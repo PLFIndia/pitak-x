@@ -1,0 +1,7 @@
+# flutter_rust_bridge codegen config (pinned to runtime frb 2.12.0).
+# Surgical setup: we hand-authored the `pitak_crypto` crate (rust/) and only
+# want frb to generate the Dart<->Rust bindings for the narrow `crate::api`
+# surface. Generated Dart lands in lib/src/rust/** (analyzer-excluded).
+rust_input: crate::api
+rust_root: rust/
+dart_output: lib/src/rust

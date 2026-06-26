@@ -1,0 +1,11 @@
+# Strict lints per repo AGENTS.md §11 (very_good_analysis).
+include: package:very_good_analysis/analysis_options.yaml
+
+analyzer:
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - "lib/src/rust/**" # flutter_rust_bridge-generated FFI bindings
+  errors:
+    # Generated/codegen files and FFI bindings are not hand-maintained.
+    invalid_annotation_target: ignore

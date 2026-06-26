@@ -1,0 +1,24 @@
+[package]
+name = "pitak_crypto"
+version = "0.1.0"
+edition = "2021"
+description = "Trusted crypto + vault core for Pitaka (Argon2id/AES-GCM blob unwrap + SQLCipher borrowers vault). Secrets never cross FFI."
+
+[lib]
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[dependencies]
+flutter_rust_bridge = "=2.12.0"
+argon2 = "0.5"
+aes-gcm = "0.10"
+zeroize = { version = "1", features = ["zeroize_derive"] }
+subtle = "2"
+base64 = "0.22"
+
+[dependencies.rusqlite]
+version = "0.32"
+features = ["bundled-sqlcipher-vendored-openssl"]
+
+[dependencies.libsqlite3-sys]
+version = "0.30"
+features = ["bundled-sqlcipher-vendored-openssl"]

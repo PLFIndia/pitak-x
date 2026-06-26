@@ -1,0 +1,56 @@
+name: CI
+
+# Continuous gates for the Kotlin->Flutter port (PLAN.md Step 9). Every push/PR
+# must keep these green: the "zero data loss" migration matrix (Dart) + the
+# hermetic vault crypto chain (Rust), plus analyze/format/test per AGENTS.md §11.
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  rust:
+    name: Rust core (pitak_crypto)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      # Builds bundled-sqlcipher (OpenSSL + SQLCipher C) and runs the unit
+      # tests + the HERMETIC vault fixture chain (Argon2id -> AES-GCM ->
+      # sqlite3_key) against the committed synthetic fixture. No secrets.
+      - name: cargo test (release)
+        working-directory: rust
+        run: cargo test --release
+
+  flutter:
+    name: Flutter (analyze, format, test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Resolve deps
+        run: flutter pub get
+      # Generated sources (drift/freezed/riverpod/json) must be regenerable and
+      # leave no uncommitted diff (AGENTS.md §11 CI gate).
+      - name: build_runner (no uncommitted diff)
+        run: |
+          dart run build_runner build --delete-conflicting-outputs
+          if ! git diff --quiet -- '*.g.dart' '*.freezed.dart'; then
+            echo "::error::Generated files are stale; run build_runner and commit."
+            git --no-pager diff --stat -- '*.g.dart' '*.freezed.dart'
+            exit 1
+          fi
+      - name: Analyze (zero issues)
+        run: flutter analyze lib test
+      - name: Format check
+        run: dart format --set-exit-if-changed lib test
+      # Includes the migration matrix (all 25 book + 16 wishlist columns survive
+      # restore) and the fail-closed restore/vault-mapping tests.
+      - name: Test (with coverage)
+        run: flutter test --coverage
