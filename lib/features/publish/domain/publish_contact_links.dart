@@ -10,13 +10,21 @@
 /// from validated/encoded parts.
 library;
 
-/// A user-supplied contact triple for the published page.
+/// A user-supplied contact set for the published page.
 final class PublishContact {
   /// Creates a contact. All fields optional (blank = omitted).
-  const PublishContact({this.location = '', this.email = '', this.phone = ''});
+  const PublishContact({
+    this.address = '',
+    this.gps = '',
+    this.email = '',
+    this.phone = '',
+  });
 
-  /// Free-text location or "lat, lng".
-  final String location;
+  /// Free-text library address (rendered as a Maps *search* link).
+  final String address;
+
+  /// "lat, lng" pin (rendered as a precise Maps pin).
+  final String gps;
 
   /// Contact email.
   final String email;
@@ -34,9 +42,14 @@ abstract final class PublishContactLinks {
     required String Function(String) escape,
   }) {
     final items = <String>[];
-    final loc = locationHref(contact.location);
-    if (loc != null) {
-      items.add(_anchor(loc, '📍 ${contact.location.trim()}', escape));
+    // Address → a Maps search link (free text). GPS → a precise pin.
+    final addr = locationHref(contact.address);
+    if (addr != null) {
+      items.add(_anchor(addr, '📍 ${contact.address.trim()}', escape));
+    }
+    final pin = locationHref(contact.gps);
+    if (pin != null) {
+      items.add(_anchor(pin, '🗺 ${contact.gps.trim()}', escape));
     }
     final mail = emailHref(contact.email);
     if (mail != null) {

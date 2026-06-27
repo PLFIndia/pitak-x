@@ -35,4 +35,20 @@ void main() {
     );
     expect(html, contains('My Library'));
   });
+
+  test('carries the events banner + a same-origin events.html probe', () async {
+    final html = utf8.decode(
+      await const ViewerHtmlBuilder(
+        libraryName: 'X',
+        contact: PublishContact(),
+      ).build(),
+    );
+    // Banner element links to the events page and starts hidden (revealed by
+    // the probe only when events.html exists).
+    expect(html, contains('id="eventsBanner"'));
+    expect(html, contains('href="events.html"'));
+    expect(html, contains('class="events-banner"'));
+    // The reveal probe is a HEAD fetch of the sibling page.
+    expect(html, contains('fetch("events.html"'));
+  });
 }

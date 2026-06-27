@@ -74,7 +74,8 @@ class PublishController extends _$PublishController {
       buildViewerHtml: ViewerHtmlBuilder(
         libraryName: settings.libraryName,
         contact: PublishContact(
-          location: settings.publishContactLocation,
+          address: settings.publishContactAddress,
+          gps: settings.publishContactGps,
           email: settings.publishContactEmail,
           phone: settings.publishContactPhone,
         ),

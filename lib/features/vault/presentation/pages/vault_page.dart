@@ -5,6 +5,9 @@
 ///  - locked → "unlock" (enter the passphrase);
 ///  - unlocked → the borrower list with add / edit / delete + a lock action.
 ///
+/// Change-passphrase + biometric settings live under Settings → Security; the
+/// vault app-bar keeps only Pending (bell) + Lock.
+///
 /// All crypto lives behind the controller; this widget only collects the
 /// passphrase via a secure field and forwards the resulting bytes. The vault
 /// key never reaches Dart.
@@ -17,10 +20,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
-import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
-import 'package:pitaka/features/vault/presentation/pages/change_passphrase_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/pending_page.dart';
 
 /// The persistent borrowers-vault screen.
@@ -41,24 +42,6 @@ class VaultPage extends ConsumerWidget {
               icon: const Icon(Icons.notifications_none),
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(builder: (_) => const PendingPage()),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Change passphrase',
-              icon: const Icon(Icons.password),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const ChangePassphrasePage(),
-                ),
-              ),
-            ),
-            IconButton(
-              tooltip: 'Biometric unlock',
-              icon: const Icon(Icons.fingerprint),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const BiometricSettingsPage(),
-                ),
               ),
             ),
             IconButton(

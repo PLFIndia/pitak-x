@@ -94,6 +94,70 @@ void main() {
       },
     );
 
+    test('round-trips the split publish-contact fields', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      final repo = PrefsSettingsRepository(prefs);
+
+      await repo.setPublishContact(
+        address: '  14 Banyan Road  ',
+        gps: '  12.97, 77.59  ',
+        email: '  a@b.com  ',
+        phone: '  +91 555  ',
+      );
+
+      final s = await repo.load();
+      expect(s.publishContactAddress, '14 Banyan Road'); // trimmed
+      expect(s.publishContactGps, '12.97, 77.59');
+      expect(s.publishContactEmail, 'a@b.com');
+      expect(s.publishContactPhone, '+91 555');
+    });
+
+    test('migrates a legacy free-text location into Address', () async {
+      // Pre-split install: only the old single key is set.
+      SharedPreferences.setMockInitialValues({
+        'publish_contact_location': 'MG Road, Bengaluru',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final s = await PrefsSettingsRepository(prefs).load();
+      expect(s.publishContactAddress, 'MG Road, Bengaluru');
+      expect(s.publishContactGps, ''); // free text never lands in GPS
+    });
+
+    test('migrates a legacy coordinate location into GPS', () async {
+      SharedPreferences.setMockInitialValues({
+        'publish_contact_location': '12.97, 77.59',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final s = await PrefsSettingsRepository(prefs).load();
+      expect(s.publishContactGps, '12.97, 77.59');
+      expect(s.publishContactAddress, ''); // a pin never lands in Address
+    });
+
+    test('a saved new field wins over the legacy location key', () async {
+      // Both old and new keys present (user re-saved post-upgrade): the new
+      // value is authoritative; the legacy key is ignored.
+      SharedPreferences.setMockInitialValues({
+        'publish_contact_location': 'OLD VALUE',
+        'publish_contact_address': 'New Address',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final s = await PrefsSettingsRepository(prefs).load();
+      expect(s.publishContactAddress, 'New Address');
+    });
+
+    test('an explicitly cleared field does not resurrect legacy', () async {
+      // address saved as '' (user cleared it) but legacy still lingers —
+      // empty-string is a real stored value and must win over the legacy key.
+      SharedPreferences.setMockInitialValues({
+        'publish_contact_location': 'OLD VALUE',
+        'publish_contact_address': '',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final s = await PrefsSettingsRepository(prefs).load();
+      expect(s.publishContactAddress, '');
+    });
+
     test('tolerates an unknown stored token', () async {
       SharedPreferences.setMockInitialValues({
         'theme_mode': 'bogus',

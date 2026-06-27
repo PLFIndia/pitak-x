@@ -1,0 +1,477 @@
+<!doctype html>
+<!--
+  Pitaka library viewer (D12).
+  Single self-contained file: no CDN dependencies, no build step,
+  no runtime fetch beyond the sibling books.json.
+
+  Bundled with the app at app/src/main/assets/publish/index.html
+  and uploaded verbatim to the user's GitHub repo on publish.
+
+  viewerVersion: 4
+    v3: F-09 — Content-Security-Policy meta added; image origins
+         restricted to same-origin, data:, and the OpenLibrary /
+         Google Books cover hosts. Mirrors CoverUrlAllowList.kt.
+    v4: genre + language filter facets (populated from books.json);
+         coarse availability badge ("Available" / "All out") rendered
+         when the publisher included it (vault unlocked at publish time).
+         Availability is a coarse status only — never an exact count.
+    v5 (Revision R): genre dropped as a dropdown — now matched via the
+         search box (title/author/genre). Sort options are Recently added /
+         Language / Age group. Language stays a filter dropdown. Age group
+         renders as a small badge and is a sort key (ordinal order).
+    v6: library info line restyled as a bordered card (address + GPS now
+         distinct entries, fed by the split Contribute fields). Eyeball-catching
+         events banner added under the title — hidden by default, revealed by a
+         same-origin HEAD probe of events.html (the two pages publish
+         independently), linking to the Events page when it exists.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<!--
+  F-09: Content-Security-Policy.
+  default-src 'self' is the catch-all deny; everything else is an
+  explicit grant. img-src mirrors CoverUrlAllowList.ALLOWED_HOSTS
+  in the Kotlin publisher; any drift between the two is caught by
+  PublishViewerCspTest. 'unsafe-inline' on script/style is honest:
+  the viewer is a single self-contained file built around inline
+  <style> and <script>. It does not protect against XSS in this
+  document, but the F-09 threat is cross-origin image exfiltration,
+  which img-src handles regardless of script-src.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+<title>Sample Community Library</title>
+<style>
+  :root {
+    --saffron-50: #fff1e6;
+    --saffron-100: #fac7a7;
+    --saffron-400: #e25822;
+    --saffron-700: #7e2706;
+    --ink-50: #fffaf5;
+    --ink-900: #1f1209;
+    --grey-30: #e5e5e5;
+    --grey-70: #424242;
+    --bg: var(--ink-50);
+    --bg-alt: var(--saffron-50);
+    --fg: var(--ink-900);
+    --fg-muted: var(--grey-70);
+    --accent: var(--saffron-400);
+    --border: var(--grey-30);
+    --shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg: #1a1208;
+    --bg-alt: #2a1c10;
+    --fg: var(--ink-50);
+    --fg-muted: var(--saffron-100);
+    --border: #3a2a1a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    min-height: 100vh;
+    -webkit-text-size-adjust: 100%;
+  }
+  header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  h1 { margin: 0 0 12px; font-size: 22px; font-weight: 500; color: var(--accent); display: flex; align-items: center; gap: 10px; }
+  h1 .logo { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
+  /* Optional library info line (rendered only when the publisher set at least
+     one of address/GPS/email/phone). Sits under the title, above the controls.
+     Muted, tappable links; wraps on narrow screens. */
+  .contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin: -4px 0 12px;
+    font-size: 13px;
+    padding: 8px 12px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .contact .contact-item {
+    color: var(--fg-muted);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .contact .contact-item:hover { color: var(--accent); text-decoration: underline; }
+  /* Eyeball-catching events banner. Hidden by default; revealed by script only
+     when a sibling events.html exists (the two pages publish independently, so
+     index.html cannot know at build time whether events was ever published). */
+  .events-banner {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    background: var(--accent);
+    color: var(--ink-50);
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .events-banner.show { display: flex; }
+  .events-banner .bell { font-size: 20px; flex-shrink: 0; }
+  .events-banner .txt { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; }
+  .events-banner .go {
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.6); border-radius: 999px; padding: 3px 12px;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  input[type="search"], select, button {
+    font: inherit;
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    color: var(--fg);
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  input[type="search"] { flex: 1; min-width: 180px; }
+  button { cursor: pointer; }
+  button.active { background: var(--accent); color: var(--ink-50); border-color: var(--accent); }
+  .meta { color: var(--fg-muted); font-size: 12px; margin: 8px 0 0; }
+  /* Coarse availability badges (v4). Only "available" / "all out" — never a count. */
+  .avail { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
+  .avail-available { background: #1b5e2022; color: #1b5e20; border: 1px solid #1b5e2055; }
+  .avail-out { background: #b0002022; color: #b00020; border: 1px solid #b0002055; }
+  .avail-age { background: #1565c022; color: #1565c0; border: 1px solid #1565c055; }
+  [data-theme="dark"] .avail-available { color: #7fdf95; }
+  [data-theme="dark"] .avail-out { color: #ff8a80; }
+  [data-theme="dark"] .avail-age { color: #90caf9; }
+  main { padding: 16px 20px 48px; }
+
+  /* Layouts */
+  .layout-table table { width: 100%; border-collapse: collapse; }
+  .layout-table th, .layout-table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 14px;
+  }
+  .layout-table th { font-weight: 600; color: var(--fg-muted); }
+
+  .layout-card .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .layout-card .card {
+    border: 1px solid var(--border);
+    background: var(--bg-alt);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: var(--shadow);
+  }
+  .layout-card .card h3 { margin: 0 0 4px; font-size: 16px; }
+  .layout-card .card .author { color: var(--fg-muted); font-size: 14px; }
+  .layout-card .card .row { font-size: 12px; color: var(--fg-muted); margin-top: 4px; }
+
+  .layout-grid .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    gap: 12px;
+  }
+  .layout-grid .grid figure {
+    margin: 0;
+    text-align: center;
+  }
+  .layout-grid .grid img {
+    width: 100%;
+    aspect-ratio: 2 / 3;
+    object-fit: cover;
+    border-radius: 4px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+  }
+  .layout-grid .grid figcaption {
+    font-size: 12px;
+    color: var(--fg-muted);
+    margin-top: 4px;
+    overflow-wrap: anywhere;
+  }
+  .layout-grid .grid .title { color: var(--fg); }
+
+  .empty {
+    color: var(--fg-muted);
+    font-size: 14px;
+    margin: 32px 0;
+    text-align: center;
+  }
+  .error {
+    color: #b00020;
+    margin: 32px 0;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">
+    <img class="logo" id="logo" src="" alt="" onerror="this.style.display='none'" />
+    <span>Sample Community Library</span>
+  </h1>
+  <a class="events-banner show" id="eventsBanner" href="events.html">
+    <span class="bell">📣</span>
+    <span class="txt">See what's happening at the library</span>
+    <span class="go">Events →</span>
+  </a>
+  <div class="contact"><a class="contact-item" href="https://www.google.com/maps/search/?api=1&query=14%20Banyan%20Road" target="_blank" rel="noopener noreferrer">📍 14 Banyan Road, Bengaluru</a><a class="contact-item" href="https://www.google.com/maps?q=12.9719,77.6412" target="_blank" rel="noopener noreferrer">🗺 12.9719, 77.6412</a><a class="contact-item" href="mailto:hello@samplelibrary.org" target="_blank" rel="noopener noreferrer">✉ hello@samplelibrary.org</a><a class="contact-item" href="tel:+919812345678" target="_blank" rel="noopener noreferrer">☎ +91 98123 45678</a></div>
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search title, author, genre, ISBN" autocomplete="off" />
+    <select id="sort">
+      <option value="addedDate">Recently added</option>
+      <option value="language">Language</option>
+      <option value="ageGroup">Age group</option>
+    </select>
+    <select id="language"><option value="">All languages</option></select>
+    <button data-layout="table" class="active">Table</button>
+    <button data-layout="card">Cards</button>
+    <button data-layout="grid">Covers</button>
+    <button id="theme" title="Toggle dark mode">🌗</button>
+  </div>
+  <p class="meta" id="meta">Loading…</p>
+</header>
+<main id="root"></main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const root = $("#root");
+  const q = $("#q");
+  const sortEl = $("#sort");
+  const languageEl = $("#language");
+  const meta = $("#meta");
+  const theme = $("#theme");
+
+  // ---- Theming ----
+  const THEME_KEY = "pitaka-theme";
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem(THEME_KEY, t);
+  }
+  applyTheme(localStorage.getItem(THEME_KEY) || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  theme.addEventListener("click", () => {
+    applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+  });
+
+  // ---- Events banner (independent pages) ----
+  // index.html and events.html publish separately, so the catalogue cannot know
+  // at build time whether an events page exists. Probe for it; reveal the
+  // banner only when present (CSP connect-src 'self' permits this same-origin
+  // request). Any failure leaves the banner hidden — never a dead link.
+  (function probeEvents() {
+    fetch("events.html", { method: "HEAD", cache: "no-cache" })
+      .then((res) => { if (res.ok) $("#eventsBanner").classList.add("show"); })
+      .catch(() => {});
+  })();
+
+  // ---- Layout switcher ----
+  let layout = "table";
+  document.querySelectorAll("button[data-layout]").forEach((b) => {
+    b.addEventListener("click", () => {
+      layout = b.dataset.layout;
+      document.querySelectorAll("button[data-layout]").forEach((x) => x.classList.toggle("active", x === b));
+      render();
+    });
+  });
+  q.addEventListener("input", render);
+  sortEl.addEventListener("change", render);
+  languageEl.addEventListener("change", render);
+
+  // ---- Data ----
+  let books = [];
+  let loadError = null;
+
+  async function load() {
+    try {
+      const res = await fetch("books.json", { cache: "no-cache" });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      if (typeof data.schemaVersion !== "number") {
+        throw new Error("Missing schemaVersion in books.json");
+      }
+      if (data.schemaVersion > 1) {
+        meta.textContent = "This file was created by a newer Pitak. Re-publish from your phone to update the viewer.";
+      }
+      books = Array.isArray(data.books) ? data.books : [];
+      populateFacets();
+      render();
+    } catch (e) {
+      loadError = e.message || String(e);
+      root.innerHTML = '<div class="error">Failed to load books.json: ' + escape(loadError) + "</div>";
+    }
+  }
+
+  function escape(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  // Populate the language facet dropdown from the loaded data.
+  // Distinct, case-insensitive, sorted; preserves the leading "All …" option.
+  function populateFacets() {
+    const seen = new Map(); // lowercase -> original
+    for (const b of books) {
+      const v = (b.language || "").trim();
+      if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+    }
+    const values = [...seen.values()].sort((a, b) => a.localeCompare(b));
+    languageEl.innerHTML = `<option value="">All languages</option>` +
+      values.map((v) => `<option value="${escape(v)}">${escape(v)}</option>`).join("");
+  }
+
+  // Age-group sort rank (for sort) + label (for the badge). Mirrors the Kotlin
+  // Book.AgeGroup enum: keyed on the stable token, ordered by sortRank. Legacy
+  // tokens (pre-"above N") are accepted too so an older published JSON still
+  // renders correctly after the app updates.
+  const AGE_ORDER = {
+    "above-3": 0, "above-6": 1, "above-10": 2, "above-15": 3, "advanced": 4,
+    // Legacy fallbacks (old published files): map onto the closest new band.
+    AGE_0_5: 0, AGE_6_10: 1, AGE_11_16: 2, ADVANCE: 4,
+  };
+  const AGE_LABEL = {
+    "above-3": "Above 3", "above-6": "Above 6", "above-10": "Above 10",
+    "above-15": "Above 15", "advanced": "Advanced",
+    // Legacy fallbacks.
+    AGE_0_5: "Above 3", AGE_6_10: "Above 6", AGE_11_16: "Above 10", ADVANCE: "Advanced",
+  };
+
+  // Coarse availability badge (v4). Only "available" / "out" (or nothing).
+  function availBadge(b) {
+    if (b.availability === "available") return ` <span class="avail avail-available">Available</span>`;
+    if (b.availability === "out") return ` <span class="avail avail-out">All out</span>`;
+    return "";
+  }
+
+  // Age-group badge (v5). Shown when the book carries an age band.
+  function ageBadge(b) {
+    const label = AGE_LABEL[b.ageGroup];
+    return label ? ` <span class="avail avail-age">${label}</span>` : "";
+  }
+
+  // Plain age-band label for the table's Age column (v6). Empty when unset.
+  function ageText(b) {
+    return AGE_LABEL[b.ageGroup] || "";
+  }
+
+  function filterAndSort() {
+    const needle = q.value.trim().toLowerCase();
+    const sortKey = sortEl.value;
+    const languageSel = languageEl.value.toLowerCase();
+    let out = books.slice();
+    if (languageSel) out = out.filter((b) => (b.language || "").toLowerCase() === languageSel);
+    if (needle) {
+      out = out.filter((b) => {
+        const t = (b.title || "").toLowerCase();
+        const tt = (b.titleTransliteration || "").toLowerCase();
+        const a = (b.author || "").toLowerCase();
+        const g = (b.genre || "").toLowerCase();
+        const i = (b.isbn || "").toLowerCase();
+        return t.indexOf(needle) >= 0 || tt.indexOf(needle) >= 0 || a.indexOf(needle) >= 0 ||
+               g.indexOf(needle) >= 0 || i.indexOf(needle) >= 0;
+      });
+    }
+    out.sort((a, b) => {
+      if (sortKey === "addedDate") {
+        return (Number(b.addedDate) || 0) - (Number(a.addedDate) || 0);
+      }
+      if (sortKey === "ageGroup") {
+        // Ordinal order; unset (undefined) sorts last.
+        const av = (a.ageGroup in AGE_ORDER) ? AGE_ORDER[a.ageGroup] : 99;
+        const bv = (b.ageGroup in AGE_ORDER) ? AGE_ORDER[b.ageGroup] : 99;
+        return av - bv;
+      }
+      // language (or any string key): blanks last, then locale compare.
+      const av = (a[sortKey] == null || a[sortKey] === "") ? "\uffff" : String(a[sortKey]);
+      const bv = (b[sortKey] == null || b[sortKey] === "") ? "\uffff" : String(b[sortKey]);
+      return av.localeCompare(bv);
+    });
+    return out;
+  }
+
+  function render() {
+    if (loadError) return;
+    const filtered = filterAndSort();
+    meta.textContent = `${filtered.length} of ${books.length} book${books.length === 1 ? "" : "s"}`;
+    if (filtered.length === 0) {
+      root.innerHTML = '<div class="empty">No matches.</div>';
+      return;
+    }
+    root.className = "layout-" + layout;
+    if (layout === "table") root.innerHTML = renderTable(filtered);
+    else if (layout === "card") root.innerHTML = renderCards(filtered);
+    else if (layout === "grid") root.innerHTML = renderGrid(filtered);
+  }
+
+  function renderTable(list) {
+    const rows = list.map((b) => `
+      <tr>
+        <td>${escape(b.title)}${availBadge(b)}${b.titleTransliteration ? `<br><span class="meta">${escape(b.titleTransliteration)}</span>` : ""}</td>
+        <td>${escape(b.author || "")}</td>
+        <td>${escape(ageText(b))}</td>
+        <td>${escape(b.publishedYear || "")}</td>
+        <td>${escape(b.isbn || "")}</td>
+      </tr>
+    `).join("");
+    return `
+      <table>
+        <thead>
+          <tr><th>Title</th><th>Author</th><th>Age</th><th>Year</th><th>ISBN</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  }
+
+  function renderCards(list) {
+    return `<div class="cards">` + list.map((b) => `
+      <div class="card">
+        <h3>${escape(b.title)}${availBadge(b)}${ageBadge(b)}</h3>
+        ${b.titleTransliteration ? `<div class="row">${escape(b.titleTransliteration)}</div>` : ""}
+        <div class="author">${escape(b.author || "")}</div>
+        <div class="row">
+          ${b.publishedYear ? escape(b.publishedYear) + " · " : ""}
+          ${b.publisher ? escape(b.publisher) : ""}
+        </div>
+        <div class="row">${b.isbn ? "ISBN " + escape(b.isbn) : ""}</div>
+      </div>
+    `).join("") + `</div>`;
+  }
+
+  function renderGrid(list) {
+    // Inline SVG placeholder so we never hit a broken image icon. Sized 2:3
+    // book aspect, themed to bg-alt.
+    const placeholder = "data:image/svg+xml;utf8," + encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 90'>` +
+      `<rect width='60' height='90' fill='#fac7a7' fill-opacity='0.25'/>` +
+      `<path d='M20 28h20v6H20zM20 38h20v4H20zM20 46h20v4H20zM20 54h12v4H20z' fill='#e25822' fill-opacity='0.6'/>` +
+      `</svg>`
+    );
+    return `<div class="grid">` + list.map((b) => `
+      <figure>
+        <img src="${b.coverUrl ? escape(b.coverUrl) : placeholder}" alt="${escape(b.title)}" loading="lazy" onerror="this.src='${placeholder}'" />
+        <figcaption><span class="title">${escape(b.title)}</span>${availBadge(b)}${ageBadge(b)}</figcaption>
+      </figure>
+    `).join("") + `</div>`;
+  }
+
+  load();
+</script>
+</body>
+</html>

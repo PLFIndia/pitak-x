@@ -44,7 +44,8 @@ class AppSettings {
     this.maintainerName = '',
     this.librarySort = BookSort.recentlyAdded,
     this.loadRemoteCovers = false,
-    this.publishContactLocation = '',
+    this.publishContactAddress = '',
+    this.publishContactGps = '',
     this.publishContactEmail = '',
     this.publishContactPhone = '',
     this.libraryLogo = '',
@@ -78,9 +79,15 @@ class AppSettings {
   /// device until the user explicitly enables this in Settings (§2a.4).
   final bool loadRemoteCovers;
 
-  /// Optional public contact line on the published page (#32): a location
-  /// (free text or "lat, lng"). PII the user DELIBERATELY chose to publish.
-  final String publishContactLocation;
+  /// Optional public library address shown on the published page (#32): free
+  /// text (e.g. "14 Banyan Road, Bengaluru"). PII the user DELIBERATELY chose
+  /// to publish. Rendered as a Maps *search* link.
+  final String publishContactAddress;
+
+  /// Optional public GPS pin on the published page (#32): "lat, lng". Rendered
+  /// as a precise Google Maps pin. Separate from [publishContactAddress] so a
+  /// library can show a human address, an exact pin, or both.
+  final String publishContactGps;
 
   /// Optional public contact email shown on the published page (#32).
   final String publishContactEmail;
@@ -110,7 +117,8 @@ class AppSettings {
     String? maintainerName,
     BookSort? librarySort,
     bool? loadRemoteCovers,
-    String? publishContactLocation,
+    String? publishContactAddress,
+    String? publishContactGps,
     String? publishContactEmail,
     String? publishContactPhone,
     String? libraryLogo,
@@ -123,8 +131,9 @@ class AppSettings {
       maintainerName: maintainerName ?? this.maintainerName,
       librarySort: librarySort ?? this.librarySort,
       loadRemoteCovers: loadRemoteCovers ?? this.loadRemoteCovers,
-      publishContactLocation:
-          publishContactLocation ?? this.publishContactLocation,
+      publishContactAddress:
+          publishContactAddress ?? this.publishContactAddress,
+      publishContactGps: publishContactGps ?? this.publishContactGps,
       publishContactEmail: publishContactEmail ?? this.publishContactEmail,
       publishContactPhone: publishContactPhone ?? this.publishContactPhone,
       libraryLogo: libraryLogo ?? this.libraryLogo,

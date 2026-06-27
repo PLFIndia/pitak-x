@@ -61,5 +61,16 @@ void main() {
       expect(html, contains('tel:555'));
       expect(html, contains('class="contact"'));
     });
+
+    test('address renders a search link, gps renders a precise pin', () {
+      final html = PublishContactLinks.render(
+        const PublishContact(address: 'MG Road', gps: '12.97, 77.59'),
+        escape: esc,
+      );
+      // Free-text address → Maps search.
+      expect(html, contains('/maps/search/?api=1&amp;query=MG%20Road'));
+      // Coordinate pair → precise pin.
+      expect(html, contains('maps?q=12.97,77.59'));
+    });
   });
 }

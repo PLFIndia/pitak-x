@@ -107,6 +107,12 @@ dependencies:
   # the old getSaveLocation path silently failed there. No secrets are shared;
   # the user explicitly picks the target app.
   share_plus: ^12.0.2
+  # Opens user-saved "other library" bookmarks in the device's EXTERNAL browser
+  # (Bookmarks feature). The canonical Flutter URL package. Only ever launches
+  # https links the app already validated against the GitHub/Cloudflare Pages
+  # host allow-list; no in-app webview (untrusted third-party pages stay out of
+  # the app's process).
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -140,6 +146,10 @@ flutter:
     # GitHub repo with {{LIBRARY_NAME}}/{{LOGO_DATA_URL}}/{{CONTACT_HTML}}
     # substituted; its CSP img-src mirrors CoverUrlAllowList.
     - assets/publish/index.html
+    # Bundled events viewer (#events Publish). Uploaded as events.html with
+    # {{LIBRARY_NAME}}/{{POSTERS_HTML}} substituted; img-src is 'self' only
+    # (posters are same-origin). Poster markup is baked in (max 2 posters).
+    - assets/publish/events.html
     # Pitak app icon, composited into the PDF export footer (attribution line).
     - assets/pdf/app_icon.png
     # Noto Sans TTFs for the PDF export. The `pdf` package's built-in base-14

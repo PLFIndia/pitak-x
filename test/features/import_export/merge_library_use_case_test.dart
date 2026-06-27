@@ -109,7 +109,8 @@ class _FakeSettings implements SettingsRepository {
   Future<void> setLoadRemoteCovers({required bool enabled}) async {}
   @override
   Future<void> setPublishContact({
-    required String location,
+    required String address,
+    required String gps,
     required String email,
     required String phone,
   }) async {}

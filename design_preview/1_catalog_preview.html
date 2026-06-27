@@ -1,0 +1,148 @@
+<!doctype html>
+<!--
+  DESIGN PREVIEW ONLY — not wired into the app.
+  Mockup of the published library page WITH the expanded "Library info" block:
+    existing: contact links  +  NEW user-defined optional fields
+    (Library address, GPS location, Contact number, Email).
+  Hardcoded sample data. Themed to match assets/publish/index.html.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Sample Community Library</title>
+<style>
+  :root {
+    --saffron-50: #fff1e6; --saffron-100: #fac7a7; --saffron-400: #e25822;
+    --saffron-700: #7e2706; --ink-50: #fffaf5; --ink-900: #1f1209;
+    --grey-30: #e5e5e5; --grey-70: #424242;
+    --bg: var(--ink-50); --bg-alt: var(--saffron-50); --fg: var(--ink-900);
+    --fg-muted: var(--grey-70); --accent: var(--saffron-400);
+    --border: var(--grey-30); --shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg: #1a1208; --bg-alt: #2a1c10; --fg: var(--ink-50);
+    --fg-muted: var(--saffron-100); --border: #3a2a1a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg); min-height: 100vh; -webkit-text-size-adjust: 100%; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);
+    position: sticky; top: 0; z-index: 10; }
+  h1 { margin: 0 0 12px; font-size: 22px; font-weight: 500; color: var(--accent);
+    display: flex; align-items: center; gap: 10px; }
+  h1 .logo { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
+    background: var(--saffron-100); display: inline-flex; align-items: center; justify-content: center; }
+
+  /* Cross-page nav tabs (links catalogue <-> events page). */
+  .nav { display: flex; gap: 8px; margin: 0 0 12px; }
+  .nav a { font-size: 13px; text-decoration: none; color: var(--fg-muted);
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-alt); }
+  .nav a.current { color: var(--ink-50); background: var(--accent); border-color: var(--accent); }
+
+  /* NEW: prominent Events banner (eyeball-catcher). Saffron-filled,
+     full-width strip directly under the header. Only shown when the library
+     has at least one event; hidden otherwise. */
+  .announce-banner { display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px; background: var(--accent); color: var(--ink-50);
+    text-decoration: none; border-bottom: 1px solid var(--saffron-700); }
+  .announce-banner .bell { font-size: 22px; flex-shrink: 0; }
+  .announce-banner .txt { flex: 1; min-width: 0; }
+  .announce-banner .txt strong { display: block; font-size: 15px; }
+  .announce-banner .txt span { font-size: 13px; opacity: 0.9;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .announce-banner .go { font-size: 13px; font-weight: 600; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.6); border-radius: 999px; padding: 4px 12px; }
+
+  /* NEW: Library info card. Replaces the thin one-line contact strip with a
+     structured block. Every row is optional — only set rows render. */
+  .libinfo { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px;
+    margin: 0 0 12px; font-size: 13px; max-width: 560px; }
+  .libinfo dt { color: var(--fg-muted); white-space: nowrap; }
+  .libinfo dd { margin: 0; }
+  .libinfo a { color: var(--fg-muted); text-decoration: none; }
+  .libinfo a:hover { color: var(--accent); text-decoration: underline; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  input[type="search"], select, button { font: inherit; border: 1px solid var(--border);
+    background: var(--bg-alt); color: var(--fg); padding: 6px 10px; border-radius: 6px; }
+  input[type="search"] { flex: 1; min-width: 180px; }
+  button { cursor: pointer; }
+  button.active { background: var(--accent); color: var(--ink-50); border-color: var(--accent); }
+  .meta { color: var(--fg-muted); font-size: 12px; margin: 8px 0 0; }
+  .avail { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px;
+    border-radius: 999px; white-space: nowrap; }
+  .avail-available { background: #1b5e2022; color: #1b5e20; border: 1px solid #1b5e2055; }
+  .avail-age { background: #1565c022; color: #1565c0; border: 1px solid #1565c055; }
+  main { padding: 16px 20px 48px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { font-weight: 600; color: var(--fg-muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="logo">📚</span><span>Sample Community Library</span></h1>
+
+  <nav class="nav">
+    <a href="1_catalog_preview.html" class="current">Catalogue</a>
+    <a href="2_events_preview.html">Events</a>
+  </nav>
+
+  <!-- NEW expanded library-info block. Each <div> here is one optional field;
+       in the real build a field is omitted entirely when the user left it blank. -->
+  <dl class="libinfo">
+    <dt>📍 Address</dt>
+    <dd>14 Banyan Road, Indiranagar, Bengaluru 560038</dd>
+
+    <dt>🗺 Location</dt>
+    <dd><a href="https://www.google.com/maps?q=12.9719,77.6412" target="_blank" rel="noopener noreferrer">12.9719, 77.6412 — open in Maps</a></dd>
+
+    <dt>☎ Phone</dt>
+    <dd><a href="tel:+919812345678">+91 98123 45678</a></dd>
+
+    <dt>✉ Email</dt>
+    <dd><a href="mailto:hello@samplelibrary.org">hello@samplelibrary.org</a></dd>
+  </dl>
+
+  <div class="controls">
+    <input id="q" type="search" placeholder="Search title, author, genre, ISBN" autocomplete="off" />
+    <select><option>Recently added</option><option>Language</option><option>Age group</option></select>
+    <select><option>All languages</option><option>English</option><option>Kannada</option></select>
+    <button class="active">Table</button><button>Cards</button><button>Covers</button>
+    <button id="theme" title="Toggle dark mode">🌗</button>
+  </div>
+  <p class="meta">3 of 3 books</p>
+</header>
+
+<!-- NEW eyeball-catching banner. Pulls the latest event's headline and links
+     straight to the Events page. Hidden when there are none. -->
+<a class="announce-banner" href="2_events_preview.html">
+  <span class="bell">📣</span>
+  <span class="txt">
+    <strong>Event</strong>
+    <span>Storytelling Saturday — this weekend, 10 AM. Free for all.</span>
+  </span>
+  <span class="go">See all →</span>
+</a>
+
+<main>
+  <table>
+    <thead><tr><th>Title</th><th>Author</th><th>Age</th><th>Year</th><th>ISBN</th></tr></thead>
+    <tbody>
+      <tr><td>The Tale of the Banyan Tree <span class="avail avail-available">Available</span> <span class="avail avail-age">Above 6</span></td><td>R. Krishnan</td><td>Above 6</td><td>2019</td><td>978-0000000001</td></tr>
+      <tr><td>Stars Over Bengaluru</td><td>Meera Iyer</td><td>Above 10</td><td>2021</td><td>978-0000000002</td></tr>
+      <tr><td>ಕನ್ನಡ ಕಥೆಗಳು</td><td>S. Rao</td><td>Above 3</td><td>2018</td><td>978-0000000003</td></tr>
+    </tbody>
+  </table>
+</main>
+
+<script>
+  const root = document.documentElement;
+  root.setAttribute("data-theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.getElementById("theme").addEventListener("click", () =>
+    root.setAttribute("data-theme", root.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+</script>
+</body>
+</html>
