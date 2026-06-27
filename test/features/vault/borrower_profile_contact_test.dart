@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/whatsapp_glyph.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
@@ -29,7 +30,7 @@ void main() {
 
     expect(find.text('+91 98123 45678'), findsOneWidget);
     expect(find.byIcon(Icons.call), findsOneWidget);
-    expect(find.byIcon(Icons.chat), findsOneWidget); // WhatsApp
+    expect(find.byType(WhatsappGlyph), findsOneWidget); // WhatsApp
     expect(find.byIcon(Icons.email_outlined), findsNothing);
   });
 
@@ -49,7 +50,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.call), findsOneWidget);
-    expect(find.byIcon(Icons.chat), findsOneWidget);
+    expect(find.byType(WhatsappGlyph), findsOneWidget);
     expect(find.byIcon(Icons.email_outlined), findsOneWidget);
   });
 
@@ -65,7 +66,7 @@ void main() {
     await tester.pumpWidget(_app(null));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.call), findsNothing);
-    expect(find.byIcon(Icons.chat), findsNothing);
+    expect(find.byType(WhatsappGlyph), findsNothing);
     expect(find.byIcon(Icons.email_outlined), findsNothing);
   });
 }
