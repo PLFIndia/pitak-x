@@ -118,6 +118,7 @@ dependencies:
   # Android, registered in AndroidManifest). Crop runs locally on-device before
   # the existing downscale; no network, no new data leaves the device.
   image_cropper: ^12.2.1
+  font_awesome_flutter: ^11.0.0
 
 dev_dependencies:
   flutter_test:

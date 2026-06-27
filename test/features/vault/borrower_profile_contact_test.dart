@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/widgets/whatsapp_glyph.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
@@ -23,6 +23,11 @@ Widget _app(String? contact) => ProviderScope(
   child: const MaterialApp(home: BorrowerProfilePage(borrowerId: 1)),
 );
 
+/// The WhatsApp button is the only FontAwesome icon on the profile, so finding
+/// the FaIcon widget type uniquely identifies it (FaIconData isn't an IconData,
+/// so find.byIcon can't be used directly).
+final _whatsapp = find.byType(FaIcon);
+
 void main() {
   testWidgets('a phone shows Call + WhatsApp buttons', (tester) async {
     await tester.pumpWidget(_app('Phone: +91 98123 45678'));
@@ -30,7 +35,7 @@ void main() {
 
     expect(find.text('+91 98123 45678'), findsOneWidget);
     expect(find.byIcon(Icons.call), findsOneWidget);
-    expect(find.byType(WhatsappGlyph), findsOneWidget); // WhatsApp
+    expect(_whatsapp, findsOneWidget);
     expect(find.byIcon(Icons.email_outlined), findsNothing);
   });
 
@@ -50,7 +55,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byIcon(Icons.call), findsOneWidget);
-    expect(find.byType(WhatsappGlyph), findsOneWidget);
+    expect(_whatsapp, findsOneWidget);
     expect(find.byIcon(Icons.email_outlined), findsOneWidget);
   });
 
@@ -66,7 +71,7 @@ void main() {
     await tester.pumpWidget(_app(null));
     await tester.pumpAndSettle();
     expect(find.byIcon(Icons.call), findsNothing);
-    expect(find.byType(WhatsappGlyph), findsNothing);
+    expect(_whatsapp, findsNothing);
     expect(find.byIcon(Icons.email_outlined), findsNothing);
   });
 }

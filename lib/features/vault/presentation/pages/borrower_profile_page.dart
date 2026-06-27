@@ -9,8 +9,8 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/widgets/whatsapp_glyph.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -244,7 +244,10 @@ class _ContactSection extends StatelessWidget {
                   ),
                 if (wa != null)
                   IconButton(
-                    icon: const WhatsappGlyph(),
+                    icon: const FaIcon(
+                      FontAwesomeIcons.whatsapp,
+                      color: Color(0xFF25D366), // WhatsApp brand green
+                    ),
                     tooltip: 'WhatsApp',
                     onPressed: () => _launch(context, wa),
                   ),
