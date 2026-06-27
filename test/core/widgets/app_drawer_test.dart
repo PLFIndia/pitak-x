@@ -47,4 +47,23 @@ void main() {
     expect(find.text('Wishlist'), findsOneWidget);
     expect(find.text('Bookmarks'), findsOneWidget);
   });
+
+  testWidgets('Settings is pinned below the primary destinations', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(await _app());
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    // Settings sits lower on screen than every primary destination.
+    final settingsY = tester.getTopLeft(find.text('Settings')).dy;
+    for (final label in ['Borrowers vault', 'Wishlist', 'Bookmarks']) {
+      expect(
+        tester.getTopLeft(find.text(label)).dy,
+        lessThan(settingsY),
+        reason: '$label should be above Settings',
+      );
+    }
+  });
 }

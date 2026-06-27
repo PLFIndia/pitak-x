@@ -1,10 +1,10 @@
 /// App navigation drawer (presentation, AGENTS.md §3.1).
 ///
-/// Left edge-swipe / hamburger drawer holding the four primary destinations:
-/// Borrowers vault, Publish, Wishlist, and Settings. Data operations
-/// (import/export/backup/restore) live under Settings → Data, so the drawer
-/// stays a short, stable list of top-level places. Each tile closes the drawer
-/// and pushes the destination page.
+/// Layout: the library header (logo + name) is pinned at the top, the primary
+/// destinations (Vault, Publish, Wishlist, Bookmarks) scroll in the middle, and
+/// Settings is pinned to the bottom edge. Data operations (import/export/backup/
+/// restore) live under Settings → Data, so the drawer stays a short, stable
+/// list of top-level places. Each tile closes the drawer and pushes the page.
 library;
 
 import 'package:flutter/material.dart';
@@ -37,9 +37,10 @@ class AppDrawer extends ConsumerWidget {
     final headerTitle = libraryName.isEmpty ? 'Pitak' : libraryName;
     return Drawer(
       child: SafeArea(
-        child: ListView(
-          padding: EdgeInsets.zero,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // Pinned top: library logo + name.
             DrawerHeader(
               decoration: BoxDecoration(color: scheme.primaryContainer),
               child: Row(
@@ -59,27 +60,36 @@ class AppDrawer extends ConsumerWidget {
                 ],
               ),
             ),
-            ListTile(
-              leading: const Icon(Icons.lock_outline),
-              title: const Text('Borrowers vault'),
-              onTap: () => _go(context, const VaultPage()),
+            // Scrollable middle: the primary destinations.
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.lock_outline),
+                    title: const Text('Borrowers vault'),
+                    onTap: () => _go(context, const VaultPage()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.cloud_upload_outlined),
+                    title: const Text('Publish to web'),
+                    onTap: () => _go(context, const PublishPage()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.bookmark_border),
+                    title: const Text('Wishlist'),
+                    onTap: () => _go(context, const WishlistPage()),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.collections_bookmark_outlined),
+                    title: const Text('Bookmarks'),
+                    onTap: () => _go(context, const BookmarksPage()),
+                  ),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.cloud_upload_outlined),
-              title: const Text('Publish to web'),
-              onTap: () => _go(context, const PublishPage()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.bookmark_border),
-              title: const Text('Wishlist'),
-              onTap: () => _go(context, const WishlistPage()),
-            ),
-            ListTile(
-              leading: const Icon(Icons.collections_bookmark_outlined),
-              title: const Text('Bookmarks'),
-              onTap: () => _go(context, const BookmarksPage()),
-            ),
-            const Divider(),
+            // Pinned bottom: Settings.
+            const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Settings'),
