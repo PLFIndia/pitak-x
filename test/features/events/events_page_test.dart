@@ -41,7 +41,9 @@ void main() {
 
     expect(find.text('No posters yet.'), findsOneWidget);
     expect(find.text('Add poster'), findsOneWidget);
-    expect(find.widgetWithText(AppBar, 'Events'), findsOneWidget);
+    // EventsPage shows an in-body title (no AppBar) now that EventsView is
+    // also embeddable as a tab.
+    expect(find.text('Events'), findsOneWidget);
   });
 
   testWidgets('with two posters the add button is disabled at the cap', (

@@ -108,6 +108,29 @@ final settingsRepositoryProvider =
 // ignore: unused_element
 typedef SettingsRepositoryRef =
     AutoDisposeFutureProviderRef<SettingsRepository>;
+String _$bookmarksRepositoryHash() =>
+    r'1a568adef0d936272410aa4927e2fa94e78f1957';
+
+/// Library-bookmarks persistence (other libraries' published sites). Non-secret
+/// flat list in shared_preferences — no Drift table/migration.
+///
+/// Copied from [bookmarksRepository].
+@ProviderFor(bookmarksRepository)
+final bookmarksRepositoryProvider =
+    AutoDisposeFutureProvider<BookmarksRepository>.internal(
+      bookmarksRepository,
+      name: r'bookmarksRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$bookmarksRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BookmarksRepositoryRef =
+    AutoDisposeFutureProviderRef<BookmarksRepository>;
 String _$bookRepositoryHash() => r'35fe70150a31083fe5f708941458de399870901e';
 
 /// Library books repository.

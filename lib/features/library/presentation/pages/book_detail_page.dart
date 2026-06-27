@@ -41,17 +41,6 @@ class BookDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Book'),
         actions: [
-          if (vaultUnlocked && !book.removed)
-            IconButton(
-              icon: const Icon(Icons.outbox),
-              tooltip: 'Lend',
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) =>
-                      LendBookPage(bookId: book.id, bookTitle: book.title),
-                ),
-              ),
-            ),
           IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Edit',
@@ -135,6 +124,20 @@ class BookDetailPage extends ConsumerWidget {
           if (book.removed) ...[
             const SizedBox(height: 12),
             _RemovedBadge(scheme: scheme, textTheme: textTheme),
+          ],
+          // Lend action (vault unlocked; not offered for removed books).
+          if (vaultUnlocked && !book.removed) ...[
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) =>
+                      LendBookPage(bookId: book.id, bookTitle: book.title),
+                ),
+              ),
+              icon: const Icon(Icons.outbox),
+              label: const Text('Lend'),
+            ),
           ],
           const SizedBox(height: 24),
           // Labeled rows in the exact order of the Kotlin detail screen.

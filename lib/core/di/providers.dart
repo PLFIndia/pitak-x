@@ -19,6 +19,8 @@ import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
+import 'package:pitaka/features/bookmarks/domain/bookmarks_repository.dart';
+import 'package:pitaka/features/bookmarks/infrastructure/prefs_bookmarks_repository.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/events/infrastructure/file_events_repository.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -105,6 +107,16 @@ Future<SharedPreferences> sharedPreferences(SharedPreferencesRef ref) =>
 Future<SettingsRepository> settingsRepository(SettingsRepositoryRef ref) async {
   final prefs = await ref.watch(sharedPreferencesProvider.future);
   return PrefsSettingsRepository(prefs);
+}
+
+/// Library-bookmarks persistence (other libraries' published sites). Non-secret
+/// flat list in shared_preferences — no Drift table/migration.
+@riverpod
+Future<BookmarksRepository> bookmarksRepository(
+  BookmarksRepositoryRef ref,
+) async {
+  final prefs = await ref.watch(sharedPreferencesProvider.future);
+  return PrefsBookmarksRepository(prefs);
 }
 
 /// Library books repository.

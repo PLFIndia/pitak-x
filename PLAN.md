@@ -131,6 +131,90 @@ catalogue page generated from `assets/publish/index.html`):
 ## Out-of-scope observations
 - UI grid work (#1/#3) already merged to main.
 
+## Phase 2 — Tabbed Publish hub (DONE)
+Result: 3-tab `PublishPage` (Connection / Basic info / Events) replaces the
+linear screen. Decision A: Library Name editable in Basic info, writing the
+SAME `libraryName` setting (single source of truth). Contribute tab removed
+from Settings (4->3 tabs). Address/GPS/email/phone editors moved to Basic info
+(storage unchanged). Cloudflare shown as a disabled "coming soon" card +
+dashboard-connect hint (decision C; real upload = decision B, later stage). The
+library 📣 AppBar action deep-links to PublishPage(initialTab: events) — one
+Events surface (EventsPage now wraps a reusable EventsView). Shared persisted-
+on-blur field extracted to `core/widgets/persisted_text_field.dart` (was two
+private copies). Tests: +4 publish-page widget tests; events_page_test updated
+for the in-body header. Full suite 456. analyze + format clean.
+
+## Phase 3 — View/Edit field toggle (DONE)
+Result: two reusable widgets in core/widgets/. `EditableTextField` (self-owned
+inline ✓/Edit toggle) used for the single Settings>Appearance fields (library
+name, maintainer name). `LabeledValueField` (parent-controlled view/edit) +
+one screen-level Save/Edit drives all of Publish>Basic info at once. Blank
+optional fields show a greyed "Not set". Both start in view mode (filled screen
+reads as a clean summary). Removed the now-unused PersistedTextField (no dead
+code). Tests: +4 EditableTextField unit tests; rewrote the Basic-info widget
+test for the view->edit->save->view cycle. Full suite 460. analyze+format clean.
+
+## Phase 4 — Small UI tweaks (DONE)
+- Vault app-bar: removed Change-passphrase + Biometric icons (still reachable
+  via Settings > Security — no access lost). Kept only Pending (bell) + Lock.
+- Book detail: removed the Lend app-bar icon; added a "Lend" FilledButton below
+  the title/author (same gate: vault unlocked && !removed).
+- Full suite 460. analyze + format clean. No tests referenced the changed UI.
+
+## Phase 5 — Bookmarks (other libraries) (DONE)
+Result: new `lib/features/bookmarks/` feature. Domain: `library_bookmark.dart`
+(`BookmarkUrl` strict allow-list — https + host endsWith github.io/pages.dev,
+rejects userinfo + suffix-spoofing like `github.io.evil.com`; `LibraryBookmark`
+label≤80 chars + tolerant JSON). shared_preferences repo (degrades to empty,
+drops now-invalid stored urls on load). @riverpod controller. BookmarksPage
+with an info note naming the accepted hosts, add-dialog with inline validation,
+tap-to-open via url_launcher (EXTERNAL browser only). Drawer entry below
+Wishlist. Added `url_launcher` dep + Android <queries> https VIEW intent for
+Android 11+ visibility. Tests: +42 (url allow-list incl. spoofing rejections,
+label/JSON, repo round-trip/corrupt/invalid-drop, controller, page widget,
+drawer entry). Full suite 504. analyze + format clean.
+
+### Decisions (locked)
+Drawer entry below Wishlist; saved links to OTHER libraries' published sites.
+- Storage: shared_preferences JSON list (no Drift migration). Each bookmark =
+  {label, url}.
+- Open: url_launcher -> external browser (new dep, approved). No in-app webview.
+- Host allow-list (STRICT, mirrors CoverUrlAllowList hardening): https only,
+  host endsWith `.github.io` OR `.pages.dev` (also bare `github.io`/`pages.dev`),
+  reject userinfo/credentials. NO custom domains.
+- Screen shows an info note explaining only GitHub Pages / Cloudflare Pages
+  links are accepted.
+- Validation lives in a pure domain value object (unit-tested).
+
+### Decisions (locked)
+- Single-field places (Settings Appearance: library name, maintainer name):
+  inline ✓ button while editing -> collapses to value + "Edit" affordance.
+- Multi-field screen (Publish Basic info): ONE screen-level Save that collapses
+  all fields to read-only values; "Edit" reopens them. No per-field ✓ there
+  (avoids redundant controls).
+- Blank optional fields collapse to a greyed "Not set" row (not hidden).
+- Scope: info/settings-style fields only — NOT search bars, add-book form, or
+  transient dialogs.
+
+### Original decisions (locked)
+Replace the linear Publish screen with a tabbed hub; consolidate everything
+that lands on the published site here.
+- TAB 1 "Connection": GitHub account + target repo (as today) + Cloudflare
+  fields DISABLED/"coming soon" (decision C) + a publish-target radio
+  (GitHub enabled, Cloudflare disabled for now).
+- TAB 2 "Basic Info": Library Name + Address + GPS + Email + Phone. MOVE the
+  address/gps/email/phone editors OUT of Settings->Contribute (storage from
+  Stage 1 unchanged; only the editing UI moves). Remove the now-empty
+  Contribute tab from Settings.
+- TAB 3 "Events": the existing poster editor. The library-screen 📣 AppBar icon
+  navigates to this tab (single Events surface, two doors) — no duplicate UI.
+- Cloudflare REAL integration (decision B): separate later stage — Cloudflare
+  API token (secret->secure store), account id, project, Direct Upload API
+  (hash manifest + upload-missing). Not built now; UI shows it as disabled.
+- OPEN: Library Name in Basic Info editable-in-place (writes the SAME
+  `libraryName` setting, single source of truth) vs read-only w/ pointer to
+  Appearance. Lean: editable-in-place.
+
 ## Result — COMPLETE (all stages)
 Shipped, across 5 stages, the published-site library-info fields + an in-app
 Events/posters feature with its own publish path:

@@ -15,7 +15,6 @@ import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
-import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -28,6 +27,7 @@ import 'package:pitaka/features/library/presentation/widgets/empty_library_state
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 
@@ -82,7 +82,10 @@ class LibraryPage extends ConsumerWidget {
             icon: const Icon(Icons.campaign_outlined),
             tooltip: 'Events',
             onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const EventsPage()),
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    const PublishPage(initialTab: PublishTab.events),
+              ),
             ),
           ),
           PopupMenuButton<String>(

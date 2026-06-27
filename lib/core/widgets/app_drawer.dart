@@ -8,14 +8,17 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
+import 'package:pitaka/features/bookmarks/presentation/pages/bookmarks_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
 
 /// The primary navigation drawer.
-class AppDrawer extends StatelessWidget {
+class AppDrawer extends ConsumerWidget {
   /// Creates the drawer.
   const AppDrawer({super.key});
 
@@ -25,8 +28,13 @@ class AppDrawer extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
+    // Show the user's library name in the header when set; else the app name.
+    final libraryName = ref
+        .watch(settingsControllerProvider)
+        .maybeWhen(data: (s) => s.libraryName.trim(), orElse: () => '');
+    final headerTitle = libraryName.isEmpty ? 'Pitak' : libraryName;
     return Drawer(
       child: SafeArea(
         child: ListView(
@@ -34,20 +42,21 @@ class AppDrawer extends StatelessWidget {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(color: scheme.primaryContainer),
-              child: Align(
-                alignment: Alignment.bottomLeft,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const LibraryLogo(size: 48, borderRadius: 12),
-                    const SizedBox(width: 12),
-                    Text(
-                      'Pitak',
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const LibraryLogo(size: 48, borderRadius: 12),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      headerTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.headlineSmall
                           ?.copyWith(color: scheme.onPrimaryContainer),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             ListTile(
@@ -64,6 +73,11 @@ class AppDrawer extends StatelessWidget {
               leading: const Icon(Icons.bookmark_border),
               title: const Text('Wishlist'),
               onTap: () => _go(context, const WishlistPage()),
+            ),
+            ListTile(
+              leading: const Icon(Icons.collections_bookmark_outlined),
+              title: const Text('Bookmarks'),
+              onTap: () => _go(context, const BookmarksPage()),
             ),
             const Divider(),
             ListTile(

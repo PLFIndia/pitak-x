@@ -107,6 +107,12 @@ dependencies:
   # the old getSaveLocation path silently failed there. No secrets are shared;
   # the user explicitly picks the target app.
   share_plus: ^12.0.2
+  # Opens user-saved "other library" bookmarks in the device's EXTERNAL browser
+  # (Bookmarks feature). The canonical Flutter URL package. Only ever launches
+  # https links the app already validated against the GitHub/Cloudflare Pages
+  # host allow-list; no in-app webview (untrusted third-party pages stay out of
+  # the app's process).
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   flutter_test:

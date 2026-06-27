@@ -1,12 +1,13 @@
 /// Settings screen (presentation layer, AGENTS.md §3.1).
 ///
-/// Four tabs mirroring the Kotlin app: Appearance, Data, Security, Contribute.
+/// Three tabs: Appearance, Data, Security.
 ///  - Appearance: theme, library name, maintainer name, remote-cover toggle.
 ///  - Data: import / export / backup / restore (links to the dedicated pages).
 ///  - Security: biometric app-lock + change vault passphrase (vault feature
 ///    entry points).
-///  - Contribute: optional public publish-contact fields (shown on the
-///    published page) + room for future community features.
+///
+/// The public publish-contact fields (address / GPS / email / phone) moved to
+/// the Publish hub's "Basic info" tab — they only matter for publishing.
 ///
 /// Pure presentation — reads [SettingsController] and forwards changes to it.
 library;
@@ -16,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/core/widgets/editable_text_field.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
@@ -40,7 +42,7 @@ class SettingsPage extends ConsumerWidget {
     final async = ref.watch(settingsControllerProvider);
 
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
@@ -50,7 +52,6 @@ class SettingsPage extends ConsumerWidget {
               Tab(text: 'Appearance'),
               Tab(text: 'Data'),
               Tab(text: 'Security'),
-              Tab(text: 'Contribute'),
             ],
           ),
         ),
@@ -63,7 +64,6 @@ class SettingsPage extends ConsumerWidget {
               _AppearanceTab(settings: settings),
               const _DataTab(),
               const _SecurityTab(),
-              _ContributeTab(settings: settings),
             ],
           ),
         ),
@@ -99,18 +99,18 @@ class _AppearanceTab extends ConsumerWidget {
         const SizedBox(height: 24),
         Text('Library', style: textTheme.titleSmall),
         const SizedBox(height: 8),
-        _DebouncedTextField(
+        EditableTextField(
           label: 'Library name',
           hint: 'Shown as the title (blank uses the app name)',
           initial: settings.libraryName,
-          onChanged: controller.setLibraryName,
+          onCommitted: controller.setLibraryName,
         ),
-        const SizedBox(height: 16),
-        _DebouncedTextField(
+        const SizedBox(height: 8),
+        EditableTextField(
           label: 'Maintainer name',
           hint: 'Stamped onto books you add (the "added by" field)',
           initial: settings.maintainerName,
-          onChanged: controller.setMaintainerName,
+          onCommitted: controller.setMaintainerName,
         ),
         const SizedBox(height: 16),
         const _LogoRow(),
@@ -356,210 +356,6 @@ class _SecurityTab extends ConsumerWidget {
           onTap: () => go(const ChangePassphrasePage()),
         ),
       ],
-    );
-  }
-}
-
-class _ContributeTab extends ConsumerStatefulWidget {
-  const _ContributeTab({required this.settings});
-
-  final AppSettings settings;
-
-  @override
-  ConsumerState<_ContributeTab> createState() => _ContributeTabState();
-}
-
-class _ContributeTabState extends ConsumerState<_ContributeTab> {
-  late final TextEditingController _address;
-  late final TextEditingController _gps;
-  late final TextEditingController _email;
-  late final TextEditingController _phone;
-
-  @override
-  void initState() {
-    super.initState();
-    _address = TextEditingController(
-      text: widget.settings.publishContactAddress,
-    );
-    _gps = TextEditingController(text: widget.settings.publishContactGps);
-    _email = TextEditingController(text: widget.settings.publishContactEmail);
-    _phone = TextEditingController(text: widget.settings.publishContactPhone);
-  }
-
-  @override
-  void dispose() {
-    _address.dispose();
-    _gps.dispose();
-    _email.dispose();
-    _phone.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() => ref
-      .read(settingsControllerProvider.notifier)
-      .setPublishContact(
-        address: _address.text,
-        gps: _gps.text,
-        email: _email.text,
-        phone: _phone.text,
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text('Public contact', style: textTheme.titleSmall),
-        const SizedBox(height: 4),
-        Text(
-          'Optional. Shown publicly on your published library page so visitors '
-          'can reach you. Leave blank to show nothing.',
-          style: textTheme.bodySmall,
-        ),
-        const SizedBox(height: 12),
-        _ContactField(
-          label: 'Library address',
-          hint: 'A street address or place name (shown as a map search link)',
-          controller: _address,
-          onEditingComplete: _save,
-        ),
-        const SizedBox(height: 16),
-        _ContactField(
-          label: 'GPS location',
-          hint: 'Coordinates as "lat, lng" — shown as a precise map pin',
-          controller: _gps,
-          onEditingComplete: _save,
-        ),
-        const SizedBox(height: 16),
-        _ContactField(
-          label: 'Email',
-          hint: 'Shown as a mailto link',
-          controller: _email,
-          onEditingComplete: _save,
-        ),
-        const SizedBox(height: 16),
-        _ContactField(
-          label: 'Phone',
-          hint: 'Shown as a tel link',
-          controller: _phone,
-          onEditingComplete: _save,
-        ),
-      ],
-    );
-  }
-}
-
-/// A contact text field that persists on focus loss / submit.
-class _ContactField extends StatefulWidget {
-  const _ContactField({
-    required this.label,
-    required this.hint,
-    required this.controller,
-    required this.onEditingComplete,
-  });
-
-  final String label;
-  final String hint;
-  final TextEditingController controller;
-  final Future<void> Function() onEditingComplete;
-
-  @override
-  State<_ContactField> createState() => _ContactFieldState();
-}
-
-class _ContactFieldState extends State<_ContactField> {
-  late final FocusNode _focus;
-
-  @override
-  void initState() {
-    super.initState();
-    _focus = FocusNode()..addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (!_focus.hasFocus) widget.onEditingComplete();
-  }
-
-  @override
-  void dispose() {
-    _focus
-      ..removeListener(_onFocusChange)
-      ..dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: widget.controller,
-      focusNode: _focus,
-      textInputAction: TextInputAction.done,
-      onSubmitted: (_) => widget.onEditingComplete(),
-      decoration: InputDecoration(
-        labelText: widget.label,
-        helperText: widget.hint,
-        border: const OutlineInputBorder(),
-      ),
-    );
-  }
-}
-
-/// A text field that persists its value on edit-end (focus loss / submit),
-/// avoiding a write per keystroke.
-class _DebouncedTextField extends StatefulWidget {
-  const _DebouncedTextField({
-    required this.label,
-    required this.hint,
-    required this.initial,
-    required this.onChanged,
-  });
-
-  final String label;
-  final String hint;
-  final String initial;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_DebouncedTextField> createState() => _DebouncedTextFieldState();
-}
-
-class _DebouncedTextFieldState extends State<_DebouncedTextField> {
-  late final TextEditingController _controller;
-  late final FocusNode _focus;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initial);
-    _focus = FocusNode()..addListener(_onFocusChange);
-  }
-
-  void _onFocusChange() {
-    if (!_focus.hasFocus) widget.onChanged(_controller.text);
-  }
-
-  @override
-  void dispose() {
-    _focus
-      ..removeListener(_onFocusChange)
-      ..dispose();
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return TextField(
-      controller: _controller,
-      focusNode: _focus,
-      textInputAction: TextInputAction.done,
-      onSubmitted: widget.onChanged,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        helperText: widget.hint,
-        border: const OutlineInputBorder(),
-      ),
     );
   }
 }

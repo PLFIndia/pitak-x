@@ -18,16 +18,35 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/presentation/widgets/poster_thumbnail.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 
-/// The Events management screen.
-class EventsPage extends ConsumerStatefulWidget {
+/// Standalone Events screen (its own Scaffold). Use [EventsView] to embed the
+/// editor inside another screen, e.g. the Publish hub's Events tab.
+class EventsPage extends StatelessWidget {
   /// Creates the events page.
   const EventsPage({super.key});
 
   @override
-  ConsumerState<EventsPage> createState() => _EventsPageState();
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      // EventsView supplies its own AppBar-less body; a title bar here.
+      body: EventsView(showHeader: true),
+    );
+  }
 }
 
-class _EventsPageState extends ConsumerState<EventsPage> {
+/// The Events poster editor body (no Scaffold), reusable as a tab or page body.
+class EventsView extends ConsumerStatefulWidget {
+  /// Creates the events editor. When [showHeader] is true an in-body title is
+  /// shown (standalone use); embedded in a tab it is omitted.
+  const EventsView({this.showHeader = false, super.key});
+
+  /// Whether to render an in-body "Events" title (standalone page use).
+  final bool showHeader;
+
+  @override
+  ConsumerState<EventsView> createState() => _EventsViewState();
+}
+
+class _EventsViewState extends ConsumerState<EventsView> {
   bool _busy = false;
 
   void _snack(String message) {
@@ -141,13 +160,13 @@ class _EventsPageState extends ConsumerState<EventsPage> {
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsControllerProvider);
-    return Scaffold(
-      appBar: AppBar(title: const Text('Events')),
-      body: eventsAsync.when(
+    return SafeArea(
+      child: eventsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (_, _) =>
             const Center(child: Text("Couldn't load your events.")),
         data: (content) => _EventsBody(
+          showHeader: widget.showHeader,
           posters: content.posters,
           isFull: content.isFull,
           busy: _busy,
@@ -163,6 +182,7 @@ class _EventsPageState extends ConsumerState<EventsPage> {
 
 class _EventsBody extends StatelessWidget {
   const _EventsBody({
+    required this.showHeader,
     required this.posters,
     required this.isFull,
     required this.busy,
@@ -175,6 +195,7 @@ class _EventsBody extends StatelessWidget {
   final List<EventPoster> posters;
   final bool isFull;
   final bool busy;
+  final bool showHeader;
   final VoidCallback onAdd;
   final void Function(int index, String current) onEditCaption;
   final void Function(int index) onRemove;
@@ -186,6 +207,10 @@ class _EventsBody extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        if (showHeader) ...[
+          Text('Events', style: textTheme.titleLarge),
+          const SizedBox(height: 12),
+        ],
         Text(
           'Add up to two posters to announce events at your library. '
           'A short description is optional. These are shown publicly when you '
