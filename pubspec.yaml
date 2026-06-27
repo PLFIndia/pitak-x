@@ -113,6 +113,11 @@ dependencies:
   # host allow-list; no in-app webview (untrusted third-party pages stay out of
   # the app's process).
   url_launcher: ^6.3.2
+  # Free-crop step after capturing a book cover photo (book-detail screen). The
+  # canonical Flutter crop plugin; uses the platform-native crop UI (uCrop on
+  # Android, registered in AndroidManifest). Crop runs locally on-device before
+  # the existing downscale; no network, no new data leaves the device.
+  image_cropper: ^12.2.1
 
 dev_dependencies:
   flutter_test:

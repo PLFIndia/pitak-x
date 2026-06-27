@@ -261,3 +261,28 @@ year (wishlist's subset of Book fields; genre/language/pages ignored); never
 overwrites user-typed values. Tests: +3 widget tests (controls present, lookup
 fills fields, lookup respects existing input). Full suite 507. analyze+format
 clean.
+
+## Phase 7 — Book cover crop after capture (decisions locked)
+- Scope: BOOK COVER capture only (book_detail_page _capture). Logo + posters
+  unchanged.
+- Crop: FREE (no aspect lock). Native crop UI via image_cropper.
+- Flow: pickImage(camera) -> image_cropper crop screen -> downscaleJpeg -> save.
+  User cancelling the crop aborts the whole capture (no save).
+- Dep: image_cropper (approved). Verify API against its docs while wiring.
+
+## Phase 8 — Borrower contact action buttons (A2, DONE)
+Decision A2: keep the vault's single `contact` TEXT column (Rust/FFI/backup
+schema UNCHANGED — confirmed by reading vault.rs SCHEMA_SQL / open_and_read /
+insert_borrower + api.rs; it's a byte-for-byte Room v1 contract with NO vault
+migration mechanism, so adding columns would break Kotlin/backup compat).
+Instead, a pure domain value object `BorrowerContact` encodes/decodes typed
+phone/email/other into that one string ("Phone: …\nEmail: …\n<other>"),
+tolerantly detecting phone+email in legacy untagged values. Edit page now has
+separate Phone/Email/Other fields; profile shows Call + WhatsApp (wa.me) next to
+phone and Email (mailto) next to email, firing device intents via url_launcher
+(external, never auto-dialled/logged). Android <queries> add tel(DIAL) +
+mailto(SENDTO); wa.me reuses the existing https VIEW intent. Tests: +22 (value
+object encode/decode/legacy/URIs +17, profile button widget +5). Full suite 530.
+analyze + format clean.
+
+NOTE: book-cover crop (image_cropper, Phase 7) is also uncommitted in this tree.

@@ -13,6 +13,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 
 /// Screen to create or edit a [Borrower].
 class BorrowerEditPage extends ConsumerStatefulWidget {
@@ -28,7 +29,9 @@ class BorrowerEditPage extends ConsumerStatefulWidget {
 
 class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
   late final TextEditingController _name;
-  late final TextEditingController _contact;
+  late final TextEditingController _phone;
+  late final TextEditingController _email;
+  late final TextEditingController _contactOther;
   late final TextEditingController _notes;
   bool _busy = false;
   String? _error;
@@ -39,15 +42,21 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
   void initState() {
     super.initState();
     final e = widget.existing;
+    // Decode the single stored `contact` string into typed phone/email/other.
+    final contact = BorrowerContact.decode(e?.contact);
     _name = TextEditingController(text: e?.name ?? '');
-    _contact = TextEditingController(text: e?.contact ?? '');
+    _phone = TextEditingController(text: contact.phone);
+    _email = TextEditingController(text: contact.email);
+    _contactOther = TextEditingController(text: contact.other);
     _notes = TextEditingController(text: e?.notes ?? '');
   }
 
   @override
   void dispose() {
     _name.dispose();
-    _contact.dispose();
+    _phone.dispose();
+    _email.dispose();
+    _contactOther.dispose();
     _notes.dispose();
     super.dispose();
   }
@@ -67,10 +76,17 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
       _busy = true;
       _error = null;
     });
+    // Re-encode the typed parts back into the single `contact` column (the
+    // vault schema is unchanged; A2). encode() returns null when all blank.
+    final contact = BorrowerContact(
+      phone: _phone.text,
+      email: _email.text,
+      other: _contactOther.text,
+    ).encode();
     final borrower = Borrower(
       id: widget.existing?.id ?? Borrower.emptyId,
       name: name,
-      contact: _trimOrNull(_contact.text),
+      contact: contact,
       notes: _trimOrNull(_notes.text),
     );
     final notifier = ref.read(vaultSessionControllerProvider.notifier);
@@ -111,10 +127,31 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
           ),
           const SizedBox(height: 16),
           TextField(
-            controller: _contact,
+            controller: _phone,
+            keyboardType: TextInputType.phone,
             decoration: const InputDecoration(
-              labelText: 'Contact (optional)',
-              helperText: 'Phone, email, or however you reach them',
+              labelText: 'Phone (optional)',
+              helperText: 'Adds call + WhatsApp buttons on their profile',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _email,
+            keyboardType: TextInputType.emailAddress,
+            autocorrect: false,
+            decoration: const InputDecoration(
+              labelText: 'Email (optional)',
+              helperText: 'Adds an email button on their profile',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _contactOther,
+            decoration: const InputDecoration(
+              labelText: 'Other contact (optional)',
+              helperText: 'Anything else — e.g. “ask at the front desk”',
               border: OutlineInputBorder(),
             ),
           ),

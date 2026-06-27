@@ -13,7 +13,9 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
+import 'package:pitaka/features/vault/domain/value_objects/borrower_contact.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Displays a borrower's details, stats, and loan history.
 class BorrowerProfilePage extends ConsumerWidget {
@@ -61,9 +63,9 @@ class BorrowerProfilePage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (profile.borrower.contact != null &&
-              profile.borrower.contact!.trim().isNotEmpty)
-            _Field(label: 'Contact', value: profile.borrower.contact!),
+          _ContactSection(
+            contact: BorrowerContact.decode(profile.borrower.contact),
+          ),
           if (profile.borrower.notes != null &&
               profile.borrower.notes!.trim().isNotEmpty)
             _Field(label: 'Notes', value: profile.borrower.notes!),
@@ -187,6 +189,91 @@ class _Field extends StatelessWidget {
           Text(value, style: textTheme.bodyLarge),
         ],
       ),
+    );
+  }
+}
+
+/// Renders the borrower's contact with action buttons: call + WhatsApp next to
+/// a phone, email next to an email. Each button fires a device intent via an
+/// external app; the value is never auto-dialled or logged. Nothing renders
+/// when there is no contact at all.
+class _ContactSection extends StatelessWidget {
+  const _ContactSection({required this.contact});
+
+  final BorrowerContact contact;
+
+  Future<void> _launch(BuildContext context, String uri) async {
+    final ok = await launchUrl(
+      Uri.parse(uri),
+      mode: LaunchMode.externalApplication,
+    );
+    if (!ok && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No app available for that action.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (contact.isEmpty) return const SizedBox.shrink();
+    final textTheme = Theme.of(context).textTheme;
+    final tel = contact.telUri;
+    final wa = contact.whatsappUri;
+    final mail = contact.mailtoUri;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Contact', style: textTheme.labelMedium),
+        const SizedBox(height: 4),
+        if (contact.phone.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(contact.phone, style: textTheme.bodyLarge),
+                ),
+                if (tel != null)
+                  IconButton(
+                    icon: const Icon(Icons.call),
+                    tooltip: 'Call',
+                    onPressed: () => _launch(context, tel),
+                  ),
+                if (wa != null)
+                  IconButton(
+                    icon: const Icon(Icons.chat),
+                    tooltip: 'WhatsApp',
+                    onPressed: () => _launch(context, wa),
+                  ),
+              ],
+            ),
+          ),
+        if (contact.email.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(contact.email, style: textTheme.bodyLarge),
+                ),
+                if (mail != null)
+                  IconButton(
+                    icon: const Icon(Icons.email_outlined),
+                    tooltip: 'Email',
+                    onPressed: () => _launch(context, mail),
+                  ),
+              ],
+            ),
+          ),
+        if (contact.other.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(contact.other, style: textTheme.bodyLarge),
+          ),
+        const SizedBox(height: 8),
+      ],
     );
   }
 }

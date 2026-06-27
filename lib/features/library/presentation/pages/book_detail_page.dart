@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
@@ -247,7 +248,20 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
         if (mounted) setState(() => _busy = false);
         return;
       }
-      final raw = await shot.readAsBytes();
+      // Free-crop step: let the user frame the cover. A null result means the
+      // user cancelled the crop — abort the whole capture (nothing is saved).
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: shot.path,
+        uiSettings: [
+          AndroidUiSettings(toolbarTitle: 'Crop cover', lockAspectRatio: false),
+          IOSUiSettings(title: 'Crop cover'),
+        ],
+      );
+      if (cropped == null) {
+        if (mounted) setState(() => _busy = false);
+        return;
+      }
+      final raw = await cropped.readAsBytes();
       final jpeg = ImageDownscaler.downscaleJpeg(raw);
       if (jpeg == null) {
         _snack('That image could not be processed.');
