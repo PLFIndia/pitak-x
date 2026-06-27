@@ -3,7 +3,7 @@
 > Read this first, then `PLAN.md` (authoritative: full roadmap + every step's
 > "Result" entry, decisions, feature-gap analysis).
 
-_Last updated: 2026-06-26 (PDF-text-as-images doc sync)._
+_Last updated: 2026-06-27 (git/remote + README doc sync)._
 
 **Status: Feature-rich and stable. Recent sessions shipped: PDF export, Pitaka→
 Pitak UI rename, launch splash + opt-in app-wide biometric gate, user library-
@@ -17,10 +17,15 @@ on the Pixel 8a but NOT yet user-confirmed on-device — see §6.**
 
 - Gates green: `flutter analyze lib test` 0 · `dart format` clean ·
   **400 Dart tests** · **22 Rust tests** · multi-ABI release APK builds
-  (~101.8MB — Noto fonts add weight) + installs on a physical Pixel 8a (FRB
-  dispatcher verified surviving R8).
-- **NO git repo** here. Real `*.pitabak` archives live untracked in the repo root.
+  (~98MB release APK — Noto fonts add weight) + installs on a physical Pixel 8a
+  (FRB dispatcher verified surviving R8).
+- **Git repo NOW EXISTS** (this changed — older notes saying "no git repo" are
+  stale). Remote: `origin` → `https://github.com/PLFIndia/pitak-x.git`. Default
+  branch `main`. `*.pitabak` archives and build output are git-ignored, not
+  committed. Branch/PR ops are §9 actions — ask before commit/push/branch-delete.
 - Release is **debug-signed** (a real keystore is the main pre-ship gate).
+- Package id (Android `applicationId` + `namespace`): `dev.khoj.pitaka`.
+  Toolchain: Flutter 3.41.1 stable / Dart SDK ^3.11.
 
 ---
 
@@ -193,6 +198,11 @@ $ADB shell monkey -p dev.khoj.pitaka -c android.intent.category.LAUNCHER 1
 
 Release still **debug-signed**. Device also carries Kotlin
 `dev.khoj.pitaka.fdroid*` variants — different apps, leave them.
+
+**Git (repo now exists):** `origin` = `github.com/PLFIndia/pitak-x`, default
+branch `main`. Read-only git is free (`git status/diff/log`); `commit`, `push`,
+branch create/delete are §9 actions — get explicit per-invocation approval.
+`*.pitabak` archives + `build/` are git-ignored.
 
 ---
 
