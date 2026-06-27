@@ -45,9 +45,11 @@ abstract interface class SettingsRepository {
   /// Persists the remote-cover opt-in (#31). Non-secret; default false.
   Future<void> setLoadRemoteCovers({required bool enabled});
 
-  /// Persists the optional public publish-contact fields (#32).
+  /// Persists the optional public publish-contact fields (#32). [address] is
+  /// free-text; [gps] is a "lat, lng" pin. Both optional (blank = omitted).
   Future<void> setPublishContact({
-    required String location,
+    required String address,
+    required String gps,
     required String email,
     required String phone,
   });

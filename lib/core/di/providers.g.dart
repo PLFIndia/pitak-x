@@ -987,5 +987,27 @@ final restoreBackupProvider = AutoDisposeFutureProvider<RestoreBackup>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RestoreBackupRef = AutoDisposeFutureProviderRef<RestoreBackup>;
+String _$eventsRepositoryHash() => r'fcff3cd04659820293505f831d60dde0d4a48e64';
+
+/// Events (poster) persistence: `events.json` + `posters/<uuid>.jpg` under the
+/// app docs dir. Poster images are downscaled (EXIF/GPS stripped) before save.
+/// Poster bounds are larger + portrait-leaning vs the 2:3 book-cover default.
+///
+/// Copied from [eventsRepository].
+@ProviderFor(eventsRepository)
+final eventsRepositoryProvider =
+    AutoDisposeFutureProvider<EventsRepository>.internal(
+      eventsRepository,
+      name: r'eventsRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$eventsRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef EventsRepositoryRef = AutoDisposeFutureProviderRef<EventsRepository>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -25,7 +25,11 @@ class PrefsSettingsRepository implements SettingsRepository {
   static const _maintainerNameKey = 'maintainer_name';
   static const _librarySortKey = 'library_sort';
   static const _loadRemoteCoversKey = 'load_remote_covers';
-  static const _publishLocationKey = 'publish_contact_location';
+  // Split fields (#32): address (free text) + gps ("lat, lng").
+  static const _publishAddressKey = 'publish_contact_address';
+  static const _publishGpsKey = 'publish_contact_gps';
+  // Legacy single "location" key (pre-split). Read once for migration only.
+  static const _legacyPublishLocationKey = 'publish_contact_location';
   static const _publishEmailKey = 'publish_contact_email';
   static const _publishPhoneKey = 'publish_contact_phone';
   static const _libraryLogoKey = 'library_logo';
@@ -40,7 +44,8 @@ class PrefsSettingsRepository implements SettingsRepository {
       maintainerName: _prefs.getString(_maintainerNameKey) ?? '',
       librarySort: BookSortX.fromToken(_prefs.getString(_librarySortKey)),
       loadRemoteCovers: _prefs.getBool(_loadRemoteCoversKey) ?? false,
-      publishContactLocation: _prefs.getString(_publishLocationKey) ?? '',
+      publishContactAddress: _readAddressWithMigration(),
+      publishContactGps: _readGpsWithMigration(),
       publishContactEmail: _prefs.getString(_publishEmailKey) ?? '',
       publishContactPhone: _prefs.getString(_publishPhoneKey) ?? '',
       libraryLogo: _prefs.getString(_libraryLogoKey) ?? '',
@@ -101,13 +106,49 @@ class PrefsSettingsRepository implements SettingsRepository {
 
   @override
   Future<void> setPublishContact({
-    required String location,
+    required String address,
+    required String gps,
     required String email,
     required String phone,
   }) async {
-    await _prefs.setString(_publishLocationKey, location.trim());
+    await _prefs.setString(_publishAddressKey, address.trim());
+    await _prefs.setString(_publishGpsKey, gps.trim());
     await _prefs.setString(_publishEmailKey, email.trim());
     await _prefs.setString(_publishPhoneKey, phone.trim());
+  }
+
+  /// Address value, migrating a legacy single "location" that is NOT a
+  /// coordinate pair into the new address field (one-time, read-only). The new
+  /// key wins once the user saves; we never write during a read.
+  String _readAddressWithMigration() {
+    final current = _prefs.getString(_publishAddressKey);
+    if (current != null) return current;
+    final legacy = (_prefs.getString(_legacyPublishLocationKey) ?? '').trim();
+    if (legacy.isEmpty) return '';
+    // A coordinate pair migrates to GPS instead; free text → address.
+    return _looksLikeLatLng(legacy) ? '' : legacy;
+  }
+
+  /// GPS value, migrating a legacy single "location" that IS a coordinate pair
+  /// into the new gps field (one-time, read-only).
+  String _readGpsWithMigration() {
+    final current = _prefs.getString(_publishGpsKey);
+    if (current != null) return current;
+    final legacy = (_prefs.getString(_legacyPublishLocationKey) ?? '').trim();
+    if (legacy.isEmpty) return '';
+    return _looksLikeLatLng(legacy) ? legacy : '';
+  }
+
+  /// True when [v] is "lat, lng" with both in valid range. Kept in sync with
+  /// `PublishContactLinks._parseLatLng` (the publish-side renderer); duplicated
+  /// here so the settings layer stays free of a publish-feature import.
+  static bool _looksLikeLatLng(String v) {
+    final parts = v.split(',').map((s) => s.trim()).toList();
+    if (parts.length != 2) return false;
+    final lat = double.tryParse(parts[0]);
+    final lng = double.tryParse(parts[1]);
+    if (lat == null || lng == null) return false;
+    return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
   }
 
   @override

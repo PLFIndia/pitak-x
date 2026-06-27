@@ -19,6 +19,11 @@
          search box (title/author/genre). Sort options are Recently added /
          Language / Age group. Language stays a filter dropdown. Age group
          renders as a small badge and is a sort key (ordinal order).
+    v6: library info line restyled as a bordered card (address + GPS now
+         distinct entries, fed by the split Contribute fields). Eyeball-catching
+         events banner added under the title — hidden by default, revealed by a
+         same-origin HEAD probe of events.html (the two pages publish
+         independently), linking to the Events page when it exists.
 -->
 <html lang="en">
 <head>
@@ -82,15 +87,19 @@
   }
   h1 { margin: 0 0 12px; font-size: 22px; font-weight: 500; color: var(--accent); display: flex; align-items: center; gap: 10px; }
   h1 .logo { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-  /* Optional library contact line (rendered only when the publisher set
-     at least one of location/email/phone). Sits under the title, above the
-     controls. Muted, tappable links; wraps on narrow screens. */
+  /* Optional library info line (rendered only when the publisher set at least
+     one of address/GPS/email/phone). Sits under the title, above the controls.
+     Muted, tappable links; wraps on narrow screens. */
   .contact {
     display: flex;
     flex-wrap: wrap;
     gap: 6px 16px;
     margin: -4px 0 12px;
     font-size: 13px;
+    padding: 8px 12px;
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
   }
   .contact .contact-item {
     color: var(--fg-muted);
@@ -98,6 +107,27 @@
     white-space: nowrap;
   }
   .contact .contact-item:hover { color: var(--accent); text-decoration: underline; }
+  /* Eyeball-catching events banner. Hidden by default; revealed by script only
+     when a sibling events.html exists (the two pages publish independently, so
+     index.html cannot know at build time whether events was ever published). */
+  .events-banner {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin: 0 0 12px;
+    padding: 10px 14px;
+    background: var(--accent);
+    color: var(--ink-50);
+    border-radius: 8px;
+    text-decoration: none;
+  }
+  .events-banner.show { display: flex; }
+  .events-banner .bell { font-size: 20px; flex-shrink: 0; }
+  .events-banner .txt { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; }
+  .events-banner .go {
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    border: 1px solid rgba(255,255,255,0.6); border-radius: 999px; padding: 3px 12px;
+  }
   .controls {
     display: flex;
     flex-wrap: wrap;
@@ -196,6 +226,11 @@
     <img class="logo" id="logo" src="{{LOGO_DATA_URL}}" alt="" onerror="this.style.display='none'" />
     <span>{{LIBRARY_NAME}}</span>
   </h1>
+  <a class="events-banner" id="eventsBanner" href="events.html">
+    <span class="bell">📣</span>
+    <span class="txt">See what's happening at the library</span>
+    <span class="go">Events →</span>
+  </a>
   {{CONTACT_HTML}}
   <div class="controls">
     <input id="q" type="search" placeholder="Search title, author, genre, ISBN" autocomplete="off" />
@@ -233,6 +268,17 @@
   theme.addEventListener("click", () => {
     applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
   });
+
+  // ---- Events banner (independent pages) ----
+  // index.html and events.html publish separately, so the catalogue cannot know
+  // at build time whether an events page exists. Probe for it; reveal the
+  // banner only when present (CSP connect-src 'self' permits this same-origin
+  // request). Any failure leaves the banner hidden — never a dead link.
+  (function probeEvents() {
+    fetch("events.html", { method: "HEAD", cache: "no-cache" })
+      .then((res) => { if (res.ok) $("#eventsBanner").classList.add("show"); })
+      .catch(() => {});
+  })();
 
   // ---- Layout switcher ----
   let layout = "table";

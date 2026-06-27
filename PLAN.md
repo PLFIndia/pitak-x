@@ -1,88 +1,169 @@
-# Task: Adaptive library grid (#1) + overflow hardening (#3)
+# Task: Published page — library info fields + Announcements page
 
 ## Understanding
-- #1: On wide windows (tablet/foldable/desktop) the library is a single skinny
-  `ListView` in a sea of whitespace. Switch to a multi-column cover grid above a
-  width breakpoint; keep the list on phones.
-- #3: No responsive code exists today. Long titles + multiple status badges in a
-  `Row`, and the two-button empty-state `Row`, can overflow on narrow widths or
-  large system font scales. Harden the known offenders.
+Expand the published GitHub/Cloudflare Pages site (currently a single
+catalogue page generated from `assets/publish/index.html`):
+1. **Library info block** — split today's single contact strip into structured,
+   all-optional fields: Library **address** (free text), **GPS location**
+   (`lat,lng`), **Contact number**, **Email**. (Correction surfaced earlier:
+   these already publish today as a one-line strip — this is a redesign +
+   address/GPS split, not "start publishing".)
+2. **Announcements page** — a SEPARATE second HTML file (`announcements.html`)
+   for 1–2 event posters, each with an optional short description. Renamed from
+   "Events" and surfaced prominently on the catalogue page to catch eyeballs.
 
-## Privacy & threat notes
-- Pure presentation change. No new data collected, stored, or transmitted.
-- Covers reuse the existing `BookCover` widget, which already gates remote
-  `https://` fetches behind the opt-in setting. No new network egress.
+## Confirmed decisions (user)
+- Q1 Address vs GPS: **two separate fields** (not the merged auto-detect field).
+- Q2 Poster hosting: **C — device picks an image; the app uploads it to the
+  same repo on publish.** (Implies: image downscale before upload like covers;
+  CSP `img-src 'self'` covers them; size cap; privacy = user-chosen public PII.)
+- Q3 Page split: **two files**, a separate **`events.html`**, surfaced
+  prominently (eyeball-catching banner on the catalogue page, not a quiet tab).
+- Q4 In-app entry: **AppBar action on the library screen** (a campaign/📣 icon
+  next to the existing scan icon + overflow menu). FAB stays the single
+  instant "add book" action — NOT overloaded with a menu. Events opens its own
+  dedicated screen.
+- Q5 Poster upload: **A — self-contained**. The Events screen has its own
+  "Publish events" button; posting/updating events does NOT touch the catalogue
+  and does not require re-publishing the book list. (Separate small publish
+  path from the existing catalogue publish.)
+- Naming: feature is called **"Events"** (reverted from "Announcements").
 
-## Investigation notes
-- `library_page.dart:172` `_BookList` = flat `ListView.separated` (only list).
-- `book_row.dart` Row: title is `Expanded`; trailing badges are fixed-width and
-  NOT wrap/flex — overflow risk with several badges on a narrow row.
-- `empty_library_state.dart` two-button `Row(mainAxisSize.min)` — overflow risk
-  at large text scale / very narrow width.
-- `library_controls_row.dart` already in a horizontal `SingleChildScrollView`
-  (scroll-safe) — out of scope.
-- `BookCover` takes `width`/`height`; safe to render large/expanded.
-- No `LayoutBuilder`/`MediaQuery`/breakpoint helper anywhere yet.
-- Default flutter_test surface is 800x600 → existing `library_page_test` will
-  now hit the grid path; grid card must still expose title / `×N` / `Removed`.
+## Privacy & threat notes (for the real build, not the mockup)
+- Address / GPS / phone / email are user-DELIBERATELY-published PII — surface a
+  "shown publicly" caution in the editor (mirrors today's contact caution).
+- Posters: images leave the device on publish. Downscale + strip EXIF before
+  upload (don't leak camera GPS in poster metadata). Size cap to bound repo
+  growth. CSP stays `img-src 'self'` — no new external origins.
+- All fields optional; blank = omitted entirely from the generated HTML.
 
-## Proposed approach
-- New `core/layout/breakpoints.dart`: single source of truth for the
-  `largeScreenMinWidth = 600` breakpoint (skill: adaptive-layout workflow).
-- `_BookList` wrapped in `LayoutBuilder`: `maxWidth >= breakpoint` → grid via
-  `GridView.builder` + `SliverGridDelegateWithMaxCrossAxisExtent`
-  (`mainAxisExtent` fixed so cells can't overflow vertically); else the existing
-  `ListView` (BookRow), unchanged.
-- New `BookGridCard`: `Column[ Expanded(Stack: cover + corner status pills),
-  title(2 lines, ellipsis), author(1 line, ellipsis) ]`. Cover is `Expanded`
-  (absorbs slack) so text never overflows the fixed-height cell. Status shown as
-  overlay pills (Removed / Not available / Needs info, and `×N`).
-- #3: `book_row.dart` — group trailing badges into a `Flexible`→`Wrap` so they
-  wrap instead of overflowing. `empty_library_state.dart` — `Row` → `Wrap`.
+## Current pipeline (read this session)
+- `assets/publish/index.html` (431 lines) — single self-contained viewer.
+- `viewer_html_builder.dart` substitutes {{LIBRARY_NAME}}/{{LOGO_DATA_URL}}/
+  {{CONTACT_HTML}}.
+- `publish_contact_links.dart` builds today's location/email/phone strip.
+- `settings_page.dart` `_ContributeTab` edits location/email/phone.
 
-## Decision points
-- None outstanding; user approved #1 + #3, end-to-end.
+## Mockups (design_preview/ — standalone, no app wiring)
+- [x] `1_catalog_preview.html` — catalogue + new Library info block + prominent
+      Announcements banner.
+- [x] `2_announcements_preview.html` — posters page (filled + empty-desc states).
 
-## Steps
-- [x] Add `core/layout/breakpoints.dart`.
-- [x] Add `BookGridCard` widget.
-- [x] Make `_BookList` adaptive (LayoutBuilder + grid).
-- [x] Harden `book_row.dart` trailing badges (Flexible + Wrap).
-- [x] Harden `empty_library_state.dart` button Row → Wrap.
-- [x] Tests: adaptive grid/list + overflow regression; full suite + analyze.
+## Steps (implementation — stage by stage, pausing at each boundary)
+- [x] **Stage 1 — Settings address/GPS split (DONE).**
+  - `app_settings.dart`: `publishContactLocation` → `publishContactAddress` +
+    `publishContactGps` (+ copyWith).
+  - `settings_repository.dart` / `prefs_settings_repository.dart`: new keys
+    `publish_contact_address` / `publish_contact_gps`; one-time READ migration
+    of legacy `publish_contact_location` → GPS if it parses as lat,lng else
+    Address (decision A). Explicitly-saved values (incl. '') win over legacy.
+  - `settings_controller.dart`: split signature.
+  - `_ContributeTab` (settings_page.dart): Library address + GPS location
+    fields; both optional, "shown publicly" caution retained.
+  - `PublishContact` (publish_contact_links.dart): address → Maps search,
+    gps → precise pin. `publish_controller.dart` passes both.
+  - Tests: +5 (round-trip, legacy→address, legacy→gps, new-wins, cleared-wins)
+    in settings_test; +1 in publish_contact_links_test; merge fake updated.
+  - Gates: analyze clean, full suite 413 passing (was 407), format clean.
+- [x] **Stage 2 — Events feature: model + screen + image pick/downscale (DONE).**
+  - Domain: `event_poster.dart` (`EventPoster` + `EventsContent`, max 2 posters,
+    280-char caption cap, tolerant JSON). `events_repository.dart` interface.
+  - Infra: `file_events_repository.dart` — `events.json` (degrades to empty) +
+    `posters/<uuid>.jpg`. Downscale fn injected; real provider uses
+    `ImageDownscaler.downscaleJpeg(maxW:1080,maxH:1440)`. NOTE: decode->encode
+    strips EXIF/GPS (verified by reading ImageDownscaler) — privacy win, free.
+  - App: `events_controller.dart` (@riverpod) holds add/caption/remove; platform
+    ImagePicker stays in the widget, logic is testable via overrides.
+  - Presentation: `events_page.dart` + `poster_thumbnail.dart`. Library AppBar
+    gains the 📣 `campaign_outlined` action (between scan + overflow) — this is
+    also the Q4 entry point, brought forward so the screen is reachable.
+  - DI: `eventsRepositoryProvider` wired.
+  - Tests: +24 (poster/content model, repo round-trip + bad-image + corrupt
+    JSON, controller add/cap/caption/remove via ProviderContainer, page widget
+    empty + cap states). Full suite 437 (was 413). analyze + format clean.
+- [ ] Stage 3 — Self-contained events publish path (own "Publish events").
+  - Q6 DECIDED: events publish REQUIRES a prior catalogue publish — it reuses
+    the stored credential + selected repo/branch. If none exists, refuse with a
+    clear "Publish your catalogue first" message (no separate repo-pick flow).
+  - Q7 DECIDED (1A): poster paths + captions are BAKED into events.html at
+    publish time (no runtime fetch, no events.json on the site). Only the 2
+    poster images + events.html are pushed.
+  - Q8 DECIDED (2A): "catalogue published" gate = the publish manifest contains
+    `index.html` for the current target repo. Manifest mismatch / missing →
+    refuse.
+  - Note: events.html template folded INTO Stage 3 (the publish path needs the
+    page it produces). Catalogue index.html edits (libinfo block + banner) stay
+    in Stage 4.
+- [x] **Stage 3 — Self-contained events publish path (DONE).**
+  - Asset: `assets/publish/events.html` (registered in pubspec) — self-contained,
+    CSP `img-src 'self' data:` (stricter than catalogue), {{LIBRARY_NAME}} +
+    {{POSTERS_HTML}} placeholders, Catalogue<->Events nav.
+  - Domain: `events_posters_html.dart` (`PublishPoster` + pure renderer,
+    injectable escape) — bakes poster <figure>s, escapes captions.
+  - Infra: `events_html_builder.dart` (loads asset + substitutes, mirrors
+    ViewerHtmlBuilder).
+  - App use case: `publish_events_use_case.dart` — gate (Q8: manifest.repo ==
+    target && has index.html), reuses credential/repo, builds events.html +
+    poster DesiredFiles, ONE atomic commitFiles, merges manifest (catalogue
+    entries preserved), sha-skip unchanged. REUSES PublishManifestGateway (no
+    duplicate interface). Drops posters whose local image is missing.
+  - App controller: `publish_events_controller.dart` (@riverpod) reads poster
+    bytes from `<docs>/posters/` (path-guarded), wires builder + settings.
+  - UI: "Publish events" button on EventsPage (enabled when >=1 poster).
+  - Tests: +14 (pure renderer escaping/empty/order, html builder asset+escape,
+    use case: gate refusals x3, commit+manifest-merge, missing-poster drop,
+    sha-skip, HTTP error). Full suite 451 (was 437). analyze + format clean.
+- [x] **Stage 4 — Catalogue template (DONE).**
+  - `assets/publish/index.html` (viewerVersion 6): library-info line restyled
+    as a bordered info card (address + GPS are already distinct entries via the
+    Stage-1 split, fed through {{CONTACT_HTML}}/PublishContactLinks).
+  - Eyeball-catching events banner under the title — hidden by default, revealed
+    by a same-origin HEAD probe of events.html (no build-time coupling between
+    the independently-published pages; never a dead link). CSP untouched, so
+    the lockstep test stays green (connect-src 'self' already permits the probe).
+  - Tests: +1 (template carries the banner + the probe). CSP-lockstep +
+    viewer-html-builder still green. Full suite 452. analyze + format clean.
+  - Preview: design_preview/3_catalog_rendered.html (real template + sample
+    data, banner forced visible).
+- [x] **Stage 5 — Library AppBar 📣 action: shipped in Stage 2** (brought
+      forward so EventsPage was reachable). No separate work remaining.
 
 ## Out-of-scope observations
-- `library_controls_row.dart` is already horizontal-scroll-safe; left untouched.
-- Centralized routing (`go_router`, prior suggestion #2) deferred per user.
+- UI grid work (#1/#3) already merged to main.
 
-## Result
-**#1 Adaptive grid:**
-- `lib/core/layout/breakpoints.dart` — `largeScreenMinWidth = 600` (SSOT).
-- `lib/features/library/presentation/widgets/book_grid_card.dart` — new
-  cover-forward card; cover is `Expanded` + status as overlay `Wrap` pills, so
-  a fixed-height grid cell can never overflow.
-- `library_page.dart` `_BookList` now wraps in `LayoutBuilder`: `>= 600px` →
-  `GridView.builder` + `SliverGridDelegateWithMaxCrossAxisExtent`
-  (`mainAxisExtent: 280`); below it the original `ListView`/`BookRow` path,
-  unchanged. Shared `unavailableOf`/`openDetail` helpers avoid duplication.
+## Result — COMPLETE (all stages)
+Shipped, across 5 stages, the published-site library-info fields + an in-app
+Events/posters feature with its own publish path:
 
-**#3 Overflow hardening:**
-- `book_row.dart` — trailing badges moved into a `Flexible`+`Wrap` (badge inner
-  padding removed; spacing now owned by the Wrap) so badges wrap instead of
-  pushing the row off-screen on narrow widths / large text scales.
-- `empty_library_state.dart` — two-button `Row` → `Wrap`.
+- **Stage 1** — Settings split: address + GPS as separate optional fields, with
+  a one-time read migration of any legacy single "location" value. Address →
+  Maps search link, GPS → precise pin on the published page.
+- **Stage 2** — `lib/features/events/`: domain model (max 2 posters, 280-char
+  captions), file-backed repo (`events.json` + `posters/<uuid>.jpg`), @riverpod
+  controller, EventsPage + PosterThumbnail. Library AppBar 📣 action. Poster
+  images downscaled — which strips EXIF/GPS for free (verified).
+- **Stage 3** — Self-contained events publish: `events.html` asset, pure poster
+  renderer, html builder, `PublishEventsUseCase` (gated on a prior catalogue
+  publish; reuses credential/repo; atomic commit; manifest-merge preserves the
+  catalogue), publish controller + "Publish events" button.
+- **Stage 4** — Catalogue `index.html` (v6): info card restyle + eyeball-catching
+  events banner revealed by a same-origin probe (pages stay decoupled).
+- **Stage 5** — folded into Stage 2 (AppBar entry).
 
-**Tests:** +3 files (`book_grid_card_test`, `library_adaptive_layout_test`,
-plus a narrow-row overflow case in `book_row_test`). Adaptive switch verified
-by forcing 400px (list) vs 1000px (grid). Full suite: **407 passing**.
-`dart analyze` clean on all touched files; `dart format` applied.
+**Gates:** `flutter analyze lib test` clean · `dart format` clean · full suite
+**452 passing** (was 407 at feature start; +45 across the stages).
 
-**Notes / verification:**
-- Existing `library_page_test` (default 800px surface) now exercises the grid
-  path and still passes — `find.text` resolves on grid cards too.
-- Pre-existing repo-wide analyzer infos (pubspec dependency sort order, etc.)
-  are unrelated to this change and were left untouched (§2 stay-in-scope).
-- No new dependency; no privacy surface change (covers reuse the opt-in-gated
-  `BookCover`).
-- Inspiration: Material 3 window-size-class 600px breakpoint + the
-  adaptive-layout skill (`LayoutBuilder` on available width, not device type).
+**Privacy posture (§2a):** poster EXIF/GPS stripped on save; address/GPS/phone/
+email are user-deliberate public PII with a "shown publicly" caution; events CSP
+is `img-src 'self' data:` (no new egress origins); the catalogue CSP is
+unchanged (lockstep test green). No secrets touched; GitHub token still in the
+secure store.
+
+**OSS/prior-art:** mirrored the repo's own `ViewerHtmlBuilder` /
+`PublishContactLinks` / `FilePublishManifestStore` / `PublishLibraryUseCase`
+patterns rather than inventing parallel ones (single source of truth).
+
+**Out-of-scope / follow-ups noted:** design_preview/ mockups remain as reference
+artifacts (not part of the app build); the catalogue info line was restyled in
+place rather than rewritten into a labeled `<dl>` (pragmatism — avoided
+rewriting the domain renderer + its tests for marginal gain).

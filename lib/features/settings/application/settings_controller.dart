@@ -113,9 +113,11 @@ class SettingsController extends _$SettingsController {
     );
   }
 
-  /// Sets the optional public publish-contact fields (#32).
+  /// Sets the optional public publish-contact fields (#32). [address] is free
+  /// text; [gps] is a "lat, lng" pin. Both optional.
   Future<void> setPublishContact({
-    required String location,
+    required String address,
+    required String gps,
     required String email,
     required String phone,
   }) async {
@@ -123,12 +125,14 @@ class SettingsController extends _$SettingsController {
     final current = state.valueOrNull ?? AppSettings.defaults;
     await _update(
       () => repo.setPublishContact(
-        location: location,
+        address: address,
+        gps: gps,
         email: email,
         phone: phone,
       ),
       current.copyWith(
-        publishContactLocation: location.trim(),
+        publishContactAddress: address.trim(),
+        publishContactGps: gps.trim(),
         publishContactEmail: email.trim(),
         publishContactPhone: phone.trim(),
       ),

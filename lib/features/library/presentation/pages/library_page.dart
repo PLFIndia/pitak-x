@@ -15,6 +15,7 @@ import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
+import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -76,6 +77,13 @@ class LibraryPage extends ConsumerWidget {
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan to add',
             onPressed: () => _quickAddByScan(context),
+          ),
+          IconButton(
+            icon: const Icon(Icons.campaign_outlined),
+            tooltip: 'Events',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const EventsPage()),
+            ),
           ),
           PopupMenuButton<String>(
             onSelected: (value) {

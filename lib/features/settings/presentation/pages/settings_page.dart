@@ -370,23 +370,26 @@ class _ContributeTab extends ConsumerStatefulWidget {
 }
 
 class _ContributeTabState extends ConsumerState<_ContributeTab> {
-  late final TextEditingController _location;
+  late final TextEditingController _address;
+  late final TextEditingController _gps;
   late final TextEditingController _email;
   late final TextEditingController _phone;
 
   @override
   void initState() {
     super.initState();
-    _location = TextEditingController(
-      text: widget.settings.publishContactLocation,
+    _address = TextEditingController(
+      text: widget.settings.publishContactAddress,
     );
+    _gps = TextEditingController(text: widget.settings.publishContactGps);
     _email = TextEditingController(text: widget.settings.publishContactEmail);
     _phone = TextEditingController(text: widget.settings.publishContactPhone);
   }
 
   @override
   void dispose() {
-    _location.dispose();
+    _address.dispose();
+    _gps.dispose();
     _email.dispose();
     _phone.dispose();
     super.dispose();
@@ -395,7 +398,8 @@ class _ContributeTabState extends ConsumerState<_ContributeTab> {
   Future<void> _save() => ref
       .read(settingsControllerProvider.notifier)
       .setPublishContact(
-        location: _location.text,
+        address: _address.text,
+        gps: _gps.text,
         email: _email.text,
         phone: _phone.text,
       );
@@ -415,9 +419,16 @@ class _ContributeTabState extends ConsumerState<_ContributeTab> {
         ),
         const SizedBox(height: 12),
         _ContactField(
-          label: 'Location',
-          hint: 'A place name, or "lat, lng" for a precise pin',
-          controller: _location,
+          label: 'Library address',
+          hint: 'A street address or place name (shown as a map search link)',
+          controller: _address,
+          onEditingComplete: _save,
+        ),
+        const SizedBox(height: 16),
+        _ContactField(
+          label: 'GPS location',
+          hint: 'Coordinates as "lat, lng" — shown as a precise map pin',
+          controller: _gps,
           onEditingComplete: _save,
         ),
         const SizedBox(height: 16),

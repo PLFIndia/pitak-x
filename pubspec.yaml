@@ -140,6 +140,10 @@ flutter:
     # GitHub repo with {{LIBRARY_NAME}}/{{LOGO_DATA_URL}}/{{CONTACT_HTML}}
     # substituted; its CSP img-src mirrors CoverUrlAllowList.
     - assets/publish/index.html
+    # Bundled events viewer (#events Publish). Uploaded as events.html with
+    # {{LIBRARY_NAME}}/{{POSTERS_HTML}} substituted; img-src is 'self' only
+    # (posters are same-origin). Poster markup is baked in (max 2 posters).
+    - assets/publish/events.html
     # Pitak app icon, composited into the PDF export footer (attribution line).
     - assets/pdf/app_icon.png
     # Noto Sans TTFs for the PDF export. The `pdf` package's built-in base-14

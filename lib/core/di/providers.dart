@@ -13,11 +13,14 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/database/app_database.dart';
+import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
+import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
+import 'package:pitaka/features/events/infrastructure/file_events_repository.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
@@ -424,5 +427,18 @@ Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
     vault: vault,
     coversDir: p.join(dir.path, 'covers'),
     workDir: p.join(dir.path, 'restore_work'),
+  );
+}
+
+/// Events (poster) persistence: `events.json` + `posters/<uuid>.jpg` under the
+/// app docs dir. Poster images are downscaled (EXIF/GPS stripped) before save.
+/// Poster bounds are larger + portrait-leaning vs the 2:3 book-cover default.
+@riverpod
+Future<EventsRepository> eventsRepository(EventsRepositoryRef ref) async {
+  final dir = await ref.watch(appDocsDirProvider.future);
+  return FileEventsRepository(
+    baseDir: dir.path,
+    downscale: (bytes) =>
+        ImageDownscaler.downscaleJpeg(bytes, maxW: 1080, maxH: 1440),
   );
 }

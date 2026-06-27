@@ -1,0 +1,87 @@
+<!doctype html>
+<!--
+  Pitak events page (#events).
+  Self-contained single file: no CDN, no build step, no runtime fetch. Poster
+  markup is BAKED in at publish time (the library caps at 2 posters, so there is
+  no separate events.json to fetch). Uploaded to the user's repo as events.html
+  alongside the catalogue index.html.
+
+  Placeholders substituted by EventsHtmlBuilder:
+    {{LIBRARY_NAME}}  — HTML-escaped page title/header
+    {{POSTERS_HTML}}  — pre-rendered poster <figure> blocks (already escaped),
+                        or an empty-state message when there are none.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<!--
+  Content-Security-Policy. Poster images are same-origin (posters/<id>.jpg in
+  the repo), so img-src needs only 'self' + data: (the inline placeholder).
+  Stricter than the catalogue, which also allows the cover CDNs.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+<title>Events — {{LIBRARY_NAME}}</title>
+<style>
+  :root {
+    --saffron-50: #fff1e6; --saffron-100: #fac7a7; --saffron-400: #e25822;
+    --saffron-700: #7e2706; --ink-50: #fffaf5; --ink-900: #1f1209;
+    --grey-30: #e5e5e5; --grey-70: #424242;
+    --bg: var(--ink-50); --bg-alt: var(--saffron-50); --fg: var(--ink-900);
+    --fg-muted: var(--grey-70); --accent: var(--saffron-400);
+    --border: var(--grey-30); --shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg: #1a1208; --bg-alt: #2a1c10; --fg: var(--ink-50);
+    --fg-muted: var(--saffron-100); --border: #3a2a1a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg); min-height: 100vh; -webkit-text-size-adjust: 100%; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);
+    position: sticky; top: 0; z-index: 10; }
+  h1 { margin: 0 0 12px; font-size: 22px; font-weight: 500; color: var(--accent);
+    display: flex; align-items: center; gap: 10px; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { font-size: 13px; text-decoration: none; color: var(--fg-muted);
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-alt); }
+  .nav a.current { color: var(--ink-50); background: var(--accent); border-color: var(--accent); }
+  main { padding: 24px 20px 48px; max-width: 900px; margin: 0 auto; }
+  h2 { margin: 0 0 4px; font-size: 20px; color: var(--accent); }
+  .intro { color: var(--fg-muted); font-size: 14px; margin: 0 0 20px; }
+  .posters { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  .poster { border: 1px solid var(--border); background: var(--bg-alt);
+    border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); margin: 0; }
+  .poster img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover; background: var(--saffron-100); }
+  .poster .desc { padding: 12px 14px; font-size: 14px; color: var(--fg); line-height: 1.45; }
+  .poster .desc.empty { color: var(--fg-muted); font-style: italic; }
+  .empty { color: var(--fg-muted); font-size: 14px; margin: 48px 0; text-align: center; }
+  button#theme { font: inherit; border: 1px solid var(--border); background: var(--bg-alt);
+    color: var(--fg); padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span>{{LIBRARY_NAME}}</span></h1>
+  <nav class="nav">
+    <a href="index.html">Catalogue</a>
+    <a href="events.html" class="current">Events</a>
+    <button id="theme" title="Toggle dark mode" style="margin-left:auto">🌗</button>
+  </nav>
+</header>
+<main>
+  <h2>📣 Events</h2>
+  <p class="intro">What's happening at the library.</p>
+  {{POSTERS_HTML}}
+</main>
+<script>
+  const root = document.documentElement;
+  const THEME_KEY = "pitaka-theme";
+  function applyTheme(t) { root.setAttribute("data-theme", t); localStorage.setItem(THEME_KEY, t); }
+  applyTheme(localStorage.getItem(THEME_KEY) || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  document.getElementById("theme").addEventListener("click", () =>
+    applyTheme(root.getAttribute("data-theme") === "dark" ? "light" : "dark"));
+</script>
+</body>
+</html>

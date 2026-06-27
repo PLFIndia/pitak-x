@@ -1,31 +1,33 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'publish_controller.dart';
+part of 'publish_events_controller.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$publishControllerHash() => r'cceba53be86b7f03229fdb239f222c570a6bc7db';
+String _$publishEventsControllerHash() =>
+    r'75047d37788e8eb92ff3c82ceb9d12bd1933ada5';
 
-/// Runs a publish and exposes its [PublishResult]; idle until [publish] runs.
+/// Runs an events publish and exposes its [PublishEventsResult].
 ///
-/// Copied from [PublishController].
-@ProviderFor(PublishController)
-final publishControllerProvider =
+/// Copied from [PublishEventsController].
+@ProviderFor(PublishEventsController)
+final publishEventsControllerProvider =
     AutoDisposeAsyncNotifierProvider<
-      PublishController,
-      PublishResult?
+      PublishEventsController,
+      PublishEventsResult?
     >.internal(
-      PublishController.new,
-      name: r'publishControllerProvider',
+      PublishEventsController.new,
+      name: r'publishEventsControllerProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$publishControllerHash,
+          : _$publishEventsControllerHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$PublishController = AutoDisposeAsyncNotifier<PublishResult?>;
+typedef _$PublishEventsController =
+    AutoDisposeAsyncNotifier<PublishEventsResult?>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package
