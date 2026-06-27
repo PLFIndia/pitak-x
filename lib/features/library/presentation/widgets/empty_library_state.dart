@@ -65,8 +65,12 @@ class EmptyLibraryState extends StatelessWidget {
           ),
           if (!isSearching && (onAdd != null || onImport != null)) ...[
             const SizedBox(height: 20),
-            Row(
-              mainAxisSize: MainAxisSize.min,
+            // Wrap (not Row) so the two buttons stack onto a second line on
+            // narrow widths or large text scales instead of overflowing.
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
               children: [
                 if (onAdd != null)
                   FilledButton.icon(
@@ -74,8 +78,6 @@ class EmptyLibraryState extends StatelessWidget {
                     icon: const Icon(Icons.add),
                     label: const Text('Add a book'),
                   ),
-                if (onAdd != null && onImport != null)
-                  const SizedBox(width: 12),
                 if (onImport != null)
                   OutlinedButton.icon(
                     onPressed: onImport,

@@ -69,32 +69,43 @@ class BookRow extends StatelessWidget {
                 ],
               ),
             ),
-            if (book.removed)
-              _Badge(
-                label: 'Removed',
-                background: scheme.errorContainer,
-                foreground: scheme.onErrorContainer,
+            // Trailing status markers. Constrained + wrapping so several badges
+            // (or large text scales) flow onto a second line instead of
+            // overflowing the row off-screen.
+            Flexible(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  if (book.removed)
+                    _Badge(
+                      label: 'Removed',
+                      background: scheme.errorContainer,
+                      foreground: scheme.onErrorContainer,
+                    ),
+                  if (unavailable && !book.removed)
+                    _Badge(
+                      label: 'Not available',
+                      background: scheme.secondaryContainer,
+                      foreground: scheme.onSecondaryContainer,
+                    ),
+                  if (book.needsMetadata)
+                    _Badge(
+                      label: 'Needs info',
+                      background: scheme.tertiaryContainer,
+                      foreground: scheme.onTertiaryContainer,
+                    ),
+                  if (book.copyCount > 1)
+                    Text(
+                      '×${book.copyCount}',
+                      style: textTheme.labelLarge?.copyWith(
+                        color: scheme.primary,
+                      ),
+                    ),
+                ],
               ),
-            if (unavailable && !book.removed)
-              _Badge(
-                label: 'Not available',
-                background: scheme.secondaryContainer,
-                foreground: scheme.onSecondaryContainer,
-              ),
-            if (book.needsMetadata)
-              _Badge(
-                label: 'Needs info',
-                background: scheme.tertiaryContainer,
-                foreground: scheme.onTertiaryContainer,
-              ),
-            if (book.copyCount > 1)
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Text(
-                  '×${book.copyCount}',
-                  style: textTheme.labelLarge?.copyWith(color: scheme.primary),
-                ),
-              ),
+            ),
           ],
         ),
       ),
@@ -116,20 +127,18 @@ class _Badge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: background,
-          borderRadius: BorderRadius.circular(50),
-        ),
-        child: Text(
-          label,
-          style: Theme.of(
-            context,
-          ).textTheme.labelSmall?.copyWith(color: foreground),
-        ),
+    // Spacing between badges is handled by the parent Wrap; no inner margin.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(50),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(
+          context,
+        ).textTheme.labelSmall?.copyWith(color: foreground),
       ),
     );
   }

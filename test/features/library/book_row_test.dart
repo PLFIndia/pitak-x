@@ -33,4 +33,29 @@ void main() {
     expect(find.text('Removed'), findsOneWidget);
     expect(find.text('Not available'), findsNothing);
   });
+
+  testWidgets('long title + multiple badges does not overflow a narrow row', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      host(
+        const Book(
+          title: 'An Extremely Long Book Title That On Its Own Fills The Row',
+          author: 'A Long Author Name As Well',
+          copyCount: 99,
+          needsMetadata: true,
+        ),
+        unavailable: true,
+      ),
+    );
+    // No RenderFlex overflow exception thrown during layout.
+    expect(tester.takeException(), isNull);
+    expect(find.text('Needs info'), findsOneWidget);
+    expect(find.text('×99'), findsOneWidget);
+  });
 }
