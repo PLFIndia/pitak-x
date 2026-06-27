@@ -251,3 +251,13 @@ patterns rather than inventing parallel ones (single source of truth).
 artifacts (not part of the app build); the catalogue info line was restyled in
 place rather than rewritten into a labeled `<dl>` (pragmatism — avoided
 rewriting the domain renderer + its tests for marginal gain).
+
+## Phase 6 — Wishlist ISBN scan + lookup (DONE)
+Ported the library add-book form's barcode-scan + ISBN-lookup row into the
+wishlist add/edit form (add_wishlist_page.dart). Reuses the SAME app-wide
+isbnLookupServiceProvider (Open Library -> Google Books over cache) and the
+ScannerPage. A successful lookup prefills only EMPTY title/author/publisher/
+year (wishlist's subset of Book fields; genre/language/pages ignored); never
+overwrites user-typed values. Tests: +3 widget tests (controls present, lookup
+fills fields, lookup respects existing input). Full suite 507. analyze+format
+clean.
