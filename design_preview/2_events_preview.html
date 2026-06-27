@@ -1,0 +1,107 @@
+<!doctype html>
+<!--
+  DESIGN PREVIEW ONLY — not wired into the app.
+  Mockup of the NEW second page (events.html): 1-2 event posters, each with an
+  optional short description. Hardcoded sample data; inline SVG stand-ins for the
+  poster images so it renders with no external files.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Events — Sample Community Library</title>
+<style>
+  :root {
+    --saffron-50: #fff1e6; --saffron-100: #fac7a7; --saffron-400: #e25822;
+    --saffron-700: #7e2706; --ink-50: #fffaf5; --ink-900: #1f1209;
+    --grey-30: #e5e5e5; --grey-70: #424242;
+    --bg: var(--ink-50); --bg-alt: var(--saffron-50); --fg: var(--ink-900);
+    --fg-muted: var(--grey-70); --accent: var(--saffron-400);
+    --border: var(--grey-30); --shadow: 0 1px 2px rgba(0,0,0,0.06);
+  }
+  [data-theme="dark"] {
+    --bg: #1a1208; --bg-alt: #2a1c10; --fg: var(--ink-50);
+    --fg-muted: var(--saffron-100); --border: #3a2a1a;
+    --shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--fg); min-height: 100vh; -webkit-text-size-adjust: 100%; }
+  header { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--bg);
+    position: sticky; top: 0; z-index: 10; }
+  h1 { margin: 0 0 12px; font-size: 22px; font-weight: 500; color: var(--accent);
+    display: flex; align-items: center; gap: 10px; }
+  h1 .logo { width: 28px; height: 28px; border-radius: 6px; background: var(--saffron-100);
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .nav { display: flex; gap: 8px; }
+  .nav a { font-size: 13px; text-decoration: none; color: var(--fg-muted);
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--bg-alt); }
+  .nav a.current { color: var(--ink-50); background: var(--accent); border-color: var(--accent); }
+
+  main { padding: 24px 20px 48px; max-width: 900px; margin: 0 auto; }
+
+  /* Posters: up to 2, side by side on wide screens, stacked on phones. */
+  .posters { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px; }
+  .poster { border: 1px solid var(--border); background: var(--bg-alt);
+    border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); }
+  .poster img { width: 100%; display: block; aspect-ratio: 3 / 4; object-fit: cover;
+    background: var(--saffron-100); }
+  .poster .desc { padding: 12px 14px; font-size: 14px; color: var(--fg); line-height: 1.45; }
+  .poster .desc.empty { color: var(--fg-muted); font-style: italic; }
+
+  .intro { color: var(--fg-muted); font-size: 14px; margin: 0 0 20px; }
+  .empty { color: var(--fg-muted); font-size: 14px; margin: 48px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="logo">📚</span><span>Sample Community Library</span></h1>
+  <nav class="nav">
+    <a href="1_catalog_preview.html">Catalogue</a>
+    <a href="2_events_preview.html" class="current">Events</a>
+  </nav>
+</header>
+
+<main>
+  <h2 style="margin:0 0 4px;font-size:20px;color:var(--accent)">📣 Events</h2>
+  <p class="intro">What's happening at the library. Tap a poster to enlarge (in the real build).</p>
+
+  <div class="posters">
+    <!-- Poster 1: with a short description. -->
+    <figure class="poster" style="margin:0">
+      <img alt="Storytelling Saturday poster" src="data:image/svg+xml;utf8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400'%3E
+        %3Crect width='300' height='400' fill='%23fac7a7'/%3E
+        %3Crect x='20' y='30' width='260' height='60' rx='8' fill='%23e25822'/%3E
+        %3Ctext x='150' y='70' font-family='sans-serif' font-size='26' fill='white' text-anchor='middle'%3EStory Saturday%3C/text%3E
+        %3Ccircle cx='150' cy='210' r='70' fill='%23e25822' fill-opacity='0.35'/%3E
+        %3Ctext x='150' y='330' font-family='sans-serif' font-size='18' fill='%237e2706' text-anchor='middle'%3E10 AM · Free entry%3C/text%3E
+        %3C/svg%3E" />
+      <div class="desc">Storytelling Saturday — bring the kids for an hour of folk tales and snacks. This weekend, 10 AM. Free for all.</div>
+    </figure>
+
+    <!-- Poster 2: description left blank — shows the muted placeholder. -->
+    <figure class="poster" style="margin:0">
+      <img alt="Book donation drive poster" src="data:image/svg+xml;utf8,
+        %3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 400'%3E
+        %3Crect width='300' height='400' fill='%23fff1e6'/%3E
+        %3Crect x='0' y='0' width='300' height='90' fill='%237e2706'/%3E
+        %3Ctext x='150' y='55' font-family='sans-serif' font-size='24' fill='white' text-anchor='middle'%3EDonation Drive%3C/text%3E
+        %3Crect x='70' y='150' width='160' height='120' rx='6' fill='%23e25822' fill-opacity='0.5'/%3E
+        %3Ctext x='150' y='330' font-family='sans-serif' font-size='16' fill='%237e2706' text-anchor='middle'%3EAll month · Drop books anytime%3C/text%3E
+        %3C/svg%3E" />
+      <div class="desc empty">No description added.</div>
+    </figure>
+  </div>
+
+  <!-- When the library has posted nothing, the whole section is replaced by: -->
+  <!-- <p class="empty">No events right now. Check back soon.</p> -->
+</main>
+
+<script>
+  const root = document.documentElement;
+  root.setAttribute("data-theme", matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+</script>
+</body>
+</html>
