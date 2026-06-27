@@ -10,6 +10,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/layout/breakpoints.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
@@ -20,6 +21,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
@@ -169,25 +171,56 @@ class _BookList extends ConsumerWidget {
     // Active-loan counts are non-null only when the vault is unlocked; the
     // "Not available" badge is hidden otherwise (availability unknown).
     final activeCounts = ref.watch(activeLoanCountsProvider);
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      itemCount: books.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, index) {
-        final book = books[index];
-        final unavailable =
-            activeCounts != null &&
-            isBookUnavailable(
-              bookId: book.id,
-              copyCount: book.copyCount,
-              activeCounts: activeCounts,
+
+    bool unavailableOf(Book book) =>
+        activeCounts != null &&
+        isBookUnavailable(
+          bookId: book.id,
+          copyCount: book.copyCount,
+          activeCounts: activeCounts,
+        );
+    void openDetail(Book book) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => BookDetailPage(book: book)));
+
+    // Adaptive layout: decide on the *available width* the parent gives us, not
+    // the device type — a single column on phones, a cover grid once there is
+    // room for it (tablets, foldables, resized desktop windows).
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= largeScreenMinWidth) {
+          return GridView.builder(
+            padding: const EdgeInsets.all(16),
+            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+              // Target column width; Flutter picks the column count that fits.
+              maxCrossAxisExtent: 200,
+              mainAxisExtent: 280,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: books.length,
+            itemBuilder: (context, index) {
+              final book = books[index];
+              return BookGridCard(
+                book: book,
+                unavailable: unavailableOf(book),
+                onTap: () => openDetail(book),
+              );
+            },
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          itemCount: books.length,
+          separatorBuilder: (_, _) => const Divider(height: 1),
+          itemBuilder: (context, index) {
+            final book = books[index];
+            return BookRow(
+              book: book,
+              unavailable: unavailableOf(book),
+              onTap: () => openDetail(book),
             );
-        return BookRow(
-          book: book,
-          unavailable: unavailable,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => BookDetailPage(book: book)),
-          ),
+          },
         );
       },
     );
