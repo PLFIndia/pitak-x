@@ -104,28 +104,37 @@ void main() {
     expect(read.firstWhere((b) => b.id == 2).title, 'Plain Book');
   });
 
-  test('the written books.db carries the Room FTS mirror', () {
-    final bytes = writer.build(
-      books: const [Book(id: 1, title: 'Findable')],
-      wishlist: const [],
-      workDir: '${tmp.path}/work',
-      exportedAt: 1,
-    );
-    final db = sqlite3.open(
-      stageDb(entry(unzip(bytes), 'books.db')!, 'fts.db'),
-    );
-    addTearDown(db.dispose);
-    // books_fts exists and was populated from books (docid = id).
-    final rows = db.select(
-      "SELECT docid FROM books_fts WHERE books_fts MATCH 'Findable'",
-    );
-    expect(rows.single['docid'], 1);
-    // Room identity row is present so the Kotlin app accepts the file.
-    final master = db.select(
-      'SELECT identity_hash FROM room_master_table WHERE id = 42',
-    );
-    expect(master.single['identity_hash'], isNotEmpty);
-  });
+  test(
+    'the written books.db has NO FTS mirror (bundled SQLite has no fts4)',
+    () {
+      // Regression guard for the on-device crash: the bundled SQLite
+      // (sqlite3_flutter_libs) ships FTS5 only, so emitting a `USING FTS4`
+      // virtual table threw `no such module: fts4` and aborted every backup.
+      // The writer must NOT create that table; books must still be readable.
+      final bytes = writer.build(
+        books: const [Book(id: 1, title: 'Findable')],
+        wishlist: const [],
+        workDir: '${tmp.path}/work',
+        exportedAt: 1,
+      );
+      final db = sqlite3.open(
+        stageDb(entry(unzip(bytes), 'books.db')!, 'no_fts.db'),
+      );
+      addTearDown(db.dispose);
+      // No books_fts (or its FTS4 shadow tables) is present.
+      final ftsTables = db.select(
+        "SELECT name FROM sqlite_master WHERE name LIKE 'books_fts%'",
+      );
+      expect(ftsTables, isEmpty);
+      // Books still round-trip through our own restore reader.
+      expect(LegacyDbReader(db).readBooks().single.title, 'Findable');
+      // Room identity row is still present (no module dependency).
+      final master = db.select(
+        'SELECT identity_hash FROM room_master_table WHERE id = 42',
+      );
+      expect(master.single['identity_hash'], isNotEmpty);
+    },
+  );
 
   test('wishlist round-trips through the restore reader', () {
     final wishlist = [

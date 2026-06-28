@@ -9,10 +9,15 @@
 ///  - user cover images are bundled as flat `cover_<leaf>` entries;
 ///  - a `manifest.json` describes what is present.
 ///
-/// Bidirectional zero-data-loss (Q-28c): the written `books.db` / `wishlist.db`
-/// include Room's `room_master_table` identity row, matching `user_version`,
-/// and the FTS4 `books_fts` table + content-sync triggers, so a backup we write
-/// is ALSO restorable by the original Kotlin app — not just by us.
+/// Restore targets (Q-28c): Pitak↔Pitak and Kotlin→Flutter. The written
+/// `books.db` / `wishlist.db` carry Room's `room_master_table` identity row and
+/// matching `user_version` so they read cleanly. We deliberately do NOT emit
+/// the FTS4 `books_fts` mirror: the bundled SQLite (`sqlite3_flutter_libs`)
+/// ships
+/// FTS5 only — `USING FTS4` throws `no such module: fts4` on-device — and our
+/// restore reader never reads that table (it rebuilds Drift's own FTS). The
+/// reverse direction (restoring our backup into the original Kotlin app) is not
+/// a goal, so the FTS mirror it would need is intentionally absent.
 ///
 /// No secrets pass through here: the vault DB is opaque ciphertext on disk and
 /// the blob is already ciphertext. This writer never sees the vault key.
@@ -137,8 +142,9 @@ class BackupArchiveWriter {
     return files;
   }
 
-  /// Writes a Room-compatible `books.db` with the books table, the FTS4
-  /// `books_fts` mirror + sync triggers, and the Room identity row.
+  /// Writes a Room-compatible `books.db` with the books table and the Room
+  /// identity row. No FTS mirror is written (see class doc / the inline note):
+  /// the bundled SQLite lacks the FTS4 module and restore never reads it.
   void _writeBooksDb(String path, List<Book> books) {
     final db = openDatabase(path);
     try {
@@ -159,12 +165,13 @@ class BackupArchiveWriter {
           '`needs_metadata` INTEGER NOT NULL DEFAULT 0, '
           '`removed` INTEGER NOT NULL DEFAULT 0, `removed_at` INTEGER, '
           '`added_by` TEXT)',
-        )
-        ..execute(
-          'CREATE VIRTUAL TABLE IF NOT EXISTS `books_fts` USING FTS4( '
-          '`title` TEXT NOT NULL, `title_transliteration` TEXT, `author` TEXT, '
-          '`isbn` TEXT, `location` TEXT, `genre` TEXT, content=`books`)',
         );
+      // NOTE: no `books_fts` FTS4 mirror is written. The bundled on-device
+      // SQLite (sqlite3_flutter_libs) has FTS5 only, so `USING FTS4` would
+      // throw `no such module: fts4` and abort the backup. Our restore reader
+      // never
+      // reads this table — it rebuilds Drift's FTS independently — so omitting
+      // it is correct for Pitak↔Pitak and Kotlin→Flutter restore.
 
       final stmt = db.prepare(
         'INSERT INTO `books`( '
@@ -209,14 +216,6 @@ class BackupArchiveWriter {
         stmt.dispose();
       }
 
-      // Populate the FTS mirror (docid = books.rowid = id), as Room's triggers
-      // would, so the Kotlin app's FTS search works against our backup.
-      db.execute(
-        'INSERT INTO `books_fts`(docid, title, title_transliteration, author, '
-        'isbn, location, genre) '
-        'SELECT id, title, title_transliteration, author, isbn, location, '
-        'genre FROM `books`',
-      );
       _writeRoomMaster(db, _booksIdentityHash);
     } finally {
       db.dispose();
