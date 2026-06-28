@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Drawer header — current vs options</title>
+<style>
+  /* Material 3 scheme generated from seedColor: Colors.indigo (matches main.dart) */
+  :root{
+    --primary:#4A5C92;
+    --onPrimary:#ffffff;
+    --primaryContainer:#dce1ff;   /* the "purple zone" */
+    --onPrimaryContainer:#001551;
+    --surface:#fefbff;
+    --onSurface:#1b1b1f;
+    --onSurfaceVariant:#46464f;
+    --surfaceContainerHigh:#e9e7ef;
+    --surfaceContainerHighest:#e3e1ec;
+    --outlineVariant:#c7c5d0;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:'Roboto',system-ui,-apple-system,sans-serif}
+  body{background:#33343a;color:#e7e7ea;padding:32px;display:flex;flex-direction:column;gap:8px;align-items:center}
+  h1{font-size:18px;font-weight:600;margin-bottom:4px}
+  .sub{font-size:13px;color:#b8b8be;margin-bottom:24px;text-align:center;max-width:760px;line-height:1.5}
+  .row{display:flex;gap:28px;flex-wrap:wrap;justify-content:center;align-items:flex-start}
+  .col{display:flex;flex-direction:column;align-items:center;gap:12px}
+  .tag{font-size:13px;font-weight:600;letter-spacing:.2px}
+  .note{font-size:11px;color:#a9a9b0;max-width:240px;text-align:center;line-height:1.45}
+  .rec{color:#9fd0a0}
+
+  /* a phone-edge drawer panel */
+  .drawer{
+    width:288px;height:560px;background:var(--surface);color:var(--onSurface);
+    border-radius:0 16px 16px 0;overflow:hidden;display:flex;flex-direction:column;
+    box-shadow:0 8px 30px rgba(0,0,0,.45);
+  }
+  .safearea{height:26px;flex:0 0 auto}            /* status-bar inset */
+
+  /* logo + name building blocks */
+  .logo{width:48px;height:48px;border-radius:12px;background:
+        linear-gradient(135deg,#5b6cc0,#3a458a);flex:0 0 auto;display:flex;
+        align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:20px}
+  .name{font-size:22px;font-weight:400;line-height:1.15;letter-spacing:.1px}
+
+  /* destinations list (shared) */
+  .list{flex:1 1 auto;padding-top:6px}
+  .tile{display:flex;align-items:center;gap:18px;padding:13px 22px;font-size:14px;color:var(--onSurface)}
+  .tile .ic{width:22px;height:22px;border-radius:5px;background:var(--onSurfaceVariant);opacity:.85;flex:0 0 auto}
+  .divider{height:1px;background:var(--outlineVariant);margin:0}
+  .bottom{padding:4px 0}
+
+  /* ---- CURRENT: DrawerHeader, fixed 160px, content bottom-aligned, primaryContainer ---- */
+  .h-current{height:160px;background:var(--primaryContainer);color:var(--onPrimaryContainer);
+    display:flex;align-items:flex-end;gap:12px;padding:16px;margin-bottom:8px}
+  .h-current .name{color:var(--onPrimaryContainer)}
+
+  /* ---- OPTION A: compact, no colour block, content-sized ---- */
+  .h-a{display:flex;align-items:center;gap:14px;padding:18px 20px 14px}
+
+  /* ---- OPTION B: tinted, self-sizing, vertically centred, subtle surface tint ---- */
+  .h-b{display:flex;align-items:center;gap:14px;padding:20px;background:var(--surfaceContainerHigh)}
+
+  /* ---- OPTION C: keep DrawerHeader height but centre + lighten ---- */
+  .h-c{height:150px;background:var(--surfaceContainerHigh);display:flex;align-items:center;
+    gap:12px;padding:16px;margin-bottom:8px}
+</style>
+</head>
+<body>
+  <h1>Drawer header — current vs. three options</h1>
+  <div class="sub">
+    Seed colour is <b>Colors.indigo</b>; the “purple zone” is Material-3 <b>primaryContainer</b>.
+    The empty space is <b>DrawerHeader</b>’s fixed ~160px height with the logo+name pinned to its
+    bottom edge (<code>CrossAxisAlignment.end</code>). Library name shown as “Pitak”.
+  </div>
+
+  <div class="row">
+
+    <!-- CURRENT -->
+    <div class="col">
+      <div class="tag">Current</div>
+      <div class="drawer">
+        <div class="safearea"></div>
+        <div class="h-current">
+          <div class="logo">प</div>
+          <div class="name">Pitak</div>
+        </div>
+        <div class="list">
+          <div class="tile"><span class="ic"></span>Borrowers vault</div>
+          <div class="tile"><span class="ic"></span>Publish to web</div>
+          <div class="tile"><span class="ic"></span>Wishlist</div>
+          <div class="tile"><span class="ic"></span>Bookmarks</div>
+        </div>
+        <div class="divider"></div>
+        <div class="bottom"><div class="tile"><span class="ic"></span>Settings</div></div>
+      </div>
+      <div class="note">Tall purple slab; logo+name shoved to the bottom, big void above.</div>
+    </div>
+
+    <!-- OPTION A -->
+    <div class="col">
+      <div class="tag rec">Option A — compact, no block ★</div>
+      <div class="drawer">
+        <div class="safearea"></div>
+        <div class="h-a">
+          <div class="logo">प</div>
+          <div class="name">Pitak</div>
+        </div>
+        <div class="divider"></div>
+        <div class="list">
+          <div class="tile"><span class="ic"></span>Borrowers vault</div>
+          <div class="tile"><span class="ic"></span>Publish to web</div>
+          <div class="tile"><span class="ic"></span>Wishlist</div>
+          <div class="tile"><span class="ic"></span>Bookmarks</div>
+        </div>
+        <div class="divider"></div>
+        <div class="bottom"><div class="tile"><span class="ic"></span>Settings</div></div>
+      </div>
+      <div class="note">No colour slab, header sized to content. Cleanest M3 look; void gone.</div>
+    </div>
+
+    <!-- OPTION B -->
+    <div class="col">
+      <div class="tag">Option B — subtle tint</div>
+      <div class="drawer">
+        <div class="safearea"></div>
+        <div class="h-b">
+          <div class="logo">प</div>
+          <div class="name">Pitak</div>
+        </div>
+        <div class="list">
+          <div class="tile"><span class="ic"></span>Borrowers vault</div>
+          <div class="tile"><span class="ic"></span>Publish to web</div>
+          <div class="tile"><span class="ic"></span>Wishlist</div>
+          <div class="tile"><span class="ic"></span>Bookmarks</div>
+        </div>
+        <div class="divider"></div>
+        <div class="bottom"><div class="tile"><span class="ic"></span>Settings</div></div>
+      </div>
+      <div class="note">Keeps a faint accent band (surface tint, not loud purple), centred, self-sizing.</div>
+    </div>
+
+    <!-- OPTION C -->
+    <div class="col">
+      <div class="tag">Option C — minimal patch</div>
+      <div class="drawer">
+        <div class="safearea"></div>
+        <div class="h-c">
+          <div class="logo">प</div>
+          <div class="name">Pitak</div>
+        </div>
+        <div class="list">
+          <div class="tile"><span class="ic"></span>Borrowers vault</div>
+          <div class="tile"><span class="ic"></span>Publish to web</div>
+          <div class="tile"><span class="ic"></span>Wishlist</div>
+          <div class="tile"><span class="ic"></span>Bookmarks</div>
+        </div>
+        <div class="divider"></div>
+        <div class="bottom"><div class="tile"><span class="ic"></span>Settings</div></div>
+      </div>
+      <div class="note">Smallest diff: centre + lighten, keep DrawerHeader. Still fairly tall.</div>
+    </div>
+
+  </div>
+</body>
+</html>

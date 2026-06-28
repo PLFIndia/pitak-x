@@ -40,26 +40,28 @@ class AppDrawer extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Pinned top: library logo + name.
-            DrawerHeader(
-              decoration: BoxDecoration(color: scheme.primaryContainer),
+            // Pinned top: library logo + name. A compact, content-sized header
+            // (not a fixed-height DrawerHeader slab): no colour block and no
+            // dead space above the logo. A divider separates it from the list.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 16, 14),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   const LibraryLogo(size: 48, borderRadius: 12),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Expanded(
                     child: Text(
                       headerTitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(color: scheme.onPrimaryContainer),
+                      style: Theme.of(context).textTheme.titleLarge
+                          ?.copyWith(color: scheme.onSurface),
                     ),
                   ),
                 ],
               ),
             ),
+            const Divider(height: 1),
             // Scrollable middle: the primary destinations.
             Expanded(
               child: ListView(
