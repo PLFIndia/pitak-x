@@ -6,11 +6,12 @@
 /// it can be adopted. Only QR codes that pass [LibraryQrPayload.parse] (correct
 /// prefix + well-formed ID) are accepted — an arbitrary QR the camera sees is
 /// ignored. We only read codes; no frames are stored or transmitted
-/// (§2a — in-person pairing, no network).
+/// (§2a — in-person pairing, no network). Backed by flutter_zxing (zxing-cpp,
+/// FOSS — no MLKit).
 library;
 
 import 'package:flutter/material.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:flutter_zxing/flutter_zxing.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
 
 /// Full-screen QR scanner. Pops a validated library ID string on success.
@@ -23,28 +24,16 @@ class ScanLibraryQrPage extends StatefulWidget {
 }
 
 class _ScanLibraryQrPageState extends State<ScanLibraryQrPage> {
-  final MobileScannerController _controller = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
-  );
   bool _handled = false;
 
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onDetect(BarcodeCapture capture) {
+  void _onScan(Code code) {
     if (_handled) return;
-    for (final barcode in capture.barcodes) {
-      final raw = barcode.rawValue;
-      if (raw == null) continue;
-      final id = LibraryQrPayload.parse(raw);
-      if (id != null) {
-        _handled = true;
-        Navigator.of(context).pop(id);
-        return;
-      }
+    final raw = code.text;
+    if (raw == null || !code.isValid) return;
+    final id = LibraryQrPayload.parse(raw);
+    if (id != null) {
+      _handled = true;
+      Navigator.of(context).pop(id);
     }
   }
 
@@ -52,34 +41,11 @@ class _ScanLibraryQrPageState extends State<ScanLibraryQrPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Scan a library QR')),
-      body: Stack(
-        alignment: Alignment.center,
-        children: [
-          MobileScanner(controller: _controller, onDetect: _onDetect),
-          IgnorePointer(
-            child: Container(
-              width: 240,
-              height: 240,
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white70, width: 2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 32,
-            left: 24,
-            right: 24,
-            child: Text(
-              'Point the camera at the other device\u2019s library QR code.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.white,
-                shadows: const [Shadow(blurRadius: 4)],
-              ),
-            ),
-          ),
-        ],
+      body: ReaderWidget(
+        codeFormat: Format.qrCode,
+        onScan: _onScan,
+        showGallery: false,
+        scanDelaySuccess: const Duration(milliseconds: 500),
       ),
     );
   }

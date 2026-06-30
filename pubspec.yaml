@@ -69,10 +69,12 @@ dependencies:
   # (scan/lookup/search); only the typed ISBN/title leaves the device. The
   # canonical Flutter HTTP package.
   http: ^1.2.2
-  # Barcode scanning (#29, CAMERA): MLKit/zxing-backed, the well-maintained
-  # de-facto Flutter scanner. Requested just-in-time; used only on the scan
-  # screen.
-  mobile_scanner: ^5.2.3
+  # Barcode + QR scanning (#29, CAMERA): zxing-cpp via Dart FFI. FOSS (MIT), no
+  # Google MLKit / Play Services — required so the F-Droid build stays free of
+  # proprietary dependencies (the reason the F-Droid edition exists). Mirrors
+  # the Kotlin app's ZXing choice. Requested just-in-time; used only on the
+  # scan screens.
+  flutter_zxing: ^2.3.0
   # QR rendering for in-person library pairing (D40). Pure-Dart QR matrix
   # encoder; we paint it with a CustomPainter (core/widgets/qr_view.dart). No
   # native code, no network. Already in the tree transitively via `pdf`/`barcode`
