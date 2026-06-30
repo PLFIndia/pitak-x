@@ -38,8 +38,14 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.khoj.pitaka"
+        // F-Droid distribution identity. This MUST match the package already
+        // published on F-Droid (dev.khoj.pitaka.fdroid) so existing users
+        // receive pitak-x as an in-place UPDATE rather than a second app.
+        // The code/resource package (namespace, above) stays dev.khoj.pitaka;
+        // only the installed applicationId carries the .fdroid suffix.
+        // If a separate Play/direct channel is ever added, split this into a
+        // product flavor instead of changing it here.
+        applicationId = "dev.khoj.pitaka.fdroid"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // flutter_zxing (zxing-cpp FFI) requires API 23+. The published F-Droid
