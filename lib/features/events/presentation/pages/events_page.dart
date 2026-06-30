@@ -12,6 +12,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/events/application/events_controller.dart';
 import 'package:pitaka/features/events/application/publish_events_controller.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
@@ -59,12 +60,17 @@ class _EventsViewState extends ConsumerState<EventsView> {
   Future<void> _addPoster() async {
     setState(() => _busy = true);
     try {
-      final picker = ImagePicker();
-      final shot = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 2048,
-        maxHeight: 2048,
-      );
+      // Suppress the app lock: the gallery picker is a separate OS activity
+      // that backgrounds us and would otherwise trip the biometric gate.
+      final shot = await ref
+          .read(lockSuppressorProvider.notifier)
+          .guard(
+            () => ImagePicker().pickImage(
+              source: ImageSource.gallery,
+              maxWidth: 2048,
+              maxHeight: 2048,
+            ),
+          );
       if (shot == null) return; // user cancelled
       final raw = await shot.readAsBytes();
       final ok = await ref

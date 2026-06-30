@@ -6,6 +6,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
+import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/core/widgets/splash_screen.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -177,6 +178,70 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Library'), findsNothing);
     expect(auth.prompts, greaterThanOrEqualTo(1));
+  });
+
+  testWidgets('suppressed background cycle (camera/crop) does NOT re-lock', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
+    final auth = _FakeAuth(result: true);
+    late ProviderContainer container;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+          biometricAuthenticatorProvider.overrideWithValue(auth),
+        ],
+        child: Consumer(
+          builder: (context, ref, _) {
+            container = ProviderScope.containerOf(context);
+            return const MaterialApp(home: AppGate());
+          },
+        ),
+      ),
+    );
+    await tester.pump(); // splash
+    await tester.pump(const Duration(seconds: 2)); // splash done → unlock
+    await tester.pumpAndSettle();
+    expect(find.text('Library'), findsOneWidget);
+    expect(auth.prompts, 1);
+
+    // Simulate a cover capture: suppression on, app backgrounds for the camera
+    // activity, then resumes. The gate must NOT re-lock or re-prompt.
+    // Valid OS order: resumed → inactive → hidden → paused, then reverse.
+    Future<void> step(AppLifecycleState s) async {
+      tester.binding.handleAppLifecycleStateChanged(s);
+      await tester.pump();
+    }
+
+    Future<void> background() async {
+      await step(AppLifecycleState.inactive);
+      await step(AppLifecycleState.hidden);
+      await step(AppLifecycleState.paused);
+    }
+
+    Future<void> foreground() async {
+      await step(AppLifecycleState.hidden);
+      await step(AppLifecycleState.inactive);
+      await step(AppLifecycleState.resumed);
+    }
+
+    final suppressor = container.read(lockSuppressorProvider.notifier);
+    await suppressor.guard(() async {
+      await background();
+      await foreground();
+    });
+    await tester.pumpAndSettle();
+
+    expect(find.text('Library'), findsOneWidget); // stayed unlocked
+    expect(auth.prompts, 1); // no extra prompt
+
+    // After the grace window elapses, a REAL background still locks.
+    await tester.pump(const Duration(seconds: 3));
+    await background();
+    await foreground();
+    await tester.pumpAndSettle();
+    expect(auth.prompts, 2); // genuine background re-prompted
   });
 
   testWidgets('locked screen Unlock button retries the prompt', (tester) async {

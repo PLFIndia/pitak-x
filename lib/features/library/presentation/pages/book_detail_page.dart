@@ -14,6 +14,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/widgets/book_cover.dart';
+import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -238,11 +239,16 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
   Future<void> _capture() async {
     setState(() => _busy = true);
     try {
-      final picker = ImagePicker();
-      final shot = await picker.pickImage(
-        source: ImageSource.camera,
-        maxWidth: 1600,
-        imageQuality: 90,
+      // Suppress the app lock for the camera + crop activities: each launches a
+      // separate OS activity that backgrounds us, which would otherwise trip
+      // the biometric gate mid-capture.
+      final suppressor = ref.read(lockSuppressorProvider.notifier);
+      final shot = await suppressor.guard(
+        () => ImagePicker().pickImage(
+          source: ImageSource.camera,
+          maxWidth: 1600,
+          imageQuality: 90,
+        ),
       );
       if (shot == null) {
         if (mounted) setState(() => _busy = false);
@@ -250,12 +256,17 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
       }
       // Free-crop step: let the user frame the cover. A null result means the
       // user cancelled the crop — abort the whole capture (nothing is saved).
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: shot.path,
-        uiSettings: [
-          AndroidUiSettings(toolbarTitle: 'Crop cover', lockAspectRatio: false),
-          IOSUiSettings(title: 'Crop cover'),
-        ],
+      final cropped = await suppressor.guard(
+        () => ImageCropper().cropImage(
+          sourcePath: shot.path,
+          uiSettings: [
+            AndroidUiSettings(
+              toolbarTitle: 'Crop cover',
+              lockAspectRatio: false,
+            ),
+            IOSUiSettings(title: 'Crop cover'),
+          ],
+        ),
       );
       if (cropped == null) {
         if (mounted) setState(() => _busy = false);

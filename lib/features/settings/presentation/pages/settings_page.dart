@@ -19,6 +19,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/widgets/editable_text_field.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
+import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
@@ -377,12 +378,17 @@ class _LogoRowState extends ConsumerState<_LogoRow> {
   Future<void> _pick() async {
     setState(() => _busy = true);
     try {
-      final picker = ImagePicker();
-      final shot = await picker.pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1024,
-        maxHeight: 1024,
-      );
+      // Suppress the app lock: the gallery picker is a separate OS activity
+      // that backgrounds us and would otherwise trip the biometric gate.
+      final shot = await ref
+          .read(lockSuppressorProvider.notifier)
+          .guard(
+            () => ImagePicker().pickImage(
+              source: ImageSource.gallery,
+              maxWidth: 1024,
+              maxHeight: 1024,
+            ),
+          );
       if (shot == null) return; // user cancelled
       final raw = await shot.readAsBytes();
       final jpeg = ImageDownscaler.downscaleJpeg(raw);

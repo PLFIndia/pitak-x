@@ -22,6 +22,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/core/widgets/splash_screen.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -70,6 +71,11 @@ class _AppGateState extends ConsumerState<AppGate> with WidgetsBindingObserver {
     // dialog). We lock on `paused` so the library isn't visible in the recents
     // preview, and re-prompt on `resumed`.
     if (!_gateEnabled) return;
+    // Don't re-lock for a background cycle WE caused (camera / gallery picker /
+    // image crop). Those launch a separate OS activity that pauses us; the
+    // LockSuppressor marks that one cycle exempt so a cover capture doesn't
+    // demand a fingerprint mid-task. Any other background still locks.
+    if (ref.read(lockSuppressorProvider.notifier).isSuppressed) return;
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       if (_phase == _Phase.unlocked) setState(() => _phase = _Phase.locked);
