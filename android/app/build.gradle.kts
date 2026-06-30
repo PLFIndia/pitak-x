@@ -37,6 +37,15 @@ android {
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    // F-Droid: AGP 8 embeds a "Dependency metadata" blob in the APK signing
+    // block (a Google/Play-oriented, non-reproducible extra block). F-Droid's
+    // `check apk` scanner rejects it. Disabling it keeps the APK clean and
+    // reproducible; it has no effect on app behaviour.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
     defaultConfig {
         // F-Droid distribution identity. This MUST match the package already
         // published on F-Droid (dev.khoj.pitaka.fdroid) so existing users
