@@ -22,6 +22,13 @@ final class SecureStorageCoverSaltStore implements PublishCoverSaltStore {
           storage ??
           const FlutterSecureStorage(
             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            // M3 (deliberate): UNLIKE the token / biometric secret, the salt
+            // stays `first_unlock_this_device`. It is NOT a secret — it only
+            // hides enumerable internal book ids on the public page (an
+            // attacker with disk access already has the DB). It must also be
+            // readable in background contexts (e.g. a post-reboot publish) so
+            // cover URLs stay stable; the stricter `unlocked_this_device` would
+            // buy nothing here and risk breaking that. Still non-migrating.
             iOptions: IOSOptions(
               accessibility: KeychainAccessibility.first_unlock_this_device,
             ),

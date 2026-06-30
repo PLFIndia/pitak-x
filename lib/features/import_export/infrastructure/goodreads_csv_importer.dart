@@ -9,6 +9,7 @@
 ///  - Required headers: `Title` and `Exclusive Shelf`.
 library;
 
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/csv_parser.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -17,12 +18,22 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 /// Imports a Goodreads library CSV export.
 final class GoodreadsCsvImporter implements Importer {
   /// Creates the importer.
-  const GoodreadsCsvImporter();
+  const GoodreadsCsvImporter({this.limits = ImportLimits.defaults});
+
+  /// Hostile-input caps (M4). Single source of truth: [ImportLimits.defaults].
+  final ImportLimits limits;
 
   static const List<String> _requiredHeaders = ['Title', 'Exclusive Shelf'];
 
   @override
   ImportPayload parse(String text) {
+    // M4: reject an oversized file before the full-string CSV scan.
+    if (text.length > limits.maxTextChars) {
+      return const ImportPayload(
+        parseErrors: ['File is too large to import safely.'],
+      );
+    }
+
     final rows = parseCsv(text);
     if (rows.isEmpty) {
       return const ImportPayload(parseErrors: ['CSV file is empty.']);
@@ -47,6 +58,14 @@ final class GoodreadsCsvImporter implements Importer {
     final errors = <String>[];
 
     for (var i = 1; i < rows.length; i++) {
+      // M4: stop ingesting past the row cap; report once and keep what's valid.
+      if (books.length + wishlist.length >= limits.maxRows) {
+        errors.add(
+          'Only the first ${limits.maxRows} rows were imported; the rest '
+          'were skipped.',
+        );
+        break;
+      }
       final row = rows[i];
       final rowNum = i + 1; // 1-indexed including header.
 
@@ -74,27 +93,28 @@ final class GoodreadsCsvImporter implements Importer {
       final notes = _nonBlank(_cell(row, index, 'My Review'));
       final shelf = _cell(row, index, 'Exclusive Shelf')?.toLowerCase().trim();
 
+      // M4: clamp every persisted text field at the boundary.
       if (shelf == 'to-read') {
         wishlist.add(
           WishlistBook(
-            title: title,
-            author: author,
-            isbn: isbn,
-            publisher: publisher,
+            title: limits.clampField(title)!,
+            author: limits.clampField(author),
+            isbn: limits.clampField(isbn),
+            publisher: limits.clampField(publisher),
             publishedYear: year,
-            notes: notes,
+            notes: limits.clampField(notes),
           ),
         );
       } else {
         books.add(
           Book(
-            title: title,
-            author: author,
-            isbn: isbn,
-            publisher: publisher,
+            title: limits.clampField(title)!,
+            author: limits.clampField(author),
+            isbn: limits.clampField(isbn),
+            publisher: limits.clampField(publisher),
             publishedYear: year,
             pageCount: pages,
-            notes: notes,
+            notes: limits.clampField(notes),
           ),
         );
       }

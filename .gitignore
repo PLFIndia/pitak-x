@@ -53,3 +53,9 @@ rust/target/
 *.pitabak
 *.pitabak.*
 android/build/
+
+# M6: Android release signing material — NEVER commit. Only the .example
+# template and the build wiring are tracked; the real secrets stay local.
+android/key.properties
+*.jks
+*.keystore

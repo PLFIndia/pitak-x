@@ -1,8 +1,26 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// M6: real release signing. Credentials live in `android/key.properties`
+// (git-ignored — NEVER commit the keystore or its passwords). Create it from
+// `android/key.properties.example` and point it at a keystore you generate with:
+//   keytool -genkey -v -keystore ~/pitak-release.jks -keyalg RSA \
+//           -keysize 2048 -validity 10000 -alias pitak
+// When the file is absent (e.g. a fresh dev checkout or CI without secrets) the
+// build falls back to debug signing so `flutter run --release` still works, but
+// a release build that is meant for distribution MUST have key.properties.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val keystoreProperties = Properties()
+val hasReleaseSigning = keystorePropertiesFile.exists()
+if (hasReleaseSigning) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -30,11 +48,31 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // M6: use the real release keystore when key.properties is present;
+            // otherwise fall back to debug signing for local dev only. A
+            // distributable build MUST supply key.properties (see top of file).
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn(
+                    "WARNING: android/key.properties not found — release build " +
+                        "is DEBUG-SIGNED. Do not distribute this artifact."
+                )
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

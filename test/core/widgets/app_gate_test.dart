@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,6 +10,7 @@ import 'package:pitaka/core/widgets/splash_screen.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,6 +45,25 @@ class _EmptyRepo implements BookRepository {
   Future<Either<Failure, Book>> update(Book book) async => right(book);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+}
+
+/// Settings repo whose [load] resolves only after [gate] completes, so a test
+/// can hold settings in the loading state and assert the gate fails CLOSED
+/// (library hidden) during that window. All other writes are no-ops; reads of
+/// IDs return blanks (not exercised here).
+class _DelayedSettingsRepo implements SettingsRepository {
+  _DelayedSettingsRepo(this.gate, this.settings);
+  final Future<void> gate;
+  final AppSettings settings;
+
+  @override
+  Future<AppSettings> load() async {
+    await gate;
+    return settings;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) async => '';
 }
 
 /// Scriptable biometric gate: returns [result] and records prompt count.
@@ -123,6 +144,39 @@ void main() {
     expect(find.text('Pitak is locked'), findsOneWidget);
     expect(find.text('Library'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Unlock'), findsOneWidget);
+  });
+
+  testWidgets('M2 race: settings still loading → library NOT shown', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
+    final unblock = Completer<void>();
+    final auth = _FakeAuth(result: false);
+    await tester.pumpWidget(
+      _app([
+        biometricAuthenticatorProvider.overrideWithValue(auth),
+        settingsRepositoryProvider.overrideWith(
+          (ref) async => _DelayedSettingsRepo(
+            unblock.future,
+            const AppSettings(appLockBiometric: true),
+          ),
+        ),
+      ]),
+    );
+
+    // Splash elapses while settings are STILL loading (gate unresolved).
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump();
+
+    // Fail-closed: the library must not be visible during the loading window.
+    expect(find.text('Library'), findsNothing);
+
+    // Now let settings resolve (gate enabled) → prompt fires, stays locked.
+    unblock.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Library'), findsNothing);
+    expect(auth.prompts, greaterThanOrEqualTo(1));
   });
 
   testWidgets('locked screen Unlock button retries the prompt', (tester) async {

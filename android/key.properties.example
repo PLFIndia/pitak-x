@@ -1,0 +1,16 @@
+# M6: Android release-signing credentials. COPY this file to
+# `android/key.properties` and fill in your real values. The real key.properties
+# and the keystore (*.jks / *.keystore) are git-ignored — NEVER commit them.
+#
+# 1. Generate a keystore (once), keeping it OUTSIDE the repo:
+#      keytool -genkey -v -keystore ~/pitak-release.jks -keyalg RSA \
+#              -keysize 2048 -validity 10000 -alias pitak
+# 2. Copy this file:  cp android/key.properties.example android/key.properties
+# 3. Fill the four values below.
+# 4. Back up the keystore + passwords securely. Losing them means you can never
+#    ship an update to the same app listing.
+
+storeFile=/absolute/path/to/pitak-release.jks
+storePassword=CHANGE_ME
+keyAlias=pitak
+keyPassword=CHANGE_ME

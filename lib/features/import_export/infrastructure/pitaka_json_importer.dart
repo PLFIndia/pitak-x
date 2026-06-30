@@ -16,6 +16,7 @@ library;
 
 import 'dart:convert';
 
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -29,14 +30,28 @@ final class PitakaJsonImporter implements Importer {
   /// Creates a JSON importer. [keepLocalCovers] is only set true by the bundle
   /// reader, which writes the bundled cover files to disk before parsing so the
   /// local references resolve.
-  const PitakaJsonImporter({this.keepLocalCovers = false});
+  const PitakaJsonImporter({
+    this.keepLocalCovers = false,
+    this.limits = ImportLimits.defaults,
+  });
 
   /// When true, local `covers/<uuid>.jpg` / `file://` references are preserved
   /// instead of dropped. Plain JSON import keeps the default (false).
   final bool keepLocalCovers;
 
+  /// Hostile-input caps (M4). Single source of truth: [ImportLimits.defaults].
+  final ImportLimits limits;
+
   @override
   ImportPayload parse(String text) {
+    // M4: reject an oversized file before handing it to jsonDecode, which would
+    // otherwise materialise the whole structure in memory.
+    if (text.length > limits.maxTextChars) {
+      return const ImportPayload(
+        parseErrors: ['File is too large to import safely.'],
+      );
+    }
+
     final Object? decoded;
     try {
       decoded = jsonDecode(text);
@@ -58,11 +73,20 @@ final class PitakaJsonImporter implements Importer {
 
     final books = <Book>[];
     final wishlist = <WishlistBook>[];
+    final errors = <String>[];
 
+    // M4: cap each collection's row count; drop the overflow with one error.
     final rawBooks = decoded['books'];
     if (rawBooks is List) {
       for (final item in rawBooks) {
         if (item is Map<String, dynamic>) {
+          if (books.length >= limits.maxRows) {
+            errors.add(
+              'Only the first ${limits.maxRows} books were imported; '
+              'the rest were skipped.',
+            );
+            break;
+          }
           books.add(_book(item));
         }
       }
@@ -72,12 +96,23 @@ final class PitakaJsonImporter implements Importer {
     if (rawWishlist is List) {
       for (final item in rawWishlist) {
         if (item is Map<String, dynamic>) {
+          if (wishlist.length >= limits.maxRows) {
+            errors.add(
+              'Only the first ${limits.maxRows} wishlist entries were '
+              'imported; the rest were skipped.',
+            );
+            break;
+          }
           wishlist.add(_wishlistBook(item));
         }
       }
     }
 
-    return ImportPayload(books: books, wishlist: wishlist);
+    return ImportPayload(
+      books: books,
+      wishlist: wishlist,
+      parseErrors: errors,
+    );
   }
 
   /// Reads ONLY the merge namespace envelope (`libraryId`, `libraryName`) off a
@@ -106,23 +141,27 @@ final class PitakaJsonImporter implements Importer {
     final rawCover = _asString(m['coverUrl']);
     final cover = (!keepLocalCovers && CoverPaths.isLocal(rawCover))
         ? null
-        : rawCover;
+        : limits.clampField(rawCover);
+    // M4: clamp every persisted text field so one giant cell can't bloat the
+    // DB.
     return Book(
-      title: _asString(m['title']) ?? '',
-      bookUid: _asString(m['bookUid']),
-      titleTransliteration: _asString(m['titleTransliteration']),
-      author: _asString(m['author']),
-      isbn: _asString(m['isbn']),
-      publisher: _asString(m['publisher']),
+      title: limits.clampField(_asString(m['title'])) ?? '',
+      bookUid: limits.clampField(_asString(m['bookUid'])),
+      titleTransliteration: limits.clampField(
+        _asString(m['titleTransliteration']),
+      ),
+      author: limits.clampField(_asString(m['author'])),
+      isbn: limits.clampField(_asString(m['isbn'])),
+      publisher: limits.clampField(_asString(m['publisher'])),
       publishedYear: _asInt(m['publishedYear']),
-      genre: _asString(m['genre']),
+      genre: limits.clampField(_asString(m['genre'])),
       coverUrl: cover,
       pageCount: _asInt(m['pageCount']),
-      language: _asString(m['language']),
-      notes: _asString(m['notes']),
-      location: _asString(m['location']),
+      language: limits.clampField(_asString(m['language'])),
+      notes: limits.clampField(_asString(m['notes'])),
+      location: limits.clampField(_asString(m['location'])),
       sourceType: BookSourceTypeX.fromToken(_asString(m['sourceType'])),
-      sourceDetail: _asString(m['sourceDetail']),
+      sourceDetail: limits.clampField(_asString(m['sourceDetail'])),
       ageGroup: AgeGroup.fromToken(_asString(m['ageGroup'])),
       addedDate: _asInt(m['addedDate']) ?? 0,
       copyCount: _asInt(m['copyCount']) ?? 1,
@@ -135,16 +174,18 @@ final class PitakaJsonImporter implements Importer {
 
   WishlistBook _wishlistBook(Map<String, dynamic> m) {
     return WishlistBook(
-      title: _asString(m['title']) ?? '',
-      titleTransliteration: _asString(m['titleTransliteration']),
-      author: _asString(m['author']),
-      isbn: _asString(m['isbn']),
-      publisher: _asString(m['publisher']),
+      title: limits.clampField(_asString(m['title'])) ?? '',
+      titleTransliteration: limits.clampField(
+        _asString(m['titleTransliteration']),
+      ),
+      author: limits.clampField(_asString(m['author'])),
+      isbn: limits.clampField(_asString(m['isbn'])),
+      publisher: limits.clampField(_asString(m['publisher'])),
       publishedYear: _asInt(m['publishedYear']),
-      coverUrl: _asString(m['coverUrl']),
+      coverUrl: limits.clampField(_asString(m['coverUrl'])),
       priceEstimate: _asDouble(m['priceEstimate']),
       priority: _asInt(m['priority']) ?? WishlistBook.priorityMed,
-      notes: _asString(m['notes']),
+      notes: limits.clampField(_asString(m['notes'])),
       source: WishlistSourceX.fromToken(_asString(m['source'])),
       addedDate: _asInt(m['addedDate']) ?? 0,
       purchased: _asBool(m['purchased']) ?? false,

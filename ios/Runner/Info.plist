@@ -67,6 +67,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>Pitaka uses the camera only to scan a book’s ISBN barcode. No photos are taken or stored.</string>
+	<string>Pitak uses the camera to scan a book’s ISBN barcode and, when you choose to add a cover, to take a photo of the book. Photos are saved only on this device.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pitak needs access to your photo library so you can choose a book cover, library logo, or event poster image. Selected images are stored only on this device.</string>
 </dict>
 </plist>

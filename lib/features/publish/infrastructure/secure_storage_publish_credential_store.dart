@@ -19,8 +19,13 @@ final class SecureStoragePublishCredentialStore
           storage ??
           const FlutterSecureStorage(
             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            // M3: the GitHub token is a bearer secret. `unlocked_this_device`
+            // means it is readable ONLY while the device is unlocked (not
+            // merely "unlocked once since boot"), and never migrates to another
+            // device via backup/restore. Least-privilege for a credential that
+            // grants write access to the user's repo.
             iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.first_unlock_this_device,
+              accessibility: KeychainAccessibility.unlocked_this_device,
             ),
           );
 

@@ -78,18 +78,43 @@ class _AppGateState extends ConsumerState<AppGate> with WidgetsBindingObserver {
     }
   }
 
+  /// Whether the lock gate is enabled, for runtime (post-splash) lifecycle
+  /// decisions. FAIL-CLOSED: an unknown (still-loading / errored) settings
+  /// state is treated as ENABLED, never open — so we never leave the library
+  /// visible in recents on a state we can't prove is unlocked. In steady-state
+  /// running, settings are resolved and this returns the real value.
   bool get _gateEnabled =>
       ref.read(settingsControllerProvider).valueOrNull?.appLockBiometric ??
-      false;
+      true;
 
   /// Called when the splash hold elapses.
-  void _onSplashDone() {
+  ///
+  /// FAIL-CLOSED (M2): we AWAIT the settings load rather than reading a
+  /// possibly-null transient value. Reading `valueOrNull` here used to default
+  /// to "gate disabled" while settings were still loading after the ~1s splash,
+  /// rendering the library unlocked in a race. Awaiting the future removes the
+  /// race; any load failure is treated as ENABLED (locked), never open.
+  Future<void> _onSplashDone() async {
     if (!mounted) return;
-    if (_gateEnabled) {
+    final enabled = await _resolveGateEnabled();
+    if (!mounted) return;
+    if (enabled) {
       setState(() => _phase = _Phase.locked);
-      _promptUnlock();
+      await _promptUnlock();
     } else {
       setState(() => _phase = _Phase.unlocked);
+    }
+  }
+
+  /// Resolves the gate-enabled flag by awaiting the settings load. Fail-closed:
+  /// any error resolves to `true` (locked), so a broken settings load can never
+  /// open the gate.
+  Future<bool> _resolveGateEnabled() async {
+    try {
+      final settings = await ref.read(settingsControllerProvider.future);
+      return settings.appLockBiometric;
+    } on Object {
+      return true; // fail closed
     }
   }
 

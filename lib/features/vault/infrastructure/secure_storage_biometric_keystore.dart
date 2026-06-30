@@ -29,8 +29,13 @@ final class SecureStorageBiometricKeyStore implements BiometricKeyStore {
           storage ??
           const FlutterSecureStorage(
             aOptions: AndroidOptions(encryptedSharedPreferences: true),
+            // M3: the biometric secret S gates vault (borrower PII) unlock.
+            // `unlocked_this_device` keeps it readable ONLY while the device is
+            // unlocked, and non-migrating across devices — a stolen, locked
+            // phone never exposes S even after a reboot-and-first-unlock by an
+            // attacker who lacks the screen lock.
             iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.first_unlock_this_device,
+              accessibility: KeychainAccessibility.unlocked_this_device,
             ),
           );
 
