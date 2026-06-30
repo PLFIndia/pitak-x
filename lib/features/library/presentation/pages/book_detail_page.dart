@@ -23,6 +23,29 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
 
+/// A portrait 2:3 crop preset — the natural shape of a book cover. The plugin's
+/// built-in enum only offers landscape ratios (e.g. 3:2), so we supply this
+/// custom preset; `data` is (ratioX, ratioY) and is passed straight to the
+/// native cropper.
+class _Ratio2x3Preset implements CropAspectRatioPresetData {
+  const _Ratio2x3Preset();
+
+  @override
+  String get name => '2x3';
+
+  @override
+  (int, int)? get data => (2, 3);
+}
+
+/// Crop ratio presets offered for a book cover. Replaces the default landscape
+/// 3:2 with a portrait 2:3 (the realistic cover shape); free-form + square +
+/// original remain available.
+const List<CropAspectRatioPresetData> _coverCropPresets = [
+  CropAspectRatioPreset.original,
+  CropAspectRatioPreset.square,
+  _Ratio2x3Preset(),
+];
+
 /// Displays a single [Book]'s fields with Edit and Remove/Restore actions.
 class BookDetailPage extends ConsumerWidget {
   /// Creates the detail page for [book].
@@ -263,8 +286,12 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
             AndroidUiSettings(
               toolbarTitle: 'Crop cover',
               lockAspectRatio: false,
+              aspectRatioPresets: _coverCropPresets,
             ),
-            IOSUiSettings(title: 'Crop cover'),
+            IOSUiSettings(
+              title: 'Crop cover',
+              aspectRatioPresets: _coverCropPresets,
+            ),
           ],
         ),
       );
