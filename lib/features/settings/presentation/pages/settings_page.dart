@@ -30,6 +30,7 @@ import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/presentation/pages/scan_library_qr_page.dart';
+import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/change_passphrase_page.dart';
 
@@ -298,6 +299,89 @@ class _CommunityLibrarySection extends ConsumerWidget {
   }
 }
 
+/// Outcome of evaluating an app-lock toggle request (pure, testable).
+enum AppLockToggleOutcome {
+  /// Persist the lock as enabled (auth succeeded).
+  enable,
+
+  /// Persist the lock as disabled (user turned it off).
+  disable,
+
+  /// Leave the setting unchanged; the device has no biometric/credential.
+  rejectedNotAvailable,
+
+  /// Leave the setting unchanged; the prompt was cancelled or failed.
+  rejectedAuthFailed,
+}
+
+/// Pure policy for the app-lock toggle, isolated from UI so it can be unit
+/// tested. Turning ON requires availability + a successful prompt; turning OFF
+/// is unguarded. [authenticate] is only invoked when enabling on an available
+/// device. Fail-closed: anything but a clean success leaves the lock OFF.
+Future<AppLockToggleOutcome> evaluateAppLockToggle({
+  required bool enabled,
+  required BiometricAvailability availability,
+  required Future<bool> Function() authenticate,
+}) async {
+  if (!enabled) return AppLockToggleOutcome.disable;
+  if (availability != BiometricAvailability.available) {
+    return AppLockToggleOutcome.rejectedNotAvailable;
+  }
+  final ok = await authenticate();
+  return ok
+      ? AppLockToggleOutcome.enable
+      : AppLockToggleOutcome.rejectedAuthFailed;
+}
+
+/// Handles the app-lock toggle. Turning it ON first requires a SUCCESSFUL
+/// biometric/device-credential auth, so a user can never arm a lock they
+/// cannot satisfy (and it confirms intent). If the device has nothing
+/// enrolled, or the prompt is cancelled/fails, the toggle stays OFF. Turning
+/// it OFF is unguarded.
+Future<void> _onAppLockChanged(
+  BuildContext context,
+  WidgetRef ref, {
+  required bool enabled,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final controller = ref.read(settingsControllerProvider.notifier);
+  final auth = ref.read(biometricAuthenticatorProvider);
+
+  final outcome = await evaluateAppLockToggle(
+    enabled: enabled,
+    availability: enabled
+        ? await auth.availability()
+        : BiometricAvailability.available,
+    authenticate: () => auth.authenticate(
+      reason: 'Confirm it is you to turn on the Pitak app lock',
+    ),
+  );
+
+  switch (outcome) {
+    case AppLockToggleOutcome.enable:
+      await controller.setAppLockBiometric(enabled: true);
+    case AppLockToggleOutcome.disable:
+      await controller.setAppLockBiometric(enabled: false);
+    case AppLockToggleOutcome.rejectedNotAvailable:
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Set up a fingerprint, face unlock, or device PIN first, then '
+            'try again.',
+          ),
+        ),
+      );
+    case AppLockToggleOutcome.rejectedAuthFailed:
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'App lock not enabled — authentication was cancelled or failed.',
+          ),
+        ),
+      );
+  }
+}
+
 class _SecurityTab extends ConsumerWidget {
   const _SecurityTab();
 
@@ -333,9 +417,7 @@ class _SecurityTab extends ConsumerWidget {
             'device PIN) each time you open or return to the app.',
           ),
           value: appLock,
-          onChanged: (v) => ref
-              .read(settingsControllerProvider.notifier)
-              .setAppLockBiometric(enabled: v),
+          onChanged: (v) => _onAppLockChanged(context, ref, enabled: v),
         ),
         const Divider(),
         Text(

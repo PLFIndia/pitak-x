@@ -46,6 +46,10 @@ const List<CropAspectRatioPresetData> _coverCropPresets = [
   _Ratio2x3Preset(),
 ];
 
+/// Initial ratio shown when the cropper opens. Must be one of
+/// [_coverCropPresets]; also required for the custom list to apply on Android.
+const CropAspectRatioPresetData _coverInitPreset = _Ratio2x3Preset();
+
 /// Displays a single [Book]'s fields with Edit and Remove/Restore actions.
 class BookDetailPage extends ConsumerWidget {
   /// Creates the detail page for [book].
@@ -287,6 +291,10 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
               toolbarTitle: 'Crop cover',
               lockAspectRatio: false,
               aspectRatioPresets: _coverCropPresets,
+              // REQUIRED on Android: uCrop only applies a custom preset list
+              // when an initial ratio is also given; without this the list is
+              // ignored and the default (landscape) presets show instead.
+              initAspectRatio: _coverInitPreset,
             ),
             IOSUiSettings(
               title: 'Crop cover',
