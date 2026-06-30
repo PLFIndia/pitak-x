@@ -87,6 +87,34 @@ final class VaultStore {
     File(_bioBlobPath).writeAsStringSync(blob, flush: true);
   }
 
+  /// Installs a vault restored from a backup archive (C1).
+  ///
+  /// Atomically replaces the at-rest vault with the encrypted DB at
+  /// [dbSourcePath] and its matching wrapped-key [blob]:
+  ///  1. the DB is copied to a sibling temp file then `rename`d onto [dbPath]
+  ///     (rename is atomic on a single filesystem — a crash mid-install can
+  ///     never leave a half-written `borrowers.db`); borrowed from SQLite's
+  ///     own write-temp-then-rename durability pattern;
+  ///  2. the [blob] is persisted (it is the passphrase-wrapped key for THIS
+  ///     DB — without it the restored DB cannot be unlocked);
+  ///  3. the biometric blob is cleared: the old `blob_bio` wrapped the PREVIOUS
+  ///     device key, which the restored vault no longer uses, so biometric
+  ///     unlock must be re-enrolled against the restored vault.
+  ///
+  /// Throws [FileSystemException] on any IO failure so the caller can fail
+  /// closed (a restore that can't persist the vault must NOT report success).
+  void installRestored({required String dbSourcePath, required String blob}) {
+    Directory(baseDir).createSync(recursive: true);
+    final tmp = File('$dbPath.restore.tmp');
+    if (tmp.existsSync()) tmp.deleteSync();
+    // Copy first (source may live on a different filesystem, e.g. a scratch
+    // dir), then atomically rename onto the live path on THIS filesystem.
+    File(dbSourcePath).copySync(tmp.path);
+    tmp.renameSync(dbPath);
+    File(_blobPath).writeAsStringSync(blob, flush: true);
+    clearBioBlob();
+  }
+
   /// Removes ONLY the biometric blob (disable biometric unlock). Idempotent;
   /// leaves the vault and its passphrase blob intact.
   void clearBioBlob() {

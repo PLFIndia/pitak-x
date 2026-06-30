@@ -13,6 +13,7 @@ import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../vault/vault_repository_write_stub.dart';
@@ -110,12 +111,16 @@ void main() {
         'hasCovers': false,
       });
 
-  RestoreBackup restorer(VaultRepository vault) => RestoreBackup(
-    db: db,
-    vault: vault,
-    coversDir: '${tmp.path}/covers',
-    workDir: '${tmp.path}/work',
-  );
+  VaultStore vaultStore() => VaultStore(baseDir: '${tmp.path}/vault');
+
+  RestoreBackup restorer(VaultRepository vault, [VaultStore? store]) =>
+      RestoreBackup(
+        db: db,
+        vault: vault,
+        vaultStore: store ?? vaultStore(),
+        coversDir: '${tmp.path}/covers',
+        workDir: '${tmp.path}/work',
+      );
 
   test('restores books + wishlist preserving id and uid', () async {
     final zip = archive({
@@ -240,6 +245,52 @@ void main() {
     // Pre-existing row must be untouched (overwrite never happened).
     final books = await db.select(db.books).get();
     expect(books.single.bookUid, 'keep');
+  });
+
+  test('C1: persists the restored vault to the live VaultStore', () async {
+    final store = vaultStore();
+    // The fake vault doesn't open the DB, so its exact bytes are opaque here;
+    // we only assert they are installed at the live path verbatim.
+    final borrowersBytes = Uint8List.fromList([10, 20, 30, 40]);
+    const blob = 'salt.iv.ct';
+    final zip = archive({
+      'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+      'borrowers.db': borrowersBytes,
+      'backup_blob': utf8.encode(blob),
+    });
+    final vault = _FakeVault(
+      right(
+        const VaultData(borrowers: [Borrower(id: 1, name: 'Asha')], loans: []),
+      ),
+    );
+    final r = restorer(vault, store);
+    final p = pass();
+    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    p.dispose();
+
+    expect(result.isRight(), isTrue);
+    // Before C1 this was false: the vault was read for counts then discarded.
+    expect(store.isInitialized(), isTrue);
+    expect(File(store.dbPath).readAsBytesSync(), borrowersBytes);
+    expect(store.readBlob(), blob);
+  });
+
+  test('C1: a backup with no vault leaves the store uninitialized', () async {
+    final store = vaultStore();
+    final zip = archive({
+      'manifest.json': utf8.encode(manifest()), // hasBackupBlob: false
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+    });
+    final r = restorer(_FakeVault(right(VaultData.empty)), store);
+    final p = pass();
+    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    p.dispose();
+
+    expect(result.isRight(), isTrue);
+    expect(store.isInitialized(), isFalse);
   });
 
   test('surfaces dangling loans from cross-DB integrity check', () async {

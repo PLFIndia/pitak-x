@@ -32,6 +32,7 @@ import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/common.dart';
@@ -56,12 +57,15 @@ final class RestoreBackup {
   /// Creates the restorer.
   ///
   /// [db] is the live app database; [vault] reads the encrypted borrowers DB
-  /// through the Rust core; [coversDir] is where `cover_*` entries are written
-  /// (wiped first — restore replaces device state); [workDir] is a scratch dir
-  /// for extracted files; [openLegacyDb] is injectable for tests.
+  /// through the Rust core; [vaultStore] owns the at-rest vault artifacts and
+  /// is where the restored `borrowers.db` + wrapped-key blob are PERSISTED
+  /// (C1); [coversDir] is where `cover_*` entries are written (wiped first —
+  /// restore replaces device state); [workDir] is a scratch dir for extracted
+  /// files; [openLegacyDb] is injectable for tests.
   RestoreBackup({
     required this.db,
     required this.vault,
+    required this.vaultStore,
     required this.coversDir,
     required this.workDir,
     LegacyDbOpener openLegacyDb = _defaultOpen,
@@ -72,6 +76,11 @@ final class RestoreBackup {
 
   /// Vault reader over the Rust FFI core.
   final VaultRepository vault;
+
+  /// At-rest persistence for the restored vault (C1). Restore reads the vault
+  /// for the summary AND installs it here, so a restored backup actually keeps
+  /// its borrowers/loans instead of silently dropping them.
+  final VaultStore vaultStore;
 
   /// Absolute path of the covers directory (`<appDocs>/covers`).
   final String coversDir;
@@ -124,7 +133,12 @@ final class RestoreBackup {
 
     try {
       // --- Phase 4: vault unlock (no device writes yet; fail closed) ---
+      // Captured for Phase 6.5: the staged DB path + the trimmed wrapped-key
+      // blob, so the validated vault can be PERSISTED after the library
+      // overwrite (C1). Null when the archive carries no vault.
       var vaultData = VaultData.empty;
+      String? stagedVaultDbPath;
+      String? vaultBlob;
       if (manifest.hasBackupBlob) {
         final blobBytes = files[_backupBlobEntry];
         final borrowersBytes = files[_borrowersDbEntry];
@@ -139,9 +153,10 @@ final class RestoreBackup {
           );
         }
         final borrowersPath = _stage(work, _borrowersDbEntry, borrowersBytes);
+        final blob = _utf8(blobBytes).trim();
         final unlocked = await vault.unlockAndRead(
           passphrase: passphrase,
-          blob: _utf8(blobBytes).trim(),
+          blob: blob,
           dbPath: borrowersPath,
         );
         // A wrong passphrase / corrupt vault aborts BEFORE any device write.
@@ -150,6 +165,9 @@ final class RestoreBackup {
           return null;
         });
         if (early != null) return left(early);
+        // Unlock succeeded → these are the artifacts to install in Phase 6.5.
+        stagedVaultDbPath = borrowersPath;
+        vaultBlob = blob;
       }
 
       // --- Phase 5: read legacy books/wishlist (still no device writes) ---
@@ -178,6 +196,25 @@ final class RestoreBackup {
         await db.rebuildFts();
       } on Object catch (e) {
         return left(StorageFailure('restore transaction failed: $e'));
+      }
+
+      // --- Phase 6.5: PERSIST the restored vault (C1) ---
+      // The vault was already validated in Phase 4 (unlock succeeded), so this
+      // is pure file IO. Fail CLOSED: if persistence throws, return a
+      // StorageFailure rather than reporting a "successful" restore that
+      // silently dropped every borrower/loan. The staged DB lives in `workDir`
+      // and is wiped by the `finally`, so it MUST be installed here.
+      if (stagedVaultDbPath != null && vaultBlob != null) {
+        try {
+          vaultStore.installRestored(
+            dbSourcePath: stagedVaultDbPath,
+            blob: vaultBlob,
+          );
+        } on FileSystemException catch (e) {
+          return left(
+            StorageFailure('Could not persist restored vault: ${e.message}'),
+          );
+        }
       }
 
       // --- Phase 7: route covers (best-effort, wipe-first) ---

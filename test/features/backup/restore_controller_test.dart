@@ -13,6 +13,7 @@ import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../vault/vault_repository_write_stub.dart';
 
@@ -45,6 +46,7 @@ void main() {
     final restorer = RestoreBackup(
       db: db,
       vault: _FakeVault(),
+      vaultStore: VaultStore(baseDir: '${tmp.path}/vault'),
       coversDir: '${tmp.path}/covers',
       workDir: '${tmp.path}/work',
     );

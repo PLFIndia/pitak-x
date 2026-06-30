@@ -433,10 +433,12 @@ Future<CreateBackupUseCase> createBackupUseCase(
 Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
   final db = await ref.watch(appDatabaseProvider.future);
   final vault = ref.watch(vaultRepositoryProvider);
+  final store = await ref.watch(vaultStoreProvider.future);
   final dir = await ref.watch(appDocsDirProvider.future);
   return RestoreBackup(
     db: db,
     vault: vault,
+    vaultStore: store,
     coversDir: p.join(dir.path, 'covers'),
     workDir: p.join(dir.path, 'restore_work'),
   );

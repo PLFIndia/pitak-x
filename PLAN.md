@@ -1,5 +1,50 @@
 # Task: Deep security audit — information-leak vectors (Pitak Flutter)
 
+## VERIFICATION PASS (2026-06-30) — findings checked against the live `fixes` branch
+
+This pass re-read the actual code for every claimed finding and remediation. Outcome in one line: **M1–M6 are all real and genuinely fixed (verified in code + passing tests); the prior PLAN's #1 Critical — "backup restore does not persist the vault" — is CONFIRMED REAL and was NEVER fixed.** It is not one of M1–M6. It is the true worst case and is now tracked below as **C1 (BLOCKER)**.
+
+Verification baseline: `flutter analyze lib test` → 0 issues; the three fix test files (`bounded_cover_fetcher_test`, `app_gate_test`, `import_limits_test`) → all pass.
+
+PLAN corrections made this pass:
+- The M3 biometric keystore lives at `lib/features/vault/infrastructure/secure_storage_biometric_keystore.dart` (the prior PLAN pointed at a non-existent `publish/` path). The fix itself is correct and present.
+- Minor `m1` (shared `httpClient` has no timeout, `providers.dart:219`) is still genuinely OPEN — only `BoundedCoverFetcher` got its own timeout.
+- The `.pitabak` backup file is untracked and git-ignored (`git check-ignore` confirms) — that Critical-table row is mitigated.
+
+## Current worst-case security findings — grouped by severity
+
+This table is the plain-English summary of what can go wrong if the currently identified issues are not patched now. The Android release-signing issue is listed separately because it matters at release time, not during private development.
+
+### Critical / fix first
+
+| Finding | Worst case if not patched now | Verification |
+|---|---|---|
+| **C1 — Backup restore does not persist the encrypted borrowers vault** | The app SAYS restore succeeded (it even prints "Borrowers restored: N / Loans restored: M"), but borrowers and loans are never written to the live vault. Restore has already authoritatively wiped + replaced books/wishlist/covers, so afterwards the library is the archive's but the vault is stale (or absent on a fresh device) and mismatched → silent borrower/loan data loss behind a false "success". | **CONFIRMED REAL, NOT FIXED.** `RestoreBackup` (`restore_backup.dart`) stages `borrowers.db` into `restore_work/`, calls `unlockAndRead` only to count rows for the summary, then deletes `restore_work` in `finally`. It takes no `VaultStore` and never copies the DB to `VaultStore.dbPath` nor persists the archive `backup_blob`. Existing tests only assert books/wishlist + summary counts, never vault persistence. |
+| Local `.pitabak` backup file exists in the repo folder | If it is accidentally shared or force-added to git, someone gets an offline copy of encrypted borrower data and can try to crack the passphrase forever. | **Mitigated.** Untracked and matched by `.gitignore` (`*.pitabak`); `git check-ignore` confirms. Residual: the plaintext file still sits on disk — user should delete it. |
+
+### High
+
+| Finding | Worst case if not patched now |
+|---|---|
+| Deleted GitHub Pages covers/posters may remain online | A removed book cover or event poster can still be reachable by direct URL after the app stops linking to it. Sensitive images could stay public and be scraped. |
+| GitHub publish token is a powerful bearer secret | Malware, a rooted device, or a stolen unlocked phone could steal the token and push spam, scam pages, or defacement into the public catalogue repo. |
+| Private notes and shelf locations are stored in the normal local database | Someone with device malware, root access, or a stolen unlocked device can read private catalogue notes and locations without the vault passphrase. |
+
+### Medium
+
+| Finding | Worst case if not patched now |
+|---|---|
+| Borrower screens can leak through screenshots/app switcher | Borrower names, contacts, and loan history can appear in app previews, screenshots, recordings, or screen-sharing, especially on iOS or if Android screen protection fails. |
+| Biometric unlock is a software gate around a stored secret | On a badly compromised device, malware/root access may bypass the prompt or extract the unlock secret after the phone is unlocked. |
+| Build and CI supply chain is not tightly pinned | A compromised build action or build tool could run malicious code during CI or local builds, possibly stealing tokens or inserting a backdoor. |
+
+### Release-time / can defer until release
+
+| Finding | Worst case if not fixed before public release |
+|---|---|
+| Android release build can fall back to debug signing | You could accidentally ship an APK signed with the debug key, weakening update trust and forcing painful release/key migration later. |
+
+
 ## Understanding
 - User asked for a focused deep-dive into the paths that can leak **critical / sensitive information**, then a rewrite of this PLAN.
 - Read-only audit. No code changed. Remediation only on explicit approval.
@@ -28,7 +73,18 @@
 ## Findings — by severity (each: evidence → leak → fix direction)
 
 ### BLOCKER
-None confirmed. (No plaintext secret egress, no token in logs/errors, vault key never crosses FFI in the clear.)
+
+- **C1 — Restore never persists the borrowers vault (silent data loss). [VERIFIED REAL, OPEN]**
+  Evidence: `restore_backup.dart` `RestoreBackup.restore()` —
+  - Phase 4 stages the archive's `borrowers.db` to `restore_work/` and calls `vault.unlockAndRead(dbPath: borrowersPath)` whose ONLY product is an in-memory `VaultData` used for the row counts in `RestoreSummary` (Phase 8) (`restore_backup.dart` Phase 4 + Phase 8).
+  - Phases 6–7 then perform an **authoritative overwrite**: `db.delete(books)`, `db.delete(wishlistBooks)`, reinsert from the archive, `rebuildFts()`, and wipe+rewrite the covers dir.
+  - The `finally` block does `work.deleteSync(recursive: true)` — so the staged `borrowers.db` is destroyed, and the archive's `backup_blob` is never written anywhere.
+  - `RestoreBackup` is constructed with `db`, `vault`, `coversDir`, `workDir` only (`providers.dart:433` `restoreBackup`). It is handed **no `VaultStore`**, so it structurally cannot copy `borrowers.db` to `VaultStore.dbPath` or persist the blob via `VaultStore.writeBlob` (contrast `BackupArchiveWriter`, which DOES take a `VaultStore`, `backup_archive_writer.dart:62`).
+  Leak/impact: not a confidentiality leak — an **integrity / availability BLOCKER** (§ AGENTS "fail closed", "data loss"). On a device with an existing vault, restore replaces the library but leaves the OLD vault → loans now reference book ids that no longer exist (the dangling-loan check will fire, but data is already mismatched). On a fresh device with no vault, restore reports "Borrowers restored: N" while `VaultStore.isInitialized()` is still false → the user believes their borrowers came back; they did not.
+  Why prior PLAN missed it: the audit was scoped to *information-leak* egress; this is an integrity bug, and the misleading `RestoreSummary` counts make a manual test look successful. Tests (`restore_backup_test.dart`) only assert books/wishlist rows + summary fields — none assert the live vault DB/blob exist after restore.
+  Fix direction (robust, not patchwork): inject `VaultStore` into `RestoreBackup`; in the pre-write phase, after a successful unlock, copy the staged `borrowers.db` to `VaultStore.dbPath` and write the archive's `backup_blob` via `VaultStore.writeBlob` **inside the same fail-closed ordering** (persist vault + library atomically, or roll back both). Add a regression test asserting `VaultStore.isInitialized()` is true and borrowers are readable from the LIVE path after restore. Requires user approval before implementing (separate from the M-batch).
+
+  (Original note retained: no plaintext secret egress, no token in logs/errors, vault key never crosses FFI in the clear.)
 
 ### MAJOR
 
@@ -80,6 +136,17 @@ None confirmed. (No plaintext secret egress, no token in logs/errors, vault key 
 ## Decision points (require user input)
 - [x] Q1: Remediation order — user approved fixing M1–M6 on branch `fixes`.
 - [x] Q2: Implement fixes — yes, robust (no patchwork), one at a time.
+- [x] Q3: Draft the C1 fix — user approved (2026-06-30).
+- [ ] Q4 (NEW, open): when a backup has NO vault (`hasBackupBlob:false`) but THIS device already has a vault, should restore (a) leave the existing vault untouched [current behaviour], or (b) wipe it to match the authoritative archive? C1 fix handles only the confirmed bug (backup HAS a vault → persist it); the no-vault case is left as-is and flagged here.
+
+### C1 remediation (branch `fixes`) — DONE
+- Root cause: `RestoreBackup` read the vault only for summary counts and was given no `VaultStore`, so it could not persist the restored `borrowers.db`/`backup_blob`; the staged copy was deleted in `finally`.
+- [x] `VaultStore.installRestored({dbSourcePath, blob})` (`vault_store.dart`) — copy-to-temp then atomic `rename` of the encrypted DB into `dbPath` (SQLite-style write-temp-then-rename durability), persist matching `blob`, and `clearBioBlob()` (old biometric wrap no longer matches the restored key; user re-enrols). Throws `FileSystemException` so the caller can fail closed.
+- [x] `RestoreBackup` takes a required `vaultStore`; new Phase 6.5 installs the validated staged vault AFTER the library transaction, BEFORE `finally` wipes `workDir`. Fails closed: any IO error → `Left(StorageFailure)` — a restore can no longer report success without a persisted vault.
+- [x] Wired `vaultStore` into the `restoreBackup` provider (`providers.dart`).
+- [x] Updated 3 existing `RestoreBackup(...)` test sites; added 2 regression tests: vault-bearing restore → `isInitialized()` true + `dbPath` bytes verbatim + blob persisted; no-vault restore → store stays uninitialized.
+- Verification: `flutter analyze lib test` → 0 issues; `flutter test` → 549 passed (was 547; +2 C1 tests).
+- Note: `flutter_secure_storage`-backed accessibility (M3) is unaffected — the wrapped-key blob is ciphertext kept as a plain file by design (see `vault_store.dart` header).
 
 ## Remediation (branch `fixes`) — DONE
 - [x] M1: New `BoundedCoverFetcher` (infra) — host allow-list (not just https),
@@ -132,3 +199,17 @@ None confirmed. (No plaintext secret egress, no token in logs/errors, vault key 
 - Completed a focused information-leak audit. Strongest real issue is **M1** (publisher IP leak + unbounded fetch via poisoned `coverUrl`), followed by the **M2** app-lock race and **M3** keychain accessibility.
 - Corrected two items from the prior pass: the visitor cover-tracking vector is **already mitigated** (CSP + sanitized published URLs); the ZIP "caps after decode" concern is **overstated** (early-reject is sound). Both reflected above.
 - No Tier-1 (vault) or token leakage found in any egress path or log.
+
+## Verification pass result (2026-06-30)
+- **Verified M1–M6 against the live `fixes` branch:** every claimed fix is present in code, wired in, and (where unit-testable) covered by passing tests. `flutter analyze lib test` is clean.
+- **Found the real worst case the prior audit missed: C1 (BLOCKER)** — restore never persists the borrowers vault, so a "successful" restore can silently lose all borrower/loan data while reporting non-zero counts. This is an integrity bug outside the information-leak scope of the original pass, which is why it was not caught. It is now the highest-priority open item.
+- **Corrected the PLAN's M3 file path** (biometric keystore is under `vault/`, not `publish/`).
+- **Confirmed minor `m1` (no shared-client timeout) is still open**, and the `.pitabak` row is mitigated (git-ignored; only on-disk residue remains).
+- Recommendation: get user approval to fix **C1** next (inject `VaultStore` into `RestoreBackup`, persist DB + blob atomically with the library overwrite, add a regression test). C1 should rank above all remaining minors.
+
+## C1 fix result (2026-06-30)
+- **C1 is now fixed** on branch `fixes`. Restore persists the validated vault to `VaultStore` (atomic DB install + blob), fails closed on any IO error, and clears the stale biometric blob so the user re-enrols against the restored vault.
+- Files changed: `vault_store.dart` (new `installRestored`), `restore_backup.dart` (required `vaultStore` + Phase 6.5 persist), `providers.dart` (wiring), 3 test construction sites updated + 2 new regression tests.
+- Open decision deferred to the user: **Q4** — behaviour when an archive has NO vault but the device already has one (currently left untouched). Not part of the confirmed bug; flagged for a decision.
+- Still open from earlier passes (not touched here): minors `m1`–`m3`, nit `n1`, and the `.pitabak` on-disk residue (delete the local file).
+- Not run: device smoke test of the restore + biometric re-enrol flow (M3/M5 also need a real-device check).

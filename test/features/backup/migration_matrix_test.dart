@@ -20,6 +20,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../vault/vault_repository_write_stub.dart';
@@ -108,6 +109,7 @@ void main() {
   RestoreBackup restorer() => RestoreBackup(
     db: db,
     vault: _EmptyVault(),
+    vaultStore: VaultStore(baseDir: '${tmp.path}/vault'),
     coversDir: '${tmp.path}/covers',
     workDir: '${tmp.path}/work',
   );
