@@ -18,7 +18,10 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # Must stay ahead of the published F-Droid app (was 1.0.3+4) so it ships as an
 # update. build-name -> Android versionName, build-number -> versionCode.
-version: 1.1.0+5
+# F-Droid ships one APK per ABI (--split-per-abi); android/app/build.gradle.kts
+# rewrites each split's versionCode to (this +number)*10 + {1,2,3}, i.e.
+# 611/612/613, matching the recipe's VercodeOperation. All stay > the live 4.
+version: 1.1.1+6
 
 environment:
   sdk: ^3.11.0

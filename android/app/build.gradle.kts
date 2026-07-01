@@ -1,3 +1,4 @@
+import com.android.build.gradle.internal.api.ApkVariantOutputImpl
 import java.util.Properties
 import java.io.FileInputStream
 
@@ -63,6 +64,27 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // F-Droid ships one APK per ABI (`flutter build apk --split-per-abi`).
+    // Each split needs a DISTINCT, monotonic versionCode or F-Droid rejects the
+    // duplicate. We derive it as base*10 + abiRank so the base (pubspec
+    // build-number, e.g. 6) maps to 61/62/63. The recipe mirrors this with
+    // `VercodeOperation: ['%c * 10 + 1', '%c * 10 + 2', '%c * 10 + 3']`.
+    // x86_64 is lowest and arm64 highest so the device picks arm64 when both
+    // are offered. Pattern adapted from poppingmoon/aria (F-Droid reference
+    // Flutter+Rust app) android/app/build.gradle.kts.
+    val abiCodes = mapOf("x86_64" to 1, "armeabi-v7a" to 2, "arm64-v8a" to 3)
+    applicationVariants.all {
+        outputs.forEach { output ->
+            val abiRank = abiCodes[
+                (output as ApkVariantOutputImpl)
+                    .filters.find { it.filterType == "ABI" }?.identifier
+            ]
+            if (abiRank != null) {
+                output.versionCodeOverride = this.versionCode * 10 + abiRank
+            }
+        }
     }
 
     signingConfigs {
