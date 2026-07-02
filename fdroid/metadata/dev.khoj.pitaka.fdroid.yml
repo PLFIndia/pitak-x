@@ -11,10 +11,8 @@ RepoType: git
 Repo: https://github.com/PLFIndia/pitak-x.git
 
 Builds:
-  # ---------------------------------------------------------------------------
-  # Historic (legacy Kotlin) F-Droid build. KEEP this entry verbatim so the
-  # version history / reproducibility chain on F-Droid is preserved. Do not edit.
-  # ---------------------------------------------------------------------------
+  # Historic legacy-Kotlin build. Kept verbatim to preserve the F-Droid
+  # version history; do not edit.
   - versionName: 1.0.3
     versionCode: 4
     commit: 714af008cb7f009737fd2cea20452ddb460dfe03
@@ -22,58 +20,99 @@ Builds:
     gradle:
       - yes
 
-  # ---------------------------------------------------------------------------
-  # pitak-x (Flutter + Rust rewrite). Same applicationId (dev.khoj.pitaka.fdroid)
-  # so this ships as an in-place UPDATE. Built entirely from source:
-  #   * Flutter SDK pinned to the version the app was developed against;
-  #   * the Rust crypto core (rust/, crate `pitak_crypto`) is compiled by
-  #     cargokit during the Gradle build via rustup — NO precompiled binaries
-  #     are downloaded (there is no cargokit.yaml public key, so cargokit's
-  #     precompiled-binary path is disabled and it always builds from source).
-  #
-  # Replace <RELEASE_COMMIT> with the exact commit the v1.1.0 tag points at.
-  # ---------------------------------------------------------------------------
-  - versionName: 1.1.0
-    versionCode: 5
-    commit: '1.1.0'
-    subdir: app
-    # Flutter SDK comes from F-Droid's official `flutter` srclib, pinned to the
-    # development version. The build steps reference it as $$flutter$$.
+  - versionName: 1.1.1
+    versionCode: 61
+    commit: '1.1.1'
     srclibs:
       - flutter@3.41.1
     sudo:
       - apt-get update
-      - apt-get install -y clang cmake ninja-build pkg-config
-      # Rust toolchain installed to a SHARED location (not root's $HOME) so the
-      # unprivileged build steps below can use it. cargokit drives
-      # `rustup target add` itself during the Gradle build; pre-adding the
-      # Android ABIs is belt-and-braces.
-      - install -d -m 0775 /opt/rust
-      - export RUSTUP_HOME=/opt/rust/rustup CARGO_HOME=/opt/rust/cargo
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
-          | sh -s -- -y --default-toolchain stable --profile minimal
-          --no-modify-path
-      - /opt/rust/cargo/bin/rustup target add armv7-linux-androideabi
-          aarch64-linux-android i686-linux-android x86_64-linux-android
-      - chmod -R a+rwX /opt/rust
+      - apt-get install -y clang cmake ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/flutter-apk/app-x86_64-release.apk
     rm:
-      # F-Droid bans bundled prebuilt binaries; drop the desktop/iOS trees the
-      # Android build never touches (belt-and-braces; none are committed binary).
       - ios
       - macos
       - windows
       - linux
+      - web
     prebuild:
+      - rustup default stable
+      - rustup target add x86_64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
       - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
     build:
-      # Point at the shared Rust install from the sudo phase.
-      - export RUSTUP_HOME=/opt/rust/rustup CARGO_HOME=/opt/rust/cargo
-      - export PATH="/opt/rust/cargo/bin:$$flutter$$/bin:$PATH"
-      - flutter build apk --release
-    output: build/app/outputs/flutter-apk/app-release.apk
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+    ndk: r28c
+
+  - versionName: 1.1.1
+    versionCode: 62
+    commit: '1.1.1'
+    srclibs:
+      - flutter@3.41.1
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+      - web
+    prebuild:
+      - rustup default stable
+      - rustup target add armv7-linux-androideabi
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+    ndk: r28c
+
+  - versionName: 1.1.1
+    versionCode: 63
+    commit: '1.1.1'
+    srclibs:
+      - flutter@3.41.1
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+      - web
+    prebuild:
+      - rustup default stable
+      - rustup target add aarch64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+    ndk: r28c
 
 AutoUpdateMode: Version
-UpdateCheckMode: Tags
-CurrentVersion: 1.1.0
-CurrentVersionCode: 5
+UpdateCheckMode: Tags ^[\d.]+$
+VercodeOperation:
+  - '%c * 10 + 1'
+  - '%c * 10 + 2'
+  - '%c * 10 + 3'
+UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
+CurrentVersion: 1.1.1
+CurrentVersionCode: 63
