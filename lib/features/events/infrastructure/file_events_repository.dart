@@ -20,6 +20,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
+import 'package:pitaka/features/events/domain/poster_paths.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:uuid/uuid.dart';
 
@@ -41,8 +42,8 @@ final class FileEventsRepository implements EventsRepository {
   final DownscaleFn _downscale;
   final Uuid _uuid;
 
-  /// Relative reference prefix for poster images.
-  static const String postersDir = 'posters';
+  /// Relative reference prefix for poster images (domain constant).
+  static const String postersDir = PosterPaths.postersDir;
   static const String _fileName = 'events.json';
 
   File get _metaFile => File(p.join(baseDir, _fileName));

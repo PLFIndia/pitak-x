@@ -213,3 +213,115 @@ This table is the plain-English summary of what can go wrong if the currently id
 - Open decision deferred to the user: **Q4** — behaviour when an archive has NO vault but the device already has one (currently left untouched). Not part of the confirmed bug; flagged for a decision.
 - Still open from earlier passes (not touched here): minors `m1`–`m3`, nit `n1`, and the `.pitabak` on-disk residue (delete the local file).
 - Not run: device smoke test of the restore + biometric re-enrol flow (M3/M5 also need a real-device check).
+
+---
+
+# Task: F-Droid review (fdroiddata!41753) — split-per-ABI rework
+
+## Understanding
+Update MR `fdroid/fdroiddata!41753` (dev.khoj.pitaka.fdroid → 1.1.0) is OPEN,
+CI green, mergeable, but labelled `waiting-on-response`. Maintainer `linsui`
+(2026-06-30): "Please follow the template at templates/build-flutter.yml and
+see other flutter + rust apps for example, e.g. metadata/com.poppingmoon.aria.yml."
+(Earlier MR !40107 "New app: Pitak" is already MERGED.)
+
+## Proposed approach
+Adopt F-Droid's Flutter+Rust convention, using poppingmoon/aria as the cited
+reference (aria/android/app/build.gradle.kts:75-81 for the ABI versionCode
+override; aria recipe for the split build entries). Bump 1.1.0+5 -> 1.1.1+6
+(decision B) to avoid rewriting the pushed 1.1.0 tag.
+
+## Steps
+- [x] pubspec: 1.1.0+5 -> 1.1.1+6.
+- [x] android/app/build.gradle.kts: add abiCodes + versionCodeOverride
+      (base*10 + {1,2,3} => 611/612/613) via applicationVariants.all.
+- [x] Recipe: replace single universal entry with 3 split-per-ABI entries
+      (codes 61/62/63), add --enforce-lockfile, relocate PUB_CACHE +
+      scandelete, add VercodeOperation, ndk: r28c, rm web, strip comments.
+- [ ] USER: local `fdroid build` verification in fdroiddata checkout.
+- [x] Tagged 1.1.1 in pitak-x (commit b1ea874, tag 3d4dcb5) and pushed.
+- [x] Recipe pushed to fdroiddata fork (c153a99), MR !41753 updated, reply posted (note 3510732517).
+
+## Out-of-scope observations
+- Rust install switched from curl|sh /opt/rust to Debian `rustup` pkg (F-Droid
+  convention). If the buildserver lacks the `rustup` package, fall back.
+- No rust-toolchain.toml in repo; recipe pins `rustup default stable`. Aria
+  pins an exact channel via rust/rust-toolchain.toml — consider adding one for
+  full reproducibility if linsui asks.
+
+## Result
+- Local edits complete (pubspec, gradle, recipe). Nothing committed/pushed.
+- versionCodes 61/62/63 all > live baseline 4; monotonic; arm64 highest.
+
+## Pipeline fixes (2026-07-01, after first failed CI on c153a99)
+- `fdroid build` failed: `rm: web` matched nothing (pitak-x has no web/ dir). Removed `web` from all 3 rm: blocks.
+- `fdroid rewritemeta` failed: recipe not in canonical form.
+  - Fix 1: `commit: '1.1.1'` -> `commit: 1.1.1` (unquoted); srclibs after output:.
+  - Fix 2: local fdroid 2.4.5 WRAPS long lines (+trailing space); CI's newer fdroid does NOT. Unwrapped the `apt-get install ... rustup` and `flutter build apk ... --target-platform=...` lines to single lines. LESSON: local fdroid 2.4.5 rewritemeta != CI version; trust CI's diff, not local rewritemeta.
+- Result (pipeline 2642417965 / commit 2a74cbf): rewritemeta, lint, schema, check-source, checkupdates all SUCCESS. `fdroid build` still running (long: Flutter+Rust x3 ABIs).
+
+## BUILD GREEN (pipeline 2642428608 / commit 30235ba)
+- fdroid build failed on prior run: openssl-sys vendored build needs `make` (not in sudo apt line). pitak_crypto -> bundled-SQLCipher -> openssl-sys builds OpenSSL from source.
+- Fix: added `make` to apt-get install in all 3 ABI entries.
+- ALL jobs success: fdroid build, check apk, rewritemeta, lint, schema, checkupdates, check-source. Pipeline = success.
+- Flutter+Rust (OpenSSL+SQLCipher) cross-compile for x86_64/armv7/arm64 all built + signed + APK-checked on the F-Droid buildserver.
+- Commits on MR !41753: c153a99 (rework) -> 6f412c1 (drop web) -> 2a74cbf (unwrap) -> 30235ba (add make).
+
+## Round 2 review (linsui, 2026-07-01 05:39) — addressed
+- "These functions are removed?" (inline on deleted AntiFeatures line): NO.
+  openlibrary ISBN lookup + GitHub publish still in source. My rework wrongly
+  dropped `AntiFeatures: NonFreeNet`. RESTORED (be80cfd). Replied in-thread.
+- "Pin rust and flutter version": Flutter already pinned (flutter@3.41.1).
+  Rust was `stable` -> pinned to `1.96.0` (matches local toolchain) in all 3
+  entries. Chose recipe-only pin (option A) over rust-toolchain.toml (B) to
+  avoid re-tagging the app repo.
+- Pipeline 2642868792 / commit be80cfd: ALL green incl. fdroid build (pinned
+  rust 1.96.0) + check apk. Replied to both comments (notes 3511257059 inline,
+  3511257150 top-level).
+- Commit chain: ...30235ba -> be80cfd.
+
+## Round 3 review (linsui, 2026-07-01 07:33/07:35) — addressed
+- "You need to patch cargokit" / "Rust is not pinned": ROOT CAUSE = cargokit
+  hardcodes toolchain to 'stable' (builder.dart:142 -> `rustup run stable`),
+  so `rustup default` was ignored. Fix: prebuild sed 's/'stable'/'1.96.0'/'
+  on builder.dart (aria's approach). Verified 1.96.0 used at runtime.
+- "Pin flutter in your repo and extract it": added .fvmrc {"flutter":"3.41.1"}
+  to pitak-x (commit d1010b0, tag 1.1.1 force-moved to 2c0412d). Recipe srclib
+  -> flutter@stable; prebuild extracts version from .fvmrc + git checkout -f.
+- Pipeline 2642991706 / recipe commit aa930c7: ALL green incl. fdroid build +
+  check apk. Reply posted (note 3511436064).
+- fdroiddata commit chain: ...be80cfd -> aa930c7.
+- pitak-x: main b1ea874 -> d1010b0; tag 1.1.1 -> 2c0412d.
+
+---
+
+# Task: Fix all Major findings from REVIEW_FINDINGS.md
+
+## Understanding
+User approved fixing all 13 Major findings, one at a time, proper fixes (no patchwork). Tests after each fix. Baseline: 559 tests pass, analyze clean.
+
+## Steps (risk order)
+- [x] F1 (§4) Restore atomicity — VaultStore.stageRestore + StagedVaultInstall two-file commit (stage BEFORE the library tx, rename-only commit after, blob rollback on DB-rename failure); RestoreBackup phases 5.5/6.5. +7 tests.
+- [x] F2 (§2) SecretBytes.useAsync (wipes the FFI copy in finally) + static wipe(); all 10 FfiVaultRepository call sites converted; biometric S FFI list wiped after copy. +9 tests.
+- [x] F3 (§2) Biometric keystore: read() hands the base64Decode buffer straight to SecretBytes (no stranded intermediate); base64-String boundary documented as the accepted §6.6 exception. +6 keystore tests (new file, closes test-gap #5).
+- [x] F4 (§5) library_controller remove()/restoreRemoved() fold Either → AsyncError. +tests (new library_controller_test.dart, closes gap #1).
+- [x] F5 (§5) wishlist_controller delete() folds Either → AsyncError. +2 tests (new wishlist_controller_test.dart).
+- [x] F6 (§5) library sort watched via settingsControllerProvider.select in build — sort changes re-sort immediately. +reactive test.
+- [x] F7 (§6) publish_page: user-code dialog fired unawaited; terminal states dismiss it; fixed sign-in failure message. +widget regression test (sign-in completes with dialog open).
+- [x] F8 (§6) NEW publish/domain/github_error_messages.dart (fixed per-status messages, body deliberately dropped); both publish use cases + publish_page use it. +2 tests.
+- [x] F9 (§1) Domain AppThemeMode enum (token-compatible with stored ThemeMode.name); Flutter import gone from settings domain; presentation mapper. NEW test/architecture/domain_purity_test.dart CI gate.
+- [x] F10 (§7) NEW BookCoverController + LibraryLogoController (plugin call stays in widget; downscale→store→persist in application, typed Either failures — logo save errors no longer silent). +6 tests.
+- [x] F11 (§1) NEW ExportController (application): PDF input resolution (footer icon via pdfFooterIconLoaderProvider, logo read, rasterizer via pdfTextRasterizerProvider), library-ID minting, use-case call, share flow — all out of export_page.dart, which is now pure presentation with typed ExportOutcome. +3 controller tests; existing widget share test still passes through the new path.
+- [x] F12 (§1) Option A executed (user-approved git mv): 9 pure modules moved import_export/infrastructure → domain (sniffer, JSON importer/exporter, goodreads/csv, cover_paths, bounded_zip_extractor, pdf_library_renderer, pdf_fonts). Ports for the genuinely side-effecting pieces: vault/domain/vault_artifacts_store.dart (VaultArtifactsStore + StagedVaultInstall — VaultStore implements), backup/domain/backup_archive_builder.dart (BackupArchiveWriter implements), import_export/domain/pdf_text_raster.dart (UiPdfTextRasterizer implements), publish/domain/publish_html_ports.dart (Viewer/Events HTML factories), events/domain/poster_paths.dart. Composition-root providers: remoteCoverFetcher, viewerHtmlFactory, eventsHtmlFactory, pdfFooterIconLoader, pdfTextRasterizer. vault_session_controller, restore_backup, create_backup_use_case, publish_controller, publish_events_controller all consume domain types only.
+- [x] F13 (§1) Zero application/presentation → infrastructure imports remain (verified by grep AND a new CI gate: second test in test/architecture/domain_purity_test.dart). Cross-feature coupling now domain/application-only (§4 Minor fixed as a side effect).
+
+## Result (all 13 Majors, 2026-07-02)
+- All 13 Major findings from REVIEW_FINDINGS.md fixed properly (no patchwork) and regression-tested.
+- Gates: flutter analyze 0 issues; dart format clean; build_runner no-diff; flutter test 602 passed (baseline was 559).
+- Architecture rules now CI-enforced by test/architecture/domain_purity_test.dart (domain purity + no infra imports from app/presentation).
+- OSS inspiration credited in-code: SQLite write-temp-then-rename (vault two-file commit), gh CLI background device-flow polling (publish sign-in), Signal bounded extraction (pre-existing, retained).
+- Out of scope, still open: the Minor/Nit findings from REVIEW_FINDINGS.md (§ swallowed bool failures in events/bookmarks, DateTime.now() in providers, lookup timeouts, token-as-String documentation, etc.) and prior-pass minors m1–m3/n1.
+- Follow-ups: device smoke test of restore + biometric re-enrol; verify Google Books http:// thumbnail handling in CoverUrlAllowList ("Needs verification" item).
+
+## Result
+- (pending)

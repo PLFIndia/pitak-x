@@ -12,9 +12,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/widgets/book_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
+import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -240,10 +240,9 @@ class BookDetailPage extends ConsumerWidget {
 
 /// Book cover with a camera-capture "replace" affordance (#cover).
 ///
-/// Tapping the camera button captures a photo (camera only), downscales it to
-/// 400x600 JPEG q80 ([ImageDownscaler]), writes it to `covers/<uuid>.jpg`
-/// (CoverStore), updates the book row, and refreshes the library. The capture
-/// stays entirely on-device.
+/// The widget owns only the plugin steps (camera capture + crop); the raw
+/// bytes then go to `BookCoverController`, which downscales, stores, and
+/// persists them (§7). The capture stays entirely on-device.
 class _EditableCover extends ConsumerStatefulWidget {
   const _EditableCover({required this.book});
 
@@ -308,23 +307,19 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
         return;
       }
       final raw = await cropped.readAsBytes();
-      final jpeg = ImageDownscaler.downscaleJpeg(raw);
-      if (jpeg == null) {
-        _snack('That image could not be processed.');
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
-      final store = await ref.read(coverStoreProvider.future);
-      final ref0 = await store.saveJpeg(jpeg);
-      final repo = await ref.read(bookRepositoryProvider.future);
-      final result = await repo.update(widget.book.copyWith(coverUrl: ref0));
+      // The testable pipeline (downscale → store → persist → refresh) lives
+      // in the application layer (§7 "no business logic in widgets"); the
+      // widget only owns the plugin calls above and renders the outcome.
+      final result = await ref
+          .read(bookCoverControllerProvider.notifier)
+          .replaceCover(widget.book, raw);
       if (!mounted) return;
-      result.match((_) => _snack('Could not save the new cover.'), (_) {
-        ref.invalidate(libraryControllerProvider);
-        setState(() => _coverUrl = ref0);
+      result.match((_) => _snack('Could not save the new cover.'), (coverRef) {
+        setState(() => _coverUrl = coverRef);
         _snack('Cover updated.');
       });
     } on Exception {
+      // Plugin (camera/crop) failure only — pipeline errors are typed above.
       _snack('Could not capture a photo.');
     } finally {
       if (mounted) setState(() => _busy = false);

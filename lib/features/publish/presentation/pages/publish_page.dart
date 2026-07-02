@@ -12,6 +12,8 @@
 /// controller; this widget only collects input and renders state.
 library;
 
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +93,10 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   String? _status;
   bool _busy = false;
 
+  /// True while the "authorize in your browser" dialog is on screen, so a
+  /// terminal device-flow state can dismiss it (see [_signIn]).
+  bool _codeDialogOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -118,27 +124,50 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     if (!mounted) return;
 
     final flow = ref.read(gitHubDeviceFlowProvider);
+    // The flow is an async GENERATOR: it is suspended at `yield` until this
+    // loop asks for the next state. Awaiting the user-code dialog here would
+    // therefore pause token polling until the dialog closes — sign-in could
+    // never complete while the user follows the on-screen instructions. So
+    // the dialog is fired unawaited and dismissed when a terminal state
+    // arrives (same pattern as gh CLI: poll in the background, UI on top).
     await for (final s in flow.start(clientId.trim())) {
       if (!mounted) return;
       switch (s) {
         case DeviceFlowStarting():
           setState(() => _status = 'Starting…');
         case DeviceFlowAwaitingUser(:final userCode, :final verificationUri):
-          await _showUserCodeDialog(userCode, verificationUri);
+          unawaited(_showUserCodeDialog(userCode, verificationUri));
         case DeviceFlowSuccess(:final accessToken):
           await ref.read(publishCredentialStoreProvider).setToken(accessToken);
           if (!mounted) return;
+          _dismissCodeDialog();
           setState(() => _status = 'Signed in.');
           await _refresh();
           await _loadRepos();
         case DeviceFlowDenied():
+          _dismissCodeDialog();
           setState(() => _status = 'Authorization denied.');
         case DeviceFlowExpired():
+          _dismissCodeDialog();
           setState(() => _status = 'The code expired. Please try again.');
-        case DeviceFlowFailed(:final reason):
-          setState(() => _status = 'Sign-in failed: $reason');
+        case DeviceFlowFailed():
+          _dismissCodeDialog();
+          // Fixed message (§5): the reason can carry transport/API text that
+          // must not reach the UI verbatim.
+          setState(
+            () => _status =
+                'Sign-in failed. Check your connection and '
+                'Client ID, then try again.',
+          );
       }
     }
+  }
+
+  /// Closes the user-code dialog if it is still open (the flow reached a
+  /// terminal state while the user had it on screen).
+  void _dismissCodeDialog() {
+    if (!_codeDialogOpen || !mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   Future<String?> _promptClientId() {
@@ -180,9 +209,13 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     );
   }
 
-  Future<void> _showUserCodeDialog(String userCode, String verificationUri) {
+  Future<void> _showUserCodeDialog(
+    String userCode,
+    String verificationUri,
+  ) async {
     setState(() => _status = 'Enter code $userCode at $verificationUri');
-    return showDialog<void>(
+    _codeDialogOpen = true;
+    await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Authorize in your browser'),
@@ -228,6 +261,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
         ],
       ),
     );
+    _codeDialogOpen = false;
   }
 
   Future<void> _signOut() async {
@@ -249,9 +283,10 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
       final repos = await ref.read(gitHubApiProvider).userRepos(token);
       if (!mounted) return;
       setState(() => _repos = repos);
-    } on GitHubApiException catch (e) {
+    } on GitHubApiException {
       if (!mounted) return;
-      setState(() => _status = 'Could not list repos: ${e.message}');
+      // Fixed message (§5): exception text can carry transport/API detail.
+      setState(() => _status = 'Could not list your repositories. Try again.');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

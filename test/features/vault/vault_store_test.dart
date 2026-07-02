@@ -54,4 +54,97 @@ void main() {
     // Idempotent: clearing again does not throw.
     expect(store.clear, returnsNormally);
   });
+
+  group('stageRestore / StagedVaultInstall (two-file commit)', () {
+    late String srcDbPath;
+
+    setUp(() {
+      srcDbPath = p.join(tmp.path, 'staged_borrowers.db');
+      File(srcDbPath).writeAsBytesSync([9, 8, 7]);
+    });
+
+    test('staging alone changes nothing live', () {
+      File(store.dbPath).writeAsBytesSync([1]);
+      store
+        ..writeBlob('old.blob.x')
+        ..stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y');
+
+      expect(File(store.dbPath).readAsBytesSync(), [1]);
+      expect(store.readBlob(), 'old.blob.x');
+    });
+
+    test('commit installs DB + blob and clears the biometric blob', () {
+      File(store.dbPath).writeAsBytesSync([1]);
+      store
+        ..writeBlob('old.blob.x')
+        ..writeBioBlob('bio.blob.z');
+
+      store.stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y').commit();
+
+      expect(File(store.dbPath).readAsBytesSync(), [9, 8, 7]);
+      expect(store.readBlob(), 'new.blob.y');
+      // Old bio blob wrapped the previous key → must be gone (re-enrol).
+      expect(store.hasBioBlob(), isFalse);
+      // No stray temps left behind.
+      expect(
+        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
+        isEmpty,
+      );
+    });
+
+    test('abort deletes temps and leaves the live vault untouched', () {
+      store.writeBlob('old.blob.x');
+      File(store.dbPath).writeAsBytesSync([1]);
+
+      store.stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y').abort();
+
+      expect(File(store.dbPath).readAsBytesSync(), [1]);
+      expect(store.readBlob(), 'old.blob.x');
+      expect(
+        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
+        isEmpty,
+      );
+    });
+
+    test('stageRestore on a missing source throws and leaves no temps', () {
+      expect(
+        () => store.stageRestore(
+          dbSourcePath: p.join(tmp.path, 'nope.db'),
+          blob: 'b',
+        ),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
+        isEmpty,
+      );
+    });
+
+    test('commit rolls the blob back when the DB rename fails', () {
+      store.writeBlob('old.blob.x');
+      File(store.dbPath).writeAsBytesSync([1]);
+
+      final staged = store.stageRestore(
+        dbSourcePath: srcDbPath,
+        blob: 'new.blob.y',
+      );
+      // Force the DB rename to fail: replace the live DB path with a
+      // non-empty DIRECTORY — renameSync onto it raises.
+      File(store.dbPath).deleteSync();
+      Directory(store.dbPath).createSync();
+      File(p.join(store.dbPath, 'occupied')).writeAsBytesSync([0]);
+
+      expect(staged.commit, throwsA(isA<FileSystemException>()));
+      // Fail closed: the OLD blob was restored, so the pre-restore vault
+      // (had the dir not been our sabotage) would still be openable — never
+      // a new-blob/old-db mismatch created by us.
+      expect(store.readBlob(), 'old.blob.x');
+    });
+
+    test('commit is single-shot', () {
+      final staged = store.stageRestore(dbSourcePath: srcDbPath, blob: 'b.l.o')
+        ..commit();
+      expect(staged.commit, throwsStateError);
+    });
+  });
 }

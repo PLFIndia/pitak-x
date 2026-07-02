@@ -16,7 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Path to the bundled default Pitak logo image.

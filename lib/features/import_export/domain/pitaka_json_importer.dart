@@ -16,9 +16,9 @@ library;
 
 import 'dart:convert';
 
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
@@ -108,11 +108,7 @@ final class PitakaJsonImporter implements Importer {
       }
     }
 
-    return ImportPayload(
-      books: books,
-      wishlist: wishlist,
-      parseErrors: errors,
-    );
+    return ImportPayload(books: books, wishlist: wishlist, parseErrors: errors);
   }
 
   /// Reads ONLY the merge namespace envelope (`libraryId`, `libraryName`) off a

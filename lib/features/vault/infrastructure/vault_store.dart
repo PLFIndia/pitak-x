@@ -18,6 +18,7 @@ library;
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 
 /// Filenames for the persistent vault artifacts (under the app docs dir).
 const String _dbFileName = 'borrowers.db';
@@ -30,14 +31,14 @@ const String _blobFileName = 'vault_backup_blob';
 const String _bioBlobFileName = 'vault_biometric_blob';
 
 /// Reads/writes the persistent vault's database path and wrapped-key blob.
-final class VaultStore {
+final class VaultStore implements VaultArtifactsStore {
   /// Creates a store rooted at [baseDir] (typically the app documents dir).
   const VaultStore({required this.baseDir});
 
   /// Directory holding the vault artifacts.
   final String baseDir;
 
-  /// Absolute path to the encrypted vault database.
+  @override
   String get dbPath => p.join(baseDir, _dbFileName);
 
   /// Absolute path to the wrapped-key blob file.
@@ -46,8 +47,7 @@ final class VaultStore {
   /// Absolute path to the biometric-wrapped blob file (#34 B2).
   String get _bioBlobPath => p.join(baseDir, _bioBlobFileName);
 
-  /// True when a vault has been created on this device (both the DB and its
-  /// wrapped-key blob exist). Either missing means "not set up".
+  @override
   bool isInitialized() =>
       File(dbPath).existsSync() && File(_blobPath).existsSync();
 
@@ -55,6 +55,7 @@ final class VaultStore {
   ///
   /// Trims surrounding whitespace so a trailing newline (if any) never reaches
   /// the Rust blob parser, matching how the archive opener trims it.
+  @override
   String? readBlob() {
     final f = File(_blobPath);
     if (!f.existsSync()) return null;
@@ -63,6 +64,7 @@ final class VaultStore {
 
   /// Persists the wrapped-key [blob]. Creates [baseDir] if needed. The blob is
   /// ciphertext, not a secret in plaintext — safe to write as a file.
+  @override
   void writeBlob(String blob) {
     Directory(baseDir).createSync(recursive: true);
     File(_blobPath).writeAsStringSync(blob, flush: true);
@@ -70,6 +72,7 @@ final class VaultStore {
 
   /// Reads the biometric-wrapped blob (#34 B2), or null when biometric unlock
   /// is not enrolled. Trimmed like [readBlob].
+  @override
   String? readBioBlob() {
     final f = File(_bioBlobPath);
     if (!f.existsSync()) return null;
@@ -78,45 +81,63 @@ final class VaultStore {
 
   /// True when biometric unlock is enrolled (a biometric blob exists). The
   /// secret S itself lives in the OS secure store, not here.
+  @override
   bool hasBioBlob() => File(_bioBlobPath).existsSync();
 
   /// Persists the biometric-wrapped [blob] (#34 B2). Ciphertext — safe as a
   /// plain file.
+  @override
   void writeBioBlob(String blob) {
     Directory(baseDir).createSync(recursive: true);
     File(_bioBlobPath).writeAsStringSync(blob, flush: true);
   }
 
-  /// Installs a vault restored from a backup archive (C1).
+  /// Stages a vault restored from a backup archive for a two-file commit
+  /// (C1 + REVIEW_FINDINGS §4 restore-atomicity Major).
   ///
-  /// Atomically replaces the at-rest vault with the encrypted DB at
-  /// [dbSourcePath] and its matching wrapped-key [blob]:
-  ///  1. the DB is copied to a sibling temp file then `rename`d onto [dbPath]
-  ///     (rename is atomic on a single filesystem — a crash mid-install can
-  ///     never leave a half-written `borrowers.db`); borrowed from SQLite's
-  ///     own write-temp-then-rename durability pattern;
-  ///  2. the [blob] is persisted (it is the passphrase-wrapped key for THIS
-  ///     DB — without it the restored DB cannot be unlocked);
-  ///  3. the biometric blob is cleared: the old `blob_bio` wrapped the PREVIOUS
-  ///     device key, which the restored vault no longer uses, so biometric
-  ///     unlock must be re-enrolled against the restored vault.
+  /// Staging is the FALLIBLE half with ZERO live effects: the encrypted DB at
+  /// [dbSourcePath] is copied to a sibling temp file next to [dbPath] (so the
+  /// later rename happens on ONE filesystem, where rename is atomic), and the
+  /// wrapped-key [blob] is written to a sibling temp file, flushed. Pattern
+  /// borrowed from SQLite's write-temp-then-rename durability approach.
   ///
-  /// Throws [FileSystemException] on any IO failure so the caller can fail
-  /// closed (a restore that can't persist the vault must NOT report success).
-  void installRestored({required String dbSourcePath, required String blob}) {
+  /// The returned handle either [StagedVaultInstall.commit]s the pair onto the
+  /// live paths or [StagedVaultInstall.abort]s, deleting the temps. Nothing
+  /// about the live vault changes until `commit()`.
+  ///
+  /// Throws [FileSystemException] on any IO failure (partial temps are cleaned
+  /// up first) so the caller can fail closed.
+  @override
+  FileStagedVaultInstall stageRestore({
+    required String dbSourcePath,
+    required String blob,
+  }) {
     Directory(baseDir).createSync(recursive: true);
-    final tmp = File('$dbPath.restore.tmp');
-    if (tmp.existsSync()) tmp.deleteSync();
-    // Copy first (source may live on a different filesystem, e.g. a scratch
-    // dir), then atomically rename onto the live path on THIS filesystem.
-    File(dbSourcePath).copySync(tmp.path);
-    tmp.renameSync(dbPath);
-    File(_blobPath).writeAsStringSync(blob, flush: true);
-    clearBioBlob();
+    final dbTmp = File('$dbPath.restore.tmp');
+    final blobTmp = File('$_blobPath.restore.tmp');
+    try {
+      if (dbTmp.existsSync()) dbTmp.deleteSync();
+      if (blobTmp.existsSync()) blobTmp.deleteSync();
+      // Copy (source may live on a different filesystem, e.g. a scratch dir);
+      // flush the blob so the bytes are on disk before commit() ever runs.
+      File(dbSourcePath).copySync(dbTmp.path);
+      blobTmp.writeAsStringSync(blob, flush: true);
+    } on FileSystemException {
+      // Leave no half-staged temps behind; staging must be all-or-nothing.
+      if (dbTmp.existsSync()) dbTmp.deleteSync();
+      if (blobTmp.existsSync()) blobTmp.deleteSync();
+      rethrow;
+    }
+    return FileStagedVaultInstall._(
+      store: this,
+      dbTmp: dbTmp,
+      blobTmp: blobTmp,
+    );
   }
 
   /// Removes ONLY the biometric blob (disable biometric unlock). Idempotent;
   /// leaves the vault and its passphrase blob intact.
+  @override
   void clearBioBlob() {
     final f = File(_bioBlobPath);
     if (f.existsSync()) f.deleteSync();
@@ -124,6 +145,7 @@ final class VaultStore {
 
   /// Deletes all artifacts (wipe / start-over path). Best-effort and
   /// idempotent: a missing file is not an error.
+  @override
   void clear() {
     final db = File(dbPath);
     if (db.existsSync()) db.deleteSync();
@@ -131,5 +153,78 @@ final class VaultStore {
     if (blob.existsSync()) blob.deleteSync();
     final bioBlob = File(_bioBlobPath);
     if (bioBlob.existsSync()) bioBlob.deleteSync();
+  }
+}
+
+/// File-backed commit half of [VaultStore.stageRestore]'s two-file install
+/// (implements the domain [StagedVaultInstall] contract).
+///
+/// Why this type exists (beginner note): replacing the vault means replacing
+/// TWO files that only work as a pair — the encrypted DB and the wrapped key
+/// that opens it. A crash between writing one and the other would leave a DB
+/// nobody can ever open again. So we stage both as temps first (fallible, no
+/// live effect), then swap them in with atomic renames here, rolling the key
+/// blob back if the second rename fails.
+final class FileStagedVaultInstall implements StagedVaultInstall {
+  FileStagedVaultInstall._({
+    required VaultStore store,
+    required File dbTmp,
+    required File blobTmp,
+  }) : _store = store,
+       _dbTmp = dbTmp,
+       _blobTmp = blobTmp;
+
+  final VaultStore _store;
+  final File _dbTmp;
+  final File _blobTmp;
+  bool _done = false;
+
+  /// Swaps the staged pair onto the live paths.
+  ///
+  /// Order and recovery:
+  ///  1. the OLD blob (if any) is read into memory as a rollback value;
+  ///  2. the staged blob is atomically renamed onto the live blob path;
+  ///  3. the staged DB is atomically renamed onto the live DB path; if THIS
+  ///     rename fails, the old blob is written back so the pre-restore vault
+  ///     stays openable (fail closed — never a DB/key mismatch we created);
+  ///  4. the biometric blob is cleared: it wrapped the PREVIOUS vault key, so
+  ///     biometric unlock must be re-enrolled against the restored vault.
+  ///
+  /// Blob-first ordering: a crash between steps 2 and 3 leaves new-blob +
+  /// old-DB, which re-running the restore from the same archive repairs — the
+  /// narrowest window achievable without a cross-file transaction. Throws
+  /// [FileSystemException] on failure (with the blob rollback applied) so the
+  /// caller can fail closed. Must be called at most once.
+  @override
+  void commit() {
+    if (_done) {
+      throw StateError('StagedVaultInstall.commit called after completion');
+    }
+    final previousBlob = _store.readBlob();
+    _blobTmp.renameSync(_store._blobPath);
+    try {
+      _dbTmp.renameSync(_store.dbPath);
+    } on FileSystemException {
+      // Roll the key blob back so the OLD vault (if any) stays openable.
+      if (previousBlob != null) {
+        File(_store._blobPath).writeAsStringSync(previousBlob, flush: true);
+      } else {
+        final f = File(_store._blobPath);
+        if (f.existsSync()) f.deleteSync();
+      }
+      _done = true;
+      rethrow;
+    }
+    _store.clearBioBlob();
+    _done = true;
+  }
+
+  /// Deletes the staged temps without touching the live vault. Idempotent and
+  /// safe to call after [commit] (the temps no longer exist then).
+  @override
+  void abort() {
+    if (_dbTmp.existsSync()) _dbTmp.deleteSync();
+    if (_blobTmp.existsSync()) _blobTmp.deleteSync();
+    _done = true;
   }
 }

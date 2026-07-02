@@ -262,7 +262,10 @@ void main() {
     });
     final vault = _FakeVault(
       right(
-        const VaultData(borrowers: [Borrower(id: 1, name: 'Asha')], loans: []),
+        const VaultData(
+          borrowers: [Borrower(id: 1, name: 'Asha')],
+          loans: [],
+        ),
       ),
     );
     final r = restorer(vault, store);
@@ -275,6 +278,45 @@ void main() {
     expect(store.isInitialized(), isTrue);
     expect(File(store.dbPath).readAsBytesSync(), borrowersBytes);
     expect(store.readBlob(), blob);
+  });
+
+  test('vault staging failure aborts BEFORE the library overwrite', () async {
+    // Pre-restore library row that must survive a failed restore.
+    await db
+        .into(db.books)
+        .insert(
+          BooksCompanion.insert(
+            title: 'KEEP',
+            addedDate: 1,
+            bookUid: const Value('keep'),
+          ),
+        );
+    // Sabotage the store: its baseDir path is occupied by a FILE, so
+    // stageRestore's createSync(recursive: true) throws.
+    final blockedBase = '${tmp.path}/vault_blocked';
+    File(blockedBase).writeAsBytesSync([0]);
+    final store = VaultStore(baseDir: blockedBase);
+
+    final zip = archive({
+      'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+      'borrowers.db': [10, 20, 30],
+      'backup_blob': utf8.encode('salt.iv.ct'),
+    });
+    final r = restorer(_FakeVault(right(VaultData.empty)), store);
+    final p = pass();
+    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    p.dispose();
+
+    result.match(
+      (f) => expect(f, isA<StorageFailure>()),
+      (_) => fail('expected staging failure'),
+    );
+    // Two-file commit: the library must be UNCHANGED when the vault could
+    // not be staged (no "new library + old vault" split-brain).
+    final books = await db.select(db.books).get();
+    expect(books.single.bookUid, 'keep');
   });
 
   test('C1: a backup with no vault leaves the store uninitialized', () async {

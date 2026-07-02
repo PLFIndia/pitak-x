@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 
 void main() {
   group('CoverPaths.remoteUrlOf', () {

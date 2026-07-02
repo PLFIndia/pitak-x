@@ -54,8 +54,9 @@ class AppDrawer extends ConsumerWidget {
                       headerTitle,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleLarge
-                          ?.copyWith(color: scheme.onSurface),
+                      style: Theme.of(
+                        context,
+                      ).textTheme.titleLarge?.copyWith(color: scheme.onSurface),
                     ),
                   ),
                 ],

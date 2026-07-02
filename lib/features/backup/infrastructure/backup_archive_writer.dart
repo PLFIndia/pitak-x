@@ -29,9 +29,10 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
+import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 
@@ -50,7 +51,7 @@ const int _wishlistDbVersion = 1;
 const String _wishlistIdentityHash = 'ef4bdbbc39ca94fef44d980ecc902f28';
 
 /// Builds a `.pitabak` archive as bytes.
-class BackupArchiveWriter {
+class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Creates the writer.
   ///
   /// [openDatabase] opens a fresh empty SQLite database at a path (injected so
@@ -67,7 +68,7 @@ class BackupArchiveWriter {
   final CommonDatabase Function(String path) openDatabase;
 
   /// Persistent vault locations (DB + blob), copied verbatim when present.
-  final VaultStore vaultStore;
+  final VaultArtifactsStore vaultStore;
 
   /// Directory holding user cover images (`covers/<leaf>`).
   final String coversDir;
@@ -76,6 +77,7 @@ class BackupArchiveWriter {
   /// and covers when present. [workDir] is a scratch directory for the
   /// transient Room DB files; it is created fresh and removed afterward.
   /// [exportedAt] stamps the manifest (epoch millis).
+  @override
   Uint8List build({
     required List<Book> books,
     required List<WishlistBook> wishlist,

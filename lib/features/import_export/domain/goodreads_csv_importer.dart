@@ -9,9 +9,9 @@
 ///  - Required headers: `Title` and `Exclusive Shelf`.
 library;
 
+import 'package:pitaka/features/import_export/domain/csv_parser.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/import_export/infrastructure/csv_parser.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 

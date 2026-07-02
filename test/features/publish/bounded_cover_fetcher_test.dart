@@ -131,12 +131,9 @@ void main() {
 
     test('returns null when the request exceeds the timeout', () async {
       final fetcher = BoundedCoverFetcher(
-        client: _streaming(
-          [
-            [1, 2, 3],
-          ],
-          chunkDelay: const Duration(milliseconds: 200),
-        ),
+        client: _streaming([
+          [1, 2, 3],
+        ], chunkDelay: const Duration(milliseconds: 200)),
         timeout: const Duration(milliseconds: 20),
       );
 

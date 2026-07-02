@@ -6,13 +6,16 @@
 /// never leaves the Rust core.
 ///
 /// At-rest encoding: S (raw bytes) is base64-encoded for the String-typed
-/// secure-storage API, then immediately decoded back to wipeable bytes on read.
-/// The transient base64 String is the unavoidable boundary cost (the plugin
-/// API is String-only); it is not retained.
+/// secure-storage API, then immediately decoded back to wipeable bytes on
+/// read. The transient base64 String is the unavoidable boundary cost (the
+/// plugin API is String-only) and cannot be wiped from the GC heap — an
+/// ACCEPTED, documented §6.6 exception until a byte-capable secure-storage
+/// channel exists. Everything this file CAN control is wipeable: no decoded
+/// byte buffer is ever left un-owned (the `SecretBytes` returned by `read()`
+/// takes ownership of the decoder's buffer directly — zero intermediates).
 library;
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:fpdart/fpdart.dart';
@@ -60,8 +63,10 @@ final class SecureStorageBiometricKeyStore implements BiometricKeyStore {
     try {
       final encoded = await _storage.read(key: _key);
       if (encoded == null) return right(null);
-      final bytes = base64Decode(encoded);
-      return right(SecretBytes(Uint8List.fromList(bytes)));
+      // base64Decode returns a FRESH Uint8List; hand it straight to
+      // SecretBytes, which takes ownership and wipes it on dispose. Copying
+      // here would strand an un-wipeable duplicate of S on the heap (§6.1).
+      return right(SecretBytes(base64Decode(encoded)));
     } on Exception catch (e) {
       return left(StorageFailure('biometric secret read: $e'));
     }

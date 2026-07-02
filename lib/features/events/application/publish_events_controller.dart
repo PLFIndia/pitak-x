@@ -11,9 +11,8 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/events/application/events_controller.dart';
-import 'package:pitaka/features/events/infrastructure/file_events_repository.dart';
+import 'package:pitaka/features/events/domain/poster_paths.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
-import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -46,15 +45,16 @@ class PublishEventsController extends _$PublishEventsController {
     final settings = await ref.read(settingsControllerProvider.future);
     final content = await ref.read(eventsControllerProvider.future);
 
+    // The HTML factory is injected via DI (domain port) — the template load
+    // (rootBundle) stays in infrastructure, wired by the composition root.
+    final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final useCase = PublishEventsUseCase(
       api: api,
       credentials: credentials,
       manifest: manifest,
       readPoster: (imageRef) => _readPoster(dir.path, imageRef),
-      buildEventsHtml: (posters) => EventsHtmlBuilder(
-        libraryName: settings.libraryName,
-        posters: posters,
-      ).build(),
+      buildEventsHtml: (posters) =>
+          buildEventsHtml(libraryName: settings.libraryName, posters: posters),
     );
 
     return useCase.call(content);
@@ -64,11 +64,9 @@ class PublishEventsController extends _$PublishEventsController {
   /// ref is not a `posters/…` leaf or the file is missing/unreadable.
   Future<List<int>?> _readPoster(String docsPath, String imageRef) async {
     // Only ever read inside the posters dir (defence against a crafted ref).
-    if (!imageRef.startsWith('${FileEventsRepository.postersDir}/')) {
-      return null;
-    }
-    final leaf = p.basename(imageRef);
-    final file = File(p.join(docsPath, FileEventsRepository.postersDir, leaf));
+    final leaf = PosterPaths.leafOf(imageRef);
+    if (leaf == null) return null;
+    final file = File(p.join(docsPath, PosterPaths.postersDir, leaf));
     if (!file.existsSync()) return null;
     try {
       return await file.readAsBytes();

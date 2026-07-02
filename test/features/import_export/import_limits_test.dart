@@ -1,18 +1,14 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/import_export/infrastructure/goodreads_csv_importer.dart';
-import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
 
 void main() {
   // Small row/field caps with a roomy text cap, so row/field tests aren't
   // tripped by the size guard.
-  const tiny = ImportLimits(
-    maxRows: 2,
-    maxFieldChars: 5,
-    maxTextChars: 100000,
-  );
+  const tiny = ImportLimits(maxRows: 2, maxFieldChars: 5, maxTextChars: 100000);
   // Tight text cap for the oversized-file tests only.
   const tinyText = ImportLimits(
     maxRows: 2,

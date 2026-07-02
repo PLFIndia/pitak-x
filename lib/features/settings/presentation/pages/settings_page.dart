@@ -16,7 +16,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/widgets/editable_text_field.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
@@ -27,6 +26,7 @@ import 'package:pitaka/features/import_export/presentation/pages/export_page.dar
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
+import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/presentation/pages/scan_library_qr_page.dart';
@@ -89,11 +89,11 @@ class _AppearanceTab extends ConsumerWidget {
       children: [
         Text('Appearance', style: textTheme.titleSmall),
         const SizedBox(height: 8),
-        SegmentedButton<ThemeMode>(
+        SegmentedButton<AppThemeMode>(
           segments: const [
-            ButtonSegment(value: ThemeMode.system, label: Text('System')),
-            ButtonSegment(value: ThemeMode.light, label: Text('Light')),
-            ButtonSegment(value: ThemeMode.dark, label: Text('Dark')),
+            ButtonSegment(value: AppThemeMode.system, label: Text('System')),
+            ButtonSegment(value: AppThemeMode.light, label: Text('Light')),
+            ButtonSegment(value: AppThemeMode.dark, label: Text('Dark')),
           ],
           selected: {settings.themeMode},
           onSelectionChanged: (s) => controller.setThemeMode(s.first),
@@ -473,27 +473,36 @@ class _LogoRowState extends ConsumerState<_LogoRow> {
           );
       if (shot == null) return; // user cancelled
       final raw = await shot.readAsBytes();
-      final jpeg = ImageDownscaler.downscaleJpeg(raw);
-      if (jpeg == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Couldn't read that image.")),
-          );
-        }
-        return;
-      }
-      final store = await ref.read(coverStoreProvider.future);
-      final reference = await store.saveJpeg(jpeg);
-      await ref
-          .read(settingsControllerProvider.notifier)
-          .setLibraryLogo(reference);
+      // Downscale → store → persist runs in the application layer (§7); the
+      // widget only owns the plugin pick above and renders the outcome. A
+      // failed save now surfaces a message instead of vanishing silently.
+      final result = await ref
+          .read(libraryLogoControllerProvider.notifier)
+          .setLogo(raw);
+      if (!mounted) return;
+      result.match(
+        (_) => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't save that image.")),
+        ),
+        (_) {},
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
-  Future<void> _clear() =>
-      ref.read(settingsControllerProvider.notifier).setLibraryLogo('');
+  Future<void> _clear() async {
+    final result = await ref
+        .read(libraryLogoControllerProvider.notifier)
+        .clearLogo();
+    if (!mounted) return;
+    result.match(
+      (_) => ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Couldn't clear the logo."))),
+      (_) {},
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

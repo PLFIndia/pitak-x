@@ -5,7 +5,6 @@
 /// fire-and-forget persistent. No secrets cross this interface.
 library;
 
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Loads and persists [AppSettings].
@@ -14,7 +13,7 @@ abstract interface class SettingsRepository {
   Future<AppSettings> load();
 
   /// Persists the appearance mode.
-  Future<void> setThemeMode(ThemeMode mode);
+  Future<void> setThemeMode(AppThemeMode mode);
 
   /// Persists the library display name.
   Future<void> setLibraryName(String name);

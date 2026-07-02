@@ -38,12 +38,17 @@ class WishlistController extends _$WishlistController {
     state = await AsyncValue.guard(_load);
   }
 
-  /// Deletes the entry [id] then refreshes. On failure the list is reloaded so
-  /// the UI stays consistent with storage.
+  /// Deletes the entry [id] then refreshes.
+  ///
+  /// Fail closed (§5): a use-case Left becomes `AsyncError(Failure)` — a
+  /// failed delete must never refresh the list as if it succeeded.
   Future<void> delete(int id) async {
     final useCase = await ref.read(deleteWishlistBookUseCaseProvider.future);
-    await useCase(id);
-    await refresh();
+    final result = await useCase(id);
+    await result.fold(
+      (failure) async => state = AsyncError(failure, StackTrace.current),
+      (_) => refresh(),
+    );
   }
 
   /// Marks the entry [id] purchased (optionally moving it to the library), then

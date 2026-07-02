@@ -201,8 +201,11 @@ void main() {
               required newPassphraseUtf8,
               required blob,
             }) async {
-              sentOld = oldPassphraseUtf8;
-              sentNew = newPassphraseUtf8;
+              // Snapshot at call time: the repository wipes these buffers as
+              // soon as the FFI call returns (§6.1), so retaining the list
+              // itself would observe zeros.
+              sentOld = List.of(oldPassphraseUtf8);
+              sentNew = List.of(newPassphraseUtf8);
               sentBlob = blob;
               return 'new.blob.ct';
             },
@@ -433,6 +436,108 @@ void main() {
         (f) => expect(f, isA<WrongPassphraseFailure>()),
         (_) => fail('expected wrong-passphrase failure'),
       );
+    });
+  });
+
+  group('§6.1: Dart-side FFI passphrase copies are wiped after the call', () {
+    test('unlockAndRead wipes the marshalled copy (success path)', () async {
+      late List<int> captured;
+      final repo = FfiVaultRepository(
+        unlock:
+            ({required passphraseUtf8, required blob, required dbPath}) async {
+              captured = passphraseUtf8;
+              expect(passphraseUtf8, [1, 2, 3]); // live during the call
+              return const ffi.VaultContents(borrowers: [], loans: []);
+            },
+      );
+      final p = pass();
+      await repo.unlockAndRead(passphrase: p, blob: 'b', dbPath: 'x.db');
+      p.dispose();
+      expect(captured.every((b) => b == 0), isTrue);
+    });
+
+    test('unlockAndRead wipes the copy on the error path too', () async {
+      late List<int> captured;
+      final repo = FfiVaultRepository(
+        unlock:
+            ({required passphraseUtf8, required blob, required dbPath}) async {
+              captured = passphraseUtf8;
+              throw const ffi.VaultUnlockError.wrongPassphrase();
+            },
+      );
+      final p = pass();
+      final result = await repo.unlockAndRead(
+        passphrase: p,
+        blob: 'b',
+        dbPath: 'x.db',
+      );
+      p.dispose();
+      expect(result.isLeft(), isTrue);
+      expect(captured.every((b) => b == 0), isTrue);
+    });
+
+    test('changePassphrase wipes BOTH marshalled copies', () async {
+      late List<int> capturedOld;
+      late List<int> capturedNew;
+      final repo = FfiVaultRepository(
+        rewrapBlob:
+            ({
+              required oldPassphraseUtf8,
+              required newPassphraseUtf8,
+              required blob,
+            }) async {
+              capturedOld = oldPassphraseUtf8;
+              capturedNew = newPassphraseUtf8;
+              return 'new.blob';
+            },
+      );
+      final oldP = pass();
+      final newP = pass();
+      await repo.changePassphrase(
+        oldPassphrase: oldP,
+        newPassphrase: newP,
+        blob: 'b',
+      );
+      oldP.dispose();
+      newP.dispose();
+      expect(capturedOld.every((b) => b == 0), isTrue);
+      expect(capturedNew.every((b) => b == 0), isTrue);
+    });
+
+    test('a write call wipes the marshalled copy', () async {
+      late List<int> captured;
+      final repo = FfiVaultRepository(
+        deleteLoan:
+            ({
+              required passphraseUtf8,
+              required blob,
+              required dbPath,
+              required id,
+            }) async {
+              captured = passphraseUtf8;
+            },
+      );
+      final p = pass();
+      await repo.deleteLoan(passphrase: p, blob: 'b', dbPath: 'x.db', id: 1);
+      p.dispose();
+      expect(captured.every((b) => b == 0), isTrue);
+    });
+
+    test('wrapForBiometric wipes the FFI-owned secret S list', () async {
+      final ffiSecret = Uint8List.fromList([7, 7, 7, 7]);
+      final repo = FfiVaultRepository(
+        wrapForBiometric: ({required activeSecretUtf8, required blob}) async =>
+            ffi.BiometricWrap(secret: ffiSecret, blob: 'bio.blob'),
+      );
+      final p = pass();
+      final result = await repo.wrapForBiometric(activeSecret: p, blob: 'b');
+      p.dispose();
+      // The SecretBytes copy carries S; the raw FFI list must be zeroed.
+      expect(ffiSecret.every((b) => b == 0), isTrue);
+      result.match((f) => fail('expected enrolment, got $f'), (enrolment) {
+        expect(enrolment.secret.use((b) => b), [7, 7, 7, 7]);
+        enrolment.secret.dispose();
+      });
     });
   });
 }

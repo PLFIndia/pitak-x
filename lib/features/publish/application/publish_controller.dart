@@ -10,16 +10,12 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/services.dart' show rootBundle;
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
-import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
-import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -54,7 +50,6 @@ class PublishController extends _$PublishController {
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
     final coverIds = ref.read(publishCoverIdsProvider);
-    final client = ref.read(httpClientProvider);
     final dir = await ref.read(appDocsDirProvider.future);
     final coversDir = p.join(dir.path, CoverPaths.coversDir);
 
@@ -65,14 +60,19 @@ class PublishController extends _$PublishController {
         .then((repo) async => (await repo.getAll()).getOrElse((_) => const []));
     final counts = ref.read(activeLoanCountsProvider);
 
+    // Side-effecting ports (bounded HTTP fetch, rootBundle template load)
+    // arrive via DI as domain function types — this controller never touches
+    // infrastructure directly (§3.1).
+    final fetchRemoteCover = ref.read(remoteCoverFetcherProvider);
+    final buildViewerHtml = ref.read(viewerHtmlFactoryProvider);
     final useCase = PublishLibraryUseCase(
       api: api,
       credentials: credentials,
       manifest: manifest,
       coverIds: coverIds,
       readLocalCover: (src) => _readLocalCover(coversDir, src),
-      fetchRemoteCover: (url) => _fetchRemoteCover(client, url),
-      buildViewerHtml: ViewerHtmlBuilder(
+      fetchRemoteCover: fetchRemoteCover,
+      buildViewerHtml: () => buildViewerHtml(
         libraryName: settings.libraryName,
         contact: PublishContact(
           address: settings.publishContactAddress,
@@ -80,7 +80,7 @@ class PublishController extends _$PublishController {
           email: settings.publishContactEmail,
           phone: settings.publishContactPhone,
         ),
-      ).build,
+      ),
     );
 
     return useCase.call(
@@ -106,17 +106,4 @@ class PublishController extends _$PublishController {
       return null;
     }
   }
-
-  /// Fetches a remote cover under strict origin / time / size limits (M1), then
-  /// downscales it. The [BoundedCoverFetcher] enforces the host allow-list, a
-  /// timeout, and a streamed byte cap; this method only adds the downscale.
-  Future<List<int>?> _fetchRemoteCover(http.Client client, String url) async {
-    final raw = await BoundedCoverFetcher(client: client).fetch(url);
-    if (raw == null) return null;
-    return ImageDownscaler.downscaleJpeg(raw) ?? raw;
-  }
 }
-
-/// Loads viewer template bytes (exposed for a smoke test of asset wiring).
-Future<String> debugLoadViewerTemplate() =>
-    rootBundle.loadString('assets/publish/index.html');

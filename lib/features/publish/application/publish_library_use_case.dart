@@ -22,6 +22,7 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -240,8 +241,9 @@ final class PublishLibraryUseCase {
         files: deduped,
         commitMessage: 'Pitaka publish $now',
       );
-    } on GitHubApiException catch (e) {
-      return PublishFailure('Network error: ${e.message}');
+    } on GitHubApiException {
+      // Fixed message (§5): exception text can embed URLs/response detail.
+      return const PublishFailure(gitHubNetworkErrorMessage);
     }
 
     switch (result) {
@@ -274,9 +276,10 @@ final class PublishLibraryUseCase {
           availabilityOmitted: availabilityOmitted,
           pagesLive: pagesLive,
         );
-      case PublishCommitHttpError(:final code, :final body):
-        final excerpt = body.substring(0, body.length.clamp(0, 200));
-        return PublishFailure('GitHub HTTP $code: $excerpt');
+      case PublishCommitHttpError(:final code):
+        // The response body is deliberately dropped: a hostile network can
+        // inject arbitrary text into it (§5 "safe message only").
+        return PublishFailure(gitHubHttpErrorMessage(code));
     }
   }
 

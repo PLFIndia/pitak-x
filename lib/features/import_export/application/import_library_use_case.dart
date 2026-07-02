@@ -13,10 +13,10 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/import_export/infrastructure/goodreads_csv_importer.dart';
-import 'package:pitaka/features/import_export/infrastructure/import_format_sniffer.dart';
-import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 

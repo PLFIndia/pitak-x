@@ -11,7 +11,7 @@ library;
 
 import 'dart:convert';
 
-import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart'
+import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart'
     show kPitakaSchemaVersion;
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';

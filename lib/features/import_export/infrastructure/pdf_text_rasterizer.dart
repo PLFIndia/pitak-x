@@ -11,53 +11,51 @@
 /// that image in the PDF. The tradeoff (chosen with the user): PDF text becomes
 /// raster, not selectable — acceptable for a printable catalogue.
 ///
-/// This is the side-effecting edge (uses `dart:ui` + a live engine), kept away
-/// the pure `PdfLibraryRenderer` layout maths and injected into it, so the
-/// renderer stays unit-testable and this stays the one place that needs a
+/// This is the side-effecting edge (uses `dart:ui` + a live engine): it
+/// implements the pure `PdfTextRasterizer` port declared in
+/// `domain/pdf_text_raster.dart` and is injected into the renderer, so the
+/// layout maths stay unit-testable and this stays the one place that needs a
 /// Flutter engine (a widget test, not a pure test).
 library;
 
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/services.dart' show FontLoader, rootBundle;
+import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 
-/// A shaped, rasterized text run ready to embed.
-class RasterizedText {
-  /// Creates a rasterized run.
-  const RasterizedText({
-    required this.pngBytes,
-    required this.widthPt,
-    required this.heightPt,
-    required this.baselinePt,
-  });
+export 'package:pitaka/features/import_export/domain/pdf_text_raster.dart'
+    show PdfTextRasterizer, RasterizedText;
 
-  /// PNG-encoded image of the shaped run (supersampled for print sharpness).
-  final Uint8List pngBytes;
+/// Bundled Noto Sans fonts for the PDF export, ordered base-first. The Latin
+/// face is the base (covers ASCII/punctuation); the Indic faces are tried in
+/// order for strings the base can't encode. Regular + Bold are kept in
+/// lockstep so headers (bold) and body (regular) resolve to the same script.
+const List<String> pdfRegularFontAssets = [
+  'assets/fonts/NotoSans-Regular.ttf',
+  'assets/fonts/NotoSansDevanagari-Regular.ttf',
+  'assets/fonts/NotoSansTamil-Regular.ttf',
+  'assets/fonts/NotoSansBengali-Regular.ttf',
+  'assets/fonts/NotoSansTelugu-Regular.ttf',
+  'assets/fonts/NotoSansKannada-Regular.ttf',
+  'assets/fonts/NotoSansGujarati-Regular.ttf',
+  'assets/fonts/NotoSansGurmukhi-Regular.ttf',
+  'assets/fonts/NotoSansMalayalam-Regular.ttf',
+  'assets/fonts/NotoSansOriya-Regular.ttf',
+];
 
-  /// Logical width in PDF points (independent of supersampling).
-  final double widthPt;
-
-  /// Logical height in PDF points.
-  final double heightPt;
-
-  /// Distance from the tile's top edge down to the text baseline, in points.
-  /// Used to align the embedded image to the renderer's baseline `y`.
-  final double baselinePt;
-}
-
-/// Shapes one text run and returns it as a [RasterizedText], or null when the
-/// run is empty / cannot be rendered (the caller then skips drawing it).
-// ignore: one_member_abstracts
-abstract interface class PdfTextRasterizer {
-  /// Shapes [text] at [fontSize] points in the given weight/colour.
-  Future<RasterizedText?> raster(
-    String text, {
-    required double fontSize,
-    required bool bold,
-    required int colorArgb,
-  });
-}
+/// Bold counterparts of [pdfRegularFontAssets], same order.
+const List<String> pdfBoldFontAssets = [
+  'assets/fonts/NotoSans-Bold.ttf',
+  'assets/fonts/NotoSansDevanagari-Bold.ttf',
+  'assets/fonts/NotoSansTamil-Bold.ttf',
+  'assets/fonts/NotoSansBengali-Bold.ttf',
+  'assets/fonts/NotoSansTelugu-Bold.ttf',
+  'assets/fonts/NotoSansKannada-Bold.ttf',
+  'assets/fonts/NotoSansGujarati-Bold.ttf',
+  'assets/fonts/NotoSansGurmukhi-Bold.ttf',
+  'assets/fonts/NotoSansMalayalam-Bold.ttf',
+  'assets/fonts/NotoSansOriya-Bold.ttf',
+];
 
 /// `dart:ui`-backed rasterizer. Registers the bundled Noto TTFs as runtime font
 /// families (a fallback group, so the engine picks the right script per glyph)

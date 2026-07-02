@@ -161,12 +161,13 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
   }) async {
     try {
-      // copyBytes() hands a defensive copy across FFI; the Rust side zeroes its
-      // own copy. The caller still owns `passphrase` and disposes it.
-      final contents = await _unlock(
-        passphraseUtf8: passphrase.copyBytes(),
-        blob: blob,
-        dbPath: dbPath,
+      // useAsync scopes a defensive copy to the FFI call and wipes it in a
+      // finally — flutter_rust_bridge marshals its OWN copy to Rust (which
+      // Rust zeroes), so without this the Dart-side copy would linger
+      // un-wiped on the GC heap after every unlock (§6.1). The caller still
+      // owns `passphrase` and disposes it.
+      final contents = await passphrase.useAsync(
+        (bytes) => _unlock(passphraseUtf8: bytes, blob: blob, dbPath: dbPath),
       );
       return _mapContents(contents);
     } on ffi.VaultUnlockError catch (e) {
@@ -232,9 +233,8 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
   }) async {
     try {
-      final blob = await _createVault(
-        passphraseUtf8: passphrase.copyBytes(),
-        dbPath: dbPath,
+      final blob = await passphrase.useAsync(
+        (bytes) => _createVault(passphraseUtf8: bytes, dbPath: dbPath),
       );
       return right(blob);
     } on ffi.VaultCreateError catch (e) {
@@ -257,10 +257,16 @@ final class FfiVaultRepository implements VaultRepository {
     required String blob,
   }) async {
     try {
-      final newBlob = await _rewrapBlob(
-        oldPassphraseUtf8: oldPassphrase.copyBytes(),
-        newPassphraseUtf8: newPassphrase.copyBytes(),
-        blob: blob,
+      // Nested useAsync: BOTH passphrase copies are wiped when the call
+      // returns, on every path.
+      final newBlob = await oldPassphrase.useAsync(
+        (oldBytes) => newPassphrase.useAsync(
+          (newBytes) => _rewrapBlob(
+            oldPassphraseUtf8: oldBytes,
+            newPassphraseUtf8: newBytes,
+            blob: blob,
+          ),
+        ),
       );
       return right(newBlob);
     } on ffi.VaultRewrapError catch (e) {
@@ -282,17 +288,14 @@ final class FfiVaultRepository implements VaultRepository {
     required String blob,
   }) async {
     try {
-      final wrap = await _wrapForBiometric(
-        activeSecretUtf8: activeSecret.copyBytes(),
-        blob: blob,
+      final wrap = await activeSecret.useAsync(
+        (bytes) => _wrapForBiometric(activeSecretUtf8: bytes, blob: blob),
       );
-      // Take ownership of S as wipeable bytes; the FFI list is a plain copy.
-      return right(
-        BiometricEnrolment(
-          secret: SecretBytes(Uint8List.fromList(wrap.secret)),
-          blobBio: wrap.blob,
-        ),
-      );
+      // Take ownership of S as wipeable bytes, then wipe the FFI-owned list
+      // so the only live copy of S on the Dart heap is the SecretBytes.
+      final secret = SecretBytes(Uint8List.fromList(wrap.secret));
+      SecretBytes.wipe(wrap.secret);
+      return right(BiometricEnrolment(secret: secret, blobBio: wrap.blob));
     } on ffi.VaultBiometricError catch (e) {
       return left(_mapBiometricError(e));
     }
@@ -313,13 +316,15 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required Borrower borrower,
   }) => _guardWrite(
-    () => _insertBorrower(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      name: borrower.name,
-      contact: borrower.contact,
-      notes: borrower.notes,
+    () => passphrase.useAsync(
+      (bytes) => _insertBorrower(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        name: borrower.name,
+        contact: borrower.contact,
+        notes: borrower.notes,
+      ),
     ),
   );
 
@@ -330,14 +335,16 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required Borrower borrower,
   }) => _guardWrite(
-    () => _updateBorrower(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      id: borrower.id,
-      name: borrower.name,
-      contact: borrower.contact,
-      notes: borrower.notes,
+    () => passphrase.useAsync(
+      (bytes) => _updateBorrower(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        id: borrower.id,
+        name: borrower.name,
+        contact: borrower.contact,
+        notes: borrower.notes,
+      ),
     ),
   ).then((e) => e.map((_) => unit));
 
@@ -348,11 +355,13 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required int id,
   }) => _guardWrite(
-    () => _deleteBorrower(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      id: id,
+    () => passphrase.useAsync(
+      (bytes) => _deleteBorrower(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        id: id,
+      ),
     ),
   ).then((e) => e.map((_) => unit));
 
@@ -363,16 +372,18 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required Loan loan,
   }) => _guardWrite(
-    () => _insertLoan(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      bookId: loan.bookId,
-      borrowerId: loan.borrowerId,
-      lentDate: loan.lentDate,
-      dueDate: loan.dueDate,
-      returnedDate: loan.returnedDate,
-      notes: loan.notes,
+    () => passphrase.useAsync(
+      (bytes) => _insertLoan(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        bookId: loan.bookId,
+        borrowerId: loan.borrowerId,
+        lentDate: loan.lentDate,
+        dueDate: loan.dueDate,
+        returnedDate: loan.returnedDate,
+        notes: loan.notes,
+      ),
     ),
   );
 
@@ -383,17 +394,19 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required Loan loan,
   }) => _guardWrite(
-    () => _updateLoan(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      id: loan.id,
-      bookId: loan.bookId,
-      borrowerId: loan.borrowerId,
-      lentDate: loan.lentDate,
-      dueDate: loan.dueDate,
-      returnedDate: loan.returnedDate,
-      notes: loan.notes,
+    () => passphrase.useAsync(
+      (bytes) => _updateLoan(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        id: loan.id,
+        bookId: loan.bookId,
+        borrowerId: loan.borrowerId,
+        lentDate: loan.lentDate,
+        dueDate: loan.dueDate,
+        returnedDate: loan.returnedDate,
+        notes: loan.notes,
+      ),
     ),
   ).then((e) => e.map((_) => unit));
 
@@ -404,11 +417,13 @@ final class FfiVaultRepository implements VaultRepository {
     required String dbPath,
     required int id,
   }) => _guardWrite(
-    () => _deleteLoan(
-      passphraseUtf8: passphrase.copyBytes(),
-      blob: blob,
-      dbPath: dbPath,
-      id: id,
+    () => passphrase.useAsync(
+      (bytes) => _deleteLoan(
+        passphraseUtf8: bytes,
+        blob: blob,
+        dbPath: dbPath,
+        id: id,
+      ),
     ),
   ).then((e) => e.map((_) => unit));
 

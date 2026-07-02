@@ -22,7 +22,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
-import 'package:pitaka/features/import_export/infrastructure/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 

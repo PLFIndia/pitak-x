@@ -7,7 +7,6 @@ library;
 
 import 'dart:math' show Random;
 
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -38,7 +37,7 @@ class PrefsSettingsRepository implements SettingsRepository {
   @override
   Future<AppSettings> load() async {
     return AppSettings(
-      themeMode: _themeFromToken(_prefs.getString(_themeKey)),
+      themeMode: AppThemeModeX.fromToken(_prefs.getString(_themeKey)),
       libraryName: _prefs.getString(_libraryNameKey) ?? '',
       libraryId: _prefs.getString(_libraryIdKey) ?? '',
       maintainerName: _prefs.getString(_maintainerNameKey) ?? '',
@@ -54,8 +53,8 @@ class PrefsSettingsRepository implements SettingsRepository {
   }
 
   @override
-  Future<void> setThemeMode(ThemeMode mode) =>
-      _prefs.setString(_themeKey, mode.name);
+  Future<void> setThemeMode(AppThemeMode mode) =>
+      _prefs.setString(_themeKey, mode.token);
 
   @override
   Future<void> setLibraryName(String name) =>
@@ -158,12 +157,4 @@ class PrefsSettingsRepository implements SettingsRepository {
   @override
   Future<void> setAppLockBiometric({required bool enabled}) =>
       _prefs.setBool(_appLockBiometricKey, enabled);
-
-  /// Maps a stored token to a [ThemeMode]; unknown/blank → system.
-  static ThemeMode _themeFromToken(String? raw) {
-    for (final m in ThemeMode.values) {
-      if (m.name == raw) return m;
-    }
-    return ThemeMode.system;
-  }
 }

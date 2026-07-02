@@ -25,14 +25,14 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
-import 'package:pitaka/features/import_export/infrastructure/bounded_zip_extractor.dart';
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/common.dart';
@@ -80,7 +80,7 @@ final class RestoreBackup {
   /// At-rest persistence for the restored vault (C1). Restore reads the vault
   /// for the summary AND installs it here, so a restored backup actually keeps
   /// its borrowers/loans instead of silently dropping them.
-  final VaultStore vaultStore;
+  final VaultArtifactsStore vaultStore;
 
   /// Absolute path of the covers directory (`<appDocs>/covers`).
   final String coversDir;
@@ -179,6 +179,27 @@ final class RestoreBackup {
         (_) => throw StateError('unreachable'),
       );
 
+      // --- Phase 5.5: STAGE the vault install (fallible, no live effect) ---
+      // Two-file-commit atomicity across stores (C1 + §4 Major): all the
+      // fallible vault IO (copying the DB, writing the blob) happens HERE,
+      // before the library is touched. If staging fails we abort with the
+      // device fully unchanged. After the library transaction commits, only
+      // near-infallible atomic renames remain (Phase 6.5), shrinking the
+      // "new library + old vault" window to a rename pair with rollback.
+      StagedVaultInstall? staged;
+      if (stagedVaultDbPath != null && vaultBlob != null) {
+        try {
+          staged = vaultStore.stageRestore(
+            dbSourcePath: stagedVaultDbPath,
+            blob: vaultBlob,
+          );
+        } on FileSystemException catch (e) {
+          return left(
+            StorageFailure('Could not stage restored vault: ${e.message}'),
+          );
+        }
+      }
+
       // --- Phase 6: authoritative overwrite inside one transaction ---
       try {
         await db.transaction(() async {
@@ -195,22 +216,22 @@ final class RestoreBackup {
         });
         await db.rebuildFts();
       } on Object catch (e) {
+        // Library rolled back by the transaction → discard the staged vault
+        // too so the device stays fully on its pre-restore state.
+        staged?.abort();
         return left(StorageFailure('restore transaction failed: $e'));
       }
 
-      // --- Phase 6.5: PERSIST the restored vault (C1) ---
-      // The vault was already validated in Phase 4 (unlock succeeded), so this
-      // is pure file IO. Fail CLOSED: if persistence throws, return a
-      // StorageFailure rather than reporting a "successful" restore that
-      // silently dropped every borrower/loan. The staged DB lives in `workDir`
-      // and is wiped by the `finally`, so it MUST be installed here.
-      if (stagedVaultDbPath != null && vaultBlob != null) {
+      // --- Phase 6.5: COMMIT the staged vault (C1) ---
+      // Rename-only: blob first, then DB, with blob rollback if the DB rename
+      // fails (see StagedVaultInstall.commit). Fail CLOSED: if this throws,
+      // report failure rather than a "successful" restore that silently
+      // dropped every borrower/loan.
+      if (staged != null) {
         try {
-          vaultStore.installRestored(
-            dbSourcePath: stagedVaultDbPath,
-            blob: vaultBlob,
-          );
+          staged.commit();
         } on FileSystemException catch (e) {
+          staged.abort();
           return left(
             StorageFailure('Could not persist restored vault: ${e.message}'),
           );

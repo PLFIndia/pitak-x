@@ -499,6 +499,72 @@ final gitHubDeviceFlowProvider = AutoDisposeProvider<GitHubDeviceFlow>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubDeviceFlowRef = AutoDisposeProviderRef<GitHubDeviceFlow>;
+String _$remoteCoverFetcherHash() =>
+    r'd31a4be4499dd9feb7175cb4599470197a94eb4f';
+
+/// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
+/// with the publish downscale applied. Injected into the publish controller
+/// as a domain function type so the application layer never constructs the
+/// HTTP-backed fetcher itself (§3.1).
+///
+/// Copied from [remoteCoverFetcher].
+@ProviderFor(remoteCoverFetcher)
+final remoteCoverFetcherProvider =
+    AutoDisposeProvider<RemoteCoverFetcher>.internal(
+      remoteCoverFetcher,
+      name: r'remoteCoverFetcherProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$remoteCoverFetcherHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
+String _$viewerHtmlFactoryHash() => r'341b7961fe4a972e730e7da176011335efce9112';
+
+/// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
+/// effect, so it lives behind this seam) and substitutes the library values.
+///
+/// Copied from [viewerHtmlFactory].
+@ProviderFor(viewerHtmlFactory)
+final viewerHtmlFactoryProvider =
+    AutoDisposeProvider<ViewerHtmlFactory>.internal(
+      viewerHtmlFactory,
+      name: r'viewerHtmlFactoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$viewerHtmlFactoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ViewerHtmlFactoryRef = AutoDisposeProviderRef<ViewerHtmlFactory>;
+String _$eventsHtmlFactoryHash() => r'7058a3a71f60555a5519580a6179123a19ade047';
+
+/// Events-HTML factory port: same seam as [viewerHtmlFactory] for the events
+/// page template.
+///
+/// Copied from [eventsHtmlFactory].
+@ProviderFor(eventsHtmlFactory)
+final eventsHtmlFactoryProvider =
+    AutoDisposeProvider<EventsHtmlFactory>.internal(
+      eventsHtmlFactory,
+      name: r'eventsHtmlFactoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$eventsHtmlFactoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef EventsHtmlFactoryRef = AutoDisposeProviderRef<EventsHtmlFactory>;
 String _$publishCoverIdsHash() => r'3c5bcadbb45d7e23406191680df0ebe5e294b100';
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
@@ -943,6 +1009,52 @@ final exportLibraryUseCaseProvider =
 // ignore: unused_element
 typedef ExportLibraryUseCaseRef =
     AutoDisposeFutureProviderRef<ExportLibraryUseCase>;
+String _$pdfFooterIconLoaderHash() =>
+    r'49130e3985bd03424e7f5bc9b78322d3152c2e76';
+
+/// Loads the bundled footer icon for the PDF export, or null when the asset
+/// is missing (a missing icon must never block an export). Behind a provider
+/// because `rootBundle` is a side effect the application layer must not own.
+///
+/// Copied from [pdfFooterIconLoader].
+@ProviderFor(pdfFooterIconLoader)
+final pdfFooterIconLoaderProvider =
+    AutoDisposeProvider<Future<Uint8List?> Function()>.internal(
+      pdfFooterIconLoader,
+      name: r'pdfFooterIconLoaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pdfFooterIconLoaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PdfFooterIconLoaderRef =
+    AutoDisposeProviderRef<Future<Uint8List?> Function()>;
+String _$pdfTextRasterizerHash() => r'841e6d7a430d6ead5467b94ed731527f70f5ef44';
+
+/// Shaped-text rasterizer for the PDF export (needs a live Flutter engine +
+/// the bundled Noto fonts — infrastructure, injected as the domain
+/// `PdfTextRasterizer` port).
+///
+/// Copied from [pdfTextRasterizer].
+@ProviderFor(pdfTextRasterizer)
+final pdfTextRasterizerProvider =
+    AutoDisposeProvider<PdfTextRasterizer>.internal(
+      pdfTextRasterizer,
+      name: r'pdfTextRasterizerProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$pdfTextRasterizerHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
     r'4fc770346e2bd2509b0472f938660e38f95635a5';
 

@@ -8,27 +8,95 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
+import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// A signed-out credential store (no token, no repo) so the Connection tab
+/// An in-memory credential store, starting signed out, so the Connection tab
 /// renders its "Sign in" state without any network.
 class _FakeCreds implements PublishCredentialStore {
+  String? _token;
   @override
-  Future<String?> token() async => null;
+  Future<String?> token() async => _token;
   @override
   Future<String?> targetRepo() async => null;
   @override
   Future<String?> clientId() async => null;
   @override
-  Future<void> clearToken() async {}
+  Future<void> clearToken() async {
+    _token = null;
+  }
+
   @override
   Future<void> setClientId(String id) async {}
   @override
   Future<void> setTargetRepo(String target) async {}
   @override
-  Future<void> setToken(String token) async {}
+  Future<void> setToken(String token) async {
+    _token = token;
+  }
+}
+
+/// Fake GitHub API for the device flow: instant grant, authorizes on the
+/// first poll. No network, no real timers (interval 0).
+class _FakeGitHubApi implements GitHubApi {
+  int polls = 0;
+
+  @override
+  Future<DeviceCodeGrant> requestDeviceCode({
+    required String clientId,
+    required String scope,
+  }) async => const DeviceCodeGrant(
+    deviceCode: 'dev-code',
+    userCode: 'ABCD-1234',
+    verificationUri: 'https://github.com/login/device',
+    expiresInSeconds: 900,
+    intervalSeconds: 0,
+  );
+
+  @override
+  Future<PollResult> pollAccessToken({
+    required String clientId,
+    required String deviceCode,
+  }) async {
+    polls++;
+    return const PollAuthorized('tok-123', 'public_repo');
+  }
+
+  @override
+  Future<String> currentUserLogin(String token) async => 'user';
+  @override
+  Future<List<GitHubRepo>> userRepos(String token) async => const [];
+  @override
+  Future<String?> defaultBranch({
+    required String owner,
+    required String repo,
+    required String token,
+  }) async => 'main';
+  @override
+  Future<Map<String, String>> headTreeShas({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) async => const {};
+  @override
+  Future<PublishCommitResult> commitFiles({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+    required List<DesiredFile> files,
+    required String commitMessage,
+  }) async => const PublishCommitSuccess('sha', []);
+  @override
+  Future<bool?> latestPagesBuildStatus({
+    required String owner,
+    required String repo,
+    required String token,
+  }) async => true;
 }
 
 class _EmptyEventsRepo implements EventsRepository {
@@ -114,6 +182,55 @@ void main() {
     expect(find.byType(TextField), findsNothing);
     expect(find.text('14 Banyan Road'), findsOneWidget);
   });
+
+  testWidgets(
+    'device-flow sign-in completes WHILE the user-code dialog is open '
+    '(regression: awaiting the dialog suspended token polling)',
+    (tester) async {
+      // Tall surface: the status line renders at the bottom of a lazy
+      // ListView and would not be built in the default test viewport.
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final creds = _FakeCreds();
+      final api = _FakeGitHubApi();
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            publishCredentialStoreProvider.overrideWithValue(creds),
+            gitHubApiProvider.overrideWithValue(api),
+            eventsRepositoryProvider.overrideWith(
+              (ref) async => _EmptyEventsRepo(),
+            ),
+          ],
+          child: const MaterialApp(home: PublishPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Sign in to GitHub'));
+      await tester.pumpAndSettle();
+
+      // Client-ID prompt.
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Client ID'),
+        'my-client-id',
+      );
+      await tester.tap(find.text('Continue'));
+      await tester.pumpAndSettle();
+
+      // The flow must have polled and stored the token WITHOUT anyone
+      // tapping "Done" on the authorize dialog — and the dialog must have
+      // been dismissed by the success state.
+      expect(api.polls, greaterThanOrEqualTo(1));
+      expect(await creds.token(), 'tok-123');
+      expect(find.text('Authorize in your browser'), findsNothing);
+      expect(find.text('Signed in.'), findsOneWidget);
+    },
+  );
 
   testWidgets('initialTab opens directly on the Events editor', (tester) async {
     await tester.pumpWidget(await _app(initialTab: PublishTab.events));

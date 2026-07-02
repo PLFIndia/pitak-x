@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
@@ -100,7 +99,7 @@ class _FakeSettings implements SettingsRepository {
 
   // Unused.
   @override
-  Future<void> setThemeMode(ThemeMode mode) async {}
+  Future<void> setThemeMode(AppThemeMode mode) async {}
   @override
   Future<void> setMaintainerName(String name) async {}
   @override

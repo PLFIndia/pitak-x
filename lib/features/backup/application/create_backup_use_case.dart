@@ -1,7 +1,7 @@
 /// Create-backup use case (application layer, AGENTS.md §4).
 ///
 /// Gathers the current library + wishlist from their repositories and asks the
-/// [BackupArchiveWriter] to build a `.pitabak` archive (including the
+/// [BackupArchiveBuilder] to build a `.pitabak` archive (including the
 /// persistent vault + covers when present). Returns the bytes for the UI.
 ///
 /// Read-only with respect to app state: it reads books/wishlist and copies the
@@ -12,7 +12,7 @@ import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
+import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -32,8 +32,8 @@ class CreateBackupUseCase {
   /// Wishlist source.
   final WishlistRepository wishlist;
 
-  /// The archive writer (Room-format DBs + vault copy + covers + manifest).
-  final BackupArchiveWriter writer;
+  /// The archive builder (Room-format DBs + vault copy + covers + manifest).
+  final BackupArchiveBuilder writer;
 
   /// Scratch directory for the transient Room DB files.
   final String workDir;

@@ -52,20 +52,46 @@ final class SecretBytes {
   }
 
   /// Returns a defensive copy. Caller owns the copy and must wipe it.
+  ///
+  /// Prefer [useAsync] for FFI/await boundaries — it wipes the copy for you.
   Uint8List copyBytes() {
     _checkAlive();
     return Uint8List.fromList(_bytes);
   }
 
+  /// Runs [action] with a defensive copy of the bytes, then WIPES the copy in
+  /// a `finally` — success, failure, or thrown error alike (§6.1).
+  ///
+  /// This exists for async boundaries (FFI calls) where the callee needs a
+  /// list it can hand across an await: the copy's lifetime is scoped to
+  /// [action], so no un-wiped passphrase copy is left on the GC heap by a
+  /// call site that forgot its cleanup. [action] must not retain the copy.
+  Future<R> useAsync<R>(Future<R> Function(Uint8List bytes) action) async {
+    _checkAlive();
+    final copy = Uint8List.fromList(_bytes);
+    try {
+      return await action(copy);
+    } finally {
+      wipe(copy);
+    }
+  }
+
+  /// Two-pass wipe (random fill, then zero) of an arbitrary [buffer]. For
+  /// byte lists that arrive from outside [SecretBytes] ownership (e.g. FFI
+  /// results) and must not linger on the heap.
+  static void wipe(List<int> buffer) {
+    for (var i = 0; i < buffer.length; i++) {
+      buffer[i] = _rng.nextInt(256);
+    }
+    for (var i = 0; i < buffer.length; i++) {
+      buffer[i] = 0;
+    }
+  }
+
   /// Two-pass wipe (random, then zero) and mark disposed. Idempotent.
   void dispose() {
     if (_disposed) return;
-    for (var i = 0; i < _bytes.length; i++) {
-      _bytes[i] = _rng.nextInt(256);
-    }
-    for (var i = 0; i < _bytes.length; i++) {
-      _bytes[i] = 0;
-    }
+    wipe(_bytes);
     _disposed = true;
   }
 

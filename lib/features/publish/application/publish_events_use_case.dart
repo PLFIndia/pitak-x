@@ -22,6 +22,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
@@ -161,8 +162,9 @@ final class PublishEventsUseCase {
         files: files,
         commitMessage: 'Pitak events publish $now',
       );
-    } on GitHubApiException catch (e) {
-      return PublishEventsFailure('Network error: ${e.message}');
+    } on GitHubApiException {
+      // Fixed message (§5): exception text can embed URLs/response detail.
+      return const PublishEventsFailure(gitHubNetworkErrorMessage);
     }
 
     switch (result) {
@@ -183,9 +185,10 @@ final class PublishEventsUseCase {
           eventsUrl: 'https://$owner.github.io/$repo/events.html',
           uploadedPaths: uploadedPaths,
         );
-      case PublishCommitHttpError(:final code, :final body):
-        final excerpt = body.substring(0, body.length.clamp(0, 200));
-        return PublishEventsFailure('GitHub HTTP $code: $excerpt');
+      case PublishCommitHttpError(:final code):
+        // The response body is deliberately dropped: a hostile network can
+        // inject arbitrary text into it (§5 "safe message only").
+        return PublishEventsFailure(gitHubHttpErrorMessage(code));
     }
   }
 }

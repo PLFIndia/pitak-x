@@ -11,7 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
-import 'package:pitaka/features/import_export/infrastructure/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 

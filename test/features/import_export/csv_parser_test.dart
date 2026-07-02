@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/infrastructure/csv_parser.dart';
+import 'package:pitaka/features/import_export/domain/csv_parser.dart';
 
 void main() {
   group('parseCsv (RFC 4180)', () {

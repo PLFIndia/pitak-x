@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart'
     show defaultPdfLabels;
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/domain/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 

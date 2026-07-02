@@ -6,7 +6,6 @@
 /// then updates state so the UI reacts immediately.
 library;
 
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -31,7 +30,7 @@ class SettingsController extends _$SettingsController {
   }
 
   /// Sets the appearance mode.
-  Future<void> setThemeMode(ThemeMode mode) async {
+  Future<void> setThemeMode(AppThemeMode mode) async {
     final repo = await ref.read(settingsRepositoryProvider.future);
     final current = state.valueOrNull ?? AppSettings.defaults;
     await _update(

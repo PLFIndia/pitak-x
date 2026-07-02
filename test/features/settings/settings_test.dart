@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
@@ -16,7 +15,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final repo = PrefsSettingsRepository(prefs);
       final s = await repo.load();
-      expect(s.themeMode, ThemeMode.system);
+      expect(s.themeMode, AppThemeMode.system);
       expect(s.libraryName, '');
       expect(s.maintainerName, '');
       expect(s.librarySort, BookSort.recentlyAdded);
@@ -30,7 +29,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final repo = PrefsSettingsRepository(prefs);
 
-      await repo.setThemeMode(ThemeMode.dark);
+      await repo.setThemeMode(AppThemeMode.dark);
       await repo.setLibraryName('  My Shelf  ');
       await repo.setMaintainerName('Asha');
       await repo.setLibrarySort(BookSort.languageAsc);
@@ -39,7 +38,7 @@ void main() {
       await repo.setAppLockBiometric(enabled: true);
 
       final s = await repo.load();
-      expect(s.themeMode, ThemeMode.dark);
+      expect(s.themeMode, AppThemeMode.dark);
       expect(s.libraryName, 'My Shelf'); // trimmed
       expect(s.maintainerName, 'Asha');
       expect(s.librarySort, BookSort.languageAsc);
@@ -165,7 +164,7 @@ void main() {
       });
       final prefs = await SharedPreferences.getInstance();
       final s = await PrefsSettingsRepository(prefs).load();
-      expect(s.themeMode, ThemeMode.system);
+      expect(s.themeMode, AppThemeMode.system);
       expect(s.librarySort, BookSort.recentlyAdded);
     });
   });
@@ -180,11 +179,11 @@ void main() {
       await container.read(settingsControllerProvider.future);
       await container
           .read(settingsControllerProvider.notifier)
-          .setThemeMode(ThemeMode.light);
+          .setThemeMode(AppThemeMode.light);
 
       expect(
         container.read(settingsControllerProvider).value!.themeMode,
-        ThemeMode.light,
+        AppThemeMode.light,
       );
       // Persisted: a fresh repo sees it.
       final prefs = await container.read(sharedPreferencesProvider.future);

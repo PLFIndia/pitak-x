@@ -4,6 +4,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/src/rust/frb_generated.dart';
@@ -26,7 +27,10 @@ class PitakaApp extends ConsumerWidget {
     // Theme follows the persisted setting; defaults to system until loaded.
     final themeMode = ref
         .watch(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.themeMode, orElse: () => ThemeMode.system);
+        .maybeWhen(
+          data: (s) => s.themeMode.toThemeMode(),
+          orElse: () => ThemeMode.system,
+        );
     final scheme = ColorScheme.fromSeed(seedColor: Colors.indigo);
 
     // Screen-capture protection (Android FLAG_SECURE) follows the vault state

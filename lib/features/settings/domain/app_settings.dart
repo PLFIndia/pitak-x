@@ -6,7 +6,34 @@
 /// their own features. Secrets are NEVER stored here.
 library;
 
-import 'package:flutter/material.dart' show ThemeMode;
+/// Appearance mode (domain twin of Flutter's `ThemeMode`, §3.1: the domain
+/// layer must stay pure Dart, so it cannot import Flutter). Presentation maps
+/// this to `ThemeMode` via `AppThemeModeX.toThemeMode`.
+enum AppThemeMode {
+  /// Follow the OS setting (default).
+  system,
+
+  /// Always light.
+  light,
+
+  /// Always dark.
+  dark,
+}
+
+/// Tolerant parsing for [AppThemeMode].
+extension AppThemeModeX on AppThemeMode {
+  /// Stable storage token (the enum name — identical to the tokens the
+  /// Flutter `ThemeMode.name` used to write, so stored settings carry over).
+  String get token => name;
+
+  /// Parses a stored token; unknown/blank → [AppThemeMode.system].
+  static AppThemeMode fromToken(String? raw) {
+    for (final v in AppThemeMode.values) {
+      if (v.name == raw) return v;
+    }
+    return AppThemeMode.system;
+  }
+}
 
 /// Library list sort order (Kotlin `BookSort`). Stored as the enum name.
 enum BookSort {
@@ -38,7 +65,7 @@ extension BookSortX on BookSort {
 class AppSettings {
   /// Creates a settings snapshot.
   const AppSettings({
-    this.themeMode = ThemeMode.system,
+    this.themeMode = AppThemeMode.system,
     this.libraryName = '',
     this.libraryId = '',
     this.maintainerName = '',
@@ -56,7 +83,7 @@ class AppSettings {
   static const AppSettings defaults = AppSettings();
 
   /// Light / dark / follow-system appearance.
-  final ThemeMode themeMode;
+  final AppThemeMode themeMode;
 
   /// Display name for the library (blank → app default title).
   final String libraryName;
@@ -111,7 +138,7 @@ class AppSettings {
 
   /// Returns a copy with the given fields replaced.
   AppSettings copyWith({
-    ThemeMode? themeMode,
+    AppThemeMode? themeMode,
     String? libraryName,
     String? libraryId,
     String? maintainerName,

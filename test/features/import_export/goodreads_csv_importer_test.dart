@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/infrastructure/goodreads_csv_importer.dart';
+import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
 
 void main() {
   const importer = GoodreadsCsvImporter();

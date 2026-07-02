@@ -27,12 +27,24 @@ class LibraryController extends _$LibraryController {
   Timer? _debounce;
   String _query = '';
   String? _languageFilter;
+  BookSort _sort = BookSort.recentlyAdded;
 
   @override
   FutureOr<List<Book>> build() async {
     // Cancel any in-flight debounce when the provider is disposed.
     ref.onDispose(() => _debounce?.cancel());
-    return _load('');
+    // WATCH the persisted sort (narrowed with select, §8): changing it in
+    // Settings rebuilds this provider and re-sorts the list immediately.
+    // A ref.read here would freeze the sort until an unrelated refresh.
+    _sort = ref.watch(
+      settingsControllerProvider.select(
+        (s) => s.maybeWhen(
+          data: (settings) => settings.librarySort,
+          orElse: () => BookSort.recentlyAdded,
+        ),
+      ),
+    );
+    return _load(_query);
   }
 
   /// The current query text (so the UI can render the field without owning it).
@@ -65,32 +77,41 @@ class LibraryController extends _$LibraryController {
   }
 
   /// Soft-deletes book [id] (stays visible-but-inert), then refreshes.
+  ///
+  /// Fail closed (§5): a repository Left becomes `AsyncError(Failure)` — a
+  /// failed write must never refresh the list as if it succeeded.
   Future<void> remove(int id) async {
     final repo = await ref.read(bookRepositoryProvider.future);
-    await repo.markRemoved(id, DateTime.now().millisecondsSinceEpoch);
-    await refresh();
+    final result = await repo.markRemoved(
+      id,
+      DateTime.now().millisecondsSinceEpoch,
+    );
+    await result.fold(
+      (failure) async => state = AsyncError(failure, StackTrace.current),
+      (_) => refresh(),
+    );
   }
 
-  /// Clears the soft-delete flag on book [id], then refreshes.
+  /// Clears the soft-delete flag on book [id], then refreshes. Fails closed
+  /// like [remove].
   Future<void> restoreRemoved(int id) async {
     final repo = await ref.read(bookRepositoryProvider.future);
-    await repo.restoreRemoved(id);
-    await refresh();
+    final result = await repo.restoreRemoved(id);
+    await result.fold(
+      (failure) async => state = AsyncError(failure, StackTrace.current),
+      (_) => refresh(),
+    );
   }
 
-  /// Fetches books for [query], applying the persisted sort and the active
-  /// language filter. A non-empty query takes the FTS path (then the filter is
-  /// applied in Dart); a blank query uses the sorted+filtered repository query.
-  /// The repository's `Either` is unwrapped into a value or a thrown `Failure`,
-  /// which Riverpod's `build`/`AsyncValue.guard` turn into `AsyncError`.
+  /// Fetches books for [query], applying the persisted sort (watched in
+  /// [build]) and the active language filter. A non-empty query takes the FTS
+  /// path (then the filter is applied in Dart); a blank query uses the
+  /// sorted+filtered repository query. The repository's `Either` is unwrapped
+  /// into a value or a thrown `Failure`, which Riverpod's
+  /// `build`/`AsyncValue.guard` turn into `AsyncError`.
   Future<List<Book>> _load(String query) async {
     final repo = await ref.read(bookRepositoryProvider.future);
-    final sort = ref
-        .read(settingsControllerProvider)
-        .maybeWhen(
-          data: (s) => s.librarySort,
-          orElse: () => BookSort.recentlyAdded,
-        );
+    final sort = _sort;
     final lang = _languageFilter;
 
     if (query.trim().isEmpty) {

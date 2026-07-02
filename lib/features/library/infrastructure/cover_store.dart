@@ -11,7 +11,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
-import 'package:pitaka/features/import_export/infrastructure/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:uuid/uuid.dart';
 
 /// Persists cover image files under the app covers directory.

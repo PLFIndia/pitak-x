@@ -26,7 +26,7 @@ import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'vault_session_controller.g.dart';
@@ -61,7 +61,8 @@ class VaultSessionController extends _$VaultSessionController
   @override
   bool get isUnlocked => state.valueOrNull is VaultUnlocked;
 
-  Future<VaultStore> get _storeFuture => ref.read(vaultStoreProvider.future);
+  Future<VaultArtifactsStore> get _storeFuture =>
+      ref.read(vaultStoreProvider.future);
 
   /// Whether the current unlocked session was opened via biometrics (held
   /// secret is S, [_activeBlob] is the bio blob) vs the passphrase.
@@ -413,7 +414,7 @@ class VaultSessionController extends _$VaultSessionController
   /// (fail-closed).
   Future<Either<Failure, Unit>> _holdAndLoad(
     SecretBytes secret,
-    VaultStore store, {
+    VaultArtifactsStore store, {
     String? blob,
     bool isBiometric = false,
   }) async {
@@ -452,7 +453,7 @@ class VaultSessionController extends _$VaultSessionController
   Future<Either<Failure, Unit>> _mutate(
     Future<Either<Failure, Unit>> Function(
       SecretBytes passphrase,
-      VaultStore store,
+      VaultArtifactsStore store,
       String blob,
     )
     op,
@@ -481,6 +482,6 @@ class VaultSessionController extends _$VaultSessionController
     });
   }
 
-  VaultSessionState _initialStateFor(VaultStore store) =>
+  VaultSessionState _initialStateFor(VaultArtifactsStore store) =>
       store.isInitialized() ? const VaultLocked() : const VaultUninitialized();
 }

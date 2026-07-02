@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/infrastructure/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 
 void main() {
   Uint8List zipOf(Map<String, List<int>> entries) {

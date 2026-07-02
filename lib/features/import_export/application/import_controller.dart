@@ -12,7 +12,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
-import 'package:pitaka/features/import_export/infrastructure/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'import_controller.g.dart';

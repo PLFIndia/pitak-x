@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/import_export/infrastructure/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 
 void main() {
   group('ImportFormatSniffer', () {

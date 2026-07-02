@@ -7,8 +7,10 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -26,7 +28,10 @@ import 'package:pitaka/features/events/infrastructure/file_events_repository.dar
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
+    hide PdfTextRasterizer, RasterizedText;
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
@@ -40,13 +45,19 @@ import 'package:pitaka/features/lookup/infrastructure/google_books_lookup_servic
 import 'package:pitaka/features/lookup/infrastructure/in_memory_isbn_cache.dart';
 import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_service.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
+import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
+    show RemoteCoverFetcher;
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
+import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
+import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
+import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:pitaka/features/vault/application/open_vault_from_archive.dart';
@@ -255,6 +266,35 @@ PublishCredentialStore publishCredentialStore(PublishCredentialStoreRef ref) =>
 GitHubDeviceFlow gitHubDeviceFlow(GitHubDeviceFlowRef ref) =>
     GitHubDeviceFlow(ref.watch(gitHubApiProvider));
 
+/// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
+/// with the publish downscale applied. Injected into the publish controller
+/// as a domain function type so the application layer never constructs the
+/// HTTP-backed fetcher itself (§3.1).
+@riverpod
+RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
+  final client = ref.watch(httpClientProvider);
+  return (url) async {
+    final raw = await BoundedCoverFetcher(client: client).fetch(url);
+    if (raw == null) return null;
+    // Downscale before publishing (400x600 q80) so the git push stays small.
+    return ImageDownscaler.downscaleJpeg(raw) ?? raw;
+  };
+}
+
+/// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
+/// effect, so it lives behind this seam) and substitutes the library values.
+@riverpod
+ViewerHtmlFactory viewerHtmlFactory(ViewerHtmlFactoryRef ref) =>
+    ({required libraryName, required contact}) =>
+        ViewerHtmlBuilder(libraryName: libraryName, contact: contact).build();
+
+/// Events-HTML factory port: same seam as [viewerHtmlFactory] for the events
+/// page template.
+@riverpod
+EventsHtmlFactory eventsHtmlFactory(EventsHtmlFactoryRef ref) =>
+    ({required libraryName, required posters}) =>
+        EventsHtmlBuilder(libraryName: libraryName, posters: posters).build();
+
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
 @riverpod
 PublishCoverIds publishCoverIds(PublishCoverIdsRef ref) =>
@@ -391,6 +431,30 @@ Future<ExportLibraryUseCase> exportLibraryUseCase(
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
   return ExportLibraryUseCase(bookRepo: bookRepo, wishlistRepo: wishlistRepo);
 }
+
+/// Loads the bundled footer icon for the PDF export, or null when the asset
+/// is missing (a missing icon must never block an export). Behind a provider
+/// because `rootBundle` is a side effect the application layer must not own.
+@riverpod
+Future<Uint8List?> Function() pdfFooterIconLoader(PdfFooterIconLoaderRef ref) =>
+    () async {
+      try {
+        final data = await rootBundle.load('assets/pdf/app_icon.png');
+        return data.buffer.asUint8List();
+      } on Object {
+        return null;
+      }
+    };
+
+/// Shaped-text rasterizer for the PDF export (needs a live Flutter engine +
+/// the bundled Noto fonts — infrastructure, injected as the domain
+/// `PdfTextRasterizer` port).
+@riverpod
+PdfTextRasterizer pdfTextRasterizer(PdfTextRasterizerRef ref) =>
+    UiPdfTextRasterizer(
+      regularAssets: pdfRegularFontAssets,
+      boldAssets: pdfBoldFontAssets,
+    );
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID
