@@ -1,0 +1,8 @@
+Flutter + Rust rewrite of Pitak:
+
+* New encrypted borrowers vault (AES-256-GCM, Argon2id)
+* ISBN barcode scanning with FOSS scanner (flutter_zxing)
+* PDF export with Indic-script support
+* Goodreads CSV import
+* Publish read-only library to GitHub Pages
+* Optional app-lock and biometric vault unlock

@@ -1,0 +1,1 @@
+Privacy-first offline library catalogue with an encrypted lending vault

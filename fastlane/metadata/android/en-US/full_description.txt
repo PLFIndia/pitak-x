@@ -1,0 +1,15 @@
+Pitak is a privacy-first, offline personal library catalogue. Catalogue your books, lend them to borrowers from an encrypted vault, keep a wishlist, import/export your data, make portable backups, and optionally publish a read-only library site.
+
+Features:
+
+* Library — add, edit, search, sort and filter books; soft-delete with restore; on-device cover capture; ISBN barcode scan with metadata lookup (Open Library → Google Books, chained and cached).
+* Borrowers vault — a persistent, AES-256-GCM encrypted store for borrowers and loans, unlocked by a passphrase (Argon2id key derivation). Optional biometric unlock.
+* Wishlist — track books to acquire; move them to the library on purchase.
+* Import / Export — JSON, CSV (including Goodreads import), and paginated PDF export with Indic-script support.
+* Backup / Restore — portable .pitabak archives.
+* Publish — optionally push a read-only library viewer to GitHub Pages, with PII redaction.
+* App-lock — optional biometric/device-credential gate before the library screen.
+
+Privacy posture: local-first by default. Sensitive data lives in the platform Keystore; secrets are held as wipeable bytes. Network calls happen only on explicit user action (ISBN lookup, publish, opt-in remote covers). Screenshots are blocked while sensitive data is visible.
+
+The cryptographic core is written in Rust and built entirely from source.
