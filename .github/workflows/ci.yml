@@ -15,7 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
+      # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
+      - uses: dtolnay/rust-toolchain@1.96.0
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
@@ -31,9 +33,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Pinned via .fvmrc — the same file the F-Droid recipe extracts the
+      # Flutter version from. One place to bump; CI and F-Droid stay in sync.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version-file: .fvmrc
       - name: Resolve deps
         run: flutter pub get
       # Generated sources (drift/freezed/riverpod/json) must be regenerable and
