@@ -1,0 +1,2 @@
+* Fixed: after restoring a backup, the vault screen now shows Unlock instead of Create vault — no app restart needed
+* Note: biometric vault unlock must be re-enabled after a restore (the restored vault has a different key)
