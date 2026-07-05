@@ -15,6 +15,7 @@ import 'dart:typed_data';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'restore_controller.g.dart';
@@ -41,7 +42,18 @@ class RestoreController extends _$RestoreController {
       );
       state = result.match(
         (failure) => AsyncError(failure, StackTrace.current),
-        AsyncData.new,
+        (summary) {
+          // Restore authoritatively replaced device state, including the
+          // on-disk vault artifacts (borrowers.db + wrapped-key blob) when the
+          // archive carried one. The session controller is keepAlive and
+          // decided "uninitialized vs locked" once at build(), so it must be
+          // rebuilt or the vault page keeps showing "Create vault".
+          // Invalidation also wipes any held session secret via its
+          // ref.onDispose (fail-closed: a pre-restore passphrase no longer
+          // matches the restored vault key).
+          ref.invalidate(vaultSessionControllerProvider);
+          return AsyncData(summary);
+        },
       );
     } finally {
       // §6.1: wipe the passphrase regardless of outcome.
