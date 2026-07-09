@@ -1,0 +1,1 @@
+* Fixed: ISBN barcode scanning is now fast and reliable — the scanner detects book barcodes within a second or two instead of rarely
