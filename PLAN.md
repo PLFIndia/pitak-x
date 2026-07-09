@@ -325,3 +325,56 @@ User approved fixing all 13 Major findings, one at a time, proper fixes (no patc
 
 ## Result
 - (pending)
+
+---
+
+# Task: ISBN scanner rarely detects barcodes (Pixel 8a)
+
+## Understanding
+- On-device report (2026-07-09): scanner opens, camera preview works, but an
+  EAN-13 book barcode was detected only once across many attempts on the
+  Pixel 8a. Regression window: commit 690f705 swapped mobile_scanner (MLKit,
+  full-frame analysis) for flutter_zxing 2.3.0 (F-Droid requirement) and left
+  ReaderWidget on its detection defaults.
+
+## Investigation notes
+- lib/features/lookup/presentation/pages/scanner_page.dart — ReaderWidget with
+  only codeFormat/onScan/showGallery/scanDelaySuccess set.
+- Read flutter_zxing source (reader_widget.dart, camera_stream.dart, main):
+  the plugin decodes only a centred SQUARE crop, side = min(w,h)*cropPercent,
+  default 0.5 (~360px square on a 720p stream). A wide, short EAN-13 barcode
+  rarely lands fully inside it. tryHarder/tryInverted/tryDownscale default
+  false; scanDelay default 1000ms (1 decode attempt/sec).
+- Upstream khoren93/flutter_zxing issues #185/#197 match the symptom; #197
+  also documents a device-specific YUV-conversion bug (Redmi/Infinix/etc.) —
+  NOT applicable to the Pixel 8a.
+
+## Proposed approach
+- Parameter tuning on ReaderWidget (additive, reversible): cropPercent 0.9,
+  tryHarder/tryInverted/tryDownscale true, scanDelay 300ms. Rationale
+  documented in-code. Inspired by upstream flutter_zxing issue guidance.
+
+## Steps
+- [x] Tune ReaderWidget in scanner_page.dart with in-code rationale.
+- [x] Gates: flutter analyze lib test 0 issues; dart format clean;
+      flutter test 604 pass (pubspec.lock drift from local Flutter 3.44.2
+      reverted — repo pins 3.41.1 in .fvmrc).
+- [x] USER: on-device verification on the Pixel 8a — confirmed working
+      (2026-07-09, release APK).
+
+## Out-of-scope observations
+- scan_library_qr_page.dart (QR pairing) uses the same defaults; QR is square
+  so the 0.5 crop hurts far less. Left untouched — tune only if QR pairing is
+  also reported slow.
+- Upstream #197 device bug (empty results on some Redmi/Infinix/Samsung/Moto)
+  is unfixable app-side; if a future device report matches, point there.
+- Local toolchain is Flutter 3.44.2 vs the pinned 3.41.1 (.fvmrc); tests pass
+  under both but release builds should use the pin.
+
+## Result
+- One-file fix: scanner_page.dart ReaderWidget detection tuning (crop 0.9,
+  tryHarder/tryInverted/tryDownscale, 300ms retry). No behaviour change to
+  validation/pop flow; ISBN validation still gates what pops. Verified
+  working on-device (Pixel 8a, release build, 2026-07-09). Also committing
+  the android/gradle.properties flags added automatically by the Flutter
+  tool during the release build (user approved).

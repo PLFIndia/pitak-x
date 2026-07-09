@@ -44,6 +44,21 @@ class _ScannerPageState extends State<ScannerPage> {
         onScan: _onScan,
         showGallery: false,
         scanDelaySuccess: const Duration(milliseconds: 500),
+        // Detection tuning. flutter_zxing decodes only a centred SQUARE crop
+        // of the camera frame (side = min(w,h) * cropPercent; default 0.5).
+        // An EAN-13 book barcode is wide and short, so at the default it must
+        // be framed almost perfectly to land inside the crop — on-device this
+        // made detection rare (Pixel 8a, 2026-07-09). Widen the crop to 90%
+        // and enable zxing-cpp's robustness passes (tryHarder = slower but
+        // thorough scan, tryInverted = light-on-dark barcodes, tryDownscale =
+        // extra pyramid pass for blurry/high-res frames). A 300ms retry cadence
+        // (default 1000ms) makes the scanner feel responsive. Mirrors the
+        // upstream guidance in khoren93/flutter_zxing issues #185/#197.
+        cropPercent: 0.9,
+        tryHarder: true,
+        tryInverted: true,
+        tryDownscale: true,
+        scanDelay: const Duration(milliseconds: 300),
       ),
     );
   }
