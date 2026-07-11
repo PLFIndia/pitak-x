@@ -1,0 +1,1 @@
+* New: sign in to GitHub and publish your library site in one tap — the app creates the repository and turns on Pages for you; share your site link from the drawer; fixed publish getting stuck forever
