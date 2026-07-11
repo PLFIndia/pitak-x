@@ -72,13 +72,6 @@ class _CapturingApi implements GitHubApi {
     return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
 
-  @override
-  Future<bool?> latestPagesBuildStatus({
-    required String owner,
-    required String repo,
-    required String token,
-  }) async => true;
-
   // Unused.
   @override
   Future<DeviceCodeGrant> requestDeviceCode({
@@ -92,6 +85,18 @@ class _CapturingApi implements GitHubApi {
   }) => throw UnimplementedError();
   @override
   Future<String> currentUserLogin(String token) => throw UnimplementedError();
+  @override
+  Future<RepoCreateResult> createUserRepo({
+    required String name,
+    required String token,
+  }) => throw UnimplementedError();
+  @override
+  Future<void> enablePages({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) => throw UnimplementedError();
   @override
   Future<List<GitHubRepo>> userRepos(String token) =>
       throw UnimplementedError();
@@ -112,8 +117,9 @@ void main() {
 
   PublishLibraryUseCase makeUseCase(
     GitHubApi api,
-    PublishManifestGateway manifest,
-  ) => PublishLibraryUseCase(
+    PublishManifestGateway manifest, {
+    PublishedFileFetcher? fetchPublishedFile,
+  }) => PublishLibraryUseCase(
     api: api,
     credentials: _FakeCreds(),
     manifest: manifest,
@@ -121,8 +127,79 @@ void main() {
     readLocalCover: (_) async => null,
     fetchRemoteCover: (_) async => null,
     buildViewerHtml: () async => utf8.encode('<html></html>'),
+    fetchPublishedFile: fetchPublishedFile,
+    sleep: (_) async {}, // no real waiting in tests
     clock: () => 1000,
   );
+
+  group('read-back verification (à la Localcart Orange)', () {
+    test(
+      'pagesLive true once the live site serves the published bytes',
+      () async {
+        final api = _CapturingApi();
+        final polled = <String>[];
+        final result =
+            await makeUseCase(
+              api,
+              _MemManifest(),
+              fetchPublishedFile: (url) async {
+                polled.add(url);
+                // Poll 1: stale content; poll 2: the committed bytes.
+                if (polled.length == 1) return utf8.encode('old');
+                return api.committed!
+                    .firstWhere((f) => f.path == 'books.json')
+                    .bytes;
+              },
+            ).call(
+              books: [book()],
+              activeLoanCounts: const {},
+              encodeBooksJson: encode,
+            );
+        expect((result as PublishSuccess).pagesLive, isTrue);
+        expect(polled, hasLength(2));
+        // Cache-busted, against the real site URL.
+        expect(
+          polled.first,
+          startsWith('https://me.github.io/lib/books.json?rb='),
+        );
+        expect(polled.first, isNot(equals(polled.last))); // unique busters
+      },
+    );
+
+    test('bounded: never-matching content stops after readBackAttempts '
+        'with pagesLive null (regression: infinite "Publishing…")', () async {
+      var polls = 0;
+      final result =
+          await makeUseCase(
+            _CapturingApi(),
+            _MemManifest(),
+            fetchPublishedFile: (_) async {
+              polls++;
+              return utf8.encode('never matches');
+            },
+          ).call(
+            books: [book()],
+            activeLoanCounts: const {},
+            encodeBooksJson: encode,
+          );
+      expect((result as PublishSuccess).pagesLive, isNull);
+      expect(polls, PublishLibraryUseCase.readBackAttempts);
+    });
+
+    test('fetch failures (null) are tolerated and stay bounded', () async {
+      final result =
+          await makeUseCase(
+            _CapturingApi(),
+            _MemManifest(),
+            fetchPublishedFile: (_) async => null,
+          ).call(
+            books: [book()],
+            activeLoanCounts: const {},
+            encodeBooksJson: encode,
+          );
+      expect((result as PublishSuccess).pagesLive, isNull);
+    });
+  });
 
   test('publishes books.json + index.html and returns the pages URL', () async {
     final api = _CapturingApi();
@@ -135,7 +212,8 @@ void main() {
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
     expect(s.pagesUrl, 'https://me.github.io/lib/');
-    expect(s.pagesLive, isTrue);
+    // No fetchPublishedFile wired ⇒ read-back skipped ⇒ unknown liveness.
+    expect(s.pagesLive, isNull);
     // books.json + index.html both in the commit.
     final paths = api.committed!.map((f) => f.path).toSet();
     expect(paths, containsAll(<String>['books.json', 'index.html']));

@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/labeled_value_field.dart';
 import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
@@ -25,8 +26,10 @@ import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// Tabs of the publish hub, in order.
 enum PublishTab {
@@ -88,6 +91,10 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   bool _loading = true;
   bool _signedIn = false;
   String? _targetRepo;
+
+  /// Set after a successful publish — drives the "your site" card with
+  /// copy + share actions.
+  String? _publishedUrl;
   List<GitHubRepo> _repos = const [];
   String? _status;
   bool _busy = false;
@@ -137,7 +144,12 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           _dismissCodeDialog();
           setState(() => _status = 'Signed in.');
           await _refresh();
-          await _loadRepos();
+          // One-tap setup (mirrors Localcart Orange): brand-new users get a
+          // publish-ready repo right away. Existing users keep their stored
+          // target untouched — setup only runs when none is set.
+          if (_targetRepo == null) {
+            await _setUpNewRepo();
+          }
         case DeviceFlowDenied():
           _dismissCodeDialog();
           setState(() => _status = 'Authorization denied.');
@@ -169,6 +181,9 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   ) async {
     setState(() => _status = 'Enter code $userCode at $verificationUri');
     _codeDialogOpen = true;
+    // Validated in the domain (safeGithubVerificationUri) so the check is
+    // unit-tested; null means "could not validate → show text, don't launch".
+    final safeUri = safeGithubVerificationUri(verificationUri);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -177,9 +192,22 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('1. Open this URL in your browser:'),
+            const Text('1. Open this page:'),
             const SizedBox(height: 4),
-            SelectableText(verificationUri),
+            if (safeUri != null)
+              FilledButton.icon(
+                icon: const Icon(Icons.open_in_browser),
+                label: Text(safeUri.host + safeUri.path),
+                // Opened EXTERNALLY (never an in-app webview), matching the
+                // bookmarks pattern — the user authorizes in their own
+                // browser session, and the app never sees their password.
+                onPressed: () =>
+                    launchUrl(safeUri, mode: LaunchMode.externalApplication),
+              )
+            else
+              // Unexpected URI shape: fall back to copyable text rather
+              // than launching something we could not validate.
+              SelectableText(verificationUri),
             const SizedBox(height: 12),
             const Text('2. Enter this code:'),
             const SizedBox(height: 4),
@@ -216,6 +244,111 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
       ),
     );
     _codeDialogOpen = false;
+  }
+
+  /// Prompts for a repo name, then creates/adopts it and enables Pages in
+  /// one go (SetupGitHubRepo). Loops on validation errors so a typo doesn't
+  /// dead-end the flow.
+  Future<void> _setUpNewRepo() async {
+    final creds = ref.read(publishCredentialStoreProvider);
+    final token = await creds.token();
+    if (token == null || !mounted) return;
+
+    var suggestion = 'my-library';
+    while (mounted) {
+      final name = await _promptRepoName(initial: suggestion);
+      if (name == null) {
+        // User backed out. With a target already stored nothing changes;
+        // otherwise nudge — the advanced picker below can also set one.
+        setState(
+          () => _status = _targetRepo == null
+              ? 'Signed in. Set up a repository to publish.'
+              : null,
+        );
+        return;
+      }
+      suggestion = name;
+      setState(() {
+        _busy = true;
+        _status = 'Setting up "$name" on GitHub…';
+      });
+      final result = await ref
+          .read(setupGitHubRepoProvider)
+          .call(token: token, repoName: name);
+      if (!mounted) return;
+      setState(() => _busy = false);
+      // .match maps Either→outcome (codebase convention, §5): a validation
+      // failure re-prompts with the rejected name; anything else ends the
+      // attempt with a safe, fixed message.
+      final retry = result.match(
+        (failure) {
+          if (failure is ValidationFailure) {
+            setState(() => _status = failure.message);
+            return true; // loop → re-prompt so the user can fix the name
+          }
+          setState(
+            () => _status =
+                'Could not set up the repository. Check your connection '
+                'and try again.',
+          );
+          return false;
+        },
+        (r) {
+          setState(
+            () => _status = r.created
+                ? 'Repository ${r.fullName} created — ready to publish!'
+                : 'Connected to your existing ${r.fullName} — ready to '
+                      'publish!',
+          );
+          return false;
+        },
+      );
+      if (!retry) {
+        await _refresh();
+        return;
+      }
+    }
+  }
+
+  Future<String?> _promptRepoName({required String initial}) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Name your library repository'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Pitak will create this public repository on your GitHub '
+              'account and turn on GitHub Pages — no dashboard visit '
+              'needed. The name becomes part of your public web address.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Repository name',
+                helperText: 'Letters, numbers, dots, dashes, underscores',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Later'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _signOut() async {
@@ -257,18 +390,57 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
       _busy = true;
       _status = 'Publishing…';
     });
-    final result = await ref.read(publishControllerProvider.notifier).publish();
+    // try/finally: _busy MUST clear on every path. Without this, any
+    // exception escaping publish() (the controller rethrows) killed this
+    // method mid-flight and the spinner ran forever (fail closed, §7).
+    PublishResult? result;
+    try {
+      result = await ref.read(publishControllerProvider.notifier).publish();
+    } on Exception {
+      // Fixed message (§5): exception text can carry transport/API detail.
+      result = const PublishFailure('Something went wrong. Please try again.');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          switch (result) {
+            case PublishSuccess(:final pagesUrl, :final pagesLive):
+              _publishedUrl = pagesUrl;
+              _status = (pagesLive ?? false)
+                  ? 'Published! Your site is live.'
+                  : 'Published! The commit is pushed — the site can take a '
+                        'minute to update.';
+              // The drawer's "Share Library Website" entry reads the
+              // published URL from the manifest — refresh it now.
+              ref.invalidate(publishedSiteUrlProvider);
+            case PublishFailure(:final reason):
+              _publishedUrl = null;
+              _status = 'Publish failed: $reason';
+            case null:
+              // Non-Exception Error escaped: still unfreeze the button.
+              _status = 'Something went wrong. Please try again.';
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _copyPublishedUrl() async {
+    final url = _publishedUrl;
+    if (url == null) return;
+    await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _status = switch (result) {
-        PublishSuccess(:final pagesUrl, :final pagesLive) =>
-          (pagesLive ?? false)
-              ? 'Published! Live at $pagesUrl'
-              : 'Published! It may take a minute to go live at $pagesUrl',
-        PublishFailure(:final reason) => 'Publish failed: $reason',
-      };
-    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Link copied')));
+  }
+
+  Future<void> _sharePublishedUrl() async {
+    final url = _publishedUrl;
+    if (url == null) return;
+    // Through the FileShareService seam (not share_plus directly) so widget
+    // tests can fake it — same pattern as PDF/backup export.
+    await ref.read(fileShareServiceProvider).shareText(url);
   }
 
   @override
@@ -311,11 +483,26 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (_targetRepo != null) Text('Current: $_targetRepo'),
+                if (_targetRepo != null) ...[
+                  Text('Current: $_targetRepo'),
+                  const SizedBox(height: 8),
+                ],
+                // Always available: create (or adopt) a public repo by name,
+                // Pages enabled automatically — no GitHub dashboard needed.
+                FilledButton.icon(
+                  onPressed: _busy ? null : _setUpNewRepo,
+                  icon: const Icon(Icons.add),
+                  label: Text(
+                    _targetRepo == null
+                        ? 'Set up a repository'
+                        : 'Create a new repository',
+                  ),
+                ),
                 const SizedBox(height: 8),
+                // Advanced path: pick one of your existing repos instead.
                 OutlinedButton(
                   onPressed: _busy ? null : _loadRepos,
-                  child: const Text('Load my repos'),
+                  child: const Text('Choose an existing repo (advanced)'),
                 ),
                 for (final r in _repos)
                   ListTile(
@@ -348,6 +535,32 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
                     )
                   : const Icon(Icons.cloud_upload),
               label: const Text('Publish catalogue now'),
+            ),
+          ),
+        if (_publishedUrl != null)
+          _SectionCard(
+            title: 'Your site',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(_publishedUrl!),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _copyPublishedUrl,
+                      icon: const Icon(Icons.copy, size: 18),
+                      label: const Text('Copy link'),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      onPressed: _sharePublishedUrl,
+                      icon: const Icon(Icons.share, size: 18),
+                      label: const Text('Share'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         if (_status != null) ...[const SizedBox(height: 8), Text(_status!)],

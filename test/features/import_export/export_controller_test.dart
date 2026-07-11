@@ -18,6 +18,10 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeShare implements FileShareService {
+  @override
+  Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
+      throw UnimplementedError();
+
   Uint8List? bytes;
   String? fileName;
   ShareOutcome outcome = ShareOutcome.success;

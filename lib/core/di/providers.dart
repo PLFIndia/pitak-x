@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
@@ -46,8 +47,10 @@ import 'package:pitaka/features/lookup/infrastructure/in_memory_isbn_cache.dart'
 import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_service.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
-    show RemoteCoverFetcher;
+    show PublishedFileFetcher, RemoteCoverFetcher;
+import 'package:pitaka/features/publish/application/setup_github_repo.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
@@ -224,10 +227,12 @@ Future<MarkWishlistPurchasedUseCase> markWishlistPurchasedUseCase(
 VaultRepository vaultRepository(VaultRepositoryRef ref) =>
     const FfiVaultRepository();
 
-/// Shared HTTP client for ISBN lookups (#30). Closed when disposed.
+/// Shared HTTP client (#30, closes audit m1). Timeout-bounded so a dead
+/// socket (OEM app freezers, dropped mobile data) fails closed instead of
+/// hanging callers forever. Closed when disposed.
 @Riverpod(keepAlive: true)
 http.Client httpClient(HttpClientRef ref) {
-  final client = http.Client();
+  final client = TimeoutHttpClient(http.Client());
   ref.onDispose(client.close);
   return client;
 }
@@ -266,6 +271,14 @@ PublishCredentialStore publishCredentialStore(PublishCredentialStoreRef ref) =>
 GitHubDeviceFlow gitHubDeviceFlow(GitHubDeviceFlowRef ref) =>
     GitHubDeviceFlow(ref.watch(gitHubApiProvider));
 
+/// One-tap repo setup: create/adopt the publish repo + enable Pages
+/// (mirrors Localcart Orange's github_setup).
+@riverpod
+SetupGitHubRepo setupGitHubRepo(SetupGitHubRepoRef ref) => SetupGitHubRepo(
+  ref.watch(gitHubApiProvider),
+  ref.watch(publishCredentialStoreProvider),
+);
+
 /// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
 /// with the publish downscale applied. Injected into the publish controller
 /// as a domain function type so the application layer never constructs the
@@ -278,6 +291,22 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
     if (raw == null) return null;
     // Downscale before publishing (400x600 q80) so the git push stays small.
     return ImageDownscaler.downscaleJpeg(raw) ?? raw;
+  };
+}
+
+/// Published-file fetcher for the post-publish read-back (à la Localcart
+/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
+/// failure; the read-back treats that as "not visible yet".
+@riverpod
+PublishedFileFetcher publishedFileFetcher(PublishedFileFetcherRef ref) {
+  final client = ref.watch(httpClientProvider);
+  return (url) async {
+    try {
+      final resp = await client.get(Uri.parse(url));
+      return resp.statusCode == 200 ? resp.bodyBytes : null;
+    } on Exception {
+      return null;
+    }
   };
 }
 
@@ -307,6 +336,17 @@ Future<FilePublishManifestStore> publishManifestStore(
 ) async {
   final dir = await ref.watch(appDocsDirProvider.future);
   return FilePublishManifestStore(baseDir: dir.path);
+}
+
+/// The live URL of the user's published library site, or null when nothing
+/// has been published yet. Derived from the publish manifest's `repo` field,
+/// which is only written AFTER a successful publish — so this is null for a
+/// repo that was created but never published. Public data (the URL is the
+/// whole point); no secrets involved.
+@riverpod
+Future<String?> publishedSiteUrl(PublishedSiteUrlRef ref) async {
+  final store = await ref.watch(publishManifestStoreProvider.future);
+  return githubPagesUrlFor(store.load().repo);
 }
 
 /// OS-level screen-capture protection toggle (Android FLAG_SECURE) for vault

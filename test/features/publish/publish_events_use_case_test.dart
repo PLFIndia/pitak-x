@@ -63,12 +63,6 @@ class _CapturingApi implements GitHubApi {
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<bool?> latestPagesBuildStatus({
-    required String owner,
-    required String repo,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
   Future<DeviceCodeGrant> requestDeviceCode({
     required String clientId,
     required String scope,
@@ -80,6 +74,18 @@ class _CapturingApi implements GitHubApi {
   }) => throw UnimplementedError();
   @override
   Future<String> currentUserLogin(String token) => throw UnimplementedError();
+  @override
+  Future<RepoCreateResult> createUserRepo({
+    required String name,
+    required String token,
+  }) => throw UnimplementedError();
+  @override
+  Future<void> enablePages({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) => throw UnimplementedError();
   @override
   Future<List<GitHubRepo>> userRepos(String token) =>
       throw UnimplementedError();

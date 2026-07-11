@@ -58,13 +58,19 @@ class _ScriptedApi implements GitHubApi {
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<bool?> latestPagesBuildStatus({
-    required String owner,
-    required String repo,
+  Future<String> currentUserLogin(String token) => throw UnimplementedError();
+  @override
+  Future<RepoCreateResult> createUserRepo({
+    required String name,
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<String> currentUserLogin(String token) => throw UnimplementedError();
+  Future<void> enablePages({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) => throw UnimplementedError();
   @override
   Future<List<GitHubRepo>> userRepos(String token) =>
       throw UnimplementedError();

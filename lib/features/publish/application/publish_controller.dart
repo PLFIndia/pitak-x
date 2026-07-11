@@ -34,6 +34,13 @@ class PublishController extends _$PublishController {
 
   /// Runs a publish end-to-end. Returns the result and also stores it in state.
   Future<PublishResult> publish() async {
+    // keepAlive for the duration of the run: this provider is autoDispose
+    // and the page only read()s it, so a long publish (the post-commit
+    // read-back waits up to 60 s) previously let Riverpod dispose+rebuild
+    // the element mid-flight — the final `state =` then hit the rebuilt
+    // element's already-completed future ("Bad state: Future already
+    // completed"). The link pins the element until the run finishes.
+    final link = ref.keepAlive();
     state = const AsyncLoading();
     try {
       final result = await _run();
@@ -42,6 +49,8 @@ class PublishController extends _$PublishController {
     } on Exception catch (e, st) {
       state = AsyncError(e, st);
       rethrow;
+    } finally {
+      link.close();
     }
   }
 
@@ -65,11 +74,13 @@ class PublishController extends _$PublishController {
     // infrastructure directly (§3.1).
     final fetchRemoteCover = ref.read(remoteCoverFetcherProvider);
     final buildViewerHtml = ref.read(viewerHtmlFactoryProvider);
+    final fetchPublishedFile = ref.read(publishedFileFetcherProvider);
     final useCase = PublishLibraryUseCase(
       api: api,
       credentials: credentials,
       manifest: manifest,
       coverIds: coverIds,
+      fetchPublishedFile: fetchPublishedFile,
       readLocalCover: (src) => _readLocalCover(coversDir, src),
       fetchRemoteCover: fetchRemoteCover,
       buildViewerHtml: () => buildViewerHtml(

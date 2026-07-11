@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/bookmarks/presentation/pages/bookmarks_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
@@ -88,6 +89,20 @@ class AppDrawer extends ConsumerWidget {
                     title: const Text('Bookmarks'),
                     onTap: () => _go(context, const BookmarksPage()),
                   ),
+                  // Shown only once a site exists (published at least once):
+                  // a share button with nothing to share would be a dead end.
+                  if (ref.watch(publishedSiteUrlProvider).valueOrNull
+                      case final String siteUrl)
+                    ListTile(
+                      leading: const Icon(Icons.ios_share),
+                      title: const Text('Share Library Website'),
+                      onTap: () {
+                        Navigator.of(context).pop(); // close the drawer
+                        // Through the FileShareService seam so tests can
+                        // fake the OS share sheet.
+                        ref.read(fileShareServiceProvider).shareText(siteUrl);
+                      },
+                    ),
                 ],
               ),
             ),

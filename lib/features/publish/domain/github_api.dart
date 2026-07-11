@@ -74,6 +74,28 @@ final class PollExpired extends PollResult {
   const PollExpired();
 }
 
+/// Outcome of a create-repo attempt (non-error paths only; transport and
+/// other HTTP failures throw [GitHubApiException]).
+sealed class RepoCreateResult {
+  const RepoCreateResult();
+}
+
+/// The repo was created; carries its default branch.
+final class RepoCreated extends RepoCreateResult {
+  /// Creates the result with the new repo's [defaultBranch].
+  const RepoCreated(this.defaultBranch);
+
+  /// The branch GitHub initialized the repo with (e.g. "main").
+  final String defaultBranch;
+}
+
+/// The name already exists on this account (HTTP 422) — callers adopt the
+/// existing repo instead of failing (idempotent reconnect, §12).
+final class RepoAlreadyExists extends RepoCreateResult {
+  /// Creates the already-exists result.
+  const RepoAlreadyExists();
+}
+
 /// Result of an atomic publish commit.
 sealed class PublishCommitResult {
   const PublishCommitResult();
@@ -135,6 +157,24 @@ abstract interface class GitHubApi {
   /// Lists repos the [token] can publish to (sorted by recently updated).
   Future<List<GitHubRepo>> userRepos(String token);
 
+  /// Creates a public repo [name] on the authenticated user's account with
+  /// `auto_init` (so the branch exists for the first publish commit).
+  /// 422 ⇒ [RepoAlreadyExists]; other failures throw [GitHubApiException].
+  Future<RepoCreateResult> createUserRepo({
+    required String name,
+    required String token,
+  });
+
+  /// Enables GitHub Pages on [owner]/[repo] serving from [branch]. Already
+  /// enabled (409) counts as success; other failures throw
+  /// [GitHubApiException].
+  Future<void> enablePages({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  });
+
   /// Resolves the Pages-serving (default) branch of [owner]/[repo], or null.
   Future<String?> defaultBranch({
     required String owner,
@@ -161,12 +201,5 @@ abstract interface class GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
-  });
-
-  /// Best-effort Pages build status: true=built, false=errored, null=unknown.
-  Future<bool?> latestPagesBuildStatus({
-    required String owner,
-    required String repo,
-    required String token,
   });
 }

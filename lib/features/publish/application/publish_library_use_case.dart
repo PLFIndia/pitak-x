@@ -24,6 +24,7 @@ import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
@@ -41,7 +42,7 @@ enum PublishPhase {
   /// Tree + commit + ref move.
   committing,
 
-  /// GitHub is building the page (best-effort).
+  /// Waiting for the live site to serve the new content (bounded).
   pagesBuilding,
 }
 
@@ -69,7 +70,9 @@ final class PublishSuccess extends PublishResult {
   /// True when availability was omitted (vault locked at publish).
   final bool availabilityOmitted;
 
-  /// Pages build status: true=live, false=errored, null=unknown.
+  /// True when the live site was VERIFIED serving this publish's bytes
+  /// (read-back, à la Localcart Orange); null when the bounded wait ran out
+  /// before the Pages build landed (it usually finishes moments later).
   final bool? pagesLive;
 }
 
@@ -91,6 +94,10 @@ typedef RemoteCoverFetcher = Future<List<int>?> Function(String url);
 /// Builds the viewer HTML from the bundled template with placeholders filled.
 typedef ViewerHtmlBuilderFn = Future<List<int>> Function();
 
+/// Fetches a PUBLIC published file's bytes from [url] (no auth), or null on
+/// any failure. Used for the post-publish read-back only.
+typedef PublishedFileFetcher = Future<List<int>?> Function(String url);
+
 /// Orchestrates a single publish run.
 final class PublishLibraryUseCase {
   /// Creates the use case over its ports.
@@ -102,6 +109,8 @@ final class PublishLibraryUseCase {
     required LocalCoverReader readLocalCover,
     required RemoteCoverFetcher fetchRemoteCover,
     required ViewerHtmlBuilderFn buildViewerHtml,
+    PublishedFileFetcher? fetchPublishedFile,
+    Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
        _credentials = credentials,
@@ -110,6 +119,8 @@ final class PublishLibraryUseCase {
        _readLocalCover = readLocalCover,
        _fetchRemoteCover = fetchRemoteCover,
        _buildViewerHtml = buildViewerHtml,
+       _fetchPublishedFile = fetchPublishedFile,
+       _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubApi _api;
@@ -119,7 +130,19 @@ final class PublishLibraryUseCase {
   final LocalCoverReader _readLocalCover;
   final RemoteCoverFetcher _fetchRemoteCover;
   final ViewerHtmlBuilderFn _buildViewerHtml;
+
+  /// Null ⇒ read-back skipped (tests / no network port wired).
+  final PublishedFileFetcher? _fetchPublishedFile;
+  final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
+
+  /// Read-back budget: [readBackAttempts] polls, [readBackInterval] apart
+  /// (Orange budgets 120 s; 60 s covers typical Pages builds and keeps the
+  /// worst-case wait tolerable on a phone). ALWAYS terminates.
+  static const int readBackAttempts = 12;
+
+  /// Pause between read-back polls.
+  static const Duration readBackInterval = Duration(seconds: 5);
 
   /// Runs the publish. [books] are all library books (removed ones are filtered
   /// here). `activeLoanCounts` is the active-loan count per book id, or null
@@ -260,18 +283,17 @@ final class PublishLibraryUseCase {
           ),
         );
         phase(PublishPhase.pagesBuilding);
-        bool? pagesLive;
-        try {
-          pagesLive = await _api.latestPagesBuildStatus(
-            owner: owner,
-            repo: repo,
-            token: token,
-          );
-        } on GitHubApiException {
-          pagesLive = null;
-        }
+        // Single source of truth for the site URL (github_pages_url.dart),
+        // shared with the drawer's "Share Library Website" action.
+        final pagesUrl =
+            githubPagesUrlFor(ownerRepo) ?? 'https://$owner.github.io/$repo/';
+        // Read-back verification (à la Localcart Orange github_pages.rs §6):
+        // poll the LIVE books.json with a cache-buster until it serves
+        // exactly the bytes we just published. Bounded — it can never spin
+        // forever — and "live" means the real site, not a build-status API.
+        final pagesLive = await _verifyLive(pagesUrl, booksJson, now);
         return PublishSuccess(
-          pagesUrl: 'https://$owner.github.io/$repo/',
+          pagesUrl: pagesUrl,
           uploadedPaths: uploadedPaths,
           availabilityOmitted: availabilityOmitted,
           pagesLive: pagesLive,
@@ -281,6 +303,33 @@ final class PublishLibraryUseCase {
         // inject arbitrary text into it (§5 "safe message only").
         return PublishFailure(gitHubHttpErrorMessage(code));
     }
+  }
+
+  /// Polls the live site (bounded) until books.json serves [expected].
+  /// Returns true when verified, null when the budget ran out or no fetch
+  /// port is wired. Never throws, never loops unbounded.
+  Future<bool?> _verifyLive(
+    String pagesUrl,
+    List<int> expected,
+    int revision,
+  ) async {
+    final fetch = _fetchPublishedFile;
+    if (fetch == null) return null;
+    for (var attempt = 0; attempt < readBackAttempts; attempt++) {
+      await _sleep(readBackInterval);
+      // Cache-buster per attempt so a CDN can't serve a stale copy.
+      final body = await fetch('${pagesUrl}books.json?rb=$revision-$attempt');
+      if (body != null && _sameBytes(body, expected)) return true;
+    }
+    return null;
+  }
+
+  static bool _sameBytes(List<int> a, List<int> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   String? _availabilityFor(Book book, Map<int, int>? counts) {

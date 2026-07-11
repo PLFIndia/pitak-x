@@ -141,6 +141,56 @@ final class HttpGitHubApi implements GitHubApi {
   }
 
   @override
+  Future<RepoCreateResult> createUserRepo({
+    required String name,
+    required String token,
+  }) async {
+    // Mirrors Localcart Orange's github_setup.rs: auto_init so the branch
+    // exists for the first commit; 422 = "name already exists" → the caller
+    // adopts the repo (idempotent reconnect / reinstall, §12).
+    final resp = await _post(
+      _apiBase.replace(path: '/user/repos'),
+      headers: _authHeaders(token),
+      jsonBody: {
+        'name': name,
+        'private': false,
+        'auto_init': true,
+        'description': 'Library catalogue published by Pitak',
+      },
+    );
+    if (resp.statusCode == 422) return const RepoAlreadyExists();
+    if (resp.statusCode >= 400) {
+      throw GitHubApiException(
+        'repo create: HTTP ${resp.statusCode} ${_excerpt(resp.body)}',
+      );
+    }
+    final branch = _decodeMap(resp.body)['default_branch'] as String? ?? 'main';
+    return RepoCreated(branch);
+  }
+
+  @override
+  Future<void> enablePages({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) async {
+    final resp = await _post(
+      _apiBase.replace(path: '/repos/$owner/$repo/pages'),
+      headers: _authHeaders(token),
+      jsonBody: {
+        'source': {'branch': branch},
+      },
+    );
+    // 409 = Pages already enabled — converged, not an error (§12).
+    if (resp.statusCode >= 400 && resp.statusCode != 409) {
+      throw GitHubApiException(
+        'enable Pages: HTTP ${resp.statusCode} ${_excerpt(resp.body)}',
+      );
+    }
+  }
+
+  @override
   Future<String?> defaultBranch({
     required String owner,
     required String repo,
@@ -295,25 +345,6 @@ final class HttpGitHubApi implements GitHubApi {
     return PublishCommitSuccess(newCommitSha, [
       for (final f in files.where((f) => f.upload)) f.path,
     ]);
-  }
-
-  @override
-  Future<bool?> latestPagesBuildStatus({
-    required String owner,
-    required String repo,
-    required String token,
-  }) async {
-    final resp = await _client.get(
-      _apiBase.replace(path: '/repos/$owner/$repo/pages/builds/latest'),
-      headers: _authHeaders(token),
-    );
-    if (resp.statusCode >= 400) return null; // no Pages scope / not found
-    final status = _decodeMap(resp.body)['status'] as String?;
-    return switch (status) {
-      'built' => true,
-      'errored' => false,
-      _ => null,
-    };
   }
 
   // --- helpers -------------------------------------------------------------

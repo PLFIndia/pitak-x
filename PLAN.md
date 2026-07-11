@@ -1,4 +1,68 @@
-# Task: Bake in Pitak's GitHub OAuth client id (Device Flow) — DONE 2026-07-11
+# Task: Publish UX + reliability batch — DONE 2026-07-11 (device-verified)
+
+## Result (in addition to the one-tap setup below, all in one batch)
+- "Create a new repository" always available on the Connection tab (user
+  decision): prompts for a name, creates/adopts + enables Pages, switches
+  the stored target. Backing out changes nothing.
+- Publish success now shows a "Your site" card (URL + Copy link + Share via
+  share sheet); `FileShareService` gained `shareText`.
+- Drawer: "Share Library Website" entry, visible only once a site exists
+  (derived from the publish manifest via new pure `githubPagesUrlFor()` —
+  single source of truth with the publish success URL).
+- Fixed infinite "Publishing…" spinner — three stacked causes, all fixed:
+  1. shared http.Client had no timeout (audit m1) → new `TimeoutHttpClient`
+     decorator (60 s connect + idle-body), OEM app-freezer hangs now fail
+     closed with the existing safe messages;
+  2. `_publish()` had no try/finally → `_busy` now clears on every path;
+  3. autoDispose PublishController was disposed mid-run during the long
+     read-back → `ref.keepAlive()` link held for the duration of publish()
+     (fixes "Bad state: Future already completed", seen in device logs).
+- Replaced the unreliable `latestPagesBuildStatus` API with Localcart
+  Orange's read-back verification (`github_pages.rs` step 6): poll the LIVE
+  books.json cache-busted, byte-compare against published content, bounded
+  12×5 s — "live" is verified truth, and the wait always terminates.
+- Device-verified on OnePlus 9R: sign-in → auto repo → publish → verified
+  live → share. 645/645 tests, analyze/format clean.
+
+---
+
+# Task: One-tap GitHub Pages setup (port of Localcart Orange) — DONE 2026-07-11
+
+## Understanding
+- Replicate Orange's `github_setup.rs`: after device-flow sign-in the app
+  itself creates the publish repo, resolves the default branch, and enables
+  Pages — zero GitHub-dashboard trips.
+- User decisions: repo name is USER INPUT (prompted, default `my-library`,
+  not a fixed const like Orange); EXISTING users keep their stored target —
+  setup only runs when no target repo is stored.
+
+## Result
+- `github_api.dart` (domain port): + `createUserRepo` (sealed
+  `RepoCreateResult`: `RepoCreated(defaultBranch)` / `RepoAlreadyExists`
+  for 422-adopt) and `enablePages` (409 already-enabled = success).
+- `http_github_api.dart`: both endpoints implemented
+  (`POST /user/repos` with auto_init+public, `POST /repos/{o}/{r}/pages`),
+  idempotent semantics mirroring Orange's Rust core.
+- NEW `application/setup_github_repo.dart` — `SetupGitHubRepo` use case:
+  validate name (hostile-input regex `[A-Za-z0-9._-]{1,100}`, rejects
+  `.`/`..`) → `GET /user` → create-or-adopt → branch → enable Pages →
+  `setTargetRepo`. Returns `Either<Failure, GitHubSetupResult>`; fails
+  closed with typed failures (new `NetworkFailure` added to core/error).
+- `publish_page.dart`: on `DeviceFlowSuccess` with NO stored target → repo
+  name prompt → setup (validation errors re-prompt). Stored target →
+  untouched, no prompt. Repo picker kept as "Choose an existing repo
+  (advanced)"; "Set up a repository" button shown when no target.
+- Tests (+23): `setup_github_repo_test.dart` mirrors Orange's four scenarios
+  (fresh account / 422 adopt with real branch / Pages failure / bad token)
+  plus hostile-name table; HTTP endpoint tests; widget tests for both the
+  fresh-user prompt path and the existing-user keep-target path.
+- Verified: `dart analyze lib test` 0 · full `flutter test` 635 pass ·
+  format clean · build_runner regenerated providers.
+- Approach credited to Localcart Orange `github_setup.rs` (localcart-code).
+
+---
+
+# Prior task: Bake in Pitak's GitHub OAuth client id (Device Flow) — DONE 2026-07-11
 
 ## Understanding
 - Replace the "user registers their own OAuth App and pastes a Client ID" flow

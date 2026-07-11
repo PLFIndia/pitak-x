@@ -75,6 +75,102 @@ void main() {
     });
   });
 
+  group('repo setup endpoints', () {
+    test(
+      'createUserRepo posts auto_init+public and parses the branch',
+      () async {
+        late Map<String, dynamic> sent;
+        final svc = api(
+          MockClient((req) async {
+            expect(req.url.path, '/user/repos');
+            expect(req.headers['Authorization'], 'Bearer tok');
+            sent = jsonDecode(req.body) as Map<String, dynamic>;
+            return http.Response(jsonEncode({'default_branch': 'main'}), 201);
+          }),
+        );
+        final r = await svc.createUserRepo(name: 'my-library', token: 'tok');
+        expect(r, isA<RepoCreated>());
+        expect((r as RepoCreated).defaultBranch, 'main');
+        expect(sent['name'], 'my-library');
+        expect(sent['auto_init'], isTrue);
+        expect(sent['private'], isFalse);
+      },
+    );
+
+    test('createUserRepo maps 422 to RepoAlreadyExists', () async {
+      final svc = api(
+        MockClient(
+          (req) async => http.Response(
+            jsonEncode({'message': 'name already exists on this account'}),
+            422,
+          ),
+        ),
+      );
+      final r = await svc.createUserRepo(name: 'x', token: 'tok');
+      expect(r, isA<RepoAlreadyExists>());
+    });
+
+    test('createUserRepo throws on other HTTP errors', () async {
+      final svc = api(
+        MockClient(
+          (req) async =>
+              http.Response(jsonEncode({'message': 'Bad credentials'}), 401),
+        ),
+      );
+      expect(
+        () => svc.createUserRepo(name: 'x', token: 'bad'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test(
+      'enablePages posts the branch source; 409 counts as success',
+      () async {
+        var calls = 0;
+        final svc = api(
+          MockClient((req) async {
+            calls++;
+            expect(req.url.path, '/repos/o/r/pages');
+            final body = jsonDecode(req.body) as Map<String, dynamic>;
+            expect((body['source'] as Map)['branch'], 'main');
+            // First call: created. Second call: already enabled.
+            return http.Response(
+              calls == 1 ? '{}' : jsonEncode({'message': 'already enabled'}),
+              calls == 1 ? 201 : 409,
+            );
+          }),
+        );
+        await svc.enablePages(
+          owner: 'o',
+          repo: 'r',
+          branch: 'main',
+          token: 't',
+        );
+        await svc.enablePages(
+          owner: 'o',
+          repo: 'r',
+          branch: 'main',
+          token: 't',
+        );
+        expect(calls, 2); // both completed without throwing
+      },
+    );
+
+    test('enablePages throws on a real error', () async {
+      final svc = api(
+        MockClient(
+          (req) async =>
+              http.Response(jsonEncode({'message': 'forbidden'}), 403),
+        ),
+      );
+      expect(
+        () =>
+            svc.enablePages(owner: 'o', repo: 'r', branch: 'main', token: 't'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+  });
+
   group('commitFiles (Git Data atomic flow)', () {
     test('blobs → tree → commit → updateRef on a non-empty repo', () async {
       final calls = <String>[];

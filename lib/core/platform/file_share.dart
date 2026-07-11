@@ -34,7 +34,6 @@ enum ShareOutcome {
 ///
 /// Kept as an interface (not a single function) so it can be provided via DI
 /// and overridden with a fake in widget tests — the seam is the point.
-// ignore: one_member_abstracts
 abstract interface class FileShareService {
   /// Presents the share sheet for [bytes] under [fileName] with [mimeType].
   ///
@@ -46,6 +45,9 @@ abstract interface class FileShareService {
     required String mimeType,
     Rect? sharePositionOrigin,
   });
+
+  /// Presents the share sheet for plain [text] (e.g. the published site URL).
+  Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin});
 }
 
 /// `share_plus`-backed implementation.
@@ -69,10 +71,23 @@ final class SharePlusFileShareService implements FileShareService {
         sharePositionOrigin: sharePositionOrigin,
       ),
     );
-    return switch (result.status) {
-      ShareResultStatus.success => ShareOutcome.success,
-      ShareResultStatus.dismissed => ShareOutcome.dismissed,
-      ShareResultStatus.unavailable => ShareOutcome.unavailable,
-    };
+    return _outcome(result);
   }
+
+  @override
+  Future<ShareOutcome> shareText(
+    String text, {
+    Rect? sharePositionOrigin,
+  }) async {
+    final result = await SharePlus.instance.share(
+      ShareParams(text: text, sharePositionOrigin: sharePositionOrigin),
+    );
+    return _outcome(result);
+  }
+
+  static ShareOutcome _outcome(ShareResult result) => switch (result.status) {
+    ShareResultStatus.success => ShareOutcome.success,
+    ShareResultStatus.dismissed => ShareOutcome.dismissed,
+    ShareResultStatus.unavailable => ShareOutcome.unavailable,
+  };
 }

@@ -17,6 +17,10 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 
 /// Captures what would be handed to the OS share sheet.
 class _FakeShare implements FileShareService {
+  @override
+  Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
+      throw UnimplementedError();
+
   String? fileName;
   String? mimeType;
   Uint8List? bytes;

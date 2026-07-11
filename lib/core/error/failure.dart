@@ -77,6 +77,14 @@ final class StorageFailure extends Failure {
   final String reason;
 }
 
+/// A network operation failed (unreachable host, timeout, or an HTTP-level
+/// error from a remote API). The UI shows a generic "check your connection"
+/// message — transport detail never reaches the user verbatim.
+final class NetworkFailure extends Failure {
+  /// Creates a network failure.
+  const NetworkFailure();
+}
+
 /// An unexpected error (a bug). Caller should log, wipe sensitive state, and
 /// fail closed — never expose [debugReason] to the user.
 final class UnexpectedFailure extends Failure {

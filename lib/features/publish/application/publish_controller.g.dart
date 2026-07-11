@@ -6,7 +6,7 @@ part of 'publish_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$publishControllerHash() => r'fb921e612dd2739843eaafffc64575aa9d5b55b3';
+String _$publishControllerHash() => r'b4707db81a9ba04908f967fde013b2f3553d0796';
 
 /// Runs a publish and exposes its [PublishResult]; idle until [publish] runs.
 ///

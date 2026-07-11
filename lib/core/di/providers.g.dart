@@ -380,9 +380,11 @@ final vaultRepositoryProvider = AutoDisposeProvider<VaultRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef VaultRepositoryRef = AutoDisposeProviderRef<VaultRepository>;
-String _$httpClientHash() => r'ed4c948b2fa39b9289a939034474b5f5551ff3b4';
+String _$httpClientHash() => r'82c4477c8bb11828af05825f58ded7ada98e8f2a';
 
-/// Shared HTTP client for ISBN lookups (#30). Closed when disposed.
+/// Shared HTTP client (#30, closes audit m1). Timeout-bounded so a dead
+/// socket (OEM app freezers, dropped mobile data) fails closed instead of
+/// hanging callers forever. Closed when disposed.
 ///
 /// Copied from [httpClient].
 @ProviderFor(httpClient)
@@ -499,6 +501,26 @@ final gitHubDeviceFlowProvider = AutoDisposeProvider<GitHubDeviceFlow>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubDeviceFlowRef = AutoDisposeProviderRef<GitHubDeviceFlow>;
+String _$setupGitHubRepoHash() => r'9281c5b0bdaf50685d0cdf621a85cf7445784933';
+
+/// One-tap repo setup: create/adopt the publish repo + enable Pages
+/// (mirrors Localcart Orange's github_setup).
+///
+/// Copied from [setupGitHubRepo].
+@ProviderFor(setupGitHubRepo)
+final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
+  setupGitHubRepo,
+  name: r'setupGitHubRepoProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$setupGitHubRepoHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
 String _$remoteCoverFetcherHash() =>
     r'd31a4be4499dd9feb7175cb4599470197a94eb4f';
 
@@ -523,6 +545,29 @@ final remoteCoverFetcherProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
+String _$publishedFileFetcherHash() =>
+    r'2e06db835520facdf9a4b173f72cea48e65d2ef4';
+
+/// Published-file fetcher for the post-publish read-back (à la Localcart
+/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
+/// failure; the read-back treats that as "not visible yet".
+///
+/// Copied from [publishedFileFetcher].
+@ProviderFor(publishedFileFetcher)
+final publishedFileFetcherProvider =
+    AutoDisposeProvider<PublishedFileFetcher>.internal(
+      publishedFileFetcher,
+      name: r'publishedFileFetcherProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedFileFetcherHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedFileFetcherRef = AutoDisposeProviderRef<PublishedFileFetcher>;
 String _$viewerHtmlFactoryHash() => r'341b7961fe4a972e730e7da176011335efce9112';
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
@@ -606,6 +651,29 @@ final publishManifestStoreProvider =
 // ignore: unused_element
 typedef PublishManifestStoreRef =
     AutoDisposeFutureProviderRef<FilePublishManifestStore>;
+String _$publishedSiteUrlHash() => r'b1c5668f3b27c7f3570b9d5cf877fac1410f06c7';
+
+/// The live URL of the user's published library site, or null when nothing
+/// has been published yet. Derived from the publish manifest's `repo` field,
+/// which is only written AFTER a successful publish — so this is null for a
+/// repo that was created but never published. Public data (the URL is the
+/// whole point); no secrets involved.
+///
+/// Copied from [publishedSiteUrl].
+@ProviderFor(publishedSiteUrl)
+final publishedSiteUrlProvider = AutoDisposeFutureProvider<String?>.internal(
+  publishedSiteUrl,
+  name: r'publishedSiteUrlProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$publishedSiteUrlHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedSiteUrlRef = AutoDisposeFutureProviderRef<String?>;
 String _$screenSecurityHash() => r'e9cf5896b361c1d071b4ac76293d15cf98e29b89';
 
 /// OS-level screen-capture protection toggle (Android FLAG_SECURE) for vault
