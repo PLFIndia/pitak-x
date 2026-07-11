@@ -3,11 +3,13 @@
 /// Port of Kotlin `GitHubDeviceFlow`. Emits a [DeviceFlowState] stream: request
 /// a device+user code, surface it for the user to enter in their browser, then
 /// poll until the user authorizes (Success), denies, lets it expire, or it
-/// fails. The user registers their OWN OAuth App and supplies the client id —
-/// zero developer infrastructure (§1.1).
+/// fails. Uses Pitak's baked-in public OAuth client id by default
+/// (`github_oauth_app.dart`) — the Device Flow needs no client secret, so the
+/// user no longer has to register their own OAuth App.
 library;
 
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 
 /// States emitted while running the device flow.
 sealed class DeviceFlowState {
@@ -80,9 +82,10 @@ final class GitHubDeviceFlow {
   /// `public_repo` suffices for publishing to a user-owned public repo (§1.1).
   static const String defaultScope = 'public_repo';
 
-  /// Drives the flow for [clientId], emitting states until a terminal one.
-  Stream<DeviceFlowState> start(
-    String clientId, {
+  /// Drives the flow, emitting states until a terminal one. [clientId]
+  /// defaults to Pitak's baked-in public OAuth App id; tests may override.
+  Stream<DeviceFlowState> start({
+    String clientId = githubOAuthClientId,
     String scope = defaultScope,
   }) async* {
     yield const DeviceFlowStarting();

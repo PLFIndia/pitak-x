@@ -87,7 +87,6 @@ class _ConnectionTab extends ConsumerStatefulWidget {
 class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   bool _loading = true;
   bool _signedIn = false;
-  String? _clientId;
   String? _targetRepo;
   List<GitHubRepo> _repos = const [];
   String? _status;
@@ -106,23 +105,18 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   Future<void> _refresh() async {
     final creds = ref.read(publishCredentialStoreProvider);
     final token = await creds.token();
-    final clientId = await creds.clientId();
     final repo = await creds.targetRepo();
     if (!mounted) return;
     setState(() {
       _signedIn = token != null;
-      _clientId = clientId;
       _targetRepo = repo;
       _loading = false;
     });
   }
 
   Future<void> _signIn() async {
-    final clientId = await _promptClientId();
-    if (clientId == null || clientId.trim().isEmpty) return;
-    await ref.read(publishCredentialStoreProvider).setClientId(clientId.trim());
-    if (!mounted) return;
-
+    // No client-id prompt: Pitak ships its own public Device-Flow client id
+    // (github_oauth_app.dart), so sign-in starts immediately.
     final flow = ref.read(gitHubDeviceFlowProvider);
     // The flow is an async GENERATOR: it is suspended at `yield` until this
     // loop asks for the next state. Awaiting the user-code dialog here would
@@ -130,7 +124,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     // never complete while the user follows the on-screen instructions. So
     // the dialog is fired unawaited and dismissed when a terminal state
     // arrives (same pattern as gh CLI: poll in the background, UI on top).
-    await for (final s in flow.start(clientId.trim())) {
+    await for (final s in flow.start()) {
       if (!mounted) return;
       switch (s) {
         case DeviceFlowStarting():
@@ -156,8 +150,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           // must not reach the UI verbatim.
           setState(
             () => _status =
-                'Sign-in failed. Check your connection and '
-                'Client ID, then try again.',
+                'Sign-in failed. Check your connection and try again.',
           );
       }
     }
@@ -168,45 +161,6 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   void _dismissCodeDialog() {
     if (!_codeDialogOpen || !mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
-  }
-
-  Future<String?> _promptClientId() {
-    final controller = TextEditingController(text: _clientId ?? '');
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('GitHub OAuth client id'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Register your own OAuth App at github.com (Settings → '
-              'Developer settings → OAuth Apps), enable Device Flow, and '
-              'paste its Client ID here. Pitak ships no credentials of '
-              'its own.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'Client ID',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text),
-            child: const Text('Continue'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _showUserCodeDialog(

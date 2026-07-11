@@ -1,10 +1,13 @@
 /// Credential store port for GitHub publishing (domain, §3.3, §6.3, #32).
 ///
-/// Holds the user's GitHub access token, OAuth client id, and target repo.
-/// Port of Kotlin `GitHubCredentialStore`. Every value belongs to the user; the
-/// app holds it on their behalf and only ever sends the token to github.com /
+/// Holds the user's GitHub access token and target repo. Port of Kotlin
+/// `GitHubCredentialStore`. Every value belongs to the user; the app holds it
+/// on their behalf and only ever sends the token to github.com /
 /// api.github.com. The token is a secret → hardware-backed secure storage
 /// (Keystore/Keychain), never shared_prefs or logs.
+///
+/// The OAuth client id is no longer stored: Pitak ships its own public
+/// Device-Flow client id as a compile-time const (`github_oauth_app.dart`).
 library;
 
 /// Narrow read view used by the publish orchestrator (token + target repo).
@@ -24,12 +27,6 @@ abstract interface class PublishCredentialStore
 
   /// Clears the access token (sign out).
   Future<void> clearToken();
-
-  /// The user's OAuth App client id, or null when unset.
-  Future<String?> clientId();
-
-  /// Persists the OAuth App client [id].
-  Future<void> setClientId(String id);
 
   /// Persists the "owner/repo" publish [target].
   Future<void> setTargetRepo(String target);

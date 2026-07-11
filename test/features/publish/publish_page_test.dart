@@ -23,14 +23,10 @@ class _FakeCreds implements PublishCredentialStore {
   @override
   Future<String?> targetRepo() async => null;
   @override
-  Future<String?> clientId() async => null;
-  @override
   Future<void> clearToken() async {
     _token = null;
   }
 
-  @override
-  Future<void> setClientId(String id) async {}
   @override
   Future<void> setTargetRepo(String target) async {}
   @override
@@ -211,15 +207,9 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      // No client-id prompt anymore: Pitak ships its own public client id,
+      // so tapping sign-in starts the device flow immediately.
       await tester.tap(find.text('Sign in to GitHub'));
-      await tester.pumpAndSettle();
-
-      // Client-ID prompt.
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Client ID'),
-        'my-client-id',
-      );
-      await tester.tap(find.text('Continue'));
       await tester.pumpAndSettle();
 
       // The flow must have polled and stored the token WITHOUT anyone

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 
 /// Scriptable GitHubApi for the device-flow state machine.
 class _ScriptedApi implements GitHubApi {
@@ -9,17 +10,23 @@ class _ScriptedApi implements GitHubApi {
   final List<PollResult> _polls;
   int _i = 0;
 
+  /// The clientId the flow actually sent — asserted in the baked-in-id test.
+  String? seenClientId;
+
   @override
   Future<DeviceCodeGrant> requestDeviceCode({
     required String clientId,
     required String scope,
-  }) async => const DeviceCodeGrant(
-    deviceCode: 'DC',
-    userCode: 'WXYZ-1234',
-    verificationUri: 'https://github.test/login/device',
-    expiresInSeconds: 900,
-    intervalSeconds: 1,
-  );
+  }) async {
+    seenClientId = clientId;
+    return const DeviceCodeGrant(
+      deviceCode: 'DC',
+      userCode: 'WXYZ-1234',
+      verificationUri: 'https://github.test/login/device',
+      expiresInSeconds: 900,
+      intervalSeconds: 1,
+    );
+  }
 
   @override
   Future<PollResult> pollAccessToken({
@@ -74,7 +81,7 @@ void main() {
       ]),
       sleep: noSleep,
     );
-    final states = await flow.start('client-id').toList();
+    final states = await flow.start(clientId: 'client-id').toList();
     expect(states[0], isA<DeviceFlowStarting>());
     expect(states[1], isA<DeviceFlowAwaitingUser>());
     expect((states[1] as DeviceFlowAwaitingUser).userCode, 'WXYZ-1234');
@@ -87,8 +94,16 @@ void main() {
       _ScriptedApi([const PollDenied()]),
       sleep: noSleep,
     );
-    final states = await flow.start('cid').toList();
+    final states = await flow.start(clientId: 'cid').toList();
     expect(states.last, isA<DeviceFlowDenied>());
+  });
+
+  test('uses the baked-in Pitak client id by default', () async {
+    final api = _ScriptedApi([const PollAuthorized('T', 'public_repo')]);
+    final flow = GitHubDeviceFlow(api, sleep: noSleep);
+    await flow.start().toList();
+    expect(api.seenClientId, githubOAuthClientId);
+    expect(githubOAuthClientId, 'Ov23liagHDJ1Ek6ROWKY');
   });
 
   test('slow_down keeps polling until success', () async {
@@ -100,7 +115,7 @@ void main() {
       ]),
       sleep: noSleep,
     );
-    final states = await flow.start('cid').toList();
+    final states = await flow.start(clientId: 'cid').toList();
     expect(states.last, isA<DeviceFlowSuccess>());
   });
 }

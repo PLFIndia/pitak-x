@@ -1,4 +1,36 @@
-# Task: Deep security audit — information-leak vectors (Pitak Flutter)
+# Task: Bake in Pitak's GitHub OAuth client id (Device Flow) — DONE 2026-07-11
+
+## Understanding
+- Replace the "user registers their own OAuth App and pastes a Client ID" flow
+  with a baked-in public client id (`Ov23liagHDJ1Ek6ROWKY`), like Localcart
+  Orange (`github_device.rs:26`) and `gh` CLI. Device Flow (RFC 8628) needs no
+  client secret, so the id is public by design — no §6 secret-handling rules
+  apply to it.
+
+## Result
+- NEW `lib/features/publish/domain/github_oauth_app.dart` — compile-time const
+  `githubOAuthClientId`, with a doc comment explaining why baking it in is safe.
+- `github_device_flow.dart` — `start()` now takes an optional named `clientId`
+  defaulting to the baked-in id (tests can still inject).
+- `publish_credential_store.dart` — `clientId()`/`setClientId()` removed from
+  the port (single source of truth: the const, not storage).
+- `secure_storage_publish_credential_store.dart` — clientId methods removed;
+  one-shot idempotent delete of the stale legacy `gh_client_id` secure-storage
+  entry on first `token()` read (data minimization).
+- `publish_page.dart` — client-id prompt dialog deleted; "Sign in to GitHub"
+  starts the device flow immediately; failure copy no longer mentions Client ID.
+- Tests: `github_device_flow_test.dart` gains a regression test asserting the
+  flow sends the baked-in id by default; `publish_page_test.dart` sign-in test
+  updated (no prompt step); fakes updated to the narrowed port.
+- Verified: `dart analyze lib test` 0 issues · full `flutter test` 605 pass ·
+  `dart format` clean. Approach credited to Localcart Orange's
+  `github_device.rs` / `gh` CLI device flow.
+- NOTE: the GitHub OAuth App must have "Device Flow" enabled in its settings,
+  or sign-in will fail at the device-code step.
+
+---
+
+# Prior task: Deep security audit — information-leak vectors (Pitak Flutter)
 
 ## VERIFICATION PASS (2026-06-30) — findings checked against the live `fixes` branch
 
