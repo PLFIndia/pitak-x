@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
+import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
+import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
@@ -49,6 +51,11 @@ class PitakaApp extends ConsumerWidget {
 
     return MaterialApp(
       title: 'Pitak',
+      // EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
+      // navigation bar; this pads every route's content clear of it once,
+      // globally, instead of at each scrollable (decision A).
+      builder: (context, child) =>
+          EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
       themeMode: themeMode,
       theme: ThemeData(colorScheme: scheme, useMaterial3: true),
       darkTheme: ThemeData(
@@ -58,7 +65,10 @@ class PitakaApp extends ConsumerWidget {
         ),
         useMaterial3: true,
       ),
-      home: const AppGate(),
+      // UnfocusOnPause: releases keyboard focus when the app is backgrounded,
+      // so the first tap after resume reliably reopens the keyboard (fixes the
+      // stale-IME "tap does nothing" bug) and clears focus off secret fields.
+      home: const UnfocusOnPause(child: AppGate()),
     );
   }
 }

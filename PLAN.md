@@ -1,3 +1,62 @@
+# Task: Keep app buttons clear of the Android system nav bar — DONE 2026-07-21
+
+## Understanding
+- Bug: on some screens, bottom buttons render behind the Android system
+  navigation bar (back/home/recents).
+- Cause: Android 15+ forces edge-to-edge (app draws behind the nav bar).
+  Flutter's ListView pads for this automatically ONLY when no explicit
+  `padding:` is passed — and ~27 scrollables across the app pass one
+  (e.g. add_book_page.dart:260, vault_page.dart:157, settings_page.dart:87),
+  disabling the built-in handling.
+
+## Decision
+- User chose A: one global bottom/side SafeArea via `MaterialApp.builder`
+  (covers every current and future route) over per-scrollable inset-aware
+  padding (more polished under-scroll look but requires discipline at every
+  future call site).
+
+## Result
+- New `lib/core/widgets/edge_to_edge_safe_area.dart`: `EdgeToEdgeSafeArea`
+  — `SafeArea(top: false)` (AppBars keep the status bar) wrapped in a
+  surface-colored `ColoredBox` so the vacated nav-bar strip blends with page
+  backgrounds. Installed once in `main.dart` `MaterialApp.builder`.
+- Pre-existing inner SafeAreas (app gate, splash, events, drawer) become
+  no-ops — SafeArea removes consumed insets from MediaQuery, no double pad.
+- Left alone: bookmarks_page.dart:80 `bottom: 88` — FAB clearance, not a
+  nav-bar hack; stacks correctly on the global SafeArea.
+- Tests: `test/core/widgets/edge_to_edge_safe_area_test.dart` (3, using
+  `FakeViewPadding`) — bottom button clears the inset, AppBar still draws
+  behind the status bar, inner SafeArea doesn't double-pad.
+  651/651 pass; analyze/format clean.
+
+---
+
+# Task: Fix stale keyboard focus after backgrounding — DONE 2026-07-21
+
+## Understanding
+- Bug: typing in a text field, backgrounding the app, then returning —
+  tapping the field no longer brings back the cursor/keyboard.
+- Cause: Android closes the IME on pause but Flutter's FocusManager keeps
+  the field as primary focus; the tap after resume is a focus no-op, so the
+  IME connection is never re-established on many OEM keyboards.
+
+## Result
+- New `lib/core/widgets/unfocus_on_pause.dart`: `UnfocusOnPause` wrapper
+  using `AppLifecycleListener`; drops primary focus on `hidden`/`paused`
+  (NOT transient `inactive`, so system dialogs/biometric prompts don't
+  yank focus). Pattern: the standard explicit-unfocus-on-background fix
+  (as used by Signal Android and recommended across flutter/flutter IME
+  issue threads).
+- Wired around `AppGate` as `home:` in `main.dart` — unfocus goes through
+  `FocusManager.primaryFocus`, so it covers pushed routes/dialogs too.
+- Security bonus: satisfies repo AGENTS.md §6.6 (clear sensitive-field
+  focus state on backgrounding) for passphrase fields.
+- Tests: `test/core/widgets/unfocus_on_pause_test.dart` (3) — focus dropped
+  on background, focus KEPT on transient inactive, tap after resume
+  re-focuses. 648/648 pass; analyze clean on touched files; format clean.
+
+---
+
 # Task: Publish UX + reliability batch — DONE 2026-07-11 (device-verified)
 
 ## Result (in addition to the one-tap setup below, all in one batch)
