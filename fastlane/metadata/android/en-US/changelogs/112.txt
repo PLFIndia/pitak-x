@@ -1,0 +1,2 @@
+* Fixed: keyboard now reliably reappears when you tap a text field after switching back to the app
+* Fixed: buttons no longer hide behind the Android navigation bar on any screen
