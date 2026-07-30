@@ -1,3 +1,57 @@
+# Task: Unblock F-Droid auto-updates (1.1.5/1.1.6 unbuildable) — release 1.1.7 — 2026-07-30
+
+## Understanding
+- F-Droid is stuck at 1.1.4 (code 93). The checkupdates bot DID open fdroiddata
+  MR !42678 ("bot: Update Pitak to 103", 2026-07-12) but its `fdroid build` CI
+  job failed, so it sits open with label `waiting-for-upstream`.
+- Root cause: commit 79ffff9 (pre-1.1.5) regenerated pubspec.lock with the
+  LOCAL Flutter 3.44.2 while .fvmrc (which the F-Droid recipe reads) still
+  pinned 3.41.1. The recipe's `flutter pub get --enforce-lockfile` then fails
+  on the buildserver: SDK-pinned matcher/meta/test_api versions differ between
+  3.41.1 (0.12.18/1.17.0/0.7.9) and 3.44.2 (0.12.19/1.18.0/0.7.11).
+  CI trace: fdroiddata job 15601357551 — "Unable to satisfy pubspec.yaml using
+  pubspec.lock" during prebuild of dev.khoj.pitaka.fdroid:111.
+- Tags are immutable for F-Droid, so 1.1.5/1.1.6 can't be repaired; ship 1.1.7.
+
+## Investigation notes
+- f-droid.org package API confirms suggestedVersionCode=93.
+- fvm is NOT installed locally; `flutter` = ~/development/flutter @ 3.44.2.
+- Repo CI (.github/workflows/ci.yml) used plain `flutter pub get`, so the
+  lockfile drift was invisible to CI.
+
+## Approach (option A, user-approved)
+- Make .fvmrc match reality (3.44.2); lockfile already matches 3.44.2 —
+  verified `flutter pub get --enforce-lockfile` passes locally.
+- Bump version to 1.1.7+12 → F-Droid codes 121/122/123 (VercodeOperation %c*10+n).
+- Mirror recipe: add three 1.1.7 build blocks, CurrentVersion 1.1.7/123.
+- Guardrail: CI now runs `flutter pub get --enforce-lockfile` with the
+  .fvmrc-pinned Flutter — same command the F-Droid recipe runs, so this class
+  of failure is caught on push, not on the buildserver.
+
+## Steps
+- [x] .fvmrc → 3.44.2
+- [x] pubspec.yaml → version: 1.1.7+12
+- [x] Verify `flutter pub get --enforce-lockfile` passes (it does; no lock diff)
+- [x] fdroid/metadata mirror: three 1.1.7 blocks (121/122/123) + CurrentVersion
+- [x] fastlane changelogs 121/122/123.txt
+- [x] fdroid/README.md + HANDOFF.md toolchain notes updated
+- [x] CI: --enforce-lockfile gate added
+- [x] flutter test (651 pass), analyze (0 issues), format (clean)
+- [ ] USER: commit, tag 1.1.7, push (needs explicit approval per command)
+- [ ] USER: after tag push, the bot MR !42678 should be superseded/updated by
+      the next checkupdates run; optionally comment on the MR that 1.1.7 fixes
+      the lockfile and 1.1.5/1.1.6 (101–113) should be skipped.
+
+## Out-of-scope observations
+- rustup pin 1.96.0 in the recipe: unchanged; cargokit builder.dart sed still
+  applies (line 142 still has 'stable').
+- 77 packages have newer versions per pub outdated — not touched (scope).
+
+## Result
+- Pending tag/push. All local changes complete and verified.
+
+---
+
 # Task: Keep app buttons clear of the Android system nav bar — DONE 2026-07-21
 
 ## Understanding

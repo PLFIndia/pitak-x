@@ -34,7 +34,7 @@ kept here so the recipe is version-controlled alongside the app it builds.
   (confirmed: our local release build logs `Precompiled binaries are disabled`).
 - No prebuilt `.so`/`.a` or other binaries are committed to the repo.
 - Toolchain pins the recipe assumes (keep the app in sync with these):
-  - Flutter **stable 3.41.1** (F-Droid `flutter` srclib)
+  - Flutter **stable 3.44.2** (F-Droid `flutter` srclib; pinned via `.fvmrc`)
   - Android **NDK 28.2.13676358**, **AGP 8.11.1**, **Gradle 8.14**, **Kotlin 2.2.20**
   - Rust **stable**, edition 2021, Android targets:
     `armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android`

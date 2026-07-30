@@ -1,0 +1,1 @@
+* Fixed: F-Droid updates work again — 1.1.5 and 1.1.6 could not be built by F-Droid due to a dependency lockfile mismatch; this release restores automatic updates. Includes all 1.1.5/1.1.6 changes: one-tap GitHub Pages publishing, keyboard focus fix after resume, and buttons clear of the system navigation bar.

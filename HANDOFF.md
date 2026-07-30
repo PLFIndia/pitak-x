@@ -25,7 +25,7 @@ on the Pixel 8a but NOT yet user-confirmed on-device — see §6.**
   committed. Branch/PR ops are §9 actions — ask before commit/push/branch-delete.
 - Release is **debug-signed** (a real keystore is the main pre-ship gate).
 - Package id (Android `applicationId` + `namespace`): `dev.khoj.pitaka`.
-  Toolchain: Flutter 3.41.1 stable / Dart SDK ^3.11.
+  Toolchain: Flutter 3.44.2 stable (pinned in .fvmrc) / Dart SDK ^3.11.
 
 ---
 

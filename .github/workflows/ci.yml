@@ -38,8 +38,12 @@ jobs:
       - uses: subosito/flutter-action@v2
         with:
           flutter-version-file: .fvmrc
-      - name: Resolve deps
-        run: flutter pub get
+      # --enforce-lockfile mirrors the F-Droid recipe exactly: if pubspec.lock
+      # was regenerated with a different Flutter than .fvmrc pins, this fails
+      # here instead of on the F-Droid buildserver (root cause of the 1.1.5/1.1.6
+      # update outage).
+      - name: Resolve deps (lockfile must match pinned Flutter)
+        run: flutter pub get --enforce-lockfile
       # Generated sources (drift/freezed/riverpod/json) must be regenerable and
       # leave no uncommitted diff (AGENTS.md §11 CI gate).
       - name: build_runner (no uncommitted diff)
