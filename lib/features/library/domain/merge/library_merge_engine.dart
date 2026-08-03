@@ -28,13 +28,16 @@
 ///  - [MergePlan.toAdd]     — incoming books with NO local match. Auto-applied.
 ///  - [MergePlan.identical] — matched + field-equal. No-op (counted only).
 ///  - [MergePlan.conflicts] — matched but differing. User resolves (row-level).
-///  - [MergePlan.possibleDuplicates] — no-ISBN fuzzy misses. User confirms.
+///  - [MergePlan.possibleDuplicates] — no-ISBN fuzzy misses AND in-file
+///    identity-key collisions (two incoming rows sharing a uid/ISBN can never
+///    both insert). User confirms.
 ///
 /// Each incoming book matches AT MOST one local book, and two incoming books
 /// never match the same local book (first-claim wins, so a messy incoming file
 /// can't fan-in onto one local row).
 library;
 
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 
 /// Default Jaccard-token similarity threshold for the no-ISBN fuzzy pass.
@@ -76,9 +79,16 @@ class MergeConflict {
   );
 }
 
-/// A no-ISBN incoming book that fuzzily resembles a local no-ISBN book but is
-/// not an exact match. Surfaced for the user to either merge (same book) or add
-/// separately. [similarity] is the token-set Jaccard score in (0,1].
+/// An incoming book that resembles a book already on the winning side of the
+/// merge but is not an exact match. Surfaced for the user to either merge
+/// (same book) or add separately. Two shapes:
+///  - **fuzzy**: a no-ISBN incoming book resembling a local no-ISBN book;
+///    [similarity] is the token-set Jaccard score in (0,1].
+///  - **identity-key collision**: the incoming row's uid/ISBN is already held
+///    by a claimed local row or an earlier incoming row from the SAME file,
+///    so inserting it would violate the UNIQUE indexes; [similarity] is 1.0
+///    and [local] is whichever row holds the key (for an in-file collision
+///    that is the earlier INCOMING row, not a persisted local book).
 class PossibleDuplicate {
   /// Creates a possible-duplicate pair.
   const PossibleDuplicate({
@@ -87,13 +97,15 @@ class PossibleDuplicate {
     required this.similarity,
   });
 
-  /// The local no-ISBN book.
+  /// The book already on the winning side (a local row, or — for an in-file
+  /// key collision — the earlier incoming row already queued to add).
   final Book local;
 
-  /// The incoming no-ISBN book resembling it.
+  /// The incoming book resembling it.
   final Book incoming;
 
-  /// Token-set Jaccard similarity in (0,1].
+  /// Token-set Jaccard similarity in (0,1]; exactly 1.0 for an identity-key
+  /// collision.
   final double similarity;
 }
 
@@ -113,7 +125,8 @@ class MergePlan {
   /// Matched but differing — await user resolution.
   final List<MergeConflict> conflicts;
 
-  /// No-ISBN fuzzy near-misses — await user confirmation.
+  /// Fuzzy near-misses and in-file identity-key collisions — await user
+  /// confirmation.
   final List<PossibleDuplicate> possibleDuplicates;
 
   /// Matched + field-equal; no action taken (counted only).
@@ -159,6 +172,23 @@ MergePlan planMerge(
   // A local row may be claimed by at most one incoming book (no fan-in).
   final claimedLocalIds = <int>{};
 
+  // Identity keys already spoken for by rows routed to [toAdd] FROM THIS
+  // FILE. The DB enforces UNIQUE on book_uid and isbn, so a second incoming
+  // row reusing either key can never be inserted — it must be surfaced for
+  // review instead of added (REVIEW_FINDINGS_2 S5: two rows in one file
+  // sharing an ISBN otherwise both landed in toAdd and the second insert
+  // failed mid-apply, leaving a partial union misreported as total failure).
+  final addedByUid = <String, Book>{};
+  final addedByIsbn = <String, Book>{};
+
+  void routeToAdd(Book b) {
+    toAdd.add(b);
+    final uid = b.bookUid?.trim();
+    if (uid != null && uid.isNotEmpty) addedByUid[uid] = b;
+    final isbn = normIsbn(b.isbn);
+    if (isbn.isNotEmpty) addedByIsbn[isbn] = b;
+  }
+
   for (final inc in incoming) {
     final incUid = inc.bookUid?.trim();
     final incIsbn = normIsbn(inc.isbn);
@@ -197,10 +227,28 @@ MergePlan planMerge(
       continue;
     }
 
-    // 3) No exact match. An incoming book WITH an ISBN is genuinely new here →
-    //    add it. With NO ISBN, try a fuzzy pass against local no-ISBN books.
+    // 3) No UNCLAIMED local match. If either identity key is already held —
+    //    by a local row an earlier incoming row claimed, or by an earlier
+    //    incoming row already queued to add — this row can never be inserted
+    //    (UNIQUE uid/isbn). Surface it as a possible duplicate of the key
+    //    holder (exact-identity near-miss, similarity 1.0) instead of adding.
+    final keyHolder =
+        byUid ??
+        byIsbn ??
+        (incUid != null && incUid.isNotEmpty ? addedByUid[incUid] : null) ??
+        (incIsbn.isNotEmpty ? addedByIsbn[incIsbn] : null);
+    if (keyHolder != null) {
+      possibleDuplicates.add(
+        PossibleDuplicate(local: keyHolder, incoming: inc, similarity: 1),
+      );
+      continue;
+    }
+
+    // 4) No exact match and no key collision. An incoming book WITH an ISBN
+    //    is genuinely new here → add it. With NO ISBN, try a fuzzy pass
+    //    against local no-ISBN books.
     if (incIsbn.isNotEmpty) {
-      toAdd.add(inc);
+      routeToAdd(inc);
       continue;
     }
 
@@ -220,7 +268,7 @@ MergePlan planMerge(
         ),
       );
     } else {
-      toAdd.add(inc);
+      routeToAdd(inc);
     }
   }
 
@@ -269,6 +317,13 @@ class _FuzzyHit {
 /// (local bookkeeping, expected to differ across devices), `bookUid` (already
 /// established equal by the caller, or irrelevant for an ISBN match), and
 /// `addedBy` (attribution travels but is not a catalogue-state difference).
+///
+/// Cover refs are compared via [_mergeCover]: LOCAL refs (`covers/<uuid>.jpg`,
+/// legacy `file://…`) are per-device artifacts — the JSON importer nulls them
+/// on the receiving device (`keepLocalCovers=false`), so comparing them raw
+/// makes every book with a camera-captured cover a PHANTOM conflict on every
+/// cross-device exchange (REVIEW_FINDINGS_2 S5). Only remote https refs carry
+/// catalogue meaning across devices, so those are what get compared.
 bool mergeEquals(Book a, Book b) =>
     a.title == b.title &&
     a.titleTransliteration == b.titleTransliteration &&
@@ -277,7 +332,7 @@ bool mergeEquals(Book a, Book b) =>
     a.publisher == b.publisher &&
     a.publishedYear == b.publishedYear &&
     a.genre == b.genre &&
-    a.coverUrl == b.coverUrl &&
+    _mergeCover(a.coverUrl) == _mergeCover(b.coverUrl) &&
     a.pageCount == b.pageCount &&
     a.language == b.language &&
     a.notes == b.notes &&
@@ -288,6 +343,12 @@ bool mergeEquals(Book a, Book b) =>
     a.copyCount == b.copyCount &&
     a.needsMetadata == b.needsMetadata &&
     a.removed == b.removed;
+
+/// The cover ref as merge-relevant state: the validated remote https URL, or
+/// null for local/blank/non-https refs (per-device or undisplayable — neither
+/// is cross-device catalogue state). Single source of truth:
+/// [CoverPaths.remoteUrlOf].
+String? _mergeCover(String? coverUrl) => CoverPaths.remoteUrlOf(coverUrl);
 
 /// Normalises an ISBN for comparison: strip spaces/hyphens, uppercase (X check
 /// digit). Null/blank → empty string. (Kotlin `String?.normIsbn`.)

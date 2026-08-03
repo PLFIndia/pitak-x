@@ -25,7 +25,9 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
+import 'package:pitaka/core/di/providers.dart';
 
 /// A growable, wipeable UTF-8 byte buffer for passphrase entry.
 ///
@@ -138,7 +140,14 @@ class SecurePassphraseController extends ChangeNotifier {
 /// and re-render the mask. Backspace clears the whole buffer (we can't byte-
 /// accurately delete a single multi-byte char from a length-only mask, so for
 /// a passphrase field "delete = start over" is the safe, simple contract).
-class SecurePassphraseField extends StatefulWidget {
+///
+/// While at least one of these fields is mounted, the app window is
+/// screen-capture-protected (Android FLAG_SECURE) via
+/// [passphraseEntryVisibilityProvider] — every passphrase flow (create,
+/// unlock, change, restore) runs before any unlock, so vault-state alone
+/// can't cover them (REVIEW_FINDINGS_2 S2). Registering HERE, at the single
+/// shared field, means no screen can forget to opt in.
+class SecurePassphraseField extends ConsumerStatefulWidget {
   /// Creates the field bound to [controller].
   const SecurePassphraseField({
     required this.controller,
@@ -161,10 +170,11 @@ class SecurePassphraseField extends StatefulWidget {
   final VoidCallback? onSubmitted;
 
   @override
-  State<SecurePassphraseField> createState() => _SecurePassphraseFieldState();
+  ConsumerState<SecurePassphraseField> createState() =>
+      _SecurePassphraseFieldState();
 }
 
-class _SecurePassphraseFieldState extends State<SecurePassphraseField> {
+class _SecurePassphraseFieldState extends ConsumerState<SecurePassphraseField> {
   final TextEditingController _masked = TextEditingController();
 
   /// Number of mask bullets currently shown. Tracked separately from the
@@ -172,8 +182,41 @@ class _SecurePassphraseFieldState extends State<SecurePassphraseField> {
   /// has already been updated — so we compare the new value against this.
   int _prevMaskLen = 0;
 
+  /// True once this field has incremented the visibility count (the
+  /// increment is deferred to post-frame — mutating a listened provider
+  /// mid-build is forbidden — so dispose can race it; the flag keeps the
+  /// increment/decrement balanced either way).
+  bool _marked = false;
+
+  /// Captured in initState because `ref` is unusable inside dispose(). The
+  /// provider is keepAlive, so this notifier stays valid for the widget's
+  /// whole life.
+  late final PassphraseEntryVisibility _visibility;
+
+  @override
+  void initState() {
+    super.initState();
+    // See the class doc: mark a passphrase field visible (FLAG_SECURE on).
+    _visibility = ref.read(passphraseEntryVisibilityProvider.notifier);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _marked) return;
+      _marked = true;
+      _visibility.markVisible();
+    });
+  }
+
   @override
   void dispose() {
+    if (_marked) {
+      // Deferred like the increment: dispose runs during tree finalization,
+      // where provider modification is forbidden. The notifier is keepAlive,
+      // so it is still valid when the callback runs. A callback lost to
+      // process teardown only ever leaves protection ON (fail closed).
+      final visibility = _visibility;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        visibility.markHidden();
+      });
+    }
     _masked.dispose();
     super.dispose();
   }

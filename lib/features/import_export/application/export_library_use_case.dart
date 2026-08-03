@@ -218,13 +218,31 @@ class ExportLibraryUseCase {
 
   static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 
+  /// Characters a spreadsheet app (Excel/LibreOffice/Sheets) treats as the
+  /// start of a formula rather than text. Tab/CR included per OWASP.
+  static const _formulaLeadingChars = ['=', '+', '-', '@', '\t', '\r'];
+
   /// RFC4180 field quoting: wrap in quotes and double internal quotes when the
   /// value contains a comma, quote, or newline.
+  ///
+  /// OWASP CSV-injection hardening: a field whose first character is one of
+  /// [_formulaLeadingChars] is prefixed with a single quote so spreadsheet
+  /// apps render it as text instead of evaluating it as a formula. Book
+  /// titles/notes are attacker-influenceable (a merge or import can plant
+  /// `=HYPERLINK(...)` as a title) and the exported CSV is exactly the
+  /// artifact a librarian opens in a spreadsheet app. The `'` becomes part
+  /// of the value (inside any RFC4180 quoting), matching what Google Sheets'
+  /// own exporter does; a CSV re-imported into Pitaka keeps the `'` — the
+  /// accepted cost of the mitigation.
   static String _csv(String v) {
-    if (v.contains(',') || v.contains('"') || v.contains('\n')) {
-      return '"${v.replaceAll('"', '""')}"';
+    var value = v;
+    if (value.isNotEmpty && _formulaLeadingChars.any(value.startsWith)) {
+      value = "'$value";
     }
-    return v;
+    if (value.contains(',') || value.contains('"') || value.contains('\n')) {
+      return '"${value.replaceAll('"', '""')}"';
+    }
+    return value;
   }
 
   /// `YYYYMMDD` stamp for the file name.

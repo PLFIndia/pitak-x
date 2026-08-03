@@ -13,6 +13,27 @@ void main() {
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
 
+  group('hasZipLocalFileHeader', () {
+    test('recognises the PK local-file-header magic', () {
+      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x03, 0x04]), isTrue);
+      expect(
+        hasZipLocalFileHeader(
+          zipOf({
+            'a.txt': [1],
+          }),
+        ),
+        isTrue,
+      );
+    });
+
+    test('rejects text, short, and non-ZIP bytes', () {
+      expect(hasZipLocalFileHeader('{"a":1}'.codeUnits), isFalse);
+      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x03]), isFalse);
+      expect(hasZipLocalFileHeader(const <int>[]), isFalse);
+      expect(hasZipLocalFileHeader([0x50, 0x4B, 0x05, 0x06]), isFalse);
+    });
+  });
+
   group('BoundedZipExtractor', () {
     test('extracts a flat zip into leaf→bytes', () {
       final zip = zipOf({

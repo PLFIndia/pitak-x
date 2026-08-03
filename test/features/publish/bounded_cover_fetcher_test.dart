@@ -151,4 +151,118 @@ void main() {
 
     expect(await fetcher.fetch(allowed), equals([10, 20, 30, 40]));
   });
+
+  // REVIEW_FINDINGS_2 S6: http.Request defaults to followRedirects = true,
+  // which would let an allow-listed host carry the fetch to ANY host. The
+  // fetcher follows redirects manually and re-validates every hop.
+  group('redirects (re-validated per hop)', () {
+    /// Routes requests by full URL; records every host:path hit.
+    MockClient router(
+      Map<String, http.StreamedResponse Function(http.BaseRequest)> routes, {
+      List<String>? hits,
+    }) {
+      return MockClient.streaming((request, _) async {
+        hits?.add('${request.url.host}${request.url.path}');
+        final handler = routes[request.url.toString()];
+        if (handler == null) {
+          return http.StreamedResponse(
+            const Stream<List<int>>.empty(),
+            404,
+            request: request,
+          );
+        }
+        return handler(request);
+      });
+    }
+
+    http.StreamedResponse redirect(http.BaseRequest req, String location) =>
+        http.StreamedResponse(
+          const Stream<List<int>>.empty(),
+          302,
+          headers: {'location': location},
+          request: req,
+        );
+
+    http.StreamedResponse ok(http.BaseRequest req, List<int> body) =>
+        http.StreamedResponse(
+          Stream.value(body),
+          200,
+          contentLength: body.length,
+          request: req,
+        );
+
+    test('a redirect to a NON-allow-listed host is not followed', () async {
+      final hits = <String>[];
+      final fetcher = BoundedCoverFetcher(
+        client: router({
+          allowed: (req) => redirect(req, 'https://evil.example.com/track.jpg'),
+          'https://evil.example.com/track.jpg': (req) => ok(req, [1]),
+        }, hits: hits),
+      );
+
+      expect(await fetcher.fetch(allowed), isNull);
+      expect(hits, ['covers.openlibrary.org/b/id/123-L.jpg']);
+    });
+
+    test('a redirect to another ALLOW-LISTED host is followed', () async {
+      const start = 'https://books.google.com/books/content?vid=1';
+      const end = 'https://books.googleusercontent.com/cover/1.jpg';
+      final fetcher = BoundedCoverFetcher(
+        client: router({
+          start: (req) => redirect(req, end),
+          end: (req) => ok(req, [9, 9]),
+        }),
+      );
+
+      expect(await fetcher.fetch(start), equals([9, 9]));
+    });
+
+    test('a relative Location resolves against the current URL', () async {
+      final fetcher = BoundedCoverFetcher(
+        client: router({
+          allowed: (req) => redirect(req, '/b/id/999-L.jpg'),
+          'https://covers.openlibrary.org/b/id/999-L.jpg': (req) =>
+              ok(req, [7]),
+        }),
+      );
+
+      expect(await fetcher.fetch(allowed), equals([7]));
+    });
+
+    test('a redirect to plain http is refused', () async {
+      final fetcher = BoundedCoverFetcher(
+        client: router({
+          allowed: (req) =>
+              redirect(req, 'http://covers.openlibrary.org/b/1-L.jpg'),
+        }),
+      );
+
+      expect(await fetcher.fetch(allowed), isNull);
+    });
+
+    test('a redirect loop is abandoned after maxRedirects hops', () async {
+      final hits = <String>[];
+      final fetcher = BoundedCoverFetcher(
+        client: router({allowed: (req) => redirect(req, allowed)}, hits: hits),
+      );
+
+      expect(await fetcher.fetch(allowed), isNull);
+      // Initial request + maxRedirects follows, then the loop is cut.
+      expect(hits, hasLength(1 + BoundedCoverFetcher.maxRedirects));
+    });
+
+    test('a redirect without a Location header is dropped', () async {
+      final fetcher = BoundedCoverFetcher(
+        client: MockClient.streaming(
+          (request, _) async => http.StreamedResponse(
+            const Stream<List<int>>.empty(),
+            302,
+            request: request,
+          ),
+        ),
+      );
+
+      expect(await fetcher.fetch(allowed), isNull);
+    });
+  });
 }

@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/import_export/domain/pitaka_json_exporter.dart';
+import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
@@ -11,6 +13,7 @@ void main() {
     String? author,
     String? isbn,
     String? genre,
+    String? coverUrl,
     bool removed = false,
     int copyCount = 1,
   }) => Book(
@@ -20,6 +23,7 @@ void main() {
     author: author,
     isbn: isbn,
     genre: genre,
+    coverUrl: coverUrl,
     addedDate: 1000,
     copyCount: copyCount,
     removed: removed,
@@ -197,8 +201,159 @@ void main() {
       final plan = planMerge(local, incoming);
 
       expect(plan.identical, 1);
+      // The second incoming row's ISBN is held by the now-claimed local row,
+      // so it can never be inserted (UNIQUE isbn). It is surfaced for review
+      // instead of auto-added (REVIEW_FINDINGS_2 S5).
+      expect(plan.toAdd, isEmpty);
+      expect(plan.possibleDuplicates, hasLength(1));
+      expect(plan.possibleDuplicates[0].incoming.title, 'Sapiens (copy)');
+      expect(plan.possibleDuplicates[0].local.id, 1);
+      expect(plan.possibleDuplicates[0].similarity, 1.0);
+    });
+
+    test('duplicate ISBN within one incoming file: first added, second '
+        'surfaced', () {
+      // REVIEW_FINDINGS_2 S5 Major: both rows used to land in toAdd; the
+      // second insert then failed on the UNIQUE isbn index mid-apply.
+      final incoming = [
+        book(id: 2, uid: 'uB', title: 'Sapiens', isbn: '9780001'),
+        book(id: 3, uid: 'uC', title: 'Sapiens', isbn: '978 0001'),
+      ];
+
+      final plan = planMerge(const [], incoming);
+
       expect(plan.toAdd, hasLength(1));
-      expect(plan.toAdd[0].title, 'Sapiens (copy)');
+      expect(plan.toAdd[0].bookUid, 'uB');
+      expect(plan.possibleDuplicates, hasLength(1));
+      expect(plan.possibleDuplicates[0].incoming.bookUid, 'uC');
+      expect(plan.possibleDuplicates[0].local.bookUid, 'uB');
+      expect(plan.possibleDuplicates[0].similarity, 1.0);
+    });
+
+    test('duplicate uid within one incoming file: first added, second '
+        'surfaced', () {
+      // Same UNIQUE-collision class via book_uid (no ISBNs involved).
+      final incoming = [
+        book(id: 2, uid: 'uB', title: 'Godaan'),
+        book(id: 3, uid: 'uB', title: 'Godaan (duplicate row)'),
+      ];
+
+      final plan = planMerge(const [], incoming);
+
+      expect(plan.toAdd, hasLength(1));
+      expect(plan.possibleDuplicates, hasLength(1));
+      expect(
+        plan.possibleDuplicates[0].incoming.title,
+        'Godaan (duplicate row)',
+      );
+    });
+
+    // Regression for REVIEW_FINDINGS_2 S5 Major: local cover refs are
+    // per-device and never survive an export→import hop (the importer nulls
+    // them), so they must not count as catalogue-state differences.
+    group('cover normalisation', () {
+      test('local cover vs null incoming cover is identical, not conflict', () {
+        final local = [
+          book(id: 1, uid: 'u1', title: 'Godaan', coverUrl: 'covers/abc.jpg'),
+        ];
+        final incoming = [book(id: 99, uid: 'u1', title: 'Godaan')];
+
+        final plan = planMerge(local, incoming);
+
+        expect(plan.isNoOp, isTrue);
+        expect(plan.identical, 1);
+      });
+
+      test('two different local refs for the same book are identical', () {
+        final local = [
+          book(id: 1, uid: 'u1', title: 'Godaan', coverUrl: 'covers/a.jpg'),
+        ];
+        final incoming = [
+          book(id: 99, uid: 'u1', title: 'Godaan', coverUrl: 'covers/b.jpg'),
+        ];
+
+        expect(planMerge(local, incoming).isNoOp, isTrue);
+      });
+
+      test('differing REMOTE covers remain a real conflict', () {
+        final local = [
+          book(
+            id: 1,
+            uid: 'u1',
+            title: 'Godaan',
+            coverUrl: 'https://covers.openlibrary.org/b/1-L.jpg',
+          ),
+        ];
+        final incoming = [
+          book(
+            id: 99,
+            uid: 'u1',
+            title: 'Godaan',
+            coverUrl: 'https://covers.openlibrary.org/b/2-L.jpg',
+          ),
+        ];
+
+        final plan = planMerge(local, incoming);
+        expect(plan.conflicts, hasLength(1));
+      });
+
+      test('local cover vs remote cover is a real conflict', () {
+        // One device fetched a fetchable cover the other doesn't have — a
+        // genuine catalogue-state difference the maintainer should see.
+        final local = [
+          book(id: 1, uid: 'u1', title: 'Godaan', coverUrl: 'covers/a.jpg'),
+        ];
+        final incoming = [
+          book(
+            id: 99,
+            uid: 'u1',
+            title: 'Godaan',
+            coverUrl: 'https://covers.openlibrary.org/b/1-L.jpg',
+          ),
+        ];
+
+        expect(planMerge(local, incoming).conflicts, hasLength(1));
+      });
+    });
+
+    test('export → parse → planMerge round-trip is a no-op', () {
+      // The exact two-maintainer flow: device A exports its library (local
+      // covers and all), device B parses with keepLocalCovers=false and plans
+      // the merge back against A's library — nothing may surface.
+      final lib = [
+        book(
+          id: 1,
+          uid: 'u1',
+          title: 'Godaan',
+          isbn: '111',
+          coverUrl: 'covers/abc.jpg',
+        ),
+        book(id: 2, uid: 'u2', title: 'Kabir', author: 'Kabir'),
+        book(
+          id: 3,
+          uid: 'u3',
+          title: 'Sapiens',
+          isbn: '978-0-00-1',
+          coverUrl: 'https://covers.openlibrary.org/b/1-L.jpg',
+        ),
+      ];
+      final json = const PitakaJsonExporter().export(
+        books: lib,
+        wishlist: const [],
+        exportedAt: 1234,
+      );
+      final payload = const PitakaJsonImporter().parse(json); // merge mode
+      expect(payload.parseErrors, isEmpty);
+      // The local cover ref really was nulled by the parse (precondition).
+      expect(
+        payload.books.firstWhere((b) => b.bookUid == 'u1').coverUrl,
+        isNull,
+      );
+
+      final plan = planMerge(lib, payload.books);
+
+      expect(plan.isNoOp, isTrue);
+      expect(plan.identical, 3);
     });
 
     test('merging the same export again is a no-op', () {

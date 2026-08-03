@@ -208,6 +208,8 @@ class DriftBookRepository implements BookRepository {
   Future<Either<Failure, int>> insertAll(List<Book> books) async {
     try {
       var count = 0;
+      // `batch` outside an explicit transaction implicitly runs in one
+      // (drift docs, ConnectionUser.batch) — so this is all-or-nothing.
       await _db.batch((b) {
         for (final book in books) {
           final withUid = book.bookUid == null
@@ -220,6 +222,29 @@ class DriftBookRepository implements BookRepository {
       return right(count);
     } on Object catch (e) {
       return left(StorageFailure('insertAll: $e'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+    try {
+      // One explicit transaction: the deletes and the inserts commit together
+      // or roll back together, so a mid-way failure (e.g. a UNIQUE violation
+      // on a crafted file) can never leave a partially-replaced catalogue.
+      return await _db.transaction(() async {
+        await _db.delete(_db.books).go();
+        var count = 0;
+        for (final book in books) {
+          final withUid = book.bookUid == null
+              ? book.copyWith(bookUid: _uuid.v4())
+              : book;
+          await _db.into(_db.books).insert(withUid.toCompanion());
+          count++;
+        }
+        return right<Failure, int>(count);
+      });
+    } on Object catch (e) {
+      return left(StorageFailure('replaceAll: $e'));
     }
   }
 

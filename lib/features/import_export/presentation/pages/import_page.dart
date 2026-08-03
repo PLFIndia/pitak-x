@@ -11,7 +11,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
+    show hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 
@@ -27,6 +30,10 @@ class ImportPage extends ConsumerStatefulWidget {
 class _ImportPageState extends ConsumerState<ImportPage> {
   final TextEditingController _text = TextEditingController();
 
+  /// Pre-read guard rejection for a picked file (shown like a controller
+  /// error; the controller never sees an oversized text pick).
+  String? _fileError;
+
   @override
   void dispose() {
     _text.dispose();
@@ -41,6 +48,7 @@ class _ImportPageState extends ConsumerState<ImportPage> {
   Future<void> _importText() async {
     final text = _text.text.trim();
     if (text.isEmpty) return;
+    setState(() => _fileError = null);
     await ref.read(importControllerProvider.notifier).importText(text);
     if (ref.read(importControllerProvider).hasValue) await _refreshLists();
   }
@@ -52,9 +60,32 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     );
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
+    // Pre-read size guard (REVIEW_FINDINGS_2 S4): the parser's
+    // ImportLimits.maxTextChars check only runs AFTER the whole file is in
+    // memory, so a multi-GB text pick could OOM the app first. UTF-8 text
+    // never has more characters than bytes, so a byte-length check is a sound
+    // early reject; the parser re-checks the decoded length regardless.
+    // Bundles (ZIP magic) skip this guard: their contents are bounded by
+    // BoundedZipExtractor instead (whole-archive-in-RAM is the accepted,
+    // documented posture for archives).
+    if (!await _hasZipMagic(file) &&
+        await file.length() > ImportLimits.defaults.maxTextChars) {
+      setState(() => _fileError = 'File is too large to import safely.');
+      return;
+    }
+    setState(() => _fileError = null);
     final bytes = await file.readAsBytes();
     await ref.read(importControllerProvider.notifier).importBytes(bytes);
     if (ref.read(importControllerProvider).hasValue) await _refreshLists();
+  }
+
+  /// Sniffs the 4-byte ZIP local-file-header magic WITHOUT loading the file,
+  /// so the size guard above applies only to text formats.
+  static Future<bool> _hasZipMagic(XFile file) async {
+    final header = await file
+        .openRead(0, 4)
+        .fold<List<int>>([], (acc, chunk) => acc..addAll(chunk));
+    return hasZipLocalFileHeader(header);
   }
 
   @override
@@ -105,6 +136,11 @@ class _ImportPageState extends ConsumerState<ImportPage> {
           ),
           const SizedBox(height: 24),
           if (busy) const Center(child: CircularProgressIndicator.adaptive()),
+          if (_fileError != null)
+            Text(
+              _fileError!,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
           state.when(
             loading: () => const SizedBox.shrink(),
             error: (_, _) => Text(

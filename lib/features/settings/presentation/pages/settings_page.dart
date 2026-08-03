@@ -236,11 +236,41 @@ class _CommunityLibrarySection extends ConsumerWidget {
       );
     }
 
+    /// First 8 chars + ellipsis — full library IDs are 16–64 lowercase hex,
+    /// too long to eyeball in a confirmation.
+    String shortId(String id) => id.length <= 8 ? id : '${id.substring(0, 8)}…';
+
     Future<void> scanQr() async {
       final id = await Navigator.of(context).push<String>(
         MaterialPageRoute(builder: (_) => const ScanLibraryQrPage()),
       );
       if (id == null || !context.mounted) return;
+      // Confirm before adopting (REVIEW_FINDINGS_2 S8): a valid-SHAPED QR is
+      // not necessarily a TRUSTED one — a malicious QR at a pairing party
+      // could silently rebind this device to an attacker's library ID, whose
+      // export files would then pass the merge ID-gate as "matching library".
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Join this library?'),
+          content: Text(
+            'Library ${shortId(id)}.\n\nFiles exported by this maintainer '
+            'will be treated as matching this device when you merge. Only '
+            'join if you scanned the QR from someone you meant to pair with.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Join'),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !context.mounted) return;
       await controller.setLibraryId(id);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

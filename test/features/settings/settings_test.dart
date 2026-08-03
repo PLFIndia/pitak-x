@@ -3,8 +3,46 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// A settings repo whose writes always fail (persist-failure regression).
+class _FailingSettingsRepo implements SettingsRepository {
+  static final _boom = StateError('prefs write failed');
+
+  @override
+  Future<AppSettings> load() async => AppSettings.defaults;
+  @override
+  Future<String> getOrCreateLibraryId() async =>
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  @override
+  Future<String> regenerateLibraryId() async =>
+      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  @override
+  Future<void> setAppLockBiometric({required bool enabled}) => throw _boom;
+  @override
+  Future<void> setLibraryId(String id) => throw _boom;
+  @override
+  Future<void> setLibraryLogo(String reference) => throw _boom;
+  @override
+  Future<void> setLibraryName(String name) => throw _boom;
+  @override
+  Future<void> setLibrarySort(BookSort sort) => throw _boom;
+  @override
+  Future<void> setLoadRemoteCovers({required bool enabled}) => throw _boom;
+  @override
+  Future<void> setMaintainerName(String name) => throw _boom;
+  @override
+  Future<void> setPublishContact({
+    required String address,
+    required String gps,
+    required String email,
+    required String phone,
+  }) => throw _boom;
+  @override
+  Future<void> setThemeMode(AppThemeMode mode) => throw _boom;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -189,6 +227,35 @@ void main() {
       final prefs = await container.read(sharedPreferencesProvider.future);
       expect(prefs.getString('theme_mode'), 'light');
     });
+
+    // Regression for REVIEW_FINDINGS_2 (carried Minor): a prefs write
+    // failure must fold into AsyncError state — not escape as an unhandled
+    // async error from an un-awaited setter — and must not publish a
+    // preference the device never stored.
+    test(
+      'a persist failure becomes AsyncError and keeps the old state',
+      () async {
+        final container = ProviderContainer(
+          overrides: [
+            settingsRepositoryProvider.overrideWith(
+              (ref) async => _FailingSettingsRepo(),
+            ),
+          ],
+        );
+        addTearDown(container.dispose);
+        await container.read(settingsControllerProvider.future);
+
+        // Must complete normally (no throw) even though the write fails.
+        await container
+            .read(settingsControllerProvider.notifier)
+            .setThemeMode(AppThemeMode.light);
+
+        final s = container.read(settingsControllerProvider);
+        expect(s.hasError, isTrue);
+        // The failed write was never published as if it had succeeded.
+        expect(s.valueOrNull?.themeMode, isNot(AppThemeMode.light));
+      },
+    );
 
     test('setMaintainerName trims and persists', () async {
       SharedPreferences.setMockInitialValues({});

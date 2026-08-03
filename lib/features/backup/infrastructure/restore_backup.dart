@@ -201,6 +201,12 @@ final class RestoreBackup {
       }
 
       // --- Phase 6: authoritative overwrite inside one transaction ---
+      // rebuildFts runs INSIDE the transaction (REVIEW_FINDINGS_2 S10): when
+      // it ran after the commit but inside this same try, a rebuild failure
+      // aborted the staged vault and reported failure while the new library
+      // stayed committed — new library + old vault + a lying error message.
+      // Inside the transaction, a rebuild failure rolls the library back too,
+      // so the device stays fully on its pre-restore state.
       try {
         await db.transaction(() async {
           await db.delete(db.books).go();
@@ -213,8 +219,8 @@ final class RestoreBackup {
               b.insert(db.wishlistBooks, w.toCompanion());
             }
           });
+          await db.rebuildFts();
         });
-        await db.rebuildFts();
       } on Object catch (e) {
         // Library rolled back by the transaction → discard the staged vault
         // too so the device stays fully on its pre-restore state.

@@ -6,7 +6,7 @@ part of 'import_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$importControllerHash() => r'27da5510c2f4925f999b4f4c15f0c799737fc29a';
+String _$importControllerHash() => r'7521cac45dfbd7123f3954ffbaefa835c24d2d2a';
 
 /// Drives a one-shot import and surfaces its [ImportSummary].
 ///

@@ -103,4 +103,69 @@ void main() {
       ok<Unit>(await repo.delete(inserted.id));
     },
   );
+
+  // REVIEW_FINDINGS_2 S5: the merge apply paths must be atomic — reported
+  // results must match committed state even when a row violates UNIQUE.
+  group('atomicity', () {
+    test(
+      'insertAll rolls back entirely when one row violates UNIQUE isbn',
+      () async {
+        final res = await repo.insertAll(const [
+          Book(title: 'A', isbn: '111', addedDate: 1),
+          Book(title: 'B', isbn: '111', addedDate: 2),
+        ]);
+        expect(res.isLeft(), isTrue);
+        // Nothing committed — not even the first, valid row.
+        expect(ok<List<Book>>(await repo.getAll()), isEmpty);
+      },
+    );
+
+    test('replaceAll swaps the catalogue and keeps incoming uids', () async {
+      await repo.insert(
+        const Book(title: 'Old', bookUid: 'old-uid', addedDate: 1),
+      );
+      final res = await repo.replaceAll(const [
+        Book(title: 'New1', bookUid: 'keep-uid', addedDate: 2),
+        Book(title: 'New2', addedDate: 3),
+      ]);
+      expect(ok<int>(res), 2);
+      final all = ok<List<Book>>(await repo.getAll());
+      expect(all.map((b) => b.title), unorderedEquals(['New1', 'New2']));
+      expect(all.firstWhere((b) => b.title == 'New1').bookUid, 'keep-uid');
+      expect(all.firstWhere((b) => b.title == 'New2').bookUid, isNotNull);
+    });
+
+    test('replaceAll rolls back the deletes when an insert fails', () async {
+      await repo.insert(
+        const Book(title: 'Old', bookUid: 'old-uid', isbn: '999', addedDate: 1),
+      );
+      // Crafted file: two rows sharing one ISBN — the second insert violates
+      // the UNIQUE index AFTER the catalogue was deleted.
+      final res = await repo.replaceAll(const [
+        Book(title: 'New1', isbn: '111', addedDate: 2),
+        Book(title: 'New2', isbn: '111', addedDate: 3),
+      ]);
+      expect(res.isLeft(), isTrue);
+      // The pre-overwrite catalogue is fully intact.
+      final all = ok<List<Book>>(await repo.getAll());
+      expect(all, hasLength(1));
+      expect(all.single.title, 'Old');
+      expect(all.single.bookUid, 'old-uid');
+    });
+
+    test(
+      'blank ISBNs are stored as NULL (unique-among-non-null holds)',
+      () async {
+        // Only a crafted import produces isbn '' (the UI trims to null); two
+        // such rows must not collide on the UNIQUE index.
+        final res = await repo.insertAll(const [
+          Book(title: 'A', isbn: '', addedDate: 1),
+          Book(title: 'B', isbn: '  ', addedDate: 2),
+        ]);
+        expect(ok<int>(res), 2);
+        final all = ok<List<Book>>(await repo.getAll());
+        expect(all.map((b) => b.isbn), everyElement(isNull));
+      },
+    );
+  });
 }

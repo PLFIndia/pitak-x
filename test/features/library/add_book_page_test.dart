@@ -57,6 +57,9 @@ class _MemRepo implements BookRepository {
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+      right(b.length);
 }
 
 /// Scrolls the lazy form ListView until the save button is built + visible,

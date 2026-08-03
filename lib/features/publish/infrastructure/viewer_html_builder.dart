@@ -36,12 +36,32 @@ final class ViewerHtmlBuilder {
     final contactHtml = PublishContactLinks.render(contact, escape: _esc);
     final html = template
         .replaceAll('{{LIBRARY_NAME}}', _esc(_nonBlank(libraryName)))
-        .replaceAll('{{LOGO_DATA_URL}}', logoDataUrl)
+        .replaceAll('{{LOGO_DATA_URL}}', _esc(_safeLogoDataUrl(logoDataUrl)))
         .replaceAll('{{CONTACT_HTML}}', contactHtml);
     return utf8.encode(html);
   }
 
   static String _nonBlank(String s) => s.trim().isEmpty ? 'My Library' : s;
+
+  /// The only shape ever allowed inside the template's `<img src="...">`.
+  /// SVG is deliberately excluded: an SVG document can carry script, and
+  /// raster formats cover every logo the app produces.
+  static final RegExp _logoDataUrlPattern = RegExp(
+    r'^data:image/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$',
+  );
+
+  /// Constrains [value] to the strict `data:image/...;base64,` shape before
+  /// it lands inside an `<img src="...">` attribute (REVIEW_FINDINGS_2 S7):
+  /// the placeholder is substituted raw, so an unconstrained value is an
+  /// attribute-injection sink for whoever wires the user-logo feature to it.
+  /// FAIL CLOSED: anything else becomes '' — the template's `onerror` hides
+  /// the empty img. (The result is also HTML-escaped at the call site as
+  /// defense in depth; escaping is a no-op on a validated base64 value.)
+  static String _safeLogoDataUrl(String value) {
+    final v = value.trim();
+    if (v.isEmpty) return '';
+    return _logoDataUrlPattern.hasMatch(v) ? v : '';
+  }
 
   static String _esc(String s) => s
       .replaceAll('&', '&amp;')

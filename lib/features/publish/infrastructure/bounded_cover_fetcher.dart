@@ -18,6 +18,11 @@
 ///     can never be fully buffered. We never trust Content-Length; we count
 ///     actual bytes.
 ///
+/// Redirects are followed MANUALLY (automatic following disabled): every
+/// hop's Location is re-validated against the same allow-list, so a
+/// redirect can never carry the request to a non-allow-listed host
+/// (REVIEW_FINDINGS_2 S6).
+///
 /// Bounded-streaming approach borrowed from the same size-accounting idea as
 /// `BoundedZipExtractor` (Signal Android's BackupImporter): never allocate
 /// attacker-controlled output; verify the real length as you go.
@@ -75,11 +80,52 @@ final class BoundedCoverFetcher {
     }
   }
 
-  /// Streams the response body, enforcing [maxBytes] as it reads. Returns null
-  /// on non-2xx, an over-cap body, or any stream error.
+  /// Max redirect hops followed per fetch. Each hop's `Location` is
+  /// re-validated against the allow-list before any packet is sent.
+  static const int maxRedirects = 3;
+
+  /// Redirect statuses considered (301/302/303/307/308). 304 Not-Modified is
+  /// never applicable here (no conditional headers sent) and falls into the
+  /// non-2xx drop like any other unexpected status.
+  static bool _isRedirect(int status) =>
+      status == 301 ||
+      status == 302 ||
+      status == 303 ||
+      status == 307 ||
+      status == 308;
+
+  /// Streams the response body, enforcing [maxBytes] as it reads. Returns
+  /// null on non-2xx, an over-cap body, or any stream error.
   Future<List<int>?> _fetchBounded(Uri uri) async {
-    final request = http.Request('GET', uri);
-    final response = await _client.send(request);
+    // Manual redirect loop (REVIEW_FINDINGS_2 S6): `http.Request` defaults to
+    // followRedirects = true, which would silently carry the fetch to ANY
+    // host — outside the allow-list (an allow-listed host 302ing elsewhere
+    // would defeat the ORIGIN defence). Automatic following is disabled and
+    // every hop's Location is re-validated with the same sanitize() as the
+    // initial URL, so no packet ever leaves for a non-allow-listed host. A
+    // redirect to another ALLOW-LISTED host (e.g. books.google.com →
+    // books.googleusercontent.com) keeps working.
+    var current = uri;
+    http.StreamedResponse response;
+    var hops = 0;
+    while (true) {
+      final request = http.Request('GET', current)..followRedirects = false;
+      response = await _client.send(request);
+      if (!_isRedirect(response.statusCode)) break;
+      // Drain so the connection can be reused/closed cleanly.
+      unawaited(response.stream.drain<void>().catchError((_) {}));
+      if (hops >= maxRedirects) return null;
+      final location = response.headers['location'];
+      if (location == null) return null;
+      // Relative Locations resolve against the current URL per RFC 7231;
+      // sanitize() then enforces absolute https + allow-listed host.
+      final target = CoverUrlAllowList.sanitize(
+        current.resolve(location).toString(),
+      );
+      if (target == null) return null;
+      current = Uri.parse(target);
+      hops++;
+    }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       // Drain so the connection can be reused/closed cleanly, then drop.

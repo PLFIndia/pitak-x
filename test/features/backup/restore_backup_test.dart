@@ -10,6 +10,8 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
+import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -28,6 +30,15 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
     required String blob,
     required String dbPath,
   }) async => _result;
+}
+
+/// An [AppDatabase] whose FTS rebuild always fails, for the restore
+/// rollback regression (REVIEW_FINDINGS_2 S10).
+class _FtsFailingDb extends AppDatabase {
+  _FtsFailingDb(super.executor);
+
+  @override
+  Future<void> rebuildFts() async => throw StateError('fts rebuild boom');
 }
 
 void main() {
@@ -149,6 +160,45 @@ void main() {
     final wishlist = await db.select(db.wishlistBooks).get();
     expect(wishlist.single.id, 3);
     expect(wishlist.single.priceEstimate, 12.5);
+  });
+
+  // Regression for REVIEW_FINDINGS_2 S10: rebuildFts used to run AFTER the
+  // library transaction committed but inside the same try — a rebuild failure
+  // aborted the staged vault and reported failure while the new library
+  // stayed committed (new library + old vault + a lying error message). Now
+  // it runs INSIDE the transaction, so a failure rolls everything back and
+  // the reported result matches the device state.
+  test('an FTS-rebuild failure rolls the whole restore back', () async {
+    final failingDb = _FtsFailingDb(NativeDatabase.memory());
+    addTearDown(failingDb.close);
+    // Pre-restore device state: one existing book.
+    await failingDb
+        .into(failingDb.books)
+        .insert(const Book(title: 'PreExisting', addedDate: 1).toCompanion());
+
+    final zip = archive({
+      'manifest.json': utf8.encode(manifest()),
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+    });
+    final r = RestoreBackup(
+      db: failingDb,
+      vault: _FakeVault(right(VaultData.empty)),
+      vaultStore: vaultStore(),
+      coversDir: '${tmp.path}/covers',
+      workDir: '${tmp.path}/work',
+    );
+    final p = pass();
+    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    p.dispose();
+
+    expect(result.isLeft(), isTrue);
+    expect(result.getLeft().toNullable(), isA<StorageFailure>());
+    // Reported failure == device state: fully pre-restore.
+    final books = await failingDb.select(failingDb.books).get();
+    expect(books.map((b) => b.title), ['PreExisting']);
+    final wishlist = await failingDb.select(failingDb.wishlistBooks).get();
+    expect(wishlist, isEmpty);
   });
 
   test('FTS search works after restore (rebuildFts ran)', () async {

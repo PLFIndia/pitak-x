@@ -92,10 +92,19 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
         padding: const EdgeInsets.all(16),
         children: [
           Text(
-            'Save a complete backup of your library and wishlist. If you have '
-            'set up the borrowers vault, it is included (still encrypted) so '
+            'Save a backup of your library and wishlist. If you have set up '
+            'the borrowers vault, it is included (still encrypted) so '
             'borrowers and loans can be restored too.',
             style: Theme.of(context).textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 12),
+          // REVIEW_FINDINGS_2 S3: say plainly what a restore does NOT bring
+          // back, so a user moving to a new phone is not surprised.
+          Text(
+            'Not included: your events page and posters, bookmarks, library '
+            'logo, library name/ID and contact details, publishing setup, and '
+            'app settings — those need to be set up again after a restore.',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const SizedBox(height: 24),
           FilledButton.icon(

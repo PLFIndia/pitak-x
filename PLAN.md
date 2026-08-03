@@ -1,3 +1,95 @@
+# Task: Dependency upgrade programme (3 tiers) — PLANNED, blocked on 1.1.7 going live on F-Droid
+
+## Understanding
+- `flutter pub outdated` (2026-07-30): 77 packages behind. Grouped into three
+  independently shippable tiers, each its own release tag (every lockfile
+  change now goes through the `--enforce-lockfile` CI gate and needs a tag
+  for F-Droid to pick up).
+- HARD GATE: do NOT start until 1.1.7 (codes 121–123) is published on
+  f-droid.org. Check: `curl -s https://f-droid.org/api/v1/packages/dev.khoj.pitaka.fdroid`
+  → suggestedVersionCode == 123.
+
+## Privacy & threat notes
+- Tier 2 touches the packages guarding vault keys and biometric unlock
+  (flutter_secure_storage, local_auth) and backup archive extraction
+  (archive). These are the security-critical paths; §10 security tests
+  (secrets wiped / not logged / not serialized, bounded zip extraction)
+  must be re-run and reviewed per tier-2 step.
+- No new data collection or egress in any tier.
+
+## Investigation notes (verified in repo, 2026-07-30)
+- Riverpod: 75 `@riverpod` annotations across 18 files; 19 `*.g.dart`,
+  1 `*.freezed.dart` — tier 3 blast radius.
+- flutter_secure_storage consumers: vault_store.dart,
+  secure_storage_biometric_keystore.dart, secure_storage_cover_salt_store.dart,
+  secure_storage_publish_credential_store.dart, core/di/providers.dart.
+- local_auth consumers: biometric_unlock.dart,
+  local_auth_biometric_authenticator.dart.
+- archive consumers: backup_archive_writer.dart, bounded_zip_extractor.dart
+  (+ ~8 test files). bounded_zip_extractor is our hostile-input guard —
+  archive 4.x API changed (streaming rewrite); this needs a careful port,
+  not a mechanical bump.
+- sqlite3_flutter_libs 0.5.x is EOL (`0.6.0+eol`); drift is migrating to
+  `sqlite3_native_assets`. Our DB init: core/di/providers.dart:101
+  (`NativeDatabase.createInBackground`). FTS5 comment in
+  backup_archive_writer.dart:15,172 documents bundled-SQLite assumptions.
+  NOTE: native-assets-based sqlite may interact with the F-Droid recipe
+  (source builds) — must verify buildability in tier 1 before tagging.
+
+## Proposed approach — three releases, in order
+
+### Tier 1 — "free" bumps + drift minors (target: 1.1.8, low risk)
+- [ ] `flutter pub upgrade` (constraint-compatible only): image_picker, uuid,
+      camera*, sqflite*, shared_preferences_android, synchronized, jni*, etc.
+- [ ] Bump constraints for minor-only direct deps: drift ^2.34, drift_dev,
+      pdf ^3.13, json_annotation ^4.12, json_serializable ^6.14.
+- [ ] DECIDE: sqlite3 ^3.5 + sqlite3_flutter_libs EOL successor — research
+      drift's official migration path first; if it drags in native-assets
+      complexity that could break the F-Droid source build, DEFER to its own
+      follow-up release rather than blocking tier 1.
+- [ ] build_runner regen, analyze/format/test, tag, release.
+
+### Tier 2 — security majors (target: 1.1.9)
+- [ ] flutter_secure_storage 9→10: read the v10 changelog/migration doc FIRST
+      (Android backup/dataStore behavior changed across majors historically);
+      verify existing stored vault keys survive the upgrade in-place — write
+      an upgrade-path test with seeded v9-format storage if feasible.
+- [ ] local_auth 2→3: port biometric_unlock + local_auth_biometric_authenticator;
+      re-test lockout/fallback paths on a real device.
+- [ ] archive 3→4: port backup_archive_writer + bounded_zip_extractor to the
+      new API; re-run ALL hostile-input tests (zip-slip, zip-bomb bounds) —
+      this is the reason to take the major (3.x had extraction CVEs).
+- [ ] share_plus 12→13 (rides along; API surface small).
+- [ ] Full §10 security test suite + manual vault unlock/backup/restore on
+      device before tagging.
+
+### Tier 3 — Riverpod 3 + Freezed 3 migration (target: 1.2.0, dedicated task)
+- [ ] Read official Riverpod 2→3 migration guide; riverpod_annotation →4,
+      riverpod_generator →4, flutter_riverpod →3.
+- [ ] Freezed 2→3: classes must become `sealed`/`abstract` per new syntax;
+      freezed_annotation →3.
+- [ ] Regenerate all 19 .g.dart + .freezed.dart; expect wide diffs.
+- [ ] very_good_analysis 6→10 LAST within this tier (new lint wave); fix or
+      consciously configure, no blanket ignores (§11).
+- [ ] Full test suite + device pass; this is a minor-version release (1.2.0).
+
+## Decision points (ask before executing)
+- [ ] Q1: sqlite3_flutter_libs EOL successor — in tier 1 or deferred?
+      (depends on F-Droid buildability finding above)
+- [ ] Q2: does flutter_secure_storage v10 change on-disk/Keystore format?
+      If migration of existing vault-key entries is needed, that becomes the
+      centerpiece of tier 2 with its own fail-closed migration code.
+
+## Out-of-scope observations
+- `js 0.6.7` discontinued — transitive only, disappears as parents update.
+- qr 3→4, image 4.3→4.9: bundle with whichever tier touches their consumers
+  (publish/PDF paths) — slot into tier 1 if trivially compatible.
+
+## Result
+- Not started. Blocked on 1.1.7 F-Droid publication.
+
+---
+
 # Task: Unblock F-Droid auto-updates (1.1.5/1.1.6 unbuildable) — release 1.1.7 — 2026-07-30
 
 ## Understanding
@@ -587,3 +679,125 @@ User approved fixing all 13 Major findings, one at a time, proper fixes (no patc
   working on-device (Pixel 8a, release build, 2026-07-09). Also committing
   the android/gradle.properties flags added automatically by the Flutter
   tool during the release build (user approved).
+
+---
+
+# Task: Fix REVIEW_FINDINGS_2.md (round-2 review) — IN PROGRESS
+
+## Understanding
+- Fix every finding in REVIEW_FINDINGS_2.md, one at a time, rigorous fixes
+  (no patchwork). Baseline HEAD 118bf31, 651 tests green at start.
+
+## Steps (severity order)
+- [x] 1. [Blocker] S11 EXIF/GPS not stripped — clear `decoded.exif` in
+      `ImageDownscaler.downscaleJpeg` (single choke point, both resize and
+      no-resize paths) + regression tests with a GPS-IFD fixture. Also
+      removed the two raw-bytes publish fallbacks (local cover + remote fetch)
+      that would have shipped unstripped JPEGs on re-encode failure.
+- [x] 2. [Major] S4 CSV export formula injection — neutralise `= + - @ \t \r`
+      leading cells in `export_library_use_case._csv` + test.
+- [x] 3. [Major] S5 spurious cover conflicts — normalise local cover refs out
+      of `mergeEquals` + export→parse→planMerge round-trip no-op test.
+- [x] 4. [Major] S5 duplicate ISBN in one file + non-atomic apply — dedupe in
+      `planMerge`, wrap `_applyEngineMerge` in one Drift transaction + tests.
+- [x] 5. [Major] S5 `applyOverwrite` non-transactional — single transaction
+      (delete+insert) + failure-injection test.
+- [x] 6. [Minor] S10 `rebuildFts` ordering — move after vault commit /
+      best-effort + test.
+- [x] 7. [Minor] S4 pre-read OOM — `file.length()` check before reading in
+      merge_page/import_page.
+- [x] 8. [Minor] S7 `{{LOGO_DATA_URL}}` unescaped — constrain/escape + test.
+- [x] 9. [Minor] S8 QR library-ID adopt without confirmation — confirm sheet.
+- [x] 10. [Minor] S6 cover fetcher follows redirects off allow-list —
+      manual redirect handling re-validating each hop against the allow-list
+      + test.
+- [x] 11. [Minor] S11 decoder-bomb — header-dimension guard before full
+      decode; evaluate Isolate.run.
+- [x] 12. [Nit] S9 `borrower_profile_page._launch` takes pre-built URI —
+      build URI inside from typed parts.
+- [x] 13. [Minor] `settings_controller._update` unguarded await — fail
+      closed with surfaced error.
+- [x] 14. [Nit] `publish_controller._phase` dead — fold into state or delete.
+- [x] 15. [Docs] carried Minors: session background lifetime, FLAG_SECURE on
+      create/unlock screens, backup exclusions note in UI, zip-extractor
+      local-header note (deferred to archive 4.x port per review direction).
+
+## Out-of-scope observations (recorded, not fixed)
+- S11 jank note: image decode still runs on the UI isolate; `Isolate.run`
+  would remove picker jank for large legit photos. Perf, not correctness —
+  the DownscaleFn typedef is synchronous across 5 call sites; deferred.
+- S10 carried: cover routing on restore is silent best-effort (no
+  skipped-count in RestoreSummary); whole-archive-in-RAM (≤500 MiB);
+  SQLCipher journal-mode pinning assertion needs the native Rust lib in
+  tests — all review-acknowledged postures with no direction given.
+- Round-1 carried Minors with no round-2 direction: providers.dart:330
+  inline SecureStorageCoverSaltStore, :177 ref.read of a keepAlive notifier,
+  borrowerProfile/pendingSnapshot frozen DateTime.now, events/bookmarks
+  bool-collapsed failures (review: deliberate, low-stakes).
+- S2 session auto-lock timeout: documented trade-off comment added to
+  vault_session_controller; the timeout itself is accepted future hardening.
+- archive 4.x port (zip local-header residual): owned by PLAN tier-2.
+
+## Result
+All 15 steps complete. Gates: `flutter analyze` clean (only pre-existing
+rust_builder/pubspec infos, identical on pristine HEAD), `dart format
+--set-exit-if-changed` clean, build_runner regen committed in-tree,
+685 tests pass (651 baseline + 34 new).
+
+Fixes, in severity order:
+1. S11 Blocker — EXIF/GPS: `ImageDownscaler.downscaleJpeg` clears
+   `decoded.exif` before encode (covers resize + no-resize paths; verified
+   against image 4.3.0's exif-cloning copyResize). Regression tests encode a
+   GPS-IFD fixture through both paths. ALSO: removed the raw-bytes fallback
+   in publish `_readLocalCover` and `remoteCoverFetcher` — a cover that
+   can't be re-encoded is now dropped, never published unstripped.
+2. S4 Major — CSV export injection: OWASP `'` prefix for fields starting
+   with = + - @ tab CR, inside RFC4180 quoting; test pins 6 hostile shapes.
+3. S5 Major — phantom cover conflicts: `mergeEquals` compares covers via
+   `CoverPaths.remoteUrlOf` (local refs normalise to null both sides);
+   engine tests + export→parse→planMerge round-trip no-op test.
+4. S5 Major — dup-ISBN/uid in one file: engine tracks identity keys claimed
+   by earlier incoming rows AND local rows claimed by earlier matches;
+   colliding rows surface as PossibleDuplicate(similarity 1.0) instead of
+   crashing the apply. `_applyEngineMerge` now inserts via ONE atomic
+   `insertAll`. Blank ISBNs persist as NULL at the mapper (unique-among-
+   non-null now actually holds). Drift-level rollback tests.
+5. S5 Major — `applyOverwrite` uses new `BookRepository.replaceAll`
+   (single Drift transaction: delete+insert together); failure-injection
+   tests at use-case level (settings untouched) and Drift level (catalogue
+   intact after mid-insert UNIQUE failure).
+6. S10 — `rebuildFts` moved INSIDE the restore transaction; a rebuild
+   failure now rolls back library + staged vault (test with a failing-FTS
+   AppDatabase subclass asserts pre-restore state).
+7. S4 — pre-read size guards on merge_page (byte-length vs maxTextChars)
+   and import_page (ZIP-magic sniff exempts bundles; shared
+   `hasZipLocalFileHeader` in bounded_zip_extractor, unit-tested).
+8. S7 — `{{LOGO_DATA_URL}}` constrained to a strict
+   `data:image/(png|jpeg|webp|gif);base64,` shape (fail closed) + escaped;
+   SVG excluded; injection tests.
+9. S8 — scanned library QR now requires a confirm dialog ("Join this
+   library?") before `setLibraryId`.
+10. S6 — BoundedCoverFetcher follows redirects MANUALLY: followRedirects=
+    false, each hop's Location re-validated against CoverUrlAllowList
+    (relative Locations resolved per RFC 7231), max 3 hops; 6 new tests
+    incl. off-allow-list redirect refused with no packet sent.
+11. S11 — header-only pre-decode (`findDecoderForData`+`startDecode`)
+    rejects sources >8192px/side before the pixel buffer is allocated;
+    test proves an 8193×1 valid image is rejected while 8192 passes.
+12. S9 nit — borrower_profile_page: no general launch-string helper;
+    per-kind actions ask BorrowerContact for its validated URI.
+13. Carried Minor — SettingsController._update folds persist failures into
+    AsyncError (all consumers fail safe); regression test with a failing
+    repo.
+14. Nit — deleted PublishController's write-only `_phase`/`phase` and the
+    onPhase wiring.
+15. Docs/scaffolds — vault session background-lifetime trade-off
+    documented; zip local-header residual documented (fix owned by tier-2
+    archive port); backup UI now lists what a restore does NOT bring back;
+    schema-migration test scaffold + schemaVersion tripwire test added;
+    FLAG_SECURE now also covers passphrase entry via
+    PassphraseEntryVisibility (keepAlive) + screenCaptureProtectedProvider
+    single decision point, registered at the shared SecurePassphraseField.
+
+Not committed (git ops need explicit approval): 56 files changed,
+1604 insertions(+), 114 deletions(-) incl. regenerated *.g.dart.

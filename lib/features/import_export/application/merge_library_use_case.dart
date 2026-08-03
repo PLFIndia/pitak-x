@@ -199,27 +199,18 @@ final class MergeLibraryUseCase {
   /// the incoming one and adopt its library ID + name. Destructive — intended
   /// for a fresh/empty install becoming a clean replica. The caller is
   /// responsible for an explicit confirm before invoking this.
+  ///
+  /// The delete+insert runs as ONE repository transaction
+  /// ([BookRepository.replaceAll]): a failure mid-way (e.g. a UNIQUE violation
+  /// on a crafted file) rolls back, so the device is never left with a
+  /// partially-deleted catalogue (REVIEW_FINDINGS_2 S5).
   Future<Either<Failure, Unit>> applyOverwrite(
     MergeDiffersDecision decision,
   ) async {
-    final local = await _bookRepo.getAll();
-    if (local.isLeft()) {
-      return local.map((_) => unit);
-    }
-    // Snapshot ids first: deleting mutates the store, so iterating the live
-    // list would risk concurrent modification.
-    final existingIds = local
-        .getOrElse((_) => const <Book>[])
-        .map((b) => b.id)
-        .toList();
-    for (final id in existingIds) {
-      final del = await _bookRepo.delete(id);
-      if (del.isLeft()) return del;
-    }
-    for (final book in decision.incomingBooks) {
-      final ins = await _bookRepo.insert(book.copyWith(id: Book.emptyId));
-      if (ins.isLeft()) return ins.map((_) => unit);
-    }
+    final replaced = await _bookRepo.replaceAll(
+      decision.incomingBooks.map((b) => b.copyWith(id: Book.emptyId)).toList(),
+    );
+    if (replaced.isLeft()) return replaced.map((_) => unit);
     if (decision.incomingLibraryId.isNotEmpty) {
       await _settings.setLibraryId(decision.incomingLibraryId);
       if (decision.incomingLibraryName.isNotEmpty) {
@@ -289,6 +280,12 @@ final class MergeLibraryUseCase {
   /// Runs the engine against the current library and auto-applies the add-only
   /// union (the new rows get fresh ids but KEEP their uid so future merges
   /// reconcile). Conflicts + possible-duplicates are returned, not applied.
+  ///
+  /// The adds land via ONE [BookRepository.insertAll] call, which is atomic —
+  /// the reported [MergeResult.added] can never disagree with the committed
+  /// DB state (REVIEW_FINDINGS_2 S5: the old sequential loop committed rows
+  /// 1..N and then reported total failure when row N+1 violated a UNIQUE
+  /// index).
   Future<Either<Failure, MergeResult>> _applyEngineMerge(
     List<Book> incoming,
   ) async {
@@ -305,8 +302,10 @@ final class MergeLibraryUseCase {
     }
     final local = localRes.getOrElse((_) => const <Book>[]);
     final plan = planMerge(local, incoming);
-    for (final book in plan.toAdd) {
-      final ins = await _bookRepo.insert(book.copyWith(id: Book.emptyId));
+    if (plan.toAdd.isNotEmpty) {
+      final ins = await _bookRepo.insertAll(
+        plan.toAdd.map((b) => b.copyWith(id: Book.emptyId)).toList(),
+      );
       if (ins.isLeft()) {
         return ins.map(
           (_) => const MergeResult(

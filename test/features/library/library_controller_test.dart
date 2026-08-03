@@ -70,6 +70,9 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async =>
       right(books.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+      right(books.length);
 }
 
 /// In-memory settings repo so the settings controller (and its sort value)

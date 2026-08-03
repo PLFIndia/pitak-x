@@ -46,6 +46,9 @@ class _EmptyRepo implements BookRepository {
   Future<Either<Failure, Book>> update(Book book) async => right(book);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+      right(b.length);
 }
 
 /// Settings repo whose [load] resolves only after [gate] completes, so a test

@@ -522,7 +522,7 @@ final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
 // ignore: unused_element
 typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
 String _$remoteCoverFetcherHash() =>
-    r'd31a4be4499dd9feb7175cb4599470197a94eb4f';
+    r'501722a897227e9a5d7a1b2a0bfe78e0f02e7a31';
 
 /// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
 /// with the publish downscale applied. Injected into the publish controller
@@ -694,6 +694,30 @@ final screenSecurityProvider = AutoDisposeProvider<ScreenSecurity>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenSecurityRef = AutoDisposeProviderRef<ScreenSecurity>;
+String _$screenCaptureProtectedHash() =>
+    r'4270b86c7cebaa1556cb10261ebed6aa92ad0c57';
+
+/// Single source of truth for the window FLAG_SECURE policy: ON when the
+/// vault is unlocked (borrower PII visible) OR any passphrase entry field is
+/// visible (#34/F-12 + REVIEW_FINDINGS_2 S2). main.dart listens to this and
+/// drives [screenSecurityProvider] — one decision point, so the page-level
+/// and vault-level signals can never race each other.
+///
+/// Copied from [screenCaptureProtected].
+@ProviderFor(screenCaptureProtected)
+final screenCaptureProtectedProvider = AutoDisposeProvider<bool>.internal(
+  screenCaptureProtected,
+  name: r'screenCaptureProtectedProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$screenCaptureProtectedHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ScreenCaptureProtectedRef = AutoDisposeProviderRef<bool>;
 String _$fileShareServiceHash() => r'4caa4196352d292bcbf88099f9a02fb2e0deb5ba';
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
@@ -1212,5 +1236,30 @@ final eventsRepositoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EventsRepositoryRef = AutoDisposeFutureProviderRef<EventsRepository>;
+String _$passphraseEntryVisibilityHash() =>
+    r'cf6a246b57a5b9acf1fafc361cee75a0f3730746';
+
+/// Count of currently-visible passphrase entry fields (vault create / unlock
+/// / change-passphrase / restore flows). Incremented by
+/// `SecurePassphraseField.initState`, decremented on dispose.
+///
+/// keepAlive is deliberate: the field captures this notifier in initState and
+/// calls it again from dispose(), which is only safe if the notifier can
+/// never be auto-disposed out from under the widget.
+///
+/// Copied from [PassphraseEntryVisibility].
+@ProviderFor(PassphraseEntryVisibility)
+final passphraseEntryVisibilityProvider =
+    NotifierProvider<PassphraseEntryVisibility, int>.internal(
+      PassphraseEntryVisibility.new,
+      name: r'passphraseEntryVisibilityProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$passphraseEntryVisibilityHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+typedef _$PassphraseEntryVisibility = Notifier<int>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

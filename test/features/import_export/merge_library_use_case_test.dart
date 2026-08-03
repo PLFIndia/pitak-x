@@ -13,6 +13,9 @@ class _FakeBooks implements BookRepository {
   final List<Book> _books;
   int _nextId = 1000;
 
+  /// Test-only failure injection for [replaceAll].
+  Failure? replaceAllFailure;
+
   List<Book> get books => _books;
 
   @override
@@ -64,6 +67,18 @@ class _FakeBooks implements BookRepository {
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async {
+    for (final b in books) {
+      await insert(b);
+    }
+    return right(books.length);
+  }
+
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+    // Mirrors the transactional contract: failure leaves the store untouched.
+    final failure = replaceAllFailure;
+    if (failure != null) return left(failure);
+    _books.clear();
     for (final b in books) {
       await insert(b);
     }
@@ -278,6 +293,69 @@ void main() {
     expect(repo.books.any((b) => b.title == 'FreshReplica'), isTrue);
     expect(settings.libraryId, otherId);
   });
+
+  // Regression for REVIEW_FINDINGS_2 S5 Major: two incoming rows sharing a
+  // new ISBN must not both reach the DB (UNIQUE isbn) — the first is added,
+  // the second surfaced, and the reported result matches the committed state.
+  test(
+    'duplicate ISBN within one file: one added, one surfaced, DB matches',
+    () async {
+      final repo = _FakeBooks([]);
+      final useCase = MergeLibraryUseCase(
+        bookRepo: repo,
+        settings: _FakeSettings(libraryId: matchingId),
+      );
+      final json = exportJson(
+        libraryId: matchingId,
+        books: [
+          {'bookUid': 'uA', 'title': 'Sapiens', 'isbn': '9780001'},
+          {'bookUid': 'uB', 'title': 'Sapiens dupe', 'isbn': '978-0001'},
+        ],
+      );
+
+      final res = await useCase.call(json);
+      final merged =
+          (res.getOrElse((f) => fail('merge failed: $f'))) as MergeMerged;
+      expect(merged.result.added, 1);
+      expect(merged.result.possibleDuplicates, hasLength(1));
+      // Reported state == committed state: exactly one new row.
+      expect(repo.books, hasLength(1));
+      expect(repo.books.single.bookUid, 'uA');
+    },
+  );
+
+  // Regression for REVIEW_FINDINGS_2 S5 Major: overwrite must be atomic — a
+  // failed replace leaves the local catalogue intact and does NOT adopt the
+  // incoming library identity.
+  test(
+    'applyOverwrite failure keeps the local catalogue and settings',
+    () async {
+      final repo = _FakeBooks([
+        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+      ])..replaceAllFailure = const StorageFailure('disk full');
+      final settings = _FakeSettings(
+        libraryId: matchingId,
+        libraryName: 'Mine',
+      );
+      final useCase = MergeLibraryUseCase(bookRepo: repo, settings: settings);
+
+      const decision = MergeDiffersDecision(
+        incomingBooks: [
+          Book(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
+        ],
+        incomingLibraryId: otherId,
+        incomingLibraryName: 'Riverside',
+        localLibraryName: 'Mine',
+        localIsEmpty: false,
+      );
+
+      final res = await useCase.applyOverwrite(decision);
+      expect(res.isLeft(), isTrue);
+      expect(repo.books.map((b) => b.title), ['OldBook']);
+      expect(settings.libraryId, matchingId);
+      expect(settings.libraryName, 'Mine');
+    },
+  );
 
   group('applyResolution', () {
     test('keepMine is a no-op', () async {

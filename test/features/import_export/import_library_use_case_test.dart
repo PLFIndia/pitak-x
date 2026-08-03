@@ -57,6 +57,14 @@ class _FakeBookRepo implements BookRepository {
     stored.addAll(books);
     return right(books.length);
   }
+
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+    stored
+      ..clear()
+      ..addAll(books);
+    return right(books.length);
+  }
 }
 
 class _FakeWishlistRepo implements WishlistRepository {
@@ -240,4 +248,6 @@ class _FailingBookRepo implements BookRepository {
   Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async => right(0);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async => right(0);
 }

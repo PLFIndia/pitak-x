@@ -96,6 +96,37 @@ void main() {
     },
   );
 
+  // Scaffold for schema migrations (REVIEW_FINDINGS_2 S3 / test-gap #8).
+  // schemaVersion is 1 with onCreate only. When the FIRST bump lands, the
+  // migration MUST ship with a forward-migration test in this group: create
+  // a database file at the OLD version (raw sqlite3 DDL mirroring the old
+  // schema — see restore_backup_test.dart's buildBooksDb for the pattern),
+  // reopen it through AppDatabase so the migration runs, then assert the
+  // data survived and the new schema objects exist. Bump the expectation
+  // below in the same PR as the schemaVersion bump.
+  group('schema migrations', () {
+    test('schemaVersion tripwire — update with every bump', () {
+      expect(
+        AppDatabase(NativeDatabase.memory()).schemaVersion,
+        1,
+        reason:
+            'schemaVersion changed without a migration test: add a '
+            'forward-migration test to this group in the same PR.',
+      );
+    });
+
+    test('a fresh database opens with the expected tables and FTS', () async {
+      // Virtual tables (books_fts) appear in sqlite_master as type 'table'.
+      final tables = await db
+          .customSelect(
+            "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
+          )
+          .map((r) => r.read<String>('name'))
+          .get();
+      expect(tables, containsAll(['books', 'wishlist_books', 'books_fts']));
+    });
+  });
+
   test('ISBN unique index rejects duplicate non-null isbn', () async {
     await db
         .into(db.books)

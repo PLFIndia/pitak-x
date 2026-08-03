@@ -26,6 +26,53 @@ void main() {
     expect(html, isNot(contains('{{LOGO_DATA_URL}}')));
   });
 
+  // Regression for REVIEW_FINDINGS_2 S7: the logo placeholder substitutes
+  // into an <img src="..."> attribute, so only a strict data:image base64
+  // shape may pass — anything else must be dropped (fail closed).
+  group('logo data URL validation', () {
+    test('a valid raster data URL passes through', () async {
+      const logo = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==';
+      final html = utf8.decode(
+        await const ViewerHtmlBuilder(
+          libraryName: 'X',
+          contact: PublishContact(),
+          logoDataUrl: logo,
+        ).build(),
+      );
+      expect(html, contains('src="$logo"'));
+    });
+
+    test('attribute-injection attempts are dropped', () async {
+      final html = utf8.decode(
+        await const ViewerHtmlBuilder(
+          libraryName: 'X',
+          contact: PublishContact(),
+          logoDataUrl: 'x" onerror="alert(1)',
+        ).build(),
+      );
+      expect(html, isNot(contains('onerror="alert')));
+      expect(html, contains('src=""'));
+    });
+
+    test('svg data URLs and non-data schemes are dropped', () async {
+      for (final bad in [
+        'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=',
+        'javascript:alert(1)',
+        'https://evil.example/x.png',
+        'data:text/html;base64,PHNjcmlwdD4=',
+      ]) {
+        final html = utf8.decode(
+          await ViewerHtmlBuilder(
+            libraryName: 'X',
+            contact: const PublishContact(),
+            logoDataUrl: bad,
+          ).build(),
+        );
+        expect(html, isNot(contains(bad)), reason: 'must drop: $bad');
+      }
+    });
+  });
+
   test('blank library name falls back to a default', () async {
     final html = utf8.decode(
       await const ViewerHtmlBuilder(

@@ -57,5 +57,14 @@ abstract interface class BookRepository {
   Future<Either<Failure, Book?>> findByIsbn(String isbn);
 
   /// Bulk insert used by restore/import. Returns the number inserted.
+  /// Atomic: either every row lands or none does.
   Future<Either<Failure, int>> insertAll(List<Book> books);
+
+  /// Atomically replaces the ENTIRE catalogue with [books] (delete all +
+  /// insert all in one transaction). Used by merge OVERWRITE: a failure
+  /// mid-way must roll back so the device is never left with a partial or
+  /// empty catalogue reported as success/failure incorrectly
+  /// (REVIEW_FINDINGS_2 S5). Rows keep their incoming `book_uid` (cross-device
+  /// identity); a null uid is minted fresh, matching [insert].
+  Future<Either<Failure, int>> replaceAll(List<Book> books);
 }

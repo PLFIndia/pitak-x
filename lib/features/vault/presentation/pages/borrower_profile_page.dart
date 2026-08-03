@@ -203,11 +203,27 @@ class _ContactSection extends StatelessWidget {
 
   final BorrowerContact contact;
 
-  Future<void> _launch(BuildContext context, String uri) async {
-    final ok = await launchUrl(
-      Uri.parse(uri),
-      mode: LaunchMode.externalApplication,
-    );
+  // Per-kind actions ONLY (REVIEW_FINDINGS_2 S9): there is deliberately no
+  // general "launch this string" helper on this page — each action asks
+  // [BorrowerContact] for its own validated URI, so a future caller cannot
+  // launch an arbitrary/injected URI by mistake.
+  Future<void> _openCall(BuildContext context) =>
+      _open(context, contact.telUri);
+
+  Future<void> _openWhatsApp(BuildContext context) =>
+      _open(context, contact.whatsappUri);
+
+  Future<void> _openEmail(BuildContext context) =>
+      _open(context, contact.mailtoUri);
+
+  /// Launches a URI constructed by [BorrowerContact]'s validated builders
+  /// (digit-filtered tel/wa.me parts, regex-validated mailto) — never an
+  /// arbitrary caller-supplied string. Null means the contact part was
+  /// missing/invalid; the buttons aren't rendered then, so this is defensive.
+  Future<void> _open(BuildContext context, String? uri) async {
+    final parsed = uri == null ? null : Uri.tryParse(uri);
+    if (parsed == null) return;
+    final ok = await launchUrl(parsed, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('No app available for that action.')),
@@ -240,7 +256,7 @@ class _ContactSection extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.call),
                     tooltip: 'Call',
-                    onPressed: () => _launch(context, tel),
+                    onPressed: () => _openCall(context),
                   ),
                 if (wa != null)
                   IconButton(
@@ -249,7 +265,7 @@ class _ContactSection extends StatelessWidget {
                       color: Color(0xFF25D366), // WhatsApp brand green
                     ),
                     tooltip: 'WhatsApp',
-                    onPressed: () => _launch(context, wa),
+                    onPressed: () => _openWhatsApp(context),
                   ),
               ],
             ),
@@ -266,7 +282,7 @@ class _ContactSection extends StatelessWidget {
                   IconButton(
                     icon: const Icon(Icons.email_outlined),
                     tooltip: 'Email',
-                    onPressed: () => _launch(context, mail),
+                    onPressed: () => _openEmail(context),
                   ),
               ],
             ),

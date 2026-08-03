@@ -52,7 +52,13 @@ extension BookCompanionMapper on Book {
     author: Value(author),
     titleSort: Value(title.toLowerCase()),
     authorSort: Value((author ?? '').toLowerCase()),
-    isbn: Value(isbn),
+    // Blank ISBNs are stored as NULL, never '': the UNIQUE index on isbn is
+    // documented "unique among non-null" and SQLite lets any number of NULLs
+    // through, while two '' rows would collide. Only crafted import files
+    // produce a blank-string ISBN (the UI trims to null), but the mapper is
+    // the single persistence choke point, so the invariant lives here
+    // (REVIEW_FINDINGS_2 S5).
+    isbn: Value(isbn == null || isbn!.trim().isEmpty ? null : isbn),
     publisher: Value(publisher),
     publishedYear: Value(publishedYear),
     genre: Value(genre),

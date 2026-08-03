@@ -12,6 +12,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
+    show hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -44,7 +46,7 @@ class ImportController extends _$ImportController {
   Future<void> importBytes(Uint8List bytes) async {
     state = const AsyncLoading();
     final useCase = await ref.read(importLibraryUseCaseProvider.future);
-    if (_isZip(bytes)) {
+    if (hasZipLocalFileHeader(bytes)) {
       final reader = await ref.read(libraryBundleReaderProvider.future);
       final payload = await reader.read(bytes);
       // Both read() and applyPayload() fail with the same `Failure` type, so a
@@ -64,12 +66,4 @@ class ImportController extends _$ImportController {
     final text = utf8.decode(bytes, allowMalformed: true);
     await importText(text);
   }
-
-  /// ZIP local-file-header magic check (`50 4B 03 04`).
-  static bool _isZip(Uint8List b) =>
-      b.length >= 4 &&
-      b[0] == 0x50 &&
-      b[1] == 0x4B &&
-      b[2] == 0x03 &&
-      b[3] == 0x04;
 }

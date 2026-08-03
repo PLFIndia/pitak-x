@@ -72,6 +72,9 @@ class _Books implements BookRepository {
   Future<Either<Failure, Book?>> findByIsbn(String i) async => right(null);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+      right(b.length);
 }
 
 class _Wishlist implements WishlistRepository {

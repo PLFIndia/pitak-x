@@ -16,10 +16,16 @@ library;
 import 'package:flutter/services.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
-/// Pure policy: the window must be screen-capture-protected exactly when the
-/// vault is unlocked (vault PII is on screen). Mirrors Kotlin
-/// `VaultWindowSecurity.shouldSecure`.
-bool shouldSecureForState(VaultSessionState state) => state is VaultUnlocked;
+/// Pure policy: the window must be screen-capture-protected when the vault is
+/// unlocked (vault PII is on screen) — mirroring Kotlin
+/// `VaultWindowSecurity.shouldSecure` — OR while any passphrase entry field
+/// is visible (REVIEW_FINDINGS_2 S2: the create/unlock/change/restore flows
+/// run BEFORE any unlock succeeds, so keying off `VaultUnlocked` alone left
+/// those screens capturable).
+bool shouldSecureForState(
+  VaultSessionState state, {
+  bool passphraseEntryVisible = false,
+}) => state is VaultUnlocked || passphraseEntryVisible;
 
 /// Toggles OS-level screen-capture protection for the app window.
 ///

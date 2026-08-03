@@ -13,5 +13,29 @@ void main() {
         isTrue,
       );
     });
+
+    // REVIEW_FINDINGS_2 S2: passphrase entry screens (create/unlock/change/
+    // restore) run before any unlock — they must be protected too.
+    test('secures while a passphrase entry field is visible', () {
+      expect(
+        shouldSecureForState(
+          const VaultUninitialized(),
+          passphraseEntryVisible: true,
+        ),
+        isTrue,
+      );
+      expect(
+        shouldSecureForState(const VaultLocked(), passphraseEntryVisible: true),
+        isTrue,
+      );
+      // Unlocked stays protected regardless (PII + possibly the field).
+      expect(
+        shouldSecureForState(
+          const VaultUnlocked(VaultData.empty),
+          passphraseEntryVisible: true,
+        ),
+        isTrue,
+      );
+    });
   });
 }

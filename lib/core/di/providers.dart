@@ -289,8 +289,10 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
   return (url) async {
     final raw = await BoundedCoverFetcher(client: client).fetch(url);
     if (raw == null) return null;
-    // Downscale before publishing (400x600 q80) so the git push stays small.
-    return ImageDownscaler.downscaleJpeg(raw) ?? raw;
+    // Downscale before publishing (400x600 q80): small git push AND EXIF/GPS
+    // stripped. No raw fallback — a cover that can't be re-encoded is
+    // dropped, never published unstripped (REVIEW_FINDINGS_2 S11).
+    return ImageDownscaler.downscaleJpeg(raw);
   };
 }
 
@@ -354,6 +356,42 @@ Future<String?> publishedSiteUrl(PublishedSiteUrlRef ref) async {
 @riverpod
 ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
     const MethodChannelScreenSecurity();
+
+/// Count of currently-visible passphrase entry fields (vault create / unlock
+/// / change-passphrase / restore flows). Incremented by
+/// `SecurePassphraseField.initState`, decremented on dispose.
+///
+/// keepAlive is deliberate: the field captures this notifier in initState and
+/// calls it again from dispose(), which is only safe if the notifier can
+/// never be auto-disposed out from under the widget.
+@Riverpod(keepAlive: true)
+class PassphraseEntryVisibility extends _$PassphraseEntryVisibility {
+  @override
+  int build() => 0;
+
+  /// A passphrase field appeared on screen.
+  void markVisible() => state = state + 1;
+
+  /// A passphrase field left the screen. Clamped at zero: an unbalanced call
+  /// is a caller bug, but it must never drive the count negative (that would
+  /// silently turn protection OFF later — fail closed).
+  void markHidden() => state = state > 0 ? state - 1 : 0;
+}
+
+/// Single source of truth for the window FLAG_SECURE policy: ON when the
+/// vault is unlocked (borrower PII visible) OR any passphrase entry field is
+/// visible (#34/F-12 + REVIEW_FINDINGS_2 S2). main.dart listens to this and
+/// drives [screenSecurityProvider] — one decision point, so the page-level
+/// and vault-level signals can never race each other.
+@riverpod
+bool screenCaptureProtected(ScreenCaptureProtectedRef ref) {
+  final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
+  final entering = ref.watch(passphraseEntryVisibilityProvider) > 0;
+  return shouldSecureForState(
+    session ?? const VaultUninitialized(),
+    passphraseEntryVisible: entering,
+  );
+}
 
 /// Hands generated files (exports, backups) to the OS share sheet. Overridden
 /// in widget tests with a fake to assert what would be shared.

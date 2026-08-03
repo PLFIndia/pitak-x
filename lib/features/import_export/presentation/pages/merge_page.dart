@@ -21,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 
 /// Screen to merge an incoming library file into the local catalogue.
@@ -57,6 +58,16 @@ class _MergePageState extends ConsumerState<MergePage> {
     _reset();
     setState(() => _busy = true);
     try {
+      // Pre-read size guard (REVIEW_FINDINGS_2 S4): the parser's
+      // ImportLimits.maxTextChars check only runs AFTER the whole file is in
+      // memory, so a multi-GB pick could OOM the app first. UTF-8 text never
+      // has more characters than bytes, so a byte-length check is a sound
+      // early reject; the parser re-checks the decoded length regardless.
+      final byteLength = await file.length();
+      if (byteLength > ImportLimits.defaults.maxTextChars) {
+        setState(() => _error = 'File is too large to import safely.');
+        return;
+      }
       final text = await file.readAsString();
       final useCase = await ref.read(mergeLibraryUseCaseProvider.future);
       final res = await useCase.call(text);

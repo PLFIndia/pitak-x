@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
-import 'package:pitaka/features/vault/application/vault_session_controller.dart';
-import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/src/rust/frb_generated.dart';
 
 Future<void> main() async {
@@ -35,19 +32,13 @@ class PitakaApp extends ConsumerWidget {
         );
     final scheme = ColorScheme.fromSeed(seedColor: Colors.indigo);
 
-    // Screen-capture protection (Android FLAG_SECURE) follows the vault state
-    // app-wide: on while unlocked (PII visible), off otherwise (#34/F-12).
-    ref.listen<bool>(
-      vaultSessionControllerProvider.select(
-        (async) => shouldSecureForState(
-          async.valueOrNull ?? const VaultUninitialized(),
-        ),
-      ),
-      (previous, secure) {
-        if (previous == secure) return;
-        ref.read(screenSecurityProvider).setSecure(secure: secure);
-      },
-    );
+    // Screen-capture protection (Android FLAG_SECURE) follows the combined
+    // policy app-wide: on while the vault is unlocked (PII visible) OR any
+    // passphrase entry field is visible (#34/F-12, REVIEW_FINDINGS_2 S2).
+    ref.listen<bool>(screenCaptureProtectedProvider, (previous, secure) {
+      if (previous == secure) return;
+      ref.read(screenSecurityProvider).setSecure(secure: secure);
+    });
 
     return MaterialApp(
       title: 'Pitak',

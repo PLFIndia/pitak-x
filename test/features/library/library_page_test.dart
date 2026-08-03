@@ -56,6 +56,9 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async =>
       right(books.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+      right(books.length);
 }
 
 Widget _app(BookRepository repo) {

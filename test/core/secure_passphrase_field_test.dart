@@ -1,8 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
+import 'package:pitaka/core/di/providers.dart';
 
 void main() {
   group('SecurePassphraseController', () {
@@ -53,15 +55,19 @@ void main() {
   });
 
   group('SecurePassphraseField widget', () {
+    // The field registers with passphraseEntryVisibilityProvider (Riverpod),
+    // so every pump needs a ProviderScope.
+    Widget wrap(SecurePassphraseController controller) => ProviderScope(
+      child: MaterialApp(
+        home: Scaffold(body: SecurePassphraseField(controller: controller)),
+      ),
+    );
+
     testWidgets('shows bullets, never the typed characters', (tester) async {
       final controller = SecurePassphraseController();
       addTearDown(controller.dispose);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: SecurePassphraseField(controller: controller)),
-        ),
-      );
+      await tester.pumpWidget(wrap(controller));
 
       await tester.enterText(find.byType(TextField), 'pw');
       await tester.pump();
@@ -76,11 +82,7 @@ void main() {
       final controller = SecurePassphraseController();
       addTearDown(controller.dispose);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: SecurePassphraseField(controller: controller)),
-        ),
-      );
+      await tester.pumpWidget(wrap(controller));
 
       await tester.enterText(find.byType(TextField), 'abc');
       await tester.pump();
@@ -89,6 +91,57 @@ void main() {
       await tester.tap(find.byIcon(Icons.clear));
       await tester.pump();
       expect(controller.isEmpty, isTrue);
+    });
+
+    // REVIEW_FINDINGS_2 S2: mounting a passphrase field must turn the window
+    // FLAG_SECURE policy ON (passphrase screens run before any unlock).
+    testWidgets('mounting marks passphrase entry visible; dispose unmarks', (
+      tester,
+    ) async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+
+      expect(container.read(passphraseEntryVisibilityProvider), 0);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(body: SecurePassphraseField(controller: controller)),
+          ),
+        ),
+      );
+      // The increment is deferred to a post-frame callback.
+      await tester.pump();
+      expect(container.read(passphraseEntryVisibilityProvider), 1);
+
+      // Two simultaneous fields count independently.
+      final second = SecurePassphraseController();
+      addTearDown(second.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  SecurePassphraseField(controller: controller),
+                  SecurePassphraseField(controller: second),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(container.read(passphraseEntryVisibilityProvider), 2);
+
+      // Tearing the tree down balances the count back to zero.
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump();
+      expect(container.read(passphraseEntryVisibilityProvider), 0);
     });
   });
 }

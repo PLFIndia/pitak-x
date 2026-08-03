@@ -24,13 +24,8 @@ part 'publish_controller.g.dart';
 /// Runs a publish and exposes its [PublishResult]; idle until [publish] runs.
 @riverpod
 class PublishController extends _$PublishController {
-  PublishPhase? _phase;
-
   @override
   FutureOr<PublishResult?> build() => null;
-
-  /// The latest coarse phase emitted during a run (for progress UI).
-  PublishPhase? get phase => _phase;
 
   /// Runs a publish end-to-end. Returns the result and also stores it in state.
   Future<PublishResult> publish() async {
@@ -99,7 +94,9 @@ class PublishController extends _$PublishController {
       activeLoanCounts: counts,
       encodeBooksJson: (e) =>
           utf8.encode(const JsonEncoder.withIndent('  ').convert(e.toJson())),
-      onPhase: (ph) => _phase = ph,
+      // No onPhase wiring: the page shows the AsyncValue only, and nothing
+      // reads per-phase progress (REVIEW_FINDINGS_2 — the old `_phase` field
+      // was write-only dead weight).
     );
   }
 
@@ -109,10 +106,13 @@ class PublishController extends _$PublishController {
     final file = File(p.join(coversDir, leaf));
     if (!file.existsSync()) return null;
     try {
-      // Downscale before publishing (400x600 q80) so the git push stays small
-      // even if the stored cover is larger (closes the Q-P1 follow-up).
-      return ImageDownscaler.downscaleJpeg(await file.readAsBytes()) ??
-          await file.readAsBytes();
+      // Downscale before publishing (400x600 q80): keeps the git push small
+      // AND strips EXIF/GPS before anything reaches the public site. NO raw
+      // fallback — when the re-encode fails (undecodable, or over the source
+      // dimension cap) the cover is DROPPED, never published unstripped
+      // (REVIEW_FINDINGS_2 S11: a raw-bytes fallback would silently ship the
+      // photographer's embedded GPS coordinates).
+      return ImageDownscaler.downscaleJpeg(await file.readAsBytes());
     } on Exception {
       return null;
     }

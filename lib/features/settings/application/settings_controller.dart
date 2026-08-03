@@ -21,11 +21,23 @@ class SettingsController extends _$SettingsController {
     return repo.load();
   }
 
+  /// Persists via [persist], then publishes [next]. A prefs write failure
+  /// must NOT escape as an unhandled async error from an un-awaited setter
+  /// (REVIEW_FINDINGS_2, carried Minor): it is folded into an [AsyncError]
+  /// state instead, which every consumer renders with a safe fallback
+  /// (settings page shows its fixed error text; theme/sort fall back to
+  /// defaults). The in-memory state is left unchanged — fail closed rather
+  /// than show a preference the device never actually stored.
   Future<void> _update(
     Future<void> Function() persist,
     AppSettings next,
   ) async {
-    await persist();
+    try {
+      await persist();
+    } on Object catch (e, st) {
+      state = AsyncError(e, st);
+      return;
+    }
     state = AsyncData(next);
   }
 

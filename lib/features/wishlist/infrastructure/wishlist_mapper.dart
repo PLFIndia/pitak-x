@@ -39,7 +39,9 @@ extension WishlistCompanionMapper on WishlistBook {
     title: Value(title),
     titleTransliteration: Value(titleTransliteration),
     author: Value(author),
-    isbn: Value(isbn),
+    // Blank ISBN → NULL, mirroring BookCompanionMapper: the UNIQUE isbn
+    // index is "unique among non-null"; two '' rows would collide.
+    isbn: Value(isbn == null || isbn!.trim().isEmpty ? null : isbn),
     publisher: Value(publisher),
     publishedYear: Value(publishedYear),
     coverUrl: Value(coverUrl),

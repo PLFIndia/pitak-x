@@ -15,6 +15,13 @@ String _$vaultSessionControllerHash() =>
 /// screen changes; it is torn down explicitly via [lock] or when the app
 /// disposes the provider (which wipes the passphrase via `ref.onDispose`).
 ///
+/// DOCUMENTED TRADE-OFF (REVIEW_FINDINGS_2 S2, carried Minor): the unlocked
+/// session — including the held passphrase — also survives APP BACKGROUNDING
+/// indefinitely. `app_gate.dart` re-gates the UI on resume, but the secret
+/// stays in memory and the vault stays unlocked behind the gate. This is a
+/// deliberate UX choice (no re-entry on every app switch); an optional
+/// auto-lock timeout is the accepted future hardening, not a bug fix.
+///
 /// Copied from [VaultSessionController].
 @ProviderFor(VaultSessionController)
 final vaultSessionControllerProvider =
