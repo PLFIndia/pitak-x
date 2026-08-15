@@ -159,12 +159,14 @@ flutter test                        # 685 pass at 1.1.8
 # After @riverpod/freezed/drift edits: dart run build_runner build --delete-conflicting-outputs
 # After rust/src/api.rs edits: flutter_rust_bridge_codegen generate
 
-# On-device (Pixel 8a, pkg dev.khoj.pitaka.fdroid):
-flutter build apk --release         # rebuild from CURRENT code (stale APK = known trap)
+# On-device (Pixel 8a, pkg dev.khoj.pitaka.fdroid). Flavors are REQUIRED on
+# every build/run command since 2026-08-15 (channel dimension: fdroid/play):
+flutter build apk --release --flavor fdroid   # rebuild from CURRENT code (stale APK = known trap)
 ADB=$HOME/Library/Android/sdk/platform-tools/adb   # adb not on PATH
 # verify frb dispatcher survived R8 (expect 2 lines: _primary + _sync):
 nm -D $(find build -path '*arm64*/libpitak_crypto.so'|head -1) | grep frb_pde_ffi_dispatcher
-$ADB install -r build/app/outputs/flutter-apk/app-release.apk   # -r preserves vault data
+$ADB install -r build/app/outputs/flutter-apk/app-fdroid-release.apk   # -r preserves vault data
+# Google Play artifact: flutter build appbundle --release --flavor play
 ```
 
 The device also carries Kotlin `dev.khoj.pitaka.fdroid*` variants — different

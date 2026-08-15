@@ -1,4 +1,63 @@
-# Task: Dependency upgrade programme (3 tiers) — PLANNED, blocked on 1.1.7 going live on F-Droid
+# Task: Google Play track — IN PROGRESS (started 2026-08-15)
+
+## Understanding
+- Ship pitak-x to Google Play. User has an active Play developer account.
+- Readiness analysis 2026-08-15 (session notes): targetSdk 36 OK; permissions
+  minimal (CAMERA/INTERNET/USE_BIOMETRIC); store copy adaptable from
+  fastlane/; security posture strong post round-2 remediation.
+
+## Privacy & threat notes
+- Play listing must not weaken the privacy posture: data-safety form answers
+  honestly (no dev-collected data; user-initiated-only egress to Open
+  Library / Google Books / user's own GitHub), privacy policy required
+  (CAMERA). Upload keystore generated locally, kept OUTSIDE the repo,
+  passwords only in git-ignored android/key.properties; Play App Signing
+  holds the real signing key at Google.
+
+## Decision points
+- Play applicationId: `dev.khoj.pitaka` via a `play` product flavor (user
+  approved the flavor approach 2026-08-15). `.fdroid` id untouched.
+  Must verify `dev.khoj.pitaka` is free on Play Console at listing creation.
+
+## Steps
+- [x] 1. `channel` flavor dimension: `fdroid` (dev.khoj.pitaka.fdroid) +
+      `play` (dev.khoj.pitaka) in android/app/build.gradle.kts.
+- [x] 2. F-Droid recipe mirror: note that post-flavor build blocks need
+      `--flavor fdroid` + flavored output paths (fdroiddata MR at next
+      release; existing 1.1.8 blocks untouched — they build pre-flavor tags).
+- [x] 3. Docs: README + HANDOFF build commands gain `--flavor fdroid` for
+      dev/F-Droid; key.properties.example aligned to Play upload-key terms
+      (+ PKCS12 same-password note — hit the padding failure for real).
+- [x] 4. Generate upload keystore (~/pitak-upload.jks, outside repo) +
+      android/key.properties (600 perms; :env password passing; PKCS12
+      keyPassword == storePassword).
+- [x] 5. `fvm flutter build appbundle --release --flavor play` — AAB built +
+      signed (build/app/outputs/bundle/playRelease/app-play-release.aab,
+      92 MB). Toolchain fixes needed on this machine: fvm + Flutter 3.44.2
+      (lockfile pinned), user-local Temurin 21 at ~/development/jdk-21 +
+      ~/.gradle/gradle.properties org.gradle.java.home (system JDK 26 breaks
+      Kotlin 2.2.20).
+- [x] 6. Verify AAB: all 64-bit .so ≥0x4000-aligned (16 KB requirement met;
+      armeabi-v7a 4 KB-aligned but 32-bit is exempt); frb dispatcher symbols
+      present (arm64); manifest package dev.khoj.pitaka, versionName 1.1.8;
+      debug symbols correctly in BUNDLE-METADATA (libflutter/libapp/
+      libpitak_crypto .sym present).
+- [ ] 6a. Flutter tool's post-build apkanalyzer verification fails because
+      Android cmdline-tools is not installed — the AAB itself is valid.
+      Install cmdline-tools so builds exit 0.
+- [ ] 7. (User, in Play Console) create app, enroll Play App Signing,
+      privacy policy URL, data safety, content rating, listing assets
+      (512 icon via tool/gen_app_icon.py, feature graphic, screenshots),
+      closed test (12 testers / 14 days for new personal accounts).
+
+## Result
+Steps 1–6 done 2026-08-15. Uploadable, signed Play AAB produced and verified
+(16 KB, symbols, identity). Remaining: cmdline-tools install (build exit
+code cosmetics), then Play Console work (step 7, user-side).
+
+---
+
+# Task: Dependency upgrade programme (3 tiers) — PLANNED, ~~blocked on 1.1.7 going live on F-Droid~~ GATE SATISFIED (1.1.8 live, code 133)
 
 ## Understanding
 - `flutter pub outdated` (2026-07-30): 77 packages behind. Grouped into three

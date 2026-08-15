@@ -13,6 +13,14 @@ AutoName: Pitak
 RepoType: git
 Repo: https://github.com/PLFIndia/pitak-x.git
 
+# FLAVOR NOTE (2026-08-15, Play track): the repo now uses a `channel` flavor
+# dimension (`fdroid` / `play`). Build blocks for tags AFTER the flavor commit
+# must add `--flavor fdroid` to every `flutter build apk` line, and the
+# `output:` paths gain the flavor: build/app/outputs/flutter-apk/
+#   app-fdroid-<abi>-release.apk
+# Blocks for 1.1.8 and earlier below are correct as-is (pre-flavor tags).
+# The fdroiddata MR for the next release must carry this change.
+
 Builds:
   # Historic legacy-Kotlin build. Kept verbatim to preserve the F-Droid
   # version history; do not edit.

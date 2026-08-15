@@ -85,12 +85,16 @@ flutter_rust_bridge_codegen generate
 ### Run / build
 
 ```bash
-flutter run -d <device-id>            # debug, with hot reload
-flutter build apk --release           # multi-ABI release APK (~98 MB; bundled Noto fonts)
-flutter install -d <device-id> --release
+flutter run -d <device-id> --flavor fdroid            # debug, with hot reload
+flutter build apk --release --flavor fdroid           # F-Droid APKs (~98 MB; bundled Noto fonts)
+flutter build appbundle --release --flavor play       # Google Play AAB
+flutter install -d <device-id> --release --flavor fdroid
 ```
 
-`flutter devices` lists ids. The Android package id is `dev.khoj.pitaka`.
+`flutter devices` lists ids. The app ships per-store flavors: `fdroid`
+(applicationId `dev.khoj.pitaka.fdroid`, matching the live F-Droid listing)
+and `play` (applicationId `dev.khoj.pitaka` for Google Play). Every build
+command needs a `--flavor`.
 
 > First Android build is slow: cargokit cross-compiles the Rust core for every
 > ABI. Use `flutter build apk` (visible Gradle/Rust progress) rather than a bare

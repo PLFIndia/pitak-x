@@ -47,15 +47,27 @@ android {
         includeInBundle = false
     }
 
+    // Distribution channels. The applicationId lives on the FLAVOR, not in
+    // defaultConfig, so each store keeps its own install identity:
+    //  - fdroid: MUST keep matching the package already published on F-Droid
+    //    (dev.khoj.pitaka.fdroid) so existing users receive updates in place.
+    //  - play:   the Google Play listing identity (dev.khoj.pitaka).
+    // The code/resource package (namespace, above) stays dev.khoj.pitaka for
+    // both. NOTE: with flavors present, EVERY build needs --flavor (e.g.
+    // `flutter run --flavor fdroid`, `flutter build appbundle --flavor play`).
+    flavorDimensions += "channel"
+    productFlavors {
+        create("fdroid") {
+            dimension = "channel"
+            applicationId = "dev.khoj.pitaka.fdroid"
+        }
+        create("play") {
+            dimension = "channel"
+            applicationId = "dev.khoj.pitaka"
+        }
+    }
+
     defaultConfig {
-        // F-Droid distribution identity. This MUST match the package already
-        // published on F-Droid (dev.khoj.pitaka.fdroid) so existing users
-        // receive pitak-x as an in-place UPDATE rather than a second app.
-        // The code/resource package (namespace, above) stays dev.khoj.pitaka;
-        // only the installed applicationId carries the .fdroid suffix.
-        // If a separate Play/direct channel is ever added, split this into a
-        // product flavor instead of changing it here.
-        applicationId = "dev.khoj.pitaka.fdroid"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // flutter_zxing (zxing-cpp FFI) requires API 23+. The published F-Droid
