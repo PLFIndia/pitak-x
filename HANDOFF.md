@@ -1,46 +1,49 @@
-# HANDOFF — Pitak Kotlin→Flutter port
+# HANDOFF — Pitak (Kotlin→Flutter port)
 
-> Read this first, then `PLAN.md` (authoritative: full roadmap + every step's
-> "Result" entry, decisions, feature-gap analysis).
+> Read this first, then `PLAN.md` (authoritative task log: roadmap, per-step
+> "Result" entries, decisions, out-of-scope observations).
 
-_Last updated: 2026-06-27 (git/remote + README doc sync)._
+_Last updated: 2026-08-15 (stale-docs cleanup + Google Play track started)._
 
-**Status: Feature-rich and stable. Recent sessions shipped: PDF export, Pitaka→
-Pitak UI rename, launch splash + opt-in app-wide biometric gate, user library-
-logo feature, the Track-B batch (logo→PDF header, multi-maintainer Merge port,
-Pitak launcher icon), and two on-device bugfixes: (a) Android export/backup save
-(share_plus — file_selector had no Android save dialog), and (b) **Devanagari
-PDF shaping — PDF TEXT IS NOW RENDERED AS SHAPED IMAGES** (Flutter/HarfBuzz
-shapes each run → embedded PNG tile; fixes conjuncts/half-letters/matra; tradeoff
-= text not selectable). See §8 + PLAN.md "Bugfix 2". Host-tested; built + installed
-on the Pixel 8a but NOT yet user-confirmed on-device — see §6.**
+**Status: stable; shipped on F-Droid as 1.1.8 (live — versionCodes 131–133,
+confirmed via the F-Droid API).** The round-2 security review is fully
+remediated (1 Blocker, 4 Majors, 10 Minor/Nits — see PLAN.md "Fix
+REVIEW_FINDINGS_2" → Result). The two `REVIEW_FINDINGS*.md` files and
+`design_preview/` were removed as superseded; they remain in git history and
+their open items live in PLAN.md's out-of-scope sections.
 
-- Gates green: `flutter analyze lib test` 0 · `dart format` clean ·
-  **400 Dart tests** · **22 Rust tests** · multi-ABI release APK builds
-  (~98MB release APK — Noto fonts add weight) + installs on a physical Pixel 8a
-  (FRB dispatcher verified surviving R8).
-- **Git repo NOW EXISTS** (this changed — older notes saying "no git repo" are
-  stale). Remote: `origin` → `https://github.com/PLFIndia/pitak-x.git`. Default
-  branch `main`. `*.pitabak` archives and build output are git-ignored, not
-  committed. Branch/PR ops are §9 actions — ask before commit/push/branch-delete.
-- Release is **debug-signed** (a real keystore is the main pre-ship gate).
-- Package id (Android `applicationId` + `namespace`): `dev.khoj.pitaka`.
-  Toolchain: Flutter 3.44.2 stable (pinned in .fvmrc) / Dart SDK ^3.11.
+- Gates green at release: `flutter analyze lib test` 0 issues · `dart format`
+  clean · **685 Dart tests** · **22 Rust tests** · multi-ABI release APK
+  (~100 MB — bundled Noto fonts) installs on a physical Pixel 8a.
+- Repo: `origin` → `https://github.com/PLFIndia/pitak-x.git`, default branch
+  `main`. `*.pitabak` + `build/` are git-ignored. Commit/push/branch ops need
+  explicit per-invocation approval (§9 of the harness AGENTS.md).
+- Package id: namespace `dev.khoj.pitaka`; applicationId
+  `dev.khoj.pitaka.fdroid` (matches the live F-Droid listing so F-Droid users
+  get updates). A Play/direct channel must be a **product flavor with its own
+  applicationId** (see the comment in `android/app/build.gradle.kts`) — do NOT
+  ship the `.fdroid` id to Play.
+- Signing: release builds use `android/key.properties` when present
+  (template: `android/key.properties.example`), else fall back to debug
+  signing with a loud warning. A real upload keystore + Play App Signing is
+  the main pre-ship gate for Google Play.
+- Toolchain: `.fvmrc` pins Flutter 3.44.2 (F-Droid reproducibility); the dev
+  machine's PATH Flutter is 3.41.1. Both build; pick deliberately for release
+  artifacts. Dart SDK `^3.11`.
 
 ---
 
 ## 1. What this project is
 
-Porting Kotlin/Android **Pitak** (`~/Pitak_fdroid/`) to **Flutter** (this repo:
-`~/development/pitak_flutter/`). One-way (Kotlin→Flutter), hard guarantee of
-**zero data loss**. Backup is BIDIRECTIONAL: our writer emits Room-compatible
-DBs so the original Kotlin app can also restore our backups.
+Port of the Kotlin/Android **Pitak** (`~/Pitak_fdroid/`) to Flutter. One-way
+(Kotlin→Flutter), hard guarantee of **zero data loss**. Backups are
+BIDIRECTIONAL: our writer emits Room-compatible DBs so the Kotlin app can
+restore our archives.
 
-Two `AGENTS.md` govern this: the repo one (Flutter/Dart: Clean Arch + DDD,
-Riverpod codegen, `fpdart Either<Failure,T>`, drift, secrets as wipeable bytes
-never `String`) and the harness one (verify-don't-assume; ask before §9 actions;
-stop-and-report after one failed approach; pause at decision points). **Read the
-Kotlin source before porting any feature** — its `data/`, `domain/usecase/`, and
+Two `AGENTS.md` govern: the repo one (Clean Arch + DDD, Riverpod codegen,
+`fpdart Either<Failure,T>`, drift, secrets as wipeable bytes never `String`)
+and the harness one (verify-don't-assume; ask before §9 actions). **Read the
+Kotlin source before porting any feature** — its `data/`, `domain/usecase/`,
 `ui/` are the contract.
 
 ---
@@ -57,22 +60,21 @@ backup_blob = base64(salt16).base64(iv12).base64(ciphertext48)
 
 The 32-byte vault key (MK) NEVER crosses FFI — it lives only in Rust
 `Zeroizing<>`. Dart sends passphrase bytes + blob + db path; gets back rows /
-new ids / typed errors. The single wrap site is `crypto::wrap_vault_key`;
+new ids / typed errors. Single wrap site: `crypto::wrap_vault_key`;
 `derive_kek` is shared so wrap/unwrap can't drift.
 
 **Envelope model:** the passphrase only ever WRAPS a random MK.
-- **#28A change-passphrase** = unwrap MK with old → rewrap under new.
-- **#34 vault biometric** = a SECOND wrapping of the SAME MK under a random
+- **Change-passphrase** = unwrap MK with old → rewrap under new.
+- **Vault biometric** = a SECOND wrapping of the SAME MK under a random
   secret S (`wrap_for_biometric`). The PASSPHRASE IS NEVER STORED; S lives in
   hardware-backed storage, gated by a `local_auth` prompt.
 
-**NOTE — two distinct biometric features, don't confuse them:**
-- **Vault biometric (#34)**: unlocks the SQLCipher vault; releases secret S; MK
-  never crosses FFI. (`features/vault/...biometric...`)
-- **App-lock biometric (NEW this session)**: a UI GATE before the Library
-  screen. It does NOT encrypt anything and holds no secret — it just calls the
-  same `BiometricAuthenticator` capability to decide whether to show the app.
-  (`core/widgets/app_gate.dart`, `settings.appLockBiometric`)
+**Two distinct biometric features — don't confuse them:**
+- **Vault biometric**: unlocks the SQLCipher vault; releases secret S; MK
+  never crosses FFI (`features/vault/...biometric...`).
+- **App-lock biometric**: a UI GATE before the Library screen
+  (`core/widgets/app_gate.dart`, `settings.appLockBiometric`). Encrypts
+  nothing, holds no secret.
 
 ---
 
@@ -80,99 +82,69 @@ new ids / typed errors. The single wrap site is `crypto::wrap_vault_key`;
 infrastructure implements domain ports)
 
 ```
-rust/  (crate pitak_crypto — trusted crypto + vault boundary)  [UNCHANGED]
+rust/  crate pitak_crypto — trusted crypto + vault boundary
   src/crypto.rs / vault.rs / api.rs ; tests/vault_fixture.rs
 
 lib/
   src/rust/**   flutter_rust_bridge generated bindings (analyzer-excluded)
   core/
-    crypto/secret_bytes.dart, secure_passphrase_field.dart
-    images/image_downscaler.dart (400x600 q80 JPEG)
-    platform/screen_security.dart (FLAG_SECURE)
-    widgets/
-      app_drawer.dart  (nav drawer; header now shows LibraryLogo + "Pitak")
-      book_cover.dart
-      library_logo.dart   ← NEW: LibraryLogo widget (user logo or default Pitak
-                            icon; resolves via CoverPaths+coversDirProvider like
-                            BookCover). kDefaultLogoAsset = assets/branding/app_icon.png
-      splash_screen.dart  ← NEW: 2s launch splash. Big centred LibraryLogo, small
-                            Pitak icon bottom, Brahmi "𑀧𑀺𑀝𑀓" (kPitakBrahmi,
-                            NotoSansBrahmi font). holdDuration default 2s.
-      app_gate.dart       ← NEW: splash→(biometric gate if on)→Library state
-                            machine. Fail-closed; re-locks on background, re-prompts
-                            on resume. main.dart home = AppGate (was LibraryPage).
-    di/providers.dart  ALL Riverpod @riverpod DI. biometricAuthenticatorProvider
-                       (#34) is REUSED by the app gate.
+    crypto/     secret_bytes.dart, secure_passphrase_field.dart
+    images/     image_downscaler.dart (400x600 q80 JPEG; CLEARS EXIF incl. GPS
+                before encode — round-2 Blocker fix; single choke point for
+                covers/posters/logos) + header-dimension guard (>8192px/side
+                rejected before allocation)
+    platform/   screen_security.dart (FLAG_SECURE; also covers passphrase
+                entry via PassphraseEntryVisibility)
+    widgets/    app_drawer.dart, book_cover.dart, library_logo.dart,
+                splash_screen.dart (2s), app_gate.dart (splash→gate→Library),
+                qr_view.dart
+    di/providers.dart  ALL Riverpod @riverpod DI
   features/
-    library/     books CRUD/search/sort/filter/soft+hard delete; cover capture;
-                 library_page app bar leading is now LibraryLogo→openDrawer
-    vault/       persistent encrypted vault (+#28A change-pass, #34 biometric)
-    lookup/      #29 scanner + #30 ISBN lookup (OL→GoogleBooks chained+cached)
-    publish/     #32 Publish to GitHub Pages (device-flow + git data API)
-    backup/      .pitabak writer (Room-format, bidirectional) + restore
-    import_export/
-      domain/pdf_column.dart        ← NEW: pure PdfColumn (14 cols, weights,
-                                      wrapLines, mandatory Title, private cols),
-                                      CSV (de)ser, resolvePrintColumns (Source
-                                      merge), wrapCell. Faithful Kotlin port.
-      infrastructure/
-        pdf_library_renderer.dart   ← NEW: paginated A4 via `pdf` pkg; header
-                                      logo+name, attribution footer+icon, serial
-                                      gutter, weighted cols, portrait→landscape
-                                      >6 cols. Y-axis flipped (ty(y)=pageH-y).
-        pdf_text_rasterizer.dart    ← PRIMARY PDF TEXT PATH: UiPdfTextRasterizer
-                                      shapes each run with Flutter's engine
-                                      (HarfBuzz) via dart:ui ParagraphBuilder →
-                                      Picture.toImage → PNG tile (supersampled 3×),
-                                      embedded as an IMAGE in the PDF. This is how
-                                      Devanagari conjuncts/half-letters/matra
-                                      reordering render correctly (e.g. बच्चे).
-                                      TRADEOFF (user-accepted): PDF text is RASTER,
-                                      not selectable. Registers bundled Noto TTFs
-                                      at runtime via FontLoader (fallback group).
-        pdf_fonts.dart              ← FALLBACK ONLY: PdfFontResolver — per-string
-                                      font selection by glyph coverage. Used by the
-                                      renderer's drawString path when NO rasterizer
-                                      is passed (Latin-only callers / pure tests).
-                                      NOT used by the live export (it passes a
-                                      rasterizer). drawString does NOT shape Indic.
-        pitaka_json_exporter.dart, cover_paths.dart, ...
-      application/export_library_use_case.dart  ExportFormat{json,csv,PDF};
-                  ExportResult now carries Uint8List bytes+mimeType (was String);
-                  defaultPdfLabels() + kPdfFooterAttribution. Filenames pitak-*.
-      presentation/pages/export_page.dart  PDF segment + column picker; loads
-                  footer icon; builds a UiPdfTextRasterizer (which owns the Noto
-                  fonts). NB: live PDF export = shaped-IMAGE text, not vector text.
-    wishlist/ settings/ (settings_page = 4 tabs; Appearance has the NEW logo
-                 picker _LogoRow; Security has the NEW app-lock toggle)
+    library/        books CRUD/search/sort/filter/soft+hard delete; cover
+                    capture; domain/merge/library_merge_engine.dart (#33)
+    vault/          persistent encrypted vault (change-passphrase, biometric)
+    lookup/         barcode scanner + ISBN lookup (OL→GoogleBooks chained)
+    publish/        Publish to GitHub Pages (device-flow + git data API);
+                    viewer + events page upload
+    events/         event posters (publish flow); EXIF-stripped on ingest
+    bookmarks/      external-library bookmarks (https allow-list launch)
+    backup/         .pitabak writer (Room-format, bidirectional) + restore
+    import_export/  JSON/CSV/PDF export (CSV export is formula-injection-
+                    neutralised), Goodreads import, merge UI/use case
+    settings/       4 tabs: Appearance · Data · Security · Contribute
   assets/
-    publish/index.html  (bundled library viewer, #32)
-    pdf/app_icon.png    (PDF footer icon)
-    fonts/  10 Noto Sans Indic scripts × {Regular,Bold} = 20 TTFs + OFL.txt.
-            PDF-only: loaded by the `pdf` pkg via rootBundle, NOT Flutter `fonts:`.
-    branding/  app_icon.png + NotoSansBrahmi-Regular.ttf. Brahmi IS a Flutter
-               `fonts:` family (rendered by the text engine on the splash).
+    publish/    index.html (library viewer), events.html (events viewer)
+    pdf/        app_icon.png (PDF footer)
+    fonts/      10 Noto Sans Indic scripts × {Regular,Bold} = 20 TTFs + OFL.txt
+                (PDF-only, loaded by the `pdf` pkg via rootBundle)
+    branding/   app_icon.png + NotoSansBrahmi-Regular.ttf (splash Brahmi text)
 ```
+
+**PDF text is rendered as SHAPED IMAGES** (accepted tradeoff, not a bug):
+Flutter's engine (HarfBuzz) shapes each run → PNG tile embedded in the PDF
+(`import_export/infrastructure/pdf_text_rasterizer.dart`). This is what makes
+Devanagari conjuncts/half-letters correct (बच्चे). Consequence: PDF text is
+NOT selectable. The vector `drawString` path survives only as a no-rasterizer
+fallback (Latin-only callers / pure tests).
 
 ---
 
 ## 4. Entry points / navigation
 
-- **App launch**: `main.dart` → **AppGate**. Cold start shows the 2s **splash**
-  (big logo, small Pitak icon, Brahmi text), then: if app-lock is ON → biometric
-  prompt (fail-closed locked screen w/ Unlock retry); else → Library. Returning
+- **App launch**: `main.dart` → **AppGate**. Cold start: 2s splash, then
+  biometric prompt if app-lock is ON (fail-closed), else Library. Returning
   from background re-locks + re-prompts when app-lock is on.
-- **Library home**: app-bar **leading is the library logo** (user's or default
-  Pitak icon) → opens the drawer (replaced the hamburger). App bar also has
-  scan-to-add + overflow (import/export/backup/restore). FAB = add book.
-- **Drawer**: header shows the logo + "Pitak"; tiles Vault · Publish · Wishlist ·
-  Settings.
-- **Settings (4 tabs)**: Appearance (theme, names, **Library icon picker**,
-  remote-cover toggle) · Data (import/export/backup/restore) · Security
-  (**Require biometric to open Pitak** toggle + vault biometric + change-pass) ·
-  Contribute (publish-contact fields — see §7 DEFERRED).
-- **Export**: JSON / CSV / **PDF**. PDF shows a column picker (Title locked on;
-  Location/Source default-off as private). PDF is always the library list.
+- **Library home**: app-bar leading = library logo → opens drawer; scan-to-add
+  + overflow (import/export/backup/restore); FAB = add book.
+- **Drawer**: logo header, tiles: Borrowers vault · Publish to web · Wishlist ·
+  Bookmarks · Share Library Website (when a site is published) · Settings.
+- **Settings (4 tabs)**: Appearance (theme, names, library-icon picker,
+  remote-cover toggle) · Data (import/export/backup/restore + **Merge from a
+  file**) · Security (app-lock toggle, vault biometric, change-passphrase) ·
+  Contribute (publish-contact fields).
+- **Events**: reached from the Publish page.
+- **Export**: JSON / CSV / PDF (column picker; Location/Source default-off as
+  private).
 
 ---
 
@@ -180,145 +152,126 @@ lib/
 
 ```bash
 cd ~/development/pitak_flutter
-flutter analyze lib test            # No issues found!
+flutter analyze lib test            # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                        # 400 pass
+flutter test                        # 685 pass at 1.1.8
 ( cd rust && cargo test --release ) # 22 pass
 # After @riverpod/freezed/drift edits: dart run build_runner build --delete-conflicting-outputs
 # After rust/src/api.rs edits: flutter_rust_bridge_codegen generate
 
-# On-device (Pixel 8a, pkg dev.khoj.pitaka):
+# On-device (Pixel 8a, pkg dev.khoj.pitaka.fdroid):
 flutter build apk --release         # rebuild from CURRENT code (stale APK = known trap)
 ADB=$HOME/Library/Android/sdk/platform-tools/adb   # adb not on PATH
 # verify frb dispatcher survived R8 (expect 2 lines: _primary + _sync):
 nm -D $(find build -path '*arm64*/libpitak_crypto.so'|head -1) | grep frb_pde_ffi_dispatcher
 $ADB install -r build/app/outputs/flutter-apk/app-release.apk   # -r preserves vault data
-$ADB shell monkey -p dev.khoj.pitaka -c android.intent.category.LAUNCHER 1
 ```
 
-Release still **debug-signed**. Device also carries Kotlin
-`dev.khoj.pitaka.fdroid*` variants — different apps, leave them.
-
-**Git (repo now exists):** `origin` = `github.com/PLFIndia/pitak-x`, default
-branch `main`. Read-only git is free (`git status/diff/log`); `commit`, `push`,
-branch create/delete are §9 actions — get explicit per-invocation approval.
-`*.pitabak` archives + `build/` are git-ignored.
+The device also carries Kotlin `dev.khoj.pitaka.fdroid*` variants — different
+apps, leave them.
 
 ---
 
 ## 6. On-device verification status (honesty)
 
-- **VERIFIED earlier** (user-confirmed): native vault write path, #28A/#34/#29/
-  #30, plus the older UX batch (drawer, scan-to-add, cover capture).
-- **BUILT + INSTALLED this session, NOT yet user-confirmed** (the current APK on
-  the Pixel 8a, splash = 2s):
-  1. **Splash** — big Pitak/logo centred, small Pitak icon + Brahmi 𑀧𑀺𑀝𑀓 at
-     bottom, ~2s, then Library.
-  2. **PDF export** — Export→PDF→columns→save; OPEN the PDF and confirm Latin
-     AND Indic (Hindi etc.) titles render correctly, incl. Devanagari conjuncts/
-     half-letters (बच्चे), not boxes/full-letters+halant. NOTE: text is now
-     embedded as SHAPED IMAGES (pdf_text_rasterizer.dart), so it will NOT be
-     selectable/searchable in the viewer — that's the accepted tradeoff, not a
-     bug. Confirm glyph correctness + acceptable print sharpness.
-  3. **Library logo** — Settings→Appearance→Library icon→Choose (gallery); it
-     should appear in splash centre, drawer header, and toolbar button; toolbar
-     icon still opens the drawer.
-  4. **App-lock biometric** — Settings→Security→toggle on; background+return
-     should re-prompt; cancel should stay locked with Unlock button.
-  5. **Rename** — launcher label reads **Pitak**.
-- **Still MockClient-only**: #32 Publish (real GitHub OAuth + push never run live).
+- **User-confirmed earlier**: native vault write path, change-passphrase,
+  vault biometric, scanner, ISBN lookup, drawer, scan-to-add, cover capture.
+- **Built + installed on the Pixel 8a, never explicitly user-confirmed**
+  (batch from the splash/PDF session): splash timing, Indic PDF glyph
+  correctness (बच्चे) + print sharpness, gallery logo pick, app-lock
+  resume re-lock, launcher label "Pitak". If the user reports an issue in
+  any of these, start there.
+- **Still MockClient-only**: Publish (real GitHub OAuth + push never run live).
 
 ---
 
-## 7. What's DONE vs NEXT
+## 7. DONE vs NEXT
 
 ### DONE
 Library (CRUD/search/sort/filter/soft+hard delete, cover capture), Wishlist,
-Import/Export (JSON/CSV/**PDF**), Backup create+restore (bidirectional),
-persistent encrypted vault (+#28A change-pass, #34 biometric), FLAG_SECURE,
-#29 scanner, #30 ISBN lookup, #32 Publish to GitHub Pages, nav drawer + tabbed
-settings. **NEW this session:** PDF export (Indic-capable), Pitaka→Pitak UI
-rename, launch splash, opt-in app-lock biometric gate, user library-logo
-feature (logo = drawer button).
+Import/Export (JSON/CSV/PDF with Indic shaping), Backup create+restore
+(bidirectional), encrypted vault (+change-passphrase, +biometric),
+FLAG_SECURE (incl. passphrase entry), scanner, ISBN lookup, Publish to GitHub
+Pages, **Merge (#33: engine + UI, atomic apply, dup-ISBN safe)**, **Events
+(posters + events.html publish)**, **Bookmarks**, nav drawer + tabbed
+settings, splash + app-lock + library logo, **round-2 security remediation
+(EXIF/GPS stripping, CSV-injection neutralisation, merge atomicity, redirect
+re-validation, decoder-bomb guard — full list in PLAN.md)**.
 
-### NEXT (pick by value/risk; network/platform items are §2a/§9 decisions)
-- **Contribute tab (DEFERRED, user wants it "last")** — Kotlin's tab is TWO new
-  subsystems that DON'T exist in Flutter: (a) app-wide LocalizedText i18n
-  (long-press any string → suggest a translation via GitHub) and (b) crash
-  capture/store/send (#35, opt-in, default-off, POSTs to GitHub). Each is a
-  large feature + a privacy/§9 decision. Read Kotlin `ui/settings/SettingsScreen.kt
-  ::ContributeTab`, `ui/contribute/**`, `data/crash/**`. When picked, scope it
-  with the user first (full mirror vs crash-only vs static guide).
-- **Cloudflare Pages publish** — deferred half of #32. Kotlin
-  `ui/publish/CloudflareWizardScreen.kt` — READ before designing (new auth/upload).
-- **#33 Merge** (cross-maintainer by book_uid/isbn) — mostly local logic;
-  Kotlin `domain/usecase/MergeLibraryUseCase.kt`.
-- **PDF header logo follow-up** — the renderer accepts a logo but the export
-  page doesn't pass one yet (only the footer icon). Now that a library-logo pref
-  EXISTS (`settings.libraryLogo`), wire it into the PDF header (resolve
-  covers/<uuid>.jpg → bytes → render logoBytes). Small, additive.
-- Bookmarks, #35 crash reporting (folds into Contribute), i18n (large).
+### NEXT
+- **Google Play track** — see §8.
+- **Dependency upgrade programme** (PLAN.md top task, 3 tiers) — the hard
+  gate is now satisfied: 1.1.8 is live on F-Droid (suggestedVersionCode 133).
+  Tier 2 touches security-critical packages (flutter_secure_storage,
+  local_auth, archive 4.x port) — re-run §10 security tests per step.
+- **Contribute tab (DEFERRED, user wants it "last")** — two new subsystems:
+  app-wide LocalizedText i18n + opt-in crash reporting. Scope with the user
+  first. Kotlin: `ui/settings/SettingsScreen.kt::ContributeTab`,
+  `ui/contribute/**`, `data/crash/**`.
+- **Cloudflare Pages publish** — deferred half of Publish. Kotlin
+  `ui/publish/CloudflareWizardScreen.kt` — READ before designing.
 
 ### Release hardening (before any public ship)
-- Real signing keystore (`android/app/build.gradle.kts` uses the debug key).
-- `cargo clippy` never run (not installed; install is a §9 action).
+- Real signing keystore (Play: upload key + Play App Signing enrollment).
+- `cargo clippy` never run (install is an approval-gated action).
 
 ---
 
-## 8. Decisions already made (don't re-litigate — see PLAN.md "Result" entries)
+## 8. Google Play track (started 2026-08-15)
 
-- **PDF** (Kotlin parity): pure column/layout logic in `domain/pdf_column.dart`
-  (unit-tested) + `pdf` pkg renderer with Y-axis flip. ExportResult is bytes.
-  User chose broad Indic (Q-B) + Regular+Bold (Q-2A), bundled 10 Noto Sans
-  scripts × {Regular,Bold} (assets/fonts/, SIL OFL, notofonts.github.io static
-  hinted instances).
-  **PDF TEXT IS RENDERED AS IMAGES (current, final approach).** The `pdf`
-  package's `drawString` maps codepoints to glyphs 1:1 with NO complex-script
-  shaping (Arabic only), so Indic conjuncts/half-letters/matra reordering broke
-  (बच्चे came out as full letters + visible halant). Kotlin sidesteps this by
-  drawing on an Android `Canvas` (OS HarfBuzz shapes). Our cross-platform fix
-  (user = option A): let Flutter's engine (HarfBuzz) shape each run, capture it
-  as a PNG tile (supersampled 3×, user = per-cell tiles), and embed the IMAGE in
-  the PDF — `infrastructure/pdf_text_rasterizer.dart` (UiPdfTextRasterizer:
-  FontLoader registers the Noto TTFs at runtime → `ui.ParagraphBuilder` →
-  `Picture.toImage`). `PdfLibraryRenderer.render` takes an optional
-  `textRasterizer`; when present it pre-rasterizes every run into a tile cache
-  and `drawText` embeds the tile at baseline. TRADEOFF (accepted): PDF text is
-  RASTER, not selectable. The old `PdfFontResolver`/`drawString` vector path
-  SURVIVES only as the fallback when no rasterizer is passed (Latin-only callers
-  / pure tests); the live export ALWAYS passes a rasterizer. Harmless dart_pdf
-  "Helvetica has no Unicode support" log line still fires (boilerplate, even for
-  all-Latin shaped renders).
-- **Splash/gate/logo**: app-lock is OPT-IN, default OFF (Q1=A); re-locks on every
-  background/resume (Q2=B); Brahmi-only text 𑀧𑀺𑀝𑀓 no Devanagari (Q3, glyph from
-  Kotlin WelcomeScreen, NotoSansBrahmi font); logo = GALLERY pick only (Q4=A),
-  downscaled + stored as covers/<uuid>.jpg via CoverStore; device PIN/pattern
-  fallback allowed (Q5=A, biometricOnly:false). Splash hold = **2s** (user set).
-  App-lock is a UI GATE ONLY — copy says so; does NOT encrypt at rest.
-- **Rename**: only USER-VISIBLE "Pitaka"→"Pitak" (drawer, title, import labels,
-  publish copy, Android label, iOS CFBundleDisplayName). LEFT as-is: Dart package
-  `pitaka`, class names (PitakaExport/PitakaJsonExporter), dartdoc, schema const,
-  and the publish git commit message "Pitaka publish $now" (Kotlin repo contract).
-- Earlier: vault at-rest = borrowers.db + blob in app docs; session passphrase
-  wiped on exit. #34 = second-blob, passphrase never stored, NON-auth-bound key
-  + software gate. #32 = one atomic git-data commit, PII redaction, https cover
-  allow-list mirrors viewer CSP, token in secure storage.
+Readiness analysis done; gaps and order of operations:
+
+1. **applicationId**: create a `play` product flavor with a clean id
+   (candidate `dev.khoj.pitaka` — verify it's free on Play). Keep the
+   `.fdroid` id untouched for F-Droid.
+2. **Signing**: generate upload keystore (command in
+   `android/key.properties.example`), create `android/key.properties`,
+   enroll in Play App Signing, back up the keystore outside the repo.
+3. **Build**: `flutter build appbundle --release` (Play accepts AAB only).
+   The ABI-split versionCode logic in build.gradle.kts is APK-only and
+   harmless for AAB.
+4. **16 KB page-size verification** (hard Play requirement for native code):
+   no explicit `max-page-size=16384` flag exists in rust/ or cargokit, but
+   the pinned NDK r28.2 defaults to 16 KB alignment. Verify on the built
+   bundle: `readelf -lW` each `.so` (LOAD segments aligned 16384) — covers
+   pitak_crypto (Rust), sqlite3_flutter_libs 0.5.42, flutter_zxing 2.3.0.
+5. **Privacy policy**: none exists — required (CAMERA permission). Write +
+   host at a public URL.
+6. **Data safety form**: no data collected/shared by the developer;
+   user-initiated-only transmissions to Open Library / Google Books (ISBN)
+   and the user's own GitHub (publish). Camera photos stay on-device unless
+   the user publishes.
+7. **Listing assets**: 512×512 icon (regenerate — `tool/gen_app_icon.py`;
+   current fastlane icon is 192×192), feature graphic 1024×500, ≥2 phone
+   screenshots. Store copy can be adapted from `fastlane/metadata/`.
+8. **Console formalities**: content rating (Everyone), target audience NOT
+   children, app-access note for reviewers (core app needs no account;
+   publish needs the reviewer's own GitHub), new personal dev accounts must
+   run a closed test (12 testers / 14 days) before production.
 
 ---
 
-## 9. Source-of-truth (Kotlin app, for verifying contracts)
+## 9. Decisions already made (don't re-litigate — PLAN.md "Result" entries)
 
-- PDF (already ported): `data/export/{PdfLibraryRenderer,PdfColumn,Exporters,
-  PdfExportAssets}.kt`, `domain/usecase/ExportUseCase.kt`.
-- Splash/logo (already ported): `ui/welcome/WelcomeScreen.kt` (Brahmi glyph +
-  font noto_sans_brahmi.ttf), `data/prefs/AppPreferences.kt` (libraryLogoUri),
-  `ui/settings/SettingsScreen.kt::LibraryLogoRow`.
-- App-lock (Kotlin has a richer PIN+lockout subsystem we did NOT fully port —
-  user asked for biometric only): `data/security/AppLock*.kt`, `ui/applock/**`.
-- Contribute (NEXT): `ui/settings/SettingsScreen.kt::ContributeTab`,
-  `ui/contribute/**`, `data/crash/**`.
-- Cloudflare (NEXT): `ui/publish/CloudflareWizardScreen.kt`, `data/publish/**`.
-- Merge (NEXT): `domain/usecase/MergeLibraryUseCase.kt`, `ui/merge/`.
+- **PDF**: text as shaped images (§3). Column/layout logic is pure
+  (`domain/pdf_column.dart`, unit-tested); `pdf` pkg renderer with Y-axis
+  flip. Bundled 10 Noto Sans scripts × {Regular,Bold} (SIL OFL).
+- **Splash/gate/logo**: app-lock OPT-IN, default OFF; re-locks on
+  background/resume; Brahmi-only splash text 𑀧𑀺𑀝𑀓 (NotoSansBrahmi);
+  logo = gallery pick only, downscaled to covers/<uuid>.jpg; device
+  PIN/pattern fallback allowed. App-lock is a UI GATE ONLY — copy says so.
+- **Rename**: only USER-VISIBLE "Pitaka"→"Pitak". LEFT as-is: Dart package
+  `pitaka`, class names, schema const, publish commit message (Kotlin repo
+  contract).
+- **Vault**: at-rest = borrowers.db + blob in app docs; session passphrase
+  wiped on exit; biometric = second wrapping, passphrase never stored.
+- **Publish**: one atomic git-data commit, PII redaction, https cover
+  allow-list mirroring viewer CSP, token in secure storage, fixed error
+  strings only. Cover fetcher follows redirects MANUALLY, re-validating each
+  hop against the allow-list (max 3 hops).
+- **Merge**: add-only semantics, removal-as-conflict, identity order
+  uid→ISBN→fuzzy, single-transaction apply, incoming-file dup-ISBN/uid
+  surfaced as PossibleDuplicate.
 
 ---
 
@@ -327,40 +280,29 @@ feature (logo = drawer button).
 - `test/fixtures/vault/` — committed SYNTHETIC vault, passphrase
   `test-pass-not-secret`. Regenerate:
   `cd rust && cargo run --release --example gen_test_vault -- ../test/fixtures/vault`.
-- Real archive (untracked, repo root): `Pitak-backup-20260625-150727.pitabak`
-  (HAS vault; pass `khoj@pitak`).
-- **Splash timing in widget tests**: AppGate opens on a 2s SplashScreen. Tests
-  that boot the app must `await tester.pump(const Duration(seconds: 2))` to fire
-  the splash timer before the Library/gate appears (`pumpAndSettle` alone won't
-  advance the Timer). See `test/widget_test.dart` + `test/core/widgets/app_gate_test.dart`.
-- **PDF text = shaped images (current path).** Live export passes a
-  `UiPdfTextRasterizer`; every text run is shaped by Flutter's engine and
-  embedded as a PNG tile (NOT selectable text — accepted tradeoff, see §8). The
-  rasterizer needs a live engine, so renderer/use-case tests exercising it are
-  WIDGET tests (`TestWidgetsFlutterBinding.ensureInitialized()`), not pure tests.
-- **PDF fonts (drawString FALLBACK path only)**: `pdf` Helvetica is Latin-1 only
-  → if you call the renderer WITHOUT a rasterizer and pass non-Latin text it
-  throws "Cannot decode the string to Latin1". The fallback expects the font
-  byte bundles; the live PDF path no longer uses them (the rasterizer owns the
-  Noto fonts via FontLoader). A harmless dart_pdf "Helvetica has no Unicode
-  support" log line fires regardless (boilerplate, even for all-Latin renders).
-- `ImageDownscaler` catches `on Object` (the `image` pkg THROWS on garbage bytes).
-- APK is 101.6MB now (bundled fonts) — expected, not a regression.
-- frb codegen runs from a runtime pin (2.12.0); regenerate after any api.rs change
-  and re-check the `nm -D` symbols.
+- **Splash timing in widget tests**: boot tests must
+  `await tester.pump(const Duration(seconds: 2))` to fire the splash timer
+  (`pumpAndSettle` alone won't advance it).
+- **PDF rasterizer needs a live engine** — renderer/use-case tests
+  exercising it are WIDGET tests (`TestWidgetsFlutterBinding.ensureInitialized()`).
+- **PDF drawString fallback is Latin-1 only** — without a rasterizer,
+  non-Latin text throws "Cannot decode the string to Latin1". A harmless
+  dart_pdf "Helvetica has no Unicode support" log line fires regardless.
+- `ImageDownscaler` catches `on Object` (the `image` pkg THROWS on garbage).
+- APK ~100 MB (bundled fonts) — expected, not a regression.
+- frb codegen runs from a runtime pin (2.12.0); regenerate after any api.rs
+  change and re-check the `nm -D` symbols.
+- Schema-migration test scaffold + schemaVersion tripwire test exist —
+  forward-migration tests must land with the first schema bump.
 
 ---
 
 ## 11. Suggested first moves for the next session
 
-1. Re-verify green (§5) — confirms a clean inherited tree (400 Dart / 22 Rust).
-2. **If the user reports an on-device issue with this session's batch (§6)**,
-   start there. PDF Indic shaping is now SOLVED via shaped-image embedding
-   (§8) — on-device, verify glyph correctness + print sharpness, and that the
-   accepted non-selectable-text tradeoff is fine. Other first-failure points:
-   gallery logo pick (image_picker); biometric resume re-lock; Android export/
-   share save path (share_plus, see PLAN bugfix).
-3. Otherwise pick a NEXT item (§7). The user explicitly wants the **Contribute
-   tab "last"** — if other NEXT work is done, that's the cue. Scope it with the
-   user before building (it's two large new subsystems).
-4. Before any public ship: real signing keystore (§7 hardening).
+1. Re-verify green (§5) — confirms a clean inherited tree (685 Dart / 22 Rust).
+2. If the user reports an on-device issue with the unconfirmed batch (§6),
+   start there.
+3. Play track (§8): the first code touch is the `play` product flavor +
+   keystore; everything else is console/assets work.
+4. Dependency upgrade tiers (PLAN.md top task) — gate satisfied, but tier 2/3
+   are security-critical and F-Droid-coupled; don't mix with the Play track.

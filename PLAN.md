@@ -5,9 +5,9 @@
   independently shippable tiers, each its own release tag (every lockfile
   change now goes through the `--enforce-lockfile` CI gate and needs a tag
   for F-Droid to pick up).
-- HARD GATE: do NOT start until 1.1.7 (codes 121–123) is published on
-  f-droid.org. Check: `curl -s https://f-droid.org/api/v1/packages/dev.khoj.pitaka.fdroid`
-  → suggestedVersionCode == 123.
+- HARD GATE: ~~do NOT start until 1.1.7 is published on f-droid.org~~
+  SATISFIED 2026-08-15 — F-Droid API reports suggestedVersionCode 133
+  (1.1.8 live).
 
 ## Privacy & threat notes
 - Tier 2 touches the packages guarding vault keys and biometric unlock
@@ -682,7 +682,11 @@ User approved fixing all 13 Major findings, one at a time, proper fixes (no patc
 
 ---
 
-# Task: Fix REVIEW_FINDINGS_2.md (round-2 review) — IN PROGRESS
+# Task: Fix REVIEW_FINDINGS_2.md (round-2 review) — DONE (committed `6b995db`, released 1.1.8)
+
+> Note: `REVIEW_FINDINGS.md` / `REVIEW_FINDINGS_2.md` were removed from the
+> tree 2026-08-15 as superseded; they remain in git history. Open items are
+> in this task's "Out-of-scope observations" below.
 
 ## Understanding
 - Fix every finding in REVIEW_FINDINGS_2.md, one at a time, rigorous fixes
@@ -799,5 +803,6 @@ Fixes, in severity order:
     PassphraseEntryVisibility (keepAlive) + screenCaptureProtectedProvider
     single decision point, registered at the shared SecurePassphraseField.
 
-Not committed (git ops need explicit approval): 56 files changed,
-1604 insertions(+), 114 deletions(-) incl. regenerated *.g.dart.
+Committed as `6b995db` (sec: remediate REVIEW_FINDINGS_2) + release
+`b8f3be4` (1.1.8). [Updated 2026-08-15: the earlier "not committed" note
+was stale.]
