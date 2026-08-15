@@ -42,6 +42,10 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FLAT = {
     "assets/branding/app_icon.png": 192,
     "assets/pdf/app_icon.png": 192,
+    # Google Play hi-res listing icon (fastlane supply path). Play requires
+    # 512x512; this replaces the old 192px F-Droid listing icon at the same
+    # path (F-Droid accepts 512 fine and downscales).
+    "fastlane/metadata/android/en-US/images/icon.png": 512,
     "android/app/src/main/res/mipmap-mdpi/ic_launcher.png": 48,
     "android/app/src/main/res/mipmap-hdpi/ic_launcher.png": 72,
     "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": 96,

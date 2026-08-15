@@ -45,10 +45,13 @@
 - [ ] 6a. Flutter tool's post-build apkanalyzer verification fails because
       Android cmdline-tools is not installed — the AAB itself is valid.
       Install cmdline-tools so builds exit 0.
-- [ ] 7. (User, in Play Console) create app, enroll Play App Signing,
-      privacy policy URL, data safety, content rating, listing assets
-      (512 icon via tool/gen_app_icon.py, feature graphic, screenshots),
-      closed test (12 testers / 14 days for new personal accounts).
+- [~] 7. (User, in Play Console) create app, enroll Play App Signing,
+      data safety, content rating, screenshots, closed test (12 testers /
+      14 days for new personal accounts). Drafted/generated 2026-08-15:
+      PRIVACY.md (host at a public URL, e.g. GitHub Pages, then paste the
+      URL into the Console), fastlane .../images/icon.png now 512x512,
+      featureGraphic.png 1024x500 (tool/gen_play_assets.py). Still needed:
+      phone screenshots (device/emulator) + Console forms.
 
 ## Result
 Steps 1–6 done 2026-08-15. Uploadable, signed Play AAB produced and verified
