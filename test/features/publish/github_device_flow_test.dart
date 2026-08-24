@@ -133,25 +133,22 @@ void main() {
     expect(states.last, isA<DeviceFlowSuccess>());
   });
 
-  test(
-    'survives transient transport failures while polling '
-    '(regression: phone backgrounded to browser → dropped socket '
-    'aborted the flow before the token could ever arrive)',
-    () async {
-      final flow = GitHubDeviceFlow(
-        _ScriptedApi([
-          const PollPending(),
-          const GitHubApiException('socket closed'), // screen-off drop
-          const GitHubApiException('timeout'), // resume blip
-          const PollAuthorized('TOKEN', 'public_repo'),
-        ]),
-        sleep: noSleep,
-      );
-      final states = await flow.start(clientId: 'cid').toList();
-      expect(states.last, isA<DeviceFlowSuccess>());
-      expect((states.last as DeviceFlowSuccess).accessToken, 'TOKEN');
-    },
-  );
+  test('survives transient transport failures while polling '
+      '(regression: phone backgrounded to browser → dropped socket '
+      'aborted the flow before the token could ever arrive)', () async {
+    final flow = GitHubDeviceFlow(
+      _ScriptedApi([
+        const PollPending(),
+        const GitHubApiException('socket closed'), // screen-off drop
+        const GitHubApiException('timeout'), // resume blip
+        const PollAuthorized('TOKEN', 'public_repo'),
+      ]),
+      sleep: noSleep,
+    );
+    final states = await flow.start(clientId: 'cid').toList();
+    expect(states.last, isA<DeviceFlowSuccess>());
+    expect((states.last as DeviceFlowSuccess).accessToken, 'TOKEN');
+  });
 
   test('gives up after 5 consecutive transport failures', () async {
     final flow = GitHubDeviceFlow(
