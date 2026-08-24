@@ -1,0 +1,3 @@
+* GitHub sign-in from a phone now completes reliably — authorization keeps polling while you switch to the browser, with a clearer signed-in status and a two-device fallback tip.
+* ISBN lookups are far more reliable: the app now identifies itself to Open Library, retries busy services automatically, fails over faster, and cross-checks ISBN-10/13 forms.
+* Optional: add your own free Google Books API key (Settings → Appearance) for a dedicated lookup quota that never shares the public pool.
