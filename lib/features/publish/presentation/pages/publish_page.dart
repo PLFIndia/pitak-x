@@ -233,6 +233,19 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
             const Text(
               'Waiting for you to authorize… this dialog can stay open.',
             ),
+            const SizedBox(height: 8),
+            // Escape hatch for devices whose OS still kills the app while
+            // the user is off in the browser (aggressive OEM app freezers):
+            // entering the code on a SECOND device needs no app switch at
+            // all, so polling here is never interrupted.
+            Builder(
+              builder: (ctx) => Text(
+                'Tip: sign-in not completing? Keep this screen open and '
+                'enter the code in a browser on another device (like a '
+                'computer) instead.',
+                style: Theme.of(ctx).textTheme.bodySmall,
+              ),
+            ),
           ],
         ),
         actions: [

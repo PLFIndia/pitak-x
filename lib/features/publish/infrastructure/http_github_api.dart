@@ -99,7 +99,12 @@ final class HttpGitHubApi implements GitHubApi {
       case null:
         return const PollPending();
       default:
-        throw GitHubApiException(
+        // Protocol-fatal (`device_flow_disabled`, `incorrect_device_code`,
+        // `unsupported_grant_type`, …): the grant itself is dead. Returned
+        // as a RESULT, not thrown — exceptions from this method mean
+        // "transport hiccup, retry", and retrying a dead grant can never
+        // succeed (RFC 8628 §3.5).
+        return PollFatal(
           (json['error_description'] as String?) ?? '${json['error']}',
         );
     }

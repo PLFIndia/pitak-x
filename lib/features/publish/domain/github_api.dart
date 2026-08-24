@@ -74,6 +74,20 @@ final class PollExpired extends PollResult {
   const PollExpired();
 }
 
+/// A non-retryable OAuth protocol error (e.g. `device_flow_disabled`,
+/// `incorrect_device_code`, `unsupported_grant_type`).
+///
+/// Distinct from transport failures ([GitHubApiException]), which are
+/// TRANSIENT and safe to retry: a fatal error means the grant itself is dead
+/// and polling again can never succeed (RFC 8628 §3.5).
+final class PollFatal extends PollResult {
+  /// Creates the fatal result with a short diagnostic [reason].
+  const PollFatal(this.reason);
+
+  /// Diagnostic (not shown verbatim to users).
+  final String reason;
+}
+
 /// Outcome of a create-repo attempt (non-error paths only; transport and
 /// other HTTP failures throw [GitHubApiException]).
 sealed class RepoCreateResult {
@@ -146,6 +160,11 @@ abstract interface class GitHubApi {
   });
 
   /// Polls once for an access token for [deviceCode].
+  ///
+  /// Protocol outcomes (pending / denied / expired / fatal) come back as
+  /// [PollResult]s; only TRANSPORT failures (timeout, dropped socket, DNS)
+  /// throw [GitHubApiException] — callers may retry those until the grant
+  /// expires.
   Future<PollResult> pollAccessToken({
     required String clientId,
     required String deviceCode,

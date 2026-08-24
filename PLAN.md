@@ -868,3 +868,31 @@ Fixes, in severity order:
 Committed as `6b995db` (sec: remediate REVIEW_FINDINGS_2) + release
 `b8f3be4` (1.1.8). [Updated 2026-08-15: the earlier "not committed" note
 was stale.]
+
+---
+
+# Task (done 2026-08-24): GitHub sign-in dies when phone switches to browser
+
+## Root cause
+`GitHubDeviceFlow.start()` aborted the whole flow on the FIRST
+`GitHubApiException` from a single token poll. On desktop the app stays
+foregrounded so polls never fail. On a phone, leaving to the browser to enter
+the code backgrounds the app / turns the screen — Android drops the in-flight
+socket (TimeoutHttpClient then surfaces ClientException → GitHubApiException),
+and the flow was already dead before the user ever authorized.
+
+## Fix
+- `github_device_flow.dart`: transient transport errors no longer abort the
+  poll loop; keep polling until the grant deadline, giving up only after 5
+  CONSECUTIVE failures (counter resets on any successful poll). Same policy as
+  `gh` CLI device flow (poll survives network blips).
+- `github_api.dart` + `http_github_api.dart`: new `PollFatal` result for
+  protocol-fatal OAuth errors (`device_flow_disabled`, `incorrect_device_code`,
+  …) which previously threw and were indistinguishable from retryable
+  transport errors. Fatal ⇒ stop immediately; thrown ⇒ transient, retry.
+
+## Tests
+- flow: survives 2 transport failures then succeeds; gives up after 5
+  consecutive; budget resets between failures; PollFatal ends as Failed.
+- infra: unknown protocol error maps to PollFatal (not throw).
+- Full publish suite: 122/122 pass; analyzer clean on touched files.

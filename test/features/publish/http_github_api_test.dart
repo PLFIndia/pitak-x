@@ -73,6 +73,25 @@ void main() {
       expect(ok, isA<PollAuthorized>());
       expect((ok as PollAuthorized).accessToken, 'TKN');
     });
+
+    test(
+      'pollAccessToken maps unknown protocol errors to PollFatal, not throw '
+      '(thrown = transient/retryable; a dead grant must not be retried)',
+      () async {
+        final r = await api(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'error': 'device_flow_disabled',
+                'error_description': 'Device flow is disabled for this app',
+              }),
+              200,
+            ),
+          ),
+        ).pollAccessToken(clientId: 'c', deviceCode: 'd');
+        expect(r, isA<PollFatal>());
+      },
+    );
   });
 
   group('repo setup endpoints', () {

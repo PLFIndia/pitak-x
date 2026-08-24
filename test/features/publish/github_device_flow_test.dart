@@ -5,9 +5,13 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 
 /// Scriptable GitHubApi for the device-flow state machine.
+///
+/// Each script entry is either a [PollResult] (returned) or a
+/// [GitHubApiException] (thrown — simulates a transport failure such as the
+/// dropped socket phones produce when the user switches to the browser).
 class _ScriptedApi implements GitHubApi {
   _ScriptedApi(this._polls);
-  final List<PollResult> _polls;
+  final List<Object> _polls;
   int _i = 0;
 
   /// The clientId the flow actually sent — asserted in the baked-in-id test.
@@ -32,7 +36,11 @@ class _ScriptedApi implements GitHubApi {
   Future<PollResult> pollAccessToken({
     required String clientId,
     required String deviceCode,
-  }) async => _polls[_i++];
+  }) async {
+    final entry = _polls[_i++];
+    if (entry is GitHubApiException) throw entry;
+    return entry as PollResult;
+  }
 
   // Unused in these tests.
   @override
@@ -123,5 +131,59 @@ void main() {
     );
     final states = await flow.start(clientId: 'cid').toList();
     expect(states.last, isA<DeviceFlowSuccess>());
+  });
+
+  test(
+    'survives transient transport failures while polling '
+    '(regression: phone backgrounded to browser → dropped socket '
+    'aborted the flow before the token could ever arrive)',
+    () async {
+      final flow = GitHubDeviceFlow(
+        _ScriptedApi([
+          const PollPending(),
+          const GitHubApiException('socket closed'), // screen-off drop
+          const GitHubApiException('timeout'), // resume blip
+          const PollAuthorized('TOKEN', 'public_repo'),
+        ]),
+        sleep: noSleep,
+      );
+      final states = await flow.start(clientId: 'cid').toList();
+      expect(states.last, isA<DeviceFlowSuccess>());
+      expect((states.last as DeviceFlowSuccess).accessToken, 'TOKEN');
+    },
+  );
+
+  test('gives up after 5 consecutive transport failures', () async {
+    final flow = GitHubDeviceFlow(
+      _ScriptedApi([
+        for (var i = 0; i < 5; i++) const GitHubApiException('net down'),
+      ]),
+      sleep: noSleep,
+    );
+    final states = await flow.start(clientId: 'cid').toList();
+    expect(states.last, isA<DeviceFlowFailed>());
+  });
+
+  test('a success between failures resets the failure budget', () async {
+    final flow = GitHubDeviceFlow(
+      _ScriptedApi([
+        for (var i = 0; i < 4; i++) const GitHubApiException('blip'),
+        const PollPending(), // resets the consecutive-failure counter
+        for (var i = 0; i < 4; i++) const GitHubApiException('blip'),
+        const PollAuthorized('T', ''),
+      ]),
+      sleep: noSleep,
+    );
+    final states = await flow.start(clientId: 'cid').toList();
+    expect(states.last, isA<DeviceFlowSuccess>());
+  });
+
+  test('PollFatal (dead grant) ends the flow as Failed immediately', () async {
+    final flow = GitHubDeviceFlow(
+      _ScriptedApi([const PollFatal('device_flow_disabled')]),
+      sleep: noSleep,
+    );
+    final states = await flow.start(clientId: 'cid').toList();
+    expect(states.last, isA<DeviceFlowFailed>());
   });
 }

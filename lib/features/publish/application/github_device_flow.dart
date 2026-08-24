@@ -107,6 +107,16 @@ final class GitHubDeviceFlow {
     final deadline = DateTime.now().add(
       Duration(seconds: grant.expiresInSeconds),
     );
+    // Transient-failure budget. On phones the OS pauses timers and drops
+    // sockets whenever the user leaves to the browser to enter the code
+    // (screen off / app backgrounded / Doze). Those surface here as
+    // GitHubApiException from a SINGLE poll — aborting the whole flow on the
+    // first one is why sign-in only worked when the app stayed foregrounded
+    // (e.g. on desktop). Like `gh` CLI's device flow, we keep polling through
+    // transient errors until the grant itself expires; only N CONSECUTIVE
+    // failures (a genuinely dead network) end the flow early.
+    const maxConsecutiveFailures = 5;
+    var consecutiveFailures = 0;
 
     while (DateTime.now().isBefore(deadline)) {
       await _sleep(Duration(milliseconds: intervalMs));
@@ -117,9 +127,14 @@ final class GitHubDeviceFlow {
           deviceCode: grant.deviceCode,
         );
       } on GitHubApiException catch (e) {
-        yield DeviceFlowFailed(e.message);
-        return;
+        consecutiveFailures++;
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          yield DeviceFlowFailed(e.message);
+          return;
+        }
+        continue; // transient (resume-from-background, blip) — poll again
       }
+      consecutiveFailures = 0;
       switch (r) {
         case PollAuthorized(:final accessToken, :final scope):
           yield DeviceFlowSuccess(accessToken, scope);
@@ -131,6 +146,9 @@ final class GitHubDeviceFlow {
           return;
         case PollExpired():
           yield const DeviceFlowExpired();
+          return;
+        case PollFatal(:final reason):
+          yield DeviceFlowFailed(reason);
           return;
       }
     }
