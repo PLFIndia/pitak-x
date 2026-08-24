@@ -929,3 +929,35 @@ and the flow was already dead before the user ever authorized.
   round-trips.
 - chained_isbn_lookup_test.dart: rescue 10→13 and 13→10; both-miss caches
   both sentinels; 979 single-pass; offline never masked by alternate miss.
+
+---
+
+# Task (done 2026-08-24): user-supplied Google Books API key
+
+## Why
+Live diagnosis on the phone: Google Books keyless quota is a GLOBAL shared
+pool — observed 429 RESOURCE_EXHAUSTED (project 624717413613, Google's own
+anonymous consumer) from both desktop and phone. Also observed: Open Library
+API 403s Jio CGNAT IPs (works from desktop, same UA). Decision: let users add
+their OWN free Google key (dedicated ~1000/day quota) instead of adding a
+third lookup provider.
+
+## Changes
+- domain/google_books_api_key.dart (NEW): pure normalize/isValid (hostile
+  paste input, §6.5) — length 20–100, URL-safe charset.
+- domain/lookup_key_store.dart (NEW) + infrastructure/
+  secure_storage_lookup_key_store.dart (NEW): key is a quota-bearing
+  credential → OS secure store, same hardening as the GitHub token (§6.3).
+- google_books_lookup_service.dart: optional `apiKey` getter, read
+  per-request (a key saved in Settings applies immediately); sent as `key=`
+  query param only when set.
+- providers.dart: lookupKeyStore provider (keepAlive) wired into the chain.
+- settings_page.dart: "Google Books API key" tile in Appearance→Network —
+  masked tail display (…Wk3c), paste dialog with validation, Remove key.
+  Stored key never round-trips into the text field.
+
+## Tests (721/721)
+- google_books_api_key_test.dart: normalize/valid/hostile-paste cases.
+- google_books_lookup_service_test.dart: key sent when set, omitted when
+  not, read per-request.
+- secure_storage_lookup_key_store_test.dart: round-trip/clear/empty-as-null.

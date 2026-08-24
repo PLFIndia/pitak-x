@@ -445,7 +445,27 @@ final lookupHttpClientProvider = Provider<http.Client>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LookupHttpClientRef = ProviderRef<http.Client>;
-String _$isbnLookupServiceHash() => r'e49baee400bb8f222944f222ea0610838169f1ec';
+String _$lookupKeyStoreHash() => r'4a7fdc4e914d0acab18bc26f72d9f03b8ab0bd90';
+
+/// Optional user-supplied Google Books API key (encrypted at rest, §6.3).
+/// keepAlive: tiny, session-stable, and read on every lookup.
+///
+/// Copied from [lookupKeyStore].
+@ProviderFor(lookupKeyStore)
+final lookupKeyStoreProvider = Provider<LookupKeyStore>.internal(
+  lookupKeyStore,
+  name: r'lookupKeyStoreProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$lookupKeyStoreHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LookupKeyStoreRef = ProviderRef<LookupKeyStore>;
+String _$isbnLookupServiceHash() => r'4af351513ac4052d00833d4af6a4a39a351eb2d3';
 
 /// ISBN lookup + title search (#29/#30): Open Library primary, Google Books
 /// fallback, chained over the cache. Only hit on explicit user action.

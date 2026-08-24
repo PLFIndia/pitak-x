@@ -19,13 +19,20 @@ import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 
 /// Google Books-backed lookup. Inject `client` in tests; `baseUrl` overridable.
 final class GoogleBooksLookupService implements IsbnLookupService {
-  /// Creates the service with a shared [client].
-  GoogleBooksLookupService({required http.Client client, Uri? baseUrl})
-    : _client = client,
-      _base = baseUrl ?? Uri.parse('https://www.googleapis.com');
+  /// Creates the service with a shared [client]. [apiKey] (optional) returns
+  /// the user's own Google API key or null — read per-request, so a key
+  /// saved in Settings takes effect without rebuilding this service.
+  GoogleBooksLookupService({
+    required http.Client client,
+    Uri? baseUrl,
+    Future<String?> Function()? apiKey,
+  }) : _client = client,
+       _base = baseUrl ?? Uri.parse('https://www.googleapis.com'),
+       _apiKey = apiKey ?? (() async => null);
 
   final http.Client _client;
   final Uri _base;
+  final Future<String?> Function() _apiKey;
 
   @override
   Future<LookupResult> lookupByIsbn(String isbn) async {
@@ -62,9 +69,17 @@ final class GoogleBooksLookupService implements IsbnLookupService {
     String q, {
     required int maxResults,
   }) async {
+    // With a user key the request runs on THEIR dedicated free quota
+    // (~1000/day) instead of Google's shared anonymous pool, which is often
+    // exhausted globally (429 RESOURCE_EXHAUSTED).
+    final key = await _apiKey();
     final uri = _base.replace(
       path: '/books/v1/volumes',
-      queryParameters: {'q': q, 'maxResults': '$maxResults'},
+      queryParameters: {
+        'q': q,
+        'maxResults': '$maxResults',
+        if (key != null) 'key': key,
+      },
     );
     final resp = await _client.get(uri);
     if (resp.statusCode >= 400) return null;

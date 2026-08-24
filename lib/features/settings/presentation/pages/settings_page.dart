@@ -26,6 +26,7 @@ import 'package:pitaka/features/import_export/presentation/pages/export_page.dar
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
+import 'package:pitaka/features/lookup/domain/google_books_api_key.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -130,6 +131,167 @@ class _AppearanceTab extends ConsumerWidget {
           value: settings.loadRemoteCovers,
           onChanged: (v) => controller.setLoadRemoteCovers(enabled: v),
         ),
+        const SizedBox(height: 8),
+        const _GoogleBooksKeyTile(),
+      ],
+    );
+  }
+}
+
+/// Entry for the user's own Google Books API key (optional).
+///
+/// Why this exists: keyless Google Books calls run on a quota pool shared by
+/// every anonymous client worldwide and are often rejected with "quota
+/// exceeded". A free personal key gives the user a dedicated daily quota.
+/// The key is a quota-bearing credential → stored in the OS secure store
+/// (never plain prefs, §6.3) and never shown back in full — only a masked
+/// tail, same idea as the vault's redaction rules.
+class _GoogleBooksKeyTile extends ConsumerStatefulWidget {
+  const _GoogleBooksKeyTile();
+
+  @override
+  ConsumerState<_GoogleBooksKeyTile> createState() =>
+      _GoogleBooksKeyTileState();
+}
+
+class _GoogleBooksKeyTileState extends ConsumerState<_GoogleBooksKeyTile> {
+  /// Masked tail of the stored key (e.g. "…Wk3c"), or null when none is set.
+  String? _maskedKey;
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _refresh();
+  }
+
+  Future<void> _refresh() async {
+    final key = await ref.read(lookupKeyStoreProvider).googleBooksApiKey();
+    if (!mounted) return;
+    setState(() {
+      _maskedKey = key == null ? null : '…${key.substring(key.length - 4)}';
+      _loaded = true;
+    });
+  }
+
+  Future<void> _edit() async {
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (_) => const _GoogleBooksKeyDialog(),
+    );
+    if (saved ?? false) await _refresh();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    final hasKey = _maskedKey != null;
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.key_outlined),
+      title: const Text('Google Books API key'),
+      subtitle: Text(
+        hasKey
+            ? 'Your key $_maskedKey is used for ISBN lookups.'
+            : 'Optional. Without a key, lookups share a public quota that '
+                  'often runs out. A free personal key from Google gives '
+                  'you your own.',
+      ),
+      trailing: TextButton(
+        onPressed: _edit,
+        child: Text(hasKey ? 'Change' : 'Add'),
+      ),
+      onTap: _edit,
+    );
+  }
+}
+
+/// Paste/validate/save dialog for the Google Books key. Pops `true` when the
+/// stored key changed (saved or removed).
+class _GoogleBooksKeyDialog extends ConsumerStatefulWidget {
+  const _GoogleBooksKeyDialog();
+
+  @override
+  ConsumerState<_GoogleBooksKeyDialog> createState() =>
+      _GoogleBooksKeyDialogState();
+}
+
+class _GoogleBooksKeyDialogState extends ConsumerState<_GoogleBooksKeyDialog> {
+  final _key = TextEditingController();
+  String? _error;
+  bool _hadKey = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Only to decide whether to offer "Remove" — the stored key is never
+    // loaded into the text field (it would defeat the masking).
+    ref
+        .read(lookupKeyStoreProvider)
+        .googleBooksApiKey()
+        .then((k) => mounted ? setState(() => _hadKey = k != null) : null);
+  }
+
+  @override
+  void dispose() {
+    _key.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final normalized = GoogleBooksApiKey.normalize(_key.text);
+    if (!GoogleBooksApiKey.isValid(normalized)) {
+      setState(
+        () => _error =
+            'That does not look like a Google API key. Paste the key '
+            'exactly as shown in Google Cloud Console.',
+      );
+      return;
+    }
+    await ref.read(lookupKeyStoreProvider).setGoogleBooksApiKey(normalized);
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _remove() async {
+    await ref.read(lookupKeyStoreProvider).clearGoogleBooksApiKey();
+    if (mounted) Navigator.of(context).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Google Books API key'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Create a free API key in Google Cloud Console (APIs & Services '
+            '→ Credentials) with the Books API enabled, then paste it here. '
+            'It is stored encrypted on this device and sent only to Google.',
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _key,
+            autofocus: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: InputDecoration(
+              labelText: 'API key',
+              errorText: _error,
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        if (_hadKey)
+          TextButton(onPressed: _remove, child: const Text('Remove key')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(onPressed: _save, child: const Text('Save')),
       ],
     );
   }

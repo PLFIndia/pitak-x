@@ -8,8 +8,44 @@ void main() {
   const isbn = '9780140449136';
 
   GoogleBooksLookupService withClient(
-    Future<http.Response> Function(http.Request) handler,
-  ) => GoogleBooksLookupService(client: MockClient(handler));
+    Future<http.Response> Function(http.Request) handler, {
+    Future<String?> Function()? apiKey,
+  }) => GoogleBooksLookupService(client: MockClient(handler), apiKey: apiKey);
+
+  group('user API key', () {
+    test('is sent as the key query parameter when present', () async {
+      String? seenKey;
+      final svc = withClient((req) async {
+        seenKey = req.url.queryParameters['key'];
+        return http.Response('{"items": []}', 200);
+      }, apiKey: () async => 'AIzaSyB-user-key');
+      await svc.lookupByIsbn(isbn);
+      expect(seenKey, 'AIzaSyB-user-key');
+    });
+
+    test('is omitted entirely when not set', () async {
+      var hadKeyParam = true;
+      final svc = withClient((req) async {
+        hadKeyParam = req.url.queryParameters.containsKey('key');
+        return http.Response('{"items": []}', 200);
+      });
+      await svc.lookupByIsbn(isbn);
+      expect(hadKeyParam, isFalse);
+    });
+
+    test('is read per-request — a newly saved key applies', () async {
+      String? stored; // starts unset
+      final seen = <String?>[];
+      final svc = withClient((req) async {
+        seen.add(req.url.queryParameters['key']);
+        return http.Response('{"items": []}', 200);
+      }, apiKey: () async => stored);
+      await svc.lookupByIsbn(isbn);
+      stored = 'AIzaSyB-added-later-1234'; // user saves a key in Settings
+      await svc.lookupByIsbn(isbn);
+      expect(seen, [null, 'AIzaSyB-added-later-1234']);
+    });
+  });
 
   group('GoogleBooksLookupService.lookupByIsbn', () {
     test('parses a found volume', () async {

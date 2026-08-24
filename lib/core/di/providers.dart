@@ -43,9 +43,11 @@ import 'package:pitaka/features/library/infrastructure/drift_book_repository.dar
 import 'package:pitaka/features/lookup/application/chained_isbn_lookup.dart';
 import 'package:pitaka/features/lookup/domain/isbn_cache.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
+import 'package:pitaka/features/lookup/domain/lookup_key_store.dart';
 import 'package:pitaka/features/lookup/infrastructure/google_books_lookup_service.dart';
 import 'package:pitaka/features/lookup/infrastructure/in_memory_isbn_cache.dart';
 import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_service.dart';
+import 'package:pitaka/features/lookup/infrastructure/secure_storage_lookup_key_store.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishedFileFetcher, RemoteCoverFetcher;
@@ -258,14 +260,25 @@ http.Client lookupHttpClient(LookupHttpClientRef ref) {
   return client;
 }
 
+/// Optional user-supplied Google Books API key (encrypted at rest, §6.3).
+/// keepAlive: tiny, session-stable, and read on every lookup.
+@Riverpod(keepAlive: true)
+LookupKeyStore lookupKeyStore(LookupKeyStoreRef ref) =>
+    SecureStorageLookupKeyStore();
+
 /// ISBN lookup + title search (#29/#30): Open Library primary, Google Books
 /// fallback, chained over the cache. Only hit on explicit user action.
 @riverpod
 IsbnLookupService isbnLookupService(IsbnLookupServiceRef ref) {
   final client = ref.watch(lookupHttpClientProvider);
+  final keys = ref.watch(lookupKeyStoreProvider);
   return ChainedIsbnLookup(
     primary: OpenLibraryLookupService(client: client),
-    fallback: GoogleBooksLookupService(client: client),
+    fallback: GoogleBooksLookupService(
+      client: client,
+      // Read per-request: a key saved in Settings applies immediately.
+      apiKey: keys.googleBooksApiKey,
+    ),
     cache: ref.watch(isbnCacheProvider),
   );
 }
