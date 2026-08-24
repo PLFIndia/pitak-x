@@ -420,7 +420,32 @@ final isbnCacheProvider = Provider<IsbnCache>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef IsbnCacheRef = ProviderRef<IsbnCache>;
-String _$isbnLookupServiceHash() => r'1175c5e03c88c13b632a42a797f5074556e9bc02';
+String _$lookupHttpClientHash() => r'ae1a1e6fd07615bd614129b579735fdfe05218e0';
+
+/// HTTP client for the public book-metadata APIs only. Differs from the
+/// shared [httpClient] in two ways (REVIEW: lookup — "fails quite often"):
+///  - 10 s timeout, not 60: lookups are interactive (user watching a
+///    spinner); a slow provider should fail over to the fallback quickly,
+///    not pin the button for a minute.
+///  - [LookupHttpClient] on top: descriptive User-Agent (Open Library's API
+///    policy throttles anonymous clients) + one jittered retry on 429/5xx.
+///
+/// Copied from [lookupHttpClient].
+@ProviderFor(lookupHttpClient)
+final lookupHttpClientProvider = Provider<http.Client>.internal(
+  lookupHttpClient,
+  name: r'lookupHttpClientProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$lookupHttpClientHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LookupHttpClientRef = ProviderRef<http.Client>;
+String _$isbnLookupServiceHash() => r'e49baee400bb8f222944f222ea0610838169f1ec';
 
 /// ISBN lookup + title search (#29/#30): Open Library primary, Google Books
 /// fallback, chained over the cache. Only hit on explicit user action.

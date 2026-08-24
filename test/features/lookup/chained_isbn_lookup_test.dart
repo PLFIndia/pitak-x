@@ -24,6 +24,27 @@ class _FakeService implements IsbnLookupService {
       search ?? const SearchEmpty();
 }
 
+/// Per-ISBN scriptable provider for the alternate-form (10↔13) tests.
+class _PerIsbnService implements IsbnLookupService {
+  _PerIsbnService(this.byIsbn);
+
+  /// Result per exact ISBN; unknown ISBNs → NotFound.
+  final Map<String, LookupResult> byIsbn;
+
+  /// Every ISBN this service was asked for, in order.
+  final List<String> asked = [];
+
+  @override
+  Future<LookupResult> lookupByIsbn(String isbn) async {
+    asked.add(isbn);
+    return byIsbn[isbn] ?? const LookupNotFound();
+  }
+
+  @override
+  Future<SearchResult> searchByTitle(String query, {int limit = 20}) async =>
+      const SearchEmpty();
+}
+
 /// Simple in-memory cache.
 class _MemCache implements IsbnCache {
   final Map<String, IsbnCacheEntry> _store = {};
@@ -132,6 +153,87 @@ void main() {
       ).lookupByIsbn(isbn);
       expect(result, isA<LookupFound>());
       expect(primary.lookups, 1);
+    });
+  });
+
+  group('ChainedIsbnLookup alternate ISBN form (10↔13)', () {
+    // 0140449132 ↔ 9780140449136 (same book, both structurally valid).
+    const isbn10 = '0140449132';
+    const isbn13 = '9780140449136';
+    const meta13 = BookMetadata(isbn: isbn13, title: 'The Odyssey');
+
+    ChainedIsbnLookup perIsbnChain(_PerIsbnService primary, _MemCache cache) =>
+        ChainedIsbnLookup(
+          primary: primary,
+          fallback: _PerIsbnService({}),
+          cache: cache,
+          clock: () => 1000,
+        );
+
+    test('NotFound under ISBN-10 is rescued by the ISBN-13 form', () async {
+      final primary = _PerIsbnService({isbn13: const LookupFound(meta13)});
+      final result = await perIsbnChain(
+        primary,
+        _MemCache(),
+      ).lookupByIsbn(isbn10);
+      expect(result, isA<LookupFound>());
+      expect((result as LookupFound).metadata.title, 'The Odyssey');
+      expect(primary.asked, [isbn10, isbn13]);
+    });
+
+    test('NotFound under ISBN-13 is rescued by the ISBN-10 form', () async {
+      const meta10 = BookMetadata(isbn: isbn10, title: 'The Odyssey');
+      final primary = _PerIsbnService({isbn10: const LookupFound(meta10)});
+      final result = await perIsbnChain(
+        primary,
+        _MemCache(),
+      ).lookupByIsbn(isbn13);
+      expect(result, isA<LookupFound>());
+      expect(primary.asked, [isbn13, isbn10]);
+    });
+
+    test('both forms NotFound → NotFound (both sentinels cached)', () async {
+      final cache = _MemCache();
+      final result = await perIsbnChain(
+        _PerIsbnService({}),
+        cache,
+      ).lookupByIsbn(isbn10);
+      expect(result, isA<LookupNotFound>());
+      expect((await cache.get(isbn10))?.notFound, isTrue);
+      expect((await cache.get(isbn13))?.notFound, isTrue);
+    });
+
+    test('a 979-prefixed ISBN-13 has no alternate — single pass', () async {
+      // Valid 979 ISBN-13; no ISBN-10 form exists.
+      const isbn979 = '9791234567896';
+      final primary = _PerIsbnService({});
+      final result = await perIsbnChain(
+        primary,
+        _MemCache(),
+      ).lookupByIsbn(isbn979);
+      expect(result, isA<LookupNotFound>());
+      expect(primary.asked, [isbn979]);
+    });
+
+    test('transient error on the original form is not masked by an '
+        'alternate-form miss', () async {
+      final primary = _PerIsbnService({
+        isbn10: const LookupNetworkError('offline'),
+      });
+      // Fallback also errors for isbn10 → chain returns NetworkError for the
+      // original; the alternate form must not run at all (result is not
+      // NotFound), so no false NotFound reaches the user while offline.
+      final chain = ChainedIsbnLookup(
+        primary: primary,
+        fallback: _PerIsbnService({
+          isbn10: const LookupNetworkError('offline'),
+        }),
+        cache: _MemCache(),
+        clock: () => 1000,
+      );
+      final result = await chain.lookupByIsbn(isbn10);
+      expect(result, isA<LookupNetworkError>());
+      expect(primary.asked, [isbn10]);
     });
   });
 

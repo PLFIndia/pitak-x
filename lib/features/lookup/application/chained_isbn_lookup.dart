@@ -18,6 +18,7 @@ library;
 
 import 'package:pitaka/features/lookup/domain/entities/title_search_result.dart';
 import 'package:pitaka/features/lookup/domain/isbn_cache.dart';
+import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 
@@ -48,6 +49,22 @@ final class ChainedIsbnLookup implements IsbnLookupService {
 
   @override
   Future<LookupResult> lookupByIsbn(String isbn) async {
+    final result = await _lookupSingle(isbn);
+    if (result is! LookupNotFound) return result;
+    // Both providers said NotFound for THIS form. Some records are indexed
+    // under only one of ISBN-10/ISBN-13, so try the other form through the
+    // same cache-aware path before giving up. (On a repeat scan the original
+    // form short-circuits via its NotFound sentinel and the alternate hits
+    // its Found cache — zero network calls.)
+    final alt = IsbnFormat.alternateForm(isbn);
+    if (alt == null) return result;
+    final altResult = await _lookupSingle(alt);
+    // Only a Found rescues; an alternate-form miss or transient error must
+    // not mask the definitive NotFound for what the user actually scanned.
+    return altResult is LookupFound ? altResult : result;
+  }
+
+  Future<LookupResult> _lookupSingle(String isbn) async {
     final now = _clock();
     final cached = await _cache.get(isbn);
     if (cached != null) {

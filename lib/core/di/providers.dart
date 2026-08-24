@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
@@ -241,11 +242,27 @@ http.Client httpClient(HttpClientRef ref) {
 @Riverpod(keepAlive: true)
 IsbnCache isbnCache(IsbnCacheRef ref) => InMemoryIsbnCache();
 
+/// HTTP client for the public book-metadata APIs only. Differs from the
+/// shared [httpClient] in two ways (REVIEW: lookup — "fails quite often"):
+///  - 10 s timeout, not 60: lookups are interactive (user watching a
+///    spinner); a slow provider should fail over to the fallback quickly,
+///    not pin the button for a minute.
+///  - [LookupHttpClient] on top: descriptive User-Agent (Open Library's API
+///    policy throttles anonymous clients) + one jittered retry on 429/5xx.
+@Riverpod(keepAlive: true)
+http.Client lookupHttpClient(LookupHttpClientRef ref) {
+  final client = LookupHttpClient(
+    TimeoutHttpClient(http.Client(), timeout: const Duration(seconds: 10)),
+  );
+  ref.onDispose(client.close);
+  return client;
+}
+
 /// ISBN lookup + title search (#29/#30): Open Library primary, Google Books
 /// fallback, chained over the cache. Only hit on explicit user action.
 @riverpod
 IsbnLookupService isbnLookupService(IsbnLookupServiceRef ref) {
-  final client = ref.watch(httpClientProvider);
+  final client = ref.watch(lookupHttpClientProvider);
   return ChainedIsbnLookup(
     primary: OpenLibraryLookupService(client: client),
     fallback: GoogleBooksLookupService(client: client),

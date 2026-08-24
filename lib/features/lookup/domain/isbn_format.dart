@@ -32,6 +32,41 @@ abstract final class IsbnFormat {
     return check == s.codeUnitAt(12) - 0x30;
   }
 
+  /// Converts a valid ISBN-10 to its ISBN-13 form (978 prefix + recomputed
+  /// check digit), or null when [isbn10] is not a valid ISBN-10.
+  ///
+  /// Why: providers index some books under only ONE form. Querying both
+  /// forms rescues lookups that would otherwise report NotFound.
+  static String? toIsbn13(String isbn10) {
+    if (!_isValidIsbn10(isbn10)) return null;
+    final body = '978${isbn10.substring(0, 9)}';
+    var sum = 0;
+    for (var i = 0; i < 12; i++) {
+      final d = body.codeUnitAt(i) - 0x30;
+      sum += i.isEven ? d : d * 3;
+    }
+    final check = (10 - (sum % 10)) % 10;
+    return '$body$check';
+  }
+
+  /// Converts a 978-prefixed ISBN-13 to its ISBN-10 form, or null when
+  /// [isbn13] is not a valid 978-prefixed ISBN-13 (979-* has no ISBN-10).
+  static String? toIsbn10(String isbn13) {
+    if (!_isValidIsbn13(isbn13) || !isbn13.startsWith('978')) return null;
+    final body = isbn13.substring(3, 12);
+    var sum = 0;
+    for (var i = 0; i < 9; i++) {
+      sum += (body.codeUnitAt(i) - 0x30) * (10 - i);
+    }
+    final check = (11 - (sum % 11)) % 11;
+    return '$body${check == 10 ? 'X' : check}';
+  }
+
+  /// The "other" structural form of a valid [normalized] ISBN: 10→13 or
+  /// 978-13→10. Null when there is none (979-* ISBN-13s, invalid input).
+  static String? alternateForm(String normalized) =>
+      normalized.length == 10 ? toIsbn13(normalized) : toIsbn10(normalized);
+
   static bool _isValidIsbn10(String s) {
     if (s.length != 10) return false;
     var sum = 0;

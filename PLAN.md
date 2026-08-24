@@ -896,3 +896,36 @@ and the flow was already dead before the user ever authorized.
   consecutive; budget resets between failures; PollFatal ends as Failed.
 - infra: unknown protocol error maps to PollFatal (not throw).
 - Full publish suite: 122/122 pass; analyzer clean on touched files.
+
+---
+
+# Task (done 2026-08-24): ISBN lookup "fails quite often" — 4 fixes
+
+## Root causes found in review
+1. No User-Agent → Open Library (PRIMARY) throttles anonymous clients.
+2. No retry → single 429/5xx blip from both providers = user-visible failure.
+3. 60 s shared timeout → interactive lookup can pin the spinner for a minute.
+4. No ISBN-10↔13 cross-query → books indexed under one form missed.
+
+## Fixes
+- core/network/lookup_http_client.dart (NEW): decorator adding descriptive
+  User-Agent (per OL API policy) + ONE jittered backoff retry on 429/5xx/
+  transport error, GET-only (idempotent). Approach mirrors package:http's
+  RetryClient defaults, kept custom for injectable sleep/random in tests.
+- core/di/providers.dart: dedicated lookupHttpClient (10 s TimeoutHttpClient
+  + LookupHttpClient) for the lookup chain; GitHub publish keeps its own
+  60 s client and its protocol-level retry policy untouched.
+- isbn_format.dart: toIsbn13/toIsbn10/alternateForm (pure, check-digit
+  recompute; 979-* has no ISBN-10).
+- chained_isbn_lookup.dart: on definitive NotFound, retry the whole
+  cache→primary→fallback chain once with the alternate form; only a Found
+  rescues (transient errors never masked; both sentinels cached).
+
+## Tests (all passing, suite 710/710)
+- lookup_http_client_test.dart: UA set/not clobbered; retry on 429/503/
+  transport; single retry cap; no 4xx retry; no POST retry; first-response
+  surfaced when retry throws.
+- isbn_format_test.dart: 10→13, X check digit, 13→10, 979 rejection,
+  round-trips.
+- chained_isbn_lookup_test.dart: rescue 10→13 and 13→10; both-miss caches
+  both sentinels; 979 single-pass; offline never masked by alternate miss.

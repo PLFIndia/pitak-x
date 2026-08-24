@@ -33,4 +33,38 @@ void main() {
       expect(IsbnFormat.isValid('043942089Z'), isFalse);
     });
   });
+
+  group('conversion (10↔13)', () {
+    test('toIsbn13 converts a valid ISBN-10', () {
+      // 0140449132 is the ISBN-10 of 9780140449136.
+      expect(IsbnFormat.toIsbn13('0140449132'), '9780140449136');
+    });
+
+    test('toIsbn13 handles an X check digit', () {
+      expect(IsbnFormat.toIsbn13('043942089X'), '9780439420891');
+    });
+
+    test('toIsbn13 rejects invalid input', () {
+      expect(IsbnFormat.toIsbn13('0140449133'), isNull); // bad check
+      expect(IsbnFormat.toIsbn13('12345'), isNull);
+      expect(IsbnFormat.toIsbn13('9780140449136'), isNull); // already 13
+    });
+
+    test('toIsbn10 converts a 978 ISBN-13', () {
+      expect(IsbnFormat.toIsbn10('9780140449136'), '0140449132');
+      expect(IsbnFormat.toIsbn10('9780439420891'), '043942089X');
+    });
+
+    test('toIsbn10 rejects 979-prefixed and invalid input', () {
+      expect(IsbnFormat.toIsbn10('9791234567896'), isNull); // 979: no 10
+      expect(IsbnFormat.toIsbn10('9780140449137'), isNull); // bad check
+      expect(IsbnFormat.toIsbn10('0140449132'), isNull); // already 10
+    });
+
+    test('alternateForm round-trips both directions', () {
+      expect(IsbnFormat.alternateForm('0140449132'), '9780140449136');
+      expect(IsbnFormat.alternateForm('9780140449136'), '0140449132');
+      expect(IsbnFormat.alternateForm('9791234567896'), isNull);
+    });
+  });
 }
