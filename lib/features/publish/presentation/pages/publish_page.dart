@@ -477,7 +477,32 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
               ? Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Text('Signed in'),
+                    // Success state must read as CONFIRMED at a glance, not
+                    // as a plain label. Green isn't in the Material scheme,
+                    // so pick a brightness-aware shade: 400 on dark surfaces
+                    // (700 is too dim there), 700 on light (400 fails
+                    // contrast on white).
+                    Builder(
+                      builder: (ctx) {
+                        final green =
+                            Theme.of(ctx).brightness == Brightness.dark
+                            ? Colors.green.shade400
+                            : Colors.green.shade700;
+                        return Row(
+                          children: [
+                            Icon(Icons.check_circle, size: 18, color: green),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Signed in',
+                              style: TextStyle(
+                                color: green,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                     TextButton(
                       onPressed: _busy ? null : _signOut,
                       child: const Text('Sign out'),
