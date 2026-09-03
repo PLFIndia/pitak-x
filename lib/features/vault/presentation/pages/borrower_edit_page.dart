@@ -9,6 +9,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fpdart/fpdart.dart' show unit;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -90,9 +91,11 @@ class _BorrowerEditPageState extends ConsumerState<BorrowerEditPage> {
       notes: _trimOrNull(_notes.text),
     );
     final notifier = ref.read(vaultSessionControllerProvider.notifier);
+    // Both branches collapse to Either<Failure, Unit> for the shared
+    // rendering below (addBorrower also returns the new id; unused here).
     final result = _isEdit
         ? await notifier.updateBorrower(borrower)
-        : await notifier.addBorrower(borrower);
+        : (await notifier.addBorrower(borrower)).map((_) => unit);
     if (!mounted) return;
     result.match(
       (f) => setState(() {

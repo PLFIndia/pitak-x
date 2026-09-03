@@ -51,6 +51,34 @@ final class VaultStore implements VaultArtifactsStore {
   bool isInitialized() =>
       File(dbPath).existsSync() && File(_blobPath).existsSync();
 
+  /// True when a `borrowers.db` exists WITHOUT its wrapped-key blob (or the
+  /// blob is blank). Such a DB can never be opened — nobody holds its key —
+  /// and, left alone, it permanently blocks creating a new vault (the Rust
+  /// core refuses to overwrite an existing file). Produced only by a crash
+  /// or disk-full between `create_vault` and `writeBlob` (review 2026-09-03).
+  @override
+  bool hasOrphanDatabase() {
+    if (!File(dbPath).existsSync()) return false;
+    final blob = readBlob();
+    return blob == null || blob.isEmpty;
+  }
+
+  /// Deletes an orphan `borrowers.db` (see [hasOrphanDatabase]) plus any stale
+  /// biometric blob, so "Create vault" works again. Refuses to touch anything
+  /// when a key blob exists (that would be a real vault — never delete it).
+  /// Idempotent.
+  @override
+  void discardOrphanDatabase() {
+    if (!hasOrphanDatabase()) return;
+    final db = File(dbPath);
+    if (db.existsSync()) db.deleteSync();
+    // A blank blob file (truncated write) is as useless as none — remove it so
+    // the state is unambiguous.
+    final blob = File(_blobPath);
+    if (blob.existsSync()) blob.deleteSync();
+    clearBioBlob();
+  }
+
   /// Reads the wrapped-key blob, or null if no vault is set up.
   ///
   /// Trims surrounding whitespace so a trailing newline (if any) never reaches
@@ -64,10 +92,32 @@ final class VaultStore implements VaultArtifactsStore {
 
   /// Persists the wrapped-key [blob]. Creates [baseDir] if needed. The blob is
   /// ciphertext, not a secret in plaintext — safe to write as a file.
+  ///
+  /// ATOMIC (review 2026-09-03, Blocker): this file is the ONLY thing that
+  /// turns the user's passphrase into the vault key. A plain in-place write
+  /// truncates the file first, so a crash / kill / disk-full between the
+  /// truncate and the write (e.g. mid change-passphrase) left an EMPTY blob
+  /// and the vault was lost forever. We now write a sibling temp file, flush
+  /// it, and `rename` it over the live path — rename is atomic on the same
+  /// filesystem, so the live blob is always either the old one or the new
+  /// one, never half-written. Throws [FileSystemException] on failure with the
+  /// live blob untouched (temp cleaned up), so callers can fail closed.
   @override
-  void writeBlob(String blob) {
+  void writeBlob(String blob) => _atomicWrite(File(_blobPath), blob);
+
+  /// Write-temp-then-rename for the two key-blob files (see [writeBlob]).
+  void _atomicWrite(File target, String contents) {
     Directory(baseDir).createSync(recursive: true);
-    File(_blobPath).writeAsStringSync(blob, flush: true);
+    final tmp = File('${target.path}.tmp');
+    try {
+      tmp
+        ..writeAsStringSync(contents, flush: true)
+        ..renameSync(target.path);
+    } on FileSystemException {
+      // Never leave a stray temp next to the live file.
+      if (tmp.existsSync()) tmp.deleteSync();
+      rethrow;
+    }
   }
 
   /// Reads the biometric-wrapped blob (#34 B2), or null when biometric unlock
@@ -85,12 +135,9 @@ final class VaultStore implements VaultArtifactsStore {
   bool hasBioBlob() => File(_bioBlobPath).existsSync();
 
   /// Persists the biometric-wrapped [blob] (#34 B2). Ciphertext — safe as a
-  /// plain file.
+  /// plain file. Atomic like [writeBlob].
   @override
-  void writeBioBlob(String blob) {
-    Directory(baseDir).createSync(recursive: true);
-    File(_bioBlobPath).writeAsStringSync(blob, flush: true);
-  }
+  void writeBioBlob(String blob) => _atomicWrite(File(_bioBlobPath), blob);
 
   /// Stages a vault restored from a backup archive for a two-file commit
   /// (C1 + REVIEW_FINDINGS §4 restore-atomicity Major).

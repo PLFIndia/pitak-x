@@ -55,6 +55,83 @@ void main() {
     expect(store.clear, returnsNormally);
   });
 
+  group('atomic blob writes (review 2026-09-03, Blocker)', () {
+    test('writeBlob leaves no temp file and the live blob is complete', () {
+      store
+        ..writeBlob('old.blob.value')
+        ..writeBlob('new.blob.value');
+      expect(store.readBlob(), 'new.blob.value');
+      final leftovers = tmp
+          .listSync()
+          .map((e) => p.basename(e.path))
+          .where((n) => n.endsWith('.tmp'))
+          .toList();
+      expect(leftovers, isEmpty);
+    });
+
+    test('a failing writeBlob keeps the OLD blob intact', () {
+      store.writeBlob('old.blob.value');
+      // Make the temp path unwritable by planting a DIRECTORY where the temp
+      // file would go — writeAsStringSync then throws before any rename.
+      Directory(p.join(tmp.path, 'vault_backup_blob.tmp')).createSync();
+      expect(
+        () => store.writeBlob('new.blob.value'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(store.readBlob(), 'old.blob.value');
+    });
+
+    test('writeBioBlob is atomic too', () {
+      store.writeBioBlob('bio.one.x');
+      Directory(p.join(tmp.path, 'vault_biometric_blob.tmp')).createSync();
+      expect(
+        () => store.writeBioBlob('bio.two.y'),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(store.readBioBlob(), 'bio.one.x');
+    });
+  });
+
+  group('orphan database (half-created vault)', () {
+    test('a DB with no blob is an orphan; a real vault is not', () {
+      expect(store.hasOrphanDatabase(), isFalse); // nothing at all
+      File(store.dbPath).writeAsBytesSync([1]);
+      expect(store.hasOrphanDatabase(), isTrue); // DB, no blob
+      store.writeBlob('a.b.c');
+      expect(store.hasOrphanDatabase(), isFalse); // real vault
+    });
+
+    test('a blank (truncated) blob also counts as an orphan', () {
+      File(store.dbPath).writeAsBytesSync([1]);
+      File(p.join(tmp.path, 'vault_backup_blob')).writeAsStringSync('');
+      expect(store.isInitialized(), isTrue); // both files exist…
+      expect(store.hasOrphanDatabase(), isTrue); // …but the key is gone
+    });
+
+    test(
+      'discardOrphanDatabase removes only an orphan, never a real vault',
+      () {
+        File(store.dbPath).writeAsBytesSync([1]);
+        store
+          ..writeBioBlob('stale.bio.blob')
+          ..discardOrphanDatabase();
+        expect(File(store.dbPath).existsSync(), isFalse);
+        expect(store.hasBioBlob(), isFalse);
+
+        // Real vault: untouched.
+        File(store.dbPath).writeAsBytesSync([2]);
+        store
+          ..writeBlob('real.key.blob')
+          ..discardOrphanDatabase();
+        expect(store.isInitialized(), isTrue);
+        expect(File(store.dbPath).readAsBytesSync(), [2]);
+        // Idempotent on nothing.
+        store.clear();
+        expect(store.discardOrphanDatabase, returnsNormally);
+      },
+    );
+  });
+
   group('stageRestore / StagedVaultInstall (two-file commit)', () {
     late String srcDbPath;
 

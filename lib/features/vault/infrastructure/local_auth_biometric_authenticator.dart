@@ -39,6 +39,22 @@ final class LocalAuthBiometricAuthenticator implements BiometricAuthenticator {
   }
 
   @override
+  Future<DeviceCredentialStatus> deviceCredentialStatus() async {
+    try {
+      // `isDeviceSupported` is true when EITHER a biometric OR a device
+      // credential (PIN/pattern/password) can be used — exactly the question
+      // "can any prompt ever succeed?" (biometrics alone are covered by
+      // availability()).
+      final supported = await _auth.isDeviceSupported();
+      return supported
+          ? DeviceCredentialStatus.available
+          : DeviceCredentialStatus.noneConfigured;
+    } on Exception {
+      return DeviceCredentialStatus.unknown;
+    }
+  }
+
+  @override
   Future<bool> authenticate({required String reason}) async {
     try {
       return await _auth.authenticate(

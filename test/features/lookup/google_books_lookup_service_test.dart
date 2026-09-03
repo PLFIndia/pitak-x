@@ -72,6 +72,32 @@ void main() {
       expect(m.coverUrl, 'https://x/t.jpg');
     });
 
+    test('wrong-typed fields never throw (hostile JSON)', () async {
+      final svc = withClient(
+        (_) async => http.Response(
+          '{"items":[{"id":9,"volumeInfo":{"title":123,"authors":[1,"Ok"],'
+          '"pageCount":"x","imageLinks":"no","categories":[{}],'
+          '"publisher":42,"language":["hi"]}}]}',
+          200,
+        ),
+      );
+      final result = await svc.lookupByIsbn(isbn);
+      expect(result, isA<LookupFound>());
+      final meta = (result as LookupFound).metadata;
+      expect(meta.title, isNull);
+      expect(meta.author, 'Ok'); // the one valid author survives
+      expect(meta.pageCount, isNull);
+      expect(meta.coverUrl, isNull);
+      expect(meta.language, isNull);
+    });
+
+    test('non-object JSON body → NotFound, not a crash', () async {
+      final svc = withClient(
+        (_) async => http.Response('"just a string"', 200),
+      );
+      expect(await svc.lookupByIsbn(isbn), isA<LookupNotFound>());
+    });
+
     test('no items → NotFound', () async {
       final svc = withClient((_) async => http.Response('{"items": []}', 200));
       expect(await svc.lookupByIsbn(isbn), isA<LookupNotFound>());

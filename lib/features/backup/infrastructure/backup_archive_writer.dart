@@ -9,15 +9,21 @@
 ///  - user cover images are bundled as flat `cover_<leaf>` entries;
 ///  - a `manifest.json` describes what is present.
 ///
-/// Restore targets (Q-28c): Pitak↔Pitak and Kotlin→Flutter. The written
-/// `books.db` / `wishlist.db` carry Room's `room_master_table` identity row and
-/// matching `user_version` so they read cleanly. We deliberately do NOT emit
-/// the FTS4 `books_fts` mirror: the bundled SQLite (`sqlite3_flutter_libs`)
-/// ships
-/// FTS5 only — `USING FTS4` throws `no such module: fts4` on-device — and our
-/// restore reader never reads that table (it rebuilds Drift's own FTS). The
-/// reverse direction (restoring our backup into the original Kotlin app) is not
-/// a goal, so the FTS mirror it would need is intentionally absent.
+/// Restore targets (Q-28c, reconfirmed 2026-09-03 — "only this app"): the
+/// archives this writer produces are read by PITAK ONLY (Pitak↔Pitak), and
+/// Pitak's reader additionally accepts archives the retired Kotlin app made
+/// (Kotlin→Pitak). The reverse — the Kotlin app restoring OUR archive — is
+/// NOT a goal and is not tested. Consequences you should know before touching
+/// this file:
+///  - the Room `room_master_table` row + `user_version` below are kept only
+///    so the file stays in the same *shape* Kotlin archives have (one reader,
+///    one format); they are NOT a promise that Room would accept the file
+///    (the version sticker is v9 while the columns are v10-shaped — harmless
+///    for our reader, which never looks at either);
+///  - we deliberately do NOT emit the FTS4 `books_fts` mirror: the bundled
+///    SQLite (`sqlite3_flutter_libs`) ships FTS5 only — `USING FTS4` throws
+///    `no such module: fts4` on-device — and our reader rebuilds Drift's own
+///    FTS after restore.
 ///
 /// No secrets pass through here: the vault DB is opaque ciphertext on disk and
 /// the blob is already ciphertext. This writer never sees the vault key.

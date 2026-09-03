@@ -17,6 +17,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Empty book repo so the gate's LibraryPage can build without a database.
 class _EmptyRepo implements BookRepository {
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(const []);
   @override
@@ -73,6 +81,13 @@ class _DelayedSettingsRepo implements SettingsRepository {
 /// Scriptable biometric gate: returns [result] and records prompt count.
 class _FakeAuth implements BiometricAuthenticator {
   _FakeAuth({required this.result});
+
+  /// Test default: the device CAN authenticate (a screen lock exists).
+  DeviceCredentialStatus credentialStatus = DeviceCredentialStatus.available;
+
+  @override
+  Future<DeviceCredentialStatus> deviceCredentialStatus() async =>
+      credentialStatus;
   bool result;
   int prompts = 0;
 
@@ -148,6 +163,49 @@ void main() {
     expect(find.text('Pitak is locked'), findsOneWidget);
     expect(find.text('Library'), findsNothing);
     expect(find.widgetWithText(FilledButton, 'Unlock'), findsOneWidget);
+  });
+
+  // Q5 (review 2026-09-03): a failed prompt on a device that CAN authenticate
+  // (fingerprint rejected, cancel) must NOT offer to turn the lock off.
+  testWidgets('gate ON + failure with a working credential: no escape hatch', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
+    final auth = _FakeAuth(result: false);
+    await tester.pumpWidget(
+      _app([biometricAuthenticatorProvider.overrideWithValue(auth)]),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('Turn off app lock'), findsNothing);
+    expect(find.textContaining('no screen lock'), findsNothing);
+  });
+
+  testWidgets('device with NO screen lock: explains and offers to turn the '
+      'app lock off, which persists and opens the library', (tester) async {
+    SharedPreferences.setMockInitialValues({'app_lock_biometric': true});
+    final auth = _FakeAuth(result: false)
+      ..credentialStatus = DeviceCredentialStatus.noneConfigured;
+    await tester.pumpWidget(
+      _app([biometricAuthenticatorProvider.overrideWithValue(auth)]),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+
+    // Still locked (fail closed) but with an honest explanation + a way out.
+    expect(find.text('Pitak is locked'), findsOneWidget);
+    expect(find.textContaining('no screen lock'), findsOneWidget);
+    expect(find.text('Library'), findsNothing);
+
+    await tester.tap(find.text('Turn off app lock'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Library'), findsOneWidget);
+    // Persisted: the gate stays off on the next launch.
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('app_lock_biometric'), isFalse);
   });
 
   testWidgets('M2 race: settings still loading → library NOT shown', (

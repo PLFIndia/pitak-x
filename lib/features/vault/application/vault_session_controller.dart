@@ -22,6 +22,7 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -46,7 +47,7 @@ part 'vault_session_controller.g.dart';
 /// auto-lock timeout is the accepted future hardening, not a bug fix.
 @Riverpod(keepAlive: true)
 class VaultSessionController extends _$VaultSessionController
-    implements VaultLoanPurger {
+    implements VaultLoanPurger, VaultLender {
   /// The session unlock secret while unlocked; null when locked/uninitialized.
   /// This is EITHER the user passphrase OR the biometric secret S, depending on
   /// how the vault was opened (both unwrap the SAME vault key MK, just from
@@ -69,6 +70,14 @@ class VaultSessionController extends _$VaultSessionController
   @override
   bool get isUnlocked => state.valueOrNull is VaultUnlocked;
 
+  /// The loans of the unlocked session (for the lending policy); null while
+  /// locked or uninitialized.
+  @override
+  List<Loan>? get currentLoans {
+    final current = state.valueOrNull;
+    return current is VaultUnlocked ? current.data.loans : null;
+  }
+
   Future<VaultArtifactsStore> get _storeFuture =>
       ref.read(vaultStoreProvider.future);
 
@@ -86,9 +95,7 @@ class VaultSessionController extends _$VaultSessionController
       _activeIsBiometric = false;
     });
     final store = await _storeFuture;
-    return store.isInitialized()
-        ? const VaultLocked()
-        : const VaultUninitialized();
+    return _initialStateFor(store);
   }
 
   /// Creates a brand-new vault and unlocks it (D18 one-tap enable).
@@ -101,7 +108,33 @@ class VaultSessionController extends _$VaultSessionController
       passphrase.dispose();
       return left(const ValidationFailure('A vault already exists.'));
     }
-    state = const AsyncLoading();
+    if (passphrase.length < minPassphraseLength) {
+      passphrase.dispose();
+      return left(
+        const ValidationFailure(
+          'Passphrase must be at least $minPassphraseLength characters.',
+        ),
+      );
+    }
+    // A half-created vault (DB written, key blob never landed — crash or
+    // disk-full last time) can never be opened and would make the Rust core
+    // refuse to create a new one forever. Discard it first (review
+    // 2026-09-03). This only ever removes a DB that has NO key blob.
+    if (store.hasOrphanDatabase()) {
+      try {
+        store.discardOrphanDatabase();
+      } on Exception {
+        // The store's file IO failures are Exceptions (dart:io); the
+        // application layer stays free of dart:io by catching the base type.
+        passphrase.dispose();
+        return left(
+          const StorageFailure('could not remove a half-created vault'),
+        );
+      }
+    }
+    // NOTE: we deliberately do NOT set `state = AsyncLoading()` here: that
+    // unmounted the passphrase form and swallowed the failure message (review
+    // 2026-09-03). The page shows its own busy indicator instead.
     final created = await _vault.createVault(
       passphrase: passphrase,
       dbPath: store.dbPath,
@@ -113,7 +146,21 @@ class VaultSessionController extends _$VaultSessionController
         return left(failure);
       },
       (blob) async {
-        store.writeBlob(blob);
+        try {
+          store.writeBlob(blob);
+        } on Exception {
+          // The DB exists but its key never reached disk: an orphan. Remove
+          // it now so the next attempt starts clean, wipe the secret, and
+          // report a typed failure instead of throwing out of the controller.
+          passphrase.dispose();
+          try {
+            store.discardOrphanDatabase();
+          } on Exception {
+            // Best effort; enable() will retry the cleanup next time.
+          }
+          state = AsyncData(_initialStateFor(store));
+          return left(const StorageFailure('could not save the vault key'));
+        }
         return _holdAndLoad(passphrase, store);
       },
     );
@@ -129,7 +176,7 @@ class VaultSessionController extends _$VaultSessionController
       passphrase.dispose();
       return left(const ValidationFailure('No vault to unlock.'));
     }
-    state = const AsyncLoading();
+    // No AsyncLoading here either — see enable().
     return _holdAndLoad(passphrase, store, blob: blob);
   }
 
@@ -177,9 +224,19 @@ class VaultSessionController extends _$VaultSessionController
         return left(failure);
       },
       (newBlob) {
-        // Persist the new MAIN passphrase blob. The biometric blob (if any) is
-        // untouched and still valid (same MK).
-        store.writeBlob(newBlob);
+        // Persist the new MAIN passphrase blob (atomic temp+rename inside the
+        // store, so a crash here leaves the OLD blob intact and the old
+        // passphrase still works). The biometric blob (if any) is untouched
+        // and still valid (same MK).
+        try {
+          store.writeBlob(newBlob);
+        } on Exception {
+          // Nothing changed on disk; the current secret still opens the vault.
+          newPassphrase.dispose();
+          return left(
+            const StorageFailure('could not save the new passphrase'),
+          );
+        }
         if (_activeIsBiometric) {
           // Session stays on S (which opens the untouched bio blob); we only
           // re-set the passphrase. The new passphrase isn't held.
@@ -251,8 +308,15 @@ class VaultSessionController extends _$VaultSessionController
       // succeeds (fail-closed: never a blob with no secret to open it).
       final stored = await _bioStore.store(enrolment.secret);
       enrolment.secret.dispose();
-      return stored.match(left, (_) {
-        store.writeBioBlob(enrolment.blobBio);
+      return stored.match(left, (_) async {
+        try {
+          store.writeBioBlob(enrolment.blobBio);
+        } on Exception {
+          // S is stored but has no blob to open → roll S back so no orphan
+          // secret lingers, and report a typed failure (fail closed).
+          await _bioStore.clear();
+          return left(const StorageFailure('could not save biometric unlock'));
+        }
         return right(unit);
       });
     });
@@ -277,8 +341,8 @@ class VaultSessionController extends _$VaultSessionController
       if (secret == null) {
         return left(const ValidationFailure('Biometric unlock is not set up.'));
       }
-      state = const AsyncLoading();
       // _holdAndLoad takes ownership of `secret` and disposes on failure.
+      // (No AsyncLoading — see enable().)
       return _holdAndLoad(secret, store, blob: bioBlob, isBiometric: true);
     });
   }
@@ -307,16 +371,17 @@ class VaultSessionController extends _$VaultSessionController
   }
 
   /// Inserts a borrower, then re-reads the vault. Vault must be unlocked.
-  Future<Either<Failure, Unit>> addBorrower(Borrower borrower) =>
-      _mutate((p, store, blob) async {
-        final r = await _vault.insertBorrower(
-          passphrase: p,
-          blob: blob,
-          dbPath: store.dbPath,
-          borrower: borrower,
-        );
-        return r.map((_) => unit);
-      });
+  /// Returns the NEW borrower id (the Rust core already reports it; callers
+  /// used to rediscover it by name + max id, which is wrong for duplicates).
+  @override
+  Future<Either<Failure, int>> addBorrower(Borrower borrower) => _mutate(
+    (p, store, blob) => _vault.insertBorrower(
+      passphrase: p,
+      blob: blob,
+      dbPath: store.dbPath,
+      borrower: borrower,
+    ),
+  );
 
   /// Updates a borrower, then re-reads the vault. Vault must be unlocked.
   Future<Either<Failure, Unit>> updateBorrower(Borrower borrower) =>
@@ -360,6 +425,7 @@ class VaultSessionController extends _$VaultSessionController
       });
 
   /// Inserts a loan, then re-reads the vault. Vault must be unlocked.
+  @override
   Future<Either<Failure, Unit>> addLoan(Loan loan) =>
       _mutate((p, store, blob) async {
         final r = await _vault.insertLoan(
@@ -473,9 +539,10 @@ class VaultSessionController extends _$VaultSessionController
   }
 
   /// Runs a write [op] with the held passphrase, then re-reads the vault so the
-  /// watched state reflects the change. Fails closed if locked.
-  Future<Either<Failure, Unit>> _mutate(
-    Future<Either<Failure, Unit>> Function(
+  /// watched state reflects the change. Fails closed if locked. Generic in
+  /// [T] so a write can hand back a value (e.g. the new row id).
+  Future<Either<Failure, T>> _mutate<T>(
+    Future<Either<Failure, T>> Function(
       SecretBytes passphrase,
       VaultArtifactsStore store,
       String blob,
@@ -491,7 +558,7 @@ class VaultSessionController extends _$VaultSessionController
       return left(const ValidationFailure('Vault is locked.'));
     }
     final result = await op(held, store, blob);
-    return result.match(left, (_) async {
+    return result.match(left, (value) async {
       // Re-read so the UI reflects the mutation. A read failure after a
       // successful write is surfaced but the write already landed.
       final read = await _vault.unlockAndRead(
@@ -501,7 +568,7 @@ class VaultSessionController extends _$VaultSessionController
       );
       return read.match(left, (data) {
         state = AsyncData(VaultUnlocked(data));
-        return right(unit);
+        return right(value);
       });
     });
   }

@@ -12,15 +12,28 @@ import 'package:pitaka/features/events/domain/repositories/events_repository.dar
 /// In-memory events repo. Each saved poster image gets a deterministic ref so
 /// tests can assert on it; a bad image is simulated by [failNextImage].
 class _FakeEventsRepo implements EventsRepository {
+  /// Records deletions so tests can assert orphan cleanup (decision Q12).
+  final List<String> deletedPosters = [];
+
+  @override
+  Future<void> deletePosterImage(String imageRef) async {
+    deletedPosters.add(imageRef);
+  }
+
   EventsContent _content = EventsContent.empty;
   int _seq = 0;
   bool failNextImage = false;
+  bool failNextSave = false;
 
   @override
   Future<EventsContent> load() async => _content;
 
   @override
   Future<Either<Failure, EventsContent>> save(EventsContent content) async {
+    if (failNextSave) {
+      failNextSave = false;
+      return left(const StorageFailure('disk full'));
+    }
     _content = content;
     return right(content);
   }
@@ -113,5 +126,41 @@ void main() {
     final content = c.read(eventsControllerProvider).value!;
     expect(content.posters, hasLength(1));
     expect(content.posters[0].description, 'second');
+  });
+
+  // Decision Q12 (review 2026-09-03): poster files must not be orphaned.
+  test('removePoster deletes the image file after saving', () async {
+    final repo = _FakeEventsRepo();
+    final c = _containerWith(repo);
+    final n = c.read(eventsControllerProvider.notifier);
+    await c.read(eventsControllerProvider.future);
+    await n.addPoster(_bytes, description: 'first');
+    await n.addPoster(_bytes, description: 'second');
+
+    await n.removePoster(0);
+    expect(repo.deletedPosters, ['posters/img0.jpg']);
+  });
+
+  test('addPoster removes the written image when the save fails', () async {
+    final repo = _FakeEventsRepo()..failNextSave = true;
+    final c = _containerWith(repo);
+    final n = c.read(eventsControllerProvider.notifier);
+    await c.read(eventsControllerProvider.future);
+
+    expect(await n.addPoster(_bytes), isFalse);
+    expect(repo.deletedPosters, ['posters/img0.jpg'], reason: 'no orphan');
+    expect(c.read(eventsControllerProvider).value!.posters, isEmpty);
+  });
+
+  test('a failed remove leaves the file (still referenced)', () async {
+    final repo = _FakeEventsRepo();
+    final c = _containerWith(repo);
+    final n = c.read(eventsControllerProvider.notifier);
+    await c.read(eventsControllerProvider.future);
+    await n.addPoster(_bytes);
+    repo.failNextSave = true;
+
+    expect(await n.removePoster(0), isFalse);
+    expect(repo.deletedPosters, isEmpty);
   });
 }

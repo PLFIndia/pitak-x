@@ -99,7 +99,12 @@ abstract final class BoundedZipExtractor {
     final Archive archive;
     try {
       archive = ZipDecoder().decodeBytes(bytes);
-    } on Exception catch (e) {
+    } on Object catch (e) {
+      // `on Object`, not `on Exception`: the archive package throws
+      // `RangeError` (an Error, not an Exception) on a truncated or bit-flipped
+      // central directory, and `ArchiveException` on other corruption. Any
+      // throw from the decoder means "this is not a readable archive" — the
+      // caller must get ONE typed failure, never a crash from a bad file.
       throw BoundedExtractionException('Could not read ZIP: $e');
     }
 
@@ -150,7 +155,16 @@ abstract final class BoundedZipExtractor {
         );
       }
 
-      final content = entry.content as List<int>;
+      // Decompression happens lazily here and can also throw on corrupt
+      // data (same Error/Exception mix as above) — guard it the same way.
+      final List<int> content;
+      try {
+        content = entry.content as List<int>;
+      } on Object catch (e) {
+        throw BoundedExtractionException(
+          "Archive entry '$leaf' could not be decompressed: $e",
+        );
+      }
       // Verify the ACTUAL decompressed length — never trust the header.
       if (content.length > caps.maxEntryBytes) {
         throw BoundedExtractionException(

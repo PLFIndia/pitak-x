@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/entities/title_search_result.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
+import 'package:pitaka/features/lookup/domain/json_coerce.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 
 /// Google Books-backed lookup. Inject `client` in tests; `baseUrl` overridable.
@@ -40,11 +41,14 @@ final class GoogleBooksLookupService implements IsbnLookupService {
       final items = await _volumes('isbn:$isbn', maxResults: 1);
       if (items == null) return const LookupNetworkError('request failed');
       if (items.isEmpty) return const LookupNotFound();
-      final info = (items.first['volumeInfo'] as Map?)?.cast<String, dynamic>();
+      final info = jsonMap(items.first['volumeInfo']);
       if (info == null) return const LookupNotFound();
       return LookupFound(_toMetadata(info, isbn));
-    } on Exception catch (e) {
-      return LookupNetworkError('$e');
+    } on Object {
+      // `on Object`: a garbled body can raise an Error, not just an
+      // Exception. Fixed reason string on purpose — the request URL carries
+      // the user's API key and must never be stringified into a diagnostic.
+      return const LookupNetworkError('request failed');
     }
   }
 
@@ -58,8 +62,8 @@ final class GoogleBooksLookupService implements IsbnLookupService {
           .whereType<TitleSearchResult>()
           .toList();
       return results.isEmpty ? const SearchEmpty() : SearchFound(results);
-    } on Exception catch (e) {
-      return SearchNetworkError('$e');
+    } on Object {
+      return const SearchNetworkError('request failed');
     }
   }
 
@@ -83,67 +87,61 @@ final class GoogleBooksLookupService implements IsbnLookupService {
     );
     final resp = await _client.get(uri);
     if (resp.statusCode >= 400) return null;
-    final body = jsonDecode(resp.body);
-    if (body is! Map || body['items'] is! List) {
-      return <Map<String, dynamic>>[];
-    }
-    return (body['items'] as List)
-        .whereType<Map<String, dynamic>>()
-        .map((e) => e.cast<String, dynamic>())
-        .toList();
+    final body = jsonMap(jsonDecode(resp.body));
+    if (body == null) return <Map<String, dynamic>>[];
+    return jsonList(
+      body['items'],
+    ).map(jsonMap).whereType<Map<String, dynamic>>().toList();
   }
 
   BookMetadata _toMetadata(Map<String, dynamic> info, String isbn) {
-    final authors = (info['authors'] as List?)?.whereType<String>().toList();
-    final categories = (info['categories'] as List?)
-        ?.whereType<String>()
-        .take(3)
-        .toList();
-    final images = (info['imageLinks'] as Map?)?.cast<String, dynamic>();
+    // Tolerant coercion throughout — see lookup/domain/json_coerce.dart.
+    final authors = jsonStringList(info['authors']);
+    final categories = jsonStringList(info['categories']).take(3).toList();
+    final images = jsonMap(info['imageLinks']);
     return BookMetadata(
       isbn: isbn,
       title: _combineTitle(
-        info['title'] as String?,
-        info['subtitle'] as String?,
+        jsonString(info['title']),
+        jsonString(info['subtitle']),
       ),
-      author: (authors == null || authors.isEmpty) ? null : authors.join(', '),
-      publisher: info['publisher'] as String?,
-      publishedYear: _extractYear(info['publishedDate'] as String?),
-      pageCount: info['pageCount'] as int?,
+      author: authors.isEmpty ? null : authors.join(', '),
+      publisher: jsonString(info['publisher']),
+      publishedYear: _extractYear(jsonString(info['publishedDate'])),
+      pageCount: jsonInt(info['pageCount']),
       coverUrl: images == null
           ? null
-          : (images['thumbnail'] ?? images['smallThumbnail']) as String?,
-      genre: (categories == null || categories.isEmpty)
-          ? null
-          : categories.join(', '),
-      language: info['language'] as String?,
+          : jsonString(images['thumbnail'] ?? images['smallThumbnail']),
+      genre: categories.isEmpty ? null : categories.join(', '),
+      language: jsonString(info['language']),
     );
   }
 
   TitleSearchResult? _itemToResult(Map<String, dynamic> item) {
-    final info = (item['volumeInfo'] as Map?)?.cast<String, dynamic>();
-    final title = (info?['title'] as String?)?.trim();
-    if (info == null || title == null || title.isEmpty) return null;
-    final authors = (info['authors'] as List?)?.whereType<String>();
-    final ids = (info['industryIdentifiers'] as List?)
-        ?.whereType<Map<String, dynamic>>()
-        .map((m) => m['identifier'] as String?)
-        .whereType<String>();
-    final images = (info['imageLinks'] as Map?)?.cast<String, dynamic>();
+    final info = jsonMap(item['volumeInfo']);
+    final title = info == null ? null : jsonString(info['title']);
+    if (info == null || title == null) return null;
+    final authors = jsonStringList(info['authors']);
+    final ids = jsonList(info['industryIdentifiers'])
+        .map(jsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map((m) => jsonString(m['identifier']))
+        .whereType<String>()
+        .toList();
+    final images = jsonMap(info['imageLinks']);
+    final isbn = ids.firstWhere(
+      (s) => s.length == 13 || s.length == 10,
+      orElse: () => '',
+    );
     return TitleSearchResult(
-      sourceKey: (item['id'] as String?) ?? title,
+      sourceKey: jsonString(item['id']) ?? title,
       title: title,
-      author: (authors == null || authors.isEmpty) ? null : authors.first,
-      publishedYear: _extractYear(info['publishedDate'] as String?),
-      isbn: ids
-          ?.firstWhere(
-            (s) => s.length == 13 || s.length == 10,
-            orElse: () => '',
-          )
-          .let((s) => s.isEmpty ? null : s),
+      author: authors.isEmpty ? null : authors.first,
+      publishedYear: _extractYear(jsonString(info['publishedDate'])),
+      isbn: isbn.isEmpty ? null : isbn,
       coverUrl: images == null
           ? null
-          : (images['thumbnail'] ?? images['smallThumbnail']) as String?,
+          : jsonString(images['thumbnail'] ?? images['smallThumbnail']),
     );
   }
 
@@ -163,9 +161,4 @@ final class GoogleBooksLookupService implements IsbnLookupService {
     final m = _yearRe.firstMatch(s);
     return m == null ? null : int.tryParse(m.group(0)!);
   }
-}
-
-/// Small functional helper for nullable transforms (Kotlin's `let`).
-extension _Let<T> on T {
-  R let<R>(R Function(T) f) => f(this);
 }

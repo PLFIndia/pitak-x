@@ -1,3 +1,123 @@
+# Task: 2026-09-03 comprehensive review → remediation (release 1.1.10) — DONE (uncommitted)
+
+## Understanding
+- Full evidence-based review of every user journey (J1–J17), data integrity,
+  security, architecture, tests, build/ops. Report delivered in-session; the
+  Blockers were reproduced with throwaway tests before being fixed.
+- User decisions (Q-numbers refer to the report's "Questions"): Q2 keep the
+  device vault on a no-vault restore · Q3 hard delete stays vault-gated ·
+  Q4 REFUSE lending + explain · Q5 offer "turn off app lock" when the device
+  has no credential · Q6 append-only passphrase field + inform · Q7 disable
+  Android backup completely · Q8 key dialog may show the key + FLAG_SECURE ·
+  Q9 import updates in place on bookUid · Q10 the exposed passphrase WAS real
+  → scrub + rotate · Q11 release 1.1.10 sensibly · Q12 remove orphaned
+  cover/logo/poster files · Q1 (answered after the batch): "only this app,
+  there is no old app functionality" → backup compatibility is ONE-WAY
+  (Kotlin→Pitak + Pitak↔Pitak); docs corrected, writer bytes untouched.
+
+## Privacy & threat notes
+- A REAL vault passphrase was pasted as the "example" value in the
+  `rust/tests/real_archive.rs` doc comment and reused as input in a
+  passphrase-field test, since the initial import (public repo). Removed from
+  the tree (the value is deliberately NOT repeated here). **USER MUST:
+  (1) open the vault, Settings → Security → Change passphrase; (2) treat
+  every archive made under the old passphrase as exposed; (3) optionally
+  rewrite git history (`git filter-repo`) — until then the old string stays
+  in history, so rotation is the real fix.**
+- Android Auto Backup + D2D transfer disabled (`allowBackup=false` +
+  `res/xml/data_extraction_rules.xml` with explicit excludes for every
+  domain). Verified in the built APK manifest with aapt2.
+- PRIVACY.md updated: backup opt-out, Google Books key, User-Agent, publish
+  egress (cover fetch, read-back GET, public site, `public_repo` scope
+  breadth), manual revoke at GitHub.
+
+## Fixes (severity order; each with regression tests)
+- [x] B1 passphrase field: any non-append edit (mid-caret insert, backspace,
+      paste-over) clears the buffer + shows a note; `enableInteractiveSelection`
+      off. (`secure_passphrase_field.dart`, 3 widget tests.)
+- [x] B2 `VaultStore.writeBlob/writeBioBlob` atomic temp+rename; controller
+      catches IO → `StorageFailure`, disposes secrets. (`vault_store.dart`,
+      `vault_session_controller.dart`; store + controller tests.)
+- [x] B3 orphan `borrowers.db` (DB without blob) detected + discarded by
+      `enable()`; Rust `create_vault` removes its half-made file on failure;
+      `open_and_key` no longer CREATEs a missing DB (READ_WRITE only).
+- [x] B4 unlock/enable/biometric no longer emit `AsyncLoading` (the form was
+      unmounted and the failure message lost); create vault now has a
+      confirm field + 8-char minimum (`SecretBytes.constantTimeEquals`).
+- [x] B5 language filter is provider state (`LibraryLanguageFilter`,
+      keepAlive) watched by chips + list; sort chip no longer double-loads.
+- [x] B6 `BoundedZipExtractor` catches `on Object` (archive throws
+      `RangeError`); `_asInt` rejects Infinity/NaN (manifest + JSON importer);
+      both lookup parsers use tolerant `json_coerce.dart` helpers (no
+      `_TypeError` escapes; no URL/key in error strings).
+- [x] Q4 `LendDecision` (domain) + `LendBookUseCase` (application) refuse
+      removed / all-copies-out with plain reasons; detail page disables Lend
+      + shows the reason; `addBorrower` returns the new id (no name look-up).
+- [x] Q5 `DeviceCredentialStatus` on the biometric port; locked screen offers
+      "Turn off app lock" ONLY when the device has no credential.
+- [x] Q8 `GoogleBooksKeyDialog` extracted (masked + eye toggle, secure-store
+      errors surfaced); new `SecretOnScreen` widget drives FLAG_SECURE for
+      any secret-bearing subtree (passphrase field now uses it too).
+- [x] Q2 `RestoreSummary.existingVaultKept`; restore page says the vault was
+      kept and its loans are unchecked instead of claiming integrity.
+- [x] Q9 import: same `bookUid` → `update` in place (keeps id/uid/local
+      cover/attribution); whole `applyPayload` inside
+      `BookRepository.runInTransaction` (new) → all-or-nothing; new
+      `findByUid`; page copy states ADD/update/skip semantics; summary shows
+      "updated".
+- [x] Q12 `CoverFiles` domain port; `CoverFileJanitor` (application) deletes
+      a cover file only when no row and not the logo reference it; wired into
+      cover replace (also cleans the NEW file on a failed update), hard delete
+      (`DeleteBookUseCase.releaseCover`), logo set/clear, and a one-shot
+      startup `orphanCoverSweepProvider`; posters deleted on remove / failed
+      add (`EventsRepository.deletePosterImage`); `events.json` written
+      atomically.
+- [x] Q11 `build.gradle.kts`: `assemble/bundle/packagePlayRelease` throw
+      without `key.properties` (`-PallowUnsignedPlayRelease=true` escape for
+      compile-only CI); fdroid keeps the debug fallback (F-Droid re-signs).
+      Verified: `flutter build appbundle --flavor play` refuses; `flutter
+      build apk --flavor fdroid` builds. Version 1.1.10+15; changelogs
+      151/152/153 + Play 15; recipe: duplicate top-level
+      AutoUpdateMode/UpdateCheckMode/VercodeOperation block removed, three
+      1.1.10 build blocks added, CurrentVersion 1.1.10/153.
+
+## Gates
+- `flutter analyze lib test` 0 · `dart format` clean · `build_runner` regen
+  committed · **794 Dart tests** (730 → 794) · **27 + 3 Rust tests** ·
+  architecture gate green · fdroid arm64 release APK built (75 MB).
+
+## Out-of-scope observations (recorded, not fixed — from the review)
+- **Q1 RESOLVED as docs-only:** the writer stamps Room `user_version 9` +
+  the v9 identity hash with `age_group INTEGER` on a v10-shaped table. Since
+  the Kotlin app is retired and not a restore target, this is harmless (our
+  own reader ignores the sticker and reads the TEXT tokens correctly —
+  covered by `migration_matrix_test` + `backup_archive_writer_test`).
+  README/HANDOFF/writer doc now say "one-way"; no bytes changed, so every
+  existing archive stays restorable.
+- Remaining Majors from the report not in this batch: on-device remote
+  covers have no host allow-list (`book_cover.dart` https-only); raw SQLite
+  text reaches UI via `ValidationFailure` for FK/NOT NULL constraints
+  (curate at the Rust boundary); `BookDetailPage` stale snapshot overwrites a
+  new cover on Edit; hard delete impossible with `VaultUninitialized`
+  (user chose to keep — but the copy should say why); merge OVERWRITE
+  dangles loans silently + JOIN adopts ID before insert + settings state
+  stale after merge; publish `http_github_api` unguarded non-JSON paths,
+  events publish controller without `keepAlive`, sign-out revoke guidance,
+  tab-switch drops the device-flow token; `RustLib.init()` unguarded; app
+  lock renders under pushed routes; CSV/PDF export include removed books;
+  wishlist promote non-atomic + silent failure; borrower return failure
+  silent; ISBN not normalised at persist; unbounded whole-table loads;
+  `pendingSnapshot` includes removed books; duplicate ISBN → generic message.
+- Backup while a vault write is in flight can copy a hot-journal DB.
+- Docs drift: README "Flutter 3.41.x"/"400 tests", HANDOFF PATH-Flutter
+  version + `~/development/pitak_flutter` path.
+
+## Result
+All user decisions implemented and the five reproduced Blockers fixed; ready
+to commit + tag 1.1.10 after the maintainer rotates the exposed passphrase.
+
+---
+
 # Task: Google Play track — IN PROGRESS (started 2026-08-15)
 
 ## Understanding

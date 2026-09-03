@@ -97,6 +97,17 @@ void main() {
       );
     });
 
+    test('out-of-range numbers (1e400) never throw', () {
+      const importer = PitakaJsonImporter();
+      final payload = importer.parse(
+        '{"schemaVersion": 1, "books": [{"title": "A", "publishedYear": 1e400,'
+        ' "pageCount": 1e999, "copyCount": -1e400}]}',
+      );
+      expect(payload.books, hasLength(1));
+      expect(payload.books.single.publishedYear, isNull);
+      expect(payload.books.single.pageCount, isNull);
+    });
+
     test('refuses a schemaVersion newer than this build', () {
       final json = jsonEncode({
         'schemaVersion': 99,

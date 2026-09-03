@@ -258,6 +258,11 @@ final class RestoreBackup {
         knownBorrowerIds: knownBorrowerIds,
       );
 
+      // Archive had no vault but this device has one → it was kept as-is and
+      // its loans could not be checked against the new book ids (see
+      // RestoreSummary.existingVaultKept).
+      final keptVault = !manifest.hasBackupBlob && vaultStore.isInitialized();
+
       return right(
         RestoreSummary(
           booksRestored: legacy.books.length,
@@ -265,6 +270,7 @@ final class RestoreBackup {
           borrowersRestored: vaultData.borrowers.length,
           loansRestored: vaultData.loans.length,
           danglingLoans: dangling,
+          existingVaultKept: keptVault,
         ),
       );
     } finally {

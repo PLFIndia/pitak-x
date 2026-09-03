@@ -89,6 +89,25 @@ pub fn create_vault(
             "refusing to overwrite existing file at {db_path}"
         )));
     }
+    let result = create_vault_inner(db_path, vault_key);
+    if result.is_err() {
+        // Fail closed with NO half-made file left behind (review 2026-09-03):
+        // `Connection::open` creates the file before keying/schema run, and a
+        // stray file would make every later create_vault refuse ("existing
+        // file") — a permanently stuck vault. Best-effort removal; the Dart
+        // side also detects/discards an orphan DB.
+        let _ = std::fs::remove_file(db_path);
+        for suffix in ["-journal", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{db_path}{suffix}"));
+        }
+    }
+    result
+}
+
+fn create_vault_inner(
+    db_path: &str,
+    vault_key: &Zeroizing<Vec<u8>>,
+) -> Result<(), VaultError> {
     let conn = Connection::open(db_path)
         .map_err(|e| VaultError::Open(e.to_string()))?;
     let rc = unsafe {
@@ -124,8 +143,18 @@ fn open_and_key(
     vault_key: &Zeroizing<Vec<u8>>,
     enforce_fk: bool,
 ) -> Result<Connection, VaultError> {
-    let conn = Connection::open(db_path)
-        .map_err(|e| VaultError::Open(e.to_string()))?;
+    // READ_WRITE without CREATE: rusqlite's default flags would silently
+    // CREATE an empty file when `borrowers.db` is missing, and an empty file
+    // passes the decrypt check below (nothing to decrypt) — the error would
+    // only surface later as "no such table". A missing vault must fail here,
+    // loudly and without side effects (review 2026-09-03).
+    let conn = Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )
+    .map_err(|e| VaultError::Open(e.to_string()))?;
 
     let rc = unsafe {
         sqlite3_key(
@@ -813,6 +842,36 @@ mod tests {
         let data = open_and_read(&path, &recovered_z).unwrap();
         assert_eq!(data.borrowers.len(), 1);
         assert_eq!(data.borrowers[0].id, bid);
+        cleanup(&path);
+    }
+
+    #[test]
+    fn open_missing_vault_fails_without_creating_a_file() {
+        let key = test_key();
+        let path = fresh_path(); // does not exist
+        let res = open_and_read(&path, &key);
+        assert!(matches!(res, Err(VaultError::Open(_))), "got {res:?}");
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "opening a missing vault must not create an empty file"
+        );
+    }
+
+    #[test]
+    fn create_vault_leaves_no_file_behind_on_failure() {
+        // A key of the wrong length makes sqlite3_key fail AFTER
+        // Connection::open has created the file. The file must be gone.
+        let bad_key: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
+        let path = fresh_path();
+        let res = create_vault(&path, &bad_key);
+        assert!(res.is_err(), "empty key must fail: {res:?}");
+        assert!(
+            !std::path::Path::new(&path).exists(),
+            "a failed create_vault must not leave an orphan DB file"
+        );
+        // And a retry with a good key now succeeds (nothing blocks it).
+        let key = test_key();
+        create_vault(&path, &key).expect("retry after cleanup");
         cleanup(&path);
     }
 

@@ -34,6 +34,7 @@ class LibraryLogoController extends _$LibraryLogoController {
       return left(const ValidationFailure('image could not be decoded'));
     }
     final store = await ref.read(coverStoreProvider.future);
+    final previous = _currentLogoReference();
     final String reference;
     try {
       reference = await store.saveJpeg(jpeg);
@@ -45,20 +46,36 @@ class LibraryLogoController extends _$LibraryLogoController {
           .read(settingsControllerProvider.notifier)
           .setLibraryLogo(reference);
     } on Exception {
-      // Settings write failed: the logo file exists but is unreferenced
-      // (harmless orphan); report the failure instead of pretending success.
+      // Settings write failed: the new file is unreferenced → remove it so a
+      // failed pick leaves no garbage; report the failure honestly.
+      await store.deleteFile(reference);
       return left(const StorageFailure('could not save the logo setting'));
     }
+    // The old logo file is unreferenced now (unless a book cover shares it —
+    // the janitor checks). Decision Q12.
+    await _release(previous);
     return right(reference);
   }
 
-  /// Clears the stored logo reference (reverts to the default icon).
+  /// Clears the stored logo reference (reverts to the default icon) and
+  /// removes the old file when nothing else uses it.
   Future<Either<Failure, Unit>> clearLogo() async {
+    final previous = _currentLogoReference();
     try {
       await ref.read(settingsControllerProvider.notifier).setLibraryLogo('');
-      return right(unit);
     } on Exception {
       return left(const StorageFailure('could not clear the logo setting'));
     }
+    await _release(previous);
+    return right(unit);
+  }
+
+  String? _currentLogoReference() =>
+      ref.read(settingsControllerProvider).valueOrNull?.libraryLogo;
+
+  Future<void> _release(String? reference) async {
+    if (reference == null || reference.isEmpty) return;
+    final janitor = await ref.read(coverFileJanitorProvider.future);
+    await janitor.releaseReference(reference);
   }
 }

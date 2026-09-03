@@ -196,7 +196,13 @@ final class PitakaJsonImporter implements Importer {
 
   static int? _asInt(Object? v) {
     if (v is int) return v;
-    if (v is double) return v.toInt();
+    // A JSON number like `1e400` decodes to double Infinity, and NaN/Infinity
+    // `.toInt()` THROWS (UnsupportedError) — a hostile file must never crash
+    // the parser, so only finite values in the int range are accepted.
+    if (v is double) {
+      if (!v.isFinite || v.abs() > 9007199254740991) return null;
+      return v.toInt();
+    }
     if (v is String) return int.tryParse(v);
     return null;
   }

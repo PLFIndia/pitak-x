@@ -54,10 +54,20 @@ class LibraryPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref.watch(libraryControllerProvider.notifier);
     final booksAsync = ref.watch(libraryControllerProvider);
-    // Use the user's library name as the title, falling back to 'Library'.
-    final libraryName = ref
-        .watch(settingsControllerProvider)
-        .maybeWhen(data: (s) => s.libraryName, orElse: () => '');
+    // Use the user's library name as the title (select: only that field
+    // rebuilds this page, §8), falling back to 'Library'.
+    final libraryName = ref.watch(
+      settingsControllerProvider.select(
+        (s) => s.maybeWhen(data: (st) => st.libraryName, orElse: () => ''),
+      ),
+    );
+    // Housekeeping (decision Q12): once the list has loaded for the first
+    // time this session, sweep cover files nothing references any more. The
+    // keepAlive provider makes this a genuine one-shot; `listen` (not watch)
+    // so the sweep's completion never rebuilds the page.
+    if (booksAsync.hasValue) {
+      ref.listen(orphanCoverSweepProvider, (_, _) {});
+    }
 
     return Scaffold(
       drawer: const AppDrawer(),

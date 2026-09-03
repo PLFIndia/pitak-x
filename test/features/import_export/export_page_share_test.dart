@@ -42,6 +42,15 @@ class _FakeShare implements FileShareService {
 
 class _Books implements BookRepository {
   _Books(this._books);
+
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
   final List<Book> _books;
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(_books);

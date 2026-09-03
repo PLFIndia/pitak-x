@@ -56,6 +56,21 @@ abstract interface class BookRepository {
   /// import dedup (existing ISBN → skip).
   Future<Either<Failure, Book?>> findByIsbn(String isbn);
 
+  /// Finds a book by its stable cross-device [bookUid], or null when none /
+  /// [bookUid] blank. Used by import to UPDATE a re-imported book in place
+  /// instead of colliding on the UNIQUE `book_uid` index (decision Q9).
+  Future<Either<Failure, Book?>> findByUid(String bookUid);
+
+  /// Runs [action] inside ONE database transaction: every repository call
+  /// made within it (books AND wishlist — they share the database) commits
+  /// together or rolls back together. If [action] returns a `Left`, or
+  /// throws, everything is rolled back and that `Left` (or a
+  /// `StorageFailure`) is returned. Used by import so a failure on row N can
+  /// never leave rows 1..N-1 behind (review 2026-09-03).
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  );
+
   /// Bulk insert used by restore/import. Returns the number inserted.
   /// Atomic: either every row lands or none does.
   Future<Either<Failure, int>> insertAll(List<Book> books);

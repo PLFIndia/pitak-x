@@ -84,8 +84,16 @@ class _PassphraseForm extends ConsumerStatefulWidget {
 
 class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
   final SecurePassphraseController _passphrase = SecurePassphraseController();
+
+  /// Setup only: the "type it again" field. A vault created under a mistyped
+  /// passphrase can never be opened again, so creation requires two matching
+  /// entries (the change-passphrase screen already did; review 2026-09-03).
+  final SecurePassphraseController _confirm = SecurePassphraseController();
   bool _busy = false;
   Failure? _error;
+
+  /// A local (non-Failure) message, e.g. "passphrases do not match".
+  String? _hint;
 
   bool _biometricEnrolled = false;
 
@@ -93,6 +101,7 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
   void initState() {
     super.initState();
     _passphrase.addListener(_onChanged);
+    _confirm.addListener(_onChanged);
     if (widget.mode == _FormMode.unlock) {
       _checkBiometric();
     }
@@ -126,6 +135,9 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
     _passphrase
       ..removeListener(_onChanged)
       ..dispose();
+    _confirm
+      ..removeListener(_onChanged)
+      ..dispose();
     super.dispose();
   }
 
@@ -133,13 +145,41 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
 
   bool get _isSetup => widget.mode == _FormMode.setup;
 
+  /// Setup needs a long-enough passphrase AND a confirmation; unlock only
+  /// needs something typed. The exact rule (8 bytes) is the controller's.
+  bool get _canSubmit {
+    if (_busy) return false;
+    if (!_isSetup) return !_passphrase.isEmpty;
+    return _passphrase.length >= VaultSessionController.minPassphraseLength &&
+        !_confirm.isEmpty;
+  }
+
   Future<void> _submit() async {
     final secret = _passphrase.takeSecret();
     if (secret == null) return;
+    if (_isSetup) {
+      // Take the confirm copy too so we own (and wipe) it on every path.
+      final confirm = _confirm.takeSecret();
+      final matches = confirm != null && secret.constantTimeEquals(confirm);
+      confirm?.dispose();
+      if (!matches) {
+        secret.dispose();
+        setState(() {
+          _hint = 'The two passphrases do not match. Please type both again.';
+          _error = null;
+        });
+        return;
+      }
+    }
     setState(() {
       _busy = true;
       _error = null;
+      _hint = null;
     });
+    // The controller no longer flips the session to AsyncLoading for these
+    // calls, so this form stays MOUNTED while the crypto runs and the result
+    // below actually reaches the user (review 2026-09-03: a wrong passphrase
+    // used to end in a blank form with no message).
     final notifier = ref.read(vaultSessionControllerProvider.notifier);
     final result = _isSetup
         ? await notifier.enable(secret)
@@ -154,7 +194,7 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final canSubmit = !_passphrase.isEmpty && !_busy;
+    final canSubmit = _canSubmit;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -163,7 +203,8 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
               ? 'Set up an encrypted vault for your borrowers and loans. '
                     'Choose a passphrase you can remember — it is the ONLY '
                     'way to open the vault, and it is never stored on this '
-                    'device.'
+                    'device. At least '
+                    '${VaultSessionController.minPassphraseLength} characters.'
               : 'Enter your vault passphrase to view and manage borrowers '
                     'and loans.',
           style: Theme.of(context).textTheme.bodyMedium,
@@ -173,6 +214,18 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
           controller: _passphrase,
           onSubmitted: canSubmit ? _submit : null,
         ),
+        if (_isSetup) ...[
+          const SizedBox(height: 12),
+          SecurePassphraseField(
+            controller: _confirm,
+            label: 'Confirm passphrase',
+            onSubmitted: canSubmit ? _submit : null,
+          ),
+        ],
+        if (_hint != null) ...[
+          const SizedBox(height: 12),
+          Text(_hint!, style: TextStyle(color: scheme.error)),
+        ],
         const SizedBox(height: 24),
         FilledButton(
           onPressed: canSubmit ? _submit : null,

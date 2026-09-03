@@ -53,9 +53,17 @@ class BookCoverController extends _$BookCoverController {
     }
     final repo = await ref.read(bookRepositoryProvider.future);
     final result = await repo.update(book.copyWith(coverUrl: coverRef));
-    return result.map((_) {
-      ref.invalidate(libraryControllerProvider);
-      return coverRef;
-    });
+    if (result.isLeft()) {
+      // The row still points at the OLD cover; the new file is now an orphan.
+      // Remove it so a failed replace leaves no garbage behind.
+      await store.deleteFile(coverRef);
+      return result.map((_) => coverRef);
+    }
+    // Row now points at the new file: the previous one is unreferenced (unless
+    // another row or the logo shares it — the janitor checks). Decision Q12.
+    final janitor = await ref.read(coverFileJanitorProvider.future);
+    await janitor.releaseReference(book.coverUrl);
+    ref.invalidate(libraryControllerProvider);
+    return right(coverRef);
   }
 }

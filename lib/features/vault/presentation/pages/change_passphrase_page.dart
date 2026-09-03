@@ -13,7 +13,6 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
@@ -68,8 +67,8 @@ class _ChangePassphrasePageState extends ConsumerState<ChangePassphrasePage> {
       confirm?.dispose();
       return;
     }
-    // Constant-time-ish byte compare; mismatch ⇒ abort before any crypto.
-    if (!_bytesEqual(next, confirm)) {
+    // Constant-time byte compare; mismatch ⇒ abort before any crypto.
+    if (!next.constantTimeEquals(confirm)) {
       next.dispose();
       confirm.dispose();
       setState(() => _error = 'The two passphrases do not match.');
@@ -97,20 +96,6 @@ class _ChangePassphrasePageState extends ConsumerState<ChangePassphrasePage> {
         ).showSnackBar(const SnackBar(content: Text('Passphrase changed.')));
         Navigator.of(context).pop();
       },
-    );
-  }
-
-  /// Length-aware byte equality (avoids early-exit on the common prefix).
-  bool _bytesEqual(SecretBytes a, SecretBytes b) {
-    return a.use(
-      (ab) => b.use((bb) {
-        if (ab.length != bb.length) return false;
-        var diff = 0;
-        for (var i = 0; i < ab.length; i++) {
-          diff |= ab[i] ^ bb[i];
-        }
-        return diff == 0;
-      }),
     );
   }
 

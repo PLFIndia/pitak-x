@@ -34,6 +34,18 @@ void main() {
       expect(m.backupHint, isNull);
     });
 
+    test('an out-of-range schemaVersion (1e400) does not throw', () {
+      // Regression: `double.toInt()` on Infinity throws UnsupportedError; the
+      // doc promises tryParse "never throws". A hostile manifest must not
+      // crash the restore path before its typed checks run.
+      final m = BackupManifest.tryParse(
+        '{"schemaVersion": 1e400, "exportedAt": 1}',
+      );
+      // Unparseable version falls back to the known version (defaults).
+      expect(m, isNotNull);
+      expect(m!.schemaVersion, BackupManifest.knownSchemaVersion);
+    });
+
     test('returns null on malformed JSON', () {
       expect(BackupManifest.tryParse('{not json'), isNull);
     });

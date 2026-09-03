@@ -12,6 +12,15 @@ import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 
 class _FakeEventsRepo implements EventsRepository {
   _FakeEventsRepo(this._content);
+
+  /// Records deletions so tests can assert orphan cleanup (decision Q12).
+  final List<String> deletedPosters = [];
+
+  @override
+  Future<void> deletePosterImage(String imageRef) async {
+    deletedPosters.add(imageRef);
+  }
+
   EventsContent _content;
 
   @override

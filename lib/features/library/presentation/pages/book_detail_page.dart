@@ -21,6 +21,7 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/domain/lending_policy.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
 
 /// A portrait 2:3 crop preset — the natural shape of a book cover. The plugin's
@@ -63,8 +64,13 @@ class BookDetailPage extends ConsumerWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
-    final vaultUnlocked =
-        ref.watch(vaultSessionControllerProvider).valueOrNull is VaultUnlocked;
+    final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
+    final vaultUnlocked = session is VaultUnlocked;
+    // Same rule the lend use case enforces; evaluated here only to render an
+    // honest button state + reason (review 2026-09-03, decision Q4).
+    final lendDecision = session is VaultUnlocked
+        ? LendDecision.forBook(book, session.data.loans)
+        : null;
 
     return Scaffold(
       appBar: AppBar(
@@ -154,19 +160,33 @@ class BookDetailPage extends ConsumerWidget {
             const SizedBox(height: 12),
             _RemovedBadge(scheme: scheme, textTheme: textTheme),
           ],
-          // Lend action (vault unlocked; not offered for removed books).
-          if (vaultUnlocked && !book.removed) ...[
+          // Lend action (vault unlocked). Disabled — with the reason shown —
+          // when the lending policy would refuse (removed / all copies out).
+          if (vaultUnlocked && lendDecision != null) ...[
             const SizedBox(height: 16),
             FilledButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) =>
-                      LendBookPage(bookId: book.id, bookTitle: book.title),
-                ),
-              ),
+              onPressed: lendDecision is LendAllowed
+                  ? () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => LendBookPage(
+                          bookId: book.id,
+                          bookTitle: book.title,
+                        ),
+                      ),
+                    )
+                  : null,
               icon: const Icon(Icons.outbox),
               label: const Text('Lend'),
             ),
+            if (lendDecision.reason != null) ...[
+              const SizedBox(height: 6),
+              Text(
+                lendDecision.reason!,
+                style: textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ],
           const SizedBox(height: 24),
           // Labeled rows in the exact order of the Kotlin detail screen.

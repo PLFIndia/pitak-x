@@ -383,6 +383,41 @@ void main() {
 
     expect(result.isRight(), isTrue);
     expect(store.isInitialized(), isFalse);
+    // Nothing to keep on a fresh device → integrity can be claimed.
+    result.match((_) => fail('unreachable'), (s) {
+      expect(s.existingVaultKept, isFalse);
+      expect(s.isIntact, isTrue);
+    });
+  });
+
+  // Decision Q2 (review 2026-09-03): an archive WITHOUT a vault restored onto
+  // a device WITH one keeps the device vault, and the summary must say so
+  // instead of claiming "all loans reference an existing book" — the kept
+  // vault's loans were never checked (restore cannot open it).
+  test('no-vault archive on a device with a vault: kept + flagged', () async {
+    final store = vaultStore();
+    File(store.dbPath).parent.createSync(recursive: true);
+    File(store.dbPath).writeAsBytesSync([9, 9, 9]);
+    store.writeBlob('existing.key.blob');
+    final zip = archive({
+      'manifest.json': utf8.encode(manifest()), // hasBackupBlob: false
+      'books.db': buildBooksDb(),
+      'wishlist.db': buildWishlistDb(),
+    });
+    final r = restorer(_FakeVault(right(VaultData.empty)), store);
+    final p = pass();
+    final result = await r.restore(archiveBytes: zip, passphrase: p);
+    p.dispose();
+
+    result.match((f) => fail('expected success, got $f'), (s) {
+      expect(s.existingVaultKept, isTrue);
+      expect(s.isIntact, isFalse, reason: 'integrity is UNKNOWN, not proven');
+      expect(s.borrowersRestored, 0);
+    });
+    // The device vault is untouched, byte for byte.
+    expect(store.isInitialized(), isTrue);
+    expect(File(store.dbPath).readAsBytesSync(), [9, 9, 9]);
+    expect(store.readBlob(), 'existing.key.blob');
   });
 
   test('surfaces dangling loans from cross-DB integrity check', () async {

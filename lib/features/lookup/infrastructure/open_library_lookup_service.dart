@@ -15,6 +15,7 @@ import 'package:http/http.dart' as http;
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/entities/title_search_result.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
+import 'package:pitaka/features/lookup/domain/json_coerce.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 
 /// Open Library-backed lookup. Inject `client` in tests; `baseUrl` is
@@ -42,12 +43,17 @@ final class OpenLibraryLookupService implements IsbnLookupService {
       if (resp.statusCode >= 400) {
         return LookupNetworkError('HTTP ${resp.statusCode}');
       }
-      final body = jsonDecode(resp.body);
-      if (body is! Map || body[bibkey] is! Map) return const LookupNotFound();
-      final dto = (body[bibkey] as Map).cast<String, dynamic>();
+      final body = jsonMap(jsonDecode(resp.body));
+      final dto = body == null ? null : jsonMap(body[bibkey]);
+      if (dto == null) return const LookupNotFound();
       return LookupFound(_toMetadata(dto, isbn));
-    } on Exception catch (e) {
-      return LookupNetworkError('$e');
+    } on Object {
+      // `on Object`: transport errors are Exceptions, but a hostile/garbled
+      // body can surface as an Error (e.g. a cast failure deep in jsonDecode).
+      // Either way the user-facing outcome is the same fixed message; the
+      // reason string is deliberately NOT built from the error object because
+      // `ClientException.toString()` includes the request URL.
+      return const LookupNetworkError('request failed');
     }
   }
 
@@ -62,75 +68,79 @@ final class OpenLibraryLookupService implements IsbnLookupService {
       if (resp.statusCode >= 400) {
         return SearchNetworkError('HTTP ${resp.statusCode}');
       }
-      final body = jsonDecode(resp.body);
-      if (body is! Map || body['docs'] is! List) return const SearchEmpty();
-      final docs = (body['docs'] as List)
+      final body = jsonMap(jsonDecode(resp.body));
+      if (body == null) return const SearchEmpty();
+      final docs = jsonList(body['docs'])
+          .map(jsonMap)
           .whereType<Map<String, dynamic>>()
-          .map((d) => _docToResult(d.cast<String, dynamic>()))
+          .map(_docToResult)
           .whereType<TitleSearchResult>()
           .toList();
       return docs.isEmpty ? const SearchEmpty() : SearchFound(docs);
-    } on Exception catch (e) {
-      return SearchNetworkError('$e');
+    } on Object {
+      return const SearchNetworkError('request failed');
     }
   }
 
   BookMetadata _toMetadata(Map<String, dynamic> dto, String isbn) {
-    final authors = (dto['authors'] as List?)
-        ?.whereType<Map<String, dynamic>>()
-        .map((a) => a['name'] as String?)
+    // Every field goes through the tolerant json* helpers: a wrong-typed value
+    // becomes null instead of throwing `_TypeError` (an Error that `on
+    // Exception` would NOT catch — see lookup/domain/json_coerce.dart).
+    final authors = jsonList(dto['authors'])
+        .map(jsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map((a) => jsonString(a['name']))
         .whereType<String>()
         .toList();
-    final publishers = (dto['publishers'] as List?)
-        ?.whereType<Map<String, dynamic>>()
-        .map((p) => p['name'] as String?)
+    final publishers = jsonList(dto['publishers'])
+        .map(jsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map((p) => jsonString(p['name']))
         .whereType<String>()
-        .where((s) => s.isNotEmpty)
         .toList();
-    final subjects = (dto['subjects'] as List?)
-        ?.whereType<Map<String, dynamic>>()
-        .map((s) => s['name'] as String?)
+    final subjects = jsonList(dto['subjects'])
+        .map(jsonMap)
+        .whereType<Map<String, dynamic>>()
+        .map((s) => jsonString(s['name']))
         .whereType<String>()
         .take(3)
         .toList();
-    final cover = (dto['cover'] as Map?)?.cast<String, dynamic>();
+    final cover = jsonMap(dto['cover']);
     return BookMetadata(
       isbn: isbn,
-      title: _combineTitle(dto['title'] as String?, dto['subtitle'] as String?),
-      author: (authors == null || authors.isEmpty) ? null : authors.join(', '),
-      publisher: (publishers == null || publishers.isEmpty)
-          ? null
-          : publishers.first,
-      publishedYear: _extractYear(dto['publish_date'] as String?),
-      pageCount: dto['number_of_pages'] as int?,
+      title: _combineTitle(
+        jsonString(dto['title']),
+        jsonString(dto['subtitle']),
+      ),
+      author: authors.isEmpty ? null : authors.join(', '),
+      publisher: publishers.isEmpty ? null : publishers.first,
+      publishedYear: _extractYear(jsonString(dto['publish_date'])),
+      pageCount: jsonInt(dto['number_of_pages']),
       coverUrl: cover == null
           ? null
-          : (cover['medium'] ?? cover['large'] ?? cover['small']) as String?,
-      genre: (subjects == null || subjects.isEmpty)
-          ? null
-          : subjects.join(', '),
+          : jsonString(cover['medium'] ?? cover['large'] ?? cover['small']),
+      genre: subjects.isEmpty ? null : subjects.join(', '),
     );
   }
 
   TitleSearchResult? _docToResult(Map<String, dynamic> d) {
-    final title = (d['title'] as String?)?.trim();
-    if (title == null || title.isEmpty) return null;
-    final authorNames = (d['author_name'] as List?)?.whereType<String>();
-    final isbns = (d['isbn'] as List?)?.whereType<String>();
-    final coverId = d['cover_i'];
+    final title = jsonString(d['title']);
+    if (title == null) return null;
+    final authorNames = jsonStringList(d['author_name']);
+    final isbns = jsonStringList(d['isbn']);
+    final coverId = jsonInt(d['cover_i']);
+    final isbn = isbns.firstWhere(
+      (s) => s.length == 13 || s.length == 10,
+      orElse: () => '',
+    );
     return TitleSearchResult(
-      sourceKey: (d['key'] as String?) ?? title,
+      sourceKey: jsonString(d['key']) ?? title,
       title: title,
-      author: (authorNames == null || authorNames.isEmpty)
-          ? null
-          : authorNames.first,
-      publishedYear: d['first_publish_year'] as int?,
-      isbn: isbns
-          ?.firstWhere(
-            (s) => s.length == 13 || s.length == 10,
-            orElse: () => '',
-          )
-          .let((s) => s.isEmpty ? null : s),
+      author: authorNames.isEmpty ? null : authorNames.first,
+      publishedYear: jsonInt(d['first_publish_year']),
+      isbn: isbn.isEmpty ? null : isbn,
+      // cover_i is an integer id; only a real int is interpolated into the URL
+      // (a string here could smuggle path characters into the cover host).
       coverUrl: coverId == null
           ? null
           : 'https://covers.openlibrary.org/b/id/$coverId-M.jpg',
@@ -153,9 +163,4 @@ final class OpenLibraryLookupService implements IsbnLookupService {
     final m = _yearRe.firstMatch(s);
     return m == null ? null : int.tryParse(m.group(0)!);
   }
-}
-
-/// Small functional helper for nullable transforms (Kotlin's `let`).
-extension _Let<T> on T {
-  R let<R>(R Function(T) f) => f(this);
 }

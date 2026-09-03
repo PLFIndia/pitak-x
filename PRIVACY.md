@@ -1,6 +1,6 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-08-15 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-09-03 · Publisher: Parallel Line Foundation_
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -18,12 +18,21 @@ analytics, no advertising, and no tracking of any kind.**
   randomly generated vault-wrapping secret is kept in the Android Keystore /
   platform secure storage and released only after an on-device biometric
   check.
-- **Settings** (theme, library name, sort preferences) in the app's private
+- **Settings** (theme, library name, sort preferences, and — if you fill them
+  in — the contact details you choose to publish) in the app's private
   preferences store.
 - **A GitHub access token**, only if you use the Publish feature, stored in
   platform secure storage (never in plain preferences).
+- **A Google Books API key**, only if you add your own in Settings, stored in
+  platform secure storage.
 
 Uninstalling the app deletes all of the above from the device.
+
+**Android system backup is switched off for this app.** Android normally copies
+app data to your Google account (and to a new phone during setup). Pitak opts
+out of both, so nothing above is copied anywhere by the operating system. To
+move your library to another device, use the app's own Backup / Restore, which
+produces a file you control.
 
 ## Permissions and why
 
@@ -37,20 +46,35 @@ Uninstalling the app deletes all of the above from the device.
 
 Network activity happens only when you explicitly ask for it:
 
-1. **ISBN / title lookup.** When you scan or type an ISBN (or search a
-   title), that ISBN/title is sent to Open Library (openlibrary.org), falling
-   back to Google Books (googleapis.com), to fetch book metadata. Nothing
-   else is sent.
+1. **ISBN lookup.** When you scan or type an ISBN and tap Lookup, that ISBN
+   (and, if the first attempt finds nothing, its equivalent ISBN-10/ISBN-13
+   form) is sent to Open Library (openlibrary.org), falling back to Google
+   Books (googleapis.com), to fetch book metadata. Like every app, Pitak
+   identifies itself to these services with a fixed "User-Agent" string
+   naming the app and its source repository — no device or user identifier.
+   If you have added your own Google Books API key in Settings, it is sent
+   to Google with those requests (that is what the key is for). Nothing else
+   is sent.
 2. **Remote cover images** (optional, OFF by default). If you enable it in
    Settings, book covers are downloaded over https from a fixed allow-list of
    cover hosts. Your catalogue is never uploaded; only cover image files are
    fetched.
 3. **Publish to web.** If you use Publish, a read-only viewer of your library
    is uploaded to a GitHub repository *you* own, via GitHub's device-flow
-   sign-in (permission scope: public repositories only). Before upload, Pitak
-   redacts private fields (notes, location, source, lender details), and
-   photos are re-encoded with EXIF metadata — including GPS coordinates —
-   stripped. You can delete the published site at any time from GitHub.
+   sign-in. The permission you grant ("public_repo") is GitHub's narrowest
+   available and covers *all* of your public repositories, not just the site;
+   GitHub's own privacy policy applies to that account and to the traffic.
+   The published site is **public to anyone on the internet** — including the
+   library name, any contact details or event posters you enter under
+   Publish, and the book covers. Before upload, Pitak redacts private fields
+   (notes, location, source, lender details), and photos are re-encoded with
+   EXIF metadata — including GPS coordinates — stripped. During publishing
+   your device also downloads book covers from the same fixed cover hosts
+   listed above and, afterwards, checks the public site URL once to confirm
+   it is live. You can delete the published site at any time from GitHub.
+   Signing out in the app forgets the token on your device; to revoke the
+   app's access on GitHub's side, remove "Pitak" under GitHub → Settings →
+   Applications (the app cannot do this for you).
 4. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
    go. Backups you restore are read locally and never transmitted.

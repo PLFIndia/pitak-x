@@ -12,9 +12,10 @@ void main() {
       final controller = SecurePassphraseController();
       addTearDown(controller.dispose);
 
-      await _typeInto(controller, 'khoj@pitak');
+      // Synthetic test input only — never reuse a real passphrase in tests.
+      await _typeInto(controller, 'test-pass-not-secret');
 
-      final expected = utf8.encode('khoj@pitak');
+      final expected = utf8.encode('test-pass-not-secret');
       expect(controller.length, expected.length);
 
       final secret = controller.takeSecret()!;
@@ -91,6 +92,86 @@ void main() {
       await tester.tap(find.byIcon(Icons.clear));
       await tester.pump();
       expect(controller.isEmpty, isTrue);
+    });
+
+    // Regression (review 2026-09-03, Blocker): a character inserted in the
+    // MIDDLE of the bullet mask used to append the trailing bullet's bytes to
+    // the buffer instead of the typed letter — a passphrase nobody knew. Any
+    // non-append edit must now clear the buffer and tell the user.
+    testWidgets('a mid-string insertion clears the buffer and explains', (
+      tester,
+    ) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'a');
+      await tester.pump();
+      for (final next in ['••', '•••', '••••']) {
+        // Simulate the IME appending one more char at the end each time.
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: '${next.substring(0, next.length - 1)}x',
+            selection: TextSelection.collapsed(offset: next.length),
+          ),
+        );
+        await tester.pump();
+      }
+      expect(controller.length, 4);
+
+      // The user taps between bullets 2 and 3 and types 'X': the IME reports
+      // the whole new value with the mask characters around the insertion.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '••X••',
+          selection: TextSelection.collapsed(offset: 3),
+        ),
+      );
+      await tester.pump();
+
+      expect(controller.isEmpty, isTrue, reason: 'never guess the bytes');
+      expect(find.textContaining('field was cleared'), findsOneWidget);
+      expect(find.text('•••••'), findsNothing);
+    });
+
+    testWidgets('a backspace clears the buffer (append-only contract)', (
+      tester,
+    ) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'abc');
+      await tester.pump();
+      expect(controller.length, 3);
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '••',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await tester.pump();
+      expect(controller.isEmpty, isTrue);
+      expect(find.textContaining('field was cleared'), findsOneWidget);
+
+      // Typing again after the note works normally and hides the note.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'z',
+          selection: TextSelection.collapsed(offset: 1),
+        ),
+      );
+      await tester.pump();
+      expect(controller.length, 1);
+      expect(find.textContaining('field was cleared'), findsNothing);
+    });
+
+    testWidgets('the caret cannot be moved by selection', (tester) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+      final field = tester.widget<TextField>(find.byType(TextField));
+      expect(field.enableInteractiveSelection, isFalse);
     });
 
     // REVIEW_FINDINGS_2 S2: mounting a passphrase field must turn the window

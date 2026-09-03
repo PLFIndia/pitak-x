@@ -7,10 +7,14 @@
 //!
 //!   PITAK_BLOB=/tmp/x/backup_blob \
 //!   PITAK_VAULT_DB=/tmp/x/borrowers.db \
-//!   PITAK_PASS=khoj@pitak \
+//!   PITAK_PASS="$(cat /path/outside/repo/passphrase.txt)" \
 //!   cargo test --release --test real_archive -- --ignored --nocapture
 //!
-//! No secret is baked into the repo; the passphrase comes from the environment.
+//! SECURITY: the passphrase comes ONLY from the environment. Never write a real
+//! passphrase into this file, a doc comment, a test, or a PLAN/HANDOFF note —
+//! the repository is public and git history is permanent. (An earlier revision
+//! of this comment pasted a real passphrase as the "example" value; it was
+//! removed and the affected vault must be re-keyed via Change passphrase.)
 
 use pitak_crypto::api::{unlock_and_read_vault, VaultUnlockError};
 use std::fs;

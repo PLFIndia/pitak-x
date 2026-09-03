@@ -13,6 +13,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// Minimal repo so the app shell can boot without a real database in tests
 /// (the full Library behaviour is covered in library_page_test.dart).
 class _EmptyRepo implements BookRepository {
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(const []);
   @override

@@ -43,16 +43,32 @@ enum DeleteBookOutcome {
   requiresVaultUnlock,
 }
 
+/// Releases a cover file once no row points at it (see `CoverFileJanitor`).
+/// Kept as a function type so this use case does not depend on the janitor
+/// class directly and tests can observe the call.
+typedef ReleaseCoverFile = Future<void> Function(String? coverRef);
+
 /// Permanently deletes a book, purging its vault loans when needed.
 class DeleteBookUseCase {
-  /// Creates the use case.
-  const DeleteBookUseCase({required this.books, required this.vault});
+  /// Creates the use case. [releaseCover] is called with the deleted book's
+  /// cover reference AFTER the row is gone (decision Q12: no orphan files);
+  /// it defaults to a no-op.
+  const DeleteBookUseCase({
+    required this.books,
+    required this.vault,
+    this.releaseCover = _noRelease,
+  });
+
+  static Future<void> _noRelease(String? _) async {}
 
   /// Library repository (owns the hard `delete`).
   final BookRepository books;
 
   /// Vault side (loan purge + unlock state).
   final VaultLoanPurger vault;
+
+  /// Cover-file housekeeping hook.
+  final ReleaseCoverFile releaseCover;
 
   /// Deletes the book with [id]. Returns the [DeleteBookOutcome] on success or
   /// a [Failure] if a step failed (the book row is only deleted AFTER loans are
@@ -69,7 +85,14 @@ class DeleteBookUseCase {
         return purged.map((_) => DeleteBookOutcome.deleted);
       }
     }
+    // Remember the cover reference before the row disappears.
+    final row = (await books.getById(id)).toNullable();
     final deleted = await books.delete(id);
+    if (deleted.isRight()) {
+      // Row gone → its cover file is unreferenced (the janitor double-checks
+      // nothing else shares it). Best-effort; never fails the delete.
+      await releaseCover(row?.coverUrl);
+    }
     return deleted.map((_) => DeleteBookOutcome.deleted);
   }
 }

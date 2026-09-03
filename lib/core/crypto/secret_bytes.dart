@@ -76,6 +76,21 @@ final class SecretBytes {
     }
   }
 
+  /// Constant-time equality with [other] (AGENTS.md §6.4: never `==` on
+  /// secret bytes). Compares every byte regardless of where the first
+  /// difference is, so timing reveals nothing about the common prefix. Length
+  /// is not secret, so a length mismatch may return early.
+  bool constantTimeEquals(SecretBytes other) {
+    _checkAlive();
+    other._checkAlive();
+    if (_bytes.length != other._bytes.length) return false;
+    var diff = 0;
+    for (var i = 0; i < _bytes.length; i++) {
+      diff |= _bytes[i] ^ other._bytes[i];
+    }
+    return diff == 0;
+  }
+
   /// Two-pass wipe (random fill, then zero) of an arbitrary [buffer]. For
   /// byte lists that arrive from outside [SecretBytes] ownership (e.g. FFI
   /// results) and must not linger on the heap.

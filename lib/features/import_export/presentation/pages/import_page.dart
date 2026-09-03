@@ -100,7 +100,12 @@ class _ImportPageState extends ConsumerState<ImportPage> {
         children: [
           Text(
             'Paste a Pitak JSON or Goodreads CSV export below, or choose a '
-            'file (JSON, CSV, or a Pitak bundle).',
+            'file (JSON, CSV, or a Pitak bundle).\n\n'
+            'Import ADDS to your library — nothing is deleted. A book that is '
+            'already here (same Pitak identity) is updated with the '
+            'file\u2019s details; one with the same ISBN is skipped. Wishlist '
+            'entries with '
+            'a matching ISBN are replaced by the file\u2019s version.',
             style: Theme.of(context).textTheme.bodyMedium,
           ),
           const SizedBox(height: 12),
@@ -183,7 +188,8 @@ class _Summary extends StatelessWidget {
         const SizedBox(height: 8),
         if (summary.format != null) Text('Format: $formatName'),
         Text('Books added: ${summary.booksAdded}'),
-        Text('Books skipped (already owned): ${summary.booksSkipped}'),
+        Text('Books updated (same identity): ${summary.booksUpdated}'),
+        Text('Books skipped (same ISBN): ${summary.booksSkipped}'),
         Text('Wishlist added: ${summary.wishlistAdded}'),
         Text('Wishlist replaced: ${summary.wishlistReplaced}'),
         if (summary.parseErrors.isNotEmpty) ...[

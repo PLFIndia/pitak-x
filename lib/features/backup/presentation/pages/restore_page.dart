@@ -154,10 +154,22 @@ class _RestoreOutcome extends StatelessWidget {
       loading: () => const SizedBox.shrink(),
       data: (summary) {
         if (summary == null) return const SizedBox.shrink();
-        final integrity = summary.isIntact
-            ? 'All loans reference an existing book and borrower.'
-            : '${summary.danglingLoans.length} loan(s) could not be matched '
-                  'after restore.';
+        final String integrity;
+        if (summary.existingVaultKept) {
+          // Honest copy: the vault was NOT in the backup and was NOT touched;
+          // restore cannot verify its loans against the new books.
+          integrity =
+              'This backup had no borrowers vault, so the vault already on '
+              'this phone was kept. Its loans still refer to the books from '
+              'before the restore and may no longer match — check them under '
+              'Borrowers.';
+        } else if (summary.isIntact) {
+          integrity = 'All loans reference an existing book and borrower.';
+        } else {
+          integrity =
+              '${summary.danglingLoans.length} loan(s) could not be matched '
+              'after restore.';
+        }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -168,8 +180,14 @@ class _RestoreOutcome extends StatelessWidget {
             const SizedBox(height: 8),
             Text('Books restored: ${summary.booksRestored}'),
             Text('Wishlist restored: ${summary.wishlistRestored}'),
-            Text('Borrowers restored: ${summary.borrowersRestored}'),
-            Text('Loans restored: ${summary.loansRestored}'),
+            if (summary.existingVaultKept)
+              const Text(
+                'Borrowers vault: kept from this phone (not in backup)',
+              )
+            else ...[
+              Text('Borrowers restored: ${summary.borrowersRestored}'),
+              Text('Loans restored: ${summary.loansRestored}'),
+            ],
             const SizedBox(height: 8),
             Text(integrity, style: textTheme.bodySmall),
           ],

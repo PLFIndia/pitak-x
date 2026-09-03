@@ -128,6 +128,33 @@ android {
     }
 }
 
-flutter {
-    source = "../.."
+// Fail CLOSED for the Play channel (review 2026-09-03): a `play` RELEASE build
+// without key.properties used to succeed silently, producing a debug-signed
+// AAB that Play rejects — or worse, that someone uploads by mistake. The
+// `fdroid` flavor keeps the debug fallback because F-Droid's build server
+// signs with ITS OWN key and never sees ours. Debug builds of either flavor
+// are unaffected (`flutter run --flavor play` still works).
+//
+// The check runs when a Play release ARTIFACT task executes (assemble/bundle),
+// not at configuration time, so `flutter run --flavor fdroid`, `gradlew tasks`
+// and fdroid builds on a machine without keys keep working.
+//
+// Escape hatch for CI smoke builds that only check the build compiles:
+//   ./gradlew ... -PallowUnsignedPlayRelease=true
+// Never use it for an artifact that will be uploaded.
+val allowUnsignedPlayRelease =
+    project.findProperty("allowUnsignedPlayRelease") == "true"
+tasks.matching { task ->
+    task.name in setOf("assemblePlayRelease", "bundlePlayRelease", "packagePlayRelease")
+}.configureEach {
+    doFirst {
+        if (!hasReleaseSigning && !allowUnsignedPlayRelease) {
+            throw GradleException(
+                "Refusing to build a DEBUG-SIGNED Play release ($name). Create " +
+                    "android/key.properties from android/key.properties.example " +
+                    "(the upload keystore lives outside the repo), or pass " +
+                    "-PallowUnsignedPlayRelease=true for a throwaway compile check."
+            )
+        }
+    }
 }

@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android 12+ (API 31) backup + device-to-device (D2D) transfer rules.
+
+  Why this file exists: android:allowBackup="false" disables Google Drive
+  backup, but per the Android docs it "doesn't disable device-to-device
+  transfers" on some manufacturers' devices, and a <device-transfer> section
+  that is MISSING means that mode is "fully enabled for all content". So we
+  spell out an explicit exclude for EVERY storage domain in BOTH sections —
+  fail closed, no ambiguity about what an empty element means.
+
+  What this protects: the catalogue database (private notes, shelf
+  locations), preferences (library contact details), covers/posters, and the
+  encrypted vault artifacts never leave the device via the OS. Users move
+  data between phones with the app's own explicit .pitabak backup, which they
+  control end to end (Library → Backup / Restore). PRIVACY.md relies on this.
+-->
+<data-extraction-rules>
+    <cloud-backup disableIfNoEncryptionCapabilities="true">
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="root" path="." />
+        <exclude domain="file" path="." />
+        <exclude domain="database" path="." />
+        <exclude domain="sharedpref" path="." />
+        <exclude domain="external" path="." />
+        <exclude domain="device_root" path="." />
+        <exclude domain="device_file" path="." />
+        <exclude domain="device_database" path="." />
+        <exclude domain="device_sharedpref" path="." />
+    </device-transfer>
+</data-extraction-rules>

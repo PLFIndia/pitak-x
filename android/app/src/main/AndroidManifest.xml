@@ -10,10 +10,20 @@
         android:required="false"/>
     <!-- Internet for ISBN metadata lookup (#30), only on explicit user action. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Privacy: Android Auto Backup defaults ON and would silently copy the
+         catalogue DB (private notes, shelf locations), preferences (contact
+         details) and covers to the user's Google account — contradicting the
+         "your data stays on your device" promise in PRIVACY.md. The app ships
+         its own explicit, user-initiated .pitabak backup instead. Both flags
+         are needed: allowBackup disables cloud backup; dataExtractionRules
+         (explicit excludes for every domain, see res/xml) also disables the
+         API 31+ device-to-device transfer that allowBackup alone may not. -->
     <application
         android:label="Pitak"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules">
         <activity
             android:name=".MainActivity"
             android:exported="true"

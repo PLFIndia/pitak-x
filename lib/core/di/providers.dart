@@ -35,8 +35,10 @@ import 'package:pitaka/features/import_export/infrastructure/library_bundle_read
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
     hide PdfTextRasterizer, RasterizedText;
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
+import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
+import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -66,6 +68,7 @@ import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_cr
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
+import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
@@ -143,11 +146,36 @@ Future<BookRepository> bookRepository(BookRepositoryRef ref) async {
   return DriftBookRepository(db);
 }
 
-/// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers.
+/// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers,
+/// exposed as the domain [CoverFiles] port.
 @riverpod
-Future<CoverStore> coverStore(CoverStoreRef ref) async {
+Future<CoverFiles> coverStore(CoverStoreRef ref) async {
   final dir = await ref.watch(coversDirProvider.future);
   return CoverStore(coversDir: dir);
+}
+
+/// Removes cover files nothing references any more (decision Q12). Used right
+/// after a cover/logo is replaced or a book hard-deleted, and once at startup
+/// to sweep orphans left by older versions.
+@riverpod
+Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
+  final books = await ref.watch(bookRepositoryProvider.future);
+  final settings = await ref.watch(settingsRepositoryProvider.future);
+  final store = await ref.watch(coverStoreProvider.future);
+  return CoverFileJanitor(books: books, settings: settings, store: store);
+}
+
+/// One-shot startup sweep of orphan cover files; resolves to the number
+/// removed. Triggered by the Library screen's first build (the composition
+/// point that already owns the database), AFTER the list has loaded so the
+/// sweep never competes with the first paint.
+///
+/// keepAlive: "once per app session" is the whole point — an autoDispose
+/// provider would re-run the directory scan every time the screen rebuilt.
+@Riverpod(keepAlive: true)
+Future<int> orphanCoverSweep(OrphanCoverSweepRef ref) async {
+  final janitor = await ref.watch(coverFileJanitorProvider.future);
+  return janitor.sweep();
 }
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
@@ -178,7 +206,22 @@ Future<UpdateBookUseCase> updateBookUseCase(UpdateBookUseCaseRef ref) async {
 Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
   final repo = await ref.watch(bookRepositoryProvider.future);
   final vault = ref.read(vaultSessionControllerProvider.notifier);
-  return DeleteBookUseCase(books: repo, vault: vault);
+  final janitor = await ref.watch(coverFileJanitorProvider.future);
+  return DeleteBookUseCase(
+    books: repo,
+    vault: vault,
+    releaseCover: janitor.releaseReference,
+  );
+}
+
+/// Lends a library book, enforcing the lending policy (removed / all copies
+/// out → refused with a reason). The vault side is the session controller
+/// (it satisfies [VaultLender]).
+@riverpod
+Future<LendBookUseCase> lendBookUseCase(LendBookUseCaseRef ref) async {
+  final repo = await ref.watch(bookRepositoryProvider.future);
+  final vault = ref.read(vaultSessionControllerProvider.notifier);
+  return LendBookUseCase(books: repo, vault: vault);
 }
 
 /// Wishlist repository.

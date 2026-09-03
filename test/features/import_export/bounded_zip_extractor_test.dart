@@ -104,5 +104,60 @@ void main() {
         throwsA(isA<BoundedExtractionException>()),
       );
     });
+
+    // Regression (review 2026-09-03, Blocker): a TRUNCATED or BIT-FLIPPED
+    // archive made the `archive` package throw `RangeError` — an Error, not
+    // an Exception — which sailed past the old `on Exception` guard and
+    // crashed restore/import on a merely corrupt file. Every corruption of a
+    // valid archive must now surface as ONE typed failure (or decode fine).
+    test('every truncation of a valid zip fails typed, never crashes', () {
+      final good = zipOf({
+        'manifest.json': List<int>.generate(64, (i) => i),
+        'books.db': List<int>.generate(300, (i) => i % 251),
+      });
+      for (var cut = good.length - 1; cut > 4; cut -= 3) {
+        final truncated = good.sublist(0, cut);
+        try {
+          BoundedZipExtractor.extract(truncated);
+        } on BoundedExtractionException {
+          // expected
+        }
+        // Any other throw type propagates out of the try and fails the test.
+      }
+    });
+
+    test('every single-byte corruption fails typed, never crashes', () {
+      final good = zipOf({
+        'manifest.json': List<int>.generate(64, (i) => i),
+        'books.db': List<int>.generate(300, (i) => i % 251),
+      });
+      for (var i = 0; i < good.length; i += 2) {
+        final flipped = Uint8List.fromList(good)..[i] ^= 0xFF;
+        try {
+          BoundedZipExtractor.extract(flipped);
+        } on BoundedExtractionException {
+          // expected
+        }
+      }
+    });
+
+    test('rejects an entry whose header lies about its size (small)', () {
+      // Declared size 1 byte, real content 64 bytes: the header check passes,
+      // the ACTUAL-length check must still enforce the cap.
+      final archive = Archive()
+        ..addFile(ArchiveFile('x.bin', 1, List<int>.generate(64, (i) => i)));
+      final bytes = Uint8List.fromList(ZipEncoder().encode(archive)!);
+      expect(
+        () => BoundedZipExtractor.extract(
+          bytes,
+          limits: ZipLimits(
+            maxEntries: 10,
+            maxEntryBytes: 32,
+            maxTotalBytes: 1000,
+          ),
+        ),
+        throwsA(isA<BoundedExtractionException>()),
+      );
+    });
   });
 }

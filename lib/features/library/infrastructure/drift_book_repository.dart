@@ -264,6 +264,44 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async {
+    final uid = bookUid.trim();
+    if (uid.isEmpty) return right(null);
+    try {
+      final row =
+          await (_db.select(_db.books)
+                ..where((t) => t.bookUid.equals(uid))
+                ..limit(1))
+              .getSingleOrNull();
+      return right(row?.toDomain());
+    } on Object catch (e) {
+      return left(StorageFailure('findByUid: $e'));
+    }
+  }
+
+  /// Drift transactions are zone-scoped: any query issued while [action] is
+  /// running — through THIS repository or the wishlist one (same database) —
+  /// joins the transaction. A `Left` result is turned into a throw so Drift
+  /// rolls back, then handed back unchanged.
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) async {
+    try {
+      return await _db.transaction(() async {
+        final result = await action();
+        if (result.isLeft()) throw _RollbackWith(result);
+        return result;
+      });
+    } on _RollbackWith catch (r) {
+      // The typed failure that asked for the rollback, unchanged.
+      return r.result as Either<Failure, T>;
+    } on Object catch (e) {
+      return left(StorageFailure('transaction: $e'));
+    }
+  }
+
+  @override
   Future<Either<Failure, List<Book>>> search(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return right(const []);
@@ -295,4 +333,11 @@ class DriftBookRepository implements BookRepository {
         .map((t) => '"${t.replaceAll('"', '""')}"*');
     return tokens.join(' ');
   }
+}
+
+/// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
+/// [DriftBookRepository.runInTransaction]. Never escapes the repository.
+final class _RollbackWith implements Exception {
+  _RollbackWith(this.result);
+  final Object result;
 }

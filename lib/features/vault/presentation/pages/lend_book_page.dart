@@ -3,13 +3,16 @@
 /// Mirrors Kotlin `LendBookUseCase` (D25): lend a specific book to either an
 /// existing borrower or a newly-created one, with an optional due date and
 /// notes. Requires the vault to be UNLOCKED (it reads borrowers from the
-/// session and writes the loan through it). Creating a borrower inline is done
-/// via the session's `addBorrower`, then the loan via `addLoan`.
+/// session). The decision + writes live in the application-layer
+/// `LendBookUseCase`, which refuses a removed or fully-lent book with a
+/// plain-language reason that this screen shows verbatim.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -72,58 +75,32 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
   }
 
   Future<void> _lend(List<Borrower> borrowers) async {
+    // Resolve WHO gets the book; the use case decides WHETHER it can be lent
+    // (removed / all copies out → refused with a reason) and does the writes.
+    final LendTarget target;
+    final borrowerId = _borrowerId;
+    if (borrowerId != null) {
+      target = ExistingBorrower(borrowerId);
+    } else {
+      final name = _newName.text.trim();
+      if (name.isEmpty) {
+        setState(() => _error = 'Pick a borrower or enter a new name.');
+        return;
+      }
+      target = NewBorrower(name);
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
-    final notifier = ref.read(vaultSessionControllerProvider.notifier);
-
-    // Resolve the borrower id: existing selection, or create one inline.
-    var borrowerId = _borrowerId;
-    if (borrowerId == null) {
-      final name = _newName.text.trim();
-      if (name.isEmpty) {
-        setState(() {
-          _busy = false;
-          _error = 'Pick a borrower or enter a new name.';
-        });
-        return;
-      }
-      final created = await notifier.addBorrower(Borrower(name: name));
-      if (!mounted) return;
-      final failed = created.fold((f) => f, (_) => null);
-      if (failed != null) {
-        setState(() {
-          _busy = false;
-          _error = _messageFor(failed);
-        });
-        return;
-      }
-      // After addBorrower the session re-read; find the new borrower by name.
-      final refreshed = ref.read(vaultSessionControllerProvider).valueOrNull;
-      if (refreshed is VaultUnlocked) {
-        final match = refreshed.data.borrowers
-            .where((b) => b.name == name)
-            .fold<Borrower?>(null, (a, b) => b.id > (a?.id ?? -1) ? b : a);
-        borrowerId = match?.id;
-      }
-      if (borrowerId == null) {
-        setState(() {
-          _busy = false;
-          _error = 'Could not create the borrower.';
-        });
-        return;
-      }
-    }
-
-    final loan = Loan(
+    final useCase = await ref.read(lendBookUseCaseProvider.future);
+    final result = await useCase(
       bookId: widget.bookId,
-      borrowerId: borrowerId,
+      target: target,
       lentDate: DateTime.now().millisecondsSinceEpoch,
       dueDate: _dueDate?.millisecondsSinceEpoch,
       notes: _trimOrNull(_notes.text),
     );
-    final result = await notifier.addLoan(loan);
     if (!mounted) return;
     result.match(
       (f) => setState(() {
@@ -136,7 +113,7 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
 
   static String _messageFor(Failure f) => switch (f) {
     ValidationFailure(:final message) => message,
-    NotFoundFailure() => 'That borrower no longer exists.',
+    NotFoundFailure() => 'That book or borrower no longer exists.',
     _ => 'Could not lend the book. Please try again.',
   };
 

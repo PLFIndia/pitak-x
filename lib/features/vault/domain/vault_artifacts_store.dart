@@ -20,10 +20,21 @@ abstract interface class VaultArtifactsStore {
   /// wrapped-key blob exist). Either missing means "not set up".
   bool isInitialized();
 
+  /// True when the encrypted DB exists but its wrapped-key blob does not (a
+  /// half-created vault after a crash). Nobody can open such a DB; the
+  /// session controller discards it so a new vault can be created.
+  bool hasOrphanDatabase();
+
+  /// Deletes an orphan DB (see [hasOrphanDatabase]). Must be a no-op when a
+  /// key blob exists — a real vault is never deleted here. Idempotent.
+  void discardOrphanDatabase();
+
   /// Reads the wrapped-key blob, or null if no vault is set up.
   String? readBlob();
 
-  /// Persists the wrapped-key [blob] (ciphertext — safe at rest).
+  /// Persists the wrapped-key [blob] (ciphertext — safe at rest). Must be
+  /// atomic (temp + rename): the live blob is never left half-written. Throws
+  /// on IO failure so the caller can fail closed.
   void writeBlob(String blob);
 
   /// Reads the biometric-wrapped blob, or null when biometric unlock is not

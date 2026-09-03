@@ -123,6 +123,14 @@ class _FakeGitHubApi implements GitHubApi {
 }
 
 class _EmptyEventsRepo implements EventsRepository {
+  /// Records deletions so tests can assert orphan cleanup (decision Q12).
+  final List<String> deletedPosters = [];
+
+  @override
+  Future<void> deletePosterImage(String imageRef) async {
+    deletedPosters.add(imageRef);
+  }
+
   @override
   Future<EventsContent> load() async => EventsContent.empty;
   @override

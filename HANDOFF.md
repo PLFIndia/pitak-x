@@ -3,7 +3,7 @@
 > Read this first, then `PLAN.md` (authoritative task log: roadmap, per-step
 > "Result" entries, decisions, out-of-scope observations).
 
-_Last updated: 2026-08-15 (stale-docs cleanup + Google Play track started)._
+_Last updated: 2026-09-03 (comprehensive review remediation → 1.1.10; see PLAN.md top task)._
 
 **Status: stable; shipped on F-Droid as 1.1.8 (live — versionCodes 131–133,
 confirmed via the F-Droid API).** The round-2 security review is fully
@@ -12,9 +12,10 @@ REVIEW_FINDINGS_2" → Result). The two `REVIEW_FINDINGS*.md` files and
 `design_preview/` were removed as superseded; they remain in git history and
 their open items live in PLAN.md's out-of-scope sections.
 
-- Gates green at release: `flutter analyze lib test` 0 issues · `dart format`
-  clean · **685 Dart tests** · **22 Rust tests** · multi-ABI release APK
-  (~100 MB — bundled Noto fonts) installs on a physical Pixel 8a.
+- Gates green (2026-09-03, pre-1.1.10): `flutter analyze lib test` 0 issues ·
+  `dart format` clean · **794 Dart tests** · **27 + 3 Rust tests** · per-ABI
+  release APK ~40 MB (arm64; the ~100 MB figure is the FAT apk — fonts are
+  only ~4 MB of it).
 - Repo: `origin` → `https://github.com/PLFIndia/pitak-x.git`, default branch
   `main`. `*.pitabak` + `build/` are git-ignored. Commit/push/branch ops need
   explicit per-invocation approval (§9 of the harness AGENTS.md).
@@ -24,21 +25,26 @@ their open items live in PLAN.md's out-of-scope sections.
   applicationId** (see the comment in `android/app/build.gradle.kts`) — do NOT
   ship the `.fdroid` id to Play.
 - Signing: release builds use `android/key.properties` when present
-  (template: `android/key.properties.example`), else fall back to debug
-  signing with a loud warning. A real upload keystore + Play App Signing is
-  the main pre-ship gate for Google Play.
-- Toolchain: `.fvmrc` pins Flutter 3.44.2 (F-Droid reproducibility); the dev
-  machine's PATH Flutter is 3.41.1. Both build; pick deliberately for release
-  artifacts. Dart SDK `^3.11`.
+  (template: `android/key.properties.example`). WITHOUT it, a `play` release
+  build now FAILS (fail closed — `-PallowUnsignedPlayRelease=true` is the
+  compile-only escape hatch) while an `fdroid` release still falls back to
+  debug signing (F-Droid signs with its own key). The upload keystore lives on
+  the maintainer's other machine.
+- Toolchain: `.fvmrc` pins Flutter 3.44.2 (F-Droid reproducibility) and the
+  dev machine's PATH Flutter is also 3.44.2 (verified 2026-09-03). Dart SDK
+  `^3.11`.
 
 ---
 
 ## 1. What this project is
 
 Port of the Kotlin/Android **Pitak** (`~/Pitak_fdroid/`) to Flutter. One-way
-(Kotlin→Flutter), hard guarantee of **zero data loss**. Backups are
-BIDIRECTIONAL: our writer emits Room-compatible DBs so the Kotlin app can
-restore our archives.
+(Kotlin→Flutter), hard guarantee of **zero data loss**. Backup compatibility
+is ALSO one-way (decided 2026-09-03: "only this app, there is no old app
+functionality"): Pitak restores Kotlin-era `.pitabak` archives and its own,
+but the Kotlin app is NOT a restore target for ours. The writer still emits
+Room-shaped `books.db`/`wishlist.db` because that is simply the archive
+format both readers understand — not because Kotlin must open them.
 
 Two `AGENTS.md` govern: the repo one (Clean Arch + DDD, Riverpod codegen,
 `fpdart Either<Failure,T>`, drift, secrets as wipeable bytes never `String`)
@@ -108,7 +114,7 @@ lib/
                     viewer + events page upload
     events/         event posters (publish flow); EXIF-stripped on ingest
     bookmarks/      external-library bookmarks (https allow-list launch)
-    backup/         .pitabak writer (Room-format, bidirectional) + restore
+    backup/         .pitabak writer (Room-shaped DBs; Pitak↔Pitak + Kotlin→Pitak) + restore
     import_export/  JSON/CSV/PDF export (CSV export is formula-injection-
                     neutralised), Goodreads import, merge UI/use case
     settings/       4 tabs: Appearance · Data · Security · Contribute
@@ -151,11 +157,11 @@ fallback (Latin-only callers / pure tests).
 ## 5. Build / verify / on-device
 
 ```bash
-cd ~/development/pitak_flutter
+cd ~/projects/pitak-x
 flutter analyze lib test            # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                        # 685 pass at 1.1.8
-( cd rust && cargo test --release ) # 22 pass
+flutter test                        # 794 pass pre-1.1.10
+( cd rust && cargo test --release ) # 27 unit + 3 fixture pass
 # After @riverpod/freezed/drift edits: dart run build_runner build --delete-conflicting-outputs
 # After rust/src/api.rs edits: flutter_rust_bridge_codegen generate
 
@@ -192,7 +198,7 @@ apps, leave them.
 ### DONE
 Library (CRUD/search/sort/filter/soft+hard delete, cover capture), Wishlist,
 Import/Export (JSON/CSV/PDF with Indic shaping), Backup create+restore
-(bidirectional), encrypted vault (+change-passphrase, +biometric),
+(Pitak↔Pitak + legacy Kotlin→Pitak), encrypted vault (+change-passphrase, +biometric),
 FLAG_SECURE (incl. passphrase entry), scanner, ISBN lookup, Publish to GitHub
 Pages, **Merge (#33: engine + UI, atomic apply, dup-ISBN safe)**, **Events
 (posters + events.html publish)**, **Bookmarks**, nav drawer + tabbed
@@ -301,7 +307,7 @@ Readiness analysis done; gaps and order of operations:
 
 ## 11. Suggested first moves for the next session
 
-1. Re-verify green (§5) — confirms a clean inherited tree (685 Dart / 22 Rust).
+1. Re-verify green (§5) — confirms a clean inherited tree (794 Dart / 27+3 Rust).
 2. If the user reports an on-device issue with the unconfirmed batch (§6),
    start there.
 3. Play track (§8): the first code touch is the `play` product flavor +

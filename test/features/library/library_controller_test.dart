@@ -15,6 +15,15 @@ import 'package:pitaka/features/settings/domain/settings_repository.dart';
 class _FakeBookRepo implements BookRepository {
   _FakeBookRepo(this._all);
 
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
+
   final List<Book> _all;
 
   /// When set, markRemoved/restoreRemoved return this failure.

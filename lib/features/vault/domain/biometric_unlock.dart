@@ -30,6 +30,26 @@ enum BiometricAvailability {
   unavailable,
 }
 
+/// Can the device authenticate the user AT ALL (biometric OR PIN/pattern)?
+///
+/// Distinct from [BiometricAvailability], which is about *biometrics*: the app
+/// lock accepts the device credential as a fallback, so it only becomes
+/// impossible to pass when the device has NO screen lock configured. That is
+/// the case the launch gate must recover from (review 2026-09-03, decision
+/// Q5): with no credential to check, every prompt fails and the user would be
+/// locked out of their own library forever.
+enum DeviceCredentialStatus {
+  /// A biometric or a device PIN/pattern/password can be checked.
+  available,
+
+  /// The device has no screen lock and no biometric — authentication can
+  /// never succeed until the user sets one up in system settings.
+  noneConfigured,
+
+  /// Platform gives no answer (plugin error); treat as unknown, keep locked.
+  unknown,
+}
+
 /// The device biometric/credential gate. Implemented over `local_auth`.
 abstract interface class BiometricAuthenticator {
   /// Reports whether biometric unlock can be offered on this device.
@@ -39,6 +59,10 @@ abstract interface class BiometricAuthenticator {
   /// dialog. Returns `true` only on a successful live authentication; `false`
   /// on cancel/failure. Never throws to the caller (errors map to `false`).
   Future<bool> authenticate({required String reason});
+
+  /// Whether the device can authenticate the user by ANY means (see
+  /// [DeviceCredentialStatus]). Never throws.
+  Future<DeviceCredentialStatus> deviceCredentialStatus();
 }
 
 /// Hardware-backed storage for the biometric secret `S`. Implemented over

@@ -57,6 +57,33 @@ void main() {
       expect(await svc.lookupByIsbn(isbn), isA<LookupNetworkError>());
     });
 
+    test('wrong-typed fields never throw (hostile JSON)', () async {
+      // Regression: `dto['title'] as String?` threw _TypeError (an Error the
+      // `on Exception` guard did not catch) → unhandled crash from Lookup.
+      final svc = withClient(
+        (_) async => http.Response(
+          '{"ISBN:$isbn":{"title":123,"subtitle":[],"authors":[{"name":5},7],'
+          '"publishers":"x","number_of_pages":"300","cover":"nope",'
+          '"subjects":[{"name":null}]}}',
+          200,
+        ),
+      );
+      final result = await svc.lookupByIsbn(isbn);
+      // The record exists but no field is usable → treated as found-with-
+      // nothing (title null); the important part is: no throw.
+      expect(result, isA<LookupFound>());
+      final meta = (result as LookupFound).metadata;
+      expect(meta.title, isNull);
+      expect(meta.pageCount, 300); // numeric string is accepted
+      expect(meta.author, isNull);
+      expect(meta.coverUrl, isNull);
+    });
+
+    test('non-object JSON body → NotFound, not a crash', () async {
+      final svc = withClient((_) async => http.Response('[1,2,3]', 200));
+      expect(await svc.lookupByIsbn(isbn), isA<LookupNotFound>());
+    });
+
     test('transport exception → NetworkError', () async {
       final svc = withClient((_) async => throw http.ClientException('boom'));
       expect(await svc.lookupByIsbn(isbn), isA<LookupNetworkError>());

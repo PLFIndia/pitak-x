@@ -26,4 +26,10 @@ abstract interface class EventsRepository {
   /// file, and returns the relative reference. [ValidationFailure] when the
   /// bytes are not a decodable image.
   Future<Either<Failure, String>> savePosterImage(Uint8List rawImageBytes);
+
+  /// Deletes the file behind a `posters/<leaf>` reference. Missing files and
+  /// references outside the poster namespace are a no-op (never throws).
+  /// Called after a poster is removed or when a save fails right after the
+  /// image was written (decision Q12: no orphan files).
+  Future<void> deletePosterImage(String imageRef);
 }

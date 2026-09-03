@@ -11,6 +11,7 @@ library;
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -44,20 +45,15 @@ class LibraryController extends _$LibraryController {
         ),
       ),
     );
+    // WATCH the language facet the same way: it is real provider state (see
+    // library_filter_controller.dart), so a chip tap rebuilds this list AND
+    // the chips from one source of truth.
+    _languageFilter = ref.watch(libraryLanguageFilterProvider);
     return _load(_query);
   }
 
   /// The current query text (so the UI can render the field without owning it).
   String get query => _query;
-
-  /// The active language filter (null = all languages).
-  String? get languageFilter => _languageFilter;
-
-  /// Sets (or clears, with null) the language filter, then refreshes.
-  Future<void> setLanguageFilter(String? language) async {
-    _languageFilter = language;
-    await refresh();
-  }
 
   /// Updates the query and refreshes the list after a short debounce. An empty
   /// query restores the full list. Each keystroke resets the timer.

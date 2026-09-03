@@ -25,9 +25,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
-import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/secret_on_screen.dart';
 
 /// A growable, wipeable UTF-8 byte buffer for passphrase entry.
 ///
@@ -137,17 +136,25 @@ class SecurePassphraseController extends ChangeNotifier {
 ///
 /// The visible [TextField] only ever shows bullets; its text is never the
 /// secret. We intercept input deltas, encode them to the controller's buffer,
-/// and re-render the mask. Backspace clears the whole buffer (we can't byte-
-/// accurately delete a single multi-byte char from a length-only mask, so for
-/// a passphrase field "delete = start over" is the safe, simple contract).
+/// and re-render the mask.
+///
+/// EDIT CONTRACT ("append-only", review 2026-09-03 Blocker): the mask holds
+/// no characters, only bullets, so the ONLY edit we can translate back into
+/// bytes is "new characters typed at the very END". Anything else — a
+/// backspace, a tap that moves the caret into the middle, a paste over a
+/// selection — clears the whole buffer and shows a short note asking the user
+/// to type the passphrase again. Before this rule existed, a mid-string edit
+/// silently appended the trailing BULLET character's bytes instead of the
+/// typed letter, so the vault could be created under a passphrase nobody
+/// knew. Selection is disabled so the caret cannot be moved by tapping.
 ///
 /// While at least one of these fields is mounted, the app window is
-/// screen-capture-protected (Android FLAG_SECURE) via
-/// [passphraseEntryVisibilityProvider] — every passphrase flow (create,
-/// unlock, change, restore) runs before any unlock, so vault-state alone
-/// can't cover them (REVIEW_FINDINGS_2 S2). Registering HERE, at the single
-/// shared field, means no screen can forget to opt in.
-class SecurePassphraseField extends ConsumerStatefulWidget {
+/// screen-capture-protected (Android FLAG_SECURE) via [SecretOnScreen] —
+/// every passphrase flow (create, unlock, change, restore) runs before any
+/// unlock, so vault-state alone can't cover them (REVIEW_FINDINGS_2 S2).
+/// Registering HERE, at the single shared field, means no screen can forget
+/// to opt in.
+class SecurePassphraseField extends StatefulWidget {
   /// Creates the field bound to [controller].
   const SecurePassphraseField({
     required this.controller,
@@ -170,11 +177,10 @@ class SecurePassphraseField extends ConsumerStatefulWidget {
   final VoidCallback? onSubmitted;
 
   @override
-  ConsumerState<SecurePassphraseField> createState() =>
-      _SecurePassphraseFieldState();
+  State<SecurePassphraseField> createState() => _SecurePassphraseFieldState();
 }
 
-class _SecurePassphraseFieldState extends ConsumerState<SecurePassphraseField> {
+class _SecurePassphraseFieldState extends State<SecurePassphraseField> {
   final TextEditingController _masked = TextEditingController();
 
   /// Number of mask bullets currently shown. Tracked separately from the
@@ -182,87 +188,89 @@ class _SecurePassphraseFieldState extends ConsumerState<SecurePassphraseField> {
   /// has already been updated — so we compare the new value against this.
   int _prevMaskLen = 0;
 
-  /// True once this field has incremented the visibility count (the
-  /// increment is deferred to post-frame — mutating a listened provider
-  /// mid-build is forbidden — so dispose can race it; the flag keeps the
-  /// increment/decrement balanced either way).
-  bool _marked = false;
-
-  /// Captured in initState because `ref` is unusable inside dispose(). The
-  /// provider is keepAlive, so this notifier stays valid for the widget's
-  /// whole life.
-  late final PassphraseEntryVisibility _visibility;
-
-  @override
-  void initState() {
-    super.initState();
-    // See the class doc: mark a passphrase field visible (FLAG_SECURE on).
-    _visibility = ref.read(passphraseEntryVisibilityProvider.notifier);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _marked) return;
-      _marked = true;
-      _visibility.markVisible();
-    });
-  }
+  /// Shown under the field after a non-append edit cleared the buffer.
+  String? _note;
 
   @override
   void dispose() {
-    if (_marked) {
-      // Deferred like the increment: dispose runs during tree finalization,
-      // where provider modification is forbidden. The notifier is keepAlive,
-      // so it is still valid when the callback runs. A callback lost to
-      // process teardown only ever leaves protection ON (fail closed).
-      final visibility = _visibility;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        visibility.markHidden();
-      });
-    }
     _masked.dispose();
     super.dispose();
   }
 
+  /// The one mask character. Any occurrence of it in a typed DELTA means the
+  /// delta is not fresh input (it is our own mask text being moved around).
+  static const String _bullet = '•';
+
   void _onChanged(String value) {
-    if (value.length > _prevMaskLen) {
-      // Net insertion: the suffix beyond the previous mask is the new delta.
-      // (The mask keeps the caret at the end, so edits are always appends.)
+    final prefix = _prevMaskLen <= value.length
+        ? value.substring(0, _prevMaskLen)
+        : null;
+    final isPureAppend =
+        prefix != null &&
+        prefix == _bullet * _prevMaskLen &&
+        !value.substring(_prevMaskLen).contains(_bullet);
+    if (isPureAppend && value.length > _prevMaskLen) {
+      // Genuine new characters typed at the end: the only edit we can turn
+      // back into passphrase bytes.
       widget.controller._append(value.substring(_prevMaskLen));
-    } else if (value.length < _prevMaskLen) {
-      // Any deletion clears the buffer (see class doc — safe simple contract).
+      _note = null;
+    } else if (value.length != _prevMaskLen || !isPureAppend) {
+      // Deletion, mid-string insertion, replacement, paste-over-selection…
+      // We cannot know which byte(s) the user meant, so fail closed: wipe and
+      // ask for a fresh entry. Never guess.
+      final hadText = widget.controller.length > 0;
       widget.controller._clearInternal();
+      _note = hadText
+          ? 'Edits are only possible at the end of the passphrase, so the '
+                'field was cleared. Please type it again.'
+          : null;
     }
-    // Re-render the mask to match the byte length, caret at end.
-    final masked = '•' * widget.controller.length;
+    // Re-render the mask to match the byte length, caret pinned at the end.
+    final masked = _bullet * widget.controller.length;
     _prevMaskLen = masked.length;
     _masked.value = TextEditingValue(
       text: masked,
       selection: TextSelection.collapsed(offset: masked.length),
     );
+    setState(() {});
   }
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: _masked,
-      autofocus: widget.autofocus,
-      autocorrect: false,
-      enableSuggestions: false,
-      keyboardType: TextInputType.visiblePassword,
-      // Defense in depth: ask the platform not to learn this text.
-      smartDashesType: SmartDashesType.disabled,
-      smartQuotesType: SmartQuotesType.disabled,
-      onChanged: _onChanged,
-      onSubmitted: (_) => widget.onSubmitted?.call(),
-      decoration: InputDecoration(
-        labelText: widget.label,
-        border: const OutlineInputBorder(),
-        suffixIcon: IconButton(
-          icon: const Icon(Icons.clear),
-          tooltip: 'Clear',
-          onPressed: () {
-            widget.controller._clearInternal();
-            _masked.clear();
-            _prevMaskLen = 0;
-          },
+    // SecretOnScreen: FLAG_SECURE while this field is mounted (class doc).
+    return SecretOnScreen(
+      child: TextField(
+        controller: _masked,
+        autofocus: widget.autofocus,
+        autocorrect: false,
+        enableSuggestions: false,
+        // No selection handles / caret moves: the caret must stay at the end so
+        // every edit is an append (see the class doc). Long-press paste still
+        // arrives through onChanged and is handled by the same rule.
+        enableInteractiveSelection: false,
+        keyboardType: TextInputType.visiblePassword,
+        // Defense in depth: ask the platform not to learn this text.
+        smartDashesType: SmartDashesType.disabled,
+        smartQuotesType: SmartQuotesType.disabled,
+        onChanged: _onChanged,
+        onSubmitted: (_) => widget.onSubmitted?.call(),
+        decoration: InputDecoration(
+          labelText: widget.label,
+          border: const OutlineInputBorder(),
+          // `helperText` (not errorText): this is guidance, the entry itself is
+          // not invalid. Reserve a line so the layout does not jump.
+          helperText: _note,
+          helperMaxLines: 3,
+          suffixIcon: IconButton(
+            icon: const Icon(Icons.clear),
+            tooltip: 'Clear',
+            onPressed: () {
+              widget.controller._clearInternal();
+              _masked.clear();
+              _prevMaskLen = 0;
+              setState(() => _note = null);
+            },
+          ),
         ),
       ),
     );

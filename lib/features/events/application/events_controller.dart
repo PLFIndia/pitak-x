@@ -37,10 +37,14 @@ class EventsController extends _$EventsController {
         imageRef: imageRef,
         description: description,
       );
-      if (poster == null) return false;
-      final next = current.add(poster);
-      if (next == null) return false;
-      return _persist(next);
+      final next = poster == null ? null : current.add(poster);
+      final saved = next != null && await _persist(next);
+      if (!saved) {
+        // The image file was written but the metadata was not: remove the
+        // file so a failed add leaves no orphan behind (decision Q12).
+        await repo.deletePosterImage(imageRef);
+      }
+      return saved;
     });
   }
 
@@ -55,11 +59,19 @@ class EventsController extends _$EventsController {
     return _persist(next);
   }
 
-  /// Removes the poster at [index]. Returns true on success.
+  /// Removes the poster at [index] and, once the metadata is saved without
+  /// it, deletes its image file (decision Q12). Returns true on success.
   Future<bool> removePoster(int index) async {
     final current = state.valueOrNull ?? EventsContent.empty;
+    if (index < 0 || index >= current.posters.length) return false;
+    final removed = current.posters[index];
     final next = current.removeAt(index);
-    return _persist(next);
+    final saved = await _persist(next);
+    if (saved && !next.posters.any((p) => p.imageRef == removed.imageRef)) {
+      final repo = await ref.read(eventsRepositoryProvider.future);
+      await repo.deletePosterImage(removed.imageRef);
+    }
+    return saved;
   }
 
   /// Saves [content], reflecting it into state on success.

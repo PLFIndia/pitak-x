@@ -167,5 +167,47 @@ void main() {
         expect(all.map((b) => b.isbn), everyElement(isNull));
       },
     );
+
+    // runInTransaction (review 2026-09-03): the import use case wraps its
+    // per-row writes in this, so a failure on row N must roll back rows
+    // 1..N-1 — no more "3 of 5 books landed and a generic error".
+    test(
+      'runInTransaction rolls back every write when the body fails',
+      () async {
+        ok(await repo.insert(const Book(title: 'Keep', bookUid: 'keep')));
+        final result = await repo.runInTransaction<int>(() async {
+          ok(await repo.insert(const Book(title: 'One', bookUid: 'u1')));
+          ok(await repo.insert(const Book(title: 'Two', bookUid: 'u2')));
+          // A UNIQUE collision on book_uid → Left → whole transaction undone.
+          final dup = await repo.insert(
+            const Book(title: 'Dup', bookUid: 'u1'),
+          );
+          if (dup.isLeft()) return dup.map((_) => 0);
+          return right(3);
+        });
+        expect(result.isLeft(), isTrue);
+        final all = ok<List<Book>>(await repo.getAll());
+        expect(all.map((b) => b.title), [
+          'Keep',
+        ], reason: 'One/Two rolled back');
+      },
+    );
+
+    test('runInTransaction commits when the body succeeds', () async {
+      final result = await repo.runInTransaction<int>(() async {
+        ok(await repo.insert(const Book(title: 'One')));
+        ok(await repo.insert(const Book(title: 'Two')));
+        return right(2);
+      });
+      expect(ok<int>(result), 2);
+      expect(ok<List<Book>>(await repo.getAll()), hasLength(2));
+    });
+
+    test('findByUid finds by stable identity; blank → null', () async {
+      ok(await repo.insert(const Book(title: 'A', bookUid: 'abc')));
+      expect(ok<Book?>(await repo.findByUid('abc'))?.title, 'A');
+      expect(ok<Book?>(await repo.findByUid('zzz')), isNull);
+      expect(ok<Book?>(await repo.findByUid('  ')), isNull);
+    });
   });
 }

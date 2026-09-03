@@ -11,6 +11,14 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// In-memory repo with autoincrement ids, enough to drive add + edit.
 class _MemRepo implements BookRepository {
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
   final List<Book> books = [];
   int _next = 1;
 

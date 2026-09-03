@@ -24,8 +24,9 @@ read-only library site to GitHub Pages.
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
-- **Backup / Restore** — `.pitabak` archives that are **bidirectional** with the
-  original Kotlin app (Room-compatible DBs).
+- **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
+  **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
+  the Kotlin app is retired and is not a restore target).
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
 - **App-lock** — optional, opt-in biometric/device-credential gate before the
@@ -41,7 +42,7 @@ blocked (`FLAG_SECURE`) while sensitive data is visible.
 
 ## Tech stack
 
-- **Flutter** 3.41.x (stable) · **Dart** SDK `^3.11`.
+- **Flutter** 3.44.2 stable (pinned in `.fvmrc`) · **Dart** SDK `^3.11`.
 - **Architecture:** Clean Architecture + DDD —
   `domain ← application ← presentation`, `infrastructure` implements domain
   ports. See `lib/features/<feature>/{domain,application,infrastructure,presentation}`.
@@ -69,7 +70,7 @@ read them before contributing.
 
 ## Getting started
 
-Prerequisites: Flutter 3.41.x stable, the Android SDK, and a Rust toolchain
+Prerequisites: Flutter 3.44.2 (pinned in `.fvmrc`) stable, the Android SDK, and a Rust toolchain
 (cargokit compiles the native crate during the Android build).
 
 ```bash
@@ -105,7 +106,7 @@ command needs a `--flavor`.
 ```bash
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (currently 400 tests)
+flutter test                                   # full Dart suite (794 tests)
 ( cd rust && cargo test --release )            # native crate tests (22)
 ```
 

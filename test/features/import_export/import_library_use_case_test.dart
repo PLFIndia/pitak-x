@@ -16,6 +16,15 @@ class _FakeBookRepo implements BookRepository {
   final List<Book> stored = [];
 
   @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async =>
+      right(stored.where((b) => b.bookUid == bookUid).firstOrNull);
+
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
+
+  @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async {
     final match = stored.where((b) => b.isbn == isbn).firstOrNull;
     return right(match);
@@ -49,7 +58,13 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, Book>> update(Book book) async {
+    final i = stored.indexWhere((b) => b.id == book.id);
+    if (i < 0) return left(const NotFoundFailure());
+    stored[i] = book;
+    return right(book);
+  }
+
   @override
   Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
   @override
@@ -181,6 +196,53 @@ void main() {
       expect(s.booksSkipped, 1);
     });
 
+    // Decision Q9 (review 2026-09-03): a re-imported book with the SAME
+    // bookUid is updated in place — same id (vault loans keep resolving),
+    // same uid — instead of colliding on the UNIQUE book_uid index.
+    test('updates a book in place when the file carries its bookUid', () async {
+      bookRepo.stored.add(
+        const Book(
+          id: 7,
+          bookUid: 'uid-7',
+          title: 'Old title',
+          coverUrl: 'covers/local.jpg',
+          addedBy: 'me',
+        ),
+      );
+      final s = ok(
+        await useCase.importText(
+          jsonWith(
+            books: [
+              {'bookUid': 'uid-7', 'title': 'New title', 'author': 'A'},
+            ],
+          ),
+        ),
+      );
+      expect(s.booksUpdated, 1);
+      expect(s.booksAdded, 0);
+      final row = bookRepo.stored.single;
+      expect(row.id, 7, reason: 'device id preserved');
+      expect(row.bookUid, 'uid-7');
+      expect(row.title, 'New title');
+      expect(row.author, 'A');
+      expect(row.coverUrl, 'covers/local.jpg', reason: 'local cover kept');
+      expect(row.addedBy, 'me', reason: 'attribution kept when file has none');
+    });
+
+    test('re-importing your own export is idempotent (no growth)', () async {
+      final first = jsonWith(
+        books: [
+          {'bookUid': 'u1', 'title': 'A'},
+          {'bookUid': 'u2', 'title': 'B', 'isbn': '999'},
+        ],
+      );
+      ok(await useCase.importText(first));
+      final s = ok(await useCase.importText(first));
+      expect(s.booksAdded, 0);
+      expect(s.booksUpdated, 2);
+      expect(bookRepo.stored, hasLength(2));
+    });
+
     test('replaces a wishlist entry on existing ISBN (latest-wins)', () async {
       wishlistRepo.stored.add(
         const WishlistBook(title: 'Old', isbn: '999', id: 5, addedDate: 100),
@@ -216,6 +278,14 @@ void main() {
 }
 
 class _FailingBookRepo implements BookRepository {
+  // BookRepository additions (review 2026-09-03): fakes default to "no match"
+  // and a pass-through transaction unless a test overrides them.
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
       left(const StorageFailure('boom'));

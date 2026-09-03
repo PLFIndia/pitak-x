@@ -66,7 +66,14 @@ final class FileEventsRepository implements EventsRepository {
   Future<Either<Failure, EventsContent>> save(EventsContent content) async {
     try {
       Directory(baseDir).createSync(recursive: true);
-      await _metaFile.writeAsString(jsonEncode(content.toJson()), flush: true);
+      // Write-temp-then-rename: an in-place write truncates first, so a kill
+      // or full disk mid-write left an EMPTY events.json that `load()` then
+      // read as "no events" and the next save overwrote — every caption and
+      // poster reference silently gone (review 2026-09-03). Rename is atomic,
+      // so the live file is always the old or the new content.
+      final tmp = File('${_metaFile.path}.tmp');
+      await tmp.writeAsString(jsonEncode(content.toJson()), flush: true);
+      await tmp.rename(_metaFile.path);
       return right(content);
     } on Exception catch (e) {
       return left(StorageFailure('events save failed: $e'));
@@ -90,6 +97,20 @@ final class FileEventsRepository implements EventsRepository {
       return right('$postersDir/$leaf');
     } on Exception catch (e) {
       return left(StorageFailure('poster write failed: $e'));
+    }
+  }
+
+  @override
+  Future<void> deletePosterImage(String imageRef) async {
+    // PosterPaths.leafOf refuses anything that is not a plain leaf inside
+    // `posters/`, so this can never reach outside the posters directory.
+    final leaf = PosterPaths.leafOf(imageRef);
+    if (leaf == null) return;
+    try {
+      final file = File(p.join(_postersPath, leaf));
+      if (file.existsSync()) file.deleteSync();
+    } on FileSystemException {
+      // Best-effort housekeeping; a leftover file is not a user-facing error.
     }
   }
 }

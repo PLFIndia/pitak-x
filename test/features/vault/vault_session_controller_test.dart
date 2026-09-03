@@ -30,11 +30,15 @@ class _InMemoryVault implements VaultRepository {
 
   bool _ok(SecretBytes p) => p.use((b) => b.isNotEmpty && b.first == _correct);
 
+  /// How many times createVault was invoked (validation must short-circuit).
+  int createCalls = 0;
+
   @override
   Future<Either<Failure, String>> createVault({
     required SecretBytes passphrase,
     required String dbPath,
   }) async {
+    createCalls++;
     _borrowers[dbPath] = [];
     _loans[dbPath] = [];
     return right('blob-for-$dbPath');
@@ -158,6 +162,13 @@ class _InMemoryVault implements VaultRepository {
 /// result, so tests drive enroll/unlock deterministically.
 class _FakeBioAuth implements BiometricAuthenticator {
   _FakeBioAuth({this.promptResult = true});
+
+  /// Test default: the device CAN authenticate (a screen lock exists).
+  DeviceCredentialStatus credentialStatus = DeviceCredentialStatus.available;
+
+  @override
+  Future<DeviceCredentialStatus> deviceCredentialStatus() async =>
+      credentialStatus;
   BiometricAvailability avail = BiometricAvailability.available;
   bool promptResult;
   int prompts = 0;
@@ -204,8 +215,12 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  SecretBytes good() => SecretBytes(Uint8List.fromList([7]));
-  SecretBytes bad() => SecretBytes(Uint8List.fromList([9]));
+  // 8 bytes: enable() now enforces VaultSessionController.minPassphraseLength
+  // on CREATE too (review 2026-09-03). The fake vault keys off the first byte.
+  SecretBytes good() =>
+      SecretBytes(Uint8List.fromList([7, 0, 0, 0, 0, 0, 0, 0]));
+  SecretBytes bad() =>
+      SecretBytes(Uint8List.fromList([9, 0, 0, 0, 0, 0, 0, 0]));
 
   ProviderContainer makeContainer(
     _InMemoryVault vault, {
@@ -233,6 +248,65 @@ void main() {
   // doesn't create it, so write a placeholder DB file when "enabling".
   void touchDb() =>
       File(p.join(tmp.path, 'borrowers.db')).writeAsBytesSync([0]);
+
+  test('enable() rejects a too-short passphrase before any crypto', () async {
+    final vault = _InMemoryVault();
+    final container = makeContainer(vault);
+    await container.read(vaultSessionControllerProvider.future);
+    final r = await container
+        .read(vaultSessionControllerProvider.notifier)
+        .enable(SecretBytes(Uint8List.fromList([7, 7, 7])));
+    r.match(
+      (f) => expect(f, isA<ValidationFailure>()),
+      (_) => fail('expected too-short validation failure'),
+    );
+    expect(vault.createCalls, 0, reason: 'no vault must be created');
+    expect(
+      await container.read(vaultSessionControllerProvider.future),
+      isA<VaultUninitialized>(),
+    );
+  });
+
+  test('enable() discards a half-created (orphan) DB and succeeds', () async {
+    // Simulate a previous crash: borrowers.db exists, key blob never landed.
+    touchDb();
+    final container = makeContainer(_InMemoryVault());
+    expect(
+      await container.read(vaultSessionControllerProvider.future),
+      isA<VaultUninitialized>(),
+    );
+    final r = await container
+        .read(vaultSessionControllerProvider.notifier)
+        .enable(good());
+    expect(r.isRight(), isTrue, reason: 'orphan must not block creation');
+    expect(
+      await container.read(vaultSessionControllerProvider.future),
+      isA<VaultUnlocked>(),
+    );
+  });
+
+  test('enable() fails closed when the key blob cannot be written', () async {
+    // Plant a directory where the blob temp file would be written so the
+    // store's atomic write throws AFTER the (fake) vault was created.
+    Directory(p.join(tmp.path, 'vault_backup_blob.tmp')).createSync();
+    final container = makeContainer(_InMemoryVault());
+    await container.read(vaultSessionControllerProvider.future);
+    final secret = good();
+    final r = await container
+        .read(vaultSessionControllerProvider.notifier)
+        .enable(secret);
+    r.match(
+      (f) => expect(f, isA<StorageFailure>()),
+      (_) => fail('expected StorageFailure, not a thrown exception'),
+    );
+    // Secret wiped, state back to uninitialized, no key blob persisted.
+    expect(() => secret.use((b) => b), throwsStateError);
+    expect(
+      await container.read(vaultSessionControllerProvider.future),
+      isA<VaultUninitialized>(),
+    );
+    expect(VaultStore(baseDir: tmp.path).readBlob(), isNull);
+  });
 
   test('starts uninitialized when no vault exists on disk', () async {
     final container = makeContainer(_InMemoryVault());

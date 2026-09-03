@@ -6,7 +6,7 @@ part of 'events_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$eventsControllerHash() => r'a820bf3e0926363da916f0fbe42fa71d48e83a9f';
+String _$eventsControllerHash() => r'48f54d7f0b2cdd105d45c8517de09e884432d6ce';
 
 /// Loads + mutates the library's event posters.
 ///

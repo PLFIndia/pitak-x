@@ -31,6 +31,48 @@ void main() {
   FileEventsRepository repo() =>
       FileEventsRepository(baseDir: tmp.path, downscale: fakeDownscale);
 
+  test('save is atomic: no temp left behind, previous content survives a '
+      'failed write', () async {
+    final r = repo();
+    final poster = EventPoster.create(
+      imageRef: 'posters/a.jpg',
+      description: 'keep me',
+    )!;
+    expect((await r.save(EventsContent.empty.add(poster)!)).isRight(), isTrue);
+    expect(
+      tmp.listSync().map((e) => e.path.split('/').last),
+      isNot(contains('events.json.tmp')),
+    );
+    // Make the temp path unwritable (a directory sits where the temp file
+    // goes) so the next save fails BEFORE any rename — the live file must be
+    // untouched (review 2026-09-03: an in-place write used to truncate it).
+    Directory('${tmp.path}/events.json.tmp').createSync();
+    final failed = await r.save(EventsContent.empty);
+    expect(failed.isLeft(), isTrue);
+    expect((await r.load()).posters.single.description, 'keep me');
+  });
+
+  test('deletePosterImage removes only files inside posters/', () async {
+    final r = repo();
+    final ref = (await r.savePosterImage(
+      Uint8List.fromList([1, 2, 3]),
+    )).getOrElse((f) => fail('save failed: $f'));
+    final file = File('${tmp.path}/$ref');
+    expect(file.existsSync(), isTrue);
+
+    await r.deletePosterImage(ref);
+    expect(file.existsSync(), isFalse);
+
+    // Hostile / foreign references are ignored, never IO outside posters/.
+    File('${tmp.path}/events.json').writeAsStringSync('{}');
+    await r.deletePosterImage('posters/../events.json');
+    await r.deletePosterImage('events.json');
+    await r.deletePosterImage('');
+    expect(File('${tmp.path}/events.json').existsSync(), isTrue);
+    // Deleting a missing file is a quiet no-op.
+    await r.deletePosterImage(ref);
+  });
+
   test('load returns empty when nothing saved', () async {
     expect((await repo().load()).posters, isEmpty);
   });

@@ -9,7 +9,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
@@ -20,15 +20,19 @@ class LibraryControlsRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sort = ref
-        .watch(settingsControllerProvider)
-        .maybeWhen(
-          data: (s) => s.librarySort,
+    // `select`: only the sort field drives a rebuild here (§8), not every
+    // settings change.
+    final sort = ref.watch(
+      settingsControllerProvider.select(
+        (s) => s.maybeWhen(
+          data: (settings) => settings.librarySort,
           orElse: () => BookSort.recentlyAdded,
-        );
-    final activeLang = ref
-        .watch(libraryControllerProvider.notifier)
-        .languageFilter;
+        ),
+      ),
+    );
+    // Provider STATE, not a notifier field: the chip's `selected` and the
+    // "Clear" chip rebuild the moment the filter changes (review 2026-09-03).
+    final activeLang = ref.watch(libraryLanguageFilterProvider);
     final languages = ref
         .watch(libraryLanguagesProvider)
         .maybeWhen(data: (l) => l, orElse: () => const <String>[]);
@@ -44,9 +48,8 @@ class LibraryControlsRow extends ConsumerWidget {
             InputChip(
               label: const Text('Clear'),
               avatar: const Icon(Icons.close, size: 16),
-              onPressed: () => ref
-                  .read(libraryControllerProvider.notifier)
-                  .setLanguageFilter(null),
+              onPressed: () =>
+                  ref.read(libraryLanguageFilterProvider.notifier).clear(),
             ),
           ],
           for (final lang in languages) ...[
@@ -55,8 +58,8 @@ class LibraryControlsRow extends ConsumerWidget {
               label: Text(lang),
               selected: activeLang?.toLowerCase() == lang.toLowerCase(),
               onSelected: (sel) => ref
-                  .read(libraryControllerProvider.notifier)
-                  .setLanguageFilter(sel ? lang : null),
+                  .read(libraryLanguageFilterProvider.notifier)
+                  .set(sel ? lang : null),
             ),
           ],
         ],
@@ -79,11 +82,11 @@ class _SortChip extends ConsumerWidget {
     };
 
     return PopupMenuButton<BookSort>(
-      onSelected: (s) async {
-        await ref.read(settingsControllerProvider.notifier).setLibrarySort(s);
-        // Re-run the query under the new sort.
-        await ref.read(libraryControllerProvider.notifier).refresh();
-      },
+      onSelected: (s) =>
+          // LibraryController.build WATCHES the sort setting (select), so the
+          // list re-queries by itself — a manual refresh() here caused a
+          // second load and a visible flash.
+          ref.read(settingsControllerProvider.notifier).setLibrarySort(s),
       itemBuilder: (context) => [
         for (final s in BookSort.values)
           PopupMenuItem(value: s, child: Text(label(s))),

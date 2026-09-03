@@ -151,13 +151,14 @@ final bookRepositoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef BookRepositoryRef = AutoDisposeFutureProviderRef<BookRepository>;
-String _$coverStoreHash() => r'5dd39b4bfcd5c767a07fd9dab42a62b47410e0ba';
+String _$coverStoreHash() => r'3e37265513e4d8f8ebe1cb6156feada810867fe2';
 
-/// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers.
+/// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers,
+/// exposed as the domain [CoverFiles] port.
 ///
 /// Copied from [coverStore].
 @ProviderFor(coverStore)
-final coverStoreProvider = AutoDisposeFutureProvider<CoverStore>.internal(
+final coverStoreProvider = AutoDisposeFutureProvider<CoverFiles>.internal(
   coverStore,
   name: r'coverStoreProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -169,7 +170,54 @@ final coverStoreProvider = AutoDisposeFutureProvider<CoverStore>.internal(
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef CoverStoreRef = AutoDisposeFutureProviderRef<CoverStore>;
+typedef CoverStoreRef = AutoDisposeFutureProviderRef<CoverFiles>;
+String _$coverFileJanitorHash() => r'523eed08650cad22aa81cd944d9c2ad4df625307';
+
+/// Removes cover files nothing references any more (decision Q12). Used right
+/// after a cover/logo is replaced or a book hard-deleted, and once at startup
+/// to sweep orphans left by older versions.
+///
+/// Copied from [coverFileJanitor].
+@ProviderFor(coverFileJanitor)
+final coverFileJanitorProvider =
+    AutoDisposeFutureProvider<CoverFileJanitor>.internal(
+      coverFileJanitor,
+      name: r'coverFileJanitorProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$coverFileJanitorHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CoverFileJanitorRef = AutoDisposeFutureProviderRef<CoverFileJanitor>;
+String _$orphanCoverSweepHash() => r'5629deddc4c1e50e48a2beeab575b6900ea01641';
+
+/// One-shot startup sweep of orphan cover files; resolves to the number
+/// removed. Triggered by the Library screen's first build (the composition
+/// point that already owns the database), AFTER the list has loaded so the
+/// sweep never competes with the first paint.
+///
+/// keepAlive: "once per app session" is the whole point — an autoDispose
+/// provider would re-run the directory scan every time the screen rebuilt.
+///
+/// Copied from [orphanCoverSweep].
+@ProviderFor(orphanCoverSweep)
+final orphanCoverSweepProvider = FutureProvider<int>.internal(
+  orphanCoverSweep,
+  name: r'orphanCoverSweepProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$orphanCoverSweepHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef OrphanCoverSweepRef = FutureProviderRef<int>;
 String _$libraryLanguagesHash() => r'3a6110bd1c22af9da9324346134f6ff1342de7eb';
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
@@ -230,7 +278,7 @@ final updateBookUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef UpdateBookUseCaseRef = AutoDisposeFutureProviderRef<UpdateBookUseCase>;
-String _$deleteBookUseCaseHash() => r'a8ca4a1e2c2190947c23e5afeb3af5d5cfbc047a';
+String _$deleteBookUseCaseHash() => r'8bd4c759d1381fe6667a5baa01a7ff658f3301a0';
 
 /// Hard-deletes a library book, purging its vault loans when unlocked (#27/D3).
 /// The vault side is the session controller (it satisfies [VaultLoanPurger]).
@@ -251,6 +299,28 @@ final deleteBookUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DeleteBookUseCaseRef = AutoDisposeFutureProviderRef<DeleteBookUseCase>;
+String _$lendBookUseCaseHash() => r'702f1ef9462049d97263029661828927bf72eb52';
+
+/// Lends a library book, enforcing the lending policy (removed / all copies
+/// out → refused with a reason). The vault side is the session controller
+/// (it satisfies [VaultLender]).
+///
+/// Copied from [lendBookUseCase].
+@ProviderFor(lendBookUseCase)
+final lendBookUseCaseProvider =
+    AutoDisposeFutureProvider<LendBookUseCase>.internal(
+      lendBookUseCase,
+      name: r'lendBookUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$lendBookUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef LendBookUseCaseRef = AutoDisposeFutureProviderRef<LendBookUseCase>;
 String _$wishlistRepositoryHash() =>
     r'8e19c7be00a2d645e10c288df3ad187eb80a6bd2';
 

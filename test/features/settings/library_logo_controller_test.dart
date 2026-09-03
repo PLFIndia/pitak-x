@@ -3,9 +3,13 @@ import 'dart:typed_data';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/cover_file_janitor.dart';
+import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -26,11 +30,20 @@ void main() {
       Uint8List.fromList(img.encodePng(img.Image(width: 64, height: 64)));
 
   ProviderContainer makeContainer() {
+    final store = CoverStore(coversDir: tmp.path);
     final container = ProviderContainer(
       overrides: [
-        coverStoreProvider.overrideWith(
-          (ref) async => CoverStore(coversDir: tmp.path),
-        ),
+        coverStoreProvider.overrideWith((ref) async => store),
+        // Janitor over an EMPTY book repo (no covers reference anything) and
+        // the real prefs-backed settings, so the logo rule is exercised.
+        coverFileJanitorProvider.overrideWith((ref) async {
+          final settings = await ref.watch(settingsRepositoryProvider.future);
+          return CoverFileJanitor(
+            books: _NoBooks(),
+            settings: settings,
+            store: store,
+          );
+        }),
       ],
     );
     addTearDown(container.dispose);
@@ -83,4 +96,13 @@ void main() {
     final settings = container.read(settingsControllerProvider).requireValue;
     expect(settings.libraryLogo, isEmpty);
   });
+}
+
+/// Book repo with no rows (nothing references any cover file).
+class _NoBooks implements BookRepository {
+  @override
+  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
 }
