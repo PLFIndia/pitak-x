@@ -116,8 +116,10 @@ abstract interface class VaultRepository {
     required Borrower borrower,
   });
 
-  /// Deletes the borrower with [id]. Fails with [ValidationFailure] if loans
-  /// still reference them (FK ON DELETE RESTRICT).
+  /// Deletes the borrower with [id] together with their returned-loan
+  /// history, atomically. Fails with [ValidationFailure] while any of their
+  /// loans is still out (see `BorrowerDeletion`), [NotFoundFailure] if no such
+  /// borrower.
   Future<Either<Failure, Unit>> deleteBorrower({
     required SecretBytes passphrase,
     required String blob,

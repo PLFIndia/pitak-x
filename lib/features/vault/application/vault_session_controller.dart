@@ -23,6 +23,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
+import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -329,10 +330,26 @@ class VaultSessionController extends _$VaultSessionController
         return r.map((_) => unit);
       });
 
-  /// Deletes a borrower by id, then re-reads. Fails closed if loans reference
-  /// them (the repository maps the FK violation to a [ValidationFailure]).
+  /// What deleting borrower [id] would do, from the currently loaded loans:
+  /// blocked (books still out) or allowed (with how much returned history goes
+  /// too). Returns `null` while locked so the caller can treat "unknown"
+  /// separately rather than assume it is safe.
+  BorrowerDeletion? planDeleteBorrower(int id) {
+    final current = state.valueOrNull;
+    if (current is! VaultUnlocked) return null;
+    return BorrowerDeletion.plan(borrowerId: id, loans: current.data.loans);
+  }
+
+  /// Deletes a borrower by id together with their returned-loan history, then
+  /// re-reads. Fails closed with [ValidationFailure] while any of their loans
+  /// is still out — checked here against the loaded snapshot AND again inside
+  /// the Rust core (the authoritative check, in the same transaction as the
+  /// delete), so a stale UI can never slip past it.
   Future<Either<Failure, Unit>> deleteBorrower(int id) =>
       _mutate((p, store, blob) async {
+        if (planDeleteBorrower(id) is BorrowerDeletionBlocked) {
+          return left(const ValidationFailure(activeLoansBlockDeleteMessage));
+        }
         final r = await _vault.deleteBorrower(
           passphrase: p,
           blob: blob,

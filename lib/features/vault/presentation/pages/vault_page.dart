@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_edit_page.dart';
@@ -228,39 +229,68 @@ class _BorrowerList extends ConsumerWidget {
     WidgetRef ref,
     Borrower borrower,
   ) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete ${borrower.name}?'),
-        content: const Text(
-          'This removes the borrower. A borrower with active loans cannot be '
-          'deleted until their loans are returned.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+    final controller = ref.read(vaultSessionControllerProvider.notifier);
+    // Decide up front what deleting would do, so the dialog can say so
+    // honestly instead of letting the user confirm and then fail.
+    final plan = controller.planDeleteBorrower(borrower.id);
+    switch (plan) {
+      case null:
+        VaultSnack.show(context, 'Vault is locked.');
+        return;
+      case BorrowerDeletionBlocked():
+        VaultSnack.show(context, activeLoansBlockDeleteMessage);
+        return;
+      case BorrowerDeletionAllowed(:final returnedLoanCount):
+        final ok = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Delete ${borrower.name}?'),
+            content: Text(_deleteExplanation(returnedLoanCount)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Delete'),
+              ),
+            ],
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    final result = await ref
-        .read(vaultSessionControllerProvider.notifier)
-        .deleteBorrower(borrower.id);
+        );
+        if (ok != true) return;
+    }
+
+    final result = await controller.deleteBorrower(borrower.id);
     if (!context.mounted) return;
     result.match(
-      (f) => VaultSnack.show(
-        context,
-        f is ValidationFailure ? f.message : 'Could not delete this borrower.',
-      ),
+      (f) => VaultSnack.show(context, _deleteFailureMessage(f)),
       (_) {},
     );
   }
+
+  /// Confirmation text: plain when there is no history, explicit about how
+  /// much returned-loan history is removed otherwise.
+  static String _deleteExplanation(int returnedLoanCount) =>
+      switch (returnedLoanCount) {
+        0 => 'This removes the borrower. This cannot be undone.',
+        1 =>
+          'This removes the borrower and their 1 returned-loan record. '
+              'This cannot be undone.',
+        final n =>
+          'This removes the borrower and their $n returned-loan records. '
+              'This cannot be undone.',
+      };
+
+  /// Maps a delete [Failure] to a sentence safe to show. Raw storage/crypto
+  /// diagnostics are never surfaced (AGENTS.md §5).
+  static String _deleteFailureMessage(Failure failure) => switch (failure) {
+    ValidationFailure(:final message) => message,
+    NotFoundFailure() => 'This borrower was already removed.',
+    WrongPassphraseFailure() =>
+      'The vault could not be opened. Lock and unlock it, then try again.',
+    _ => 'Could not delete this borrower.',
+  };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

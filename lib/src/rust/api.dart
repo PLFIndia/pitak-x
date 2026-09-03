@@ -62,7 +62,9 @@ Future<void> updateBorrower({
   notes: notes,
 );
 
-/// Deletes a borrower by id (blocked by FK if loans still reference them).
+/// Deletes a borrower by id together with their returned-loan history, in one
+/// transaction. Refused (`Constraint`, human-readable message) while any loan
+/// is still out; `NotFound` if the id does not exist.
 Future<void> deleteBorrower({
   required List<int> passphraseUtf8,
   required String blob,

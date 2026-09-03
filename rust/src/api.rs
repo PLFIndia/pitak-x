@@ -178,7 +178,9 @@ pub fn update_borrower(
     })
 }
 
-/// Deletes a borrower by id (blocked by FK if loans still reference them).
+/// Deletes a borrower by id together with their returned-loan history, in one
+/// transaction. Refused (`Constraint`, human-readable message) while any loan
+/// is still out; `NotFound` if the id does not exist.
 pub fn delete_borrower(
     passphrase_utf8: Vec<u8>,
     blob: String,

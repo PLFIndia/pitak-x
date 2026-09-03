@@ -284,20 +284,83 @@ pub fn update_borrower(
     Ok(())
 }
 
-/// Deletes a borrower by id. Fails with `Constraint` if loans still reference
-/// them (ON DELETE RESTRICT); `NotFound` if no such row.
+/// User-facing reason a borrower cannot be deleted while books are still out.
+/// Surfaced verbatim by the UI (Dart maps `Constraint` → `ValidationFailure`),
+/// so it is written as a sentence, not a SQL diagnostic.
+pub const ACTIVE_LOANS_BLOCK_DELETE: &str =
+    "This borrower still has books out. Mark those loans returned first.";
+
+/// Deletes a borrower by id together with their returned-loan history.
+///
+/// Why not a plain `DELETE FROM borrowers`? A loan row is never removed when a
+/// book comes back — `returned_date` is filled in and the row stays as history.
+/// The schema's `ON DELETE RESTRICT` therefore blocks deleting ANY borrower who
+/// ever borrowed something, which is not what a user means by "delete this
+/// person". The rule we actually want is:
+///
+///  - loans still out (`returned_date IS NULL`) → refuse with `Constraint`
+///    carrying [ACTIVE_LOANS_BLOCK_DELETE] (fail closed: a book cannot be out
+///    to nobody);
+///  - only returned loans → delete those history rows, then the borrower.
+///
+/// Both steps run inside ONE SQLite transaction so a crash or error midway
+/// leaves the vault exactly as it was (never a borrower with orphaned history,
+/// never history without its borrower). `NotFound` if there is no such borrower.
+///
+/// The Dart layer applies the same rule before calling in (so the UI can warn
+/// about how much history will go); this is the authoritative check.
 pub fn delete_borrower(
     db_path: &str,
     vault_key: &Zeroizing<Vec<u8>>,
     id: i64,
 ) -> Result<(), VaultError> {
-    let conn = open_and_key(db_path, vault_key, true)?;
-    let affected = conn
+    let mut conn = open_and_key(db_path, vault_key, true)?;
+    // `IMMEDIATE` takes the write lock up front so the active-loan check and
+    // the deletes below see one consistent snapshot (no writer can slip a new
+    // loan in between the check and the delete).
+    let tx = conn
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|e| map_sqlite_err(e, "delete_borrower: begin"))?;
+
+    let exists: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM borrowers WHERE id = ?1",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .map_err(|e| map_sqlite_err(e, "delete_borrower: lookup"))?;
+    if exists == 0 {
+        // Dropping `tx` without commit rolls back (nothing was written anyway).
+        return Err(VaultError::NotFound);
+    }
+
+    let active: i64 = tx
+        .query_row(
+            "SELECT count(*) FROM loans WHERE borrower_id = ?1 AND returned_date IS NULL",
+            rusqlite::params![id],
+            |r| r.get(0),
+        )
+        .map_err(|e| map_sqlite_err(e, "delete_borrower: active loans"))?;
+    if active > 0 {
+        return Err(VaultError::Constraint(ACTIVE_LOANS_BLOCK_DELETE.to_string()));
+    }
+
+    tx.execute(
+        "DELETE FROM loans WHERE borrower_id = ?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| map_sqlite_err(e, "delete_borrower: history"))?;
+    let affected = tx
         .execute("DELETE FROM borrowers WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| map_sqlite_err(e, "delete_borrower"))?;
     if affected == 0 {
+        // Cannot normally happen (we hold the write lock since the lookup),
+        // but fail closed rather than commit a half-done delete.
         return Err(VaultError::NotFound);
     }
+
+    tx.commit()
+        .map_err(|e| map_sqlite_err(e, "delete_borrower: commit"))?;
     Ok(())
 }
 
@@ -558,16 +621,108 @@ mod tests {
         )
         .unwrap();
 
-        // ON DELETE RESTRICT + PRAGMA foreign_keys=ON must block this.
+        // A book is still out (returned_date IS NULL) → refuse, with the
+        // human-readable reason (not a raw SQLite diagnostic).
         let res = delete_borrower(&db, &key, bid);
         assert!(
-            matches!(res, Err(VaultError::Constraint(_))),
-            "expected Constraint, got {res:?}"
+            matches!(res, Err(VaultError::Constraint(ref m)) if m == ACTIVE_LOANS_BLOCK_DELETE),
+            "expected Constraint(ACTIVE_LOANS_BLOCK_DELETE), got {res:?}"
         );
 
-        // The borrower is still there (fail-closed: nothing was deleted).
+        // The borrower AND the loan are still there (fail-closed: nothing was
+        // deleted, the transaction rolled back).
         let data = open_and_read(&db, &key).unwrap();
         assert_eq!(data.borrowers.len(), 1);
+        assert_eq!(data.loans.len(), 1);
+        cleanup(&db);
+    }
+
+    #[test]
+    fn delete_borrower_removes_returned_history_with_them() {
+        let key = test_key();
+        let db = fresh_vault(&key);
+        let bid = insert_borrower(
+            &db,
+            &key,
+            &BorrowerInput { name: "History".into(), contact: None, notes: None },
+        )
+        .unwrap();
+        // Another borrower whose rows must be untouched by the delete.
+        let other = insert_borrower(
+            &db,
+            &key,
+            &BorrowerInput { name: "Other".into(), contact: None, notes: None },
+        )
+        .unwrap();
+        for (who, book) in [(bid, 1), (bid, 2), (other, 3)] {
+            insert_loan(
+                &db,
+                &key,
+                &LoanInput {
+                    book_id: book,
+                    borrower_id: who,
+                    lent_date: 1,
+                    due_date: None,
+                    returned_date: Some(2), // returned → history only
+                    notes: None,
+                },
+            )
+            .unwrap();
+        }
+
+        delete_borrower(&db, &key, bid).expect("returned-only history is deletable");
+
+        let data = open_and_read(&db, &key).unwrap();
+        assert_eq!(data.borrowers.len(), 1);
+        assert_eq!(data.borrowers[0].id, other);
+        assert_eq!(data.loans.len(), 1, "only the OTHER borrower's loan remains");
+        assert_eq!(data.loans[0].borrower_id, other);
+        cleanup(&db);
+    }
+
+    #[test]
+    fn delete_borrower_with_mixed_loans_is_all_or_nothing() {
+        let key = test_key();
+        let db = fresh_vault(&key);
+        let bid = insert_borrower(
+            &db,
+            &key,
+            &BorrowerInput { name: "Mixed".into(), contact: None, notes: None },
+        )
+        .unwrap();
+        for returned in [Some(2), None] {
+            insert_loan(
+                &db,
+                &key,
+                &LoanInput {
+                    book_id: 1,
+                    borrower_id: bid,
+                    lent_date: 1,
+                    due_date: None,
+                    returned_date: returned,
+                    notes: None,
+                },
+            )
+            .unwrap();
+        }
+
+        let res = delete_borrower(&db, &key, bid);
+        assert!(matches!(res, Err(VaultError::Constraint(_))), "got {res:?}");
+
+        // Atomicity: the returned-history row must NOT have been deleted just
+        // because the borrower delete was refused.
+        let data = open_and_read(&db, &key).unwrap();
+        assert_eq!(data.borrowers.len(), 1);
+        assert_eq!(data.loans.len(), 2);
+        cleanup(&db);
+    }
+
+    #[test]
+    fn delete_missing_borrower_is_not_found() {
+        let key = test_key();
+        let db = fresh_vault(&key);
+        let res = delete_borrower(&db, &key, 4242);
+        assert!(matches!(res, Err(VaultError::NotFound)), "got {res:?}");
         cleanup(&db);
     }
 

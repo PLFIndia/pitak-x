@@ -10,6 +10,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
+import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/biometric_enrolment.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -105,6 +106,13 @@ class _InMemoryVault implements VaultRepository {
     required int id,
   }) async {
     if (!_ok(passphrase)) return left(const WrongPassphraseFailure());
+    // Mirror the Rust core: refuse while a book is out, otherwise take the
+    // returned history along with the borrower.
+    final loans = _loans[dbPath] ?? const <Loan>[];
+    if (loans.any((l) => l.borrowerId == id && !l.isReturned)) {
+      return left(const ValidationFailure('rust: books still out'));
+    }
+    _loans[dbPath]?.removeWhere((l) => l.borrowerId == id);
     _borrowers[dbPath]?.removeWhere((b) => b.id == id);
     return right(unit);
   }
@@ -265,6 +273,93 @@ void main() {
       expect((state! as VaultUnlocked).data.borrowers.single.name, 'Asha');
     },
   );
+
+  group('deleteBorrower', () {
+    // Enables the vault, adds one borrower, returns (notifier, borrower id).
+    Future<(VaultSessionController, int)> unlockedWithBorrower(
+      ProviderContainer container,
+    ) async {
+      await container.read(vaultSessionControllerProvider.future);
+      final notifier = container.read(vaultSessionControllerProvider.notifier);
+      await notifier.enable(good());
+      touchDb();
+      await notifier.addBorrower(const Borrower(name: 'Asha'));
+      final state = container.read(vaultSessionControllerProvider).value;
+      return (notifier, (state! as VaultUnlocked).data.borrowers.single.id);
+    }
+
+    VaultData dataOf(ProviderContainer c) =>
+        (c.read(vaultSessionControllerProvider).value! as VaultUnlocked).data;
+
+    test('plan is null while locked (unknown, not "safe")', () async {
+      final container = makeContainer(_InMemoryVault());
+      await container.read(vaultSessionControllerProvider.future);
+      final notifier = container.read(vaultSessionControllerProvider.notifier);
+      expect(notifier.planDeleteBorrower(1), isNull);
+    });
+
+    test('borrower with no loans: plan allowed (0 history), deleted', () async {
+      final container = makeContainer(_InMemoryVault());
+      final (notifier, id) = await unlockedWithBorrower(container);
+
+      final plan = notifier.planDeleteBorrower(id);
+      expect(plan, isA<BorrowerDeletionAllowed>());
+      expect((plan! as BorrowerDeletionAllowed).returnedLoanCount, 0);
+
+      final r = await notifier.deleteBorrower(id);
+      expect(r.isRight(), isTrue);
+      expect(dataOf(container).borrowers, isEmpty);
+    });
+
+    test(
+      'active loan: plan blocked, delete refused, nothing removed',
+      () async {
+        final container = makeContainer(_InMemoryVault());
+        final (notifier, id) = await unlockedWithBorrower(container);
+        await notifier.addLoan(Loan(bookId: 1, borrowerId: id, lentDate: 1));
+
+        final plan = notifier.planDeleteBorrower(id);
+        expect(plan, isA<BorrowerDeletionBlocked>());
+        expect((plan! as BorrowerDeletionBlocked).activeLoanCount, 1);
+
+        final r = await notifier.deleteBorrower(id);
+        r.match((f) {
+          expect(f, isA<ValidationFailure>());
+          // The controller's own pre-check answers with the shared,
+          // user-facing sentence — the fake's raw text never gets through.
+          expect(
+            (f as ValidationFailure).message,
+            activeLoansBlockDeleteMessage,
+          );
+        }, (_) => fail('expected the delete to be refused'));
+        expect(dataOf(container).borrowers, hasLength(1));
+        expect(dataOf(container).loans, hasLength(1));
+      },
+    );
+
+    test(
+      'returned loans only: plan counts them, delete takes them too',
+      () async {
+        final container = makeContainer(_InMemoryVault());
+        final (notifier, id) = await unlockedWithBorrower(container);
+        await notifier.addLoan(
+          Loan(bookId: 1, borrowerId: id, lentDate: 1, returnedDate: 2),
+        );
+        await notifier.addLoan(
+          Loan(bookId: 2, borrowerId: id, lentDate: 1, returnedDate: 3),
+        );
+
+        final plan = notifier.planDeleteBorrower(id);
+        expect(plan, isA<BorrowerDeletionAllowed>());
+        expect((plan! as BorrowerDeletionAllowed).returnedLoanCount, 2);
+
+        final r = await notifier.deleteBorrower(id);
+        expect(r.isRight(), isTrue);
+        expect(dataOf(container).borrowers, isEmpty);
+        expect(dataOf(container).loans, isEmpty);
+      },
+    );
+  });
 
   test('a mutation while locked fails closed with ValidationFailure', () async {
     final vault = _InMemoryVault();
