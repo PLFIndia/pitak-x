@@ -1,0 +1,6 @@
+* Vault: key file written atomically (no loss on a crash mid change-passphrase); half-created vaults auto-cleaned; passphrase asked twice, 8+ chars; unlock errors shown again.
+* Passphrase field: edits not at the end clear the field and say so (they used to corrupt the entry).
+* Lending refused (with reason) for removed or fully-out books.
+* Corrupt backups fail cleanly; imports update in place, all-or-nothing.
+* Filter chips show the active filter; orphan images cleaned; auto-backup off.
+* Rebuild of 1.1.10: the previous upload was packaged from a stale compile and lacked the 1.1.9 fixes (GitHub sign-in on phones, Google Books API key).
