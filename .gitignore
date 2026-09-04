@@ -58,6 +58,11 @@ android/build/
 # template and the build wiring are tracked; the real secrets stay local.
 android/key.properties
 *.jks
+
+# Local-only engineering reference (machine paths, keystore location, Play
+# Console answers, release status). Kept out of the public repo by choice;
+# PLAN.md and README.md are the public-facing companions.
+appDetails.md
 *.keystore
 
 # Play Store form answers — local working notes, not for the public repo.

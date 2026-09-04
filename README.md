@@ -6,10 +6,10 @@ catalogue your books, lend them to borrowers from an **encrypted vault**, keep a
 wishlist, import/export (JSON · CSV · PDF), make portable backups, and publish a
 read-only library site to GitHub Pages.
 
-> **Status:** feature-rich and stable on a physical device (Pixel 8a). The
-> release build is still **debug-signed** — a real signing keystore is the main
-> pre-ship gate. See `HANDOFF.md` for the authoritative engineering status and
-> `PLAN.md` for task history.
+> **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
+> **Google Play** (`dev.khoj.pitaka`); current release 1.1.10. `PLAN.md`
+> tracks the task in flight; the maintainer's full engineering reference
+> (`appDetails.md`) is kept locally and is not part of this repository.
 
 ---
 
