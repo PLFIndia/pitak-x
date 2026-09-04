@@ -1,7 +1,7 @@
 /// Google Books [IsbnLookupService] (infrastructure, AGENTS.md §3.3).
 ///
-/// Port of the Kotlin `GoogleBooksApi` + service (adapted, credited in
-/// PLAN.md). Public, no-auth v1 REST:
+/// Adapted from the Kotlin Pitak app's `GoogleBooksApi` + service (same
+/// author, retired codebase). Public, no-auth v1 REST:
 ///  - ISBN:  GET /books/v1/volumes?q=isbn:{isbn}
 ///  - title: GET /books/v1/volumes?q=intitle:{q}&maxResults={n}
 ///

@@ -44,7 +44,7 @@ class Borrower {
 ///
 /// `bookId` is a logical cross-DB reference to a library book (no DB-level FK,
 /// since books live in Drift and loans in the Rust vault). Integrity is
-/// enforced in the application layer (AGENTS.md / PLAN.md cross-DB rule).
+/// enforced in the application layer (AGENTS.md; see `loan_integrity.dart`).
 class Loan {
   /// Creates a loan. [bookId], [borrowerId] and [lentDate] are required.
   const Loan({

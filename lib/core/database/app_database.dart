@@ -1,9 +1,10 @@
 /// Drift database for the non-secret stores (books + wishlist).
 ///
 /// The encrypted borrowers vault is NOT here — it is owned by the Rust core
-/// (PLAN.md Q3). FTS5 mirrors the five-field search the Kotlin app derived from
-/// `books_fts` (FTS4 external-content); we rebuild it as FTS5 rather than
-/// migrating the virtual table (PLAN.md Q2).
+/// (decision: secrets never live in Dart-side storage). FTS5 mirrors the
+/// five-field search the Kotlin app derived from `books_fts` (FTS4
+/// external-content); we rebuild it as FTS5 rather than migrating the virtual
+/// table (decision: a derived index is rebuilt, not migrated).
 library;
 
 import 'package:drift/drift.dart';

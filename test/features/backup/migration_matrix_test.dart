@@ -1,4 +1,5 @@
-/// Migration test matrix — the "zero data loss" contract (PLAN.md).
+/// Migration test matrix — the port's "zero data loss" contract: every legacy
+/// archive shape must restore with every row and column intact.
 ///
 /// Asserts that EVERY column of the legacy Room `books` (25 cols, v10) and
 /// `wishlist_books` (16 cols) survives a backup restore into Drift, byte-for-

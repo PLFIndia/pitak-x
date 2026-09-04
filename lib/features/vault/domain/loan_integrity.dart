@@ -1,4 +1,6 @@
-/// Cross-DB loan↔book integrity (AGENTS.md / PLAN.md cross-DB rule).
+/// Cross-DB loan↔book integrity. Books live in Drift, loans in the Rust vault,
+/// so there is no DB-level foreign key; this is the application-layer rule that
+/// stands in for it (AGENTS.md §3.3).
 ///
 /// Books live in the Drift database; loans live in the encrypted Rust vault.
 /// There is no DB-level foreign key across that boundary, so referential

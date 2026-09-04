@@ -2,9 +2,8 @@
 ///
 /// Pure presentation: reads [LibraryController] state and forwards user input
 /// to it. No business logic, no direct repository/DB access. Mirrors the Kotlin
-/// `LibraryScreen` (search field, row list, empty state) minus the features
-/// deferred for this slice (sort/filter facets, vault availability badge, cover
-/// images — see PLAN.md Step 11 out-of-scope).
+/// `LibraryScreen` (search field, sort/filter controls, row list with covers,
+/// empty state).
 library;
 
 import 'package:flutter/material.dart';

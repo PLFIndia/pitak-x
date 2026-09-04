@@ -23,8 +23,8 @@
 /// allocation (up to 4 GiB) before the post-decode length check fires. The
 /// content is still capped; only the transient allocation is not. The proper
 /// fix is the archive 4.x streaming API (allocation bounded by bytes actually
-/// inflated) — tracked in PLAN.md's tier-2 dependency programme, which owns
-/// the archive bump.
+/// inflated) — tracked in the dependency-upgrade backlog (tier 2, security
+/// packages), which owns the `archive` 3→4 bump.
 library;
 
 import 'dart:typed_data';

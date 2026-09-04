@@ -6,7 +6,8 @@
 //! FFI boundary to Dart. Books/wishlist (no secrets) stay in Dart/Drift.
 //!
 //! Verified byte-compatible with the Kotlin source app's
-//! `BackupPassphraseWrapper` + zetetic SQLCipher 4.5.4 in Step 0 (PLAN.md).
+//! `BackupPassphraseWrapper` + zetetic SQLCipher 4.5.4 (the first thing the
+//! port proved, against real archives, before any UI was written).
 
 pub mod api;
 pub mod crypto;

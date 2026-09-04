@@ -1,6 +1,7 @@
 /// Reads a legacy Room `books.db` / `wishlist.db` exhaustively and maps every
-/// row+column into the Flutter domain entities (PLAN.md Option B: one-time
-/// translation at restore, then Flutter owns its Drift schema).
+/// row+column into the Flutter domain entities (decision: one-time translation
+/// at restore, then Flutter owns its Drift schema — rather than keeping the
+/// Room schema live).
 ///
 /// These DBs carry NO secrets (the encrypted vault is a separate `borrowers.db`
 /// read by the Rust core), so they are opened with plain `sqlite3` read-only.

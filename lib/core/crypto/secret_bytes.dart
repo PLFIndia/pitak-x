@@ -12,7 +12,7 @@
 ///    (random fill, then zero) to avoid leaving an all-zero region that betrays
 ///    where a key used to live.
 ///
-/// NOTE (honest limitation, per PLAN.md threat notes): this is best-effort
+/// NOTE (honest limitation, recorded in the threat model): this is best-effort
 /// on a GC runtime. The VM may have copied these bytes during a moving GC
 /// before we wipe. The *vault key itself* never lives here — it lives only
 /// inside the Rust core in `Zeroizing<>`. This holder only ever carries the

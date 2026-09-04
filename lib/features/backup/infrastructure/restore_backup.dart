@@ -1,4 +1,5 @@
-/// Applies a Pitaka backup archive to this device (PLAN.md Step 7, the crux).
+/// Applies a Pitaka backup archive to this device — the crux of the port's
+/// "zero data loss" guarantee.
 ///
 /// Restore is an AUTHORITATIVE OVERWRITE of local state, not an additive merge
 /// (mirrors Kotlin `BackupRestore`). Ordering is fail-closed: everything that

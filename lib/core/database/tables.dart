@@ -4,7 +4,8 @@
 /// `app/schemas/.../BooksDatabase/10.json` and `WishlistDatabase/1.json`), with
 /// idiomatic Drift naming via `.named()` to keep the on-disk column names
 /// identical to Room — so the migration reader maps 1:1. The encrypted vault
-/// (borrowers/loans) is NOT here; it lives in the Rust core (PLAN.md Q3).
+/// (borrowers/loans) is NOT here; it lives in the Rust core (decision: secrets
+/// never live in Dart-side storage).
 library;
 
 import 'package:drift/drift.dart';
