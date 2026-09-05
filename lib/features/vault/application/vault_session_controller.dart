@@ -17,6 +17,8 @@
 /// re-derived per call from (passphrase, blob).
 library;
 
+import 'dart:async';
+
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
@@ -85,16 +87,46 @@ class VaultSessionController extends _$VaultSessionController
   /// secret is S, [_activeBlob] is the bio blob) vs the passphrase.
   bool _activeIsBiometric = false;
 
+  // A generation is a session's identity: old work cannot act in a new one.
+  int _generation = 0;
+  int _lifetime = 0;
+  bool _disposed = false;
+  VaultArtifactsStore? _store;
+  Future<void>? _operationTail;
+  final Set<SecretBytes> _pendingSecrets = {};
+
+  static const _cancelled = ValidationFailure(
+    'The vault session ended. Unlock it and try again.',
+  );
+
+  bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  void _forgetSession() {
+    _generation++;
+    _passphrase?.dispose();
+    _passphrase = null;
+    _activeBlob = null;
+    _activeIsBiometric = false;
+    for (final secret in _pendingSecrets) {
+      secret.dispose();
+    }
+    _pendingSecrets.clear();
+  }
+
   @override
   Future<VaultSessionState> build() async {
-    // Wipe any held secret if this provider is ever disposed (fail-closed).
+    _disposed = false;
+    final lifetime = _lifetime;
     ref.onDispose(() {
-      _passphrase?.dispose();
-      _passphrase = null;
-      _activeBlob = null;
-      _activeIsBiometric = false;
+      _disposed = true;
+      _lifetime++;
+      _forgetSession();
+      _store = null;
     });
     final store = await _storeFuture;
+    // Riverpod may rebuild this same notifier after invalidation. Never let an
+    // old build replace the new lifetime's cached store.
+    if (!_disposed && lifetime == _lifetime) _store = store;
     return _initialStateFor(store);
   }
 
@@ -102,8 +134,10 @@ class VaultSessionController extends _$VaultSessionController
   ///
   /// Takes ownership of [passphrase]: on success it is HELD as the session
   /// passphrase; on failure it is disposed. Returns the failure for the UI.
-  Future<Either<Failure, Unit>> enable(SecretBytes passphrase) async {
-    final store = await _storeFuture;
+  Future<Either<Failure, Unit>> enable(SecretBytes passphrase) => _run((
+    generation,
+    store,
+  ) async {
     if (store.isInitialized()) {
       passphrase.dispose();
       return left(const ValidationFailure('A vault already exists.'));
@@ -135,10 +169,15 @@ class VaultSessionController extends _$VaultSessionController
     // NOTE: we deliberately do NOT set `state = AsyncLoading()` here: that
     // unmounted the passphrase form and swallowed the failure message (review
     // 2026-09-03). The page shows its own busy indicator instead.
+    final lifetime = _lifetime;
     final created = await _vault.createVault(
       passphrase: passphrase,
       dbPath: store.dbPath,
     );
+    // Invalidation can mean restore replaced the files. Never install an old
+    // blob into that lifetime. An abandoned EMPTY creation is handled by the
+    // existing orphan-recovery path on the next enable.
+    if (_disposed || lifetime != _lifetime) return left(_cancelled);
     return created.match(
       (failure) {
         passphrase.dispose();
@@ -161,24 +200,32 @@ class VaultSessionController extends _$VaultSessionController
           state = AsyncData(_initialStateFor(store));
           return left(const StorageFailure('could not save the vault key'));
         }
-        return _holdAndLoad(passphrase, store);
+        if (!_isCurrent(generation)) {
+          // Lock cancels the unlock, not the already-created encrypted pair.
+          // Finish saving its only wrapped key, but retain no secret or rows.
+          state = AsyncData(_initialStateFor(store));
+          return left(_cancelled);
+        }
+        return _holdAndLoad(passphrase, store, generation: generation);
       },
     );
-  }
+  }, incoming: passphrase);
 
   /// Unlocks the existing vault with [passphrase], loading its contents.
   ///
   /// Takes ownership of [passphrase]: held on success, disposed on failure.
-  Future<Either<Failure, Unit>> unlock(SecretBytes passphrase) async {
-    final store = await _storeFuture;
+  Future<Either<Failure, Unit>> unlock(SecretBytes passphrase) => _run((
+    generation,
+    store,
+  ) async {
     final blob = store.readBlob();
     if (blob == null) {
       passphrase.dispose();
       return left(const ValidationFailure('No vault to unlock.'));
     }
     // No AsyncLoading here either — see enable().
-    return _holdAndLoad(passphrase, store, blob: blob);
-  }
+    return _holdAndLoad(passphrase, store, blob: blob, generation: generation);
+  }, incoming: passphrase);
 
   /// Minimum new-passphrase length in UTF-8 bytes (mirrors Kotlin
   /// `SetBackupPassphraseUseCase.MIN_PASSPHRASE_LEN`).
@@ -194,78 +241,92 @@ class VaultSessionController extends _$VaultSessionController
   /// old passphrase keeps working (fail-closed — nothing was persisted).
   Future<Either<Failure, Unit>> changePassphrase(
     SecretBytes newPassphrase,
-  ) async {
-    final held = _passphrase;
-    final store = await _storeFuture;
-    // Rewrap from whatever secret currently opens the vault (passphrase OR the
-    // biometric S) — both unwrap the same MK — into a NEW main passphrase blob.
-    final blob = _activeBlob;
-    if (held == null || blob == null) {
-      newPassphrase.dispose();
-      return left(const ValidationFailure('Vault is locked.'));
-    }
-    if (newPassphrase.length < minPassphraseLength) {
-      newPassphrase.dispose();
-      return left(
-        const ValidationFailure(
-          'Passphrase must be at least $minPassphraseLength characters.',
-        ),
-      );
-    }
-    final rewrapped = await _vault.changePassphrase(
-      oldPassphrase: held,
-      newPassphrase: newPassphrase,
-      blob: blob,
-    );
-    return rewrapped.match(
-      (failure) {
-        // Nothing persisted; the current secret still works. Drop the new one.
+  ) => _run(
+    (generation, store) async {
+      final held = _passphrase;
+      // Both the passphrase and biometric S open the same key. Rewrap that
+      // key into a new main passphrase blob, using the currently held secret.
+      final blob = _activeBlob;
+      if (held == null || blob == null) {
         newPassphrase.dispose();
-        return left(failure);
-      },
-      (newBlob) {
-        // Persist the new MAIN passphrase blob (atomic temp+rename inside the
-        // store, so a crash here leaves the OLD blob intact and the old
-        // passphrase still works). The biometric blob (if any) is untouched
-        // and still valid (same MK).
-        try {
-          store.writeBlob(newBlob);
-        } on Exception {
-          // Nothing changed on disk; the current secret still opens the vault.
+        return left(const ValidationFailure('Vault is locked.'));
+      }
+      if (newPassphrase.length < minPassphraseLength) {
+        newPassphrase.dispose();
+        return left(
+          const ValidationFailure(
+            'Passphrase must be at least $minPassphraseLength characters.',
+          ),
+        );
+      }
+      final rewrapped = await _vault.changePassphrase(
+        oldPassphrase: held,
+        newPassphrase: newPassphrase,
+        blob: blob,
+      );
+      if (!_isCurrent(generation)) return left(_cancelled);
+      return rewrapped.match(
+        (failure) {
+          // Nothing persisted. Keep the current secret; drop the new one.
           newPassphrase.dispose();
-          return left(
-            const StorageFailure('could not save the new passphrase'),
-          );
-        }
-        if (_activeIsBiometric) {
-          // Session stays on S (which opens the untouched bio blob); we only
-          // re-set the passphrase. The new passphrase isn't held.
-          newPassphrase.dispose();
-        } else {
-          // Passphrase-unlocked: swap the held secret + active blob to the new
-          // passphrase/main blob (the old passphrase no longer opens it).
-          _passphrase?.dispose();
-          _passphrase = newPassphrase;
-          _activeBlob = newBlob;
-        }
-        return right(unit);
-      },
-    );
-  }
+          return left(failure);
+        },
+        (newBlob) {
+          // Persist the new MAIN passphrase blob (atomic temp+rename inside the
+          // store, so a crash here leaves the OLD blob intact and the old
+          // passphrase still works). The biometric blob (if any) is untouched
+          // and still valid (same MK).
+          try {
+            store.writeBlob(newBlob);
+          } on Exception {
+            // The old blob and secret still open the vault.
+            newPassphrase.dispose();
+            return left(
+              const StorageFailure('could not save the new passphrase'),
+            );
+          }
+          if (_activeIsBiometric) {
+            // Session stays on S (which opens the untouched bio blob); we only
+            // re-set the passphrase. The new passphrase isn't held.
+            newPassphrase.dispose();
+          } else {
+            // Swap both held secret and blob together. The old passphrase
+            // no longer opens the new main blob.
+            _passphrase?.dispose();
+            _passphrase = newPassphrase;
+            _activeBlob = newBlob;
+          }
+          return right(unit);
+        },
+      );
+    },
+    incoming: newPassphrase,
+    requiresUnlocked: true,
+  );
 
   // --- Biometric unlock (#34 B2, opt-in / default OFF) -------------------
 
   /// Whether biometric unlock is currently enrolled (a biometric blob + a
   /// secret in the OS store). Cheap file check + secure-store presence.
   Future<bool> isBiometricEnrolled() async {
-    final store = await _storeFuture;
-    if (!store.hasBioBlob()) return false;
-    return _bioStore.hasSecret();
+    final result = await _run<bool>((generation, store) async {
+      if (!store.hasBioBlob()) return right(false);
+      final hasSecret = await _bioStore.hasSecret();
+      if (!_isCurrent(generation)) return left(_cancelled);
+      return right(hasSecret);
+    });
+    return result.getOrElse((_) => false);
   }
 
   /// Reports whether the device can offer biometric unlock at all.
-  Future<BiometricAvailability> biometricAvailability() =>
-      _bioAuth.availability();
+  Future<BiometricAvailability> biometricAvailability() async {
+    final result = await _run<BiometricAvailability>((generation, _) async {
+      final available = await _bioAuth.availability();
+      if (!_isCurrent(generation)) return left(_cancelled);
+      return right(available);
+    });
+    return result.getOrElse((_) => BiometricAvailability.unavailable);
+  }
 
   /// Enrolls biometric unlock (#34 B2). Requires the vault to be UNLOCKED so
   /// the held secret can authorize wrapping a second copy of MK under a fresh
@@ -273,17 +334,25 @@ class VaultSessionController extends _$VaultSessionController
   /// it in hardware-backed storage, and persists the biometric blob. The user
   /// passphrase is NEVER stored. Fail-closed: any failure leaves no biometric
   /// artifacts behind.
-  Future<Either<Failure, Unit>> enrollBiometric() async {
+  Future<Either<Failure, Unit>> enrollBiometric() => _run((
+    generation,
+    store,
+  ) async {
     final held = _passphrase;
     final activeBlob = _activeBlob;
-    final store = await _storeFuture;
+    final bioStore = _bioStore;
     if (held == null || activeBlob == null) {
       return left(const ValidationFailure('Vault is locked.'));
     }
     // Already enrolled? Treat as success (idempotent).
-    if (await isBiometricEnrolled()) return right(unit);
+    if (store.hasBioBlob()) {
+      final hasSecret = await bioStore.hasSecret();
+      if (!_isCurrent(generation)) return left(_cancelled);
+      if (hasSecret) return right(unit);
+    }
 
     final available = await _bioAuth.availability();
+    if (!_isCurrent(generation)) return left(_cancelled);
     if (available != BiometricAvailability.available) {
       return left(
         const ValidationFailure(
@@ -294,6 +363,7 @@ class VaultSessionController extends _$VaultSessionController
     final ok = await _bioAuth.authenticate(
       reason: 'Confirm to enable unlocking the vault with biometrics',
     );
+    if (!_isCurrent(generation)) return left(_cancelled);
     if (!ok) {
       return left(const ValidationFailure('Biometric confirmation failed.'));
     }
@@ -304,70 +374,112 @@ class VaultSessionController extends _$VaultSessionController
       blob: activeBlob,
     );
     return enrolled.match(left, (enrolment) async {
-      // Store S in the OS secure store FIRST; only persist the blob if that
-      // succeeds (fail-closed: never a blob with no secret to open it).
-      final stored = await _bioStore.store(enrolment.secret);
-      enrolment.secret.dispose();
-      return stored.match(left, (_) async {
-        try {
-          store.writeBioBlob(enrolment.blobBio);
-        } on Exception {
-          // S is stored but has no blob to open → roll S back so no orphan
-          // secret lingers, and report a typed failure (fail closed).
-          await _bioStore.clear();
-          return left(const StorageFailure('could not save biometric unlock'));
+      if (!_isCurrent(generation)) {
+        enrolment.secret.dispose();
+        return left(_cancelled);
+      }
+      _pendingSecrets.add(enrolment.secret);
+      try {
+        // Store owns a scoped copy. Lock can wipe our original immediately.
+        final stored = await bioStore.store(enrolment.secret);
+        if (!_isCurrent(generation)) {
+          // The write was already dispatched. Undo it before releasing the
+          // queue slot so it cannot erase a newer enrollment's secret.
+          final cleared = await bioStore.clear();
+          return cleared.match(left, (_) => left(_cancelled));
         }
-        return right(unit);
-      });
+        return await stored.match(left, (_) async {
+          try {
+            store.writeBioBlob(enrolment.blobBio);
+          } on Exception {
+            // S is stored but has no blob to open → roll S back so no orphan
+            // secret lingers, and report a typed failure (fail closed).
+            final cleared = await bioStore.clear();
+            return cleared.match(
+              left,
+              (_) =>
+                  left(const StorageFailure('could not save biometric unlock')),
+            );
+          }
+          return right(unit);
+        });
+      } finally {
+        _pendingSecrets.remove(enrolment.secret);
+        enrolment.secret.dispose();
+      }
     });
-  }
+  }, requiresUnlocked: true);
 
   /// Unlocks the vault using biometrics (#34 B2): prompts, releases S from the
   /// OS store, and opens the vault via the ORDINARY unlock path with
   /// (S, bioBlob). Fail-closed: a failed prompt or missing artifact stays
   /// locked and wipes any transient secret.
-  Future<Either<Failure, Unit>> unlockWithBiometric() async {
-    final store = await _storeFuture;
+  Future<Either<Failure, Unit>> unlockWithBiometric() => _run((
+    generation,
+    store,
+  ) async {
     final bioBlob = store.readBioBlob();
-    if (bioBlob == null || !await _bioStore.hasSecret()) {
+    if (bioBlob == null) {
+      return left(const ValidationFailure('Biometric unlock is not set up.'));
+    }
+    final hasSecret = await _bioStore.hasSecret();
+    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!hasSecret) {
       return left(const ValidationFailure('Biometric unlock is not set up.'));
     }
     final ok = await _bioAuth.authenticate(reason: 'Unlock your vault');
+    if (!_isCurrent(generation)) return left(_cancelled);
     if (!ok) {
       return left(const ValidationFailure('Biometric unlock failed.'));
     }
     final read = await _bioStore.read();
     return read.match(left, (secret) async {
+      if (!_isCurrent(generation)) {
+        secret?.dispose();
+        return left(_cancelled);
+      }
       if (secret == null) {
         return left(const ValidationFailure('Biometric unlock is not set up.'));
       }
-      // _holdAndLoad takes ownership of `secret` and disposes on failure.
-      // (No AsyncLoading — see enable().)
-      return _holdAndLoad(secret, store, blob: bioBlob, isBiometric: true);
+      _pendingSecrets.add(secret);
+      try {
+        return await _holdAndLoad(
+          secret,
+          store,
+          blob: bioBlob,
+          isBiometric: true,
+          generation: generation,
+        );
+      } finally {
+        _pendingSecrets.remove(secret);
+        if (!identical(secret, _passphrase)) secret.dispose();
+      }
     });
-  }
+  });
 
   /// Disables biometric unlock (#34 B2): deletes S from the OS store and the
   /// biometric blob. The vault + passphrase are untouched. Idempotent. If the
   /// session was unlocked via biometrics it stays unlocked (S still in memory)
   /// but future biometric unlocks are gone until re-enrolled.
-  Future<Either<Failure, Unit>> disableBiometric() async {
-    final store = await _storeFuture;
-    final cleared = await _bioStore.clear();
-    return cleared.match(left, (_) {
-      store.clearBioBlob();
-      return right(unit);
-    });
-  }
+  Future<Either<Failure, Unit>> disableBiometric() =>
+      _run((generation, store) async {
+        final cleared = await _bioStore.clear();
+        if (!_isCurrent(generation)) return left(_cancelled);
+        return cleared.match(left, (_) {
+          store.clearBioBlob();
+          return right(unit);
+        });
+      });
 
-  /// Locks the vault: wipes the held secret and forgets the contents.
+  /// Locks immediately, without waiting for queued IO or biometric prompts.
+  /// Already-dispatched native writes may finish, but cannot unlock the UI.
   Future<void> lock() async {
-    _passphrase?.dispose();
-    _passphrase = null;
-    _activeBlob = null;
-    _activeIsBiometric = false;
-    final store = await _storeFuture;
-    state = AsyncData(_initialStateFor(store));
+    _forgetSession();
+    if (_disposed) return;
+    final store = _store;
+    // Before build finishes there are no contents to hide. Leave its loading
+    // state intact so an operation cannot overtake initialization.
+    if (store != null) state = AsyncData(_initialStateFor(store));
   }
 
   /// Inserts a borrower, then re-reads the vault. Vault must be unlocked.
@@ -476,6 +588,7 @@ class VaultSessionController extends _$VaultSessionController
   @override
   Future<Either<Failure, Unit>> purgeLoansForBook(int bookId) =>
       _mutate((p, store, blob) async {
+        final generation = _generation;
         final current = state.valueOrNull;
         final ids = current is VaultUnlocked
             ? current.data.loans
@@ -490,12 +603,63 @@ class VaultSessionController extends _$VaultSessionController
             dbPath: store.dbPath,
             id: id,
           );
+          if (!_isCurrent(generation)) return left(_cancelled);
           if (r.isLeft()) return r.map((_) => unit);
         }
         return right(unit);
       });
 
   // --- internals ----------------------------------------------------------
+
+  /// One FIFO for session operations; lock/disposal deliberately bypass it.
+  /// Adapted from synchronized's BasicLock (completer released in finally) and
+  /// Riverpod's handleFuture cancellation guard. No new dependency is needed.
+  Future<Either<Failure, T>> _run<T>(
+    Future<Either<Failure, T>> Function(
+      int generation,
+      VaultArtifactsStore store,
+    )
+    action, {
+    SecretBytes? incoming,
+    bool requiresUnlocked = false,
+  }) async {
+    final generation = _generation;
+    if (_disposed || (requiresUnlocked && _passphrase == null)) {
+      incoming?.dispose();
+      return left(_cancelled);
+    }
+    if (incoming != null) _pendingSecrets.add(incoming);
+    final previous = _operationTail;
+    final done = Completer<void>();
+    _operationTail = done.future;
+    try {
+      // Wait for build as well as preceding work. Do not reset the queue on
+      // lock/invalidation: a dispatched native call still owns its IO slot.
+      if (previous != null) await previous;
+      if (!_isCurrent(generation)) return left(_cancelled);
+      await future;
+      if (!_isCurrent(generation)) return left(_cancelled);
+      final store = _store;
+      if (store == null) return left(_cancelled);
+      return await action(generation, store);
+    } on Object {
+      // A violated repository contract is a bug, not a raw UI exception.
+      // Discard the exception itself: it could include a secret or PII.
+      const failure = UnexpectedFailure('Vault operation failed unexpectedly');
+      if (_isCurrent(generation)) {
+        _forgetSession();
+        state = const AsyncData(VaultLocked());
+      }
+      return left(failure);
+    } finally {
+      if (incoming != null) {
+        _pendingSecrets.remove(incoming);
+        if (!identical(incoming, _passphrase)) incoming.dispose();
+      }
+      if (identical(_operationTail, done.future)) _operationTail = null;
+      done.complete();
+    }
+  }
 
   /// Holds [secret] as the session secret and loads the vault contents using
   /// [blob] (the at-rest blob that [secret] opens). [isBiometric] records
@@ -505,11 +669,14 @@ class VaultSessionController extends _$VaultSessionController
   Future<Either<Failure, Unit>> _holdAndLoad(
     SecretBytes secret,
     VaultArtifactsStore store, {
+    required int generation,
     String? blob,
     bool isBiometric = false,
   }) async {
+    if (!_isCurrent(generation)) return left(_cancelled);
     final effectiveBlob = blob ?? store.readBlob();
     if (effectiveBlob == null) {
+      _forgetSession();
       secret.dispose();
       state = AsyncData(_initialStateFor(store));
       return left(const ValidationFailure('No vault to unlock.'));
@@ -520,8 +687,10 @@ class VaultSessionController extends _$VaultSessionController
       blob: effectiveBlob,
       dbPath: store.dbPath,
     );
+    if (!_isCurrent(generation)) return left(_cancelled);
     return read.match(
       (failure) {
+        _forgetSession();
         secret.dispose();
         state = AsyncData(_initialStateFor(store));
         return left(failure);
@@ -548,9 +717,8 @@ class VaultSessionController extends _$VaultSessionController
       String blob,
     )
     op,
-  ) async {
+  ) => _run((generation, store) async {
     final held = _passphrase;
-    final store = await _storeFuture;
     // Use the blob the HELD secret opens (passphrase blob, or bio blob when
     // unlocked via biometrics) — same MK, different wrapping key.
     final blob = _activeBlob;
@@ -558,6 +726,7 @@ class VaultSessionController extends _$VaultSessionController
       return left(const ValidationFailure('Vault is locked.'));
     }
     final result = await op(held, store, blob);
+    if (!_isCurrent(generation)) return left(_cancelled);
     return result.match(left, (value) async {
       // Re-read so the UI reflects the mutation. A read failure after a
       // successful write is surfaced but the write already landed.
@@ -566,12 +735,20 @@ class VaultSessionController extends _$VaultSessionController
         blob: blob,
         dbPath: store.dbPath,
       );
-      return read.match(left, (data) {
-        state = AsyncData(VaultUnlocked(data));
-        return right(value);
-      });
+      if (!_isCurrent(generation)) return left(_cancelled);
+      return read.match(
+        (failure) {
+          _forgetSession();
+          state = AsyncData(_initialStateFor(store));
+          return left(failure);
+        },
+        (data) {
+          state = AsyncData(VaultUnlocked(data));
+          return right(value);
+        },
+      );
     });
-  }
+  }, requiresUnlocked: true);
 
   VaultSessionState _initialStateFor(VaultArtifactsStore store) =>
       store.isInitialized() ? const VaultLocked() : const VaultUninitialized();

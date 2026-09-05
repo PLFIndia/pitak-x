@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -29,6 +30,10 @@ class _InMemoryVault implements VaultRepository {
   static const _correct = 7;
 
   bool _ok(SecretBytes p) => p.use((b) => b.isNotEmpty && b.first == _correct);
+
+  /// Captures the result before a controllable wait, like an FFI call.
+  Completer<void>? readStarted;
+  Completer<void>? finishRead;
 
   /// How many times createVault was invoked (validation must short-circuit).
   int createCalls = 0;
@@ -81,12 +86,16 @@ class _InMemoryVault implements VaultRepository {
     required String dbPath,
   }) async {
     if (!_ok(passphrase)) return left(const WrongPassphraseFailure());
-    return right(
-      VaultData(
-        borrowers: List.of(_borrowers[dbPath] ?? const []),
-        loans: List.of(_loans[dbPath] ?? const []),
-      ),
+    final data = VaultData(
+      borrowers: List.of(_borrowers[dbPath] ?? const []),
+      loans: List.of(_loans[dbPath] ?? const []),
     );
+    readStarted?.complete();
+    readStarted = null;
+    final pendingRead = finishRead;
+    finishRead = null;
+    if (pendingRead != null) await pendingRead.future;
+    return right(data);
   }
 
   @override
@@ -248,6 +257,33 @@ void main() {
   // doesn't create it, so write a placeholder DB file when "enabling".
   void touchDb() =>
       File(p.join(tmp.path, 'borrowers.db')).writeAsBytesSync([0]);
+
+  test('M07: unlock completed after lock must stay locked', () async {
+    final vault = _InMemoryVault();
+    final container = makeContainer(vault);
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+    await notifier.lock();
+
+    final started = vault.readStarted = Completer<void>();
+    final finish = vault.finishRead = Completer<void>();
+    final secret = good();
+    final unlocking = notifier.unlock(secret);
+    await started.future;
+    await notifier.lock();
+    finish.complete();
+    final result = await unlocking;
+
+    expect(
+      container.read(vaultSessionControllerProvider).value,
+      isA<VaultLocked>(),
+    );
+    expect(result.isLeft(), isTrue);
+    expect(() => secret.use((bytes) => bytes), throwsStateError);
+    expect(notifier.currentLoans, isNull);
+  });
 
   test('enable() rejects a too-short passphrase before any crypto', () async {
     final vault = _InMemoryVault();
