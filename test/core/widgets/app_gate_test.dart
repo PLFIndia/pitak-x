@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/app_lock/app_lock_observer.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
@@ -10,6 +11,7 @@ import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/core/widgets/splash_screen.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
@@ -102,12 +104,21 @@ class _FakeAuth implements BiometricAuthenticator {
   }
 }
 
+/// Same composition as `main.dart`: the observer above `MaterialApp`, the gate
+/// in `builder` covering the navigator, and the Library as the home route.
+Widget _shell() => const AppLockObserver(
+  child: MaterialApp(builder: _gateBuilder, home: LibraryPage()),
+);
+
+Widget _gateBuilder(BuildContext context, Widget? child) =>
+    AppGate(child: child ?? const SizedBox.shrink());
+
 Widget _app(List<Override> overrides) => ProviderScope(
   overrides: [
     bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
     ...overrides,
   ],
-  child: const MaterialApp(home: AppGate()),
+  child: _shell(),
 );
 
 void main() {
@@ -256,7 +267,7 @@ void main() {
         child: Consumer(
           builder: (context, ref, _) {
             container = ProviderScope.containerOf(context);
-            return const MaterialApp(home: AppGate());
+            return _shell();
           },
         ),
       ),

@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/app_lock/app_lock_observer.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
+import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
 import 'package:pitaka/src/rust/frb_generated.dart';
@@ -40,26 +42,36 @@ class PitakaApp extends ConsumerWidget {
       ref.read(screenSecurityProvider).setSecure(secure: secure);
     });
 
-    return MaterialApp(
-      title: 'Pitak',
-      // EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
-      // navigation bar; this pads every route's content clear of it once,
-      // globally, instead of at each scrollable (decision A).
-      builder: (context, child) =>
-          EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
-      themeMode: themeMode,
-      theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-      darkTheme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          brightness: Brightness.dark,
+    // AppLockObserver sits ABOVE MaterialApp: it forwards lifecycle events to
+    // the app-lock controller and, while locked, intercepts the Android back
+    // button before the navigator can pop a route hidden under the lock (B01).
+    return AppLockObserver(
+      child: MaterialApp(
+        title: 'Pitak',
+        // `builder` wraps the Navigator itself, so both wrappers below apply
+        // to EVERY route, dialog and sheet — not just `home`:
+        //  - AppGate: splash + optional biometric lock painted OVER the whole
+        //    navigator; routes underneath are kept alive but inert (B01).
+        //  - EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
+        //    navigation bar; pads all content clear of it once (decision A).
+        builder: (context, child) => AppGate(
+          child: EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
         ),
-        useMaterial3: true,
+        themeMode: themeMode,
+        theme: ThemeData(colorScheme: scheme, useMaterial3: true),
+        darkTheme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: Colors.indigo,
+            brightness: Brightness.dark,
+          ),
+          useMaterial3: true,
+        ),
+        // UnfocusOnPause: releases keyboard focus when the app is
+        // backgrounded, so the first tap after resume reliably reopens the
+        // keyboard (fixes the stale-IME "tap does nothing" bug) and clears
+        // focus off secret fields.
+        home: const UnfocusOnPause(child: LibraryPage()),
       ),
-      // UnfocusOnPause: releases keyboard focus when the app is backgrounded,
-      // so the first tap after resume reliably reopens the keyboard (fixes the
-      // stale-IME "tap does nothing" bug) and clears focus off secret fields.
-      home: const UnfocusOnPause(child: AppGate()),
     );
   }
 }
