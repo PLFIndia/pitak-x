@@ -52,7 +52,7 @@ import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_servic
 import 'package:pitaka/features/lookup/infrastructure/secure_storage_lookup_key_store.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
-    show PublishedFileFetcher, RemoteCoverFetcher;
+    show PublishManifestGateway, PublishedFileFetcher, RemoteCoverFetcher;
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
@@ -405,8 +405,9 @@ PublishCoverIds publishCoverIds(PublishCoverIdsRef ref) =>
     PublishCoverIds(SecureStorageCoverSaltStore());
 
 /// File-backed incremental-publish manifest, rooted at the app docs dir.
+/// Expose the port so tests can substitute an in-memory store without file IO.
 @riverpod
-Future<FilePublishManifestStore> publishManifestStore(
+Future<PublishManifestGateway> publishManifestStore(
   PublishManifestStoreRef ref,
 ) async {
   final dir = await ref.watch(appDocsDirProvider.future);

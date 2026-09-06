@@ -745,14 +745,15 @@ final publishCoverIdsProvider = AutoDisposeProvider<PublishCoverIds>.internal(
 // ignore: unused_element
 typedef PublishCoverIdsRef = AutoDisposeProviderRef<PublishCoverIds>;
 String _$publishManifestStoreHash() =>
-    r'c2991bc3cdd50b2e4ba1ef7cd506955430206d3b';
+    r'5aa1156d243efd66c3ce996c2ee810a597c87928';
 
 /// File-backed incremental-publish manifest, rooted at the app docs dir.
+/// Expose the port so tests can substitute an in-memory store without file IO.
 ///
 /// Copied from [publishManifestStore].
 @ProviderFor(publishManifestStore)
 final publishManifestStoreProvider =
-    AutoDisposeFutureProvider<FilePublishManifestStore>.internal(
+    AutoDisposeFutureProvider<PublishManifestGateway>.internal(
       publishManifestStore,
       name: r'publishManifestStoreProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -765,7 +766,7 @@ final publishManifestStoreProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PublishManifestStoreRef =
-    AutoDisposeFutureProviderRef<FilePublishManifestStore>;
+    AutoDisposeFutureProviderRef<PublishManifestGateway>;
 String _$publishedSiteUrlHash() => r'b1c5668f3b27c7f3570b9d5cf877fac1410f06c7';
 
 /// The live URL of the user's published library site, or null when nothing

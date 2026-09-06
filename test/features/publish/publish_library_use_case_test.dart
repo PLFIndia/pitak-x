@@ -221,6 +221,28 @@ void main() {
     expect(manifest.saved?.repo, 'me/lib');
   });
 
+  test('an explicitly empty catalogue is a valid publication input', () async {
+    final api = _CapturingApi();
+    final manifest = _MemManifest();
+    final result = await makeUseCase(
+      api,
+      manifest,
+    ).call(books: const [], activeLoanCounts: null, encodeBooksJson: encode);
+
+    expect(result, isA<PublishSuccess>());
+    final files = api.committed!;
+    final payload =
+        jsonDecode(
+              utf8.decode(
+                files.firstWhere((f) => f.path == 'books.json').bytes,
+              ),
+            )
+            as Map<String, dynamic>;
+    expect(payload['books'], isEmpty);
+    expect(files.map((file) => file.path), ['books.json', 'index.html']);
+    expect(manifest.saved?.repo, 'me/lib');
+  });
+
   test('books.json carries redacted data only (no PII)', () async {
     final api = _CapturingApi();
     await makeUseCase(api, _MemManifest()).call(

@@ -1,94 +1,104 @@
 # PLAN.md — current task
 
-Roadmap: `fix-schedule.md`. Session 4, **M01 COMPLETE, uncommitted**.
-User approved end-to-end execution and clarified that the app creates repos.
-Use the existing auto_init setup flow; do not add another initialization path.
+Roadmap: `fix-schedule.md`. Session 5, **M10 COMPLETE, uncommitted**.
+User approved end-to-end execution. Commit approval remains separate.
 
 ## Understanding
-- Prevent GitHub publication from deleting unrelated branch files after a failed
-  head/commit lookup. An existing head must always supply a known `base_tree`.
-- Start/current HEAD: `3b44f4f`. Resume state matched the checkpoint (PLAN.md
-  only); astra-review.md and fix-schedule.md stay intentionally untracked.
-- Scope: commitFiles head/base-tree resolution, its tests and contract comments.
-  M10, M14 and manifest-cache policy are not part of this task.
+- A catalogue read failure must stop publishing, never become an empty library.
+- Start/current HEAD: `4b0f583`; tracked tree was clean at session start.
+  `astra-review.md` and `fix-schedule.md` remain intentionally untracked.
+- Scope: the controller's catalogue-read boundary, its Riverpod test seams,
+  regression tests, and generated code. Preserve legitimate empty publication.
 
 ## Privacy & threat notes
-- A failed read must cause no blob/tree/commit/ref writes, not an orphan tree
-  committed over existing content. Validate response shape before using SHAs.
-- No new data collection, logging, permissions, credentials or persistence.
-- Existing callers map HTTP errors and GitHubApiException to fixed UI messages;
-  never expose response bodies or tokens in new diagnostics.
-- Tests use mock HTTP only. No live GitHub mutations are authorized.
+- Before the fix, a local storage error let the publisher overwrite public
+  books.json with zero books. The new read boundary prevents that data loss.
+- Stop before publish preparation, credential access, network calls or manifest
+  mutation when getAll returns Left. The previous public site must stay intact.
+- StorageFailure.reason can contain raw database diagnostics. Map failures to a
+  fixed safe PublishFailure message; never log or display the diagnostic.
+- No new data, telemetry, permissions, storage formats, credentials or endpoints.
+  Tests use synthetic data and overridden ports, not real accounts/storage.
 
 ## Investigation notes
-- Before changes, M01 evidence matched http_github_api.dart:266–269, :295 and
-  :371–381: null commit lookup could omit base_tree but retain the existing
-  parent and advance the ref. Malformed 200 ref responses could bootstrap too.
-- Original tests covered success, ambiguous 404 bootstrap, and blob 403, but not
-  failed commit lookup. Library/events callers already handle typed failures.
-- CORRECTION to the first plan: the GitHub REST reference docs list 404 as
-  Resource not found and 409 as Conflict. Neither status alone proves emptiness.
-  They also explicitly prohibit creating references in empty repositories,
-  even with an existing commit SHA. The previous plan's claim that 404/409 were
-  documented positive empty-repo signals was incorrect; do not implement it.
-- Source verified from the documentation fetched earlier in this session:
-  https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28
-  Cached document: /tmp/gh_refs.html, sections Get/Create a reference.
-- createUserRepo already sends auto_init: true (http_github_api.dart:162).
-  Re-read SetupGitHubRepo: creation precedes Pages setup and target persistence.
-  User confirmed this existing workflow; no additional bootstrap is needed.
+- Before changes, review evidence matched publish_controller.dart:61–64:
+  getOrElse([]) discarded Failure. BookRepository.getAll returns an Either;
+  DriftBookRepository.getAll:27–35 already reports StorageFailure correctly.
+- publish_library_use_case.dart:203–221 serializes the supplied list as valid
+  public data. Rejecting empty lists there would break valid empty libraries.
+- publish_page.dart:401–437 already displays PublishFailure safely and clears
+  its busy state. Keep the existing publish result/UI contract; do not invent
+  another Result type or throw expected repository failures.
+- export_library_use_case.dart:118–121 checks Left before using books; its
+  export_controller_test.dart contains the analogous no-output-on-read-failure
+  regression. Existing publish tests cover use-case success, not this boundary.
+- Read the publish controller/use case/tests/page handler, repository contract
+  and getAll implementation, Failure types, settings load, and DI providers.
+- publishManifestStoreProvider exposed final FilePublishManifestStore, preventing
+  an in-memory fake. All three consumers only require the existing
+  PublishManifestGateway (library/events publishing and publishedSiteUrl).
+- Baseline with pinned Flutter 3.44.2: analyzer 0 issues; format 337 files /
+  0 changed; full Flutter 945 passed / 0 failed; Rust 30 passed / 0 failed,
+  2 expected ignored real-archive tests. Flutter log:
+  `/tmp/pitak-m10-flutter-baseline.GPJBmP`.
 
-## Proposed approach (implemented; supersedes first plan)
-- Require an existing, readable branch and its commit tree before all writes.
-  Return HTTP failures for every non-200 preflight response, including 404/409;
-  reject malformed response bodies and missing/invalid SHAs safely.
-- Remove the ambiguous no-head/bootstrap path. Tree always has base_tree,
-  commit always has the verified parent, ref update always uses force: false.
-- Keep the implementation explicit; no _EmptyRepo type or speculative bootstrap
-  abstraction is needed if only verified existing heads are supported.
-- Preserve the existing domain error contract; use the established guarded HTTP
-  pattern for transport errors. Manifest rebuilding remains separate.
-- Canonical reference: GitHub REST Git references documentation above. No OSS
-  algorithm or cryptography needed for this bounded control-flow fix; no deps.
+## Proposed approach (implemented; with OSS references)
+- Read getAll first and explicitly branch on its Either. Map Left to a fixed
+  PublishFailure; only Right may enter existing publish preparation. Preserve
+  publish()'s loading/result state and temporary keepAlive/finally cleanup.
+- Expose the existing PublishManifestGateway from its DI provider, retaining
+  FilePublishManifestStore as the production implementation. This narrow type
+  change enables in-memory controller tests; no new abstraction or dependency.
+- Add the test seam and regression tests before changing failure behavior;
+  demonstrate the old code publishes an empty payload after a failed read.
+- Cover failure vs successful empty/nonempty reads, unchanged manifest/no API
+  activity on failure, delayed reads, safe messages, and retry after failure.
+  Test controller return value and provider state; add explicit empty-library
+  coverage to the existing use-case suite and a focused UI failure regression.
+- Borrow the existing export tests' repository-failure pattern. Canonical OSS
+  reference verified locally: fpdart 1.2.0 `lib/src/either.dart:267–280` defines
+  getOrElse as recovery and fold/match as explicit Left/Right handling. Use the
+  installed library, not a custom error-propagation mechanism.
 
 ## Decision points
-- End-to-end execution: APPROVED.
-- Resolved by user clarification: the app already lets users create the repo.
-  Preserve that auto_init flow; require a readable existing branch at publish.
-  No new initialization UX/API workflow. Commit approval remains separate.
+- End-to-end M10 execution: APPROVED by the user.
+- No product/security policy decision is needed for M10. Any unexpected scope
+  expansion stops for confirmation. Commit approval is always separate.
 
 ## Steps
-- [x] Verify repository state, evidence, callers and baseline gates.
-- [x] Correct unsupported bootstrap assumption; record checkpoint before coding.
-- [x] Resolve bootstrap question using the existing app repo-creation flow.
-- [x] Write failing mock regressions first: ref and commit HTTP errors, malformed
-  bodies, transport failures; assert no writes and no ref movement.
-- [x] Implement approved preflight invariant; test preservation of unrelated
-  files via base_tree, parent and non-forced ref update assertions.
-- [x] Run focused/full tests, analyzer, formatter and Rust gates.
-- [x] Update tracker/result; present explicit-path commit approval request.
+- [x] Verify handoff/HEAD, read evidence/callers/tests and run baseline gates.
+- [x] Record the plan and planning checkpoint in the schedule.
+- [x] Obtain execution-mode approval.
+- [x] Add permanent regressions and demonstrate failure before the behavior fix.
+- [x] Implement explicit failure propagation and regenerate annotated providers.
+- [x] Run focused tests, full suite/coverage, analyzer, format and Rust gates.
+- [x] Review privacy/diff, update Result and handoff, request commit separately.
 
 ## Out-of-scope observations
-- headTreeShas and its caller treat manifest-rebuild failure as empty cache.
-  This can lose cover-reuse information, not just cause redundant uploads.
-- defaultBranch failures still fall back to main. M01 now rejects a missing
-  branch rather than creating an orphan; broader branch/Pages resolution remains
-  N09. The initial plan overstated the old behavior's safety.
+- Manifest rebuild failure still degrades to an empty cache (previously noted).
+  The DI return-type change must not alter manifest policy or storage behavior.
+- defaultBranch fallback remains N09; events lifecycle remains N11. Do not
+  broaden M10 into publish-result redesign, settings fixes or storage migration.
 
 ## Result
-- M01 implemented in http_github_api.dart:247–370; contract documented in
-  github_api.dart:213–220. No setup/UI/cache-policy changes.
-- New http_github_publish_preflight_test.dart contains 65 tests. Original 500
-  reproduction FAILED before fixing: blob/tree/commit/ref writes occurred.
-  Initial 58-test matrix: 12 passed / 46 failed before the fix. Existing API
-  tests updated for real SHA-shaped fixtures and fail-closed missing-ref behavior.
-- End gates: analyzer 0 issues; format 337 files/0 changed; full Flutter with
-  coverage 945 passed/0 failed (65 new); Rust 30 passed/0 failed, 2 expected ignored.
-  Baseline: 880 Flutter, 30 Rust, analyzer clean, format 336 files/0 changed.
-- Coverage: preflight 13/13 lines; SHA parser 6/6; commitFiles 48/50 (96%).
-  No annotated edits or generated diffs. Manual diff/security review: no new
-  logging, secrets, permissions, persistence, or endpoints; boundary validation
-  strengthened. Four overlong-line analyzer findings corrected and rechecked.
-- No pending failed checks. No commit, installation, destructive command or live
-  API write. Mock verification only, not a live GitHub publication. Commit approval
-  is the remaining optional action; next remediation task is M10.
+- M10 implemented in publish_controller.dart:53–64: explicit Either matching,
+  safe failure message, success-only preparation. DI exposes the existing
+  manifest gateway; file-backed production behavior and UI remain unchanged.
+- Added publish_controller_test.dart (19 tests, including the real page) and
+  one empty-input use-case test. Original regression FAILED before the fix:
+  StorageFailure returned PublishSuccess. Typed failures, delayed reads,
+  retries, redaction, manifest preservation and auto-dispose are covered.
+- Final gates: Flutter --no-pub --coverage 965 passed / 0 failed (20 new);
+  Rust 30 passed / 0 failed, 2 expected ignored; analyzer 0 issues; format
+  338 files / 0 changed; diff check clean. Full-suite log:
+  `/tmp/pitak-m10-flutter-final.EAzXh5`. Generation rerun: no unexpected diffs.
+- Coverage: new read boundary 6/6 (100%); publish/preparation 38/39 (97.44%).
+  Entire controller 38/45 (84.44%); uncovered local-cover path is unchanged
+  and outside M10. No claim of full cover-reader or physical-device coverage.
+- Corrected two lint findings and a fake-clock disposal-timer test issue;
+  all reruns pass. Existing build_runner SDK/analyzer-version warning persists.
+- Privacy/diff review: no new logging, secrets, permissions, persistence or
+  network destinations; tests use only synthetic data and in-memory ports.
+- Seven code/generated/test/PLAN.md paths remain uncommitted; request approval
+  before staging/commit. No live publish, install, schema or destructive action.
+  Next remediation task after the commit decision: M04.

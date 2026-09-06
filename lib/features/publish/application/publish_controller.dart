@@ -14,6 +14,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -50,6 +51,19 @@ class PublishController extends _$PublishController {
   }
 
   Future<PublishResult> _run() async {
+    final repo = await ref.read(bookRepositoryProvider.future);
+    final books = await repo.getAll();
+    // A failed read is not an empty library: stop before preparing any publish.
+    // Diagnostics can contain private database details; never show them.
+    return books.match<Future<PublishResult>>(
+      (_) async => const PublishFailure(
+        'Could not read the library. Nothing was published. Please try again.',
+      ),
+      _publishBooks,
+    );
+  }
+
+  Future<PublishResult> _publishBooks(List<Book> books) async {
     final api = ref.read(gitHubApiProvider);
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
@@ -59,9 +73,6 @@ class PublishController extends _$PublishController {
 
     final settings = await ref.read(settingsControllerProvider.future);
 
-    final books = await ref
-        .read(bookRepositoryProvider.future)
-        .then((repo) async => (await repo.getAll()).getOrElse((_) => const []));
     final counts = ref.read(activeLoanCountsProvider);
 
     // Side-effecting ports (bounded HTTP fetch, rootBundle template load)
