@@ -171,7 +171,28 @@ final coverStoreProvider = AutoDisposeFutureProvider<CoverFiles>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CoverStoreRef = AutoDisposeFutureProviderRef<CoverFiles>;
-String _$coverFileJanitorHash() => r'523eed08650cad22aa81cd944d9c2ad4df625307';
+String _$coverFileCoordinatorHash() =>
+    r'5dcbe8a5922a3856e1451d69e042effaf2ce7e48';
+
+/// Shared for the app lifetime: old/new auto-disposed callers must coordinate
+/// on the same FIFO while an import or a cleanup operation is still running.
+///
+/// Copied from [coverFileCoordinator].
+@ProviderFor(coverFileCoordinator)
+final coverFileCoordinatorProvider = Provider<CoverFileCoordinator>.internal(
+  coverFileCoordinator,
+  name: r'coverFileCoordinatorProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$coverFileCoordinatorHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CoverFileCoordinatorRef = ProviderRef<CoverFileCoordinator>;
+String _$coverFileJanitorHash() => r'7d17377008cdb5dfd08bec95a3ff19e8cb0d6c33';
 
 /// Removes cover files nothing references any more (decision Q12). Used right
 /// after a cover/logo is replaced or a book hard-deleted, and once at startup
@@ -1151,15 +1172,14 @@ final openVaultFromArchiveProvider =
 typedef OpenVaultFromArchiveRef =
     AutoDisposeFutureProviderRef<OpenVaultFromArchive>;
 String _$libraryBundleReaderHash() =>
-    r'01d5daf5718041b3cf2a5a919a6dec33b9cc9324';
+    r'9b5a65c16881ce1118e34d43334eae4ed427ceee';
 
-/// Reads Pitaka bundle (.zip) archives into an import payload, writing any
-/// bundled covers under `<appDocs>/covers`.
+/// Side-effect-free bundle decoding, exposed through its domain contract.
 ///
 /// Copied from [libraryBundleReader].
 @ProviderFor(libraryBundleReader)
 final libraryBundleReaderProvider =
-    AutoDisposeFutureProvider<LibraryBundleReader>.internal(
+    AutoDisposeFutureProvider<BundleReader>.internal(
       libraryBundleReader,
       name: r'libraryBundleReaderProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -1171,8 +1191,27 @@ final libraryBundleReaderProvider =
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef LibraryBundleReaderRef =
-    AutoDisposeFutureProviderRef<LibraryBundleReader>;
+typedef LibraryBundleReaderRef = AutoDisposeFutureProviderRef<BundleReader>;
+String _$bundleCoverFilesHash() => r'1a39d026e0238b00f8061007a6005f7afa808372';
+
+/// Operation-owned imported covers under the existing app-private covers dir.
+///
+/// Copied from [bundleCoverFiles].
+@ProviderFor(bundleCoverFiles)
+final bundleCoverFilesProvider =
+    AutoDisposeFutureProvider<BundleCoverFiles>.internal(
+      bundleCoverFiles,
+      name: r'bundleCoverFilesProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$bundleCoverFilesHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BundleCoverFilesRef = AutoDisposeFutureProviderRef<BundleCoverFiles>;
 String _$importLibraryUseCaseHash() =>
     r'7b84c6eb03884f248819d8fa3903076c7aabd2a2';
 

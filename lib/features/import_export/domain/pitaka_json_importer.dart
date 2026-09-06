@@ -27,9 +27,8 @@ const int kPitakaSchemaVersion = 3;
 
 /// Parses Pitaka JSON export files into an [ImportPayload].
 final class PitakaJsonImporter implements Importer {
-  /// Creates a JSON importer. [keepLocalCovers] is only set true by the bundle
-  /// reader, which writes the bundled cover files to disk before parsing so the
-  /// local references resolve.
+  /// Creates a JSON importer. Bundles preserve local refs during parsing, then
+  /// validate them against bundled bytes and rewrite them before persistence.
   const PitakaJsonImporter({
     this.keepLocalCovers = false,
     this.limits = ImportLimits.defaults,

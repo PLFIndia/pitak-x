@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -7,72 +6,106 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 
+Uint8List _zip(Map<String, List<int>> entries) {
+  final archive = Archive();
+  entries.forEach(
+    (name, data) => archive.addFile(ArchiveFile(name, data.length, data)),
+  );
+  return Uint8List.fromList(ZipEncoder().encode(archive)!);
+}
+
 void main() {
-  late Directory tempDir;
-  late String coversDir;
+  const reader = LibraryBundleReader();
+  test(
+    'reads Unicode metadata and image bytes without filesystem access',
+    () async {
+      final result = await reader.read(
+        _zip({
+          'library.json': utf8.encode(
+            jsonEncode({
+              'schemaVersion': 3,
+              'books': [
+                {'title': 'गोदान', 'coverUrl': 'covers/uuid-1.jpg'},
+              ],
+              'wishlist': <Object>[],
+            }),
+          ),
+          'cover_uuid-1.jpg': [9, 9, 9],
+        }),
+      );
+      final bundle = result.toNullable()!;
+      expect(bundle.payload.books.single.title, 'गोदान');
+      expect(bundle.payload.books.single.coverUrl, 'covers/uuid-1.jpg');
+      expect(bundle.covers['uuid-1.jpg'], [9, 9, 9]);
+    },
+  );
 
-  setUp(() {
-    tempDir = Directory.systemTemp.createTempSync('bundle_test');
-    coversDir = '${tempDir.path}/covers';
-  });
-
-  tearDown(() {
-    if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
-  });
-
-  Uint8List bundleOf(Map<String, List<int>> entries) {
-    final archive = Archive();
-    entries.forEach((name, data) {
-      archive.addFile(ArchiveFile(name, data.length, data));
+  for (final json in [
+    '{broken',
+    '[]',
+    '{}',
+    '{"books":null}',
+    '{"books":"bad"}',
+    '{"books":[7]}',
+    '{"books":[],"wishlist":[null]}',
+    '{"schemaVersion":999,"books":[]}',
+    '{"books":[{"title":"A","coverUrl":"covers/missing.jpg"}]}',
+    '{"wishlist":[{"title":"A","coverUrl":"file:///old/missing.jpg"}]}',
+    '{"books":[{"title":"A","coverUrl":"covers/../bad.jpg"}]}',
+  ]) {
+    test('rejects invalid catalogue: $json', () async {
+      final result = await reader.read(
+        _zip({'library.json': utf8.encode(json)}),
+      );
+      expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
     });
-    return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }
 
-  group('LibraryBundleReader', () {
-    test('reads library.json and writes bundled covers to disk', () async {
-      final json = jsonEncode({
-        'schemaVersion': 3,
-        'exportedAt': 0,
-        'books': [
-          {'title': 'गोदान', 'coverUrl': 'covers/uuid-1.jpg'},
-        ],
-        'wishlist': <dynamic>[],
-      });
-      final zip = bundleOf({
-        'library.json': utf8.encode(json),
-        'cover_uuid-1.jpg': [9, 9, 9],
-      });
+  test('rejects unreferenced image entries', () async {
+    final result = await reader.read(
+      _zip({
+        'library.json': utf8.encode('{"books":[]}'),
+        'cover_unowned.jpg': [1],
+      }),
+    );
+    expect(result.isLeft(), isTrue);
+  });
 
-      final reader = LibraryBundleReader(coversDir: coversDir);
-      final result = await reader.read(zip);
+  test('accepts a valid empty catalogue', () async {
+    final result = await reader.read(
+      _zip({'library.json': utf8.encode('{"books":[],"wishlist":[]}')}),
+    );
+    expect(result.toNullable()!.payload.isEmpty, isTrue);
+    expect(result.toNullable()!.covers, isEmpty);
+  });
 
-      final payload = result.getOrElse((_) => throw StateError('expected ok'));
-      // Local cover ref is KEPT (bundle path), Unicode title survives.
-      expect(payload.books.single.title, 'गोदान');
-      expect(payload.books.single.coverUrl, 'covers/uuid-1.jpg');
-      // The cover file was written into place.
-      expect(File('$coversDir/uuid-1.jpg').readAsBytesSync(), [9, 9, 9]);
-    });
-
-    test('fails closed when library.json is missing', () async {
-      final zip = bundleOf({
-        'cover_x.jpg': [1],
-      });
-      final reader = LibraryBundleReader(coversDir: coversDir);
-      final result = await reader.read(zip);
-      result.match(
-        (f) => expect(f, isA<BackupCorruptFailure>()),
-        (_) => fail('expected a corrupt failure'),
+  test(
+    'rejects malformed UTF-8 rather than silently altering metadata',
+    () async {
+      expect(
+        (await reader.read(
+          _zip({
+            'library.json': [0xff],
+          }),
+        )).isLeft(),
+        isTrue,
       );
-    });
+    },
+  );
 
-    test('maps a hostile/corrupt archive to BackupCorruptFailure', () async {
-      final reader = LibraryBundleReader(coversDir: coversDir);
-      final result = await reader.read(Uint8List.fromList([0, 1, 2]));
-      result.match(
-        (f) => expect(f, isA<BackupCorruptFailure>()),
-        (_) => fail('expected a corrupt failure'),
-      );
-    });
+  test('fails closed when library.json is missing', () async {
+    expect(
+      (await reader.read(
+        _zip({
+          'cover_x.jpg': [1],
+        }),
+      )).swap().toNullable(),
+      isA<BackupCorruptFailure>(),
+    );
+  });
+
+  test('maps a hostile/corrupt archive to a safe failure', () async {
+    final result = await reader.read(Uint8List.fromList([0, 1, 2]));
+    expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
   });
 }

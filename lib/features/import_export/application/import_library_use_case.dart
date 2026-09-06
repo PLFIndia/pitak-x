@@ -18,18 +18,23 @@
 /// a UNIQUE collision in a crafted file) rolls back rows 1..N-1 too, so an
 /// import is all-or-nothing and the reported counts always match the DB.
 ///
-/// Bundles (.zip) are not plain text — they are read by `LibraryBundleReader`
-/// and the parsed payload handed to `applyPayload` with the bundle format.
+/// Bundles are validated without IO, then imported with operation-owned cover
+/// files. File ownership lasts until the outermost database transaction ends.
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/application/bundle_import_images.dart';
+import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
 import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
+import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 /// Result of an import run.
@@ -98,9 +103,9 @@ final class ImportLibraryUseCase {
     }
     switch (format) {
       case ImportFormat.pitakaJson:
-        return applyPayload(_json.parse(text), format);
+        return _applyPayload(_json.parse(text), format);
       case ImportFormat.goodreadsCsv:
-        return applyPayload(_goodreads.parse(text), format);
+        return _applyPayload(_goodreads.parse(text), format);
       case ImportFormat.pitakaBundle:
         return right(
           const ImportSummary(
@@ -111,18 +116,51 @@ final class ImportLibraryUseCase {
     }
   }
 
-  /// Writes an already-parsed [payload] through both repositories with the
-  /// dedup semantics, inside one transaction. Shared by the text path and the
-  /// bundle path.
-  Future<Either<Failure, ImportSummary>> applyPayload(
+  /// Imports a validated bundle. Cleanup owns only new files, never old covers.
+  /// Do not invoke inside another database transaction: ownership is released
+  /// only when this top-level operation knows that the commit succeeded.
+  Future<Either<Failure, ImportSummary>> importBundle(
+    ImportBundle bundle, {
+    required BundleCoverFiles coverFiles,
+    required CoverFileCoordinator coordinator,
+  }) => coordinator.run(() async {
+    final batch = coverFiles.begin();
+    final images = BundleImportImages(bundle, batch);
+    Either<Failure, ImportSummary> result;
+    try {
+      result = await _bookRepo.runInTransaction(() async {
+        final applied = await _applyInside(
+          bundle.payload,
+          ImportFormat.pitakaBundle,
+          images: images,
+        );
+        if (applied.isLeft()) return applied;
+        final retained = await images.retainFinalReferences();
+        return retained.match(left, (_) => applied);
+      });
+    } on Object {
+      // Unexpected collaborator errors still release newly created files.
+      result = left(const UnexpectedFailure('Bundle import failed.'));
+    }
+    if (result.isRight()) {
+      // No IO: an already committed import cannot be undone here.
+      batch.commit();
+      return result;
+    }
+    final cleanup = await batch.rollback();
+    return cleanup.match(left, (_) => result);
+  });
+
+  Future<Either<Failure, ImportSummary>> _applyPayload(
     ImportPayload payload,
     ImportFormat format,
   ) => _bookRepo.runInTransaction(() => _applyInside(payload, format));
 
   Future<Either<Failure, ImportSummary>> _applyInside(
     ImportPayload payload,
-    ImportFormat format,
-  ) async {
+    ImportFormat format, {
+    BundleImportImages? images,
+  }) async {
     var booksAdded = 0;
     var booksUpdated = 0;
     var booksSkipped = 0;
@@ -139,12 +177,22 @@ final class ImportLibraryUseCase {
         }
         final existing = byUid.toNullable();
         if (existing != null) {
+          final prepared = images == null
+              ? right<Failure, Book>(book)
+              : await images.prepareBook(book);
+          if (prepared.isLeft()) {
+            return prepared.map((_) => const ImportSummary(format: null));
+          }
           final updated = await _bookRepo.update(
-            _mergeIntoExisting(existing: existing, incoming: book),
+            _mergeIntoExisting(
+              existing: existing,
+              incoming: prepared.toNullable()!,
+            ),
           );
           if (updated.isLeft()) {
             return updated.map((_) => const ImportSummary(format: null));
           }
+          images?.recordBook(updated.toNullable()!);
           booksUpdated++;
           continue;
         }
@@ -162,10 +210,17 @@ final class ImportLibraryUseCase {
         }
       }
       // 3. New to this library → insert.
-      final inserted = await _bookRepo.insert(book);
+      final prepared = images == null
+          ? right<Failure, Book>(book)
+          : await images.prepareBook(book);
+      if (prepared.isLeft()) {
+        return prepared.map((_) => const ImportSummary(format: null));
+      }
+      final inserted = await _bookRepo.insert(prepared.toNullable()!);
       if (inserted.isLeft()) {
         return inserted.map((_) => const ImportSummary(format: null));
       }
+      images?.recordBook(inserted.toNullable()!);
       booksAdded++;
     }
 
@@ -183,18 +238,34 @@ final class ImportLibraryUseCase {
             id: existing.id,
             addedDate: existing.addedDate,
           );
-          final res = await _wishlistRepo.upsert(replacement);
+          final prepared = images == null
+              ? right<Failure, WishlistBook>(replacement)
+              : await images.prepareWishlist(replacement);
+          if (prepared.isLeft()) {
+            return prepared.map((_) => const ImportSummary(format: null));
+          }
+          final res = await _wishlistRepo.upsert(prepared.toNullable()!);
           if (res.isLeft()) {
             return res.map((_) => const ImportSummary(format: null));
           }
+          // upsert's conflict-update path may return SQLite's last insert ID;
+          // the matched row's ID is the authoritative identity for replacement.
+          images?.recordWishlist(res.toNullable()!.copyWith(id: existing.id));
           wishlistReplaced++;
           continue;
         }
       }
-      final res = await _wishlistRepo.insert(w);
+      final prepared = images == null
+          ? right<Failure, WishlistBook>(w)
+          : await images.prepareWishlist(w);
+      if (prepared.isLeft()) {
+        return prepared.map((_) => const ImportSummary(format: null));
+      }
+      final res = await _wishlistRepo.insert(prepared.toNullable()!);
       if (res.isLeft()) {
         return res.map((_) => const ImportSummary(format: null));
       }
+      images?.recordWishlist(res.toNullable()!);
       wishlistAdded++;
     }
 

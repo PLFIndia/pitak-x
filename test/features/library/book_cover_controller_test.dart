@@ -97,6 +97,7 @@ void main() {
             books: repo,
             settings: _NoLogoSettings(),
             store: store,
+            coordinator: ref.watch(coverFileCoordinatorProvider),
           ),
         ),
       ],

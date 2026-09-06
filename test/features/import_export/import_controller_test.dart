@@ -212,8 +212,9 @@ void main() {
       overrides: [
         importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
         libraryBundleReaderProvider.overrideWith(
-          (ref) async => LibraryBundleReader(coversDir: '${tmp.path}/covers'),
+          (ref) async => const LibraryBundleReader(),
         ),
+        coversDirProvider.overrideWith((ref) async => '${tmp.path}/covers'),
       ],
     );
     addTearDown(container.dispose);

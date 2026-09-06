@@ -23,6 +23,7 @@
 library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -34,6 +35,7 @@ class CoverFileJanitor {
     required this.books,
     required this.settings,
     required this.store,
+    required this.coordinator,
   });
 
   /// Source of truth for which covers are referenced.
@@ -44,6 +46,9 @@ class CoverFileJanitor {
 
   /// The files (domain port; `CoverStore` in infrastructure).
   final CoverFiles store;
+
+  /// Shared with import so cleanup's reference snapshot waits for its commit.
+  final CoverFileCoordinator coordinator;
 
   /// The set of leaf names that are currently referenced, or null when the
   /// database could not be read (then NOTHING must be deleted — fail closed).
@@ -63,7 +68,10 @@ class CoverFileJanitor {
 
   /// A row (or the logo) stopped pointing at [coverRef]: delete the file if
   /// nothing else still does. Non-local / blank references are ignored.
-  Future<void> releaseReference(String? coverRef) async {
+  Future<void> releaseReference(String? coverRef) =>
+      coordinator.run(() => _releaseReference(coverRef));
+
+  Future<void> _releaseReference(String? coverRef) async {
     final leaf = CoverPaths.leafOf(coverRef);
     if (leaf == null) return;
     try {
@@ -77,7 +85,9 @@ class CoverFileJanitor {
 
   /// Deletes every file in the covers directory that nothing references.
   /// Returns how many were removed (0 on any read problem — fail closed).
-  Future<int> sweep() async {
+  Future<int> sweep() => coordinator.run(_sweep);
+
+  Future<int> _sweep() async {
     try {
       final referenced = await _referencedLeaves();
       if (referenced == null) return 0;

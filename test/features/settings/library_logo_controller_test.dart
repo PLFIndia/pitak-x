@@ -42,6 +42,7 @@ void main() {
             books: _NoBooks(),
             settings: settings,
             store: store,
+            coordinator: ref.watch(coverFileCoordinatorProvider),
           );
         }),
       ],

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
+import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
@@ -66,6 +67,7 @@ void main() {
       ]),
       settings: _Settings(logo: 'covers/$logo'),
       store: store,
+      coordinator: CoverFileCoordinator(),
     );
     final removed = await janitor.sweep();
     expect(removed, 1);
@@ -78,6 +80,7 @@ void main() {
       books: _Books(const [], fail: true),
       settings: _Settings(),
       store: store,
+      coordinator: CoverFileCoordinator(),
     );
     expect(await janitor.sweep(), 0);
     expect(leaves(), {a, b, logo, orphan, 'notes.txt'});
@@ -90,6 +93,7 @@ void main() {
         books: _Books([const Book(title: 'A', coverUrl: 'covers/$a')]),
         settings: _Settings(logo: 'covers/$logo'),
         store: store,
+        coordinator: CoverFileCoordinator(),
       );
       await janitor.releaseReference('covers/$a'); // still referenced by A
       expect(File('${tmp.path}/$a').existsSync(), isTrue);

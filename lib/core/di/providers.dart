@@ -30,7 +30,10 @@ import 'package:pitaka/features/events/infrastructure/file_events_repository.dar
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
+import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
+import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
     hide PdfTextRasterizer, RasterizedText;
@@ -38,6 +41,7 @@ import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
+import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
@@ -154,6 +158,12 @@ Future<CoverFiles> coverStore(CoverStoreRef ref) async {
   return CoverStore(coversDir: dir);
 }
 
+/// Shared for the app lifetime: old/new auto-disposed callers must coordinate
+/// on the same FIFO while an import or a cleanup operation is still running.
+@Riverpod(keepAlive: true)
+CoverFileCoordinator coverFileCoordinator(CoverFileCoordinatorRef ref) =>
+    CoverFileCoordinator();
+
 /// Removes cover files nothing references any more (decision Q12). Used right
 /// after a cover/logo is replaced or a book hard-deleted, and once at startup
 /// to sweep orphans left by older versions.
@@ -162,7 +172,12 @@ Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
   final books = await ref.watch(bookRepositoryProvider.future);
   final settings = await ref.watch(settingsRepositoryProvider.future);
   final store = await ref.watch(coverStoreProvider.future);
-  return CoverFileJanitor(books: books, settings: settings, store: store);
+  return CoverFileJanitor(
+    books: books,
+    settings: settings,
+    store: store,
+    coordinator: ref.watch(coverFileCoordinatorProvider),
+  );
 }
 
 /// One-shot startup sweep of orphan cover files; resolves to the number
@@ -554,15 +569,15 @@ Future<OpenVaultFromArchive> openVaultFromArchive(
   );
 }
 
-/// Reads Pitaka bundle (.zip) archives into an import payload, writing any
-/// bundled covers under `<appDocs>/covers`.
+/// Side-effect-free bundle decoding, exposed through its domain contract.
 @riverpod
-Future<LibraryBundleReader> libraryBundleReader(
-  LibraryBundleReaderRef ref,
-) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return LibraryBundleReader(coversDir: p.join(dir.path, 'covers'));
-}
+Future<BundleReader> libraryBundleReader(LibraryBundleReaderRef ref) async =>
+    const LibraryBundleReader();
+
+/// Operation-owned imported covers under the existing app-private covers dir.
+@riverpod
+Future<BundleCoverFiles> bundleCoverFiles(BundleCoverFilesRef ref) async =>
+    FileBundleCoverStore(coversDir: await ref.watch(coversDirProvider.future));
 
 /// One-shot library/wishlist import use case.
 @riverpod

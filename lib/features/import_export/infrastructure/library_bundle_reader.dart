@@ -1,28 +1,15 @@
-/// Reads a "Pitaka bundle" (.zip): the canonical re-importable JSON plus the
-/// actual local cover images. Pure-logic-where-possible port of Kotlin
-/// `LibraryBundle.read` (source app).
-///
-/// Layout (flat, shared with the backup archive):
-///   library.json     the PitakaExport
-///   cover_<leaf>     one entry per referenced LOCAL cover file
-///
-/// A bundle is MERGED (additive), never restored destructively, and carries
-/// zero vault data. The reader: bounded-extracts the ZIP, writes the bundled
-/// covers into the covers dir (ADDITIVE — never wipes existing covers), then
-/// parses library.json with keepLocalCovers=true so the local references
-/// resolve against the files just written.
+/// Decodes a Pitaka bundle without touching the filesystem. Incoming names
+/// identify bundled bytes only; the import transaction assigns fresh names.
 library;
 
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
-import 'package:pitaka/features/import_export/domain/cover_paths.dart';
-import 'package:pitaka/features/import_export/domain/import_payload.dart';
+import 'package:pitaka/features/import_export/domain/import_bundle.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
 
 /// ZIP entry name of the bundled library JSON.
@@ -31,61 +18,62 @@ const String kBundleLibraryJsonEntry = 'library.json';
 /// Prefix of a bundled cover entry (Kotlin `BackupArchive.COVER_ENTRY_PREFIX`).
 const String kBundleCoverEntryPrefix = 'cover_';
 
-/// Reads Pitaka bundle archives into an [ImportPayload], writing covers to
-/// disk.
-final class LibraryBundleReader {
-  /// Creates a reader that writes covers under `coversDir` (typically
-  /// `<appDocsDir>/covers`). The directory is created if missing.
-  const LibraryBundleReader({required this.coversDir});
+/// Parses bundle metadata and validates all local image references first.
+final class LibraryBundleReader implements BundleReader {
+  /// Creates a side-effect-free reader using the existing import limits.
+  const LibraryBundleReader({this.limits = ImportLimits.defaults});
 
-  /// Absolute path to the covers directory covers are written into.
-  final String coversDir;
+  /// Catalogue parsing limits; decompression limits remain in the extractor.
+  final ImportLimits limits;
 
-  /// Reads [zipBytes]: bounded-extract, write bundled covers (additive), then
-  /// parse `library.json` keeping local cover refs. Fails closed with a typed
-  /// [Failure] on a hostile/corrupt archive or a missing JSON entry.
-  Future<Either<Failure, ImportPayload>> read(Uint8List zipBytes) async {
+  @override
+  Future<Either<Failure, ImportBundle>> read(Uint8List zipBytes) async {
     final Map<String, Uint8List> files;
     try {
       files = BoundedZipExtractor.extract(zipBytes);
-    } on BoundedExtractionException catch (e) {
-      return left(BackupCorruptFailure(e.message));
+    } on BoundedExtractionException {
+      return left(const BackupCorruptFailure('Could not read bundle archive.'));
     }
-
     final jsonBytes = files[kBundleLibraryJsonEntry];
     if (jsonBytes == null) {
-      return left(const BackupCorruptFailure('Bundle missing library.json'));
+      return left(const BackupCorruptFailure('Bundle missing library.json.'));
     }
-
-    // Write bundled covers into place BEFORE parsing, so kept local references
-    // point at real files. Best-effort per cover: one bad entry must not fail
-    // the whole import. Re-validate the leaf via CoverPaths (defence in depth —
-    // the extractor already sanitised it).
-    final dir = Directory(coversDir);
+    final String text;
+    final Object? decoded;
     try {
-      if (!dir.existsSync()) dir.createSync(recursive: true);
-    } on FileSystemException catch (e) {
-      return left(StorageFailure('Could not create covers dir: ${e.message}'));
+      text = utf8.decode(jsonBytes);
+      if (text.length > limits.maxTextChars) {
+        return left(
+          const BackupCorruptFailure('Bundle catalogue is too large.'),
+        );
+      }
+      decoded = jsonDecode(text);
+    } on FormatException {
+      return left(const BackupCorruptFailure('Invalid bundle catalogue.'));
     }
-
-    for (final entry in files.entries) {
-      final name = entry.key;
-      if (!name.startsWith(kBundleCoverEntryPrefix)) continue;
-      final leaf = name.substring(kBundleCoverEntryPrefix.length);
-      if (CoverPaths.leafOf('${CoverPaths.prefix}$leaf') != leaf) continue;
-      try {
-        File(p.join(coversDir, leaf)).writeAsBytesSync(entry.value);
-      } on FileSystemException {
-        // Best effort: skip an unwritable cover, keep importing.
-        continue;
+    // Tolerant text imports may skip malformed collections/rows. A bundle
+    // must not install images for rows that silently disappeared while parsing.
+    if (decoded is! Map<String, dynamic> ||
+        !['books', 'wishlist'].any(decoded.containsKey)) {
+      return left(const BackupCorruptFailure('Invalid bundle collections.'));
+    }
+    for (final key in ['books', 'wishlist']) {
+      if (!decoded.containsKey(key)) continue;
+      final rows = decoded[key];
+      if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {
+        return left(const BackupCorruptFailure('Invalid bundle rows.'));
       }
     }
-
-    const importer = PitakaJsonImporter(keepLocalCovers: true);
-    // UTF-8 decode (allowMalformed) so Devanagari/Unicode titles survive; never
-    // String.fromCharCodes, which mangles multi-byte sequences.
-    final json = utf8.decode(jsonBytes, allowMalformed: true);
-    final payload = importer.parse(json);
-    return right(payload);
+    final payload = PitakaJsonImporter(
+      keepLocalCovers: true,
+      limits: limits,
+    ).parse(text);
+    final covers = <String, Uint8List>{};
+    for (final entry in files.entries) {
+      if (!entry.key.startsWith(kBundleCoverEntryPrefix)) continue;
+      final leaf = entry.key.substring(kBundleCoverEntryPrefix.length);
+      covers[leaf] = entry.value;
+    }
+    return ImportBundle.validate(payload, covers);
   }
 }
