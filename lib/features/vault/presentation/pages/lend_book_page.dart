@@ -145,14 +145,22 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
           if (borrowers.isNotEmpty)
             DropdownButtonFormField<int?>(
               initialValue: _borrowerId,
+              // N12: long borrower names must ellipsize inside the field
+              // instead of overflowing it (320px / large text).
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Existing borrower',
                 border: OutlineInputBorder(),
               ),
               items: [
-                const DropdownMenuItem(child: Text('New borrower…')),
+                const DropdownMenuItem(
+                  child: Text('New borrower…', overflow: TextOverflow.ellipsis),
+                ),
                 for (final b in borrowers)
-                  DropdownMenuItem(value: b.id, child: Text(b.name)),
+                  DropdownMenuItem(
+                    value: b.id,
+                    child: Text(b.name, overflow: TextOverflow.ellipsis),
+                  ),
               ],
               onChanged: (v) => setState(() => _borrowerId = v),
             ),

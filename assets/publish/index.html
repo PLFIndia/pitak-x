@@ -157,6 +157,9 @@
   main { padding: 16px 20px 48px; }
 
   /* Layouts */
+  /* N12: wide tables scroll sideways on narrow screens instead of breaking
+     the page layout. */
+  .layout-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .layout-table table { width: 100%; border-collapse: collapse; }
   .layout-table th, .layout-table td {
     padding: 8px 10px;
@@ -233,17 +236,17 @@
   </a>
   {{CONTACT_HTML}}
   <div class="controls">
-    <input id="q" type="search" placeholder="Search title, author, genre, ISBN" autocomplete="off" />
-    <select id="sort">
+    <input id="q" type="search" placeholder="Search title, author, genre, ISBN" aria-label="Search the catalogue" autocomplete="off" />
+    <select id="sort" aria-label="Sort books by">
       <option value="addedDate">Recently added</option>
       <option value="language">Language</option>
       <option value="ageGroup">Age group</option>
     </select>
-    <select id="language"><option value="">All languages</option></select>
-    <button data-layout="table" class="active">Table</button>
-    <button data-layout="card">Cards</button>
-    <button data-layout="grid">Covers</button>
-    <button id="theme" title="Toggle dark mode">🌗</button>
+    <select id="language" aria-label="Filter by language"><option value="">All languages</option></select>
+    <button data-layout="table" class="active" aria-label="Table layout" aria-pressed="true">Table</button>
+    <button data-layout="card" aria-label="Card layout" aria-pressed="false">Cards</button>
+    <button data-layout="grid" aria-label="Cover grid layout" aria-pressed="false">Covers</button>
+    <button id="theme" title="Toggle dark mode" aria-label="Toggle dark mode">🌗</button>
   </div>
   <p class="meta" id="meta">Loading…</p>
 </header>
@@ -285,7 +288,11 @@
   document.querySelectorAll("button[data-layout]").forEach((b) => {
     b.addEventListener("click", () => {
       layout = b.dataset.layout;
-      document.querySelectorAll("button[data-layout]").forEach((x) => x.classList.toggle("active", x === b));
+      document.querySelectorAll("button[data-layout]").forEach((x) => {
+        x.classList.toggle("active", x === b);
+        // N12: keep the pressed state truthful for assistive tech.
+        x.setAttribute("aria-pressed", x === b ? "true" : "false");
+      });
       render();
     });
   });
