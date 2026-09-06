@@ -2,7 +2,9 @@
 ///
 /// Port of Kotlin `DeleteBookUseCase` (D3). A permanent delete must also purge
 /// the book's loan rows in the encrypted vault — a vault-write op — so it is
-/// gated on an unlocked vault:
+/// gated on the vault's state:
+///  - no vault has ever existed on this device → delete straight away (M12:
+///    no loan can possibly reference the book);
 ///  - vault unlocked → purge the book's loans, then delete the book row;
 ///  - vault locked AND the book has loan history → [DeleteBookOutcome.
 ///    requiresVaultUnlock] (the UI prompts unlock and re-invokes);
@@ -23,6 +25,12 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 /// The vault operations the delete flow needs, kept as a narrow interface so
 /// the use case does not depend on the Riverpod session controller directly.
 abstract interface class VaultLoanPurger {
+  /// Whether a vault has EVER been created on this device (M12). False means
+  /// no loan can exist anywhere, so deletes need no vault interaction. When
+  /// the state is still loading/unknown this must report true (fail closed:
+  /// treat the vault as present until proven absent).
+  bool get vaultExists;
+
   /// Whether the vault is currently unlocked.
   bool get isUnlocked;
 
@@ -74,12 +82,14 @@ class DeleteBookUseCase {
   /// a [Failure] if a step failed (the book row is only deleted AFTER loans are
   /// purged, so a purge failure leaves everything intact — fail-closed).
   Future<Either<Failure, DeleteBookOutcome>> call(int id) async {
-    if (!vault.isUnlocked) {
-      // Locked: we cannot confirm there are no loans without leaking vault
-      // state, so require unlock (Kotlin's conservative RequiresVaultUnlock).
+    if (vault.vaultExists && !vault.isUnlocked) {
+      // Locked EXISTING vault: we cannot confirm there are no loans without
+      // leaking vault state, so require unlock (Kotlin's conservative
+      // RequiresVaultUnlock). A device where no vault was ever created has
+      // nothing to unlock (M12) and falls through to a plain delete.
       return right(DeleteBookOutcome.requiresVaultUnlock);
     }
-    if (vault.hasLoansForBook(id)) {
+    if (vault.isUnlocked && vault.hasLoansForBook(id)) {
       final purged = await vault.purgeLoansForBook(id);
       if (purged.isLeft()) {
         return purged.map((_) => DeleteBookOutcome.deleted);

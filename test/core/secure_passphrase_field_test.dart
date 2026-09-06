@@ -174,6 +174,87 @@ void main() {
       expect(field.enableInteractiveSelection, isFalse);
     });
 
+    // N01 regression (astra-review.md, reproduced by the reviewer): after
+    // the parent CONSUMED the secret (takeSecret on submit) the bullets used
+    // to stay on screen — a failed unlock then looked like a full field, and
+    // the retry typed "behind" an invisible old password.
+    testWidgets('consuming the secret clears the visible mask', (tester) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'hunter2');
+      await tester.pump();
+      expect(find.text('•••••••'), findsOneWidget);
+
+      final secret = controller.takeSecret()!;
+      addTearDown(secret.dispose);
+      await tester.pump();
+
+      expect(find.text('•••••••'), findsNothing);
+      expect(find.text('•'), findsNothing);
+      expect(controller.isEmpty, isTrue);
+    });
+
+    testWidgets('an external clear() empties the mask too', (tester) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'abc');
+      await tester.pump();
+      expect(find.text('•••'), findsOneWidget);
+
+      controller.clear();
+      await tester.pump();
+      expect(find.text('•••'), findsNothing);
+    });
+
+    testWidgets('after a consume the retry shows ONLY the new bytes', (
+      tester,
+    ) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'first');
+      await tester.pump();
+      final secret = controller.takeSecret()!;
+      addTearDown(secret.dispose);
+      await tester.pump();
+
+      // Retry: two fresh characters must read as two bullets, not seven.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: 'ab',
+          selection: TextSelection.collapsed(offset: 2),
+        ),
+      );
+      await tester.pump();
+      expect(controller.length, 2);
+      expect(find.text('••'), findsOneWidget);
+      expect(find.text('•••••••'), findsNothing);
+    });
+
+    testWidgets('a paste at the end appends like typing', (tester) async {
+      final controller = SecurePassphraseController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(wrap(controller));
+
+      await tester.enterText(find.byType(TextField), 'ab');
+      await tester.pump();
+      // A long-press paste arrives through onChanged as the full new value.
+      tester.testTextInput.updateEditingValue(
+        const TextEditingValue(
+          text: '••cdef',
+          selection: TextSelection.collapsed(offset: 6),
+        ),
+      );
+      await tester.pump();
+      expect(controller.length, 6);
+      expect(find.text('••••••'), findsOneWidget);
+    });
+
     // REVIEW_FINDINGS_2 S2: mounting a passphrase field must turn the window
     // FLAG_SECURE policy ON (passphrase screens run before any unlock).
     testWidgets('mounting marks passphrase entry visible; dispose unmarks', (

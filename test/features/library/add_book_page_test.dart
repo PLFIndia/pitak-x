@@ -7,7 +7,21 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
+import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
+import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+
+/// Lookup stub returning a scripted result (N02 cover/flag tests).
+class _FakeLookup implements IsbnLookupService {
+  _FakeLookup(this._result);
+  final LookupResult _result;
+  @override
+  Future<LookupResult> lookupByIsbn(String isbn) async => _result;
+  @override
+  Future<SearchResult> searchByTitle(String query, {int limit = 20}) async =>
+      const SearchEmpty();
+}
 
 /// In-memory repo with autoincrement ids, enough to drive add + edit.
 class _MemRepo implements BookRepository {
@@ -83,11 +97,21 @@ Future<void> _tapSave(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _host(_MemRepo repo, {Book? book}) {
+Widget _host(_MemRepo repo, {Book? book, LookupResult? lookup}) {
   return ProviderScope(
-    overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+    overrides: [
+      bookRepositoryProvider.overrideWith((ref) async => repo),
+      if (lookup != null)
+        isbnLookupServiceProvider.overrideWithValue(_FakeLookup(lookup)),
+    ],
     child: MaterialApp(home: AddBookPage(book: book)),
   );
+}
+
+/// The lookup result SnackBar overlays the form bottom for ~4s; expire it.
+Future<void> _letSnackBarExpire(WidgetTester tester) async {
+  await tester.pump(const Duration(seconds: 5));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -147,5 +171,91 @@ void main() {
     expect(repo.books.length, 1);
     expect(repo.books.single.id, existing.id);
     expect(repo.books.single.title, 'Revised');
+  });
+
+  // N02 regression: lookup covers used to be discarded and needsMetadata
+  // could never be cleared once set.
+  testWidgets('N02: an allow-listed lookup cover is saved; flag clears', (
+    tester,
+  ) async {
+    const meta = BookMetadata(
+      isbn: '9780140449136',
+      title: 'Looked Up',
+      coverUrl: 'https://books.google.com/books/content?id=x',
+    );
+    final repo = _MemRepo();
+    await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ISBN'),
+      '9780140449136',
+    );
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    await _letSnackBarExpire(tester);
+
+    await _tapSave(tester);
+
+    expect(repo.books, hasLength(1));
+    expect(
+      repo.books.single.coverUrl,
+      'https://books.google.com/books/content?id=x',
+    );
+    expect(repo.books.single.needsMetadata, isFalse);
+  });
+
+  testWidgets('N02: a NON-allow-listed lookup cover is dropped', (
+    tester,
+  ) async {
+    const meta = BookMetadata(
+      isbn: '9780140449136',
+      title: 'Beacon',
+      coverUrl: 'https://attacker.example/track.gif',
+    );
+    final repo = _MemRepo();
+    await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ISBN'),
+      '9780140449136',
+    );
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    await _letSnackBarExpire(tester);
+
+    await _tapSave(tester);
+
+    expect(repo.books, hasLength(1));
+    expect(repo.books.single.coverUrl, isNull);
+  });
+
+  testWidgets('N02: an existing cover beats the lookup cover', (tester) async {
+    const meta = BookMetadata(
+      isbn: '9780140449136',
+      coverUrl: 'https://books.google.com/books/content?id=x',
+    );
+    final repo = _MemRepo();
+    final existing = (await repo.insert(
+      const Book(title: 'Local cover', coverUrl: 'covers/local.jpg'),
+    )).getOrElse((_) => throw StateError('seed failed'));
+
+    await tester.pumpWidget(
+      _host(repo, book: existing, lookup: const LookupFound(meta)),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ISBN'),
+      '9780140449136',
+    );
+    await tester.tap(find.byTooltip('Look up details'));
+    await tester.pumpAndSettle();
+    await _letSnackBarExpire(tester);
+
+    await _tapSave(tester);
+
+    expect(repo.books.single.coverUrl, 'covers/local.jpg');
   });
 }

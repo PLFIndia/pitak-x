@@ -171,4 +171,43 @@ void main() {
       isA<VaultUninitialized>(),
     );
   });
+
+  // N13: the screen inspects the manifest before asking for a passphrase.
+  test('inspectArchive surfaces the manifest without touching state', () async {
+    final container = makeContainer();
+    final inspected = await container
+        .read(restoreControllerProvider.notifier)
+        .inspectArchive(vaultOnlyArchive());
+    final manifest = inspected.getOrElse((f) => fail('unexpected: $f'));
+    expect(manifest.hasBackupBlob, isTrue);
+    // Still idle — inspection is not a restore.
+    expect(container.read(restoreControllerProvider).value, isNull);
+  });
+
+  test('a vault-free restore accepts a null passphrase', () async {
+    final container = makeContainer();
+    // Manifest with no vault + no books/wishlist rows: a valid empty restore.
+    final manifest = utf8.encode(
+      jsonEncode({
+        'schemaVersion': 1,
+        'exportedAt': 123,
+        'hasBooks': false,
+        'hasWishlist': false,
+        'hasBorrowers': false,
+        'hasBackupBlob': false,
+        'hasCovers': false,
+      }),
+    );
+    final a = Archive()
+      ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
+    final zip = Uint8List.fromList(ZipEncoder().encode(a)!);
+
+    await container
+        .read(restoreControllerProvider.notifier)
+        .restore(archiveBytes: zip); // N13: null passphrase, no crash
+
+    final state = container.read(restoreControllerProvider);
+    expect(state.hasValue, isTrue);
+    expect(state.value?.booksRestored, 0);
+  });
 }

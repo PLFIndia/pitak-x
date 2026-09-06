@@ -350,6 +350,29 @@ void main() {
     expect(state, isA<VaultUninitialized>());
   });
 
+  // M12: the delete flow needs "vault never existed" told apart from "locked".
+  test('vaultExists is false only when the vault never existed', () async {
+    final container = makeContainer(_InMemoryVault());
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await container.read(vaultSessionControllerProvider.future);
+    expect(notifier.vaultExists, isFalse); // uninitialized → no vault
+    expect(notifier.isUnlocked, isFalse);
+
+    // Create + lock: the vault now EXISTS (locked), so deletes must still
+    // route through the unlock gate. The fake vault never writes a real
+    // borrowers.db; touchDb() simulates the Rust core having created it.
+    await notifier.enable(good());
+    expect(notifier.vaultExists, isTrue);
+    touchDb();
+    await notifier.lock();
+    expect(
+      await container.read(vaultSessionControllerProvider.future),
+      isA<VaultLocked>(),
+    );
+    expect(notifier.vaultExists, isTrue);
+    expect(notifier.isUnlocked, isFalse);
+  });
+
   test('enable creates, persists the blob, and unlocks', () async {
     final vault = _InMemoryVault();
     final container = makeContainer(vault);

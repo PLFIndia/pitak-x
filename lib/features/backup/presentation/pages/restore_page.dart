@@ -17,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 
@@ -33,6 +34,16 @@ class _RestorePageState extends ConsumerState<RestorePage> {
   final SecurePassphraseController _passphrase = SecurePassphraseController();
   Uint8List? _archiveBytes;
   String? _archiveName;
+
+  /// What the picked archive contains (N13): read from its manifest BEFORE
+  /// any restore so the screen can show what will happen and ask for a
+  /// passphrase only when the archive actually carries an encrypted vault.
+  BackupManifest? _manifest;
+
+  /// Why the picked file could not be read as a backup (bad zip/manifest).
+  Failure? _inspectError;
+
+  bool _inspecting = false;
 
   @override
   void initState() {
@@ -58,21 +69,47 @@ class _RestorePageState extends ConsumerState<RestorePage> {
     setState(() {
       _archiveBytes = bytes;
       _archiveName = file.name;
+      _manifest = null;
+      _inspectError = null;
+      _inspecting = true;
+    });
+    // N13: bounded manifest read first — no restore, no passphrase yet.
+    final inspected = await ref
+        .read(restoreControllerProvider.notifier)
+        .inspectArchive(bytes);
+    if (!mounted) return;
+    setState(() {
+      _inspecting = false;
+      inspected.match((failure) {
+        _inspectError = failure;
+        _manifest = null;
+        // An unreadable archive can never be restored; drop it so the
+        // button state cannot lie.
+        _archiveBytes = null;
+        _archiveName = null;
+      }, (manifest) => _manifest = manifest);
     });
   }
 
+  /// Whether the picked archive needs a passphrase at all (N13): only
+  /// archives carrying an encrypted borrowers vault do.
+  bool get _needsPassphrase => _manifest?.hasBackupBlob ?? false;
+
   bool get _canRestore =>
       _archiveBytes != null &&
-      !_passphrase.isEmpty &&
+      _manifest != null &&
+      !_inspecting &&
+      (!_needsPassphrase || !_passphrase.isEmpty) &&
       !ref.read(restoreControllerProvider).isLoading;
 
   Future<void> _runRestore() async {
     final bytes = _archiveBytes;
-    final secret = _passphrase.takeSecret();
-    if (bytes == null || secret == null) {
-      secret?.dispose();
-      return;
-    }
+    final manifest = _manifest;
+    if (bytes == null || manifest == null) return;
+    // Vault-free archives restore with no passphrase (N13); the restorer
+    // fails closed if a vault is present but no secret was supplied.
+    final secret = manifest.hasBackupBlob ? _passphrase.takeSecret() : null;
+    if (manifest.hasBackupBlob && secret == null) return;
     // The controller takes ownership of `secret` and disposes it.
     await ref
         .read(restoreControllerProvider.notifier)
@@ -101,9 +138,16 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               color: scheme.errorContainer,
               borderRadius: BorderRadius.circular(8),
             ),
+            // N13 + doc-item: "replaces everything" was too broad. The truth:
+            // books/wishlist/covers (and the vault when the backup has one)
+            // are replaced; events, bookmarks, settings and publishing setup
+            // are not in backups at all.
             child: Text(
-              'Restoring replaces everything currently in this app with the '
-              'contents of the backup. This cannot be undone.',
+              'Restoring replaces your books, wishlist and cover images with '
+              'the contents of the backup. If the backup contains a borrowers '
+              'vault, it replaces this device’s vault; if it does not, your '
+              'existing vault is kept. Events, bookmarks, settings and '
+              'publishing setup are not restored. This cannot be undone.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onErrorContainer,
               ),
@@ -111,15 +155,37 @@ class _RestorePageState extends ConsumerState<RestorePage> {
           ),
           const SizedBox(height: 16),
           OutlinedButton.icon(
-            onPressed: state.isLoading ? null : _pickArchive,
+            onPressed: state.isLoading || _inspecting ? null : _pickArchive,
             icon: const Icon(Icons.folder_open),
             label: Text(_archiveName ?? 'Choose .pitabak file'),
           ),
+          if (_inspecting) ...[
+            const SizedBox(height: 12),
+            const Text('Reading the backup…'),
+          ],
+          if (_inspectError != null) ...[
+            const SizedBox(height: 12),
+            Text(
+              _RestoreOutcome.messageFor(_inspectError!),
+              style: textTheme.bodyMedium?.copyWith(color: scheme.error),
+            ),
+          ],
+          if (_manifest != null) ...[
+            const SizedBox(height: 12),
+            _ManifestSummary(manifest: _manifest!),
+          ],
           const SizedBox(height: 16),
-          SecurePassphraseField(
-            controller: _passphrase,
-            onSubmitted: _canRestore ? _runRestore : null,
-          ),
+          if (_needsPassphrase)
+            SecurePassphraseField(
+              controller: _passphrase,
+              onSubmitted: _canRestore ? _runRestore : null,
+            )
+          else if (_manifest != null)
+            Text(
+              'This backup has no borrowers vault, so no passphrase is '
+              'needed.',
+              style: textTheme.bodyMedium,
+            ),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: _canRestore ? _runRestore : null,
@@ -135,6 +201,43 @@ class _RestorePageState extends ConsumerState<RestorePage> {
           _RestoreOutcome(state: state),
         ],
       ),
+    );
+  }
+}
+
+/// Shows what the picked archive contains, straight from its manifest (N13).
+class _ManifestSummary extends StatelessWidget {
+  const _ManifestSummary({required this.manifest});
+
+  final BackupManifest manifest;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final exported = DateTime.fromMillisecondsSinceEpoch(manifest.exportedAt);
+    final date = manifest.exportedAt > 0
+        ? '${exported.year}-'
+              '${exported.month.toString().padLeft(2, '0')}-'
+              '${exported.day.toString().padLeft(2, '0')}'
+        : null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('This backup contains:', style: textTheme.titleSmall),
+        const SizedBox(height: 4),
+        Text(manifest.hasBooks ? '• Books' : '• No books'),
+        Text(manifest.hasWishlist ? '• Wishlist' : '• No wishlist'),
+        Text(
+          manifest.hasBackupBlob
+              ? '• Borrowers vault (encrypted \u2014 passphrase required)'
+              : '• No borrowers vault',
+        ),
+        if (manifest.hasCovers) const Text('• Cover images'),
+        if (date != null) ...[
+          const SizedBox(height: 4),
+          Text('Made on: $date', style: textTheme.bodySmall),
+        ],
+      ],
     );
   }
 }
@@ -194,7 +297,7 @@ class _RestoreOutcome extends StatelessWidget {
         );
       },
       error: (error, _) {
-        final message = _messageFor(error);
+        final message = messageFor(error);
         return Text(
           message,
           style: textTheme.bodyMedium?.copyWith(color: scheme.error),
@@ -204,8 +307,9 @@ class _RestoreOutcome extends StatelessWidget {
   }
 
   /// Maps a sealed [Failure] to safe, user-facing copy (AGENTS.md §5: never
-  /// surface raw exception text).
-  static String _messageFor(Object error) {
+  /// surface raw exception text). Shared by the restore outcome and the
+  /// archive-inspection error (N13).
+  static String messageFor(Object error) {
     if (error is WrongPassphraseFailure) {
       return 'That passphrase did not unlock the backup. Please try again.';
     }
@@ -215,6 +319,9 @@ class _RestoreOutcome extends StatelessWidget {
     }
     if (error is BackupCorruptFailure) {
       return 'This file doesn’t look like a valid Pitak backup.';
+    }
+    if (error is ValidationFailure) {
+      return error.message;
     }
     if (error is StorageFailure) {
       return 'Something went wrong writing the restored data. '

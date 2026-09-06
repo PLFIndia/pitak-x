@@ -91,15 +91,46 @@ final class RestoreBackup {
 
   final LegacyDbOpener _open;
 
-  /// Applies [archiveBytes], unlocking the vault with [passphrase]. The caller
-  /// owns [passphrase] and must dispose it.
+  /// Inspects [archiveBytes] WITHOUT restoring anything (N13): bounded
+  /// extract + manifest parse only. The UI uses this to show what the archive
+  /// contains and whether a passphrase is even required (`hasBackupBlob`).
+  /// Reads no database rows, unlocks nothing, and touches no device state.
+  Future<Either<Failure, BackupManifest>> inspectArchive(
+    Uint8List archiveBytes,
+  ) async {
+    final Map<String, Uint8List> files;
+    try {
+      files = BoundedZipExtractor.extract(archiveBytes);
+    } on BoundedExtractionException catch (e) {
+      return left(BackupCorruptFailure(e.message));
+    }
+    final manifestBytes = files[_manifestEntry];
+    if (manifestBytes == null) {
+      return left(const BackupCorruptFailure('Archive missing manifest.json'));
+    }
+    final manifest = BackupManifest.tryParse(_utf8(manifestBytes));
+    if (manifest == null) {
+      return left(const BackupCorruptFailure('Invalid manifest.json'));
+    }
+    if (manifest.schemaVersion > BackupManifest.knownSchemaVersion) {
+      return left(SchemaTooNewFailure(manifest.schemaVersion));
+    }
+    return right(manifest);
+  }
+
+  /// Applies [archiveBytes], unlocking the vault with [passphrase] when the
+  /// archive carries one. The caller owns [passphrase] and must dispose it.
+  ///
+  /// [passphrase] is null only when the archive holds NO vault (N13: a
+  /// vault-free backup needs no passphrase); when the manifest says a vault
+  /// is present but no passphrase was supplied, restore fails closed.
   ///
   /// Returns a typed [Failure] on any problem, with no partial device writes on
   /// a pre-write failure (extract/manifest/blob). Wrong passphrase is distinct
   /// from a corrupt archive.
   Future<Either<Failure, RestoreSummary>> restore({
     required Uint8List archiveBytes,
-    required SecretBytes passphrase,
+    SecretBytes? passphrase,
   }) async {
     // --- Phase 1: extract (no device writes yet) ---
     final Map<String, Uint8List> files;
@@ -141,6 +172,16 @@ final class RestoreBackup {
       String? stagedVaultDbPath;
       String? vaultBlob;
       if (manifest.hasBackupBlob) {
+        // N13 fail-closed: a vault-bearing archive MUST come with a
+        // passphrase; the UI only omits the field for vault-free archives.
+        if (passphrase == null) {
+          return left(
+            const ValidationFailure(
+              'This backup contains an encrypted borrowers vault. Enter its '
+              'passphrase to restore.',
+            ),
+          );
+        }
         final blobBytes = files[_backupBlobEntry];
         final borrowersBytes = files[_borrowersDbEntry];
         if (blobBytes == null) {

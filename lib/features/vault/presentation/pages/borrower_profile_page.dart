@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/borrower_profile.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -25,14 +26,6 @@ class BorrowerProfilePage extends ConsumerWidget {
 
   /// The borrower whose profile to show.
   final int borrowerId;
-
-  Future<void> _returnLoan(WidgetRef ref, int loanId, Loan loan) async {
-    await ref
-        .read(vaultSessionControllerProvider.notifier)
-        .updateLoan(
-          loan.copyWith(returnedDate: DateTime.now().millisecondsSinceEpoch),
-        );
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -80,16 +73,7 @@ class BorrowerProfilePage extends ConsumerWidget {
               child: Text('Nothing out right now.'),
             )
           else
-            for (final loan in profile.active)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Book #${loan.bookId}'),
-                subtitle: Text(_dueLabel(loan)),
-                trailing: TextButton(
-                  onPressed: () => _returnLoan(ref, loan.id, loan),
-                  child: const Text('Return'),
-                ),
-              ),
+            for (final loan in profile.active) _ActiveLoanTile(loan: loan),
           const SizedBox(height: 16),
           Text('History', style: textTheme.titleMedium),
           if (profile.returned.isEmpty)
@@ -98,29 +82,123 @@ class BorrowerProfilePage extends ConsumerWidget {
               child: Text('No returned loans yet.'),
             )
           else
-            for (final loan in profile.returned)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('Book #${loan.bookId}'),
-                subtitle: Text('Returned ${_date(loan.returnedDate)}'),
-                trailing: const Icon(Icons.check_circle_outline),
-              ),
+            for (final loan in profile.returned) _ReturnedLoanTile(loan: loan),
         ],
       ),
     );
   }
 
-  static String _dueLabel(Loan loan) {
+  /// Due-date label for a loan row (shared with the loan tiles, N06).
+  static String dueLabel(Loan loan) {
     if (loan.dueDate == null) return 'No due date';
-    return 'Due ${_date(loan.dueDate)}';
+    return 'Due ${formatDate(loan.dueDate)}';
   }
 
-  static String _date(int? epochMillis) {
+  /// YYYY-MM-DD for epoch millis (shared with the loan tiles, N06).
+  static String formatDate(int? epochMillis) {
     if (epochMillis == null) return '—';
     final d = DateTime.fromMillisecondsSinceEpoch(epochMillis);
     final m = d.month.toString().padLeft(2, '0');
     final day = d.day.toString().padLeft(2, '0');
     return '${d.year}-$m-$day';
+  }
+}
+
+/// Resolves a loan's book title through the [bookTitleProvider] read model
+/// (N06), falling back to the internal id when the book is gone.
+class _LoanTitle extends ConsumerWidget {
+  const _LoanTitle({required this.bookId});
+
+  final int bookId;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final title = ref.watch(bookTitleProvider(bookId: bookId)).valueOrNull;
+    final text = (title == null || title.trim().isEmpty)
+        ? 'Book #$bookId'
+        : title;
+    return Text(text, overflow: TextOverflow.ellipsis);
+  }
+}
+
+/// An out-on-loan row (N06): shows the book title, per-return progress, and
+/// a typed failure message instead of silently doing nothing. Returning an
+/// already-returned loan is a no-op (idempotent).
+class _ActiveLoanTile extends ConsumerStatefulWidget {
+  const _ActiveLoanTile({required this.loan});
+
+  final Loan loan;
+
+  @override
+  ConsumerState<_ActiveLoanTile> createState() => _ActiveLoanTileState();
+}
+
+class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
+  bool _busy = false;
+
+  Future<void> _return() async {
+    // Idempotent: a loan that is already returned is never written again.
+    if (_busy || widget.loan.returnedDate != null) return;
+    setState(() => _busy = true);
+    final result = await ref
+        .read(vaultSessionControllerProvider.notifier)
+        .updateLoan(
+          widget.loan.copyWith(
+            returnedDate: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (result.isLeft()) {
+      // Safe message only — the Failure reason is never user-facing (§5).
+      final failure = result.swap().toNullable();
+      final message = failure is NotFoundFailure
+          ? 'That loan no longer exists.'
+          : 'Could not return this book. Please try again.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    }
+    // On success the session state changes, the profile rebuilds, and this
+    // loan moves to History on its own.
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: _LoanTitle(bookId: widget.loan.bookId),
+      subtitle: Text(BorrowerProfilePage.dueLabel(widget.loan)),
+      trailing: TextButton(
+        onPressed: _busy ? null : _return,
+        child: _busy
+            ? const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Return'),
+      ),
+    );
+  }
+}
+
+/// A returned-loan history row (N06) with the resolved book title.
+class _ReturnedLoanTile extends StatelessWidget {
+  const _ReturnedLoanTile({required this.loan});
+
+  final Loan loan;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      title: _LoanTitle(bookId: loan.bookId),
+      subtitle: Text(
+        'Returned ${BorrowerProfilePage.formatDate(loan.returnedDate)}',
+      ),
+      trailing: const Icon(Icons.check_circle_outline),
+    );
   }
 }
 
@@ -135,8 +213,13 @@ class _StatsCard extends StatelessWidget {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        // N12: a Wrap instead of a fixed Row — at 320px or large text the
+        // stats flow onto a second line instead of overflowing.
+        child: Wrap(
+          alignment: WrapAlignment.spaceAround,
+          runAlignment: WrapAlignment.spaceAround,
+          spacing: 16,
+          runSpacing: 12,
           children: [
             _Stat(label: 'Loans', value: '${stats.totalLoans}'),
             _Stat(

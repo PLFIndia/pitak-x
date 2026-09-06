@@ -192,9 +192,49 @@ class _SecurePassphraseFieldState extends State<SecurePassphraseField> {
   String? _note;
 
   @override
+  void initState() {
+    super.initState();
+    // N01: the controller is the source of truth for the secret bytes. When
+    // it changes OUTSIDE a keystroke — `takeSecret()` consumed the buffer on
+    // submit, or something called `clear()` — the visible mask must follow,
+    // or stale bullets hide how to retry (astra-review.md N01).
+    widget.controller.addListener(_syncMaskToController);
+  }
+
+  @override
+  void didUpdateWidget(SecurePassphraseField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncMaskToController);
+      widget.controller.addListener(_syncMaskToController);
+      _syncMaskToController();
+    }
+  }
+
+  @override
   void dispose() {
+    widget.controller.removeListener(_syncMaskToController);
     _masked.dispose();
     super.dispose();
+  }
+
+  /// Re-renders the mask from the controller's public byte length (length is
+  /// not secret). Idempotent: a keystroke-driven `_onChanged` also re-renders
+  /// the mask, so running twice for one change is harmless. Never touches the
+  /// secret itself — only the bullet count.
+  void _syncMaskToController() {
+    final len = widget.controller.length;
+    if (len == _prevMaskLen) return;
+    final masked = _bullet * len;
+    _prevMaskLen = masked.length;
+    _masked.value = TextEditingValue(
+      text: masked,
+      selection: TextSelection.collapsed(offset: masked.length),
+    );
+    // A stale "edits are only possible at the end..." note makes no sense
+    // once the field was emptied from outside.
+    if (len == 0 && _note != null) _note = null;
+    setState(() {});
   }
 
   /// The one mask character. Any occurrence of it in a typed DELTA means the

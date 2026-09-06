@@ -460,4 +460,92 @@ void main() {
       (_) => fail('expected corrupt'),
     );
   });
+
+  group('N13 — inspect before restore', () {
+    test('inspectArchive returns the manifest without restoring', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final inspected = await r.inspectArchive(zip);
+      final m = inspected.getOrElse((f) => fail('unexpected: $f'));
+      expect(m.hasBackupBlob, isFalse);
+      expect(m.hasBooks, isTrue);
+      expect(m.hasWishlist, isTrue);
+      // Nothing was written: inspection must not touch the live DB.
+      expect(await db.select(db.books).get(), isEmpty);
+    });
+
+    test('inspectArchive flags a vault-bearing archive', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'borrowers.db': [1, 2, 3],
+        'backup_blob': utf8.encode('salt.iv.ct'),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final m = (await r.inspectArchive(
+        zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(m.hasBackupBlob, isTrue);
+    });
+
+    test('inspectArchive rejects a corrupt archive', () async {
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final inspected = await r.inspectArchive(
+        Uint8List.fromList([0, 1, 2, 3]),
+      );
+      inspected.match(
+        (f) => expect(f, isA<BackupCorruptFailure>()),
+        (_) => fail('expected corrupt'),
+      );
+    });
+
+    test('inspectArchive refuses a too-new schema', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(schemaVersion: 99)),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final inspected = await r.inspectArchive(zip);
+      inspected.match(
+        (f) => expect(f, isA<SchemaTooNewFailure>()),
+        (_) => fail('expected schema-too-new'),
+      );
+    });
+
+    test('a vault-free archive restores with NO passphrase', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      // N13: a vault-free archive restores with NO passphrase argument.
+      final result = await r.restore(archiveBytes: zip);
+      final summary = result.getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.booksRestored, 1);
+      expect(summary.existingVaultKept, isFalse);
+    });
+
+    test('a vault-bearing archive with NO passphrase fails closed', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'borrowers.db': [1, 2, 3],
+        'backup_blob': utf8.encode('salt.iv.ct'),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final result = await r.restore(archiveBytes: zip);
+      result.match(
+        (f) => expect(f, isA<ValidationFailure>()),
+        (_) => fail('expected validation failure'),
+      );
+      // Fail closed BEFORE any device write.
+      expect(await db.select(db.books).get(), isEmpty);
+    });
+  });
 }

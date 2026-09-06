@@ -72,6 +72,13 @@ class VaultSessionController extends _$VaultSessionController
   @override
   bool get isUnlocked => state.valueOrNull is VaultUnlocked;
 
+  /// M12: whether a vault has EVER been created on this device. Only a
+  /// positively-known [VaultUninitialized] is absent; loading/unknown state
+  /// reports present (fail closed) so a delete never skips the unlock gate
+  /// while the session is still resolving.
+  @override
+  bool get vaultExists => state.valueOrNull is! VaultUninitialized;
+
   /// The loans of the unlocked session (for the lending policy); null while
   /// locked or uninitialized.
   @override

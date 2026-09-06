@@ -40,10 +40,13 @@ class _FakeBooks implements BookRepository {
 class _FakePurger implements VaultLoanPurger {
   _FakePurger({
     required this.isUnlocked,
+    this.vaultExists = true,
     this.loansForBook = false,
     this.purgeFailure,
   });
 
+  @override
+  bool vaultExists;
   @override
   bool isUnlocked;
   bool loansForBook;
@@ -62,6 +65,23 @@ class _FakePurger implements VaultLoanPurger {
 }
 
 void main() {
+  // M12 regression: a catalogue-only user (vault never created) used to be
+  // told to "unlock the borrowers vault first" — an unlock that can never
+  // happen because there is no vault. They must be able to delete directly.
+  test(
+    'no vault on device (M12) → deletes directly, no unlock demanded',
+    () async {
+      final books = _FakeBooks();
+      final purger = _FakePurger(isUnlocked: false, vaultExists: false);
+      final useCase = DeleteBookUseCase(books: books, vault: purger);
+
+      final result = await useCase(9);
+      expect(result.getOrElse((_) => fail('right')), DeleteBookOutcome.deleted);
+      expect(books.deleted, [9]);
+      expect(purger.purgeCalls, 0);
+    },
+  );
+
   test('locked vault → requiresVaultUnlock, nothing deleted', () async {
     final books = _FakeBooks();
     final purger = _FakePurger(isUnlocked: false);

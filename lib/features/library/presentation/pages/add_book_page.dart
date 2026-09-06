@@ -23,6 +23,7 @@ import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// Form screen to add a new book or edit an existing one.
@@ -62,6 +63,15 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   late int _addedDate;
   bool _titleError = false;
 
+  /// N02: the cover URL a successful lookup returned, kept ONLY when it
+  /// passes the publish allow-list (https + fixed host set). Null until a
+  /// lookup supplies one; an existing cover on the book always wins.
+  String? _lookupCoverUrl;
+
+  /// N02: the "needs metadata" flag is now user-editable, so a completed
+  /// lookup (or manual fill-in) can clear the permanently-pending state.
+  late bool _needsMetadata;
+
   bool get _isEdit => widget.book != null;
 
   @override
@@ -84,6 +94,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     _sourceType = b?.sourceType;
     _ageGroup = b?.ageGroup;
     _addedDate = b?.addedDate ?? DateTime.now().millisecondsSinceEpoch;
+    _needsMetadata = b?.needsMetadata ?? false;
   }
 
   @override
@@ -153,6 +164,12 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   }
 
   /// Fills only empty fields from [m] (user-entered values win).
+  ///
+  /// N02: also keeps the lookup's cover URL — but only when it passes
+  /// [CoverUrlAllowList] (the same https + fixed-host policy publishing
+  /// enforces), so a poisoned lookup response cannot plant an arbitrary
+  /// beacon host — and clears the "needs metadata" flag, since the lookup
+  /// just completed it. Both stay user-adjustable before saving.
   void _applyMetadata(BookMetadata m) {
     void fillIfEmpty(TextEditingController c, String? value) {
       if (value != null && value.trim().isNotEmpty && c.text.trim().isEmpty) {
@@ -168,6 +185,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       fillIfEmpty(_genre, m.genre);
       fillIfEmpty(_language, m.language);
       fillIfEmpty(_pages, m.pageCount?.toString());
+      final safeCover = CoverUrlAllowList.sanitize(m.coverUrl);
+      if (safeCover != null) _lookupCoverUrl = safeCover;
+      _needsMetadata = false;
       if (_titleError && _title.text.trim().isNotEmpty) _titleError = false;
     });
   }
@@ -193,7 +213,11 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       publisher: _trimToNull(_publisher),
       publishedYear: int.tryParse(_year.text.trim()),
       genre: _trimToNull(_genre),
-      coverUrl: base?.coverUrl,
+      // N02: an existing cover always wins; otherwise use the validated
+      // lookup cover when one was found.
+      coverUrl: (base?.coverUrl?.trim().isNotEmpty ?? false)
+          ? base!.coverUrl
+          : _lookupCoverUrl,
       pageCount: int.tryParse(_pages.text.trim()),
       language: _trimToNull(_language),
       notes: _trimToNull(_notes),
@@ -203,7 +227,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       ageGroup: _ageGroup,
       addedDate: _addedDate,
       copyCount: qty < 1 ? 1 : qty,
-      needsMetadata: base?.needsMetadata ?? false,
+      needsMetadata: _needsMetadata,
       removed: base?.removed ?? false,
       removedAt: base?.removedAt,
       // Stamp the maintainer name onto a NEW book that has none yet (mirrors
@@ -376,6 +400,17 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
           ),
           const SizedBox(height: 12),
           _field(_notes, 'Notes', maxLines: 4),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Metadata incomplete'),
+            subtitle: const Text(
+              'On while this book still needs details (title, author, '
+              'cover…). A successful lookup clears it; turn it back on '
+              'any time.',
+            ),
+            value: _needsMetadata,
+            onChanged: (v) => setState(() => _needsMetadata = v),
+          ),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: saving ? null : _save,

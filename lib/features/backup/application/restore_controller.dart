@@ -12,8 +12,11 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -26,12 +29,26 @@ class RestoreController extends _$RestoreController {
   @override
   FutureOr<RestoreSummary?> build() => null; // idle until restore() is run
 
+  /// Inspects the archive's manifest WITHOUT restoring (N13): the Restore
+  /// screen runs this right after a file is picked so it can show what the
+  /// backup contains and ask for a passphrase only when the archive actually
+  /// carries an encrypted vault.
+  Future<Either<Failure, BackupManifest>> inspectArchive(
+    Uint8List archiveBytes,
+  ) async {
+    final restorer = await ref.read(restoreBackupProvider.future);
+    return restorer.inspectArchive(archiveBytes);
+  }
+
   /// Restores [archiveBytes] using [passphrase]. Takes ownership of
   /// [passphrase] and disposes it when done. State becomes loading, then either
   /// `AsyncData(summary)` or `AsyncError(Failure)`.
+  ///
+  /// [passphrase] is null only for vault-free archives (N13); the restorer
+  /// fails closed if a vault is present but no passphrase was supplied.
   Future<void> restore({
     required Uint8List archiveBytes,
-    required SecretBytes passphrase,
+    SecretBytes? passphrase,
   }) async {
     state = const AsyncLoading();
     try {
@@ -56,8 +73,9 @@ class RestoreController extends _$RestoreController {
         },
       );
     } finally {
-      // §6.1: wipe the passphrase regardless of outcome.
-      passphrase.dispose();
+      // §6.1: wipe the passphrase regardless of outcome (null for vault-free
+      // archives — nothing to wipe).
+      passphrase?.dispose();
     }
   }
 }

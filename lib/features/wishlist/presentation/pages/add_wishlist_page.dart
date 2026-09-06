@@ -20,6 +20,7 @@ import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/wishlist/application/add_wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -48,6 +49,13 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
   int _priority = WishlistBook.priorityMed;
   bool _titleError = false;
 
+  /// N02: the cover URL a successful lookup returned, kept ONLY when it
+  /// passes the publish allow-list. An existing cover on the entry wins.
+  String? _lookupCoverUrl;
+
+  /// N02: user-editable "needs metadata" flag (a lookup clears it).
+  late bool _needsMetadata;
+
   bool get _isEdit => widget.book != null;
 
   @override
@@ -62,6 +70,7 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
     _price = TextEditingController(text: b?.priceEstimate?.toString());
     _notes = TextEditingController(text: b?.notes);
     _priority = b?.priority ?? WishlistBook.priorityMed;
+    _needsMetadata = b?.needsMetadata ?? false;
   }
 
   @override
@@ -124,6 +133,10 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
 
   /// Fills only empty fields from [m] (user-entered values win). The wishlist
   /// form has a subset of Book's fields; lookup-only extras are ignored.
+  ///
+  /// N02: keeps the lookup's cover URL when it passes [CoverUrlAllowList]
+  /// (https + fixed host set — a poisoned lookup cannot plant a beacon
+  /// host) and clears the "needs metadata" flag the lookup just completed.
   void _applyMetadata(BookMetadata m) {
     void fillIfEmpty(TextEditingController c, String? value) {
       if (value != null && value.trim().isNotEmpty && c.text.trim().isEmpty) {
@@ -136,6 +149,9 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
       fillIfEmpty(_author, m.author);
       fillIfEmpty(_publisher, m.publisher);
       fillIfEmpty(_year, m.publishedYear?.toString());
+      final safeCover = CoverUrlAllowList.sanitize(m.coverUrl);
+      if (safeCover != null) _lookupCoverUrl = safeCover;
+      _needsMetadata = false;
       if (_titleError && _title.text.trim().isNotEmpty) _titleError = false;
     });
   }
@@ -157,7 +173,10 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
       isbn: _trimToNull(_isbn),
       publisher: _trimToNull(_publisher),
       publishedYear: int.tryParse(_year.text.trim()),
-      coverUrl: base?.coverUrl,
+      // N02: an existing cover wins; otherwise the validated lookup cover.
+      coverUrl: (base?.coverUrl?.trim().isNotEmpty ?? false)
+          ? base!.coverUrl
+          : _lookupCoverUrl,
       priceEstimate: double.tryParse(_price.text.trim()),
       priority: _priority,
       notes: _trimToNull(_notes),
@@ -166,7 +185,7 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
       addedDate: base?.addedDate ?? DateTime.now().millisecondsSinceEpoch,
       purchased: base?.purchased ?? false,
       purchasedDate: base?.purchasedDate,
-      needsMetadata: base?.needsMetadata ?? false,
+      needsMetadata: _needsMetadata,
     );
   }
 
@@ -282,6 +301,16 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
           ),
           const SizedBox(height: 12),
           _field(_notes, 'Notes', maxLines: 4),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Metadata incomplete'),
+            subtitle: const Text(
+              'On while this entry still needs details. A successful lookup '
+              'clears it; turn it back on any time.',
+            ),
+            value: _needsMetadata,
+            onChanged: (v) => setState(() => _needsMetadata = v),
+          ),
           const SizedBox(height: 24),
           FilledButton(
             onPressed: saving ? null : _save,
