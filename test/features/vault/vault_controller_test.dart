@@ -7,10 +7,10 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/vault/application/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/application/vault_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
 
 import 'vault_repository_write_stub.dart';
 

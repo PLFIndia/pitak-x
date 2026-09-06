@@ -51,6 +51,7 @@ class _ScriptedApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) => throw UnimplementedError();
   @override
   Future<String?> defaultBranch({

@@ -67,6 +67,7 @@ class _CapturingApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) async {
     committed = files;
     return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);

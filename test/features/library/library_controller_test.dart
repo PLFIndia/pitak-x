@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -84,6 +86,27 @@ class _FakeBookRepo implements BookRepository {
       right(books.length);
 }
 
+/// Repo whose search completions are manually gated, so an OLD query's
+/// result can be landed AFTER a newer query's (N05 race).
+class _GatedSearchRepo extends _FakeBookRepo {
+  _GatedSearchRepo(super.all);
+  final Map<String, Completer<List<Book>>> gates = {};
+
+  @override
+  Future<Either<Failure, List<Book>>> search(String query) =>
+      (gates[query] ??= Completer<List<Book>>()).future.then(right);
+}
+
+/// Repo whose search always returns a fixed unsorted list (N05 sort check).
+class _FixedSearchRepo extends _FakeBookRepo {
+  _FixedSearchRepo(super.all, this.searchResults);
+  final List<Book> searchResults;
+
+  @override
+  Future<Either<Failure, List<Book>>> search(String query) async =>
+      right(searchResults);
+}
+
 /// In-memory settings repo so the settings controller (and its sort value)
 /// can be driven without shared_preferences.
 class _FakeSettingsRepo implements SettingsRepository {
@@ -92,46 +115,60 @@ class _FakeSettingsRepo implements SettingsRepository {
   @override
   Future<AppSettings> load() async => settings;
   @override
-  Future<void> setLibrarySort(BookSort sort) async {
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async {
     settings = settings.copyWith(librarySort: sort);
+    return right(unit);
   }
 
   @override
-  Future<void> setThemeMode(AppThemeMode mode) async {}
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
   @override
-  Future<void> setLibraryName(String name) async {}
+  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
+      right(unit);
   @override
-  Future<String> getOrCreateLibraryId() async => 'a' * 32;
+  Future<Either<Failure, String>> getOrCreateLibraryId() async =>
+      right('a' * 32);
   @override
-  Future<void> setLibraryId(String id) async {}
+  Future<Either<Failure, Unit>> setLibraryId(String id) async => right(unit);
   @override
-  Future<String> regenerateLibraryId() async => 'b' * 32;
+  Future<Either<Failure, String>> regenerateLibraryId() async =>
+      right('b' * 32);
   @override
-  Future<void> setMaintainerName(String name) async {}
+  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
+      right(unit);
   @override
-  Future<void> setLoadRemoteCovers({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
   @override
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
     required String phone,
-  }) async {}
+  }) async => right(unit);
   @override
-  Future<void> setLibraryLogo(String reference) async {}
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
+      right(unit);
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 void main() {
   const books = [Book(id: 1, title: 'Dune', author: 'Herbert')];
 
-  ProviderContainer makeContainer(_FakeBookRepo repo) {
+  ProviderContainer makeContainer(
+    _FakeBookRepo repo, {
+    _FakeSettingsRepo? settings,
+  }) {
     final container = ProviderContainer(
       overrides: [
         bookRepositoryProvider.overrideWith((ref) async => repo),
         settingsRepositoryProvider.overrideWith(
-          (ref) async => _FakeSettingsRepo(),
+          (ref) async => settings ?? _FakeSettingsRepo(),
         ),
       ],
     );
@@ -204,4 +241,61 @@ void main() {
       expect(repo.sortsSeen, contains(BookSort.languageAsc));
     },
   );
+
+  // N05 regressions (astra-review.md): a cancelled debounce does NOT cancel
+  // an already-running query, and search used to ignore the selected sort.
+  test('N05: a slow old search cannot overwrite a newer query', () async {
+    final repo = _GatedSearchRepo(const []);
+    // A listener mirrors the mounted UI: without it the autoDispose provider
+    // is torn down mid-test and cancels its own debounce.
+    final container = makeContainer(repo)
+      ..listen(libraryControllerProvider, (_, _) {});
+    final notifier = container.read(libraryControllerProvider.notifier);
+    await container.read(libraryControllerProvider.future);
+
+    notifier.onQueryChanged('slow');
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    notifier.onQueryChanged('fast');
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+
+    // Complete the NEW query first, then let the OLD one land late.
+    repo.gates['fast']!.complete([const Book(id: 2, title: 'FAST')]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    repo.gates['slow']!.complete([const Book(id: 1, title: 'SLOW')]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    final list = container.read(libraryControllerProvider).value!;
+    expect(list.single.title, 'FAST');
+  });
+
+  test('N05: search results honor the persisted sort', () async {
+    final repo = _FixedSearchRepo(const [], [
+      const Book(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
+      const Book(
+        id: 2,
+        title: 'afrikaans',
+        addedDate: 2,
+        language: 'Afrikaans',
+      ),
+    ]);
+    final settings = _FakeSettingsRepo()
+      ..settings = AppSettings.defaults.copyWith(
+        librarySort: BookSort.languageAsc,
+      );
+    final container = makeContainer(repo, settings: settings)
+      ..listen(libraryControllerProvider, (_, _) {}); // keep alive
+    final notifier = container.read(libraryControllerProvider.notifier);
+    await container.read(libraryControllerProvider.future);
+
+    notifier.onQueryChanged('x');
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await container.read(libraryControllerProvider.future);
+
+    final titles = container
+        .read(libraryControllerProvider)
+        .value!
+        .map((x) => x.title)
+        .toList();
+    expect(titles, ['afrikaans', 'zulu']);
+  });
 }

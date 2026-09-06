@@ -192,7 +192,7 @@ final coverFileCoordinatorProvider = Provider<CoverFileCoordinator>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CoverFileCoordinatorRef = ProviderRef<CoverFileCoordinator>;
-String _$coverFileJanitorHash() => r'7d17377008cdb5dfd08bec95a3ff19e8cb0d6c33';
+String _$coverFileJanitorHash() => r'84e84acfff56b9566de8f56654ed51b13214ef4f';
 
 /// Removes cover files nothing references any more (decision Q12). Used right
 /// after a cover/logo is replaced or a book hard-deleted, and once at startup
@@ -681,6 +681,30 @@ final remoteCoverFetcherProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
+String _$publishLocalCoverReaderHash() =>
+    r'e4afffa4a1e4a55a6150cb829b6618cf9705b70f';
+
+/// Local cover-file reader for publishing (N14): the file IO the publish
+/// controller used to do itself (dart:io in the application layer). Injected
+/// as a function port, rooted at the app's covers directory.
+///
+/// Copied from [publishLocalCoverReader].
+@ProviderFor(publishLocalCoverReader)
+final publishLocalCoverReaderProvider =
+    AutoDisposeFutureProvider<Future<List<int>?> Function(String)>.internal(
+      publishLocalCoverReader,
+      name: r'publishLocalCoverReaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishLocalCoverReaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishLocalCoverReaderRef =
+    AutoDisposeFutureProviderRef<Future<List<int>?> Function(String)>;
 String _$publishedFileFetcherHash() =>
     r'2e06db835520facdf9a4b173f72cea48e65d2ef4';
 
@@ -961,7 +985,7 @@ final activeLoanCountsProvider = AutoDisposeProvider<Map<int, int>?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveLoanCountsRef = AutoDisposeProviderRef<Map<int, int>?>;
-String _$borrowerProfileHash() => r'64dd91226f28e204c8931b3f847fc9bf21c4ab76';
+String _$bookTitleHash() => r'18288cb119e846085af5914659110098ed2a0893';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -983,6 +1007,147 @@ class _SystemHash {
     return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
   }
 }
+
+/// Loan-row read model (N06): resolves the catalogue title of a loaned book
+/// so borrower screens show the book's name instead of the internal row id.
+/// Null when the book no longer exists (the UI falls back to "Book #id").
+///
+/// Copied from [bookTitle].
+@ProviderFor(bookTitle)
+const bookTitleProvider = BookTitleFamily();
+
+/// Loan-row read model (N06): resolves the catalogue title of a loaned book
+/// so borrower screens show the book's name instead of the internal row id.
+/// Null when the book no longer exists (the UI falls back to "Book #id").
+///
+/// Copied from [bookTitle].
+class BookTitleFamily extends Family<AsyncValue<String?>> {
+  /// Loan-row read model (N06): resolves the catalogue title of a loaned book
+  /// so borrower screens show the book's name instead of the internal row id.
+  /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// Copied from [bookTitle].
+  const BookTitleFamily();
+
+  /// Loan-row read model (N06): resolves the catalogue title of a loaned book
+  /// so borrower screens show the book's name instead of the internal row id.
+  /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// Copied from [bookTitle].
+  BookTitleProvider call({required int bookId}) {
+    return BookTitleProvider(bookId: bookId);
+  }
+
+  @override
+  BookTitleProvider getProviderOverride(covariant BookTitleProvider provider) {
+    return call(bookId: provider.bookId);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'bookTitleProvider';
+}
+
+/// Loan-row read model (N06): resolves the catalogue title of a loaned book
+/// so borrower screens show the book's name instead of the internal row id.
+/// Null when the book no longer exists (the UI falls back to "Book #id").
+///
+/// Copied from [bookTitle].
+class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
+  /// Loan-row read model (N06): resolves the catalogue title of a loaned book
+  /// so borrower screens show the book's name instead of the internal row id.
+  /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// Copied from [bookTitle].
+  BookTitleProvider({required int bookId})
+    : this._internal(
+        (ref) => bookTitle(ref as BookTitleRef, bookId: bookId),
+        from: bookTitleProvider,
+        name: r'bookTitleProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$bookTitleHash,
+        dependencies: BookTitleFamily._dependencies,
+        allTransitiveDependencies: BookTitleFamily._allTransitiveDependencies,
+        bookId: bookId,
+      );
+
+  BookTitleProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.bookId,
+  }) : super.internal();
+
+  final int bookId;
+
+  @override
+  Override overrideWith(
+    FutureOr<String?> Function(BookTitleRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: BookTitleProvider._internal(
+        (ref) => create(ref as BookTitleRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        bookId: bookId,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<String?> createElement() {
+    return _BookTitleProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is BookTitleProvider && other.bookId == bookId;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, bookId.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin BookTitleRef on AutoDisposeFutureProviderRef<String?> {
+  /// The parameter `bookId` of this provider.
+  int get bookId;
+}
+
+class _BookTitleProviderElement
+    extends AutoDisposeFutureProviderElement<String?>
+    with BookTitleRef {
+  _BookTitleProviderElement(super.provider);
+
+  @override
+  int get bookId => (origin as BookTitleProvider).bookId;
+}
+
+String _$borrowerProfileHash() => r'64dd91226f28e204c8931b3f847fc9bf21c4ab76';
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
@@ -1213,7 +1378,7 @@ final bundleCoverFilesProvider =
 // ignore: unused_element
 typedef BundleCoverFilesRef = AutoDisposeFutureProviderRef<BundleCoverFiles>;
 String _$importLibraryUseCaseHash() =>
-    r'7b84c6eb03884f248819d8fa3903076c7aabd2a2';
+    r'30ac257e30c36a352ce4ff67e895c819020133a2';
 
 /// One-shot library/wishlist import use case.
 ///
@@ -1234,8 +1399,53 @@ final importLibraryUseCaseProvider =
 // ignore: unused_element
 typedef ImportLibraryUseCaseRef =
     AutoDisposeFutureProviderRef<ImportLibraryUseCase>;
+String _$exportLogoReaderHash() => r'a98726e103d90ec921020da91e345d46495304d5';
+
+/// Library-logo file reader for exports (N14): file IO injected as a port;
+/// the application controller no longer touches dart:io.
+///
+/// Copied from [exportLogoReader].
+@ProviderFor(exportLogoReader)
+final exportLogoReaderProvider =
+    AutoDisposeFutureProvider<Future<Uint8List?> Function(String)>.internal(
+      exportLogoReader,
+      name: r'exportLogoReaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$exportLogoReaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ExportLogoReaderRef =
+    AutoDisposeFutureProviderRef<Future<Uint8List?> Function(String)>;
+String _$eventsPosterReaderHash() =>
+    r'8c4ec79276a4cd17122505a0b19484db9e750563';
+
+/// Event-poster file reader for publishing (N14): file IO injected as the
+/// `PosterBytesReader` port; the events controller no longer touches dart:io.
+///
+/// Copied from [eventsPosterReader].
+@ProviderFor(eventsPosterReader)
+final eventsPosterReaderProvider =
+    AutoDisposeFutureProvider<Future<List<int>?> Function(String)>.internal(
+      eventsPosterReader,
+      name: r'eventsPosterReaderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$eventsPosterReaderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef EventsPosterReaderRef =
+    AutoDisposeFutureProviderRef<Future<List<int>?> Function(String)>;
 String _$exportLibraryUseCaseHash() =>
-    r'394ba07b4ce6c110421ddf992e9d4599d11fe908';
+    r'efe6913015990d9cd6a03e40e1b26de914f4e14e';
 
 /// One-shot library/wishlist export use case.
 ///
@@ -1303,7 +1513,7 @@ final pdfTextRasterizerProvider =
 // ignore: unused_element
 typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
-    r'4fc770346e2bd2509b0472f938660e38f95635a5';
+    r'dfc37a47af5e1567d68b7b2d33c97b4baf7c9b8c';
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID

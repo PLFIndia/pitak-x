@@ -214,6 +214,12 @@ abstract interface class GitHubApi {
   /// (blobs → tree(base) → commit → move ref). Only `upload`-flagged files
   /// have their bytes sent; the rest are reused by sha.
   ///
+  /// [deletePaths] (M14) lists repo-relative paths to REMOVE in the same
+  /// commit: GitHub's create-tree API deletes any entry whose `sha` is null
+  /// (verified against GitHub's official OpenAPI description, 2026-09). Only
+  /// paths that actually exist in the base tree are affected; callers pass
+  /// app-owned paths they previously published.
+  ///
   /// Requires an initialized [branch] (repo creation uses `auto_init`).
   /// Resolves its head and base tree before any writes. HTTP read failures
   /// return [PublishCommitHttpError]; malformed responses and transport
@@ -225,5 +231,6 @@ abstract interface class GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths,
   });
 }

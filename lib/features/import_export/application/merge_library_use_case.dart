@@ -29,7 +29,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -124,14 +124,16 @@ final class MergeLibraryUseCase {
   const MergeLibraryUseCase({
     required BookRepository bookRepo,
     required SettingsRepository settings,
-    PitakaJsonImporter jsonImporter = const PitakaJsonImporter(),
+    // N14: the concrete JSON codec lives in infrastructure; the use case
+    // depends on the domain port and gets the implementation via DI.
+    required LibraryJsonParser jsonParser,
   }) : _bookRepo = bookRepo,
        _settings = settings,
-       _json = jsonImporter;
+       _json = jsonParser;
 
   final BookRepository _bookRepo;
   final SettingsRepository _settings;
-  final PitakaJsonImporter _json;
+  final LibraryJsonParser _json;
 
   /// Runs the ID gate and (on a match) the engine merge.
   Future<Either<Failure, MergeOutcome>> call(String text) async {
@@ -156,7 +158,13 @@ final class MergeLibraryUseCase {
         LibraryId.normalizeOrNull(envelope.libraryId) ?? '';
     final incomingLibraryName = envelope.libraryName;
 
-    final localLibraryId = (await _settings.getOrCreateLibraryId()).trim();
+    // M17: a failed ID read/mint must not be papered over with a blank ID —
+    // that would route every file into the "differing IDs" decision path.
+    final localIdResult = await _settings.getOrCreateLibraryId();
+    if (localIdResult.isLeft()) {
+      return localIdResult.match(left, (_) => throw StateError('unreachable'));
+    }
+    final localLibraryId = localIdResult.getOrElse((_) => '').trim();
     final settings = await _settings.load();
 
     // ID gate (D40). Match → merge. Differ (or incoming has no ID) → decision.
@@ -187,9 +195,19 @@ final class MergeLibraryUseCase {
     MergeDiffersDecision decision,
   ) async {
     if (decision.incomingLibraryId.isNotEmpty) {
-      await _settings.setLibraryId(decision.incomingLibraryId);
+      // M17: namespace adoption is fail-closed — a silent half-adoption
+      // would poison future merge identity (see also N07).
+      final adopted = await _settings.setLibraryId(decision.incomingLibraryId);
+      if (adopted.isLeft()) {
+        return adopted.match(left, (_) => throw StateError('unreachable'));
+      }
       if (decision.incomingLibraryName.isNotEmpty) {
-        await _settings.setLibraryName(decision.incomingLibraryName);
+        final named = await _settings.setLibraryName(
+          decision.incomingLibraryName,
+        );
+        if (named.isLeft()) {
+          return named.match(left, (_) => throw StateError('unreachable'));
+        }
       }
     }
     return _applyEngineMerge(decision.incomingBooks);
@@ -212,9 +230,20 @@ final class MergeLibraryUseCase {
     );
     if (replaced.isLeft()) return replaced.map((_) => unit);
     if (decision.incomingLibraryId.isNotEmpty) {
-      await _settings.setLibraryId(decision.incomingLibraryId);
+      // M17: the catalogue was already replaced above; a failed ID adoption
+      // still surfaces as an error so the user knows the namespace was NOT
+      // adopted (data replaced + old ID is reported, never silent).
+      final adopted = await _settings.setLibraryId(decision.incomingLibraryId);
+      if (adopted.isLeft()) {
+        return adopted.match(left, (_) => throw StateError('unreachable'));
+      }
       if (decision.incomingLibraryName.isNotEmpty) {
-        await _settings.setLibraryName(decision.incomingLibraryName);
+        final named = await _settings.setLibraryName(
+          decision.incomingLibraryName,
+        );
+        if (named.isLeft()) {
+          return named.match(left, (_) => throw StateError('unreachable'));
+        }
       }
     }
     return right(unit);

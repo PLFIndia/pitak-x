@@ -8,7 +8,7 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:freezed_annotation/freezed_annotation.dart' hide protected;
 part 'api.freezed.dart';
 
-// These functions are ignored because they are not marked as `pub`: `map_unwrap_err_bio`, `map_unwrap_err_rewrap`, `map_unwrap_err_write`, `map_unwrap_err`, `map_vault_err_create`, `map_vault_err_write`, `map_vault_err`, `map_wrap_err_bio`, `map_wrap_err_rewrap`, `map_wrap_err`, `unlock_inner`, `with_vault_key`
+// These functions are ignored because they are not marked as `pub`: `map_unwrap_err_bio`, `map_unwrap_err_rewrap`, `map_unwrap_err_write`, `map_unwrap_err`, `map_vault_err_create`, `map_vault_err_write`, `map_vault_err`, `map_wrap_err_bio`, `map_wrap_err_rewrap`, `map_wrap_err`, `unlock_inner`, `validate_borrower_fields`, `validate_date`, `validate_loan_fields`, `validate_text`, `with_vault_key`
 // These function are ignored because they are on traits that is not defined in current crate (put an empty `#[frb]` on it to unignore): `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`, `fmt`
 
 /// Unwraps the backup blob with `passphrase_utf8`, opens `borrowers.db` at
@@ -377,4 +377,10 @@ sealed class VaultWriteError with _$VaultWriteError implements FrbException {
 
   /// update/delete targeted an id that does not exist → `NotFoundFailure`.
   const factory VaultWriteError.notFound() = VaultWriteError_NotFound;
+
+  /// Input failed FFI-boundary validation (empty/over-long fields,
+  /// non-positive ids, out-of-range dates) → `ValidationFailure` (N14:
+  /// every argument crossing the boundary is validated, global AGENTS §2).
+  const factory VaultWriteError.validation(String field0) =
+      VaultWriteError_Validation;
 }

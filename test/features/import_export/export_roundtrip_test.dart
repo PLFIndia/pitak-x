@@ -5,8 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_exporter.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -119,6 +120,8 @@ void main() {
 
   test('JSON export re-imports losslessly (round-trip)', () async {
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
     );
@@ -154,6 +157,8 @@ void main() {
 
   test('scope libraryOnly excludes wishlist', () async {
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
     );
@@ -169,6 +174,8 @@ void main() {
 
   test('CSV export has a header and one row per book', () async {
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
     );
@@ -201,6 +208,8 @@ void main() {
       Book(title: 'Normal title', addedDate: 7),
     ];
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(hostile),
       wishlistRepo: _Wishlist(const []),
     );
@@ -227,6 +236,8 @@ void main() {
 
   test('PDF export produces a valid PDF of the library list', () async {
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
     );
@@ -255,6 +266,8 @@ void main() {
 
   test('PDF export with a header logo still produces a valid PDF', () async {
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
     );

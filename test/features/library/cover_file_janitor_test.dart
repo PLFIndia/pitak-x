@@ -10,9 +10,11 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
+import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 class _Books implements BookRepository {
-  _Books(this.rows, {this.fail = false});
+  const _Books(this.rows, {this.fail = false});
   final List<Book> rows;
   final bool fail;
 
@@ -32,6 +34,21 @@ class _Settings implements SettingsRepository {
   @override
   Future<AppSettings> load() async =>
       AppSettings.defaults.copyWith(libraryLogo: logo);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
+/// M11: wishlist rows are cover-reference owners too.
+class _Wishlist implements WishlistRepository {
+  const _Wishlist(this.rows, {this.fail = false});
+  final List<WishlistBook> rows;
+  final bool fail;
+
+  @override
+  Future<Either<Failure, List<WishlistBook>>> getAll() async =>
+      fail ? left(const StorageFailure('db closed')) : right(rows);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -60,11 +77,12 @@ void main() {
 
   test('sweep removes only unreferenced cover-shaped files', () async {
     final janitor = CoverFileJanitor(
-      books: _Books([
-        const Book(title: 'A', coverUrl: 'covers/$a'),
-        const Book(title: 'B', coverUrl: 'file:///old/path/$b'), // legacy ref
-        const Book(title: 'R', coverUrl: 'https://covers.openlibrary.org/x'),
+      books: const _Books([
+        Book(title: 'A', coverUrl: 'covers/$a'),
+        Book(title: 'B', coverUrl: 'file:///old/path/$b'), // legacy ref
+        Book(title: 'R', coverUrl: 'https://covers.openlibrary.org/x'),
       ]),
+      wishlist: const _Wishlist([]),
       settings: _Settings(logo: 'covers/$logo'),
       store: store,
       coordinator: CoverFileCoordinator(),
@@ -77,7 +95,8 @@ void main() {
 
   test('sweep deletes NOTHING when the database cannot be read', () async {
     final janitor = CoverFileJanitor(
-      books: _Books(const [], fail: true),
+      books: const _Books([], fail: true),
+      wishlist: const _Wishlist([]),
       settings: _Settings(),
       store: store,
       coordinator: CoverFileCoordinator(),
@@ -90,7 +109,8 @@ void main() {
     'releaseReference deletes a file only once nothing points at it',
     () async {
       final janitor = CoverFileJanitor(
-        books: _Books([const Book(title: 'A', coverUrl: 'covers/$a')]),
+        books: const _Books([Book(title: 'A', coverUrl: 'covers/$a')]),
+        wishlist: const _Wishlist([]),
         settings: _Settings(logo: 'covers/$logo'),
         store: store,
         coordinator: CoverFileCoordinator(),
@@ -108,4 +128,57 @@ void main() {
       expect(File('${tmp.path}/notes.txt').existsSync(), isTrue);
     },
   );
+
+  // M11 regression: the janitor used to collect references from library
+  // books + logo ONLY, so a startup sweep deleted covers owned solely by a
+  // wishlist entry, and releasing a library book could delete a cover the
+  // wishlist still shared.
+  test('M11: a wishlist-only cover survives the startup sweep', () async {
+    final janitor = CoverFileJanitor(
+      books: const _Books([]), // no library book references $orphan...
+      wishlist: const _Wishlist([
+        WishlistBook(
+          title: 'W',
+          coverUrl: 'covers/$orphan',
+        ), // ...wishlist does
+      ]),
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+    await janitor.sweep();
+    expect(File('${tmp.path}/$orphan').existsSync(), isTrue);
+  });
+
+  test(
+    'M11: a cover shared with the wishlist survives a book release',
+    () async {
+      final janitor = CoverFileJanitor(
+        books: const _Books([]), // the library book is already gone...
+        wishlist: const _Wishlist([
+          WishlistBook(
+            title: 'W',
+            coverUrl: 'covers/$a',
+          ), // ...wishlist still holds it
+        ]),
+        settings: _Settings(),
+        store: store,
+        coordinator: CoverFileCoordinator(),
+      );
+      await janitor.releaseReference('covers/$a');
+      expect(File('${tmp.path}/$a').existsSync(), isTrue);
+    },
+  );
+
+  test('M11: an unreadable wishlist fails closed (nothing deleted)', () async {
+    final janitor = CoverFileJanitor(
+      books: const _Books([]),
+      wishlist: const _Wishlist([], fail: true),
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+    expect(await janitor.sweep(), 0);
+    expect(leaves(), {a, b, logo, orphan, 'notes.txt'});
+  });
 }

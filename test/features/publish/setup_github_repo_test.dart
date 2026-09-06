@@ -85,6 +85,7 @@ class _SetupApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) => throw UnimplementedError();
 }
 

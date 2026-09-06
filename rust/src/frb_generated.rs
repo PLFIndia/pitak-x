@@ -737,6 +737,10 @@ impl SseDecode for crate::api::VaultWriteError {
             4 => {
                 return crate::api::VaultWriteError::NotFound;
             }
+            5 => {
+                let mut var_field0 = <String>::sse_decode(deserializer);
+                return crate::api::VaultWriteError::Validation(var_field0);
+            }
             _ => {
                 unimplemented!("");
             }
@@ -986,6 +990,9 @@ impl flutter_rust_bridge::IntoDart for crate::api::VaultWriteError {
                 [3.into_dart(), field0.into_into_dart().into_dart()].into_dart()
             }
             crate::api::VaultWriteError::NotFound => [4.into_dart()].into_dart(),
+            crate::api::VaultWriteError::Validation(field0) => {
+                [5.into_dart(), field0.into_into_dart().into_dart()].into_dart()
+            }
             _ => {
                 unimplemented!("");
             }
@@ -1226,6 +1233,10 @@ impl SseEncode for crate::api::VaultWriteError {
             }
             crate::api::VaultWriteError::NotFound => {
                 <i32>::sse_encode(4, serializer);
+            }
+            crate::api::VaultWriteError::Validation(field0) => {
+                <i32>::sse_encode(5, serializer);
+                <String>::sse_encode(field0, serializer);
             }
             _ => {
                 unimplemented!("");

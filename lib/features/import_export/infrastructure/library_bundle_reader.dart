@@ -10,7 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 
 /// ZIP entry name of the bundled library JSON.
 const String kBundleLibraryJsonEntry = 'library.json';

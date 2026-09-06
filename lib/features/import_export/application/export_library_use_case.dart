@@ -13,11 +13,10 @@ import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/import_export/domain/pdf_fonts.dart';
-import 'package:pitaka/features/import_export/domain/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_exporter.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -72,17 +71,19 @@ class ExportLibraryUseCase {
   const ExportLibraryUseCase({
     required BookRepository bookRepo,
     required WishlistRepository wishlistRepo,
-    PitakaJsonExporter jsonExporter = const PitakaJsonExporter(),
-    PdfLibraryRenderer pdfRenderer = const PdfLibraryRenderer(),
+    // N14: the concrete JSON codec and PDF renderer live in infrastructure;
+    // the use case depends on the domain ports, injected via DI.
+    required LibraryJsonEncoder jsonEncoder,
+    required LibraryPdfRenderer pdfRenderer,
   }) : _books = bookRepo,
        _wishlist = wishlistRepo,
-       _json = jsonExporter,
+       _json = jsonEncoder,
        _pdf = pdfRenderer;
 
   final BookRepository _books;
   final WishlistRepository _wishlist;
-  final PitakaJsonExporter _json;
-  final PdfLibraryRenderer _pdf;
+  final LibraryJsonEncoder _json;
+  final LibraryPdfRenderer _pdf;
 
   /// Builds an export for [scope] in [format] at [now] (epoch millis stamp).
   ///

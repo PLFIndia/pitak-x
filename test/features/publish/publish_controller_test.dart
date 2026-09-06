@@ -438,6 +438,7 @@ class _Api implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) async {
     commits.add(files);
     return const PublishCommitSuccess('synthetic-commit', ['books.json']);

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 
 void main() {
   // Small row/field caps with a roomy text cap, so row/field tests aren't

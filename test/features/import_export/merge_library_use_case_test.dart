@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -106,41 +107,57 @@ class _FakeSettings implements SettingsRepository {
       AppSettings(libraryName: libraryName, libraryId: libraryId);
 
   @override
-  Future<String> getOrCreateLibraryId() async {
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
     if (libraryId.isEmpty) libraryId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    return libraryId;
+    return right(libraryId);
   }
 
   @override
-  Future<void> setLibraryId(String id) async => libraryId = id;
+  Future<Either<Failure, Unit>> setLibraryId(String id) async {
+    libraryId = id;
+    return right(unit);
+  }
 
   @override
-  Future<String> regenerateLibraryId() async =>
-      libraryId = 'cccccccccccccccccccccccccccccccc';
+  Future<Either<Failure, String>> regenerateLibraryId() async {
+    libraryId = 'cccccccccccccccccccccccccccccccc';
+    return right(libraryId);
+  }
 
   @override
-  Future<void> setLibraryName(String name) async => libraryName = name;
+  Future<Either<Failure, Unit>> setLibraryName(String name) async {
+    libraryName = name;
+    return right(unit);
+  }
 
   // Unused.
   @override
-  Future<void> setThemeMode(AppThemeMode mode) async {}
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
   @override
-  Future<void> setMaintainerName(String name) async {}
+  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
+      right(unit);
   @override
-  Future<void> setLibrarySort(BookSort sort) async {}
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+      right(unit);
   @override
-  Future<void> setLoadRemoteCovers({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
   @override
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
     required String phone,
-  }) async {}
+  }) async => right(unit);
   @override
-  Future<void> setLibraryLogo(String reference) async {}
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
+      right(unit);
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 /// Builds a minimal Pitaka-JSON export string with the given envelope + books.
@@ -172,6 +189,7 @@ void main() {
 
   test('rejects a non-Pitak file with a validation failure', () async {
     final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: _FakeBooks([]),
       settings: _FakeSettings(libraryId: matchingId),
     );
@@ -191,6 +209,7 @@ void main() {
       ),
     ]);
     final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId),
     );
@@ -216,6 +235,7 @@ void main() {
       const Book(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
     ]);
     final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId, libraryName: 'Mine'),
     );
@@ -242,6 +262,7 @@ void main() {
   test('a corrupt incoming id is treated as absent → decision', () async {
     final repo = _FakeBooks([]);
     final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId),
     );
@@ -261,7 +282,11 @@ void main() {
   test('applyJoin unions books and adopts the incoming id+name', () async {
     final repo = _FakeBooks([]);
     final settings = _FakeSettings(libraryId: matchingId, libraryName: 'Mine');
-    final useCase = MergeLibraryUseCase(bookRepo: repo, settings: settings);
+    final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: repo,
+      settings: settings,
+    );
 
     const decision = MergeDiffersDecision(
       incomingBooks: [
@@ -286,7 +311,11 @@ void main() {
       const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
     ]);
     final settings = _FakeSettings(libraryId: matchingId, libraryName: 'Mine');
-    final useCase = MergeLibraryUseCase(bookRepo: repo, settings: settings);
+    final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: repo,
+      settings: settings,
+    );
 
     const decision = MergeDiffersDecision(
       incomingBooks: [Book(bookUid: 'u9', title: 'FreshReplica', addedDate: 1)],
@@ -311,6 +340,7 @@ void main() {
     () async {
       final repo = _FakeBooks([]);
       final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(libraryId: matchingId),
       );
@@ -346,7 +376,11 @@ void main() {
         libraryId: matchingId,
         libraryName: 'Mine',
       );
-      final useCase = MergeLibraryUseCase(bookRepo: repo, settings: settings);
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        settings: settings,
+      );
 
       const decision = MergeDiffersDecision(
         incomingBooks: [
@@ -378,6 +412,7 @@ void main() {
         ),
       ]);
       final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(),
       );
@@ -405,6 +440,7 @@ void main() {
         ),
       ]);
       final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(),
       );
@@ -438,6 +474,7 @@ void main() {
           ),
         ]);
         final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
           settings: _FakeSettings(),
         );

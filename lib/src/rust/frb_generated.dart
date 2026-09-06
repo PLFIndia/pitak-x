@@ -810,6 +810,8 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return VaultWriteError_Constraint(dco_decode_String(raw[1]));
       case 4:
         return VaultWriteError_NotFound();
+      case 5:
+        return VaultWriteError_Validation(dco_decode_String(raw[1]));
       default:
         throw Exception("unreachable");
     }
@@ -1055,6 +1057,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         return VaultWriteError_Constraint(var_field0);
       case 4:
         return VaultWriteError_NotFound();
+      case 5:
+        var var_field0 = sse_decode_String(deserializer);
+        return VaultWriteError_Validation(var_field0);
       default:
         throw UnimplementedError('');
     }
@@ -1295,6 +1300,9 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
         sse_encode_String(field0, serializer);
       case VaultWriteError_NotFound():
         sse_encode_i_32(4, serializer);
+      case VaultWriteError_Validation(field0: final field0):
+        sse_encode_i_32(5, serializer);
+        sse_encode_String(field0, serializer);
     }
   }
 

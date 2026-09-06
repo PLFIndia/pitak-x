@@ -25,12 +25,13 @@ import 'dart:typed_data';
 
 import 'package:pdf/pdf.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/import_export/domain/pdf_fonts.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_fonts.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 
 /// Renders a book list to a paginated PDF and returns the encoded bytes.
-class PdfLibraryRenderer {
+class PdfLibraryRenderer implements LibraryPdfRenderer {
   /// Creates the renderer.
   const PdfLibraryRenderer();
 
@@ -90,6 +91,7 @@ class PdfLibraryRenderer {
   /// [regularFonts]/[boldFonts] are ordered TTF byte bundles (base/Latin first,
   /// then script fallbacks) used to render text the built-in Latin-1 fonts
   /// cannot. When empty, Helvetica is used (Latin-only); see [PdfFontResolver].
+  @override
   Future<Uint8List> render({
     required String libraryName,
     required List<Book> books,

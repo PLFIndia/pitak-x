@@ -32,6 +32,7 @@ class _MemManifest implements PublishManifestGateway {
 
 class _CapturingApi implements GitHubApi {
   List<DesiredFile>? committed;
+  List<String> deleted = [];
   PublishCommitResult result = const PublishCommitSuccess('NEW', ['x']);
 
   @override
@@ -49,8 +50,10 @@ class _CapturingApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) async {
     committed = files;
+    deleted = deletePaths;
     return result;
   }
 
@@ -208,6 +211,65 @@ void main() {
     );
     final aFile = api.committed!.firstWhere((f) => f.path == 'posters/a.jpg');
     expect(aFile.upload, isFalse); // reused, not uploaded
+  });
+
+  // M14 regressions: obsolete posters must be deleted from the branch in
+  // the same commit, and an empty publish is the explicit page-clear.
+  test(
+    'M14: a removed poster is deleted and dropped from the manifest',
+    () async {
+      final api = _CapturingApi();
+      // The manifest still knows about poster b from an earlier publish.
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/lib',
+          fileShas: {
+            'index.html': 'abc',
+            'events.html': 'old',
+            'posters/a.jpg': 'sha-a',
+            'posters/b.jpg': 'sha-b',
+          },
+        ),
+      );
+      // Now only poster a is published.
+      final content = EventsContent(
+        posters: [EventPoster.create(imageRef: 'posters/a.jpg')!],
+      );
+      final result = await make(api: api, manifest: manifest).call(content);
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect(api.deleted, ['posters/b.jpg']);
+      // Catalogue + live poster shas survive; the deleted path is gone.
+      expect(manifest.saved!.shaFor('index.html'), 'abc');
+      expect(manifest.saved!.shaFor('posters/a.jpg'), isNotNull);
+      expect(manifest.saved!.shaFor('posters/b.jpg'), isNull);
+    },
+  );
+
+  test('M14: publishing with ZERO posters clears the events page', () async {
+    final api = _CapturingApi();
+    final manifest = _MemManifest(
+      const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {
+          'index.html': 'abc',
+          'events.html': 'old',
+          'posters/a.jpg': 'sha-a',
+        },
+      ),
+    );
+    final result = await make(
+      api: api,
+      manifest: manifest,
+    ).call(EventsContent.empty);
+
+    expect(result, isA<PublishEventsSuccess>());
+    // events.html is still committed (empty-state page)…
+    expect(api.committed!.map((f) => f.path), ['events.html']);
+    // …and every previously published poster is deleted.
+    expect(api.deleted, ['posters/a.jpg']);
+    expect(manifest.saved!.shaFor('posters/a.jpg'), isNull);
+    expect(manifest.saved!.shaFor('index.html'), 'abc');
   });
 
   test('surfaces an HTTP error as a safe failure', () async {

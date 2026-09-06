@@ -130,6 +130,10 @@ pub enum VaultWriteError {
     Constraint(String),
     /// update/delete targeted an id that does not exist → `NotFoundFailure`.
     NotFound,
+    /// Input failed FFI-boundary validation (empty/over-long fields,
+    /// non-positive ids, out-of-range dates) → `ValidationFailure` (N14:
+    /// every argument crossing the boundary is validated, global AGENTS §2).
+    Validation(String),
 }
 
 /// Unwraps the vault key from `passphrase_utf8` + `blob`, runs `op` with the
@@ -149,6 +153,90 @@ fn with_vault_key<T>(
     result
 }
 
+// --- FFI boundary input validation (N14, astra-review.md) ------------------
+//
+// The Dart UI applies no hard caps to these free-text fields, so the vault
+// boundary is the authoritative defence against oversized or crafted input.
+// Validation runs BEFORE any crypto/key work: a bad input must never reach
+// the vault, and the checks are cheap enough to run on every write.
+
+/// Max borrower-name length in Unicode chars.
+pub const MAX_NAME_CHARS: usize = 200;
+/// Max free-text (contact/notes) length in Unicode chars.
+pub const MAX_TEXT_CHARS: usize = 2000;
+/// Max acceptable epoch-millis date (the JS `Date` ceiling, year ~275760);
+/// anything beyond is a corrupt or crafted value.
+pub const MAX_DATE_MILLIS: i64 = 8_640_000_000_000_000;
+
+fn validate_text(field: &str, value: &str, max_chars: usize) -> Result<(), VaultWriteError> {
+    let chars = value.trim().chars().count();
+    if chars > max_chars {
+        return Err(VaultWriteError::Validation(format!(
+            "{field} is too long ({chars} chars; max {max_chars})"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_date(field: &str, value: i64) -> Result<(), VaultWriteError> {
+    if value <= 0 || value > MAX_DATE_MILLIS {
+        return Err(VaultWriteError::Validation(format!(
+            "{field} is out of range"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_borrower_fields(
+    name: &str,
+    contact: Option<&str>,
+    notes: Option<&str>,
+) -> Result<(), VaultWriteError> {
+    if name.trim().is_empty() {
+        return Err(VaultWriteError::Validation(
+            "borrower name must not be empty".into(),
+        ));
+    }
+    validate_text("borrower name", name, MAX_NAME_CHARS)?;
+    if let Some(c) = contact {
+        validate_text("contact", c, MAX_TEXT_CHARS)?;
+    }
+    if let Some(n) = notes {
+        validate_text("notes", n, MAX_TEXT_CHARS)?;
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn validate_loan_fields(
+    book_id: i64,
+    borrower_id: i64,
+    lent_date: i64,
+    due_date: Option<i64>,
+    returned_date: Option<i64>,
+    notes: Option<&str>,
+) -> Result<(), VaultWriteError> {
+    if book_id <= 0 {
+        return Err(VaultWriteError::Validation("book_id must be positive".into()));
+    }
+    if borrower_id <= 0 {
+        return Err(VaultWriteError::Validation(
+            "borrower_id must be positive".into(),
+        ));
+    }
+    validate_date("lent_date", lent_date)?;
+    if let Some(d) = due_date {
+        validate_date("due_date", d)?;
+    }
+    if let Some(r) = returned_date {
+        validate_date("returned_date", r)?;
+    }
+    if let Some(n) = notes {
+        validate_text("loan notes", n, MAX_TEXT_CHARS)?;
+    }
+    Ok(())
+}
+
 /// Inserts a borrower; returns the new id.
 pub fn insert_borrower(
     passphrase_utf8: Vec<u8>,
@@ -158,6 +246,7 @@ pub fn insert_borrower(
     contact: Option<String>,
     notes: Option<String>,
 ) -> Result<i64, VaultWriteError> {
+    validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::insert_borrower(&db_path, key, &BorrowerInput { name, contact, notes })
     })
@@ -173,6 +262,7 @@ pub fn update_borrower(
     contact: Option<String>,
     notes: Option<String>,
 ) -> Result<(), VaultWriteError> {
+    validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::update_borrower(&db_path, key, id, &BorrowerInput { name, contact, notes })
     })
@@ -205,6 +295,7 @@ pub fn insert_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<i64, VaultWriteError> {
+    validate_loan_fields(book_id, borrower_id, lent_date, due_date, returned_date, notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::insert_loan(
             &db_path,
@@ -228,6 +319,7 @@ pub fn update_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<(), VaultWriteError> {
+    validate_loan_fields(book_id, borrower_id, lent_date, due_date, returned_date, notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::update_loan(
             &db_path,
@@ -551,6 +643,50 @@ mod tests {
         let err = wrap_for_biometric(b"wrong".to_vec(), blob)
             .expect_err("wrong active secret must fail");
         assert!(matches!(err, VaultBiometricError::WrongPassphrase), "got {err:?}");
+    }
+
+    // N14: FFI-boundary input validation. These checks run BEFORE any key
+    // work, so a dummy blob/passphrase still exercises every branch.
+    #[test]
+    fn borrower_validation_rejects_empty_and_oversized_input() {
+        let dummy = (b"p".to_vec(), "not-a-blob".to_string(), "db".to_string());
+        let err = insert_borrower(dummy.0.clone(), dummy.1.clone(), dummy.2.clone(), "   ".into(), None, None)
+            .expect_err("blank name must fail");
+        assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
+
+        let long = "x".repeat(MAX_NAME_CHARS + 1);
+        let err = insert_borrower(dummy.0.clone(), dummy.1.clone(), dummy.2.clone(), long, None, None)
+            .expect_err("oversized name must fail");
+        assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
+
+        let long_text = "y".repeat(MAX_TEXT_CHARS + 1);
+        let err = update_borrower(dummy.0, dummy.1, dummy.2, 1, "Ok".into(), Some(long_text), None)
+            .expect_err("oversized contact must fail");
+        assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
+    }
+
+    #[test]
+    fn loan_validation_rejects_bad_ids_dates_and_notes() {
+        let dummy = (b"p".to_vec(), "not-a-blob".to_string(), "db".to_string());
+        let cases: Vec<(i64, i64, i64)> = vec![
+            (0, 1, 1000),            // non-positive book id
+            (7, -1, 1000),           // non-positive borrower id
+            (7, 1, 0),               // non-positive lent date
+            (7, 1, MAX_DATE_MILLIS + 1), // out-of-range date
+        ];
+        for (book_id, borrower_id, lent) in cases {
+            let err = insert_loan(
+                dummy.0.clone(), dummy.1.clone(), dummy.2.clone(),
+                book_id, borrower_id, lent, None, None, None,
+            ).expect_err("invalid loan input must fail");
+            assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
+        }
+        let long_notes = "z".repeat(MAX_TEXT_CHARS + 1);
+        let err = update_loan(
+            dummy.0, dummy.1, dummy.2,
+            5, 7, 1, 1000, None, None, Some(long_notes),
+        ).expect_err("oversized loan notes must fail");
+        assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
     }
 
     #[test]

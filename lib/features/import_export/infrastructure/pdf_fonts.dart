@@ -16,17 +16,8 @@
 /// of the pure render path and lets tests supply their own bytes.
 library;
 
-import 'dart:typed_data';
-
 import 'package:pdf/pdf.dart';
-
-/// Raw TTF bytes for one weight (regular or bold), ordered by preference.
-///
-/// The FIRST entry is the primary/base font (Latin); the rest are script
-/// fallbacks tried in order. A string is rendered with the first font that can
-/// encode all of its runes; if none can, the base font is used (the unsupported
-/// glyphs degrade rather than crashing the whole export).
-typedef PdfFontBundle = List<ByteData>;
+import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 
 /// Resolves which loaded [PdfFont] should render a given string, by glyph
 /// coverage. Built once per document (fonts are document-bound objects).

@@ -6,7 +6,9 @@
 /// then updates state so the UI reacts immediately.
 library;
 
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -21,24 +23,32 @@ class SettingsController extends _$SettingsController {
     return repo.load();
   }
 
-  /// Persists via [persist], then publishes [next]. A prefs write failure
-  /// must NOT escape as an unhandled async error from an un-awaited setter
-  /// (REVIEW_FINDINGS_2, carried Minor): it is folded into an [AsyncError]
-  /// state instead, which every consumer renders with a safe fallback
-  /// (settings page shows its fixed error text; theme/sort fall back to
-  /// defaults). The in-memory state is left unchanged — fail closed rather
-  /// than show a preference the device never actually stored.
+  /// Persists via [persist], then publishes [next] only when the write
+  /// actually succeeded (M17: the plugin's success boolean is now a typed
+  /// `Either`, so a failed write can never be confirmed). A prefs write
+  /// failure — typed [Failure] or unexpected throw — is folded into an
+  /// [AsyncError] state instead of escaping as an unhandled async error from
+  /// an un-awaited setter (REVIEW_FINDINGS_2, carried Minor); every consumer
+  /// renders that with a safe fallback (settings page shows its fixed error
+  /// text; theme/sort fall back to defaults). The in-memory value is left
+  /// unchanged — fail closed rather than show a preference the device never
+  /// actually stored (Riverpod keeps the previous value reachable via
+  /// `valueOrNull` on the error state).
   Future<void> _update(
-    Future<void> Function() persist,
+    Future<Either<Failure, Unit>> Function() persist,
     AppSettings next,
   ) async {
+    final Either<Failure, Unit> result;
     try {
-      await persist();
+      result = await persist();
     } on Object catch (e, st) {
       state = AsyncError(e, st);
       return;
     }
-    state = AsyncData(next);
+    state = result.match(
+      (failure) => AsyncError(failure, StackTrace.current),
+      (_) => AsyncData(next),
+    );
   }
 
   /// Sets the appearance mode.
@@ -62,13 +72,16 @@ class SettingsController extends _$SettingsController {
   }
 
   /// Returns this app's library ID, minting one on first call, and reflects it
-  /// into state so the UI can show it (PLAN-merge.md D40).
-  Future<String> getOrCreateLibraryId() async {
+  /// into state so the UI can show it (PLAN-merge.md D40). A failed mint or
+  /// persist is a left (M17) — callers must not proceed with a phantom ID.
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
     final repo = await ref.read(settingsRepositoryProvider.future);
     final id = await repo.getOrCreateLibraryId();
+    if (id.isLeft()) return id;
     final current = state.valueOrNull ?? AppSettings.defaults;
-    if (current.libraryId != id) {
-      state = AsyncData(current.copyWith(libraryId: id));
+    final minted = id.getOrElse((_) => '');
+    if (current.libraryId != minted) {
+      state = AsyncData(current.copyWith(libraryId: minted));
     }
     return id;
   }
@@ -86,12 +99,15 @@ class SettingsController extends _$SettingsController {
   }
 
   /// Mints a brand-new library ID (CSPRNG), detaching this device from the
-  /// previous namespace, and reflects it into state.
-  Future<void> regenerateLibraryId() async {
+  /// previous namespace, and reflects it into state. Left on persist failure
+  /// (M17) — the old ID then stays in force.
+  Future<Either<Failure, String>> regenerateLibraryId() async {
     final repo = await ref.read(settingsRepositoryProvider.future);
     final current = state.valueOrNull ?? AppSettings.defaults;
     final minted = await repo.regenerateLibraryId();
-    state = AsyncData(current.copyWith(libraryId: minted));
+    if (minted.isLeft()) return minted;
+    state = AsyncData(current.copyWith(libraryId: minted.getOrElse((_) => '')));
+    return minted;
   }
 
   /// Sets the maintainer name (stamped onto newly-added books).

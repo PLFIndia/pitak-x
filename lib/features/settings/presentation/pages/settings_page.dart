@@ -252,7 +252,11 @@ class _DataTab extends ConsumerWidget {
         ListTile(
           leading: const Icon(Icons.backup_outlined),
           title: const Text('Create backup'),
-          subtitle: const Text('Full encrypted .pitabak archive'),
+          // M06a: the old "Full encrypted" label was false — only the vault
+          // inside the archive is encrypted; books/wishlist/covers are plain.
+          subtitle: const Text(
+            '.pitabak archive — only the borrowers vault inside is encrypted',
+          ),
           onTap: () => go(const CreateBackupPage()),
         ),
         ListTile(
@@ -280,6 +284,16 @@ class _CommunityLibrarySection extends ConsumerWidget {
       // Mint the ID on demand so a never-exported device can still pair.
       final id = await controller.getOrCreateLibraryId();
       if (!context.mounted) return;
+      // M17: a failed mint/persist must not show a QR with a phantom ID.
+      if (id.isLeft()) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not load your library ID. Please try again.'),
+          ),
+        );
+        return;
+      }
+      final idValue = id.getOrElse((_) => '');
       await showDialog<void>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -291,10 +305,10 @@ class _CommunityLibrarySection extends ConsumerWidget {
                 'Have another maintainer scan this to join your library.',
               ),
               const SizedBox(height: 16),
-              Center(child: QrView(data: LibraryQrPayload.forId(id))),
+              Center(child: QrView(data: LibraryQrPayload.forId(idValue))),
               const SizedBox(height: 12),
               SelectableText(
-                id,
+                idValue,
                 style: Theme.of(ctx).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -374,7 +388,20 @@ class _CommunityLibrarySection extends ConsumerWidget {
           ],
         ),
       );
-      if (ok ?? false) await controller.regenerateLibraryId();
+      if (ok ?? false) {
+        final minted = await controller.regenerateLibraryId();
+        if (!context.mounted) return;
+        // M17: tell the user when the new identity was NOT persisted.
+        if (minted.isLeft()) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not save the new library ID. Please try again.',
+              ),
+            ),
+          );
+        }
+      }
     }
 
     return Column(

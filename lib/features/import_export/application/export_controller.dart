@@ -10,11 +10,9 @@
 /// share sheet) arrive via DI ports so this stays testable with overrides.
 library;
 
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' show Rect;
 
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
@@ -102,12 +100,18 @@ class ExportController extends _$ExportController {
                 .maybeWhen(data: (s) => s.libraryName, orElse: () => '')
           : '';
       // Mint/read this app's library ID so every JSON export carries one
-      // (PLAN-merge.md D40).
-      final libraryId = isJson
-          ? await ref
-                .read(settingsControllerProvider.notifier)
-                .getOrCreateLibraryId()
-          : '';
+      // (PLAN-merge.md D40). M17: a failed mint/persist aborts a JSON export
+      // rather than shipping a file under a phantom identity.
+      var libraryId = '';
+      if (isJson) {
+        final minted = await ref
+            .read(settingsControllerProvider.notifier)
+            .getOrCreateLibraryId();
+        if (minted.isLeft()) {
+          return const ExportRunResult(ExportOutcome.failed);
+        }
+        libraryId = minted.getOrElse((_) => '');
+      }
       final footerIcon = isPdf
           ? await ref.read(pdfFooterIconLoaderProvider)()
           : null;
@@ -163,18 +167,11 @@ class ExportController extends _$ExportController {
   /// dir exactly like the `LibraryLogo` widget (single source of truth). A
   /// missing/unreadable logo never blocks the export.
   Future<Uint8List?> _loadLibraryLogo() async {
-    try {
-      final logoRef = ref
-          .read(settingsControllerProvider)
-          .maybeWhen(data: (s) => s.libraryLogo, orElse: () => '');
-      final leaf = CoverPaths.leafOf(logoRef);
-      if (leaf == null) return null;
-      final coversDir = await ref.read(coversDirProvider.future);
-      final file = File(p.join(coversDir, leaf));
-      if (!file.existsSync()) return null;
-      return file.readAsBytes();
-    } on Object {
-      return null;
-    }
+    // N14: the actual file read is infrastructure, injected as a port.
+    final logoRef = ref
+        .read(settingsControllerProvider)
+        .maybeWhen(data: (s) => s.libraryLogo, orElse: () => '');
+    final readLogo = await ref.read(exportLogoReaderProvider.future);
+    return readLogo(logoRef);
   }
 }

@@ -12,6 +12,7 @@ import 'package:pitaka/features/import_export/application/import_controller.dart
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -94,6 +95,7 @@ class _MemWishlistRepo implements WishlistRepository {
 void main() {
   test('ImportController exposes a summary after importText', () async {
     final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
     );
@@ -128,6 +130,7 @@ void main() {
       // Unrecognized format returns a Right(summary with null format), not an
       // error — verify the controller still lands in data state with no books.
       final useCase = ImportLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
         bookRepo: _MemBookRepo(),
         wishlistRepo: _MemWishlistRepo(),
       );
@@ -151,6 +154,7 @@ void main() {
 
   test('importBytes routes JSON bytes through the text path', () async {
     final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
     );
@@ -184,6 +188,7 @@ void main() {
     addTearDown(() => tmp.deleteSync(recursive: true));
 
     final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
     );

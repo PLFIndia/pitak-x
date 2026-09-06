@@ -8,6 +8,8 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -114,6 +116,8 @@ void main() {
   testWidgets('CSV export hands bytes to the share service', (tester) async {
     final share = _FakeShare();
     final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books([const Book(id: 1, title: 'Godaan', isbn: '111')]),
       wishlistRepo: _Wishlist(),
     );

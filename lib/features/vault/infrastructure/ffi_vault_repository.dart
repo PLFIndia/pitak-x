@@ -444,5 +444,7 @@ final class FfiVaultRepository implements VaultRepository {
     // FK RESTRICT / NOT NULL → a validation problem the user can act on.
     constraint: ValidationFailure.new,
     notFound: NotFoundFailure.new,
+    // N14: FFI-boundary input validation (lengths/ranges) in the Rust core.
+    validation: ValidationFailure.new,
   );
 }

@@ -151,6 +151,19 @@ final class PublishEventsUseCase {
       ...posterFiles,
     ];
 
+    // M14: posters the manifest knows about but this publish no longer
+    // carries are OBSOLETE — deleted from the branch in the same commit.
+    // Only app-owned `posters/*` paths are ever touched; catalogue files
+    // (index.html, books.json, covers/*) are never candidates. Publishing
+    // with ZERO posters therefore clears the live events page.
+    final livePosterPaths = {for (final f in posterFiles) f.path};
+    final obsolete = manifest.fileShas.keys
+        .where(
+          (path) =>
+              path.startsWith('posters/') && !livePosterPaths.contains(path),
+        )
+        .toList();
+
     final now = _clock();
     final PublishCommitResult result;
     try {
@@ -160,6 +173,7 @@ final class PublishEventsUseCase {
         branch: branch,
         token: token,
         files: files,
+        deletePaths: obsolete,
         commitMessage: 'Pitak events publish $now',
       );
     } on GitHubApiException {
@@ -170,12 +184,15 @@ final class PublishEventsUseCase {
     switch (result) {
       case PublishCommitSuccess(:final uploadedPaths):
         // Merge the new file shas into the existing manifest (preserve the
-        // catalogue's entries so a later catalogue publish still diffs right).
+        // catalogue's entries so a later catalogue publish still diffs
+        // right), and DROP the deleted poster paths (M14) so a later publish
+        // does not try to reuse their shas.
         _manifest.save(
           PublishManifest(
             repo: ownerRepo,
             fileShas: {
-              ...manifest.fileShas,
+              for (final entry in manifest.fileShas.entries)
+                if (!obsolete.contains(entry.key)) entry.key: entry.value,
               for (final f in files) f.path: f.gitSha,
             },
             coverUrlByBookId: manifest.coverUrlByBookId,

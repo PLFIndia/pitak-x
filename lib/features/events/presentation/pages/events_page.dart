@@ -260,15 +260,31 @@ class _EventsBody extends StatelessWidget {
         Text('Publish', style: textTheme.titleSmall),
         const SizedBox(height: 4),
         Text(
-          'Upload these posters to your public events page. You must publish '
-          'your catalogue at least once first.',
+          posters.isEmpty
+              // M14: publishing with no posters is the explicit CLEAR action.
+              ? 'Publishing with no posters clears your public events page. '
+                    'You must publish your catalogue at least once first.'
+              : 'Upload these posters to your public events page. You must '
+                    'publish your catalogue at least once first.',
+          style: textTheme.bodySmall,
+        ),
+        const SizedBox(height: 4),
+        // M14: honest removal copy — deleting current files does not rewrite
+        // Git history or third-party copies.
+        Text(
+          'Removing a poster deletes it from the live page, but older '
+          'versions stay in the repository’s Git history (and copies may '
+          'exist elsewhere).',
           style: textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
         OutlinedButton.icon(
-          onPressed: (posters.isEmpty || busy) ? null : onPublish,
+          // M14: allowed with zero posters — that is how the page is cleared.
+          onPressed: busy ? null : onPublish,
           icon: const Icon(Icons.cloud_upload_outlined),
-          label: const Text('Publish events'),
+          label: Text(
+            posters.isEmpty ? 'Clear the events page' : 'Publish events',
+          ),
         ),
       ],
     );

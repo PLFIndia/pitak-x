@@ -17,7 +17,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// An in-memory credential store, starting signed out, so the Connection tab
 /// renders its "Sign in" state without any network.
 class _FakeCreds implements PublishCredentialStore {
-  _FakeCreds({String? targetRepo}) : _target = targetRepo;
+  _FakeCreds({String? targetRepo, String? token})
+    : _target = targetRepo,
+      _token = token;
   String? _token;
   String? _target;
   @override
@@ -119,6 +121,7 @@ class _FakeGitHubApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) async => const PublishCommitSuccess('sha', []);
 }
 
@@ -390,5 +393,34 @@ void main() {
     // The Events editor body is shown (its empty-state copy).
     expect(find.text('No posters yet.'), findsOneWidget);
     expect(find.text('Add poster'), findsOneWidget);
+  });
+
+  // N12 regression: the signed-in account row used to be a fixed
+  // spaceBetween Row that overflowed at 320px / large text.
+  testWidgets('N12: signed-in row survives a 320px width', (tester) async {
+    tester.view.physicalSize = const Size(320, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    SharedPreferences.setMockInitialValues({'library_name': 'My Shelf'});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          publishCredentialStoreProvider.overrideWithValue(
+            _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
+          ),
+          eventsRepositoryProvider.overrideWith(
+            (ref) async => _EmptyEventsRepo(),
+          ),
+        ],
+        child: const MaterialApp(home: PublishPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Signed in'), findsOneWidget);
+    // A RenderFlex overflow would fail the test via the binding; reaching
+    // here with the row built is the assertion.
+    expect(tester.takeException(), isNull);
   });
 }

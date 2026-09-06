@@ -2096,6 +2096,7 @@ mixin _$VaultWriteError {
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? whenOrNull<TResult extends Object?>({
@@ -2104,6 +2105,7 @@ mixin _$VaultWriteError {
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeWhen<TResult extends Object?>({
@@ -2112,6 +2114,7 @@ mixin _$VaultWriteError {
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
@@ -2122,6 +2125,7 @@ mixin _$VaultWriteError {
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult? mapOrNull<TResult extends Object?>({
@@ -2130,6 +2134,7 @@ mixin _$VaultWriteError {
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) => throw _privateConstructorUsedError;
   @optionalTypeArgs
   TResult maybeMap<TResult extends Object?>({
@@ -2138,6 +2143,7 @@ mixin _$VaultWriteError {
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) => throw _privateConstructorUsedError;
 }
@@ -2242,6 +2248,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) {
     return corrupt(field0);
   }
@@ -2254,6 +2261,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) {
     return corrupt?.call(field0);
   }
@@ -2266,6 +2274,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) {
     if (corrupt != null) {
@@ -2283,6 +2292,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) {
     return corrupt(this);
   }
@@ -2295,6 +2305,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) {
     return corrupt?.call(this);
   }
@@ -2307,6 +2318,7 @@ class _$VaultWriteError_CorruptImpl extends VaultWriteError_Corrupt {
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) {
     if (corrupt != null) {
@@ -2384,6 +2396,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) {
     return wrongPassphrase();
   }
@@ -2396,6 +2409,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) {
     return wrongPassphrase?.call();
   }
@@ -2408,6 +2422,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) {
     if (wrongPassphrase != null) {
@@ -2425,6 +2440,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) {
     return wrongPassphrase(this);
   }
@@ -2437,6 +2453,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) {
     return wrongPassphrase?.call(this);
   }
@@ -2449,6 +2466,7 @@ class _$VaultWriteError_WrongPassphraseImpl
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) {
     if (wrongPassphrase != null) {
@@ -2542,6 +2560,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) {
     return vaultOpen(field0);
   }
@@ -2554,6 +2573,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) {
     return vaultOpen?.call(field0);
   }
@@ -2566,6 +2586,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) {
     if (vaultOpen != null) {
@@ -2583,6 +2604,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) {
     return vaultOpen(this);
   }
@@ -2595,6 +2617,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) {
     return vaultOpen?.call(this);
   }
@@ -2607,6 +2630,7 @@ class _$VaultWriteError_VaultOpenImpl extends VaultWriteError_VaultOpen {
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) {
     if (vaultOpen != null) {
@@ -2709,6 +2733,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) {
     return constraint(field0);
   }
@@ -2721,6 +2746,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) {
     return constraint?.call(field0);
   }
@@ -2733,6 +2759,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) {
     if (constraint != null) {
@@ -2750,6 +2777,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) {
     return constraint(this);
   }
@@ -2762,6 +2790,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) {
     return constraint?.call(this);
   }
@@ -2774,6 +2803,7 @@ class _$VaultWriteError_ConstraintImpl extends VaultWriteError_Constraint {
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) {
     if (constraint != null) {
@@ -2846,6 +2876,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     required TResult Function(String field0) vaultOpen,
     required TResult Function(String field0) constraint,
     required TResult Function() notFound,
+    required TResult Function(String field0) validation,
   }) {
     return notFound();
   }
@@ -2858,6 +2889,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     TResult? Function(String field0)? vaultOpen,
     TResult? Function(String field0)? constraint,
     TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
   }) {
     return notFound?.call();
   }
@@ -2870,6 +2902,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     TResult Function(String field0)? vaultOpen,
     TResult Function(String field0)? constraint,
     TResult Function()? notFound,
+    TResult Function(String field0)? validation,
     required TResult orElse(),
   }) {
     if (notFound != null) {
@@ -2887,6 +2920,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
     required TResult Function(VaultWriteError_Constraint value) constraint,
     required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
   }) {
     return notFound(this);
   }
@@ -2899,6 +2933,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult? Function(VaultWriteError_Constraint value)? constraint,
     TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
   }) {
     return notFound?.call(this);
   }
@@ -2911,6 +2946,7 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
     TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
     TResult Function(VaultWriteError_Constraint value)? constraint,
     TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
     required TResult orElse(),
   }) {
     if (notFound != null) {
@@ -2923,4 +2959,177 @@ class _$VaultWriteError_NotFoundImpl extends VaultWriteError_NotFound {
 abstract class VaultWriteError_NotFound extends VaultWriteError {
   const factory VaultWriteError_NotFound() = _$VaultWriteError_NotFoundImpl;
   const VaultWriteError_NotFound._() : super._();
+}
+
+/// @nodoc
+abstract class _$$VaultWriteError_ValidationImplCopyWith<$Res> {
+  factory _$$VaultWriteError_ValidationImplCopyWith(
+    _$VaultWriteError_ValidationImpl value,
+    $Res Function(_$VaultWriteError_ValidationImpl) then,
+  ) = __$$VaultWriteError_ValidationImplCopyWithImpl<$Res>;
+  @useResult
+  $Res call({String field0});
+}
+
+/// @nodoc
+class __$$VaultWriteError_ValidationImplCopyWithImpl<$Res>
+    extends
+        _$VaultWriteErrorCopyWithImpl<$Res, _$VaultWriteError_ValidationImpl>
+    implements _$$VaultWriteError_ValidationImplCopyWith<$Res> {
+  __$$VaultWriteError_ValidationImplCopyWithImpl(
+    _$VaultWriteError_ValidationImpl _value,
+    $Res Function(_$VaultWriteError_ValidationImpl) _then,
+  ) : super(_value, _then);
+
+  /// Create a copy of VaultWriteError
+  /// with the given fields replaced by the non-null parameter values.
+  @pragma('vm:prefer-inline')
+  @override
+  $Res call({Object? field0 = null}) {
+    return _then(
+      _$VaultWriteError_ValidationImpl(
+        null == field0
+            ? _value.field0
+            : field0 // ignore: cast_nullable_to_non_nullable
+                  as String,
+      ),
+    );
+  }
+}
+
+/// @nodoc
+
+class _$VaultWriteError_ValidationImpl extends VaultWriteError_Validation {
+  const _$VaultWriteError_ValidationImpl(this.field0) : super._();
+
+  @override
+  final String field0;
+
+  @override
+  String toString() {
+    return 'VaultWriteError.validation(field0: $field0)';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        (other.runtimeType == runtimeType &&
+            other is _$VaultWriteError_ValidationImpl &&
+            (identical(other.field0, field0) || other.field0 == field0));
+  }
+
+  @override
+  int get hashCode => Object.hash(runtimeType, field0);
+
+  /// Create a copy of VaultWriteError
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  @override
+  @pragma('vm:prefer-inline')
+  _$$VaultWriteError_ValidationImplCopyWith<_$VaultWriteError_ValidationImpl>
+  get copyWith =>
+      __$$VaultWriteError_ValidationImplCopyWithImpl<
+        _$VaultWriteError_ValidationImpl
+      >(this, _$identity);
+
+  @override
+  @optionalTypeArgs
+  TResult when<TResult extends Object?>({
+    required TResult Function(String field0) corrupt,
+    required TResult Function() wrongPassphrase,
+    required TResult Function(String field0) vaultOpen,
+    required TResult Function(String field0) constraint,
+    required TResult Function() notFound,
+    required TResult Function(String field0) validation,
+  }) {
+    return validation(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? whenOrNull<TResult extends Object?>({
+    TResult? Function(String field0)? corrupt,
+    TResult? Function()? wrongPassphrase,
+    TResult? Function(String field0)? vaultOpen,
+    TResult? Function(String field0)? constraint,
+    TResult? Function()? notFound,
+    TResult? Function(String field0)? validation,
+  }) {
+    return validation?.call(field0);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeWhen<TResult extends Object?>({
+    TResult Function(String field0)? corrupt,
+    TResult Function()? wrongPassphrase,
+    TResult Function(String field0)? vaultOpen,
+    TResult Function(String field0)? constraint,
+    TResult Function()? notFound,
+    TResult Function(String field0)? validation,
+    required TResult orElse(),
+  }) {
+    if (validation != null) {
+      return validation(field0);
+    }
+    return orElse();
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult map<TResult extends Object?>({
+    required TResult Function(VaultWriteError_Corrupt value) corrupt,
+    required TResult Function(VaultWriteError_WrongPassphrase value)
+    wrongPassphrase,
+    required TResult Function(VaultWriteError_VaultOpen value) vaultOpen,
+    required TResult Function(VaultWriteError_Constraint value) constraint,
+    required TResult Function(VaultWriteError_NotFound value) notFound,
+    required TResult Function(VaultWriteError_Validation value) validation,
+  }) {
+    return validation(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult? mapOrNull<TResult extends Object?>({
+    TResult? Function(VaultWriteError_Corrupt value)? corrupt,
+    TResult? Function(VaultWriteError_WrongPassphrase value)? wrongPassphrase,
+    TResult? Function(VaultWriteError_VaultOpen value)? vaultOpen,
+    TResult? Function(VaultWriteError_Constraint value)? constraint,
+    TResult? Function(VaultWriteError_NotFound value)? notFound,
+    TResult? Function(VaultWriteError_Validation value)? validation,
+  }) {
+    return validation?.call(this);
+  }
+
+  @override
+  @optionalTypeArgs
+  TResult maybeMap<TResult extends Object?>({
+    TResult Function(VaultWriteError_Corrupt value)? corrupt,
+    TResult Function(VaultWriteError_WrongPassphrase value)? wrongPassphrase,
+    TResult Function(VaultWriteError_VaultOpen value)? vaultOpen,
+    TResult Function(VaultWriteError_Constraint value)? constraint,
+    TResult Function(VaultWriteError_NotFound value)? notFound,
+    TResult Function(VaultWriteError_Validation value)? validation,
+    required TResult orElse(),
+  }) {
+    if (validation != null) {
+      return validation(this);
+    }
+    return orElse();
+  }
+}
+
+abstract class VaultWriteError_Validation extends VaultWriteError {
+  const factory VaultWriteError_Validation(final String field0) =
+      _$VaultWriteError_ValidationImpl;
+  const VaultWriteError_Validation._() : super._();
+
+  String get field0;
+
+  /// Create a copy of VaultWriteError
+  /// with the given fields replaced by the non-null parameter values.
+  @JsonKey(includeFromJson: false, includeToJson: false)
+  _$$VaultWriteError_ValidationImplCopyWith<_$VaultWriteError_ValidationImpl>
+  get copyWith => throw _privateConstructorUsedError;
 }

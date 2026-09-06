@@ -8,12 +8,8 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/images/image_downscaler.dart';
-import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
@@ -68,8 +64,6 @@ class PublishController extends _$PublishController {
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
     final coverIds = ref.read(publishCoverIdsProvider);
-    final dir = await ref.read(appDocsDirProvider.future);
-    final coversDir = p.join(dir.path, CoverPaths.coversDir);
 
     final settings = await ref.read(settingsControllerProvider.future);
 
@@ -81,13 +75,18 @@ class PublishController extends _$PublishController {
     final fetchRemoteCover = ref.read(remoteCoverFetcherProvider);
     final buildViewerHtml = ref.read(viewerHtmlFactoryProvider);
     final fetchPublishedFile = ref.read(publishedFileFetcherProvider);
+    // N14: local-cover file IO arrives via DI (infrastructure), keeping this
+    // controller free of dart:io (§3.1).
+    final readLocalCover = await ref.read(
+      publishLocalCoverReaderProvider.future,
+    );
     final useCase = PublishLibraryUseCase(
       api: api,
       credentials: credentials,
       manifest: manifest,
       coverIds: coverIds,
       fetchPublishedFile: fetchPublishedFile,
-      readLocalCover: (src) => _readLocalCover(coversDir, src),
+      readLocalCover: readLocalCover,
       fetchRemoteCover: fetchRemoteCover,
       buildViewerHtml: () => buildViewerHtml(
         libraryName: settings.libraryName,
@@ -109,23 +108,5 @@ class PublishController extends _$PublishController {
       // reads per-phase progress (REVIEW_FINDINGS_2 — the old `_phase` field
       // was write-only dead weight).
     );
-  }
-
-  Future<List<int>?> _readLocalCover(String coversDir, String src) async {
-    final leaf = CoverPaths.leafOf(src);
-    if (leaf == null) return null;
-    final file = File(p.join(coversDir, leaf));
-    if (!file.existsSync()) return null;
-    try {
-      // Downscale before publishing (400x600 q80): keeps the git push small
-      // AND strips EXIF/GPS before anything reaches the public site. NO raw
-      // fallback — when the re-encode fails (undecodable, or over the source
-      // dimension cap) the cover is DROPPED, never published unstripped
-      // (REVIEW_FINDINGS_2 S11: a raw-bytes fallback would silently ship the
-      // photographer's embedded GPS coordinates).
-      return ImageDownscaler.downscaleJpeg(await file.readAsBytes());
-    } on Exception {
-      return null;
-    }
   }
 }

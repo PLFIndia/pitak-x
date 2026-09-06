@@ -13,6 +13,8 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
+import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -40,6 +42,7 @@ void main() {
           final settings = await ref.watch(settingsRepositoryProvider.future);
           return CoverFileJanitor(
             books: _NoBooks(),
+            wishlist: _NoWishlist(),
             settings: settings,
             store: store,
             coordinator: ref.watch(coverFileCoordinatorProvider),
@@ -100,6 +103,16 @@ void main() {
 }
 
 /// Book repo with no rows (nothing references any cover file).
+/// Empty wishlist (M11: the janitor counts wishlist cover refs as live).
+class _NoWishlist implements WishlistRepository {
+  @override
+  Future<Either<Failure, List<WishlistBook>>> getAll() async => right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
 class _NoBooks implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(const []);

@@ -27,6 +27,7 @@ import 'package:pitaka/features/bookmarks/domain/bookmarks_repository.dart';
 import 'package:pitaka/features/bookmarks/infrastructure/prefs_bookmarks_repository.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/events/infrastructure/file_events_repository.dart';
+import 'package:pitaka/features/events/infrastructure/poster_file_reader.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
@@ -35,8 +36,12 @@ import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
+import 'package:pitaka/features/import_export/infrastructure/logo_file_reader.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart'
     hide PdfTextRasterizer, RasterizedText;
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
@@ -67,13 +72,13 @@ import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dar
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
+import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
-import 'package:pitaka/features/vault/application/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
@@ -84,6 +89,7 @@ import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
+import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/infrastructure/secure_storage_biometric_keystore.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
@@ -170,10 +176,14 @@ CoverFileCoordinator coverFileCoordinator(CoverFileCoordinatorRef ref) =>
 @riverpod
 Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
   final books = await ref.watch(bookRepositoryProvider.future);
+  // M11: wishlist rows reference covers in the same directory; the janitor
+  // must count them as live references or startup sweeps delete their art.
+  final wishlist = await ref.watch(wishlistRepositoryProvider.future);
   final settings = await ref.watch(settingsRepositoryProvider.future);
   final store = await ref.watch(coverStoreProvider.future);
   return CoverFileJanitor(
     books: books,
+    wishlist: wishlist,
     settings: settings,
     store: store,
     coordinator: ref.watch(coverFileCoordinatorProvider),
@@ -384,6 +394,17 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
   };
 }
 
+/// Local cover-file reader for publishing (N14): the file IO the publish
+/// controller used to do itself (dart:io in the application layer). Injected
+/// as a function port, rooted at the app's covers directory.
+@riverpod
+Future<Future<List<int>?> Function(String)> publishLocalCoverReader(
+  PublishLocalCoverReaderRef ref,
+) async {
+  final coversDir = await ref.watch(coversDirProvider.future);
+  return localCoverReader(coversDir);
+}
+
 /// Published-file fetcher for the post-publish read-back (à la Localcart
 /// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
 /// failure; the read-back treats that as "not visible yet".
@@ -521,6 +542,16 @@ Map<int, int>? activeLoanCounts(ActiveLoanCountsRef ref) {
   return null;
 }
 
+/// Loan-row read model (N06): resolves the catalogue title of a loaned book
+/// so borrower screens show the book's name instead of the internal row id.
+/// Null when the book no longer exists (the UI falls back to "Book #id").
+@riverpod
+Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
+  final repo = await ref.watch(bookRepositoryProvider.future);
+  final book = (await repo.getById(bookId)).toNullable();
+  return book?.title;
+}
+
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
 /// changes (e.g. after a lend/return).
@@ -586,7 +617,33 @@ Future<ImportLibraryUseCase> importLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(bookRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
-  return ImportLibraryUseCase(bookRepo: bookRepo, wishlistRepo: wishlistRepo);
+  return ImportLibraryUseCase(
+    bookRepo: bookRepo,
+    wishlistRepo: wishlistRepo,
+    // N14: the concrete JSON codec is infrastructure, wired here at the
+    // composition root.
+    jsonParser: const PitakaJsonImporter(),
+  );
+}
+
+/// Library-logo file reader for exports (N14): file IO injected as a port;
+/// the application controller no longer touches dart:io.
+@riverpod
+Future<Future<Uint8List?> Function(String)> exportLogoReader(
+  ExportLogoReaderRef ref,
+) async {
+  final coversDir = await ref.watch(coversDirProvider.future);
+  return logoFileReader(coversDir);
+}
+
+/// Event-poster file reader for publishing (N14): file IO injected as the
+/// `PosterBytesReader` port; the events controller no longer touches dart:io.
+@riverpod
+Future<Future<List<int>?> Function(String)> eventsPosterReader(
+  EventsPosterReaderRef ref,
+) async {
+  final dir = await ref.watch(appDocsDirProvider.future);
+  return posterFileReader(dir.path);
 }
 
 /// One-shot library/wishlist export use case.
@@ -596,7 +653,12 @@ Future<ExportLibraryUseCase> exportLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(bookRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
-  return ExportLibraryUseCase(bookRepo: bookRepo, wishlistRepo: wishlistRepo);
+  return ExportLibraryUseCase(
+    bookRepo: bookRepo,
+    wishlistRepo: wishlistRepo,
+    jsonEncoder: const PitakaJsonExporter(),
+    pdfRenderer: const PdfLibraryRenderer(),
+  );
 }
 
 /// Loads the bundled footer icon for the PDF export, or null when the asset
@@ -632,7 +694,11 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(bookRepositoryProvider.future);
   final settings = await ref.watch(settingsRepositoryProvider.future);
-  return MergeLibraryUseCase(bookRepo: bookRepo, settings: settings);
+  return MergeLibraryUseCase(
+    bookRepo: bookRepo,
+    settings: settings,
+    jsonParser: const PitakaJsonImporter(),
+  );
 }
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format

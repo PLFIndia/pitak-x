@@ -475,33 +475,38 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           title: 'GitHub account',
           child: _signedIn
               ? Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     // Success state must read as CONFIRMED at a glance, not
                     // as a plain label. Green isn't in the Material scheme,
                     // so pick a brightness-aware shade: 400 on dark surfaces
                     // (700 is too dim there), 700 on light (400 fails
-                    // contrast on white).
-                    Builder(
-                      builder: (ctx) {
-                        final green =
-                            Theme.of(ctx).brightness == Brightness.dark
-                            ? Colors.green.shade400
-                            : Colors.green.shade700;
-                        return Row(
-                          children: [
-                            Icon(Icons.check_circle, size: 18, color: green),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Signed in',
-                              style: TextStyle(
-                                color: green,
-                                fontWeight: FontWeight.bold,
+                    // contrast on white). N12: Flexible + ellipsis keep this
+                    // row from overflowing at 320px / large text.
+                    Expanded(
+                      child: Builder(
+                        builder: (ctx) {
+                          final green =
+                              Theme.of(ctx).brightness == Brightness.dark
+                              ? Colors.green.shade400
+                              : Colors.green.shade700;
+                          return Row(
+                            children: [
+                              Icon(Icons.check_circle, size: 18, color: green),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  'Signed in',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: green,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ),
-                            ),
-                          ],
-                        );
-                      },
+                            ],
+                          );
+                        },
+                      ),
                     ),
                     TextButton(
                       onPressed: _busy ? null : _signOut,

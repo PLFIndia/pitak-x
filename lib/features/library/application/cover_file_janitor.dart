@@ -8,8 +8,8 @@
 /// grew with the garbage. This is the ONE place that knows the rule for when
 /// a cover file may be deleted:
 ///
-///   a file may go only when NO book row references it AND it is not the
-///   current library logo.
+///   a file may go only when NO book row references it, NO wishlist row
+///   references it (M11), AND it is not the current library logo.
 ///
 /// Two entry points share that rule:
 ///  - `releaseReference` — call right after a row stopped pointing at a file
@@ -27,19 +27,27 @@ import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
-/// Deletes cover files that no book row and no logo setting point at.
+/// Deletes cover files that no book row, no wishlist row, and no logo setting
+/// point at.
 class CoverFileJanitor {
   /// Creates the janitor over its collaborators.
   const CoverFileJanitor({
     required this.books,
+    required this.wishlist,
     required this.settings,
     required this.store,
     required this.coordinator,
   });
 
-  /// Source of truth for which covers are referenced.
+  /// Source of truth for which covers are referenced by library books.
   final BookRepository books;
+
+  /// Source of truth for which covers are referenced by wishlist entries
+  /// (M11: they share the same `covers/` directory, so their references are
+  /// live too — sweeping without them deleted wishlist-only artwork).
+  final WishlistRepository wishlist;
 
   /// Source of truth for the current library logo reference.
   final SettingsRepository settings;
@@ -50,8 +58,9 @@ class CoverFileJanitor {
   /// Shared with import so cleanup's reference snapshot waits for its commit.
   final CoverFileCoordinator coordinator;
 
-  /// The set of leaf names that are currently referenced, or null when the
-  /// database could not be read (then NOTHING must be deleted — fail closed).
+  /// The set of leaf names that are currently referenced, or null when ANY
+  /// reference source could not be read (then NOTHING must be deleted —
+  /// fail closed).
   Future<Set<String>?> _referencedLeaves() async {
     final all = await books.getAll();
     final rows = all.toNullable();
@@ -59,6 +68,14 @@ class CoverFileJanitor {
     final leaves = <String>{};
     for (final b in rows) {
       final leaf = CoverPaths.leafOf(b.coverUrl);
+      if (leaf != null) leaves.add(leaf);
+    }
+    // M11: wishlist rows hold local cover references in the same directory.
+    // A read failure is fail-closed exactly like the books read above.
+    final wishlistRows = (await wishlist.getAll()).toNullable();
+    if (wishlistRows == null) return null;
+    for (final w in wishlistRows) {
+      final leaf = CoverPaths.leafOf(w.coverUrl);
       if (leaf != null) leaves.add(leaf);
     }
     final logoLeaf = CoverPaths.leafOf((await settings.load()).libraryLogo);

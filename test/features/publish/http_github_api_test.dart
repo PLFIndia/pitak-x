@@ -267,6 +267,78 @@ void main() {
       expect(calls.last, 'PATCH /repos/me/lib/git/refs/heads/main');
     });
 
+    // M14: obsolete app-owned paths ride in the SAME atomic commit as tree
+    // entries whose sha is null — GitHub's documented delete form.
+    test(
+      'deletePaths become null-sha tree entries in the same commit',
+      () async {
+        final bytes = utf8.encode('<html></html>');
+        final sha = GitBlobSha.of(bytes);
+        List<Map<String, dynamic>>? sentTree;
+
+        final svc = api(
+          MockClient((req) async {
+            final p = req.url.path;
+            if (p.endsWith('/git/ref/heads/main')) {
+              return http.Response(
+                jsonEncode({
+                  'object': {'sha': _headSha},
+                }),
+                200,
+              );
+            }
+            if (p.endsWith('/git/commits/$_headSha')) {
+              return http.Response(
+                jsonEncode({
+                  'tree': {'sha': _baseTreeSha},
+                }),
+                200,
+              );
+            }
+            if (p.endsWith('/git/blobs')) {
+              return http.Response(jsonEncode({'sha': sha}), 201);
+            }
+            if (p.endsWith('/git/trees')) {
+              final body = jsonDecode(req.body) as Map<String, dynamic>;
+              sentTree = (body['tree'] as List).cast<Map<String, dynamic>>();
+              return http.Response(jsonEncode({'sha': 'NEWTREE'}), 201);
+            }
+            if (p.endsWith('/git/commits')) {
+              return http.Response(jsonEncode({'sha': 'NEWCOMMIT'}), 201);
+            }
+            if (p.endsWith('/git/refs/heads/main')) {
+              return http.Response(jsonEncode({'ref': 'refs/heads/main'}), 200);
+            }
+            return http.Response('unexpected ${req.url.path}', 500);
+          }),
+        );
+
+        final result = await svc.commitFiles(
+          owner: 'me',
+          repo: 'lib',
+          branch: 'main',
+          token: 'TKN',
+          files: [
+            DesiredFile(
+              path: 'events.html',
+              bytes: bytes,
+              gitSha: sha,
+              upload: true,
+            ),
+          ],
+          commitMessage: 'Pitaka events publish',
+          deletePaths: const ['posters/old.jpg'],
+        );
+
+        expect(result, isA<PublishCommitSuccess>());
+        expect(sentTree, isNotNull);
+        // The kept file carries its sha; the deleted path carries null.
+        final byPath = {for (final e in sentTree!) e['path'] as String: e};
+        expect(byPath['events.html']!['sha'], sha);
+        expect(byPath['posters/old.jpg']!['sha'], isNull);
+      },
+    );
+
     test('missing ref fails without trying to initialize a repo', () async {
       final calls = <String>[];
       final svc = api(

@@ -14,6 +14,8 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
+import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 /// Records update() calls; scriptable failure for the fail-closed test.
 class _FakeBookRepo implements BookRepository {
@@ -95,6 +97,7 @@ void main() {
         coverFileJanitorProvider.overrideWith(
           (ref) async => CoverFileJanitor(
             books: repo,
+            wishlist: _NoWishlist(),
             settings: _NoLogoSettings(),
             store: store,
             coordinator: ref.watch(coverFileCoordinatorProvider),
@@ -196,34 +199,53 @@ void main() {
 }
 
 /// Settings fake with no logo (so the janitor never protects a logo file).
+/// Empty wishlist (M11: the janitor counts wishlist cover refs as live).
+class _NoWishlist implements WishlistRepository {
+  @override
+  Future<Either<Failure, List<WishlistBook>>> getAll() async => right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
 class _NoLogoSettings implements SettingsRepository {
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
   @override
-  Future<void> setThemeMode(AppThemeMode mode) async {}
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
   @override
-  Future<void> setLibraryName(String name) async {}
+  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
+      right(unit);
   @override
-  Future<void> setMaintainerName(String name) async {}
+  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
+      right(unit);
   @override
-  Future<void> setLibrarySort(BookSort sort) async {}
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+      right(unit);
   @override
-  Future<String> getOrCreateLibraryId() async => '';
+  Future<Either<Failure, String>> getOrCreateLibraryId() async => right('');
   @override
-  Future<String> regenerateLibraryId() async => '';
+  Future<Either<Failure, String>> regenerateLibraryId() async => right('');
   @override
-  Future<void> setLibraryId(String id) async {}
+  Future<Either<Failure, Unit>> setLibraryId(String id) async => right(unit);
   @override
-  Future<void> setLoadRemoteCovers({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
   @override
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
     required String phone,
-  }) async {}
+  }) async => right(unit);
   @override
-  Future<void> setLibraryLogo(String reference) async {}
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
+      right(unit);
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) async {}
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async => right(unit);
 }

@@ -251,6 +251,7 @@ final class HttpGitHubApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    List<String> deletePaths = const [],
   }) async {
     final headers = _authHeaders(token);
 
@@ -292,10 +293,15 @@ final class HttpGitHubApi implements GitHubApi {
       }
     }
 
-    // 3. New tree: every desired file as an entry, by sha.
+    // 3. New tree: every desired file as an entry, by sha. M14: paths with
+    // a null sha are deleted from the base tree (GitHub's documented
+    // create-tree contract), so obsolete app-owned files leave the branch in
+    // the SAME atomic commit that updates the rest.
     final treeEntries = [
       for (final f in files)
         {'path': f.path, 'mode': _modeFile, 'type': 'blob', 'sha': f.gitSha},
+      for (final path in deletePaths)
+        {'path': path, 'mode': _modeFile, 'type': 'blob', 'sha': null},
     ];
     final treeResp = await _post(
       _apiBase.replace(path: '/repos/$owner/$repo/git/trees'),

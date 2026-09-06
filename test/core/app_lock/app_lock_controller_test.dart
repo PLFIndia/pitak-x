@@ -7,8 +7,10 @@ import 'dart:ui' show AppLifecycleState;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/app_lock/app_lock_controller.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -64,9 +66,12 @@ class _ScriptedSettingsRepo implements SettingsRepository {
   }
 
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) async {
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async {
     if (writeThrows) throw StateError('prefs write failed');
     writes.add(enabled);
+    return right(unit);
   }
 
   @override

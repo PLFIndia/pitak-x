@@ -10,6 +10,7 @@ import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -41,6 +42,7 @@ final class BundleTestFixture {
       (failure) async => left(failure),
       (bundle) =>
           ImportLibraryUseCase(
+            jsonParser: const PitakaJsonImporter(),
             bookRepo: bookRepository ?? books,
             wishlistRepo: wishlistRepository ?? wishlist,
           ).importBundle(

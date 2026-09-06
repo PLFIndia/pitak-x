@@ -7,6 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -92,6 +93,7 @@ void main() {
     tester,
   ) async {
     final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
     );

@@ -7,6 +7,8 @@ library;
 
 import 'dart:math' show Random;
 
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,32 +54,55 @@ class PrefsSettingsRepository implements SettingsRepository {
     );
   }
 
-  @override
-  Future<void> setThemeMode(AppThemeMode mode) =>
-      _prefs.setString(_themeKey, mode.token);
-
-  @override
-  Future<void> setLibraryName(String name) =>
-      _prefs.setString(_libraryNameKey, name.trim());
-
-  @override
-  Future<String> getOrCreateLibraryId() async {
-    final existing = _prefs.getString(_libraryIdKey);
-    if (existing != null && existing.isNotEmpty) return existing;
-    final minted = _mintLibraryId();
-    await _prefs.setString(_libraryIdKey, minted);
-    return minted;
+  /// Runs one plugin write and turns its boolean/exception contract into a
+  /// typed result (M17). `SharedPreferences` setters report success as a
+  /// `Future<bool>`; discarding it let the UI confirm preferences the device
+  /// never stored. A `false` OR a thrown plugin error is a [StorageFailure].
+  Future<Either<Failure, Unit>> _write(
+    Future<bool> Function() op,
+    String what,
+  ) async {
+    try {
+      final ok = await op();
+      if (!ok) return left(StorageFailure('settings write failed: $what'));
+      return right(unit);
+    } on Exception catch (e) {
+      return left(StorageFailure('settings write failed: $what ($e)'));
+    }
   }
 
   @override
-  Future<void> setLibraryId(String id) =>
-      _prefs.setString(_libraryIdKey, id.trim());
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
+      _write(() => _prefs.setString(_themeKey, mode.token), 'theme');
 
   @override
-  Future<String> regenerateLibraryId() async {
+  Future<Either<Failure, Unit>> setLibraryName(String name) =>
+      _write(() => _prefs.setString(_libraryNameKey, name.trim()), 'name');
+
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
+    final existing = _prefs.getString(_libraryIdKey);
+    if (existing != null && existing.isNotEmpty) return right(existing);
     final minted = _mintLibraryId();
-    await _prefs.setString(_libraryIdKey, minted);
-    return minted;
+    final saved = await _write(
+      () => _prefs.setString(_libraryIdKey, minted),
+      'library id',
+    );
+    return saved.match(left, (_) => right(minted));
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) =>
+      _write(() => _prefs.setString(_libraryIdKey, id.trim()), 'library id');
+
+  @override
+  Future<Either<Failure, String>> regenerateLibraryId() async {
+    final minted = _mintLibraryId();
+    final saved = await _write(
+      () => _prefs.setString(_libraryIdKey, minted),
+      'library id',
+    );
+    return saved.match(left, (_) => right(minted));
   }
 
   /// Mints a 32-char lowercase-hex ID from 16 CSPRNG bytes (§6.4: never the
@@ -92,28 +117,51 @@ class PrefsSettingsRepository implements SettingsRepository {
   }
 
   @override
-  Future<void> setMaintainerName(String name) =>
-      _prefs.setString(_maintainerNameKey, name.trim());
+  Future<Either<Failure, Unit>> setMaintainerName(String name) => _write(
+    () => _prefs.setString(_maintainerNameKey, name.trim()),
+    'maintainer name',
+  );
 
   @override
-  Future<void> setLibrarySort(BookSort sort) =>
-      _prefs.setString(_librarySortKey, sort.token);
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) =>
+      _write(() => _prefs.setString(_librarySortKey, sort.token), 'sort');
 
   @override
-  Future<void> setLoadRemoteCovers({required bool enabled}) =>
-      _prefs.setBool(_loadRemoteCoversKey, enabled);
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
+      _write(
+        () => _prefs.setBool(_loadRemoteCoversKey, enabled),
+        'remote covers',
+      );
 
   @override
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
     required String phone,
   }) async {
-    await _prefs.setString(_publishAddressKey, address.trim());
-    await _prefs.setString(_publishGpsKey, gps.trim());
-    await _prefs.setString(_publishEmailKey, email.trim());
-    await _prefs.setString(_publishPhoneKey, phone.trim());
+    // One failed field write aborts the whole contact save (M17): the UI
+    // must not report a saved contact that is only half on disk.
+    final writes = <(String, Future<bool> Function())>[
+      (
+        _publishAddressKey,
+        () => _prefs.setString(_publishAddressKey, address.trim()),
+      ),
+      (_publishGpsKey, () => _prefs.setString(_publishGpsKey, gps.trim())),
+      (
+        _publishEmailKey,
+        () => _prefs.setString(_publishEmailKey, email.trim()),
+      ),
+      (
+        _publishPhoneKey,
+        () => _prefs.setString(_publishPhoneKey, phone.trim()),
+      ),
+    ];
+    for (final (key, op) in writes) {
+      final result = await _write(op, 'publish contact ($key)');
+      if (result.isLeft()) return result;
+    }
+    return right(unit);
   }
 
   /// Address value, migrating a legacy single "location" that is NOT a
@@ -151,10 +199,12 @@ class PrefsSettingsRepository implements SettingsRepository {
   }
 
   @override
-  Future<void> setLibraryLogo(String reference) =>
-      _prefs.setString(_libraryLogoKey, reference.trim());
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) => _write(
+    () => _prefs.setString(_libraryLogoKey, reference.trim()),
+    'library logo',
+  );
 
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) =>
-      _prefs.setBool(_appLockBiometricKey, enabled);
+  Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
+      _write(() => _prefs.setBool(_appLockBiometricKey, enabled), 'app lock');
 }

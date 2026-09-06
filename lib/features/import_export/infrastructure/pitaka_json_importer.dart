@@ -19,6 +19,7 @@ import 'dart:convert';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
+import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
@@ -26,7 +27,7 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 const int kPitakaSchemaVersion = 3;
 
 /// Parses Pitaka JSON export files into an [ImportPayload].
-final class PitakaJsonImporter implements Importer {
+final class PitakaJsonImporter implements Importer, LibraryJsonParser {
   /// Creates a JSON importer. Bundles preserve local refs during parsing, then
   /// validate them against bundled bytes and rewrite them before persistence.
   const PitakaJsonImporter({
@@ -115,6 +116,7 @@ final class PitakaJsonImporter implements Importer {
   /// strings when absent/malformed — never throws. The merge gate validates the
   /// ID separately via `LibraryId.normalizeOrNull`, so a junk value here is
   /// safely treated as "no ID" (→ the differ-decision path).
+  @override
   ({String libraryId, String libraryName}) parseEnvelope(String text) {
     try {
       final decoded = jsonDecode(text);

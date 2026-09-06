@@ -10,6 +10,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_controller.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
+import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -122,8 +124,12 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         exportLibraryUseCaseProvider.overrideWith(
-          (ref) async =>
-              ExportLibraryUseCase(bookRepo: books, wishlistRepo: _Wishlist()),
+          (ref) async => ExportLibraryUseCase(
+            jsonEncoder: const PitakaJsonExporter(),
+            pdfRenderer: const PdfLibraryRenderer(),
+            bookRepo: books,
+            wishlistRepo: _Wishlist(),
+          ),
         ),
         fileShareServiceProvider.overrideWithValue(share),
       ],

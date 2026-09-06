@@ -1,11 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// Transitive dependency of shared_preferences, imported only for the
+// false-write store seam below (M17). Deliberately NOT added to pubspec so
+// the app's dependency surface stays unchanged.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 /// A settings repo whose writes always fail (persist-failure regression).
 class _FailingSettingsRepo implements SettingsRepository {
@@ -14,34 +21,51 @@ class _FailingSettingsRepo implements SettingsRepository {
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
   @override
-  Future<String> getOrCreateLibraryId() async =>
-      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  Future<Either<Failure, String>> getOrCreateLibraryId() async =>
+      right('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
   @override
-  Future<String> regenerateLibraryId() async =>
-      'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+  Future<Either<Failure, String>> regenerateLibraryId() async =>
+      right('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
   @override
-  Future<void> setAppLockBiometric({required bool enabled}) => throw _boom;
+  Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
+      throw _boom;
   @override
-  Future<void> setLibraryId(String id) => throw _boom;
+  Future<Either<Failure, Unit>> setLibraryId(String id) => throw _boom;
   @override
-  Future<void> setLibraryLogo(String reference) => throw _boom;
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) => throw _boom;
   @override
-  Future<void> setLibraryName(String name) => throw _boom;
+  Future<Either<Failure, Unit>> setLibraryName(String name) => throw _boom;
   @override
-  Future<void> setLibrarySort(BookSort sort) => throw _boom;
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) => throw _boom;
   @override
-  Future<void> setLoadRemoteCovers({required bool enabled}) => throw _boom;
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
+      throw _boom;
   @override
-  Future<void> setMaintainerName(String name) => throw _boom;
+  Future<Either<Failure, Unit>> setMaintainerName(String name) => throw _boom;
   @override
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
     required String phone,
   }) => throw _boom;
   @override
-  Future<void> setThemeMode(AppThemeMode mode) => throw _boom;
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) => throw _boom;
+}
+
+/// A plugin store whose writes always report `false` — the M17 regression:
+/// `SharedPreferences` setters return a success boolean that the repository
+/// used to discard, letting the UI confirm writes that never landed.
+class _FalseWriteStore extends InMemorySharedPreferencesStore {
+  // Super params can't target the named `.withData` constructor, so the
+  // explicit initializer stays (lint suppressed with reason).
+  // ignore: use_super_parameters
+  _FalseWriteStore([Map<String, Object> data = const {}])
+    : super.withData(data);
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async =>
+      false; // never stores, never succeeds
 }
 
 void main() {
@@ -92,11 +116,11 @@ void main() {
         final prefs = await SharedPreferences.getInstance();
         final repo = PrefsSettingsRepository(prefs);
 
-        final first = await repo.getOrCreateLibraryId();
+        final first = (await repo.getOrCreateLibraryId()).getOrElse((_) => '');
         expect(first, hasLength(32));
         expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(first), isTrue);
         // Idempotent: a second call returns the same stored id.
-        expect(await repo.getOrCreateLibraryId(), first);
+        expect((await repo.getOrCreateLibraryId()).getOrElse((_) => ''), first);
         // And it is reflected into load().
         expect((await repo.load()).libraryId, first);
       },
@@ -111,7 +135,7 @@ void main() {
       expect((await repo.load()).libraryId, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb');
       // getOrCreate now returns the adopted id, not a fresh one.
       expect(
-        await repo.getOrCreateLibraryId(),
+        (await repo.getOrCreateLibraryId()).getOrElse((_) => ''),
         'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
       );
     });
@@ -123,8 +147,8 @@ void main() {
         final prefs = await SharedPreferences.getInstance();
         final repo = PrefsSettingsRepository(prefs);
 
-        final first = await repo.getOrCreateLibraryId();
-        final regen = await repo.regenerateLibraryId();
+        final first = (await repo.getOrCreateLibraryId()).getOrElse((_) => '');
+        final regen = (await repo.regenerateLibraryId()).getOrElse((_) => '');
         expect(regen, isNot(first));
         expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(regen), isTrue);
         expect((await repo.load()).libraryId, regen);
@@ -303,7 +327,10 @@ void main() {
         await container.read(settingsControllerProvider.future);
         final notifier = container.read(settingsControllerProvider.notifier);
 
-        final minted = await notifier.getOrCreateLibraryId();
+        final minted = (await notifier.getOrCreateLibraryId()).getOrElse(
+          (_) => '',
+        );
+        expect(minted, isNotEmpty);
         expect(
           container.read(settingsControllerProvider).value!.libraryId,
           minted,
@@ -324,5 +351,100 @@ void main() {
         expect(RegExp(r'^[0-9a-f]{32}$').hasMatch(after), isTrue);
       },
     );
+  });
+
+  group('M17 — plugin reports false (write never landed)', () {
+    // Installs a store whose setValue always returns false, then hands the
+    // repository a SharedPreferences bound to it. Mirrors the plugin contract:
+    // setString/setBool surface the store's boolean unchanged.
+    Future<PrefsSettingsRepository> falseWriteRepo() async {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = _FalseWriteStore();
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      final prefs = await SharedPreferences.getInstance();
+      return PrefsSettingsRepository(prefs);
+    }
+
+    test(
+      'every setter becomes a StorageFailure, never silent success',
+      () async {
+        final repo = await falseWriteRepo();
+
+        // Minting paths first, on a pristine store: the plugin ALSO caches
+        // values in memory when a write fails, so a prior failed setLibraryId
+        // would make getOrCreateLibraryId answer from the cache without a
+        // write. Fresh store = the mint/persist write actually happens.
+        expect((await repo.getOrCreateLibraryId()).isLeft(), isTrue);
+        expect((await repo.regenerateLibraryId()).isLeft(), isTrue);
+
+        expect((await repo.setThemeMode(AppThemeMode.light)).isLeft(), isTrue);
+        expect((await repo.setLibraryName('x')).isLeft(), isTrue);
+        expect((await repo.setMaintainerName('x')).isLeft(), isTrue);
+        expect(
+          (await repo.setLibrarySort(BookSort.languageAsc)).isLeft(),
+          isTrue,
+        );
+        expect(
+          (await repo.setLoadRemoteCovers(enabled: true)).isLeft(),
+          isTrue,
+        );
+        expect(
+          (await repo.setPublishContact(
+            address: 'a',
+            gps: '',
+            email: '',
+            phone: '',
+          )).isLeft(),
+          isTrue,
+        );
+        expect((await repo.setLibraryLogo('covers/x.jpg')).isLeft(), isTrue);
+        expect(
+          (await repo.setAppLockBiometric(enabled: true)).isLeft(),
+          isTrue,
+        );
+        expect((await repo.setLibraryId('c' * 32)).isLeft(), isTrue);
+      },
+    );
+
+    test('controller keeps last-known-good state on a false write', () async {
+      SharedPreferences.setMockInitialValues({});
+      // Seed the READ side (prefixed keys) while every write reports false.
+      SharedPreferencesStorePlatform.instance = _FalseWriteStore({
+        'flutter.theme_mode': 'light',
+      });
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(settingsControllerProvider.future);
+
+      await container
+          .read(settingsControllerProvider.notifier)
+          .setThemeMode(AppThemeMode.dark);
+
+      final s = container.read(settingsControllerProvider);
+      expect(s.hasError, isTrue);
+      expect(s.error, isA<StorageFailure>());
+      // The failed write was never published; the old value stays readable.
+      expect(s.valueOrNull?.themeMode, AppThemeMode.light);
+    });
+
+    test('getOrCreateLibraryId surfaces the failure to the caller', () async {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = _FalseWriteStore();
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(settingsControllerProvider.future);
+
+      final minted = await container
+          .read(settingsControllerProvider.notifier)
+          .getOrCreateLibraryId();
+      expect(minted.isLeft(), isTrue);
+      // No phantom ID was published into state.
+      expect(
+        container.read(settingsControllerProvider).valueOrNull?.libraryId,
+        '',
+      );
+    });
   });
 }

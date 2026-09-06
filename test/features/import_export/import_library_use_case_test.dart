@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -143,6 +144,7 @@ void main() {
     bookRepo = _FakeBookRepo();
     wishlistRepo = _FakeWishlistRepo();
     useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
       bookRepo: bookRepo,
       wishlistRepo: wishlistRepo,
     );
@@ -262,6 +264,7 @@ void main() {
 
     test('propagates a repository failure as Left', () async {
       final failing = ImportLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
         bookRepo: _FailingBookRepo(),
         wishlistRepo: wishlistRepo,
       );

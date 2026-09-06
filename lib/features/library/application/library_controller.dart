@@ -12,6 +12,7 @@ import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
+import 'package:pitaka/features/library/domain/book_sorter.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -30,10 +31,20 @@ class LibraryController extends _$LibraryController {
   String? _languageFilter;
   BookSort _sort = BookSort.recentlyAdded;
 
+  /// N05: every new load intent (build, refresh, query change) bumps this;
+  /// a completion publishes its result ONLY if it still belongs to the
+  /// newest revision. Cancelling the debounce timer is not enough — a query
+  /// already running in SQLite cannot be cancelled, and its late result must
+  /// not overwrite the answer to a newer query.
+  int _revision = 0;
+
   @override
   FutureOr<List<Book>> build() async {
     // Cancel any in-flight debounce when the provider is disposed.
     ref.onDispose(() => _debounce?.cancel());
+    // A rebuild (sort/language change, invalidation) supersedes any search
+    // completion still in flight.
+    _revision++;
     // WATCH the persisted sort (narrowed with select, §8): changing it in
     // Settings rebuilds this provider and re-sorts the list immediately.
     // A ref.read here would freeze the sort until an unrelated refresh.
@@ -56,20 +67,27 @@ class LibraryController extends _$LibraryController {
   String get query => _query;
 
   /// Updates the query and refreshes the list after a short debounce. An empty
-  /// query restores the full list. Each keystroke resets the timer.
+  /// query restores the full list. Each keystroke resets the timer AND bumps
+  /// the revision, so an older in-flight query can never land last (N05).
   void onQueryChanged(String query) {
     _query = query;
+    _revision++;
+    final rev = _revision;
     _debounce?.cancel();
     _debounce = Timer(_searchDebounce, () async {
       state = const AsyncLoading();
-      state = await AsyncValue.guard(() => _load(query));
+      final loaded = await AsyncValue.guard(() => _load(query));
+      if (rev == _revision) state = loaded; // stale completions are dropped
     });
   }
 
   /// Reloads the list for the active query (used after external mutations).
   Future<void> refresh() async {
+    _revision++;
+    final rev = _revision;
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() => _load(_query));
+    final loaded = await AsyncValue.guard(() => _load(_query));
+    if (rev == _revision) state = loaded;
   }
 
   /// Soft-deletes book [id] (stays visible-but-inert), then refreshes.
@@ -120,19 +138,24 @@ class LibraryController extends _$LibraryController {
       );
     }
     // Search path: FTS5 matches, then narrow by language in Dart (the FTS
-    // query doesn't carry the facet).
+    // query doesn't carry the facet), then apply the SAME sort the unsearched
+    // list uses (N05: search results used to ignore the selected sort).
     final result = await repo.search(query);
     return result.fold(
       (failure) =>
           // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
           throw failure,
-      (books) => lang == null || lang.trim().isEmpty
-          ? books
-          : books
-                .where(
-                  (b) => (b.language ?? '').toLowerCase() == lang.toLowerCase(),
-                )
-                .toList(),
+      (books) {
+        final filtered = lang == null || lang.trim().isEmpty
+            ? books
+            : books
+                  .where(
+                    (b) =>
+                        (b.language ?? '').toLowerCase() == lang.toLowerCase(),
+                  )
+                  .toList();
+        return BookSorter.sort(filtered, sort);
+      },
     );
   }
 }

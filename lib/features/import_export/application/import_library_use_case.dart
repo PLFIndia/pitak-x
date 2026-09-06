@@ -30,7 +30,7 @@ import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart';
+import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -78,16 +78,17 @@ final class ImportLibraryUseCase {
   const ImportLibraryUseCase({
     required BookRepository bookRepo,
     required WishlistRepository wishlistRepo,
-    PitakaJsonImporter jsonImporter = const PitakaJsonImporter(),
+    // N14: concrete JSON codec lives in infrastructure; injected via DI.
+    required LibraryJsonParser jsonParser,
     GoodreadsCsvImporter goodreadsImporter = const GoodreadsCsvImporter(),
   }) : _bookRepo = bookRepo,
        _wishlistRepo = wishlistRepo,
-       _json = jsonImporter,
+       _json = jsonParser,
        _goodreads = goodreadsImporter;
 
   final BookRepository _bookRepo;
   final WishlistRepository _wishlistRepo;
-  final PitakaJsonImporter _json;
+  final LibraryJsonParser _json;
   final GoodreadsCsvImporter _goodreads;
 
   /// Sniffs [text], parses with the right importer, and applies it.

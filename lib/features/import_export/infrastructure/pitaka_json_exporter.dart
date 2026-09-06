@@ -11,13 +11,14 @@ library;
 
 import 'dart:convert';
 
-import 'package:pitaka/features/import_export/domain/pitaka_json_importer.dart'
+import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart'
     show kPitakaSchemaVersion;
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Serialises library + wishlist rows to a Pitaka JSON export string.
-class PitakaJsonExporter {
+class PitakaJsonExporter implements LibraryJsonEncoder {
   /// Creates the exporter.
   const PitakaJsonExporter();
 
@@ -28,6 +29,7 @@ class PitakaJsonExporter {
   /// D40): the recipient's merge gate compares the file's [libraryId] against
   /// its own to decide match-vs-decision. Blank values are omitted (an older
   /// file with no ID is treated as "unknown library" by the merge gate).
+  @override
   String export({
     required List<Book> books,
     required List<WishlistBook> wishlist,
