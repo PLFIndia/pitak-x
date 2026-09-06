@@ -26,19 +26,43 @@ read-only library site to GitHub Pages.
   paginated A4 library list with Indic-script support via shaped-image text).
 - **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
   **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
-  the Kotlin app is retired and is not a restore target).
+  the Kotlin app is retired and is not a restore target). **Honest limit:**
+  the archive is *not* fully encrypted — books, wishlist and covers are stored
+  plainly inside it; only the borrowers vault (when present) stays encrypted.
+  Treat backup files accordingly.
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
 - **App-lock** — optional, opt-in biometric/device-credential gate before the
-  library screen (a UI gate, not at-rest encryption).
+  library screen. It is a **screen cover, not a vault lock**: it deters casual
+  access on an unlocked phone but does not encrypt data at rest and does not
+  lock an already-unlocked vault.
 
 ## Privacy posture
 
 Local-first by default. Sensitive data (vault, tokens) lives in
-`flutter_secure_storage` (Keystore/Keychain); secrets are held as wipeable bytes,
-never `String`. Network calls happen only on explicit user action (ISBN lookup,
-publish, remote covers — the last is opt-in, default off). Screenshots are
-blocked (`FLAG_SECURE`) while sensitive data is visible.
+`flutter_secure_storage` (Keystore/Keychain); secrets are held as wipeable bytes
+where the design allows it (some platform-managed secrets, like the GitHub
+token, transit as immutable strings — see `astra-review.md` trade-offs).
+Network calls happen only on explicit user action (ISBN lookup,
+publish, remote covers — the last is opt-in, default off).
+
+**Platform matrix (M18):** Android is the only shipping target today.
+Screenshot/recents capture is blocked on Android (`FLAG_SECURE`) while
+sensitive data is visible; other Flutter targets are not shipped and have no
+equivalent protection wired up. The optional biometric app-lock is a screen
+cover, not a vault lock (see the security notes below).
+
+### Security notes (honest limits)
+
+- **Vault session lifetime:** once unlocked, the vault stays unlocked in
+  memory until you lock it or the app exits. There is deliberately no
+  auto-lock timeout (user decision); backgrounding the app does not lock it.
+- **App-lock ≠ vault lock:** the optional biometric app gate covers the
+  screen; it does not lock or encrypt the vault itself.
+- **Passphrase change is rewrap, not key rotation:** changing the vault
+  passphrase re-wraps the *same* master key (`rust/src/api.rs`). Anyone holding
+  an old vault copy *and* the old passphrase can still open that copy; only
+  re-creating the vault would rotate the key.
 
 ## Tech stack
 

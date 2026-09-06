@@ -13,6 +13,7 @@
 /// (iOS, desktop, tests) the call degrades to a silent no-op.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
@@ -39,9 +40,11 @@ abstract interface class ScreenSecurity {
 
 /// [ScreenSecurity] backed by a narrow platform [MethodChannel].
 ///
-/// Android maps this to `WindowManager.LayoutParams.FLAG_SECURE`. Other
-/// platforms have no handler registered; a [MissingPluginException] is caught
-/// and treated as a no-op (the feature simply has no effect there).
+/// PLATFORM MATRIX (M18, astra-review.md): Android is the only shipping
+/// target. Android maps this to `WindowManager.LayoutParams.FLAG_SECURE`
+/// (MainActivity). Other platforms register no handler; that case is a
+/// deliberate no-op, and the README states plainly that capture protection
+/// exists only on Android.
 final class MethodChannelScreenSecurity implements ScreenSecurity {
   /// Creates the channel-backed implementation.
   const MethodChannelScreenSecurity();
@@ -56,10 +59,14 @@ final class MethodChannelScreenSecurity implements ScreenSecurity {
     try {
       await _channel.invokeMethod<void>('setSecure', {'secure': secure});
     } on MissingPluginException {
-      // No native handler on this platform (iOS/desktop/tests) — no-op.
-    } on PlatformException {
-      // Never let a window-flag failure crash a vault flow; fail open visually
-      // but the data itself is already protected by encryption at rest.
+      // No native handler on this platform (non-Android/tests) — an expected
+      // no-op, not a failure.
+    } on PlatformException catch (e) {
+      // M18: a handler EXISTS but failed (Android) — that is a real defect
+      // in the capture shield, so it must not be silent. Log it (debug
+      // console only — no analytics, no PII, §3), but never crash a vault
+      // flow: the data itself is still protected by encryption at rest.
+      debugPrint('screen_security: setSecure($secure) failed: ${e.code}');
     }
   }
 }

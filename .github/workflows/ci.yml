@@ -27,6 +27,15 @@ jobs:
       - name: cargo test (release)
         working-directory: rust
         run: cargo test --release
+      # N14: advisory gate. Fails on any known vulnerability AND on warnings
+      # (e.g. unsoundness advisories like RUSTSEC-2026-0190) — the explicit
+      # warning policy astra-review.md asked for. Fetches the live advisory
+      # DB (the stale offline scan in astra-review.md is NOT this gate).
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+      - name: cargo audit (deny warnings)
+        working-directory: rust
+        run: cargo audit --deny warnings
 
   flutter:
     name: Flutter (analyze, format, test)
@@ -62,3 +71,32 @@ jobs:
       # restore) and the fail-closed restore/vault-mapping tests.
       - name: Test (with coverage)
         run: flutter test --coverage
+      # N14: coverage RATCHET — total line coverage must not regress below
+      # the floor. The repo target is >=90% for domain/application
+      # (AGENTS.md §10); this whole-suite floor is the enforceable minimum
+      # (presentation/infrastructure pull the total below the layer target).
+      # Raise the floor as coverage improves; never lower it.
+      - name: Coverage floor
+        run: |
+          python3 - <<'EOF'
+          total = hit = 0
+          for line in open('coverage/lcov.info'):
+              if line.startswith('LF:'): total += int(line[3:])
+              elif line.startswith('LH:'): hit += int(line[3:])
+          pct = hit / total * 100 if total else 0.0
+          floor = 64.0
+          print(f'line coverage: {hit}/{total} = {pct:.2f}% (floor {floor}%)')
+          if pct < floor:
+              raise SystemExit('coverage fell below the floor')
+          EOF
+      # N14: lightweight secret scan over everything git tracks (no extra
+      # tooling to supply-chain). Catches the common credential shapes; the
+      # real protection remains AGENTS.md §12 (never commit secrets) +
+      # review discipline.
+      - name: Secret scan (tracked files)
+        run: |
+          ! git grep -nIE \
+            'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY' \
+            'gh[pousr]_[A-Za-z0-9]{36,}' 'github_pat_[A-Za-z0-9_]{22,}' \
+            'AKIA[0-9A-Z]{16}' 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+            -- ':!*.lock' ':!.github/workflows/*'

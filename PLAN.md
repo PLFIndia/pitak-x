@@ -1,177 +1,150 @@
-# PLAN.md — current task
+# PLAN.md — Session 7: batch remediation (14 findings)
 
-Roadmap: `fix-schedule.md`. Session 6, **M04 COMPLETE, uncommitted**.
-User approved end-to-end execution (option a). Commit approval is separate.
+**Scope (user request):** M06a, M17, M12, M11, N01, N13, N02, N06, N15, M14, N05,
+N12, N14, M18 — every remaining item except the DECISION-blocked design items
+(M02, M03, M05, M06b, M08, M09, M16) and the rest of Phase 5.
+
+**Baseline (verified this session, pinned SDK 3.44.2):** analyze 0 issues;
+format clean; Flutter **1049 passed / 0 failed**; Rust **30 passed**, 2
+expected ignored. HEAD `60ad670`, tracked tree clean. All 14 findings'
+`astra-review.md` evidence re-verified against current code — all still match.
+
+---
 
 ## Understanding
-- Prevent a bundle import from overwriting existing covers, including when
-  JSON is invalid, a book is skipped, or a later database operation fails.
-- Start/current HEAD: `cb5d74d`; tracked tree clean at session start.
-  `astra-review.md` and `fix-schedule.md` stay untracked and must not be staged.
-- Scope: bundle reader, import orchestration, narrow file-ownership ports/DI,
-  relevant tests and generated code. Do not implement other scheduled findings.
+
+Thirteen of the fourteen items are implementation-ready; **M18 is DECISION-
+blocked** (which Apple targets ship). **N02 has a dependency note** on M09
+(not in scope) — resolvable without M09 (see below). Commit policy from
+Session 1 stands: fix code/tests + PLAN.md only, explicit paths, never stage
+`astra-review.md` / `fix-schedule.md`.
 
 ## Privacy & threat notes
-- A user-selected archive is untrusted. Its filenames must never authorize
-  writes to existing files or access to another local image via a forged ref.
-- Parse/check first; keep only image bytes referenced by accepted rows. Never
-  fetch remote images during import or expose paths/catalogue data in errors.
-- Store any temporary files in app-private storage; track ownership explicitly.
-  Rollback may delete only files created by that particular import operation.
-- No new telemetry, network, credentials, permissions, dependencies or schema.
-  Existing plaintext-cover/catalogue storage policy remains M06, not changed.
-- SQLite cannot roll back filesystem writes. Complete new files before their
-  database references commit; remove owned files on rollback. Do not claim
-  power-loss atomicity from rename or a SQL transaction alone.
 
-## Investigation notes
-- Before changes, M04 matched library_bundle_reader.dart:60–89: writeAsBytesSync used
-  incoming leaf names before JSON parsing; cover write failures are skipped.
-- import_controller.dart:46–64 reads/writes the bundle before applyPayload.
-  No file rollback is tied to the resulting database transaction.
-- import_library_use_case.dart:117–204 deduplicates within runInTransaction:
-  stable UID updates, ISBN-only books skip, wishlist ISBN matches replace.
-  Preserve these rules and book IDs; skipped rows must not install covers.
-- Both repositories share AppDatabase via DI. DriftBookRepository:287–301
-  rolls back Left results/throws; current import fakes are pass-through, so
-  add real in-memory Drift integration tests, not fake-only atomicity claims.
-- Read tables.dart/app_database.dart: books and wishlist both have cover_url;
-  no schema change is needed. Vault/FFI are not involved in additive import.
-- ImportPayload mixes file/row parse errors; PitakaJsonImporter currently keeps
-  local refs for bundles. Comprehensive field validation remains M15.
-- CoverFiles.saveJpeg is JPEG-specific, while bundle bytes need not be JPEG.
-  Do not rename arbitrary bytes to JPEG or expand capture behavior casually.
-- CoverFileJanitor:80–94 can sweep fresh UUID JPEGs before DB commit. Pending
-  import files need explicit protection; do not rely on today's janitor for
-  rollback (its wishlist ownership omission remains M11).
-- Pinned Flutter 3.44.2 baseline: analyzer 0 issues; format 338 files / 0 changed;
-  full Flutter 965 passed / 0 failed; Rust 30 passed / 2 expected ignored.
-  Flutter log: `/tmp/pitak-m04-flutter-baseline.e30L4Q`.
+- M17: a silently-unpersisted `appLockBiometric` is a security-flag drift
+  (UI says locked, disk says not) → fail closed, keep last-known-good state.
+- N01: mask fix must NOT weaken byte handling (schedule note). Listener only
+  re-renders the mask from the controller's public `length`; no secret access.
+- N13: vault-free archives need no passphrase; inspection must not leak vault
+  contents — manifest only (counts/flags), never DB rows.
+- N02: persisted remote cover URLs must pass `CoverUrlAllowList` (https +
+  fixed host set) — otherwise lookup becomes an arbitrary-host beacon vector.
+- M14: deleting tree paths does NOT rewrite Git history — UI copy must say so.
+- N15: advisory RUSTSEC-2026-0190 (anyhow unsoundness) — dep bump, §6 approval.
+- M18: least privilege — add ONLY the capabilities of shipping targets.
+- N14 Rust length validation: FFI boundary input validation (global AGENTS §2).
 
-## Implemented approach (with OSS references)
-- First add the permanent invalid-JSON/existing-cover regression and demonstrate
-  failure on old code. Add duplicate-ISBN and DB-failure reproductions too.
-- Separate side-effect-free bundle decoding/validation from file installation.
-  Use a narrow domain contract for application orchestration; keep file IO in
-  infrastructure and provider wiring in core DI, with typed Either failures.
-- Recommended bundle policy: reject parse errors, unsafe/missing local image
-  references and unreferenced cover entries before persistence. Accept valid
-  empty bundles. Leave ordinary text JSON/CSV import semantics unchanged.
-- Resolve accepted rows using existing transaction/dedup rules; stage only their
-  referenced images, sharing one new reference per incoming image where needed.
-  Rewrite book AND wishlist refs to fresh app-owned names, never incoming names.
-- Coordinate pending-file ownership with cleanup; detect destination collisions
-  without overwriting. Preserve existing covers even on rollback/cleanup error.
-  Test repeated imports, overlapping operations and sweeps at await boundaries.
-- Tie installation and rollback to the OUTERMOST transaction result, including
-  commit failure. Keep completed files after successful commit; do not report
-  an already-committed import as rolled back because housekeeping failed.
-- OSS foundations verified locally: Drift 2.28.2 source, runtime/api/
-  connection_user.dart:431–524 (zone-scoped transaction, commit/rollback cleanup);
-  pinned Dart SDK io/file.dart:223–311 (exclusive create and destructive rename
-  semantics), io/directory.dart:223–240 (unique temporary directories). Adapt
-  these existing primitives; no home-grown transaction or crypto library.
-- Add reader/storage unit tests, ProviderContainer controller tests, real Drift
-  rollback tests and UI error/retry coverage. Regenerate annotated providers;
-  run full tests/coverage, analyzer, format, Rust and diff checks before done.
+## Investigation notes (all verified this session)
 
-## Decision points
-- End-to-end M04 execution and proposed bundle rejection policy: APPROVED.
-- Use one DI-owned FIFO around import and janitor decisions so cleanup cannot
-  observe uncommitted cover references. Wishlist ownership rules remain M11.
-- Pause if file/sweep coordination requires broader M11 work or if compatibility
-  evidence contradicts the proposed rejection policy. Commit approval separate.
+| ID | Verified state | Fix direction |
+|---|---|---|
+| M06a | `settings_page.dart:255` says "Full encrypted .pitabak archive"; only vault inside is encrypted | truthful label + README/PRIVACY pass; fold doc items: rewrap≠rotation (`rust/src/api.rs:289–337`), honest auto-lock/biometric-gate wording (Session-1 decision) |
+| M17 | `prefs_settings_repository.dart` setters return `Future<void>`, discard plugin bools; controller `_update` already folds throws into `AsyncError` keeping last-known-good | check every bool, throw typed `StorageFailure` on false (bookmarks `_persist` is the blessed pattern); test false-return paths. M16 (race) stays open |
+| M12 | `DeleteBookUseCase` sees only `isUnlocked`; state machine ALREADY distinguishes `VaultUninitialized`/`VaultLocked` (`vault_session_state.dart`) | add `bool get vaultExists` to `VaultLoanPurger`; controller implements from state; use case deletes straight away when no vault exists; UI copy unchanged path for locked |
+| M11 | `CoverFileJanitor._referencedLeaves` = books + logo only; wishlist rows hold local `coverUrl` refs in the same dir | inject `WishlistRepository`; union wishlist leaves; wishlist-read failure → fail closed (delete nothing), same as books |
+| N01 | field never listens to controller; `takeSecret()`/external `clear()` leave stale bullets (`_masked`/`_prevMaskLen`) | add controller listener in `initState` syncing mask from public `length`; handle `didUpdateWidget` controller swap; clear stale note on external empty. Append-only edit contract untouched |
+| N13 | `_canRestore` always requires non-empty passphrase; `manifest.hasBackupBlob` tells whether one is needed; no pre-inspection exists | add `RestoreBackup.inspectArchive(bytes) → Either<Failure, BackupManifest>` (bounded extract + manifest only); page inspects on pick, shows contents, asks passphrase only when `hasBackupBlob`; `restore()` passphrase becomes nullable, fail closed when vault present but passphrase absent; fix "replaces everything" copy (doc item folded) |
+| N02 | both add pages discard `BookMetadata.coverUrl`; `needsMetadata` never clearable | retain `coverUrl` ONLY when `CoverUrlAllowList.sanitize` passes (M09's display enforcement stays open — persisted URLs are allow-list-clean, so display stays safe); explicit "metadata complete" action clearing `needsMetadata`. M09 not needed for correctness here |
+| N06 | `_returnLoan` discards `Either`; rows show `Book #<id>` | read model resolving titles via `BookRepository` (fallback to id); per-loan busy + typed failure snack; idempotent (returned loan → no-op) |
+| N15 | `rust/Cargo.lock:105–106` anyhow 1.0.102; `cargo-audit` installed | §6 approval → `cargo update -p anyhow` (≥1.0.103), fresh `cargo audit` (network DB fetch), `dart pub outdated` read-only |
+| M14 | events publish disabled when posters empty; `commitFiles` only adds/updates tree entries; manifest tracks events file shas | allow empty publish; add delete support to `GitHubApi.commitFiles` (GitHub tree API: entry with `sha: null` deletes the path from `base_tree`); events use case deletes obsolete app-owned paths (`posters/*`, stale `events.html` shas from manifest); UI copy explains Git history persists (doc item folded) |
+| N05 | debounce cancels timer but an in-flight `_load` can still land late; `search` hardcodes newest-first | revision counter in controller — publish only if revision current (query/refresh/build each bump); `search` gains `sort` param, sorted in Dart with the SAME semantics as `query` (shared helper; age-band re-sort already exists) |
+| N12 | `_StatsCard` Row overflow risk; lend dropdown long names; publish "Signed in" Row; `index.html` table has no narrow scroll container; controls unlabeled | Wrap/Flexible fixes + overflow elipsis; `.layout-table` scroll container; aria-labels on search/sort/language/theme controls. Record: widget/layout tests only, no physical device/browser |
+| N14 | purity test is a denylist (misses `package:pdf`); `pdf_library_renderer.dart` sits in `domain/` (doc even says infrastructure); `publish_controller.dart` imports `dart:io`; CI lacks coverage/secret gates; Rust insert_borrower/insert_loan do no length checks | strengthen purity test to an allowlist (dart: core except io/isolate/ui + pitaka domain + explicitly listed pure packages); move PDF renderer to `infrastructure/` (check callers); move file IO out of publish controller OR document exception (investigate first); CI: coverage threshold + secret scan steps; Rust: validate borrower/loan field lengths at api.rs boundary with `ValidationFailure` |
+| M18 | iOS plist lacks `NSFaceIDUsageDescription`; macOS entitlements lack network.client / user-selected files / keychain group; `screen_security.dart` swallows Android failures + no non-Android path | **BLOCKED on decision**: which Apple targets ship? Then configure only those; stop silent-swallow of Android platform-call failures (log-free fail-closed state or honest no-op per platform) |
 
-## Steps
-- [x] Verify handoff, source/callers/tests/schema and OSS primitives.
-- [x] Run baseline gates and record this plan/checkpoint.
-- [x] Obtain execution-mode approval.
-- [x] Add permanent failing regressions before implementation.
-- [x] Implement/review validation, staging, reference rewriting and owned-file rollback.
-- [x] Verify failure, dedup, wishlist, lifecycle and cleanup interleavings.
-- [x] Run final gates/coverage; update Result and schedule; request commit.
+## Decision points (user input required)
 
-## Out-of-scope observations
-- Archive decompression remains unbounded before some checks (M05).
-- Numeric/domain validation (M15), wishlist janitor ownership (M11), broad UI
-  lifecycle hardening (N11), and cross-dataset restore recovery (M02) remain open.
-- Plain-JSON wishlist parsing retains local refs unlike book parsing; record for
-  input-validation follow-up, do not silently broaden M04 into all import paths.
+1. **M18 (DECISION):** which Apple targets are actually shipping?
+   (a) iOS only · (b) macOS only · (c) both · (d) neither (Android only —
+   then M18 = README honesty + Android-failure handling only).
+2. **N02 without M09:** proceed validating persisted cover URLs via the
+   existing `CoverUrlAllowList` (M09's display-path enforcement remains a
+   separate open item)? (a) yes, proceed · (b) pull M09 into this batch.
+3. **N15 §6 approval:** bump anyhow → ≥1.0.103 (`cargo update -p anyhow`) +
+   fresh online `cargo audit`? (a) approved · (b) skip N15 this session.
+4. **Execution mode:** end-to-end across all batches, or pause at each batch?
+
+## Steps (one commit per batch; explicit paths each time)
+
+- [x] B1  M06a — truthful backup label + README/PRIVACY copy pass (+ rewrap
+      note, + honest auto-lock/biometric wording) + copy-guard widget test
+- [x] B2  M17 — prefs bool checks → StorageFailure; false-return tests
+- [x] B3  M12 + M11 — vault-uninitialized delete; janitor wishlist refs;
+      regression tests (wishlist-only cover survives sweep; no-vault delete)
+- [x] B4  N01 + N13 — mask sync tests (consume/clear/retry/paste);
+      inspectArchive + conditional passphrase + restore tests + copy fix
+      (N01 regressions verified failing on pre-fix code)
+- [x] B5  N02 — retain allow-listed lookup cover; "metadata complete" switch;
+      lookup→save flow tests (both pages)
+- [x] B6  N06 — title read model, per-loan progress/failure, idempotent
+      return; 4 widget tests
+- [x] B7  M14 — commitFiles deletePaths (sha:null, verified against GitHub's
+      OpenAPI spec) + events empty publish + obsolete path removal +
+      Git-history copy; mock-HTTP tests incl. delete entries
+- [x] B8  N05 — revision guard + BookSorter + sorted search; out-of-order
+      completion tests
+- [x] B9  N12 — Wrap stats / isExpanded dropdown / Flexible signed-in row /
+      viewer table scroll + aria labels; 320px widget tests
+- [x] B10 N14 — allowlist purity gate (3 tests), PDF renderer + fonts + JSON
+      codec moved to infrastructure behind domain ports, OpenVaultFromArchive
+      moved to infrastructure, 3 more application-layer IO extractions
+      (publish covers, export logo, event posters), poster_paths depath-ified,
+      CI coverage floor + secret scan + cargo audit --deny warnings, Rust
+      FFI-boundary length/date validation (+2 tests, FRB bindings regenerated)
+- [x] B11 N15 — anyhow 1.0.102 → 1.0.104, fresh ONLINE cargo audit clean
+      (1239-advisory DB), dart pub outdated recorded
+- [x] B12 M18 — Android-only: README platform matrix + Android-only capture
+      claim; screen_security PlatformException no longer silent (debugPrint)
+- [x] Update fix-schedule.md (§1, §3 rows, §5 log) at session end
+
+## Out-of-scope observations (record, don't fix)
+
+- M16 (settings race) shares files with M17 but is not requested; M17 fix is
+  designed so M16 can layer on later.
+- M09 display-path enforcement remains open after N02 (display still accepts
+  any https when opted in; N02 only persists allow-listed URLs).
+- N13 inspection reuses `BoundedZipExtractor` (M05's unbounded path) — M05
+  later hardens it for both.
 
 ## Result
-- M04 complete after user approved resumption. Three permanent real-Drift
-  regressions FAILED before fixing: invalid JSON, duplicate ISBN, DB rollback
-  each overwrote an old cover. All now pass; 84 net new Flutter tests overall.
-- Pure BundleReader validates catalogue/refs before IO; ImportBundle owns
-  immutable copies. Only accepted rows stage covers under exclusive fresh names.
-  Both tables share rewritten refs; later replacements discard superseded new
-  files. UID identity and ISBN/wishlist dedup rules are preserved.
-- ImportLibraryUseCase:122 coordinates the top-level transaction result with
-  file ownership. Failure removes only owned new files; failed cleanup returns
-  a typed failure. Existing covers are never overwritten/deleted by this path.
-- Shared DI-owned FIFO serializes import and janitor reference-check/delete;
-  controller pins operation lifetime and blocks overlapping submissions.
-  No broad M11 ownership or N11 widget-lifecycle refactor was performed.
-- Tests cover immutable/unsafe input; file/directory/link collisions; partial
-  writes; cleanup failures; database reads/writes; outer transaction rejection
-  after its body succeeds; wishlist/shared/final refs; repeated imports; queue
-  failure/release; disposal before/after staging; real-page error and retry.
-- Final full Flutter --no-pub --coverage: **1049 passed / 0 failed** (baseline 965).
-  Rust: **30 passed / 0 failed**, 2 expected ignored real-archive tests.
-  Analyzer: **0 issues**. Format: **352 files / 0 changed**. Diff check clean.
-  Flutter log: `/tmp/pitak-m04-flutter-full.KjFP1P`.
-- Line coverage: import controller 31/31 (100%); import use case 119/123 (96.75%);
-  image mapper 19/20 (95%); validated bundle 31/31 (100%); file store 37/37 (100%);
-  reader 29/30 (96.67%); coordinator 7/7 (100%); janitor 26/26 (100%).
-- Generation rerun wrote 0 outputs; expected two generated files unchanged.
-  Existing SDK/analyzer language-version warning appeared on the earlier build.
-  Two missed test constructor arguments and style diagnostics were corrected;
-  the analyzer rerun is clean. Nominal-port lint exceptions are justified like
-  the existing Importer contract, not blanket lint disabling.
-- OSS: adapted synchronized 3.4.0+1 BasicLock; verified MIT license/copyright
-  retained in source (initial BSD comment corrected). Drift insert.dart:205–210
-  confirms upsert's last-insert-ID caveat; known matched wishlist ID is used.
-- Privacy/diff review: no new network/logging/secrets/permissions/dependencies or
-  schema changes. Tests use synthetic temporary files and in-memory databases.
-  Narrow touched-file logging/network scan is not a full dependency/secret audit.
-- Limits: no physical-device/picker/power-loss test. Outer commit rejection is
-  fault-injected through the real Drift transaction wrapper, not simulated
-  hardware failure. Abrupt death/failed cleanup can leave unreferenced NEW files;
-  this is not a claim of cross-file power-loss atomicity. M02/M05/M11 stay open.
-- All 28 code/test/generated/PLAN.md paths are uncommitted; no staging or commit
-  performed. Ask separately before committing. Next finding after commit: M03.
 
-## Proposed commit (awaiting approval)
-Only these 28 paths; never stage the local review or schedule files:
-```sh
-git add -- \
-  PLAN.md \
-  lib/core/di/providers.dart \
-  lib/core/di/providers.g.dart \
-  lib/features/import_export/application/bundle_import_images.dart \
-  lib/features/import_export/application/import_controller.dart \
-  lib/features/import_export/application/import_controller.g.dart \
-  lib/features/import_export/application/import_library_use_case.dart \
-  lib/features/import_export/domain/bundle_cover_files.dart \
-  lib/features/import_export/domain/import_bundle.dart \
-  lib/features/import_export/domain/pitaka_json_importer.dart \
-  lib/features/import_export/infrastructure/file_bundle_cover_store.dart \
-  lib/features/import_export/infrastructure/library_bundle_reader.dart \
-  lib/features/library/application/cover_file_janitor.dart \
-  lib/features/library/domain/cover_file_coordinator.dart \
-  test/features/import_export/bundle_import_fault_test.dart \
-  test/features/import_export/bundle_import_lifecycle_test.dart \
-  test/features/import_export/bundle_import_safety_test.dart \
-  test/features/import_export/bundle_import_transaction_test.dart \
-  test/features/import_export/bundle_test_fixture.dart \
-  test/features/import_export/controlled_bundle_files.dart \
-  test/features/import_export/file_bundle_cover_store_test.dart \
-  test/features/import_export/import_bundle_test.dart \
-  test/features/import_export/import_controller_test.dart \
-  test/features/import_export/library_bundle_reader_test.dart \
-  test/features/library/book_cover_controller_test.dart \
-  test/features/library/cover_file_coordinator_test.dart \
-  test/features/library/cover_file_janitor_test.dart \
-  test/features/settings/library_logo_controller_test.dart
-git commit -m "fix(import): preserve covers during bundle imports (M04)"
-```
+All 14 findings implemented and verified in one end-to-end session.
+
+**Gates (session end, pinned SDK 3.44.2):** analyze 0 issues; format 363
+files / 0 changed; Flutter **1097 passed / 0 failed** (+48 vs the 1049
+baseline); Rust **32 passed** (29+3, +2 boundary tests), 2 expected ignored;
+coverage 65.70% (above the new 64% CI floor).
+
+**Verification notes:**
+- N01 regressions proven to fail on pre-fix code (listener disabled → stale
+  mask), passing with the fix.
+- M14 deletion contract verified against GitHub's official OpenAPI
+  description (`sha: null` deletes the path), not from memory.
+- N15 audit ran against the LIVE advisory DB (1239 advisories) — the stale
+  offline scan from the review is superseded.
+- FRB bindings regenerated after adding `VaultWriteError.Validation`;
+  `.fvmrc`/`.gitignore` side effects of the codegen's internal fvm run were
+  reverted (unrequested).
+
+**Disclosed deviations / pulled-forward items:**
+- README "never String" clause narrowed during the M06a copy pass although
+  the schedule folded that into M08/N08 — it sat in the paragraph being
+  rewritten and was false as written.
+- N14 surfaced THREE more application-layer dart:io violations beyond the
+  review's publish_controller evidence (export logo, event posters,
+  OpenVaultFromArchive); all fixed the same way (infrastructure + DI port).
+- `bounded_zip_extractor` (package:archive) and the JSON codec's dart:convert
+  stay domain-legal under the documented allowlist (pure Dart; limits policy
+  is a domain decision). CSV importer stays in domain (out of scope; noted).
+- M09 (display-path allow-list enforcement) remains OPEN by design (Q2=a);
+  N02 persists only allow-list-validated URLs so display stays safe.
+
+**Out-of-scope observations (not fixed):**
+- M16 (settings write race) still open; M17's Either contract is the base it
+  layers on.
+- M02/M03/M05/M06b/M08/M09 remain per schedule.
+- `.fvm/` directory now exists locally (created by FRB codegen's fvm); it is
+  untracked and not committed.
+- `dart pub outdated`: direct deps pinned (riverpod 2.x etc.); newer majors
+  exist — a deliberate non-action this session.

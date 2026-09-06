@@ -17,7 +17,13 @@ analytics, no advertising, and no tracking of any kind.**
   never stored and never leaves the app. If you enable biometric unlock, a
   randomly generated vault-wrapping secret is kept in the Android Keystore /
   platform secure storage and released only after an on-device biometric
-  check.
+  check. Two honest limits: (1) while the app is open, an unlocked vault
+  stays unlocked in memory until you lock it or the app exits — there is no
+  automatic timeout; (2) the optional app-lock biometric gate is a screen
+  cover, not a vault lock: it does not encrypt your data or lock an
+  already-unlocked vault. Changing your passphrase re-wraps the same vault
+  key; it does not rotate it, so old vault copies paired with an old
+  passphrase could still be opened.
 - **Settings** (theme, library name, sort preferences, and — if you fill them
   in — the contact details you choose to publish) in the app's private
   preferences store.
@@ -77,7 +83,12 @@ Network activity happens only when you explicitly ask for it:
    Applications (the app cannot do this for you).
 4. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
-   go. Backups you restore are read locally and never transmitted.
+   go. Backups you restore are read locally and never transmitted. Note:
+   `.pitabak` backups are **not fully encrypted** — the books, wishlist and
+   cover images inside are stored plainly; only the borrowers vault (when
+   you have one) remains encrypted inside the archive. Anyone who receives
+   your backup file can read the catalogue fields, so share backups only
+   with people you trust with that data.
 
 ## What Pitak does NOT do
 
