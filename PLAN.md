@@ -1,120 +1,94 @@
 # PLAN.md — current task
 
-Roadmap: `fix-schedule.md`. Session 3, M07 complete; uncommitted.
+Roadmap: `fix-schedule.md`. Session 4, **M01 COMPLETE, uncommitted**.
+User approved end-to-end execution and clarified that the app creates repos.
+Use the existing auto_init setup flow; do not add another initialization path.
 
 ## Understanding
-- Fix M07: asynchronous vault work must never undo a later lock or provider
-  invalidation. Serialize session operations so concurrent work cannot reuse
-  a disposed secret or publish snapshots out of order.
-- Start HEAD: `e266aca`. Working tree matched the handoff: only the intentionally
-  untracked `astra-review.md` and `fix-schedule.md` existed before planning.
-- Scope: vault session lifecycle and its regression tests. No auto-lock timeout,
-  new dependencies, cryptography, schema changes, or unrelated review fixes.
+- Prevent GitHub publication from deleting unrelated branch files after a failed
+  head/commit lookup. An existing head must always supply a known `base_tree`.
+- Start/current HEAD: `3b44f4f`. Resume state matched the checkpoint (PLAN.md
+  only); astra-review.md and fix-schedule.md stay intentionally untracked.
+- Scope: commitFiles head/base-tree resolution, its tests and contract comments.
+  M10, M14 and manifest-cache policy are not part of this task.
 
 ## Privacy & threat notes
-- A late unlock/read can expose borrower PII after the user explicitly locks;
-  a late unlock can also retain its passphrase again.
-- Lock must immediately forget visible data and invalidate earlier work, without
-  waiting behind slow crypto, biometric prompts, or writes.
-- Secrets stay in existing wipeable buffers; cleanup must include incoming,
-  queued, and late-returned secrets, not only the currently held passphrase.
-- Native calls already dispatched have their own scoped copies. Rejecting a
-  completion does not cancel or roll back its native write. Do not claim it does.
-- No new collection, logging, network, permissions, or persistent data fields.
+- A failed read must cause no blob/tree/commit/ref writes, not an orphan tree
+  committed over existing content. Validate response shape before using SHAs.
+- No new data collection, logging, permissions, credentials or persistence.
+- Existing callers map HTTP errors and GitHubApiException to fixed UI messages;
+  never expose response bodies or tokens in new diagnostics.
+- Tests use mock HTTP only. No live GitHub mutations are authorized.
 
-## Investigation notes (before implementation)
-- Review evidence matched `vault_session_controller.dart:364–371` and
-  `:505–570`: lock has no invalidation; unlock and refresh publish unconditionally.
-- `_mutate` captures the held secret before awaiting the store, then reuses it
-  after a write. `purgeLoansForBook` also reuses it across multiple awaited deletes.
-- `enable`, passphrase change, and biometric enrollment/unlock have additional
-  await boundaries before retaining secrets or changing artifacts.
-- Existing `test/features/vault/vault_session_controller_test.dart` exercises
-  ordinary success/failure, but not delayed completions or concurrent calls.
-- Read the repository contract, FFI implementation, `SecretBytes`, artifact-store
-  contract/implementation, state types, DI providers, vault page callers, restore
-  controller/tests, and Rust unlock/create/rewrap/biometric entry points.
-- `SecretBytes.useAsync` defensively copies and wipes in finally; FFI uses it.
-  Rust retains the vault key internally and wipes owned passphrase buffers.
-- Successful restore invalidates the session (`restore_controller.dart:54`).
-  Its disposal hook must invalidate pending work even if Riverpod rebuilds the
-  same notifier. Failed restore deliberately does not invalidate today (M02).
-- Baseline on pinned Flutter 3.44.2: analyzer 0 issues; format 335 files,
-  0 changed; full Flutter suite 819 passed, 0 failed; Rust 30 passed, 0 failed,
-  2 expected ignored real-archive tests. No fallback test run was needed.
+## Investigation notes
+- Before changes, M01 evidence matched http_github_api.dart:266–269, :295 and
+  :371–381: null commit lookup could omit base_tree but retain the existing
+  parent and advance the ref. Malformed 200 ref responses could bootstrap too.
+- Original tests covered success, ambiguous 404 bootstrap, and blob 403, but not
+  failed commit lookup. Library/events callers already handle typed failures.
+- CORRECTION to the first plan: the GitHub REST reference docs list 404 as
+  Resource not found and 409 as Conflict. Neither status alone proves emptiness.
+  They also explicitly prohibit creating references in empty repositories,
+  even with an existing commit SHA. The previous plan's claim that 404/409 were
+  documented positive empty-repo signals was incorrect; do not implement it.
+- Source verified from the documentation fetched earlier in this session:
+  https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28
+  Cached document: /tmp/gh_refs.html, sections Get/Create a reference.
+- createUserRepo already sends auto_init: true (http_github_api.dart:162).
+  Re-read SetupGitHubRepo: creation precedes Pages setup and target persistence.
+  User confirmed this existing workflow; no additional bootstrap is needed.
 
-## Proposed approach (with OSS references)
-- Give every submitted session operation a generation identity. Lock and
-  `ref.onDispose` invalidate prior generations. Check validity after each await
-  before using held secrets, starting another side effect, or publishing state.
-- Serialize session-changing operations through one private FIFO mechanism.
-  Capture identity at submission, not when dequeued, so old queued requests do
-  not run in a newly unlocked session. Lock must bypass this queue.
-- Centralize secret ownership/cleanup and stale-operation failure handling using
-  the existing `Either<Failure, T>` contract; no raw exceptions or PII in UI errors.
-- Preserve artifact integrity when canceling creation/enrollment: simply throwing
-  away a created DB's only wrapped-key blob is not a safe cancellation strategy.
-  Check these boundaries explicitly; pause if they require a broader storage fix.
-- Verified OSS models: Riverpod 2.6.1 `lib/src/async_notifier/base.dart:350–364`
-  ignores canceled future completions; `synchronized` 3.4.0+1
-  `lib/src/basic_lock.dart` chains operations with a completer released in finally.
-  Adapt these lifecycle/serialization patterns without adding a package or
-  implementing cryptography. Both sources were read from the local package cache.
+## Proposed approach (implemented; supersedes first plan)
+- Require an existing, readable branch and its commit tree before all writes.
+  Return HTTP failures for every non-200 preflight response, including 404/409;
+  reject malformed response bodies and missing/invalid SHAs safely.
+- Remove the ambiguous no-head/bootstrap path. Tree always has base_tree,
+  commit always has the verified parent, ref update always uses force: false.
+- Keep the implementation explicit; no _EmptyRepo type or speculative bootstrap
+  abstraction is needed if only verified existing heads are supported.
+- Preserve the existing domain error contract; use the established guarded HTTP
+  pattern for transport errors. Manifest rebuilding remains separate.
+- Canonical reference: GitHub REST Git references documentation above. No OSS
+  algorithm or cryptography needed for this bounded control-flow fix; no deps.
 
 ## Decision points
-- User approved end-to-end execution. Pause only for unforeseen decisions,
-  security trade-offs, or actions requiring exact-command approval.
-- Any discovered need for storage recovery, restore coordination, dependency
-  changes, or a security trade-off requires a separate pause and explanation.
-- Commit only code/tests and PLAN.md, by explicit paths, after exact-command
-  approval. Never stage the local review or schedule files.
+- End-to-end execution: APPROVED.
+- Resolved by user clarification: the app already lets users create the repo.
+  Preserve that auto_init flow; require a readable existing branch at publish.
+  No new initialization UX/API workflow. Commit approval remains separate.
 
 ## Steps
-- [x] Verify handoff, rules, cited evidence, callers/callees, and baseline gates.
-- [x] Write this plan and record the planning checkpoint in fix-schedule.md.
-- [x] Receive execution-mode approval: end-to-end.
-- [x] First add and run a failing delayed-unlock → lock → complete regression.
-      Failed on old code: expected VaultLocked, actual VaultUnlocked.
-- [x] Add deterministic completion-controlled tests for write/refresh, queued
-      operations, multi-delete, rekey, biometric paths, disposal/invalidation,
-      and lock before store resolution. Assert secret cleanup and no stale calls.
-- [x] Implement generation invalidation and serialization with explicit ownership.
-- [x] Generate annotated code; only the expected provider hash changed;
-      a second generation run made no further tracked changes.
-- [x] Focused tests 83 passed; full Flutter tests 880 passed; analyzer 0 issues;
-      format 336 files / 0 changed; Rust 30 passed, 2 expected ignored.
-- [x] Scoped security/diff review: no new logging, remote calls, plaintext
-      secret storage, dependencies, permissions, or FFI/schema changes.
-- [x] Update Result and schedule. No staging or commit performed.
+- [x] Verify repository state, evidence, callers and baseline gates.
+- [x] Correct unsupported bootstrap assumption; record checkpoint before coding.
+- [x] Resolve bootstrap question using the existing app repo-creation flow.
+- [x] Write failing mock regressions first: ref and commit HTTP errors, malformed
+  bodies, transport failures; assert no writes and no ref movement.
+- [x] Implement approved preflight invariant; test preservation of unrelated
+  files via base_tree, parent and non-forced ref update assertions.
+- [x] Run focused/full tests, analyzer, formatter and Rust gates.
+- [x] Update tracker/result; present explicit-path commit approval request.
 
 ## Out-of-scope observations
-- M02 still owns crash-safe restore and failed-restore cache clearing. A session
-  token does not coordinate an already-running native write with file replacement.
-- Existing biometric hardware-gating claims and non-Android capture protection
-  remain M08/M18. No promise of stronger hardware protection in this task.
-- build_runner warns SDK language 3.12.0 is newer than its analyzer's 3.9.0;
-  generation and analysis succeed. Dependency upgrades belong to N15; none made.
+- headTreeShas and its caller treat manifest-rebuild failure as empty cache.
+  This can lose cover-reuse information, not just cause redundant uploads.
+- defaultBranch failures still fall back to main. M01 now rejects a missing
+  branch rather than creating an orphan; broader branch/Pages resolution remains
+  N09. The initial plan overstated the old behavior's safety.
 
 ## Result
-M07 implemented and verified. Lock/disposal invalidate submitted operations and
-wipe held/pending input secrets immediately. A shared FIFO prevents overlapping
-session writes, refreshes, rekey, and biometric operations; checks after awaits
-prevent stale secret reuse and publishing. Late biometric secrets are wiped;
-rollback failures are returned, and cleanup keeps its queue slot until finished.
-
-Creation detail: after a lock, an already-created empty encrypted DB still gets
-its wrapped-key blob, but no secret or rows are retained. After disposal/restore
-invalidation, an old creation cannot write a blob into the replacement lifetime;
-an abandoned empty creation uses the existing orphan-recovery path. Native calls
-already dispatched are not cancellable. Cross-file restore coordination is M02.
-
-Changes: vault_session_controller.dart (+ generated hash), the original failing
-regression in vault_session_controller_test.dart, and 60 additional tests in
-vault_session_race_test.dart (real Dart FFI adapter, synthetic native completions).
-Total: 61 new tests; full suite 819 → 880. Controller line coverage **269/298
-(90.27%)**, measured with `flutter test --no-pub --coverage`. Rust: 27 unit +
-3 fixture tests passed; 2 real-archive tests remain intentionally ignored.
-No device biometric prompt or physical-device lifecycle run was performed.
-
-PLAN.md and fix-schedule.md updated; all edits re-read, diff check clean.
-No changes committed. Next task: M01; obtain commit approval separately.
+- M01 implemented in http_github_api.dart:247–370; contract documented in
+  github_api.dart:213–220. No setup/UI/cache-policy changes.
+- New http_github_publish_preflight_test.dart contains 65 tests. Original 500
+  reproduction FAILED before fixing: blob/tree/commit/ref writes occurred.
+  Initial 58-test matrix: 12 passed / 46 failed before the fix. Existing API
+  tests updated for real SHA-shaped fixtures and fail-closed missing-ref behavior.
+- End gates: analyzer 0 issues; format 337 files/0 changed; full Flutter with
+  coverage 945 passed/0 failed (65 new); Rust 30 passed/0 failed, 2 expected ignored.
+  Baseline: 880 Flutter, 30 Rust, analyzer clean, format 336 files/0 changed.
+- Coverage: preflight 13/13 lines; SHA parser 6/6; commitFiles 48/50 (96%).
+  No annotated edits or generated diffs. Manual diff/security review: no new
+  logging, secrets, permissions, persistence, or endpoints; boundary validation
+  strengthened. Four overlong-line analyzer findings corrected and rechecked.
+- No pending failed checks. No commit, installation, destructive command or live
+  API write. Mock verification only, not a live GitHub publication. Commit approval
+  is the remaining optional action; next remediation task is M10.

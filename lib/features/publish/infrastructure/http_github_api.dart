@@ -35,6 +35,8 @@ final class HttpGitHubApi implements GitHubApi {
   /// Git file mode for a normal (non-executable) blob.
   static const String _modeFile = '100644';
 
+  static final RegExp _gitSha = RegExp(r'^[0-9a-fA-F]{40}$');
+
   Map<String, String> _authHeaders(String token) => {
     'Authorization': 'Bearer $token',
     'Accept': _accept,
@@ -252,21 +254,28 @@ final class HttpGitHubApi implements GitHubApi {
   }) async {
     final headers = _authHeaders(token);
 
-    // 1. Current head + its base tree. 404/409 → empty repo (bootstrap).
-    String? headSha;
-    final refResp = await _client.get(
+    // 1. Resolve both head and base tree before ANY writes. Setup creates repos
+    // with auto_init, so a missing/unreadable branch is an error, not permission
+    // to bootstrap. GitHub's 404/409 do not prove that the repository is empty.
+    final refResp = await _get(
       _apiBase.replace(path: '/repos/$owner/$repo/git/ref/heads/$branch'),
       headers: headers,
     );
-    if (refResp.statusCode == 200) {
-      headSha = (_decodeMap(refResp.body)['object'] as Map?)?['sha'] as String?;
-    } else if (refResp.statusCode != 404 && refResp.statusCode != 409) {
+    if (refResp.statusCode != 200) {
       return PublishCommitHttpError(refResp.statusCode, _excerpt(refResp.body));
     }
-    String? baseTreeSha;
-    if (headSha != null) {
-      baseTreeSha = await _commitTreeSha(owner, repo, headSha, token);
+    final headSha = _readGitObjectSha(refResp.body, 'object');
+    final headCommitResp = await _get(
+      _apiBase.replace(path: '/repos/$owner/$repo/git/commits/$headSha'),
+      headers: headers,
+    );
+    if (headCommitResp.statusCode != 200) {
+      return PublishCommitHttpError(
+        headCommitResp.statusCode,
+        _excerpt(headCommitResp.body),
+      );
     }
+    final baseTreeSha = _readGitObjectSha(headCommitResp.body, 'tree');
 
     // 2. Upload changed blobs (serially — simple + safe; counts are small).
     for (final f in files.where((f) => f.upload)) {
@@ -291,10 +300,7 @@ final class HttpGitHubApi implements GitHubApi {
     final treeResp = await _post(
       _apiBase.replace(path: '/repos/$owner/$repo/git/trees'),
       headers: headers,
-      jsonBody: {
-        if (baseTreeSha != null) 'base_tree': baseTreeSha,
-        'tree': treeEntries,
-      },
+      jsonBody: {'base_tree': baseTreeSha, 'tree': treeEntries},
     );
     if (treeResp.statusCode >= 400) {
       return PublishCommitHttpError(
@@ -314,7 +320,7 @@ final class HttpGitHubApi implements GitHubApi {
       jsonBody: {
         'message': commitMessage,
         'tree': newTreeSha,
-        'parents': headSha != null ? [headSha] : <String>[],
+        'parents': [headSha],
       },
     );
     if (commitResp.statusCode >= 400) {
@@ -328,21 +334,13 @@ final class HttpGitHubApi implements GitHubApi {
       return PublishCommitHttpError(commitResp.statusCode, 'Empty commit sha');
     }
 
-    // 5. Move (or create) the branch ref — the single atomic flip.
-    final http.Response refMove;
-    if (headSha != null) {
-      refMove = await _patch(
-        _apiBase.replace(path: '/repos/$owner/$repo/git/refs/heads/$branch'),
-        headers: headers,
-        jsonBody: {'sha': newCommitSha, 'force': false},
-      );
-    } else {
-      refMove = await _post(
-        _apiBase.replace(path: '/repos/$owner/$repo/git/refs'),
-        headers: headers,
-        jsonBody: {'ref': 'refs/heads/$branch', 'sha': newCommitSha},
-      );
-    }
+    // 5. Move the existing branch ref — the single atomic flip. A concurrent
+    // branch advance must be rejected by GitHub, never overwritten by force.
+    final refMove = await _patch(
+      _apiBase.replace(path: '/repos/$owner/$repo/git/refs/heads/$branch'),
+      headers: headers,
+      jsonBody: {'sha': newCommitSha, 'force': false},
+    );
     if (refMove.statusCode >= 400) {
       return PublishCommitHttpError(refMove.statusCode, _excerpt(refMove.body));
     }
@@ -353,6 +351,24 @@ final class HttpGitHubApi implements GitHubApi {
   }
 
   // --- helpers -------------------------------------------------------------
+
+  // These reads authorize a publish, unlike the best-effort manifest cache.
+  // Require a complete Git SHA-1, not null/empty text or an arbitrary URL path.
+  String _readGitObjectSha(String body, String field) {
+    final Map<String, dynamic> json;
+    try {
+      json = _decodeMap(body);
+    } on FormatException {
+      // FormatException embeds response text; keep it out of diagnostics.
+      throw const GitHubApiException('Malformed Git object response');
+    }
+    final object = json[field];
+    final sha = object is Map<String, dynamic> ? object['sha'] : null;
+    if (sha is! String || sha.length != 40 || !_gitSha.hasMatch(sha)) {
+      throw const GitHubApiException('Malformed Git object SHA');
+    }
+    return sha;
+  }
 
   Future<String?> _refSha(
     String owner,

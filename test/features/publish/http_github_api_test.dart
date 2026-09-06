@@ -8,6 +8,9 @@ import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 
+const _headSha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const _baseTreeSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
 void main() {
   HttpGitHubApi api(MockClient c) => HttpGitHubApi(
     client: c,
@@ -203,15 +206,15 @@ void main() {
           if (p.endsWith('/git/ref/heads/main')) {
             return http.Response(
               jsonEncode({
-                'object': {'sha': 'HEADSHA'},
+                'object': {'sha': _headSha},
               }),
               200,
             );
           }
-          if (p.endsWith('/git/commits/HEADSHA')) {
+          if (p.endsWith('/git/commits/$_headSha')) {
             return http.Response(
               jsonEncode({
-                'tree': {'sha': 'BASETREE'},
+                'tree': {'sha': _baseTreeSha},
               }),
               200,
             );
@@ -222,18 +225,19 @@ void main() {
           if (p.endsWith('/git/trees')) {
             // base_tree must be threaded through.
             final body = jsonDecode(req.body) as Map<String, dynamic>;
-            expect(body['base_tree'], 'BASETREE');
+            expect(body['base_tree'], _baseTreeSha);
             return http.Response(jsonEncode({'sha': 'NEWTREE'}), 201);
           }
           if (p.endsWith('/git/commits')) {
             final body = jsonDecode(req.body) as Map<String, dynamic>;
             expect(body['tree'], 'NEWTREE');
-            expect(body['parents'], ['HEADSHA']);
+            expect(body['parents'], [_headSha]);
             return http.Response(jsonEncode({'sha': 'NEWCOMMIT'}), 201);
           }
           if (p.endsWith('/git/refs/heads/main')) {
             final body = jsonDecode(req.body) as Map<String, dynamic>;
             expect(body['sha'], 'NEWCOMMIT');
+            expect(body['force'], isFalse);
             return http.Response(jsonEncode({'ref': 'refs/heads/main'}), 200);
           }
           return http.Response('unexpected ${req.url.path}', 500);
@@ -263,33 +267,12 @@ void main() {
       expect(calls.last, 'PATCH /repos/me/lib/git/refs/heads/main');
     });
 
-    test('empty repo (404 ref) bootstraps via createRef', () async {
-      final bytes = utf8.encode('x');
-      final sha = GitBlobSha.of(bytes);
-      var createdRef = false;
+    test('missing ref fails without trying to initialize a repo', () async {
+      final calls = <String>[];
       final svc = api(
         MockClient((req) async {
-          final p = req.url.path;
-          if (p.endsWith('/git/ref/heads/main')) return http.Response('', 404);
-          if (p.endsWith('/git/blobs')) {
-            return http.Response(jsonEncode({'sha': sha}), 201);
-          }
-          if (p.endsWith('/git/trees')) {
-            final body = jsonDecode(req.body) as Map<String, dynamic>;
-            // No base_tree on an empty repo.
-            expect(body.containsKey('base_tree'), isFalse);
-            return http.Response(jsonEncode({'sha': 'T'}), 201);
-          }
-          if (p.endsWith('/git/commits')) {
-            final body = jsonDecode(req.body) as Map<String, dynamic>;
-            expect(body['parents'], isEmpty);
-            return http.Response(jsonEncode({'sha': 'C'}), 201);
-          }
-          if (p.endsWith('/git/refs')) {
-            createdRef = true;
-            return http.Response(jsonEncode({'ref': 'refs/heads/main'}), 201);
-          }
-          return http.Response('unexpected', 500);
+          calls.add('${req.method} ${req.url.path}');
+          return http.Response('', 404);
         }),
       );
       final result = await svc.commitFiles(
@@ -297,13 +280,12 @@ void main() {
         repo: 'lib',
         branch: 'main',
         token: 'TKN',
-        files: [
-          DesiredFile(path: 'x', bytes: bytes, gitSha: sha, upload: true),
-        ],
-        commitMessage: 'init',
+        files: const [],
+        commitMessage: 'publish',
       );
-      expect(result, isA<PublishCommitSuccess>());
-      expect(createdRef, isTrue);
+      expect(result, isA<PublishCommitHttpError>());
+      expect((result as PublishCommitHttpError).code, 404);
+      expect(calls, ['GET /repos/me/lib/git/ref/heads/main']);
     });
 
     test('an HTTP error before the ref move returns HttpError', () async {
@@ -313,15 +295,15 @@ void main() {
           if (p.endsWith('/git/ref/heads/main')) {
             return http.Response(
               jsonEncode({
-                'object': {'sha': 'H'},
+                'object': {'sha': _headSha},
               }),
               200,
             );
           }
-          if (p.endsWith('/git/commits/H')) {
+          if (p.endsWith('/git/commits/$_headSha')) {
             return http.Response(
               jsonEncode({
-                'tree': {'sha': 'BT'},
+                'tree': {'sha': _baseTreeSha},
               }),
               200,
             );

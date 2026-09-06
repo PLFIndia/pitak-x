@@ -213,6 +213,11 @@ abstract interface class GitHubApi {
   /// Pushes [files] to [owner]/[repo]@[branch] as a SINGLE atomic commit
   /// (blobs → tree(base) → commit → move ref). Only `upload`-flagged files
   /// have their bytes sent; the rest are reused by sha.
+  ///
+  /// Requires an initialized [branch] (repo creation uses `auto_init`).
+  /// Resolves its head and base tree before any writes. HTTP read failures
+  /// return [PublishCommitHttpError]; malformed responses and transport
+  /// failures throw [GitHubApiException]. Never initializes a missing branch.
   Future<PublishCommitResult> commitFiles({
     required String owner,
     required String repo,
