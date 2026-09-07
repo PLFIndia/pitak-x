@@ -1,5 +1,11 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/crypto/secret_bytes.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
@@ -7,6 +13,28 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/borrower.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+
+import '../library/replacement_test_guard.dart';
+import '../vault/vault_repository_write_stub.dart';
+
+class _LoanVault with VaultWriteUnsupported implements VaultRepository {
+  @override
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
+  }) async => right(
+    const VaultData(
+      borrowers: [Borrower(id: 1, name: 'Test borrower')],
+      loans: [Loan(bookId: 7, borrowerId: 1, lentDate: 1)],
+    ),
+  );
+}
 
 /// In-memory book repo: just enough surface for the merge use case.
 class _FakeBooks implements BookRepository {
@@ -34,7 +62,7 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, Book>> insert(Book book) async {
     final stored = book.copyWith(
-      id: _nextId++,
+      id: book.id == Book.emptyId ? _nextId++ : book.id,
       bookUid: book.bookUid ?? 'minted-$_nextId',
     );
     _books.add(stored);
@@ -187,10 +215,51 @@ void main() {
   const matchingId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   const otherId = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
+  test('M03: overwrite refuses to drop an existing loan identity', () async {
+    final tmp = Directory.systemTemp.createTempSync('m03_merge_');
+    addTearDown(() => tmp.deleteSync(recursive: true));
+    final store = VaultStore(baseDir: tmp.path);
+    File(store.dbPath).writeAsBytesSync([1]);
+    store.writeBlob('synthetic.blob.only');
+    final books = _FakeBooks([
+      const Book(id: 7, bookUid: 'loaned', title: 'Loaned book'),
+    ]);
+    final settings = _FakeSettings(libraryId: matchingId);
+    final container = ProviderContainer(
+      overrides: [
+        vaultStoreProvider.overrideWith((ref) async => store),
+        vaultRepositoryProvider.overrideWithValue(_LoanVault()),
+        bookRepositoryProvider.overrideWith((ref) async => books),
+        settingsRepositoryProvider.overrideWith((ref) async => settings),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(vaultSessionControllerProvider.future);
+    final unlocked = await container
+        .read(vaultSessionControllerProvider.notifier)
+        .unlock(SecretBytes(Uint8List.fromList([1, 2, 3])));
+    expect(unlocked.isRight(), isTrue);
+    final useCase = await container.read(mergeLibraryUseCaseProvider.future);
+    final result = await useCase.applyOverwrite(
+      const MergeDiffersDecision(
+        incomingBooks: [Book(id: 7, bookUid: 'unrelated', title: 'Other book')],
+        incomingLibraryId: otherId,
+        incomingLibraryName: 'Other',
+        localLibraryName: 'Mine',
+        localIsEmpty: false,
+      ),
+    );
+    expect(result.isLeft(), isTrue);
+    expect(books.books.single.bookUid, 'loaned');
+    expect(books.books.single.id, 7);
+    expect(settings.libraryId, matchingId);
+  });
+
   test('rejects a non-Pitak file with a validation failure', () async {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _FakeBooks([]),
+      replacementGuard: FakeReplacementGuard(),
       settings: _FakeSettings(libraryId: matchingId),
     );
     final res = await useCase.call('title,author\nFoo,Bar');
@@ -212,6 +281,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId),
+      replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
       libraryId: matchingId,
@@ -238,6 +308,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId, libraryName: 'Mine'),
+      replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
       libraryId: otherId,
@@ -265,6 +336,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: _FakeSettings(libraryId: matchingId),
+      replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
       libraryId: 'NOT-A-VALID-ID',
@@ -286,6 +358,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: settings,
+      replacementGuard: FakeReplacementGuard(),
     );
 
     const decision = MergeDiffersDecision(
@@ -315,6 +388,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
       settings: settings,
+      replacementGuard: FakeReplacementGuard(),
     );
 
     const decision = MergeDiffersDecision(
@@ -343,6 +417,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(libraryId: matchingId),
+        replacementGuard: FakeReplacementGuard(),
       );
       final json = exportJson(
         libraryId: matchingId,
@@ -380,6 +455,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: settings,
+        replacementGuard: FakeReplacementGuard(),
       );
 
       const decision = MergeDiffersDecision(
@@ -415,6 +491,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(),
+        replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -443,6 +520,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
         settings: _FakeSettings(),
+        replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -477,6 +555,7 @@ void main() {
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
           settings: _FakeSettings(),
+          replacementGuard: FakeReplacementGuard(),
         );
         await useCase.applyResolution(
           local: repo.books.first,

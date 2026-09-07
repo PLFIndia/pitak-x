@@ -120,7 +120,10 @@ class _MergePageState extends ConsumerState<MergePage> {
         content: Text(
           'This deletes all ${decision.localIsEmpty ? '' : 'your '}books on '
           'this device and replaces them with the books from the file. This '
-          'cannot be undone. Your borrowers vault is not affected.',
+          'cannot be undone. If a borrowers vault exists, unlock it first. '
+          'Replacement is allowed only when all existing loan history can '
+          'be matched safely to the incoming books. Otherwise nothing is '
+          'replaced. The vault and its loan history are kept.',
         ),
         actions: [
           TextButton(

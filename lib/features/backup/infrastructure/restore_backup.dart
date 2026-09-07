@@ -28,6 +28,8 @@ import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
+import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -69,6 +71,7 @@ final class RestoreBackup {
     required this.vaultStore,
     required this.coversDir,
     required this.workDir,
+    required this.replacementGuard,
     LegacyDbOpener openLegacyDb = _defaultOpen,
   }) : _open = openLegacyDb;
 
@@ -88,6 +91,9 @@ final class RestoreBackup {
 
   /// Absolute path of a scratch directory for extracted files.
   final String workDir;
+
+  /// Shared session guard: no vault operations overlap this replacement.
+  final CatalogueReplacementGuard replacementGuard;
 
   final LegacyDbOpener _open;
 
@@ -153,6 +159,18 @@ final class RestoreBackup {
       return left(SchemaTooNewFailure(manifest.schemaVersion));
     }
 
+    return replacementGuard.protectReplacement(
+      (scope) => _restoreValidated(files, manifest, passphrase, scope),
+      replacingVault: manifest.hasBackupBlob,
+    );
+  }
+
+  Future<Either<Failure, RestoreSummary>> _restoreValidated(
+    Map<String, Uint8List> files,
+    BackupManifest manifest,
+    SecretBytes? passphrase,
+    CatalogueReplacementScope scope,
+  ) async {
     // --- Phase 3: stage files to disk (sqlite3 + FFI need paths) ---
     final Directory work;
     try {
@@ -251,6 +269,24 @@ final class RestoreBackup {
       // so the device stays fully on its pre-restore state.
       try {
         await db.transaction(() async {
+          final loanIds = scope.retainedLoanBookIds;
+          if (loanIds != null) {
+            final local = await db.select(db.books).get();
+            final plan = CatalogueReplacementPlan.build(
+              local: local.map((row) => row.toDomain()).toList(),
+              incoming: legacy.books,
+              loanBookIds: loanIds,
+            );
+            legacy.books = plan.match(
+              (failure) => throw _ReplacementRefused(failure),
+              (books) => books,
+            );
+          }
+          if (!scope.isCurrent) {
+            throw const _ReplacementRefused(
+              CatalogueReplacementScope.cancelled,
+            );
+          }
           await db.delete(db.books).go();
           await db.delete(db.wishlistBooks).go();
           await db.batch((b) {
@@ -262,7 +298,15 @@ final class RestoreBackup {
             }
           });
           await db.rebuildFts();
+          if (!scope.isCurrent) {
+            throw const _ReplacementRefused(
+              CatalogueReplacementScope.cancelled,
+            );
+          }
         });
+      } on _ReplacementRefused catch (e) {
+        staged?.abort();
+        return left(e.failure);
       } on Object catch (e) {
         // Library rolled back by the transaction → discard the staged vault
         // too so the device stays fully on its pre-restore state.
@@ -300,10 +344,9 @@ final class RestoreBackup {
         knownBorrowerIds: knownBorrowerIds,
       );
 
-      // Archive had no vault but this device has one → it was kept as-is and
-      // its loans could not be checked against the new book ids (see
-      // RestoreSummary.existingVaultKept).
-      final keptVault = !manifest.hasBackupBlob && vaultStore.isInitialized();
+      // M03: a retained vault was freshly checked by the guard; every loan's
+      // book identity was preserved by the plan, or the transaction refused.
+      final keptVault = scope.retainedLoanBookIds != null;
 
       return right(
         RestoreSummary(
@@ -406,6 +449,12 @@ final class RestoreBackup {
 
   static String _utf8(Uint8List bytes) =>
       const Utf8Decoder(allowMalformed: true).convert(bytes);
+}
+
+/// Infrastructure-only rollback signal, converted back to a typed Failure.
+final class _ReplacementRefused implements Exception {
+  const _ReplacementRefused(this.failure);
+  final Failure failure;
 }
 
 /// Internal carrier for rows read out of the legacy DBs.

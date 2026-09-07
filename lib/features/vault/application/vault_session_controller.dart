@@ -24,11 +24,13 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
+import 'package:pitaka/features/vault/domain/lending_policy.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -49,7 +51,7 @@ part 'vault_session_controller.g.dart';
 /// auto-lock timeout is the accepted future hardening, not a bug fix.
 @Riverpod(keepAlive: true)
 class VaultSessionController extends _$VaultSessionController
-    implements VaultLoanPurger, VaultLender {
+    implements VaultLoanPurger, VaultLender, CatalogueReplacementGuard {
   /// The session unlock secret while unlocked; null when locked/uninitialized.
   /// This is EITHER the user passphrase OR the biometric secret S, depending on
   /// how the vault was opened (both unwrap the SAME vault key MK, just from
@@ -544,9 +546,25 @@ class VaultSessionController extends _$VaultSessionController
       });
 
   /// Inserts a loan, then re-reads the vault. Vault must be unlocked.
+  /// Re-check the book INSIDE the FIFO: a lend form may have read it before
+  /// a queued catalogue replacement removed it (M03).
   @override
   Future<Either<Failure, Unit>> addLoan(Loan loan) =>
       _mutate((p, store, blob) async {
+        final generation = _generation;
+        final books = await ref.read(bookRepositoryProvider.future);
+        if (!_isCurrent(generation)) return left(_cancelled);
+        final found = await books.getById(loan.bookId);
+        if (!_isCurrent(generation)) return left(_cancelled);
+        if (found.isLeft()) return found.map((_) => unit);
+        final book = found.toNullable();
+        if (book == null) return left(const NotFoundFailure());
+        if (loan.returnedDate == null) {
+          final decision = LendDecision.forBook(book, currentLoans ?? const []);
+          if (decision is! LendAllowed) {
+            return left(ValidationFailure(decision.reason!));
+          }
+        }
         final r = await _vault.insertLoan(
           passphrase: p,
           blob: blob,
@@ -615,6 +633,73 @@ class VaultSessionController extends _$VaultSessionController
         }
         return right(unit);
       });
+
+  /// Holds the existing vault FIFO while a catalogue replacement runs. Only
+  /// book IDs leave this boundary; no secret or borrower details are exposed.
+  @override
+  Future<Either<Failure, T>> protectReplacement<T>(
+    Future<Either<Failure, T>> Function(CatalogueReplacementScope scope)
+    action, {
+    bool replacingVault = false,
+  }) => _run((generation, store) async {
+    Set<int>? loanIds;
+    if (!replacingVault) {
+      if (store.isInitialized()) {
+        final held = _passphrase;
+        final blob = _activeBlob;
+        if (!isUnlocked || held == null || blob == null) {
+          return left(
+            const ValidationFailure(
+              'Unlock the borrowers vault first, then try replacing the '
+              'catalogue again. Existing loan history must be checked.',
+            ),
+          );
+        }
+        final read = await _vault.unlockAndRead(
+          passphrase: held,
+          blob: blob,
+          dbPath: store.dbPath,
+        );
+        if (!_isCurrent(generation)) return left(_cancelled);
+        if (read.isLeft()) {
+          await lock();
+          return read.match(left, (_) => throw StateError('unreachable'));
+        }
+        final data = read.getOrElse((_) => throw StateError('unreachable'));
+        final borrowers = data.borrowers.map((b) => b.id).toSet();
+        if (data.loans.any((l) => !borrowers.contains(l.borrowerId))) {
+          return left(
+            const ValidationFailure(
+              'Existing loan history could not be verified. '
+              'No books were replaced.',
+            ),
+          );
+        }
+        loanIds = data.loans.map((l) => l.bookId).toSet();
+        state = AsyncData(VaultUnlocked(data));
+      } else if (state.valueOrNull is! VaultUninitialized ||
+          store.hasOrphanDatabase() ||
+          store.readBlob() != null) {
+        return left(const StorageFailure('Vault state could not be verified'));
+      }
+    }
+    var active = true;
+    final scope = CatalogueReplacementScope(
+      retainedLoanBookIds: loanIds,
+      isCurrent: () => active && _isCurrent(generation),
+    );
+    try {
+      // Check the lease inside the transaction, not after commit: reporting
+      // cancellation after a successful commit would be misleading.
+      return await action(scope);
+    } finally {
+      active = false;
+      // A vault-bearing restore can replace the key pair, even on a partial
+      // failure (M02). Never release queued writes with the old held key.
+      // This does not claim to fix cross-file restore crash recovery.
+      if (replacingVault) await lock();
+    }
+  });
 
   // --- internals ----------------------------------------------------------
 

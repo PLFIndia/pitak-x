@@ -18,6 +18,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 /// A fake vault repo so the restore test never loads the native Rust lib.
@@ -129,6 +130,11 @@ void main() {
         db: db,
         vault: vault,
         vaultStore: store ?? vaultStore(),
+        replacementGuard: FakeReplacementGuard(
+          failure: store?.isInitialized() ?? false
+              ? const ValidationFailure('Unlock the borrowers vault first.')
+              : null,
+        ),
         coversDir: '${tmp.path}/covers',
         workDir: '${tmp.path}/work',
       );
@@ -185,6 +191,7 @@ void main() {
       db: failingDb,
       vault: _FakeVault(right(VaultData.empty)),
       vaultStore: vaultStore(),
+      replacementGuard: FakeReplacementGuard(),
       coversDir: '${tmp.path}/covers',
       workDir: '${tmp.path}/work',
     );
@@ -390,15 +397,22 @@ void main() {
     });
   });
 
-  // Decision Q2 (review 2026-09-03): an archive WITHOUT a vault restored onto
-  // a device WITH one keeps the device vault, and the summary must say so
-  // instead of claiming "all loans reference an existing book" — the kept
-  // vault's loans were never checked (restore cannot open it).
-  test('no-vault archive on a device with a vault: kept + flagged', () async {
+  // M03 policy C supersedes keep-and-warn: unknown loans require unlock,
+  // and a colliding numeric ID must never substitute a different book.
+  test('M03: no-vault restore refuses unchecked existing loan links', () async {
     final store = vaultStore();
     File(store.dbPath).parent.createSync(recursive: true);
     File(store.dbPath).writeAsBytesSync([9, 9, 9]);
     store.writeBlob('existing.key.blob');
+    await db
+        .into(db.books)
+        .insert(
+          const Book(
+            id: 7,
+            bookUid: 'different-uid',
+            title: 'Keep me',
+          ).toCompanion(),
+        );
     final zip = archive({
       'manifest.json': utf8.encode(manifest()), // hasBackupBlob: false
       'books.db': buildBooksDb(),
@@ -409,11 +423,8 @@ void main() {
     final result = await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
-    result.match((f) => fail('expected success, got $f'), (s) {
-      expect(s.existingVaultKept, isTrue);
-      expect(s.isIntact, isFalse, reason: 'integrity is UNKNOWN, not proven');
-      expect(s.borrowersRestored, 0);
-    });
+    expect(result.isLeft(), isTrue);
+    expect((await db.select(db.books).get()).single.bookUid, 'different-uid');
     // The device vault is untouched, byte for byte.
     expect(store.isInitialized(), isTrue);
     expect(File(store.dbPath).readAsBytesSync(), [9, 9, 9]);

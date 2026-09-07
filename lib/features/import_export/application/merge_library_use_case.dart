@@ -30,6 +30,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
+import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
+import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -127,10 +129,13 @@ final class MergeLibraryUseCase {
     // N14: the concrete JSON codec lives in infrastructure; the use case
     // depends on the domain port and gets the implementation via DI.
     required LibraryJsonParser jsonParser,
+    required CatalogueReplacementGuard replacementGuard,
   }) : _bookRepo = bookRepo,
        _settings = settings,
-       _json = jsonParser;
+       _json = jsonParser,
+       _replacementGuard = replacementGuard;
 
+  final CatalogueReplacementGuard _replacementGuard;
   final BookRepository _bookRepo;
   final SettingsRepository _settings;
   final LibraryJsonParser _json;
@@ -224,11 +229,31 @@ final class MergeLibraryUseCase {
   /// partially-deleted catalogue (REVIEW_FINDINGS_2 S5).
   Future<Either<Failure, Unit>> applyOverwrite(
     MergeDiffersDecision decision,
-  ) async {
-    final replaced = await _bookRepo.replaceAll(
-      decision.incomingBooks.map((b) => b.copyWith(id: Book.emptyId)).toList(),
-    );
-    if (replaced.isLeft()) return replaced.map((_) => unit);
+  ) => _replacementGuard.protectReplacement((scope) async {
+    // The snapshot and replacement share a transaction, while the guard
+    // prevents a vault write from changing the loan set between them (M03).
+    final replaced = await _bookRepo.runInTransaction<Unit>(() async {
+      var incoming = decision.incomingBooks
+          .map((b) => b.copyWith(id: Book.emptyId))
+          .toList();
+      final loanIds = scope.retainedLoanBookIds;
+      if (loanIds != null) {
+        final local = await _bookRepo.getAll();
+        if (local.isLeft()) return local.map((_) => unit);
+        final plan = CatalogueReplacementPlan.build(
+          local: local.getOrElse((_) => const []),
+          incoming: incoming,
+          loanBookIds: loanIds,
+        );
+        if (plan.isLeft()) return plan.map((_) => unit);
+        incoming = plan.getOrElse((_) => const []);
+      }
+      if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+      final result = await _bookRepo.replaceAll(incoming);
+      if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+      return result.map((_) => unit);
+    });
+    if (replaced.isLeft()) return replaced;
     if (decision.incomingLibraryId.isNotEmpty) {
       // M17: the catalogue was already replaced above; a failed ID adoption
       // still surfaces as an error so the user knows the namespace was NOT
@@ -247,7 +272,7 @@ final class MergeLibraryUseCase {
       }
     }
     return right(unit);
-  }
+  });
 
   /// Applies the user's choice for one surfaced conflict / possible-duplicate.
   ///  - keep-mine   → no-op.

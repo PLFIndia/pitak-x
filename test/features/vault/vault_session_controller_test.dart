@@ -2,13 +2,17 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
+import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
@@ -239,6 +243,14 @@ void main() {
     final store = VaultStore(baseDir: tmp.path);
     final container = ProviderContainer(
       overrides: [
+        bookRepositoryProvider.overrideWith((ref) async {
+          final db = AppDatabase(NativeDatabase.memory());
+          ref.onDispose(db.close);
+          final books = DriftBookRepository(db);
+          await books.insert(const Book(id: 1, title: 'First'));
+          await books.insert(const Book(id: 2, title: 'Second'));
+          return books;
+        }),
         vaultRepositoryProvider.overrideWithValue(vault),
         vaultStoreProvider.overrideWith((ref) async => store),
         biometricAuthenticatorProvider.overrideWithValue(

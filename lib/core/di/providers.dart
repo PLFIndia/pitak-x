@@ -698,6 +698,7 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
     bookRepo: bookRepo,
     settings: settings,
     jsonParser: const PitakaJsonImporter(),
+    replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );
 }
 
@@ -738,6 +739,7 @@ Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
     vaultStore: store,
     coversDir: p.join(dir.path, 'covers'),
     workDir: p.join(dir.path, 'restore_work'),
+    replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );
 }
 

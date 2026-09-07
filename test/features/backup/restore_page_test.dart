@@ -23,13 +23,27 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
+
+class _RetainedRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    existingVaultKept: true,
+  );
+}
 
 class _FakeVault with VaultWriteUnsupported implements VaultRepository {
   @override
@@ -91,12 +105,13 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Widget wrap(Uint8List archiveBytes) {
+  Widget wrap(Uint8List archiveBytes, {Failure? replacementFailure}) {
     final store = VaultStore(baseDir: '${tmp.path}/vault');
     final restorer = RestoreBackup(
       db: db,
       vault: _FakeVault(),
       vaultStore: store,
+      replacementGuard: FakeReplacementGuard(failure: replacementFailure),
       coversDir: '${tmp.path}/covers',
       workDir: '${tmp.path}/work',
     );
@@ -138,6 +153,49 @@ void main() {
       tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
       isTrue,
     );
+  });
+
+  testWidgets('M03: refusal is shown before any restore work', (tester) async {
+    await tester.pumpWidget(
+      wrap(
+        _archive(withVault: false),
+        replacementFailure: const ValidationFailure(
+          'Unlock the borrowers vault first.',
+        ),
+      ),
+    );
+    expect(
+      find.textContaining('every book link can be matched safely'),
+      findsOneWidget,
+    );
+    await pick(tester);
+    await tester.ensureVisible(find.text('Restore'));
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    expect(find.text('Unlock the borrowers vault first.'), findsOneWidget);
+    expect(find.text('Restore complete'), findsNothing);
+    expect(Directory('${tmp.path}/work').existsSync(), isFalse);
+  });
+
+  testWidgets('M03: retained-vault success reports preserved history', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          restoreControllerProvider.overrideWith(
+            _RetainedRestoreController.new,
+          ),
+        ],
+        child: const MaterialApp(home: RestorePage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('including returned loan history'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('may no longer match'), findsNothing);
   });
 
   testWidgets('vault backup: passphrase required before Restore enables', (

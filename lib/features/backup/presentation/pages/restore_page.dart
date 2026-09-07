@@ -146,8 +146,11 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               'Restoring replaces your books, wishlist and cover images with '
               'the contents of the backup. If the backup contains a borrowers '
               'vault, it replaces this device’s vault; if it does not, your '
-              'existing vault is kept. Events, bookmarks, settings and '
-              'publishing setup are not restored. This cannot be undone.',
+              'existing vault must be unlocked first. Its loan history is '
+              'kept only when every book link can be matched safely; otherwise '
+              'the restore is refused without replacing data. Events, '
+              'bookmarks, settings and publishing setup are not restored. '
+              'This cannot be undone.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onErrorContainer,
               ),
@@ -259,13 +262,10 @@ class _RestoreOutcome extends StatelessWidget {
         if (summary == null) return const SizedBox.shrink();
         final String integrity;
         if (summary.existingVaultKept) {
-          // Honest copy: the vault was NOT in the backup and was NOT touched;
-          // restore cannot verify its loans against the new books.
           integrity =
-              'This backup had no borrowers vault, so the vault already on '
-              'this phone was kept. Its loans still refer to the books from '
-              'before the restore and may no longer match — check them under '
-              'Borrowers.';
+              'The borrowers vault on this phone was kept. All existing '
+              'loan links were checked and preserved, including returned '
+              'loan history.';
         } else if (summary.isIntact) {
           integrity = 'All loans reference an existing book and borrower.';
         } else {

@@ -19,6 +19,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 /// Fake vault: never loads the native lib. Returns empty data (unused in the
@@ -52,6 +53,7 @@ void main() {
       db: db,
       vault: _FakeVault(),
       vaultStore: store,
+      replacementGuard: FakeReplacementGuard(),
       coversDir: '${tmp.path}/covers',
       workDir: '${tmp.path}/work',
     );

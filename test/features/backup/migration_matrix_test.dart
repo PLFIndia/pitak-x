@@ -24,6 +24,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 class _EmptyVault with VaultWriteUnsupported implements VaultRepository {
@@ -111,6 +112,7 @@ void main() {
     db: db,
     vault: _EmptyVault(),
     vaultStore: VaultStore(baseDir: '${tmp.path}/vault'),
+    replacementGuard: FakeReplacementGuard(),
     coversDir: '${tmp.path}/covers',
     workDir: '${tmp.path}/work',
   );
