@@ -16,9 +16,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
+    show ZipLimits;
 import 'package:pitaka/features/library/application/library_controller.dart';
 
 /// Screen that restores a backup archive over the current device state.
@@ -65,7 +68,25 @@ class _RestorePageState extends ConsumerState<RestorePage> {
     const group = XTypeGroup(label: 'Pitak backup', extensions: ['pitabak']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
-    final bytes = await file.readAsBytes();
+    // M05: read under the archive cap. The extractor re-checks the same cap,
+    // but enforcing it here means an oversized pick is never buffered at all.
+    final bytes = await readPickedFileBounded(
+      file,
+      maxBytes: ZipLimits.pitakaBackup.maxArchiveBytes,
+    );
+    if (!mounted) return;
+    if (bytes == null) {
+      setState(() {
+        _archiveBytes = null;
+        _archiveName = null;
+        _manifest = null;
+        _inspectError = const ValidationFailure(
+          'This file is too large to be a Pitak backup.',
+        );
+        _inspecting = false;
+      });
+      return;
+    }
     setState(() {
       _archiveBytes = bytes;
       _archiveName = file.name;

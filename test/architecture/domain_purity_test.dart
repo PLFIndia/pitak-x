@@ -58,7 +58,9 @@ void main() {
     ///  - `crypto` — hashing (the Git blob SHA-1 is domain protocol logic);
     ///  - `archive` — pure-Dart zip codec used by `bounded_zip_extractor`,
     ///    whose decode LIMITS (byte caps, entry counts) are the domain's
-    ///    defensive policy (M05 will harden the streaming path in place).
+    ///    defensive policy. M05 kept it here on purpose: the extractor uses
+    ///    the package's pure-Dart `Inflate.stream` (not the `dart:io` native
+    ///    inflater) so the budgeted decode stays platform-free.
     /// Rendering engines (`pdf`), path contexts (`path`), plugins and
     /// frameworks are all forbidden here (N14).
     const allowedPackages = {'fpdart', 'crypto', 'archive'};

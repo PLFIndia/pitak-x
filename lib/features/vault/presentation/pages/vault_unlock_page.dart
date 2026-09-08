@@ -17,6 +17,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/bounded_file_read.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
+    show ZipLimits;
 import 'package:pitaka/features/vault/application/vault_controller.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_contents_page.dart';
 
@@ -33,6 +36,9 @@ class _VaultUnlockPageState extends ConsumerState<VaultUnlockPage> {
   final SecurePassphraseController _passphrase = SecurePassphraseController();
   Uint8List? _archiveBytes;
   String? _archiveName;
+
+  /// Set when the picked file was refused before reading (M05: too large).
+  String? _pickError;
 
   @override
   void initState() {
@@ -54,10 +60,22 @@ class _VaultUnlockPageState extends ConsumerState<VaultUnlockPage> {
     const group = XTypeGroup(label: 'Pitak backup', extensions: ['pitabak']);
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
-    final bytes = await file.readAsBytes();
+    // M05: read under the archive cap so an oversized pick is never buffered.
+    final bytes = await readPickedFileBounded(
+      file,
+      maxBytes: ZipLimits.pitakaBackup.maxArchiveBytes,
+    );
+    if (!mounted) return;
     setState(() {
-      _archiveBytes = bytes;
-      _archiveName = file.name;
+      if (bytes == null) {
+        _archiveBytes = null;
+        _archiveName = null;
+        _pickError = 'This file is too large to be a Pitak backup.';
+      } else {
+        _archiveBytes = bytes;
+        _archiveName = file.name;
+        _pickError = null;
+      }
     });
   }
 
@@ -108,6 +126,10 @@ class _VaultUnlockPageState extends ConsumerState<VaultUnlockPage> {
             icon: const Icon(Icons.folder_open),
             label: Text(_archiveName ?? 'Choose .pitabak file'),
           ),
+          if (_pickError != null) ...[
+            const SizedBox(height: 12),
+            Text(_pickError!, style: TextStyle(color: scheme.error)),
+          ],
           const SizedBox(height: 16),
           SecurePassphraseField(
             controller: _passphrase,

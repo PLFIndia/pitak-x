@@ -1,281 +1,249 @@
-# PLAN.md — Session 9: M02 atomic restore (generation directories)
+# PLAN.md — Session 10: M05 archive resource limits
 
 ## Understanding
 
-Only M02 is in scope (`fix-schedule.md` §1 NEXT). Restore currently commits
-three independent stores in sequence — catalogue Drift transaction
-(`restore_backup.dart:263–315`), vault rename pair (`vault_store.dart:246–267`),
-covers wipe-and-rewrite (`restore_backup.dart:333–336, 428–447`). A crash or IO
-error between any two leaves the device on a mix of old and new data, and no
-startup code detects it. **User decision (2026-09-08): Option 1 — versioned
-generation directories with an atomic active pointer.** The review's static
-finding was re-verified against HEAD `db4d040`; all three boundaries still exist.
-Session 8 already locks the old session after a vault-bearing restore
-(`vault_session_controller.dart:700`), which is the only part of M02 done so far.
+Only M05 is in scope (`fix-schedule.md` §1 NEXT). Three screens accept a
+user-picked ZIP (`.pitabak` restore, `.pitabundle`/`.zip` import, vault
+unlock-from-archive) and hand the whole file to
+`lib/features/import_export/domain/bounded_zip_extractor.dart`. Today the caps
+in `ZipLimits` are enforced only AFTER the dangerous allocations happen:
 
-Expected size: **two sessions** (schedule). This session delivers a safe,
-committable slice; the remainder is recorded explicitly in Steps.
+1. **No compressed-input cap.** `restore_page.dart:68`,
+   `vault_unlock_page.dart:57` call `file.readAsBytes()` unconditionally;
+   `import_page.dart:71–77` has a byte-length guard for text but explicitly
+   skips it for ZIPs. A multi-GB pick is fully buffered before anything checks.
+2. **Entry count checked after every header is parsed.**
+   `ZipDecoder.decodeBytes` (`archive-3.6.1/lib/src/zip_decoder.dart:19–74`)
+   builds the full `ZipDirectory` + one `ArchiveFile` per header first; our
+   `entryCount > maxEntries` check runs on the finished list.
+3. **Each entry fully decompresses before its real size is checked.**
+   `entry.content` → `zip_file.dart:161–167` → `inflateBuffer` → `dart:io`
+   `ZLibDecoder(raw: true).convert(...)` which has NO output bound. The header
+   `uncompressedSize` we pre-check is attacker-supplied. Probe on the pinned
+   SDK: a 65 232-byte archive inflates to 64 MiB (ratio 1028) in one shot.
+4. **No integrity check.** `decodeBytes(verify: false)` is the default; a
+   bit-flipped body passes into the restore/import path silently. Both the
+   native and the pure-Dart inflater return truncated/garbage output without
+   throwing on corrupt input (probe: 100 000-byte payload, one flipped byte →
+   99 326 bytes, no exception). CRC-32 is the only detector.
+
+Expected size per schedule: **two sessions**. Slice for this session: the
+extractor hardening + input caps at all three pages + tests. Anything left is
+recorded in Steps.
 
 ## Privacy & threat notes
 
-- Trust boundary unchanged: everything stays in the app-private documents dir.
-  The catalogue is still plain SQLite (M06b, open); the vault stays SQLCipher.
-- **Retention:** a generation switch briefly leaves the previous generation
-  (plaintext catalogue + covers + encrypted vault) on disk. Data minimization
-  requires deleting it promptly: obsolete generations are removed right after
-  the switch and again at every startup. Android is the only shipping target
-  (M18 decision d); POSIX unlink semantics make deleting a directory whose old
-  SQLite handle is still closing safe (the inode outlives the name).
-- No new secrets, logging of paths/PII, telemetry, network, or permissions.
-  Vault key material is never read by Dart; the vault files are copied as
-  opaque bytes while the session FIFO (M03 guard) guarantees no writer runs.
-- Fail closed everywhere: any error while BUILDING a generation discards it and
-  leaves the active generation byte-identical. Only the pointer switch commits.
-- Adoption of the current flat layout on first launch must be idempotent and
-  must never delete anything outside `data/gen-*`.
+- **Who:** anyone who can get a file onto the device and have the user pick it
+  (messaging attachment, download, shared drive). No trust in the file at all.
+- **What:** memory-exhaustion DoS (zip bomb, lying headers, millions of
+  headers, a very large pick); silent acceptance of corrupted content.
+- **What stops them after this fix:** bounded read at the picker
+  (compressed-byte cap enforced while streaming, never trusting `length()`
+  alone), EOCD pre-check (entry count + central-directory size) BEFORE
+  `ZipDecoder` runs, streaming inflate that throws the moment the running
+  output exceeds the per-entry / total budget, CRC-32 verification against the
+  central directory, and explicit rejection of encrypted / non-deflate /
+  zip64 entries our writer never produces.
+- **Data minimization / local-first:** nothing leaves the device; no new
+  logging (rejection messages carry entry names only inside the typed
+  exception, which the UI already maps to fixed safe copy). No new permissions.
+- **Honest limits:** whole-archive-in-RAM stays the accepted posture; peak
+  memory is `archive bytes (≤ maxArchiveBytes) + extracted map (≤ maxTotal)`
+  + one transient inflate buffer (≤ 2× the current entry's actual size, from
+  `OutputStream`'s doubling growth). The defaults (200 MiB / 500 MiB / 4096)
+  are unchanged — lowering them is a product decision, not this finding.
 
 ## Investigation notes (verified this session)
 
-- Layout today (`providers.dart:116,127,530,719,740`): `<docs>/pitaka.db`,
-  `<docs>/covers/`, `<docs>/borrowers.db`, `<docs>/vault_backup_blob`,
-  `<docs>/vault_biometric_blob`. Not replaced by restore and therefore staying
-  in `<docs>`: events, posters, publish manifest, bookmarks/settings (prefs),
-  scratch dirs (`restore_work`, `backup_create_work`, `vault_view_work`).
-- Consumers that must follow the active generation: `appDatabaseProvider`,
-  `coversDirProvider` (→ coverStore, localCoverReader, bundle cover store,
-  logo reader, `book_cover.dart:87`, `library_logo.dart:51`), `vaultStoreProvider`
-  (→ session controller via `ref.read`, backup writer, restore), and the two
-  literal `p.join(dir.path, 'covers')` in `createBackupUseCase`/`restoreBackup`.
-- `pitaka.db` uses SQLite's default rollback journal (no `setup:` PRAGMA), so a
-  hot `-journal` can exist after a crash: adoption must move `-journal/-wal/-shm`
-  companions together with each DB. Same for `borrowers.db` (Rust, default mode).
-- `VaultSessionController.build` uses `ref.read(vaultStoreProvider.future)`
-  (`:92–93`) and caches the store; a switch does not re-point it. Today the
-  restore controller `ref.invalidate`s the session only on success (`:69`).
-- `stageRestore`/`StagedVaultInstall` (`vault_artifacts_store.dart`,
-  `vault_store.dart:158–277`) become dead once the generation dir is the
-  staging area; six `vault_store_test.dart` tests cover them and will be
-  replaced by generation tests (no dead code, repo AGENTS.md §2.4).
-- Test fixtures constructing `RestoreBackup(...)` with `coversDir`/`vaultStore`:
-  `restore_backup_test.dart`, `migration_matrix_test.dart`,
-  `restore_controller_test.dart`, `restore_page_test.dart`,
-  `catalogue_replacement_restore_test.dart` (+ `replacement_harness.dart`).
-  They assert on the in-memory live `db`; after the change the NEW generation's
-  DB holds the rows, so the fixtures need an "open active catalogue" helper.
-- Verified primitives: `File.rename` replaces an existing file atomically and
-  fails over a directory (pinned SDK `io/file.dart:281–283`, probe confirmed);
-  `dart:io` cannot fsync a directory (probe: "Is a directory") — directory-entry
-  durability relies on the filesystem committing metadata in order (ext4/f2fs
-  journal ordering); this limit is documented, not hidden.
-- SQLite `sqlite_sequence` keeps the AUTOINCREMENT high-water mark across
-  delete/copy (CLI probe: seq 500 → next id 501), so M03's no-ID-reuse property
-  survives a snapshot into a new generation.
+- `ZipDirectory.read` (`zip_directory.dart:27–63`): backward EOCD scan over the
+  WHOLE input (`_findEocdrSignature`, O(n)); parses central headers until a
+  signature mismatch (the EOCD entry count is not what bounds the loop — the
+  `centralDirectorySize` slice is); then `readLocalFileHeader` for each →
+  `ZipFile(...)` reads the local header and takes `compressedSize` bytes as a
+  **view** (`input_stream.dart:195–199`, no copy). So header parsing is
+  bounded by the central-directory size, not by the entry count.
+- `ArchiveFile` from the decoder exposes `rawContent` (compressed view),
+  `compressionType` (0 store / 8 deflate / other), `size` (central
+  `uncompressedSize`), `crc32`, `isFile`, `name` (central filename —
+  spoof-safe per archive issue #266). `decoder.directory.fileHeaders[i]` is the
+  parallel `ZipFileHeader` with `generalPurposeBitFlag` (bit 0 = encrypted),
+  `compressionMethod` (99 = AES) and `crc32`.
+- `Inflate.stream(InputStreamBase, dynamic outputStream)` (`inflate.dart:24`)
+  runs `_inflate()` in the constructor and writes through `writeByte`,
+  `writeBytes`, `writeInputStream` on the output; `_decodeHuffman` also calls
+  `output.subset(...)`, so the sink must be an `OutputStream` (public,
+  non-final class). Largest single write is ≤ 65 535 bytes (stored block).
+  Probe: a subclass that throws when `length` would exceed the cap aborted a
+  64 MiB bomb at 1 048 577 bytes in 17 ms, having consumed ~1 KB of input.
+- Throughput probe (pinned SDK, compiled): 32 MiB JSON-like text → native
+  20 ms, pure-Dart 80 ms; 16 MiB incompressible (JPEG-like) → 4 ms both.
+  Worst realistic full-cap restore adds ≈ 1 s. `getCrc32` over 200 MiB:
+  452 ms.
+- Corruption behaviour: neither inflater throws on flipped/truncated deflate
+  data (truncation of the *container* still raises `RangeError`, which the
+  existing `on Object` guards wrap). CRC-32 verification is required for the
+  "actual content is what the archive claims" guarantee.
+- `XFile.length()` (cross_file 0.3.5+4 `io.dart:106`) is a `stat`; the picker
+  fakes in `restore_page_test.dart` use `XFile.fromData(bytes, length:)`, which
+  lets a widget test declare a huge length without allocating it.
+- Domain purity gate (`test/architecture/domain_purity_test.dart:56–63`)
+  allow-lists `package:archive` in domain specifically for this file and
+  already anticipates "M05 will harden the streaming path in place".
 
-## Proposed approach (with OSS references)
+## Proposed approach (OSS references)
 
-Layout: `<docs>/data/CURRENT` (text: active generation name) and
-`<docs>/data/gen-NNNNNN/{pitaka.db, covers/, borrowers.db, vault_backup_blob,
-vault_biometric_blob, COMPLETE}`. `COMPLETE` is an empty marker written
-(flushed) last, so startup can tell a finished generation from a crashed build.
+**Design choice — inflater:** keep the extractor in `domain/` and stream
+through `archive`'s pure-Dart `Inflate.stream` into a capped `OutputStream`
+subclass (option B). The alternative (A) — `dart:io` `RawZLibFilter`
+chunked inflate — is 4× faster on text but requires `dart:io`, i.e. moving the
+decoder to infrastructure and splitting the sniffer/limits out for the
+application/presentation importers. The speed gain (~1 s at full caps, zero on
+covers) does not justify the layering churn; B is recommended. Revisit only if
+device testing shows restore latency matters.
 
-1. **`lib/core/storage/data_generations.dart`** (new; dart:io, cross-cutting like
-   `core/database`): `open()` = adopt flat layout into `gen-000001` if `CURRENT`
-   is absent (per-file rename, idempotent, moves DB companions, never overwrites
-   an existing destination), read `CURRENT`, require its `COMPLETE`, fall back
-   to the highest complete generation if the pointer is dangling, delete every
-   other `gen-*`; `beginNext()` = fresh builder dir; `complete()` = marker;
-   `activate(name)` = write `CURRENT.tmp` flushed → rename over `CURRENT` →
-   delete obsolete generations. Adapted from LevelDB `SetCurrentFile`
-   (`db/filename.cc`, BSD-3, fetched 2026-09-08) and its remove-obsolete-files-
-   on-recovery rule; temp-then-rename durability as in SQLite (already credited
-   in `vault_store.dart`).
-2. **DI:** new keepAlive `@riverpod` `ActiveDataGeneration` AsyncNotifier
-   (build → `open()`; `activate(prepared)` → switch + publish new paths).
-   `appDatabaseProvider`, `coversDirProvider`, `vaultStoreProvider` watch it;
-   `createBackupUseCase` uses `coversDirProvider`. Everything downstream follows
-   via `ref.watch`. `main.dart` unchanged (providers are lazy).
-3. **Restore = build a generation, then switch** (`RestoreBackup`): snapshot
-   the live catalogue with `VACUUM INTO <gen>/pitaka.db` (transactionally
-   consistent copy; preserves schema, indexes, FTS shadow tables, and
-   `sqlite_sequence`), open a private `AppDatabase` on it, run the existing
-   M03 plan + delete/insert/rebuildFts transaction THERE, close; write covers
-   into `<gen>/covers/` (fail closed now — nothing live is at risk; when the
-   archive has no covers, copy the active covers dir to preserve today's
-   behaviour); vault: archive-borne pair written + validated in the new dir, or
-   the retained pair (+ biometric blob) copied from the active dir under the
-   FIFO; write `COMPLETE`; check `scope.isCurrent`; `activate`. Any failure →
-   discard the builder dir, typed `Failure`, live state untouched.
-4. **Session safety:** `CatalogueReplacementGuard.protectReplacement` gains
-   `endsSession` (restore always passes it: the vault's location changes even
-   when its key does not); the guard locks in `finally`, deterministic inside
-   the FIFO. `VaultSessionController.build` switches to `ref.watch` of the
-   store so ANY generation change also rebuilds it (belt and braces).
-5. Remove `stageRestore`/`StagedVaultInstall`; remove `RestoreBackup.coversDir`.
-6. Copy pass (schedule doc item): restore page mentions the library logo lives
-   with covers; README/PRIVACY sentence on crash-safe restore.
+Sources adapted (credited in code):
+- **Go `archive/zip` `readDirectoryEnd`** (Go 1.26 `reader.go`): bounded
+  backward EOCD scan (last 64 KiB + 22 bytes, the spec's max comment) and
+  central-directory CRC as the authority. BSD-3.
+- **Signal Android BackupImporter** size accounting — already the basis of
+  this file; the running-total-with-early-abort is extended to the inflate
+  loop.
+- **`archive` 3.6.1 `Inflate.stream` + `OutputStream`** — public API used
+  as-is; the capped sink is a subclass, not a fork.
+
+Changes:
+
+1. `ZipLimits` gains `maxArchiveBytes` (compressed input cap; default
+   `maxTotalBytes + 4 MiB` header slack — an honest archive can never be
+   larger than what it may contain plus headers) and
+   `maxCentralDirectoryBytes` (default `maxEntries × 1 KiB`; flat archives
+   have short names). Asserts keep the invariants.
+2. `BoundedZipExtractor.extract`:
+   - reject `bytes.length > maxArchiveBytes` first;
+   - own EOCD pre-scan (bounded backward search) → reject zip64 markers,
+     declared entry count > `maxEntries`, central-directory size >
+     `maxCentralDirectoryBytes` or beyond the input — BEFORE `ZipDecoder`;
+   - per entry: existing name/dup/directory checks; reject encrypted flag /
+     method ∉ {store, deflate}; early declared-size + declared-running-total
+     reject; stream-inflate into the capped sink with budget
+     `min(maxEntryBytes, maxTotalBytes − totalSoFar)`; verify CRC-32 against
+     the central directory; copy to an exact-size `Uint8List`.
+   - The post-decode entry-count check stays (defence against a lying EOCD).
+3. New `lib/core/platform/bounded_file_read.dart`:
+   `readPickedFileBounded(XFile, {required int maxBytes})` → `length()` early
+   reject, then `openRead()` streaming with a running total, fail closed at
+   `maxBytes + 1`. Single source of truth for the three pages (and the import
+   page's existing text branch, which is the same pattern).
+4. Pages: `restore_page.dart`, `import_page.dart`, `vault_unlock_page.dart`
+   use the helper with `ZipLimits.pitakaBackup.maxArchiveBytes` and show a
+   fixed safe "too large" message.
+5. Fix the stale KNOWN RESIDUAL comment in the extractor header.
 
 ## Decision points
 
-1. **Settled:** Option 1 (generation directories + atomic pointer).
-2. **Settled: (a) end-to-end.** Still pause on the triggers in point 4.
-3. Any `git commit`, `rm`, package add, or schema change needs separate approval
-   of the exact invocation. None requested at this checkpoint. No new packages
-   are expected (`path`, `drift`, `sqlite3` already present).
-4. Pause triggers even under end-to-end: `createInBackground` misbehaving in
-   tests; any need to touch Rust or the FRB surface; any assumption above
-   failing. (`VACUUM INTO` verified through the Drift executor 2026-09-08:
-   works from memory and background-isolate sources, preserves `user_version`,
-   `sqlite_sequence` and FTS shadow tables; refuses to run inside a
-   transaction; refuses an existing output file.)
+- **D1 (design):** pure-Dart streaming inflate in domain vs `dart:io` native
+  inflate in infrastructure. → **User decided (2026-09-08): B** — pure-Dart
+  `Inflate.stream` + capped `OutputStream` subclass; extractor stays in
+  `domain/`; no new dependency.
+- **D2 (execution mode):** → **User decided (2026-09-08): (a) end-to-end.**
+- Pause triggers under (a): any need for a new package (§6), any change to
+  the default cap values, any test that cannot be made deterministic.
 
 ## Steps
 
-Slice 1 (storage foundation):
-- [x] Verify handoff/HEAD, cited evidence, consumers, primitives, and tests.
-- [x] Baseline gates on pinned SDK 3.44.2 (recorded in Result).
-- [x] Obtain the design decision (Option 1).
-- [x] Obtain execution-mode approval (a — end-to-end).
-- [x] Failing tests first: adoption (all artifacts + DB companions, idempotent
-      mid-way, fresh install), dangling/incomplete `CURRENT`, GC scope,
-      `activate` temp+rename, incomplete builder never activates
-      (`test/core/storage/data_generations_test.dart`, 18 tests;
-      `active_data_generation_test.dart`, 4 tests — provider re-pointing).
-- [x] Implement `DataGenerations` + `ActiveDataGeneration` provider; re-point
-      `appDatabase`/`coversDir`/`vaultStore`/`createBackupUseCase`/`restoreBackup`.
-- [x] build_runner; full gates; re-read every edited region.
+- [x] Regression tests first (`bounded_zip_extractor_test.dart`, 31 new M05
+      tests via a hand-built lying-header writer `hostile_zip_builder.dart`):
+      input cap; 64 MiB→65 KB bomb with 1 MiB budget stopped AT the budget
+      (probe proves ≤ 1 048 576 bytes produced); lying declared size both
+      directions; EOCD count/directory-size/offset lies; zip64 markers;
+      encrypted flag; unsupported methods; CRC mismatch; flipped-body sweep;
+      local/central disagreement; symlink-flagged bomb; UNIX dir/regular
+      classification; stored-block (level 0) budget; existing
+      truncation/corruption loops still typed-only.
+- [x] Implement `ZipLimits` additions + EOCD pre-scan + streaming inflate +
+      CRC verify. **Mid-implementation correction:** `ZipDecoder.decodeBytes`
+      inflates UNIX-symlink-flagged entries while building its `Archive`
+      (`zip_decoder.dart:58–60`) — an unbounded native inflate BEFORE any
+      caller check. Red-proved (64 MiB bomb inflated in 48 ms under the first
+      cut), then switched to `ZipDirectory.read` (headers only) and classify
+      file types ourselves (`_isRegularFile`, same rule as the decoder).
+- [x] `lib/core/platform/bounded_file_read.dart` + 7 unit tests (exact-fit,
+      one-over, lying `length` both directions, multi-chunk real file, empty).
+- [x] Wire the three pages; widget tests: restore (oversize refused,
+      recovers on a sane re-pick) and import (text cap, ZIP cap, honest pick
+      still imports) via `XFile.fromData(length:)`. Vault-unlock page: same
+      helper, same fixed message; no existing widget test harness for that
+      page (its controller chain needs the Rust FFI) — recorded, not faked.
+- [x] Extractor header comment rewritten (KNOWN RESIDUAL removed — it is now
+      fixed); purity-gate comment updated. README/PRIVACY: no wording claims
+      about archive limits exist → no change.
+- [x] Gates: analyze 0; format 381/0; Flutter **1235 passed / 0 failed**
+      (+43 over 1192 baseline); Rust 32 passed / 2 expected ignored;
+      `git diff --check` clean. Coverage: extractor 144/148 (97.30%),
+      `bounded_file_read` 8/8, restore page 142/150, import page 78/85;
+      project 68.20% (floor 64%).
+- [ ] Commit request with the explicit path manifest below.
 
-Slice 2 (atomic restore) — completed in the same session:
-- [x] Fault-injection regressions at every boundary
-      (`test/features/backup/atomic_restore_test.dart`, 14 tests): wrong
-      passphrase, guard refusal, FTS failure, lease lost before switch, corrupt
-      legacy DB, cover write failure, pointer-switch failure, missing
-      borrowers.db, crash-simulated complete-but-unswitched generation; success
-      paths for vault-free, vault-bearing (old bio blob dropped), retained vault
-      + bio blob carried over, covers carried when archive has none, two
-      restores chained in one session.
-- [x] Rebuild `RestoreBackup` around a builder generation (`VACUUM INTO`
-      snapshot → replace inside a transaction on the copy → covers → vault →
-      `COMPLETE` → lease check → atomic `activate`); discard on any failure.
-- [x] `CatalogueReplacementGuard.protectReplacement(endsSession:)`; session
-      controller locks in `finally`; `_storeFuture` now `ref.watch`es the store
-      so a generation switch rebuilds the session (3 + 1 new tests).
-- [x] Delete `stageRestore`/`StagedVaultInstall`; replace with
-      `installRestored`/`copyFrom` on the domain port (6 store tests).
-- [x] Fixtures: `generation_fixture.dart`; `ReplacementHarness(generations:)`
-      runs the real chain; restore/controller/page/matrix tests updated; the
-      publish fixture pins `coversDirProvider` (it used `Directory('.')`).
-- [x] Copy pass: restore page (logo, re-lock, all-or-nothing), README, PRIVACY.
-- [x] Gates, coverage, generation idempotency, privacy/diff review, Result.
-- [ ] Commit approval for the explicit manifest below.
+## Commit manifest (awaiting §6 approval)
+
+```
+git add PLAN.md \
+  lib/core/platform/bounded_file_read.dart \
+  lib/features/import_export/domain/bounded_zip_extractor.dart \
+  lib/features/backup/presentation/pages/restore_page.dart \
+  lib/features/import_export/presentation/pages/import_page.dart \
+  lib/features/vault/presentation/pages/vault_unlock_page.dart \
+  test/architecture/domain_purity_test.dart \
+  test/core/platform/bounded_file_read_test.dart \
+  test/features/backup/restore_page_test.dart \
+  test/features/import_export/bounded_zip_extractor_test.dart \
+  test/features/import_export/hostile_zip_builder.dart \
+  test/features/import_export/import_page_test.dart
+git commit -m "sec(archive): enforce zip limits before allocation (M05)"
+```
+
+11 paths + PLAN.md = 12. Never stage `astra-review.md` / `fix-schedule.md`.
 
 ## Out-of-scope observations
 
-- A library logo referenced by settings can dangle after a covers-bearing
-  restore that lacks it (pre-existing; settings are not in backups). Record for
-  N07/N04; only the copy is adjusted here.
-- `RestoreController` is autoDispose and uses `ref` after awaits (N11).
-- The Drift catalogue uses the default rollback journal; WAL is not needed for
-  this fix and is not changed.
-- Windows/Linux/iOS/macOS unlink-while-open semantics differ; Android-only
-  shipping (M18) is assumed and documented in code.
-- Startup recovery is synchronous file IO in `ActiveDataGeneration.build`
-  (one listing + a handful of renames once per install). Fine today; if a
-  device ever accumulates many stray `gen-*` dirs it would be noticeable.
-- `restore_backup_test.dart` still contains the `_FtsFailingDb` fault helper;
-  it now targets the builder catalogue (kept; still the S10 regression).
-- The M02 review also mentioned "rollback uses a truncating write" — that code
-  path (`StagedVaultInstall.commit`) is deleted, not patched.
-- A stray `data/` directory appeared at the repo root during the session,
-  created by `publish_controller_test.dart`'s `Directory('.')` docs override
-  hitting the new generation chain; the fixture is fixed, the directory is
-  untracked and needs a §6-approved `rm -rf data/` (contains only an empty
-  `gen-000001/COMPLETE` + `CURRENT`).
+- `merge_page.dart:62–70` has the same text-size pattern (length-then-read);
+  switching it to the shared helper is a one-liner but is N07/N11 territory.
+- Default caps (200 MiB / 500 MiB / 4096) are unchanged; the reviewer calls
+  them "substantial". Lowering is a product decision for the user.
+- `BackupArchiveWriter` reads every cover into memory to build the archive
+  (write-side memory posture, not a hostile-input issue).
 
 ## Result
 
-Baseline (pinned SDK 3.44.2, HEAD `db4d040` = `origin/main`, tracked tree clean;
-untracked only `.fvm/`, `astra-review.md`, `fix-schedule.md`): analyzer
-**0 issues**; format **371 files / 0 changed**; Flutter **1152 passed / 0 failed**
-(log `/tmp/pitak-m02-flutter-baseline.SGmgFb`, 0 `[E]` markers); Rust
-**32 passed / 0 failed**, 2 expected ignored.
+**M05 implemented; commit pending approval.** Every `ZipLimits` cap now fires
+before the allocation it protects:
 
-Final gates: analyzer **0 issues**; format **378 files / 0 changed**; full
-Flutter `--no-pub --coverage` **1192 passed / 0 failed** (+40; log
-`/tmp/pitak-m02-flutter-final.V6dzOk`, re-run after the last fixture fix
-`/tmp/pitak-m02-flutter-final2.DsVOqv`, 0 `[E]` markers); Rust **32 passed /
-0 failed**, 2 expected ignored; `git diff --check` clean. build_runner rerun:
-the 3 affected generated files byte-identical; only DI + session hash diffs
-and the new `active_data_generation.g.dart`.
+| Limit | Old point of enforcement | New point of enforcement |
+|---|---|---|
+| Compressed input size | none (`readAsBytes` unconditionally) | picker streams under `maxArchiveBytes`, counting real bytes; extractor re-checks |
+| Entry count | after every header parsed into an `Archive` | EOCD record read by us first; re-checked per header |
+| Central-directory size | none | EOCD pre-check (`maxCentralDirectoryBytes`), bounds-checked against input |
+| Per-entry / total bytes | after the native inflater produced the whole entry | budgeted `OutputStream` subclass refuses the write that would cross `min(entry, remaining total)` |
+| Integrity | none (`verify: false`) | CRC-32 against the central directory |
+| Symlink / encrypted / non-deflate / zip64 | decoded (symlink target INFLATED by the decoder itself) | refused on the header |
 
-Regression evidence: this finding was **static** (no reviewer reproduction);
-the fault-injection suite is the "would have caught it" test set. The M03
-restore regressions were re-run on the REAL storage chain (session guard +
-generation switch) and additionally assert the retained vault moved with the
-catalogue and the session ended. Test iterations fixed along the way: a fresh
-device has no catalogue file yet (skip `VACUUM INTO`, let Drift create the
-schema); Riverpod `updateOverrides` cannot add overrides (test rewritten with
-a mutable store path); the harness's flat vault files were being adopted by
-the real generation chain (pinned `coversDirProvider` where the flat layout is
-intended).
+Default cap values are unchanged (200 MiB / 500 MiB / 4096; input cap derives
+as 504 MiB; directory cap 4 MiB).
 
-Coverage: `data_generations.dart` **104/113 (92.04%)**;
-`active_data_generation.dart` **7/7**; `restore_backup.dart` **146/156
-(93.59%)** (was 106/139); `vault_store.dart` **72/72 (100%)**;
-`vault_session_controller.dart` **310/339 (91.45%)**; `restore_controller.dart`
-**14/14**. Project **7582/11194 (67.73%)**. Line coverage is not proof of
-power-loss behaviour: crash points are simulated by throwing at boundaries and
-by hand-building on-disk states for startup recovery, not by killing the
-process. `dart:io` cannot fsync a directory; the pointer rename's durability
-relies on filesystem metadata ordering (documented in code).
+**Honest limits.** Whole-archive-in-RAM remains the posture; the pure-Dart
+inflater is ~4× slower than native on compressible data (measured 139 ms for
+a 20 MiB JSON-like entry through the full extractor). No physical-device or
+low-memory-device verification; bombs were exercised at small budgets in unit
+tests. `XFile.length()` for content-provider URIs on Android is best-effort —
+which is exactly why the streaming count, not the length, is the guarantee.
+The vault-unlock page's cap path has no widget test (no harness for its
+FFI-backed controller); it is the same three lines as the tested restore page.
 
-Privacy/diff review: no new logging, network, telemetry, permissions, crypto,
-schema or dependency changes (grep of all added production lines: none).
-Vault bytes are only ever copied as opaque files under the M03 FIFO; the
-generation store never reads them. Old generations are deleted right after a
-switch and on every startup, so no second plaintext copy lingers (§3.1).
-OSS credit: LevelDB `db/filename.cc` `SetCurrentFile` (BSD-3-Clause) for the
-`CURRENT` temp+rename pattern and its remove-obsolete-files recovery rule;
-SQLite temp-then-rename durability (already credited in `vault_store.dart`);
-`VACUUM INTO` verified through Drift on 2026-09-08.
+**OSS credited:** Go `archive/zip` `readDirectoryEnd`/`findSignatureInBlock`
+(bounded EOCD scan, BSD-3) in code; Signal BackupImporter accounting (already
+credited); `package:archive` public `Inflate.stream`/`OutputStream`/
+`ZipDirectory` used as-is, no fork.
 
-## Proposed commit manifest — exactly 31 paths (awaiting approval)
-
-Stage only these paths; never the local review, schedule, `.fvm/` or the stray
-`data/` directory. One buildable M02 fix with its regression tests, docs and
-working plan.
-
-```sh
-git add -- \
-  PLAN.md \
-  PRIVACY.md \
-  README.md \
-  lib/core/di/providers.dart \
-  lib/core/di/providers.g.dart \
-  lib/core/storage/active_data_generation.dart \
-  lib/core/storage/active_data_generation.g.dart \
-  lib/core/storage/data_generations.dart \
-  lib/features/backup/application/restore_controller.dart \
-  lib/features/backup/infrastructure/restore_backup.dart \
-  lib/features/backup/presentation/pages/restore_page.dart \
-  lib/features/library/domain/catalogue_replacement_guard.dart \
-  lib/features/vault/application/vault_session_controller.dart \
-  lib/features/vault/application/vault_session_controller.g.dart \
-  lib/features/vault/domain/vault_artifacts_store.dart \
-  lib/features/vault/infrastructure/vault_store.dart \
-  test/core/storage/active_data_generation_test.dart \
-  test/core/storage/data_generations_test.dart \
-  test/features/backup/atomic_restore_test.dart \
-  test/features/backup/catalogue_replacement_restore_test.dart \
-  test/features/backup/generation_fixture.dart \
-  test/features/backup/migration_matrix_test.dart \
-  test/features/backup/restore_backup_test.dart \
-  test/features/backup/restore_controller_test.dart \
-  test/features/backup/restore_page_test.dart \
-  test/features/library/catalogue_replacement_integration_test.dart \
-  test/features/library/replacement_harness.dart \
-  test/features/library/replacement_test_guard.dart \
-  test/features/publish/publish_controller_test.dart \
-  test/features/vault/vault_session_controller_test.dart \
-  test/features/vault/vault_store_test.dart
-git commit -m "fix(backup): atomic restore via data generations (M02)"
-```
+**Privacy posture:** no new logging, network, permissions or persistence.
+Rejection messages carry only entry names inside the typed exception, which
+the pages already map to fixed copy.

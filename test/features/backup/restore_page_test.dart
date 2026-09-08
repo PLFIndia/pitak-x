@@ -54,8 +54,12 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
 /// Picker seam: hands back an in-memory [XFile] (no file IO, so the test's
 /// FakeAsync zone never blocks).
 class _FakeFileSelector extends FileSelectorPlatform {
-  _FakeFileSelector(this.bytes);
+  _FakeFileSelector(this.bytes, {this.reportedLength});
   final Uint8List bytes;
+
+  /// M05: lets a test hand the page a file whose reported size differs from
+  /// its real bytes (a huge declared length without allocating it).
+  final int? reportedLength;
   int picks = 0;
 
   @override
@@ -65,7 +69,7 @@ class _FakeFileSelector extends FileSelectorPlatform {
     String? confirmButtonText,
   }) async {
     picks++;
-    return XFile.fromData(bytes, name: 'test.pitabak');
+    return XFile.fromData(bytes, name: 'test.pitabak', length: reportedLength);
   }
 }
 
@@ -103,12 +107,19 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Widget wrap(Uint8List archiveBytes, {Failure? replacementFailure}) {
+  Widget wrap(
+    Uint8List archiveBytes, {
+    Failure? replacementFailure,
+    int? reportedLength,
+  }) {
     final restorer = gen.restorer(
       vault: _FakeVault(),
       guard: FakeReplacementGuard(failure: replacementFailure),
     );
-    FileSelectorPlatform.instance = _FakeFileSelector(archiveBytes);
+    FileSelectorPlatform.instance = _FakeFileSelector(
+      archiveBytes,
+      reportedLength: reportedLength,
+    );
     return ProviderScope(
       overrides: [
         restoreBackupProvider.overrideWith((ref) async => restorer),
@@ -233,5 +244,33 @@ void main() {
       isFalse,
     );
     expect(find.text('Passphrase'), findsNothing);
+  });
+
+  testWidgets('M05: an oversized pick is refused before it is read', (
+    tester,
+  ) async {
+    // A perfectly valid archive whose picker-reported size is 5 GiB. The
+    // page must refuse on the report alone: no bytes buffered, no
+    // inspection, nothing to restore.
+    await tester.pumpWidget(
+      wrap(_archive(withVault: false), reportedLength: 5 * 1024 * 1024 * 1024),
+    );
+    await pick(tester);
+
+    expect(find.textContaining('too large'), findsOneWidget);
+    expect(find.text('Choose .pitabak file'), findsOneWidget);
+    expect(find.textContaining('No borrowers vault'), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      isFalse,
+    );
+
+    // Picking a sane file afterwards clears the error and proceeds normally.
+    FileSelectorPlatform.instance = _FakeFileSelector(
+      _archive(withVault: false),
+    );
+    await pick(tester);
+    expect(find.textContaining('too large'), findsNothing);
+    expect(find.textContaining('No borrowers vault'), findsOneWidget);
   });
 }

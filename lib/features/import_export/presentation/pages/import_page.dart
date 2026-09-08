@@ -9,10 +9,11 @@ library;
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
-    show hasZipLocalFileHeader;
+    show ZipLimits, hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -60,21 +61,27 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     );
     final file = await openFile(acceptedTypeGroups: [group]);
     if (file == null) return;
-    // Pre-read size guard (REVIEW_FINDINGS_2 S4): the parser's
-    // ImportLimits.maxTextChars check only runs AFTER the whole file is in
-    // memory, so a multi-GB text pick could OOM the app first. UTF-8 text
-    // never has more characters than bytes, so a byte-length check is a sound
-    // early reject; the parser re-checks the decoded length regardless.
-    // Bundles (ZIP magic) skip this guard: their contents are bounded by
-    // BoundedZipExtractor instead (whole-archive-in-RAM is the accepted,
-    // documented posture for archives).
-    if (!await _hasZipMagic(file) &&
-        await file.length() > ImportLimits.defaults.maxTextChars) {
+    // Bounded read (REVIEW_FINDINGS_2 S4, hardened by M05): the parsers'
+    // limits only run AFTER the whole file is in memory, so the cap has to be
+    // enforced while reading. The cap depends on the format, sniffed from the
+    // first four bytes without loading the file:
+    //  - text (JSON/CSV): ImportLimits.maxTextChars — UTF-8 never has more
+    //    characters than bytes, so a byte cap is a sound early reject and the
+    //    parser re-checks the decoded length regardless;
+    //  - bundle (ZIP magic): ZipLimits.maxArchiveBytes — the extractor
+    //    re-checks it and bounds the decompressed contents separately.
+    // `readPickedFileBounded` counts the bytes that actually arrive, so a
+    // lying file length cannot get around either cap.
+    final maxBytes = await _hasZipMagic(file)
+        ? ZipLimits.pitakaBackup.maxArchiveBytes
+        : ImportLimits.defaults.maxTextChars;
+    final bytes = await readPickedFileBounded(file, maxBytes: maxBytes);
+    if (!mounted) return;
+    if (bytes == null) {
       setState(() => _fileError = 'File is too large to import safely.');
       return;
     }
     setState(() => _fileError = null);
-    final bytes = await file.readAsBytes();
     await ref.read(importControllerProvider.notifier).importBytes(bytes);
     if (ref.read(importControllerProvider).hasValue) await _refreshLists();
   }
