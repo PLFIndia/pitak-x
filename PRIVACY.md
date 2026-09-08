@@ -88,7 +88,11 @@ Network activity happens only when you explicitly ask for it:
    cover images inside are stored plainly; only the borrowers vault (when
    you have one) remains encrypted inside the archive. Anyone who receives
    your backup file can read the catalogue fields, so share backups only
-   with people you trust with that data.
+   with people you trust with that data. Restoring writes the new catalogue,
+   covers and vault into a fresh app-private folder and switches to it in one
+   step; the previous folder is deleted immediately after a successful switch
+   (and any half-built folder is removed on the next launch), so no second
+   copy of your data lingers on the device.
 
 ## What Pitak does NOT do
 

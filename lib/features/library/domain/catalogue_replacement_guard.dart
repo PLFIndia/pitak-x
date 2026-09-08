@@ -10,10 +10,14 @@ abstract interface class CatalogueReplacementGuard {
   /// Runs [action] exclusively with respect to vault operations. A retained
   /// vault must be unlocked and freshly read first; unknown state fails closed.
   /// [replacingVault] is only for a backup that installs its own vault pair.
+  /// [endsSession] locks the vault session once [action] finishes (success or
+  /// failure): a restore moves the vault to a new location even when it keeps
+  /// the same key, so a cached store or held secret must not survive it (M02).
   Future<Either<Failure, T>> protectReplacement<T>(
     Future<Either<Failure, T>> Function(CatalogueReplacementScope scope)
     action, {
     bool replacingVault = false,
+    bool endsSession = false,
   });
 }
 

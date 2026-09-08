@@ -8,6 +8,9 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/core/storage/data_generations.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -98,22 +101,70 @@ class ReplacementSettings implements SettingsRepository {
 }
 
 class ReplacementHarness {
-  ReplacementHarness({AppDatabase? database}) {
+  /// [database]: an injected in-memory catalogue (merge/session tests).
+  /// [generations]: instead run on the REAL M02 storage chain — a data
+  /// generation on disk with a file-backed catalogue — which restore tests
+  /// need because restore snapshots the active generation's catalogue FILE and
+  /// switches generations. [openCatalogue] lets those tests inject faults into
+  /// the builder generation's catalogue.
+  ReplacementHarness({
+    AppDatabase? database,
+    bool generations = false,
+    AppDatabase Function(String path)? openCatalogue,
+  }) : usesGenerations = generations {
     directory = Directory.systemTemp.createTempSync('m03_integration_');
-    db = database ?? AppDatabase(NativeDatabase.memory());
-    store = VaultStore(baseDir: directory.path);
+    if (generations) {
+      final store = DataGenerations(docsDir: directory.path);
+      final active = store.open();
+      db = AppDatabase(NativeDatabase(File(active.catalogueDbPath)));
+      this.store = VaultStore(baseDir: active.vaultDir);
+    } else {
+      db = database ?? AppDatabase(NativeDatabase.memory());
+      store = VaultStore(baseDir: directory.path);
+    }
     books = DriftBookRepository(db);
     container = ProviderContainer(
       overrides: [
         appDocsDirProvider.overrideWith((ref) async => directory),
-        appDatabaseProvider.overrideWith((ref) async => db),
+        if (!generations) ...[
+          // The real coversDir resolves through the active data generation,
+          // whose startup adoption would MOVE this harness's hand-placed flat
+          // vault files into data/gen-000001. Pin the covers path instead so
+          // the fixture's flat layout stays exactly where the tests put it.
+          coversDirProvider.overrideWith(
+            (ref) async => '${directory.path}/covers',
+          ),
+          appDatabaseProvider.overrideWith((ref) async => db),
+          vaultStoreProvider.overrideWith((ref) async => store),
+        ],
+        if (generations && openCatalogue != null)
+          restoreBackupProvider.overrideWith((ref) async {
+            final real = await ref.watch(dataGenerationsProvider.future);
+            final dir = await ref.watch(appDocsDirProvider.future);
+            return RestoreBackup(
+              vault: vault,
+              generations: real,
+              activeGeneration: () =>
+                  ref.read(activeDataGenerationProvider.future),
+              activate: (generation) => ref
+                  .read(activeDataGenerationProvider.notifier)
+                  .activate(generation),
+              openCatalogue: openCatalogue,
+              workDir: '${dir.path}/restore_work',
+              replacementGuard: ref.read(
+                vaultSessionControllerProvider.notifier,
+              ),
+            );
+          }),
         bookRepositoryProvider.overrideWith((ref) async => books),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         vaultRepositoryProvider.overrideWithValue(vault),
-        vaultStoreProvider.overrideWith((ref) async => store),
       ],
     );
   }
+
+  /// Whether this harness runs on the real generation chain (see constructor).
+  final bool usesGenerations;
   late final Directory directory;
   late final AppDatabase db;
   late final DriftBookRepository books;
@@ -121,6 +172,22 @@ class ReplacementHarness {
   late final ProviderContainer container;
   final vault = ReplacementVault();
   final settings = ReplacementSettings();
+
+  /// The covers directory of the CURRENT generation (or the flat one).
+  Future<String> coversDir() => container.read(coversDirProvider.future);
+
+  /// The book repository over the CURRENT catalogue. After a restore the
+  /// active generation has moved, so the pre-restore [books] handle would
+  /// read the deleted old file; this one follows the switch.
+  Future<DriftBookRepository> currentBooks() async {
+    if (!usesGenerations) return books;
+    final database = await container.read(appDatabaseProvider.future);
+    return DriftBookRepository(database);
+  }
+
+  /// The vault store of the CURRENT generation (or the flat one).
+  Future<VaultStore> currentStore() async =>
+      usesGenerations ? container.read(vaultStoreProvider.future) : store;
 
   VaultSessionController get session =>
       container.read(vaultSessionControllerProvider.notifier);
@@ -154,6 +221,9 @@ class ReplacementHarness {
   }
 
   Future<void> close() async {
+    if (usesGenerations && container.exists(appDatabaseProvider)) {
+      await (await container.read(appDatabaseProvider.future)).close();
+    }
     container.dispose();
     await db.close();
     directory.deleteSync(recursive: true);

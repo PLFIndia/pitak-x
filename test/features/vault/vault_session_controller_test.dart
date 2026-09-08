@@ -239,8 +239,8 @@ void main() {
     _InMemoryVault vault, {
     _FakeBioAuth? bioAuth,
     _FakeBioStore? bioStore,
+    String Function()? storeDir,
   }) {
-    final store = VaultStore(baseDir: tmp.path);
     final container = ProviderContainer(
       overrides: [
         bookRepositoryProvider.overrideWith((ref) async {
@@ -252,7 +252,10 @@ void main() {
           return books;
         }),
         vaultRepositoryProvider.overrideWithValue(vault),
-        vaultStoreProvider.overrideWith((ref) async => store),
+        // Resolved per build so a test can move the store (M02 switch).
+        vaultStoreProvider.overrideWith(
+          (ref) async => VaultStore(baseDir: storeDir?.call() ?? tmp.path),
+        ),
         biometricAuthenticatorProvider.overrideWithValue(
           bioAuth ?? _FakeBioAuth(),
         ),
@@ -745,5 +748,29 @@ void main() {
       container.read(vaultSessionControllerProvider).value,
       isA<VaultLocked>(),
     );
+  });
+
+  test('M02: a vault-store change (generation switch) rebuilds the session, '
+      'drops the held secret and re-reads the new location', () async {
+    final vault = _InMemoryVault();
+    var storeDir = tmp.path;
+    final container = makeContainer(vault, storeDir: () => storeDir);
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+    expect(notifier.isUnlocked, isTrue);
+
+    // Simulate a restore that moved the vault to a new (empty) generation:
+    // the store provider now resolves elsewhere. The session WATCHES it.
+    Directory(p.join(tmp.path, 'next')).createSync();
+    storeDir = p.join(tmp.path, 'next');
+    container.invalidate(vaultStoreProvider);
+
+    final state = await container.read(vaultSessionControllerProvider.future);
+    // No vault in the new location → Uninitialized, not a stale Unlocked.
+    expect(state, isA<VaultUninitialized>());
+    expect(notifier.isUnlocked, isFalse);
+    expect(notifier.currentLoans, isNull);
   });
 }

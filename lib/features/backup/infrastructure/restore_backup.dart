@@ -4,9 +4,20 @@
 /// Restore is an AUTHORITATIVE OVERWRITE of local state, not an additive merge
 /// (mirrors Kotlin `BackupRestore`). Ordering is fail-closed: everything that
 /// can fail without side effects (extract, manifest, blob unwrap) happens
-/// BEFORE any device write. Then the library/wishlist are replaced inside a
-/// single Drift transaction; covers are routed; cross-DB loan integrity is
-/// checked.
+/// BEFORE any device write.
+///
+/// ATOMIC across stores (M02, astra-review.md): the catalogue database, the
+/// covers and the vault are never edited in place. Restore BUILDS a complete
+/// new data generation directory (see `core/storage/data_generations.dart`) —
+/// a transactionally consistent snapshot of the live catalogue that is then
+/// replaced inside its own transaction, the archive's covers, and either the
+/// archive's vault pair or a byte-for-byte copy of the retained one — marks it
+/// COMPLETE, and only then switches the single `CURRENT` pointer with one
+/// atomic rename. Any failure before that switch discards the builder
+/// directory and leaves the active generation byte-identical. A crash before
+/// the switch is cleaned up by startup recovery; a crash after it is simply a
+/// successful restore. There is no window in which the device runs on a mix of
+/// old and new catalogue, vault and covers.
 ///
 /// Trust boundary: the encrypted `borrowers.db` + vault key live entirely in
 /// the Rust core (via [VaultRepository]); the plain `books.db`/`wishlist.db`
@@ -18,11 +29,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/drift.dart';
+import 'package:drift/native.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
@@ -35,7 +48,7 @@ import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/common.dart';
@@ -52,42 +65,59 @@ const String _coverEntryPrefix = 'cover_';
 /// Opens a plain SQLite database file read-only. Injectable for tests.
 typedef LegacyDbOpener = CommonDatabase Function(String path);
 
+/// Opens the app's Drift catalogue at an arbitrary file path (the builder
+/// generation's copy). Injectable so tests can inject faults into it.
+typedef CatalogueOpener = AppDatabase Function(String path);
+
+/// Resolves the generation the app is currently running on.
+typedef ActiveGenerationResolver = Future<DataGeneration> Function();
+
+/// Switches the app onto a COMPLETE generation (the DI implementation goes
+/// through `ActiveDataGeneration.activate`, which also republishes the paths
+/// so database/covers/vault providers rebuild). Throws on failure.
+typedef GenerationActivator =
+    Future<DataGeneration> Function(DataGeneration generation);
+
 CommonDatabase _defaultOpen(String path) =>
     sqlite3.open(path, mode: OpenMode.readOnly);
 
-/// Restores a backup archive into the app's Drift DB + Rust vault.
+AppDatabase _defaultOpenCatalogue(String path) =>
+    AppDatabase(NativeDatabase(File(path)));
+
+/// Restores a backup archive by building and activating a new data generation.
 final class RestoreBackup {
   /// Creates the restorer.
   ///
-  /// [db] is the live app database; [vault] reads the encrypted borrowers DB
-  /// through the Rust core; [vaultStore] owns the at-rest vault artifacts and
-  /// is where the restored `borrowers.db` + wrapped-key blob are PERSISTED
-  /// (C1); [coversDir] is where `cover_*` entries are written (wiped first —
-  /// restore replaces device state); [workDir] is a scratch dir for extracted
-  /// files; [openLegacyDb] is injectable for tests.
+  /// [vault] reads the encrypted borrowers DB through the Rust core;
+  /// [generations] owns the generation directories; [activeGeneration]
+  /// resolves the live one (its catalogue is snapshotted, its vault/covers
+  /// carried over where the archive lacks them); [activate] performs the
+  /// atomic switch; [openCatalogue] opens the builder's catalogue copy;
+  /// [workDir] is a scratch dir for extracted files; [replacementGuard]
+  /// serialises this operation against vault work (M03).
   RestoreBackup({
-    required this.db,
     required this.vault,
-    required this.vaultStore,
-    required this.coversDir,
+    required this.generations,
+    required this.activeGeneration,
+    required this.activate,
     required this.workDir,
     required this.replacementGuard,
+    CatalogueOpener openCatalogue = _defaultOpenCatalogue,
     LegacyDbOpener openLegacyDb = _defaultOpen,
-  }) : _open = openLegacyDb;
-
-  /// The live application database (books + wishlist).
-  final AppDatabase db;
+  }) : _openCatalogue = openCatalogue,
+       _open = openLegacyDb;
 
   /// Vault reader over the Rust FFI core.
   final VaultRepository vault;
 
-  /// At-rest persistence for the restored vault (C1). Restore reads the vault
-  /// for the summary AND installs it here, so a restored backup actually keeps
-  /// its borrowers/loans instead of silently dropping them.
-  final VaultArtifactsStore vaultStore;
+  /// Generation directory store (build / complete / activate / discard).
+  final DataGenerations generations;
 
-  /// Absolute path of the covers directory (`<appDocs>/covers`).
-  final String coversDir;
+  /// Resolves the generation currently active.
+  final ActiveGenerationResolver activeGeneration;
+
+  /// Performs the atomic switch onto a completed generation.
+  final GenerationActivator activate;
 
   /// Absolute path of a scratch directory for extracted files.
   final String workDir;
@@ -95,6 +125,7 @@ final class RestoreBackup {
   /// Shared session guard: no vault operations overlap this replacement.
   final CatalogueReplacementGuard replacementGuard;
 
+  final CatalogueOpener _openCatalogue;
   final LegacyDbOpener _open;
 
   /// Inspects [archiveBytes] WITHOUT restoring anything (N13): bounded
@@ -110,6 +141,47 @@ final class RestoreBackup {
     } on BoundedExtractionException catch (e) {
       return left(BackupCorruptFailure(e.message));
     }
+    return _parseManifest(files);
+  }
+
+  /// Applies [archiveBytes], unlocking the vault with [passphrase] when the
+  /// archive carries one. The caller owns [passphrase] and must dispose it.
+  ///
+  /// [passphrase] is null only when the archive holds NO vault (N13: a
+  /// vault-free backup needs no passphrase); when the manifest says a vault
+  /// is present but no passphrase was supplied, restore fails closed.
+  ///
+  /// Returns a typed [Failure] on any problem. On failure the device is left
+  /// EXACTLY on its pre-restore generation: nothing live is ever written.
+  Future<Either<Failure, RestoreSummary>> restore({
+    required Uint8List archiveBytes,
+    SecretBytes? passphrase,
+  }) async {
+    // --- Phase 1: extract (no device writes yet) ---
+    final Map<String, Uint8List> files;
+    try {
+      files = BoundedZipExtractor.extract(archiveBytes);
+    } on BoundedExtractionException catch (e) {
+      return left(BackupCorruptFailure(e.message));
+    }
+
+    // --- Phase 2: manifest, refuse schemaVersion > known ---
+    final parsed = _parseManifest(files);
+    final manifest = parsed.toNullable();
+    if (manifest == null) {
+      return parsed.map((_) => throw StateError('unreachable'));
+    }
+
+    // The guard also ends the vault session afterwards: even a retained vault
+    // moves to a new directory, so a cached store/key must not survive.
+    return replacementGuard.protectReplacement(
+      (scope) => _restoreValidated(files, manifest, passphrase, scope),
+      replacingVault: manifest.hasBackupBlob,
+      endsSession: true,
+    );
+  }
+
+  Either<Failure, BackupManifest> _parseManifest(Map<String, Uint8List> files) {
     final manifestBytes = files[_manifestEntry];
     if (manifestBytes == null) {
       return left(const BackupCorruptFailure('Archive missing manifest.json'));
@@ -124,54 +196,13 @@ final class RestoreBackup {
     return right(manifest);
   }
 
-  /// Applies [archiveBytes], unlocking the vault with [passphrase] when the
-  /// archive carries one. The caller owns [passphrase] and must dispose it.
-  ///
-  /// [passphrase] is null only when the archive holds NO vault (N13: a
-  /// vault-free backup needs no passphrase); when the manifest says a vault
-  /// is present but no passphrase was supplied, restore fails closed.
-  ///
-  /// Returns a typed [Failure] on any problem, with no partial device writes on
-  /// a pre-write failure (extract/manifest/blob). Wrong passphrase is distinct
-  /// from a corrupt archive.
-  Future<Either<Failure, RestoreSummary>> restore({
-    required Uint8List archiveBytes,
-    SecretBytes? passphrase,
-  }) async {
-    // --- Phase 1: extract (no device writes yet) ---
-    final Map<String, Uint8List> files;
-    try {
-      files = BoundedZipExtractor.extract(archiveBytes);
-    } on BoundedExtractionException catch (e) {
-      return left(BackupCorruptFailure(e.message));
-    }
-
-    // --- Phase 2: manifest, refuse schemaVersion > known ---
-    final manifestBytes = files[_manifestEntry];
-    if (manifestBytes == null) {
-      return left(const BackupCorruptFailure('Archive missing manifest.json'));
-    }
-    final manifest = BackupManifest.tryParse(_utf8(manifestBytes));
-    if (manifest == null) {
-      return left(const BackupCorruptFailure('Invalid manifest.json'));
-    }
-    if (manifest.schemaVersion > BackupManifest.knownSchemaVersion) {
-      return left(SchemaTooNewFailure(manifest.schemaVersion));
-    }
-
-    return replacementGuard.protectReplacement(
-      (scope) => _restoreValidated(files, manifest, passphrase, scope),
-      replacingVault: manifest.hasBackupBlob,
-    );
-  }
-
   Future<Either<Failure, RestoreSummary>> _restoreValidated(
     Map<String, Uint8List> files,
     BackupManifest manifest,
     SecretBytes? passphrase,
     CatalogueReplacementScope scope,
   ) async {
-    // --- Phase 3: stage files to disk (sqlite3 + FFI need paths) ---
+    // --- Phase 3: stage archive files to disk (sqlite3 + FFI need paths) ---
     final Directory work;
     try {
       work = Directory(workDir);
@@ -181,11 +212,9 @@ final class RestoreBackup {
       return left(StorageFailure('Could not create work dir: ${e.message}'));
     }
 
+    DataGeneration? builder;
     try {
       // --- Phase 4: vault unlock (no device writes yet; fail closed) ---
-      // Captured for Phase 6.5: the staged DB path + the trimmed wrapped-key
-      // blob, so the validated vault can be PERSISTED after the library
-      // overwrite (C1). Null when the archive carries no vault.
       var vaultData = VaultData.empty;
       String? stagedVaultDbPath;
       String? vaultBlob;
@@ -225,115 +254,60 @@ final class RestoreBackup {
           return null;
         });
         if (early != null) return left(early);
-        // Unlock succeeded → these are the artifacts to install in Phase 6.5.
         stagedVaultDbPath = borrowersPath;
         vaultBlob = blob;
       }
 
       // --- Phase 5: read legacy books/wishlist (still no device writes) ---
       final readResult = _readLegacy(work, files, manifest);
-      if (readResult.isLeft()) {
-        return readResult.match(left, (_) => throw StateError('unreachable'));
+      final legacy = readResult.toNullable();
+      if (legacy == null) {
+        return readResult.map((_) => throw StateError('unreachable'));
       }
-      final legacy = readResult.getOrElse(
-        (_) => throw StateError('unreachable'),
+      if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+
+      // --- Phase 6: BUILD the next generation (no live effect) ---
+      // Everything below writes only into the builder directory. Any failure
+      // is caught, the directory discarded, and the device is unchanged.
+      final active = await activeGeneration();
+      builder = generations.beginNext(active);
+
+      // 6a. catalogue: consistent snapshot of the live DB, then replace inside
+      // a transaction on THAT copy. `VACUUM INTO` copies schema, indexes,
+      // FTS shadow tables and sqlite_sequence (so M03's no-ID-reuse holds).
+      final catalogueResult = await _buildCatalogue(
+        active: active,
+        builder: builder,
+        legacy: legacy,
+        scope: scope,
       );
+      if (catalogueResult.isLeft()) {
+        return catalogueResult.map((_) => throw StateError('unreachable'));
+      }
 
-      // --- Phase 5.5: STAGE the vault install (fallible, no live effect) ---
-      // Two-file-commit atomicity across stores (C1 + §4 Major): all the
-      // fallible vault IO (copying the DB, writing the blob) happens HERE,
-      // before the library is touched. If staging fails we abort with the
-      // device fully unchanged. After the library transaction commits, only
-      // near-infallible atomic renames remain (Phase 6.5), shrinking the
-      // "new library + old vault" window to a rename pair with rollback.
-      StagedVaultInstall? staged;
+      // 6b. covers: the archive's set when it has one; otherwise carry the
+      // device's covers over (restored rows may still reference them).
+      _buildCovers(files, manifest, active: active, builder: builder);
+
+      // 6c. vault: the archive's validated pair, or the retained device vault
+      // copied byte-for-byte (the guard holds the FIFO, so nothing writes it).
+      final nextStore = VaultStore(baseDir: builder.vaultDir);
       if (stagedVaultDbPath != null && vaultBlob != null) {
-        try {
-          staged = vaultStore.stageRestore(
-            dbSourcePath: stagedVaultDbPath,
-            blob: vaultBlob,
-          );
-        } on FileSystemException catch (e) {
-          return left(
-            StorageFailure('Could not stage restored vault: ${e.message}'),
-          );
-        }
+        nextStore.installRestored(
+          dbSourcePath: stagedVaultDbPath,
+          blob: vaultBlob,
+        );
+      } else if (scope.retainedLoanBookIds != null) {
+        nextStore.copyFrom(VaultStore(baseDir: active.vaultDir));
       }
 
-      // --- Phase 6: authoritative overwrite inside one transaction ---
-      // rebuildFts runs INSIDE the transaction (REVIEW_FINDINGS_2 S10): when
-      // it ran after the commit but inside this same try, a rebuild failure
-      // aborted the staged vault and reported failure while the new library
-      // stayed committed — new library + old vault + a lying error message.
-      // Inside the transaction, a rebuild failure rolls the library back too,
-      // so the device stays fully on its pre-restore state.
-      try {
-        await db.transaction(() async {
-          final loanIds = scope.retainedLoanBookIds;
-          if (loanIds != null) {
-            final local = await db.select(db.books).get();
-            final plan = CatalogueReplacementPlan.build(
-              local: local.map((row) => row.toDomain()).toList(),
-              incoming: legacy.books,
-              loanBookIds: loanIds,
-            );
-            legacy.books = plan.match(
-              (failure) => throw _ReplacementRefused(failure),
-              (books) => books,
-            );
-          }
-          if (!scope.isCurrent) {
-            throw const _ReplacementRefused(
-              CatalogueReplacementScope.cancelled,
-            );
-          }
-          await db.delete(db.books).go();
-          await db.delete(db.wishlistBooks).go();
-          await db.batch((b) {
-            for (final book in legacy.books) {
-              b.insert(db.books, book.toCompanion());
-            }
-            for (final w in legacy.wishlist) {
-              b.insert(db.wishlistBooks, w.toCompanion());
-            }
-          });
-          await db.rebuildFts();
-          if (!scope.isCurrent) {
-            throw const _ReplacementRefused(
-              CatalogueReplacementScope.cancelled,
-            );
-          }
-        });
-      } on _ReplacementRefused catch (e) {
-        staged?.abort();
-        return left(e.failure);
-      } on Object catch (e) {
-        // Library rolled back by the transaction → discard the staged vault
-        // too so the device stays fully on its pre-restore state.
-        staged?.abort();
-        return left(StorageFailure('restore transaction failed: $e'));
-      }
-
-      // --- Phase 6.5: COMMIT the staged vault (C1) ---
-      // Rename-only: blob first, then DB, with blob rollback if the DB rename
-      // fails (see StagedVaultInstall.commit). Fail CLOSED: if this throws,
-      // report failure rather than a "successful" restore that silently
-      // dropped every borrower/loan.
-      if (staged != null) {
-        try {
-          staged.commit();
-        } on FileSystemException catch (e) {
-          staged.abort();
-          return left(
-            StorageFailure('Could not persist restored vault: ${e.message}'),
-          );
-        }
-      }
-
-      // --- Phase 7: route covers (best-effort, wipe-first) ---
-      if (manifest.hasCovers) {
-        _restoreCovers(files);
-      }
+      // --- Phase 7: COMPLETE, then the single atomic switch ---
+      generations.complete(builder);
+      // The lease is checked last: a lock/disposal during the build must not
+      // be followed by a switch that reports success for a session that ended.
+      if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+      await activate(builder);
+      builder = null; // now live: never discard it in `finally`
 
       // --- Phase 8: cross-DB loan integrity over the FFI vault result ---
       final knownBookIds = legacy.books.map((b) => b.id).toSet();
@@ -344,10 +318,6 @@ final class RestoreBackup {
         knownBorrowerIds: knownBorrowerIds,
       );
 
-      // M03: a retained vault was freshly checked by the guard; every loan's
-      // book identity was preserved by the plan, or the transaction refused.
-      final keptVault = scope.retainedLoanBookIds != null;
-
       return right(
         RestoreSummary(
           booksRestored: legacy.books.length,
@@ -355,15 +325,132 @@ final class RestoreBackup {
           borrowersRestored: vaultData.borrowers.length,
           loansRestored: vaultData.loans.length,
           danglingLoans: dangling,
-          existingVaultKept: keptVault,
+          // M03: a retained vault was freshly checked by the guard; every
+          // loan's book identity was preserved by the plan, or we refused.
+          existingVaultKept: scope.retainedLoanBookIds != null,
         ),
       );
+    } on _ReplacementRefused catch (e) {
+      return left(e.failure);
+    } on FileSystemException catch (e) {
+      return left(
+        StorageFailure('Restore could not write files: ${e.message}'),
+      );
+    } on Object catch (e) {
+      // Drift/SQLite/VACUUM failures inside the builder; the message never
+      // includes vault secrets (the vault is only ever copied as bytes).
+      return left(StorageFailure('Restore failed before activation: $e'));
     } finally {
+      // Fail closed: a builder that did not become live is removed so no
+      // second copy of the catalogue lingers (privacy) and no half-built
+      // generation can be mistaken for data. Startup recovery covers a crash.
+      final abandoned = builder;
+      if (abandoned != null) {
+        try {
+          generations.discard(abandoned);
+        } on FileSystemException {
+          // Startup recovery deletes it on the next launch.
+        }
+      }
       try {
         if (work.existsSync()) work.deleteSync(recursive: true);
       } on FileSystemException {
         // Best-effort cleanup; nothing actionable.
       }
+    }
+  }
+
+  /// Snapshots the live catalogue into the builder and replaces its rows.
+  Future<Either<Failure, Unit>> _buildCatalogue({
+    required DataGeneration active,
+    required DataGeneration builder,
+    required _LegacyRows legacy,
+    required CatalogueReplacementScope scope,
+  }) async {
+    // Snapshot through a private read connection so the copy is consistent
+    // and independent of whichever executor the app holds on the live file.
+    // `VACUUM INTO` refuses to run inside a transaction and refuses to
+    // overwrite; the builder directory is fresh, so the target is absent.
+    // A device that never opened its catalogue has no file yet: Drift then
+    // creates the builder's schema from scratch when opened below.
+    if (File(active.catalogueDbPath).existsSync()) {
+      final source = sqlite3.open(
+        active.catalogueDbPath,
+        mode: OpenMode.readOnly,
+      );
+      try {
+        source.execute('VACUUM INTO ?', [builder.catalogueDbPath]);
+      } finally {
+        source.dispose();
+      }
+    }
+
+    final db = _openCatalogue(builder.catalogueDbPath);
+    try {
+      await db.transaction(() async {
+        final loanIds = scope.retainedLoanBookIds;
+        if (loanIds != null) {
+          final local = await db.select(db.books).get();
+          final plan = CatalogueReplacementPlan.build(
+            local: local.map((row) => row.toDomain()).toList(),
+            incoming: legacy.books,
+            loanBookIds: loanIds,
+          );
+          legacy.books = plan.match(
+            (failure) => throw _ReplacementRefused(failure),
+            (books) => books,
+          );
+        }
+        if (!scope.isCurrent) {
+          throw const _ReplacementRefused(CatalogueReplacementScope.cancelled);
+        }
+        await db.delete(db.books).go();
+        await db.delete(db.wishlistBooks).go();
+        await db.batch((b) {
+          for (final book in legacy.books) {
+            b.insert(db.books, book.toCompanion());
+          }
+          for (final w in legacy.wishlist) {
+            b.insert(db.wishlistBooks, w.toCompanion());
+          }
+        });
+        // Rebuild the derived FTS index from the rows just written.
+        await db.rebuildFts();
+        if (!scope.isCurrent) {
+          throw const _ReplacementRefused(CatalogueReplacementScope.cancelled);
+        }
+      });
+    } finally {
+      await db.close();
+    }
+    return right(unit);
+  }
+
+  /// Writes the builder's covers directory: the archive's covers when present,
+  /// otherwise a copy of the active generation's. Fails closed (throws) — the
+  /// builder is not live, so there is no reason to accept a partial set.
+  void _buildCovers(
+    Map<String, Uint8List> files,
+    BackupManifest manifest, {
+    required DataGeneration active,
+    required DataGeneration builder,
+  }) {
+    final target = Directory(builder.coversDir)..createSync(recursive: true);
+    if (manifest.hasCovers) {
+      for (final entry in files.entries) {
+        if (!entry.key.startsWith(_coverEntryPrefix)) continue;
+        final leaf = entry.key.substring(_coverEntryPrefix.length);
+        // Defence in depth: re-validate via CoverPaths (zip-slip / traversal).
+        if (CoverPaths.leafOf('${CoverPaths.prefix}$leaf') != leaf) continue;
+        File(p.join(target.path, leaf)).writeAsBytesSync(entry.value);
+      }
+      return;
+    }
+    final current = Directory(active.coversDir);
+    if (!current.existsSync()) return;
+    for (final entity in current.listSync()) {
+      if (entity is! File) continue;
+      entity.copySync(p.join(target.path, p.basename(entity.path)));
     }
   }
 
@@ -422,29 +509,6 @@ final class RestoreBackup {
     final path = p.join(work.path, name);
     File(path).writeAsBytesSync(bytes);
     return path;
-  }
-
-  void _restoreCovers(Map<String, Uint8List> files) {
-    // Restore replaces device state: wipe the covers dir first so no cover
-    // from the pre-restore library survives.
-    final dir = Directory(coversDir);
-    try {
-      if (dir.existsSync()) dir.deleteSync(recursive: true);
-      dir.createSync(recursive: true);
-    } on FileSystemException {
-      return; // best-effort; a missing cover just renders a placeholder
-    }
-    for (final entry in files.entries) {
-      if (!entry.key.startsWith(_coverEntryPrefix)) continue;
-      final leaf = entry.key.substring(_coverEntryPrefix.length);
-      // Defence in depth: re-validate via CoverPaths.
-      if (CoverPaths.leafOf('${CoverPaths.prefix}$leaf') != leaf) continue;
-      try {
-        File(p.join(coversDir, leaf)).writeAsBytesSync(entry.value);
-      } on FileSystemException {
-        continue; // best-effort per cover
-      }
-    }
   }
 
   static String _utf8(Uint8List bytes) =>

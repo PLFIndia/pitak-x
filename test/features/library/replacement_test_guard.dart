@@ -11,13 +11,18 @@ class FakeReplacementGuard implements CatalogueReplacementGuard {
   bool current = true;
   int calls = 0;
 
+  /// How many protected actions asked to end the vault session afterwards.
+  int sessionEnds = 0;
+
   @override
   Future<Either<Failure, T>> protectReplacement<T>(
     Future<Either<Failure, T>> Function(CatalogueReplacementScope scope)
     action, {
     bool replacingVault = false,
+    bool endsSession = false,
   }) async {
     calls++;
+    if (endsSession) sessionEnds++;
     final refused = failure;
     if (!replacingVault && refused != null) return left(refused);
     return action(

@@ -280,6 +280,43 @@ void main() {
     },
   );
 
+  for (final succeeds in [true, false]) {
+    test('M02: a retained-vault replacement that endsSession locks afterwards '
+        '(${succeeds ? 'success' : 'failure'}) so no cached store/key survives '
+        'the generation switch', () async {
+      await h.books.insert(_book);
+      await h.initialize();
+      expect(h.session.isUnlocked, isTrue);
+      Set<int>? seen;
+      final result = await h.session.protectReplacement((scope) async {
+        seen = scope.retainedLoanBookIds;
+        // Still unlocked INSIDE the action: the retained vault is copied
+        // while the session (and its FIFO) owns it.
+        expect(h.session.isUnlocked, isTrue);
+        return succeeds
+            ? right<Failure, Unit>(unit)
+            : left<Failure, Unit>(const StorageFailure('build failed'));
+      }, endsSession: true);
+      expect(result.isRight(), succeeds);
+      expect(seen, isNotNull); // a verified (empty) loan set was exposed
+      expect(h.session.isUnlocked, isFalse);
+      // A queued write must not run with the pre-replacement key.
+      expect((await h.session.addLoan(_loan)).isLeft(), isTrue);
+      expect(h.vault.writes, 0);
+    });
+  }
+
+  test('M02: without endsSession a retained-vault replacement stays unlocked '
+      '(merge-overwrite keeps the session)', () async {
+    await h.books.insert(_book);
+    await h.initialize();
+    final result = await h.session.protectReplacement(
+      (scope) async => right<Failure, Unit>(unit),
+    );
+    expect(result.isRight(), isTrue);
+    expect(h.session.isUnlocked, isTrue);
+  });
+
   for (final orphanDatabase in [false, true]) {
     test(
       'partial vault (${orphanDatabase ? 'DB' : 'blob'} only) refuses',

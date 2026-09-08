@@ -89,8 +89,13 @@ class VaultSessionController extends _$VaultSessionController
     return current is VaultUnlocked ? current.data.loans : null;
   }
 
+  /// WATCHED, not read (M02): the store is rooted in the active data
+  /// generation. When a restore switches generations the store provider
+  /// rebuilds, and this session must rebuild with it — a cached store pointing
+  /// at the deleted old directory would otherwise survive. The rebuild also
+  /// wipes any held secret via `ref.onDispose` (fail closed).
   Future<VaultArtifactsStore> get _storeFuture =>
-      ref.read(vaultStoreProvider.future);
+      ref.watch(vaultStoreProvider.future);
 
   /// Whether the current unlocked session was opened via biometrics (held
   /// secret is S, [_activeBlob] is the bio blob) vs the passphrase.
@@ -641,6 +646,7 @@ class VaultSessionController extends _$VaultSessionController
     Future<Either<Failure, T>> Function(CatalogueReplacementScope scope)
     action, {
     bool replacingVault = false,
+    bool endsSession = false,
   }) => _run((generation, store) async {
     Set<int>? loanIds;
     if (!replacingVault) {
@@ -694,10 +700,10 @@ class VaultSessionController extends _$VaultSessionController
       return await action(scope);
     } finally {
       active = false;
-      // A vault-bearing restore can replace the key pair, even on a partial
-      // failure (M02). Never release queued writes with the old held key.
-      // This does not claim to fix cross-file restore crash recovery.
-      if (replacingVault) await lock();
+      // A restore replaces the vault's key pair and/or moves it to a new data
+      // generation, even on a partial failure (M02). Never release queued
+      // writes with the old held key or the old cached store: lock first.
+      if (replacingVault || endsSession) await lock();
     }
   });
 

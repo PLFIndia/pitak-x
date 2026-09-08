@@ -25,9 +25,31 @@ final appDocsDirProvider = FutureProvider<Directory>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AppDocsDirRef = FutureProviderRef<Directory>;
-String _$appDatabaseHash() => r'6a549fa7d9a9c9bb74f4bb381e2edebdbbba0cb9';
+String _$dataGenerationsHash() => r'5c7eb39a9f63c79decce85093ed046e046d888ce';
 
-/// The non-secret Drift database (books + wishlist).
+/// Versioned data-generation store under `<appDocs>/data` (M02). The
+/// catalogue DB, covers and vault live INSIDE the active generation so a
+/// restore can build a complete new set and switch to it atomically.
+///
+/// Copied from [dataGenerations].
+@ProviderFor(dataGenerations)
+final dataGenerationsProvider = FutureProvider<DataGenerations>.internal(
+  dataGenerations,
+  name: r'dataGenerationsProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$dataGenerationsHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef DataGenerationsRef = FutureProviderRef<DataGenerations>;
+String _$appDatabaseHash() => r'629041a8bb606751ed78ae4b41cea55108033206';
+
+/// The non-secret Drift database (books + wishlist), opened inside the active
+/// data generation (M02) — switching generations closes and reopens it.
 ///
 /// `keepAlive`: the open DB must survive navigation; reopening per-screen would
 /// thrash the connection. Closed when the provider is finally disposed.
@@ -47,10 +69,10 @@ final appDatabaseProvider = FutureProvider<AppDatabase>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AppDatabaseRef = FutureProviderRef<AppDatabase>;
-String _$coversDirHash() => r'5a0975a50009067a5b1ad466771b7bf26581ac96';
+String _$coversDirHash() => r'aa856a5a2f60d599ae78e5ef83102f4a57d5daab';
 
-/// Absolute path to the covers directory (`<appDocs>/covers`), where local
-/// book covers are stored. Resolved once; used by cover-rendering widgets.
+/// Absolute path to the covers directory inside the active data generation
+/// (M02), where local book covers are stored. Used by cover-rendering widgets.
 ///
 /// Copied from [coversDir].
 @ProviderFor(coversDir)
@@ -944,10 +966,11 @@ final biometricKeyStoreProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef BiometricKeyStoreRef = AutoDisposeProviderRef<BiometricKeyStore>;
-String _$vaultStoreHash() => r'6a58c80807af41f6738d4263ab3a19e1317b5c16';
+String _$vaultStoreHash() => r'022b6a19c0e5283e4b96d54f14892995881cf96e';
 
 /// At-rest store for the persistent on-device vault (DB path + wrapped-key
-/// blob), rooted at the app documents dir (#26.2, Q-26b).
+/// blob), rooted inside the active data generation (M02; was the app documents
+/// dir before, #26.2, Q-26b).
 ///
 /// Copied from [vaultStore].
 @ProviderFor(vaultStore)
@@ -1537,7 +1560,7 @@ final mergeLibraryUseCaseProvider =
 typedef MergeLibraryUseCaseRef =
     AutoDisposeFutureProviderRef<MergeLibraryUseCase>;
 String _$createBackupUseCaseHash() =>
-    r'6dd381d8b5ef29bb19c9e55cf1ef6040050b9800';
+    r'26c2970f397dd08822a1616b02b7c30547572b51';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
@@ -1560,9 +1583,15 @@ final createBackupUseCaseProvider =
 // ignore: unused_element
 typedef CreateBackupUseCaseRef =
     AutoDisposeFutureProviderRef<CreateBackupUseCase>;
-String _$restoreBackupHash() => r'a84043c0f74d1f05caa959ea45a399f081e2fa74';
+String _$restoreBackupHash() => r'8d7aa949f4ca117a64bafc962132974dc72c3d08';
 
 /// Backup-archive restorer (authoritative overwrite of local state).
+///
+/// M02: restore builds a NEW data generation and switches to it atomically
+/// through [ActiveDataGeneration.activate], which republishes the paths so the
+/// database, covers and vault-store providers all rebuild onto the new set.
+/// The active generation is resolved lazily (`ref.read` at call time), not
+/// watched: watching would rebuild this restorer mid-switch for no benefit.
 ///
 /// Copied from [restoreBackup].
 @ProviderFor(restoreBackup)

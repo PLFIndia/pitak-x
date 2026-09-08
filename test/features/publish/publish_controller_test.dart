@@ -273,6 +273,10 @@ class _Harness {
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),
+        // M02: the real coversDir resolves through the active data generation
+        // (which would CREATE `data/` under the docs dir above). Pin it so
+        // this fixture keeps its no-disk-access promise.
+        coversDirProvider.overrideWith((ref) async => 'covers'),
         activeLoanCountsProvider.overrideWith((ref) => null),
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,

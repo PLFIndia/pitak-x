@@ -132,96 +132,89 @@ void main() {
     );
   });
 
-  group('stageRestore / StagedVaultInstall (two-file commit)', () {
+  group('installRestored / copyFrom (M02: populate an EMPTY generation)', () {
     late String srcDbPath;
+    late VaultStore next;
 
     setUp(() {
       srcDbPath = p.join(tmp.path, 'staged_borrowers.db');
       File(srcDbPath).writeAsBytesSync([9, 8, 7]);
+      next = VaultStore(baseDir: p.join(tmp.path, 'next_generation'));
     });
 
-    test('staging alone changes nothing live', () {
-      File(store.dbPath).writeAsBytesSync([1]);
-      store
-        ..writeBlob('old.blob.x')
-        ..stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y');
+    test('installRestored copies the DB and writes the blob into the empty '
+        'store, with no biometric blob', () {
+      next.installRestored(dbSourcePath: srcDbPath, blob: 'new.blob.y');
 
-      expect(File(store.dbPath).readAsBytesSync(), [1]);
-      expect(store.readBlob(), 'old.blob.x');
+      expect(next.isInitialized(), isTrue);
+      expect(File(next.dbPath).readAsBytesSync(), [9, 8, 7]);
+      expect(next.readBlob(), 'new.blob.y');
+      expect(next.hasBioBlob(), isFalse);
+      // The source (a scratch copy) is left for the caller to clean up.
+      expect(File(srcDbPath).existsSync(), isTrue);
     });
 
-    test('commit installs DB + blob and clears the biometric blob', () {
-      File(store.dbPath).writeAsBytesSync([1]);
-      store
-        ..writeBlob('old.blob.x')
-        ..writeBioBlob('bio.blob.z');
+    test('installRestored refuses when ANY vault artifact already exists', () {
+      next.writeBioBlob('stale.bio');
 
-      store.stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y').commit();
-
-      expect(File(store.dbPath).readAsBytesSync(), [9, 8, 7]);
-      expect(store.readBlob(), 'new.blob.y');
-      // Old bio blob wrapped the previous key → must be gone (re-enrol).
-      expect(store.hasBioBlob(), isFalse);
-      // No stray temps left behind.
       expect(
-        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
-        isEmpty,
+        () => next.installRestored(dbSourcePath: srcDbPath, blob: 'b'),
+        throwsStateError,
       );
+      expect(File(next.dbPath).existsSync(), isFalse);
+      expect(next.readBlob(), isNull);
     });
 
-    test('abort deletes temps and leaves the live vault untouched', () {
-      store.writeBlob('old.blob.x');
-      File(store.dbPath).writeAsBytesSync([1]);
-
-      store.stageRestore(dbSourcePath: srcDbPath, blob: 'new.blob.y').abort();
-
-      expect(File(store.dbPath).readAsBytesSync(), [1]);
-      expect(store.readBlob(), 'old.blob.x');
+    test('installRestored on a missing source throws and writes nothing', () {
       expect(
-        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
-        isEmpty,
-      );
-    });
-
-    test('stageRestore on a missing source throws and leaves no temps', () {
-      expect(
-        () => store.stageRestore(
+        () => next.installRestored(
           dbSourcePath: p.join(tmp.path, 'nope.db'),
           blob: 'b',
         ),
         throwsA(isA<FileSystemException>()),
       );
-      expect(
-        tmp.listSync().where((e) => e.path.endsWith('.restore.tmp')).toList(),
-        isEmpty,
-      );
+      expect(File(next.dbPath).existsSync(), isFalse);
+      expect(next.readBlob(), isNull);
     });
 
-    test('commit rolls the blob back when the DB rename fails', () {
-      store.writeBlob('old.blob.x');
-      File(store.dbPath).writeAsBytesSync([1]);
+    test('copyFrom carries DB, SQLite side files, key blob AND biometric blob '
+        'over byte-for-byte', () {
+      File(store.dbPath).writeAsBytesSync([1, 2, 3]);
+      File('${store.dbPath}-journal').writeAsBytesSync([4]);
+      File('${store.dbPath}-wal').writeAsBytesSync([5]);
+      store
+        ..writeBlob('old.blob.x')
+        ..writeBioBlob('bio.blob.z');
 
-      final staged = store.stageRestore(
-        dbSourcePath: srcDbPath,
-        blob: 'new.blob.y',
-      );
-      // Force the DB rename to fail: replace the live DB path with a
-      // non-empty DIRECTORY — renameSync onto it raises.
-      File(store.dbPath).deleteSync();
-      Directory(store.dbPath).createSync();
-      File(p.join(store.dbPath, 'occupied')).writeAsBytesSync([0]);
+      next.copyFrom(store);
 
-      expect(staged.commit, throwsA(isA<FileSystemException>()));
-      // Fail closed: the OLD blob was restored, so the pre-restore vault
-      // (had the dir not been our sabotage) would still be openable — never
-      // a new-blob/old-db mismatch created by us.
+      expect(File(next.dbPath).readAsBytesSync(), [1, 2, 3]);
+      expect(File('${next.dbPath}-journal').readAsBytesSync(), [4]);
+      expect(File('${next.dbPath}-wal').readAsBytesSync(), [5]);
+      expect(next.readBlob(), 'old.blob.x');
+      expect(next.readBioBlob(), 'bio.blob.z');
+      // The source is untouched (the old generation stays complete until the
+      // pointer switch deletes it as a whole).
+      expect(File(store.dbPath).readAsBytesSync(), [1, 2, 3]);
       expect(store.readBlob(), 'old.blob.x');
     });
 
-    test('commit is single-shot', () {
-      final staged = store.stageRestore(dbSourcePath: srcDbPath, blob: 'b.l.o')
-        ..commit();
-      expect(staged.commit, throwsStateError);
+    test('copyFrom of an uninitialized source leaves the target empty', () {
+      next.copyFrom(store);
+
+      expect(next.isInitialized(), isFalse);
+      expect(next.hasBioBlob(), isFalse);
+    });
+
+    test('copyFrom refuses when the target already holds a vault', () {
+      File(store.dbPath).writeAsBytesSync([1]);
+      store.writeBlob('old.blob.x');
+      File(next.dbPath).parent.createSync(recursive: true);
+      File(next.dbPath).writeAsBytesSync([7]);
+
+      expect(() => next.copyFrom(store), throwsStateError);
+      expect(File(next.dbPath).readAsBytesSync(), [7]);
+      expect(next.readBlob(), isNull);
     });
   });
 }

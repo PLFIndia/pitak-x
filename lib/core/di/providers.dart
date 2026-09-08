@@ -20,6 +20,8 @@ import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
+import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
@@ -106,25 +108,35 @@ part 'providers.g.dart';
 Future<Directory> appDocsDir(AppDocsDirRef ref) =>
     getApplicationDocumentsDirectory();
 
-/// The non-secret Drift database (books + wishlist).
+/// Versioned data-generation store under `<appDocs>/data` (M02). The
+/// catalogue DB, covers and vault live INSIDE the active generation so a
+/// restore can build a complete new set and switch to it atomically.
+@Riverpod(keepAlive: true)
+Future<DataGenerations> dataGenerations(DataGenerationsRef ref) async {
+  final dir = await ref.watch(appDocsDirProvider.future);
+  return DataGenerations(docsDir: dir.path);
+}
+
+/// The non-secret Drift database (books + wishlist), opened inside the active
+/// data generation (M02) — switching generations closes and reopens it.
 ///
 /// `keepAlive`: the open DB must survive navigation; reopening per-screen would
 /// thrash the connection. Closed when the provider is finally disposed.
 @Riverpod(keepAlive: true)
 Future<AppDatabase> appDatabase(AppDatabaseRef ref) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  final file = File(p.join(dir.path, 'pitaka.db'));
+  final generation = await ref.watch(activeDataGenerationProvider.future);
+  final file = File(generation.catalogueDbPath);
   final db = AppDatabase(NativeDatabase.createInBackground(file));
   ref.onDispose(db.close);
   return db;
 }
 
-/// Absolute path to the covers directory (`<appDocs>/covers`), where local
-/// book covers are stored. Resolved once; used by cover-rendering widgets.
+/// Absolute path to the covers directory inside the active data generation
+/// (M02), where local book covers are stored. Used by cover-rendering widgets.
 @riverpod
 Future<String> coversDir(CoversDirRef ref) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return p.join(dir.path, 'covers');
+  final generation = await ref.watch(activeDataGenerationProvider.future);
+  return generation.coversDir;
 }
 
 /// The app's shared (non-secret) key-value preferences store.
@@ -523,11 +535,12 @@ BiometricKeyStore biometricKeyStore(BiometricKeyStoreRef ref) =>
     SecureStorageBiometricKeyStore();
 
 /// At-rest store for the persistent on-device vault (DB path + wrapped-key
-/// blob), rooted at the app documents dir (#26.2, Q-26b).
+/// blob), rooted inside the active data generation (M02; was the app documents
+/// dir before, #26.2, Q-26b).
 @riverpod
 Future<VaultStore> vaultStore(VaultStoreRef ref) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return VaultStore(baseDir: dir.path);
+  final generation = await ref.watch(activeDataGenerationProvider.future);
+  return VaultStore(baseDir: generation.vaultDir);
 }
 
 /// Active-loan counts per book id when the vault is UNLOCKED, or null when
@@ -712,11 +725,12 @@ Future<CreateBackupUseCase> createBackupUseCase(
   final books = await ref.watch(bookRepositoryProvider.future);
   final wishlist = await ref.watch(wishlistRepositoryProvider.future);
   final store = await ref.watch(vaultStoreProvider.future);
+  final coversDir = await ref.watch(coversDirProvider.future);
   final dir = await ref.watch(appDocsDirProvider.future);
   final writer = BackupArchiveWriter(
     openDatabase: sqlite3.open,
     vaultStore: store,
-    coversDir: p.join(dir.path, 'covers'),
+    coversDir: coversDir,
   );
   return CreateBackupUseCase(
     books: books,
@@ -727,17 +741,23 @@ Future<CreateBackupUseCase> createBackupUseCase(
 }
 
 /// Backup-archive restorer (authoritative overwrite of local state).
+///
+/// M02: restore builds a NEW data generation and switches to it atomically
+/// through [ActiveDataGeneration.activate], which republishes the paths so the
+/// database, covers and vault-store providers all rebuild onto the new set.
+/// The active generation is resolved lazily (`ref.read` at call time), not
+/// watched: watching would rebuild this restorer mid-switch for no benefit.
 @riverpod
 Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
-  final db = await ref.watch(appDatabaseProvider.future);
   final vault = ref.watch(vaultRepositoryProvider);
-  final store = await ref.watch(vaultStoreProvider.future);
+  final generations = await ref.watch(dataGenerationsProvider.future);
   final dir = await ref.watch(appDocsDirProvider.future);
   return RestoreBackup(
-    db: db,
     vault: vault,
-    vaultStore: store,
-    coversDir: p.join(dir.path, 'covers'),
+    generations: generations,
+    activeGeneration: () => ref.read(activeDataGenerationProvider.future),
+    activate: (generation) =>
+        ref.read(activeDataGenerationProvider.notifier).activate(generation),
     workDir: p.join(dir.path, 'restore_work'),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );

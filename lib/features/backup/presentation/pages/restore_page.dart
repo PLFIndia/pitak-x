@@ -143,14 +143,17 @@ class _RestorePageState extends ConsumerState<RestorePage> {
             // are replaced; events, bookmarks, settings and publishing setup
             // are not in backups at all.
             child: Text(
-              'Restoring replaces your books, wishlist and cover images with '
-              'the contents of the backup. If the backup contains a borrowers '
-              'vault, it replaces this device’s vault; if it does not, your '
-              'existing vault must be unlocked first. Its loan history is '
-              'kept only when every book link can be matched safely; otherwise '
-              'the restore is refused without replacing data. Events, '
-              'bookmarks, settings and publishing setup are not restored. '
-              'This cannot be undone.',
+              'Restoring replaces your books, wishlist and cover images '
+              '(including the library logo) with the contents of the backup. '
+              'If the backup contains a borrowers vault, it replaces this '
+              'device’s vault and you will need to lock and unlock it again; '
+              'if it does not, your existing vault must be unlocked first. '
+              'Its loan history is kept only when every book link can be '
+              'matched safely; otherwise the restore is refused without '
+              'replacing data. Everything switches over together: if the '
+              'restore fails or is interrupted, your current data stays '
+              'exactly as it is. Events, bookmarks, settings and publishing '
+              'setup are not restored. This cannot be undone.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onErrorContainer,
               ),

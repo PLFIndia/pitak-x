@@ -14,13 +14,22 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_harness.dart';
 
-class _RestoreDb extends AppDatabase {
-  _RestoreDb() : super(NativeDatabase.memory());
+/// Hook into the BUILDER generation's catalogue (M02: restore writes there,
+/// never into the live one) so a test can inject a fault or a lock right
+/// after the rows were written.
+class _RestoreHooks {
   Future<void> Function()? afterRebuild;
+
+  AppDatabase open(String path) => _RestoreDb(this, NativeDatabase(File(path)));
+}
+
+class _RestoreDb extends AppDatabase {
+  _RestoreDb(this._hooks, super.executor);
+  final _RestoreHooks _hooks;
   @override
   Future<void> rebuildFts() async {
     await super.rebuildFts();
-    await afterRebuild?.call();
+    await _hooks.afterRebuild?.call();
   }
 }
 
@@ -29,10 +38,12 @@ const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
   late ReplacementHarness h;
-  late _RestoreDb db;
+  late _RestoreHooks hooks;
   setUp(() {
-    db = _RestoreDb();
-    h = ReplacementHarness(database: db);
+    hooks = _RestoreHooks();
+    // M03 policy C on the REAL M02 storage chain: session guard, generation
+    // switch, and post-restore reads through the providers the app uses.
+    h = ReplacementHarness(generations: true, openCatalogue: hooks.open);
   });
   tearDown(() => h.close());
 
@@ -70,14 +81,24 @@ void main() {
         expect(summary.existingVaultKept, isTrue);
         expect(summary.isIntact, isTrue);
         expect(summary.borrowersRestored, 0);
-        expect((await h.books.getById(7)).toNullable()!.title, 'Changed');
-        expect((await h.books.getAll()).toNullable()!.length, 2);
+        final books = await h.currentBooks();
+        expect((await books.getById(7)).toNullable()!.title, 'Changed');
+        expect((await books.getAll()).toNullable()!.length, 2);
         expect(h.vault.loans.single.bookId, 7);
         expect(h.vault.writes, 0);
-        expect(File(h.store.dbPath).readAsBytesSync(), [1, 2, 3]);
-        expect(h.store.readBlob(), 'synthetic.blob.only');
+        // The retained vault moved with the catalogue into the new generation.
+        final store = await h.currentStore();
+        expect(store.baseDir, isNot(h.store.baseDir));
+        expect(File(store.dbPath).readAsBytesSync(), [1, 2, 3]);
+        expect(store.readBlob(), 'synthetic.blob.only');
+        // M02: the session was ended by the switch; a retained vault must be
+        // unlocked again before the next replacement can verify its loans.
+        expect(h.session.isUnlocked, isFalse);
+        expect((await restorer.restore(archiveBytes: bytes)).isLeft(), isTrue);
+        await h.session.unlock(ReplacementHarness.secret());
         expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
-        expect((await h.books.getById(7)).toNullable()!.bookUid, 'stable');
+        final again = await h.currentBooks();
+        expect((await again.getById(7)).toNullable()!.bookUid, 'stable');
       },
     );
   }
@@ -86,12 +107,12 @@ void main() {
     'same-ID substitution refuses and leaves all stores and covers intact',
     () async {
       await existing();
-      await db
-          .into(db.wishlistBooks)
+      await h.db
+          .into(h.db.wishlistBooks)
           .insert(
             WishlistBooksCompanion.insert(title: 'Wishlist', addedDate: 1),
           );
-      final cover = File('${h.directory.path}/covers/old.jpg');
+      final cover = File('${await h.coversDir()}/old.jpg');
       cover.parent.createSync(recursive: true);
       cover.writeAsBytesSync([9, 9]);
       final source = File('${h.directory.path}/incoming_covers/new.jpg');
@@ -104,13 +125,16 @@ void main() {
         ]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
-      expect((await h.books.getById(7)).toNullable()!.title, 'Existing');
+      final books = await h.currentBooks();
+      expect((await books.getById(7)).toNullable()!.title, 'Existing');
       expect(
-        (await db.select(db.wishlistBooks).get()).single.title,
+        (await h.db.select(h.db.wishlistBooks).get()).single.title,
         'Wishlist',
       );
       expect(cover.readAsBytesSync(), [9, 9]);
-      expect(File('${h.directory.path}/covers/new.jpg').existsSync(), isFalse);
+      expect(File('${await h.coversDir()}/new.jpg').existsSync(), isFalse);
+      // No generation switch happened; the same store is still the live one.
+      expect((await h.currentStore()).baseDir, h.store.baseDir);
     },
   );
 
@@ -118,14 +142,16 @@ void main() {
     'lock after writes but before transaction end rolls everything back',
     () async {
       await existing();
-      db.afterRebuild = () => h.session.lock();
+      hooks.afterRebuild = () => h.session.lock();
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
         archiveBytes: archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
-      expect((await h.books.getById(7)).toNullable()!.title, 'Existing');
+      final books = await h.currentBooks();
+      expect((await books.getById(7)).toNullable()!.title, 'Existing');
       expect(h.vault.writes, 0);
+      expect((await h.currentStore()).baseDir, h.store.baseDir);
     },
   );
 
@@ -133,14 +159,17 @@ void main() {
     'FTS failure after remapping rolls back without changing vault',
     () async {
       await existing();
-      db.afterRebuild = () async => throw StateError('synthetic FTS failure');
+      hooks.afterRebuild = () async =>
+          throw StateError('synthetic FTS failure');
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
         archiveBytes: archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
-      expect((await h.books.getById(7)).toNullable()!.title, 'Existing');
+      final books = await h.currentBooks();
+      expect((await books.getById(7)).toNullable()!.title, 'Existing');
       expect(File(h.store.dbPath).readAsBytesSync(), [1, 2, 3]);
+      expect((await h.currentStore()).baseDir, h.store.baseDir);
     },
   );
 
@@ -168,6 +197,7 @@ void main() {
       (await restorer.restore(archiveBytes: archive([]))).isLeft(),
       isTrue,
     );
-    expect((await h.books.getAll()).toNullable()!.single.id, 7);
+    final books = await h.currentBooks();
+    expect((await books.getAll()).toNullable()!.single.id, 7);
   });
 }

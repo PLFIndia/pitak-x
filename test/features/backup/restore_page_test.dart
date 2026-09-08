@@ -9,7 +9,6 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:drift/native.dart';
 // Transitive dependency of file_selector; imported only for the picker seam
 // below (it also re-exports XFile). Deliberately NOT added to pubspec so the
 // dependency surface stays unchanged.
@@ -20,19 +19,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
-import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
-import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
+import 'generation_fixture.dart';
 
 class _RetainedRestoreController extends RestoreController {
   @override
@@ -93,33 +90,29 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   late Directory tmp;
-  late AppDatabase db;
+  late GenerationFixture gen;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('restore_page_test');
-    db = AppDatabase(NativeDatabase.memory());
+    // M02: the restorer works on a real on-disk data generation.
+    gen = GenerationFixture(tmp);
   });
 
   tearDown(() async {
-    await db.close();
+    await gen.db.close();
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
   Widget wrap(Uint8List archiveBytes, {Failure? replacementFailure}) {
-    final store = VaultStore(baseDir: '${tmp.path}/vault');
-    final restorer = RestoreBackup(
-      db: db,
+    final restorer = gen.restorer(
       vault: _FakeVault(),
-      vaultStore: store,
-      replacementGuard: FakeReplacementGuard(failure: replacementFailure),
-      coversDir: '${tmp.path}/covers',
-      workDir: '${tmp.path}/work',
+      guard: FakeReplacementGuard(failure: replacementFailure),
     );
     FileSelectorPlatform.instance = _FakeFileSelector(archiveBytes);
     return ProviderScope(
       overrides: [
         restoreBackupProvider.overrideWith((ref) async => restorer),
-        vaultStoreProvider.overrideWith((ref) async => store),
+        vaultStoreProvider.overrideWith((ref) async => gen.store),
       ],
       child: const MaterialApp(home: RestorePage()),
     );
@@ -174,7 +167,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Unlock the borrowers vault first.'), findsOneWidget);
     expect(find.text('Restore complete'), findsNothing);
-    expect(Directory('${tmp.path}/work').existsSync(), isFalse);
+    expect(Directory('${tmp.path}/restore_work').existsSync(), isFalse);
   });
 
   testWidgets('M03: retained-vault success reports preserved history', (

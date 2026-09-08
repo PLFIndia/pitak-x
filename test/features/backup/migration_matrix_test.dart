@@ -12,7 +12,6 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
@@ -21,11 +20,11 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
+import 'generation_fixture.dart';
 
 class _EmptyVault with VaultWriteUnsupported implements VaultRepository {
   @override
@@ -38,11 +37,15 @@ class _EmptyVault with VaultWriteUnsupported implements VaultRepository {
 
 void main() {
   late Directory tmp;
+  late GenerationFixture gen;
   late AppDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('matrix_test');
-    db = AppDatabase(NativeDatabase.memory());
+    // M02: restore switches data generations; read results from the one that
+    // is active AFTER the restore, not from the pre-restore handle.
+    gen = GenerationFixture(tmp);
+    db = gen.db;
   });
 
   tearDown(() async {
@@ -108,14 +111,15 @@ void main() {
     return Uint8List.fromList(ZipEncoder().encode(a)!);
   }
 
-  RestoreBackup restorer() => RestoreBackup(
-    db: db,
-    vault: _EmptyVault(),
-    vaultStore: VaultStore(baseDir: '${tmp.path}/vault'),
-    replacementGuard: FakeReplacementGuard(),
-    coversDir: '${tmp.path}/covers',
-    workDir: '${tmp.path}/work',
-  );
+  RestoreBackup restorer() =>
+      gen.restorer(vault: _EmptyVault(), guard: FakeReplacementGuard());
+
+  /// Opens the post-restore catalogue (closed automatically).
+  Future<AppDatabase> restored() async {
+    final active = gen.openActiveCatalogue();
+    addTearDown(active.close);
+    return active;
+  }
 
   test('all 25 book columns survive restore byte-for-byte', () async {
     final zip = archive({
@@ -136,6 +140,7 @@ void main() {
     p.dispose();
     result.getOrElse((f) => fail('restore failed: $f'));
 
+    final db = await restored();
     final b = (await db.select(db.books).get()).single;
     expect(b.id, 42);
     expect(b.bookUid, 'uid-42');
@@ -184,6 +189,7 @@ void main() {
     p.dispose();
     result.getOrElse((f) => fail('restore failed: $f'));
 
+    final db = await restored();
     final w = (await db.select(db.wishlistBooks).get()).single;
     expect(w.id, 9);
     expect(w.title, 'Wanted');
@@ -245,6 +251,7 @@ void main() {
     result.getOrElse((f) => fail('restore failed: $f'));
 
     // Legacy 'age_11_16' maps to the v10 'above-10' token (MIGRATION_9_10).
+    final db = await restored();
     final b = (await db.select(db.books).get()).single;
     expect(b.ageGroup, 'above-10');
   });

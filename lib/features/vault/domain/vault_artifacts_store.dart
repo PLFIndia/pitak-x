@@ -53,30 +53,22 @@ abstract interface class VaultArtifactsStore {
   /// Deletes all artifacts (wipe / start-over path). Idempotent.
   void clear();
 
-  /// Stages a restored vault (encrypted DB at [dbSourcePath] + its wrapped-key
-  /// [blob]) for a two-file commit. Staging has ZERO live effects; the
-  /// returned handle either commits the pair atomically or aborts.
+  /// Installs a vault restored from a backup archive — the encrypted DB at
+  /// [dbSourcePath] plus its wrapped-key [blob] — into THIS store, which must
+  /// be empty (M02: restore builds a brand-new data generation and only ever
+  /// installs into that fresh directory; the live vault is never written).
+  /// No biometric blob is written: the old one wrapped the previous key.
   ///
-  /// Throws on IO failure so the caller can fail closed.
-  StagedVaultInstall stageRestore({
-    required String dbSourcePath,
-    required String blob,
-  });
-}
+  /// Throws on IO failure, or if a vault already exists here, so the caller
+  /// can fail closed and discard the whole generation.
+  void installRestored({required String dbSourcePath, required String blob});
 
-/// The commit half of [VaultArtifactsStore.stageRestore]'s two-file install.
-///
-/// Why this exists (beginner note): replacing the vault means replacing TWO
-/// files that only work as a pair — the encrypted DB and the wrapped key that
-/// opens it. A crash between writing one and the other would leave a DB
-/// nobody can ever open again, so both are staged first and swapped in
-/// together here.
-abstract interface class StagedVaultInstall {
-  /// Swaps the staged pair onto the live paths (blob first, DB second, with
-  /// blob rollback if the DB swap fails). Throws on failure so the caller can
-  /// fail closed. Must be called at most once.
-  void commit();
-
-  /// Deletes the staged temps without touching the live vault. Idempotent.
-  void abort();
+  /// Copies every artifact of [source] (encrypted DB with any SQLite side
+  /// files, wrapped-key blob, biometric blob) into THIS empty store (M02: a
+  /// vault-free restore carries the device's existing vault into the new
+  /// generation unchanged). The caller must guarantee no vault operation is
+  /// in flight (the session FIFO does).
+  ///
+  /// Throws on IO failure, or if a vault already exists here.
+  void copyFrom(VaultArtifactsStore source);
 }

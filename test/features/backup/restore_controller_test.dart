@@ -3,23 +3,18 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
-import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
-import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
-import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
-import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 /// Fake vault: never loads the native lib. Returns empty data (unused in the
@@ -35,37 +30,33 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
 
 void main() {
   late Directory tmp;
-  late AppDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('restore_ctrl_test');
-    db = AppDatabase(NativeDatabase.memory());
   });
 
-  tearDown(() async {
-    await db.close();
+  tearDown(() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
+  /// The REAL storage chain (M02): docs dir → data generations → active
+  /// generation → database / covers / vault store → restorer. Only the Rust
+  /// vault is faked. This is what proves the whole app follows a generation
+  /// switch, not just the restorer.
   ProviderContainer makeContainer() {
-    final store = VaultStore(baseDir: '${tmp.path}/vault');
-    final restorer = RestoreBackup(
-      db: db,
-      vault: _FakeVault(),
-      vaultStore: store,
-      replacementGuard: FakeReplacementGuard(),
-      coversDir: '${tmp.path}/covers',
-      workDir: '${tmp.path}/work',
-    );
     final container = ProviderContainer(
       overrides: [
-        restoreBackupProvider.overrideWith((ref) async => restorer),
-        // The session controller's build() checks this store for the vault
-        // files, so it must see the SAME directory the restorer installs into.
-        vaultStoreProvider.overrideWith((ref) async => store),
+        appDocsDirProvider.overrideWith((ref) async => tmp),
+        vaultRepositoryProvider.overrideWithValue(_FakeVault()),
       ],
     );
-    addTearDown(container.dispose);
+    addTearDown(() async {
+      // Close whatever catalogue the chain opened before deleting the files.
+      if (container.exists(appDatabaseProvider)) {
+        await (await container.read(appDatabaseProvider.future)).close();
+      }
+      container.dispose();
+    });
     return container;
   }
 

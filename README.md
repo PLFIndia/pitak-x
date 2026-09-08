@@ -29,7 +29,10 @@ read-only library site to GitHub Pages.
   the Kotlin app is retired and is not a restore target). **Honest limit:**
   the archive is *not* fully encrypted — books, wishlist and covers are stored
   plainly inside it; only the borrowers vault (when present) stays encrypted.
-  Treat backup files accordingly.
+  Treat backup files accordingly. Restore is all-or-nothing: the catalogue,
+  covers and vault are written into a new data folder and the app switches to
+  it in one step, so a failed or interrupted restore leaves your current data
+  untouched (the previous folder is deleted right after a successful switch).
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
 - **App-lock** — optional, opt-in biometric/device-credential gate before the

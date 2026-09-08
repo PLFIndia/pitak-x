@@ -139,47 +139,55 @@ final class VaultStore implements VaultArtifactsStore {
   @override
   void writeBioBlob(String blob) => _atomicWrite(File(_bioBlobPath), blob);
 
-  /// Stages a vault restored from a backup archive for a two-file commit
-  /// (C1 + REVIEW_FINDINGS §4 restore-atomicity Major).
+  /// Installs an archive's vault pair into this EMPTY store (M02).
   ///
-  /// Staging is the FALLIBLE half with ZERO live effects: the encrypted DB at
-  /// [dbSourcePath] is copied to a sibling temp file next to [dbPath] (so the
-  /// later rename happens on ONE filesystem, where rename is atomic), and the
-  /// wrapped-key [blob] is written to a sibling temp file, flushed. Pattern
-  /// borrowed from SQLite's write-temp-then-rename durability approach.
-  ///
-  /// The returned handle either [StagedVaultInstall.commit]s the pair onto the
-  /// live paths or [StagedVaultInstall.abort]s, deleting the temps. Nothing
-  /// about the live vault changes until `commit()`.
-  ///
-  /// Throws [FileSystemException] on any IO failure (partial temps are cleaned
-  /// up first) so the caller can fail closed.
+  /// The DB is copied (the source is a scratch file, possibly on another
+  /// filesystem) and the blob is written + flushed. Nothing here is live yet:
+  /// the store is rooted in a generation directory that only becomes active
+  /// after every file in it exists and the pointer is switched. A failure
+  /// throws and the caller discards the whole generation, so there is no
+  /// partial state to roll back. Refuses (throws [StateError]) if any vault
+  /// artifact already exists here — installing over a vault is never valid.
   @override
-  FileStagedVaultInstall stageRestore({
-    required String dbSourcePath,
-    required String blob,
-  }) {
+  void installRestored({required String dbSourcePath, required String blob}) {
+    _requireEmpty('installRestored');
     Directory(baseDir).createSync(recursive: true);
-    final dbTmp = File('$dbPath.restore.tmp');
-    final blobTmp = File('$_blobPath.restore.tmp');
-    try {
-      if (dbTmp.existsSync()) dbTmp.deleteSync();
-      if (blobTmp.existsSync()) blobTmp.deleteSync();
-      // Copy (source may live on a different filesystem, e.g. a scratch dir);
-      // flush the blob so the bytes are on disk before commit() ever runs.
-      File(dbSourcePath).copySync(dbTmp.path);
-      blobTmp.writeAsStringSync(blob, flush: true);
-    } on FileSystemException {
-      // Leave no half-staged temps behind; staging must be all-or-nothing.
-      if (dbTmp.existsSync()) dbTmp.deleteSync();
-      if (blobTmp.existsSync()) blobTmp.deleteSync();
-      rethrow;
+    File(dbSourcePath).copySync(dbPath);
+    File(_blobPath).writeAsStringSync(blob, flush: true);
+  }
+
+  /// Copies the existing vault of [source] into this EMPTY store (M02): the
+  /// encrypted DB with any SQLite side files, the wrapped-key blob and the
+  /// biometric blob, all byte-for-byte. The blob files are flushed. Refuses
+  /// (throws [StateError]) if any vault artifact already exists here.
+  @override
+  void copyFrom(VaultArtifactsStore source) {
+    _requireEmpty('copyFrom');
+    Directory(baseDir).createSync(recursive: true);
+    final sourceDb = File(source.dbPath);
+    if (sourceDb.existsSync()) {
+      sourceDb.copySync(dbPath);
+      // A hot journal / WAL is part of the database's state after a crash;
+      // leaving it behind would silently drop committed vault writes.
+      for (final suffix in const ['-journal', '-wal', '-shm']) {
+        final side = File('${source.dbPath}$suffix');
+        if (side.existsSync()) side.copySync('$dbPath$suffix');
+      }
     }
-    return FileStagedVaultInstall._(
-      store: this,
-      dbTmp: dbTmp,
-      blobTmp: blobTmp,
-    );
+    final blob = source.readBlob();
+    if (blob != null) File(_blobPath).writeAsStringSync(blob, flush: true);
+    final bioBlob = source.readBioBlob();
+    if (bioBlob != null) {
+      File(_bioBlobPath).writeAsStringSync(bioBlob, flush: true);
+    }
+  }
+
+  void _requireEmpty(String operation) {
+    if (File(dbPath).existsSync() ||
+        File(_blobPath).existsSync() ||
+        File(_bioBlobPath).existsSync()) {
+      throw StateError('$operation: a vault already exists in $baseDir');
+    }
   }
 
   /// Removes ONLY the biometric blob (disable biometric unlock). Idempotent;
@@ -200,78 +208,5 @@ final class VaultStore implements VaultArtifactsStore {
     if (blob.existsSync()) blob.deleteSync();
     final bioBlob = File(_bioBlobPath);
     if (bioBlob.existsSync()) bioBlob.deleteSync();
-  }
-}
-
-/// File-backed commit half of [VaultStore.stageRestore]'s two-file install
-/// (implements the domain [StagedVaultInstall] contract).
-///
-/// Why this type exists (beginner note): replacing the vault means replacing
-/// TWO files that only work as a pair — the encrypted DB and the wrapped key
-/// that opens it. A crash between writing one and the other would leave a DB
-/// nobody can ever open again. So we stage both as temps first (fallible, no
-/// live effect), then swap them in with atomic renames here, rolling the key
-/// blob back if the second rename fails.
-final class FileStagedVaultInstall implements StagedVaultInstall {
-  FileStagedVaultInstall._({
-    required VaultStore store,
-    required File dbTmp,
-    required File blobTmp,
-  }) : _store = store,
-       _dbTmp = dbTmp,
-       _blobTmp = blobTmp;
-
-  final VaultStore _store;
-  final File _dbTmp;
-  final File _blobTmp;
-  bool _done = false;
-
-  /// Swaps the staged pair onto the live paths.
-  ///
-  /// Order and recovery:
-  ///  1. the OLD blob (if any) is read into memory as a rollback value;
-  ///  2. the staged blob is atomically renamed onto the live blob path;
-  ///  3. the staged DB is atomically renamed onto the live DB path; if THIS
-  ///     rename fails, the old blob is written back so the pre-restore vault
-  ///     stays openable (fail closed — never a DB/key mismatch we created);
-  ///  4. the biometric blob is cleared: it wrapped the PREVIOUS vault key, so
-  ///     biometric unlock must be re-enrolled against the restored vault.
-  ///
-  /// Blob-first ordering: a crash between steps 2 and 3 leaves new-blob +
-  /// old-DB, which re-running the restore from the same archive repairs — the
-  /// narrowest window achievable without a cross-file transaction. Throws
-  /// [FileSystemException] on failure (with the blob rollback applied) so the
-  /// caller can fail closed. Must be called at most once.
-  @override
-  void commit() {
-    if (_done) {
-      throw StateError('StagedVaultInstall.commit called after completion');
-    }
-    final previousBlob = _store.readBlob();
-    _blobTmp.renameSync(_store._blobPath);
-    try {
-      _dbTmp.renameSync(_store.dbPath);
-    } on FileSystemException {
-      // Roll the key blob back so the OLD vault (if any) stays openable.
-      if (previousBlob != null) {
-        File(_store._blobPath).writeAsStringSync(previousBlob, flush: true);
-      } else {
-        final f = File(_store._blobPath);
-        if (f.existsSync()) f.deleteSync();
-      }
-      _done = true;
-      rethrow;
-    }
-    _store.clearBioBlob();
-    _done = true;
-  }
-
-  /// Deletes the staged temps without touching the live vault. Idempotent and
-  /// safe to call after [commit] (the temps no longer exist then).
-  @override
-  void abort() {
-    if (_dbTmp.existsSync()) _dbTmp.deleteSync();
-    if (_blobTmp.existsSync()) _blobTmp.deleteSync();
-    _done = true;
   }
 }

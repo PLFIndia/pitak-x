@@ -20,6 +20,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
+import 'generation_fixture.dart';
 
 /// A fake vault repo so the restore test never loads the native Rust lib.
 class _FakeVault with VaultWriteUnsupported implements VaultRepository {
@@ -34,7 +35,8 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
 }
 
 /// An [AppDatabase] whose FTS rebuild always fails, for the restore
-/// rollback regression (REVIEW_FINDINGS_2 S10).
+/// rollback regression (REVIEW_FINDINGS_2 S10). M02: opened on the BUILDER
+/// generation's catalogue copy, where restore now does its writes.
 class _FtsFailingDb extends AppDatabase {
   _FtsFailingDb(super.executor);
 
@@ -42,19 +44,48 @@ class _FtsFailingDb extends AppDatabase {
   Future<void> rebuildFts() async => throw StateError('fts rebuild boom');
 }
 
+/// Runs [after] once the builder catalogue is written: a hook to inject a
+/// fault at the NEXT commit boundary (covers / vault) of an M02 restore.
+class _AfterRebuildDb extends AppDatabase {
+  _AfterRebuildDb(super.executor, this.after);
+  final void Function() after;
+
+  @override
+  Future<void> rebuildFts() async {
+    await super.rebuildFts();
+    after();
+  }
+}
+
 void main() {
   late Directory tmp;
+  late GenerationFixture gen;
   late AppDatabase db;
 
   setUp(() {
     tmp = Directory.systemTemp.createTempSync('restore_test');
-    db = AppDatabase(NativeDatabase.memory());
+    // M02: restore snapshots the ACTIVE generation's catalogue file and
+    // switches generations, so the pre-restore DB must be a real file.
+    gen = GenerationFixture(tmp);
+    db = gen.db;
   });
 
   tearDown(() async {
     await db.close();
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
+
+  /// Rows of whichever generation is CURRENT after a restore.
+  Future<List<Book>> activeBooks() async {
+    final active = gen.openActiveCatalogue();
+    try {
+      return (await active.select(active.books).get())
+          .map((r) => r.toDomain())
+          .toList();
+    } finally {
+      await active.close();
+    }
+  }
 
   SecretBytes pass() => SecretBytes(Uint8List.fromList([1, 2, 3]));
 
@@ -123,21 +154,22 @@ void main() {
         'hasCovers': false,
       });
 
-  VaultStore vaultStore() => VaultStore(baseDir: '${tmp.path}/vault');
+  /// The pre-restore device vault store (inside the active generation).
+  VaultStore vaultStore() => gen.store;
 
-  RestoreBackup restorer(VaultRepository vault, [VaultStore? store]) =>
-      RestoreBackup(
-        db: db,
-        vault: vault,
-        vaultStore: store ?? vaultStore(),
-        replacementGuard: FakeReplacementGuard(
-          failure: store?.isInitialized() ?? false
-              ? const ValidationFailure('Unlock the borrowers vault first.')
-              : null,
-        ),
-        coversDir: '${tmp.path}/covers',
-        workDir: '${tmp.path}/work',
-      );
+  RestoreBackup restorer(
+    VaultRepository vault, [
+    VaultStore? store,
+    CatalogueOpener? openCatalogue,
+  ]) => gen.restorer(
+    vault: vault,
+    guard: FakeReplacementGuard(
+      failure: store?.isInitialized() ?? false
+          ? const ValidationFailure('Unlock the borrowers vault first.')
+          : null,
+    ),
+    openCatalogue: openCatalogue,
+  );
 
   test('restores books + wishlist preserving id and uid', () async {
     final zip = archive({
@@ -151,19 +183,25 @@ void main() {
     final result = await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
-    final summary = result.getOrElse((f) => fail('unexpected failure: $f'));
+    final summary = result.getOrElse(
+      (f) => fail('unexpected failure: ${f is StorageFailure ? f.reason : f}'),
+    );
     expect(summary.booksRestored, 1);
     expect(summary.wishlistRestored, 1);
     expect(summary.isIntact, isTrue);
 
-    // Preserved id + uid + Unicode title in the live Drift DB.
-    final books = await db.select(db.books).get();
+    // Preserved id + uid + Unicode title in the NEW active generation (M02:
+    // restore switched generations; the pre-restore file is gone).
+    expect(gen.switched, hasLength(1));
+    final active = gen.openActiveCatalogue();
+    addTearDown(active.close);
+    final books = await active.select(active.books).get();
     expect(books.single.id, 7);
     expect(books.single.bookUid, 'uid-7');
     expect(books.single.title, 'गोदान');
     expect(books.single.copyCount, 2);
 
-    final wishlist = await db.select(db.wishlistBooks).get();
+    final wishlist = await active.select(active.wishlistBooks).get();
     expect(wishlist.single.id, 3);
     expect(wishlist.single.priceEstimate, 12.5);
   });
@@ -175,11 +213,9 @@ void main() {
   // it runs INSIDE the transaction, so a failure rolls everything back and
   // the reported result matches the device state.
   test('an FTS-rebuild failure rolls the whole restore back', () async {
-    final failingDb = _FtsFailingDb(NativeDatabase.memory());
-    addTearDown(failingDb.close);
     // Pre-restore device state: one existing book.
-    await failingDb
-        .into(failingDb.books)
+    await db
+        .into(db.books)
         .insert(const Book(title: 'PreExisting', addedDate: 1).toCompanion());
 
     final zip = archive({
@@ -187,13 +223,11 @@ void main() {
       'books.db': buildBooksDb(),
       'wishlist.db': buildWishlistDb(),
     });
-    final r = RestoreBackup(
-      db: failingDb,
-      vault: _FakeVault(right(VaultData.empty)),
-      vaultStore: vaultStore(),
-      replacementGuard: FakeReplacementGuard(),
-      coversDir: '${tmp.path}/covers',
-      workDir: '${tmp.path}/work',
+    // M02: the fault is injected into the BUILDER generation's catalogue.
+    final r = restorer(
+      _FakeVault(right(VaultData.empty)),
+      null,
+      (path) => _FtsFailingDb(NativeDatabase(File(path))),
     );
     final p = pass();
     final result = await r.restore(archiveBytes: zip, passphrase: p);
@@ -201,10 +235,12 @@ void main() {
 
     expect(result.isLeft(), isTrue);
     expect(result.getLeft().toNullable(), isA<StorageFailure>());
-    // Reported failure == device state: fully pre-restore.
-    final books = await failingDb.select(failingDb.books).get();
+    // Reported failure == device state: fully pre-restore, no switch.
+    expect(gen.switched, isEmpty);
+    expect(gen.current().name, gen.active.name);
+    final books = await db.select(db.books).get();
     expect(books.map((b) => b.title), ['PreExisting']);
-    final wishlist = await failingDb.select(failingDb.wishlistBooks).get();
+    final wishlist = await db.select(db.wishlistBooks).get();
     expect(wishlist, isEmpty);
   });
 
@@ -219,7 +255,9 @@ void main() {
     await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
-    final hits = await db
+    final active = gen.openActiveCatalogue();
+    addTearDown(active.close);
+    final hits = await active
         .customSelect(
           'SELECT b.id FROM books_fts f JOIN books b ON b.id = f.rowid '
           'WHERE books_fts MATCH ?1',
@@ -249,7 +287,7 @@ void main() {
     await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
-    final books = await db.select(db.books).get();
+    final books = await activeBooks();
     expect(books.length, 1);
     expect(books.single.bookUid, 'uid-7'); // OLD row gone
   });
@@ -305,9 +343,9 @@ void main() {
   });
 
   test('C1: persists the restored vault to the live VaultStore', () async {
-    final store = vaultStore();
     // The fake vault doesn't open the DB, so its exact bytes are opaque here;
-    // we only assert they are installed at the live path verbatim.
+    // we only assert they are installed at the live path verbatim (M02: the
+    // live path is the NEW generation's vault dir after the switch).
     final borrowersBytes = Uint8List.fromList([10, 20, 30, 40]);
     const blob = 'salt.iv.ct';
     final zip = archive({
@@ -325,19 +363,20 @@ void main() {
         ),
       ),
     );
-    final r = restorer(vault, store);
+    final r = restorer(vault);
     final p = pass();
     final result = await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
     expect(result.isRight(), isTrue);
     // Before C1 this was false: the vault was read for counts then discarded.
+    final store = gen.activeStore();
     expect(store.isInitialized(), isTrue);
     expect(File(store.dbPath).readAsBytesSync(), borrowersBytes);
     expect(store.readBlob(), blob);
   });
 
-  test('vault staging failure aborts BEFORE the library overwrite', () async {
+  test('vault install failure aborts the WHOLE restore (no switch)', () async {
     // Pre-restore library row that must survive a failed restore.
     await db
         .into(db.books)
@@ -348,12 +387,8 @@ void main() {
             bookUid: const Value('keep'),
           ),
         );
-    // Sabotage the store: its baseDir path is occupied by a FILE, so
-    // stageRestore's createSync(recursive: true) throws.
-    final blockedBase = '${tmp.path}/vault_blocked';
-    File(blockedBase).writeAsBytesSync([0]);
-    final store = VaultStore(baseDir: blockedBase);
-
+    // Sabotage the vault install: delete the staged borrowers.db copy right
+    // after the catalogue was built, so installRestored's copySync throws.
     final zip = archive({
       'manifest.json': utf8.encode(manifest(hasBackupBlob: true)),
       'books.db': buildBooksDb(),
@@ -361,35 +396,42 @@ void main() {
       'borrowers.db': [10, 20, 30],
       'backup_blob': utf8.encode('salt.iv.ct'),
     });
-    final r = restorer(_FakeVault(right(VaultData.empty)), store);
+    final r = restorer(
+      _FakeVault(right(VaultData.empty)),
+      null,
+      (path) => _AfterRebuildDb(NativeDatabase(File(path)), () {
+        File('${tmp.path}/restore_work/borrowers.db').deleteSync();
+      }),
+    );
     final p = pass();
     final result = await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
     result.match(
       (f) => expect(f, isA<StorageFailure>()),
-      (_) => fail('expected staging failure'),
+      (_) => fail('expected vault install failure'),
     );
-    // Two-file commit: the library must be UNCHANGED when the vault could
-    // not be staged (no "new library + old vault" split-brain).
+    // M02: one switch or none — the library must be UNCHANGED when the vault
+    // could not be installed (no "new library + old vault" split-brain).
+    expect(gen.switched, isEmpty);
     final books = await db.select(db.books).get();
     expect(books.single.bookUid, 'keep');
+    expect(gen.store.isInitialized(), isFalse);
   });
 
   test('C1: a backup with no vault leaves the store uninitialized', () async {
-    final store = vaultStore();
     final zip = archive({
       'manifest.json': utf8.encode(manifest()), // hasBackupBlob: false
       'books.db': buildBooksDb(),
       'wishlist.db': buildWishlistDb(),
     });
-    final r = restorer(_FakeVault(right(VaultData.empty)), store);
+    final r = restorer(_FakeVault(right(VaultData.empty)));
     final p = pass();
     final result = await r.restore(archiveBytes: zip, passphrase: p);
     p.dispose();
 
     expect(result.isRight(), isTrue);
-    expect(store.isInitialized(), isFalse);
+    expect(gen.activeStore().isInitialized(), isFalse);
     // Nothing to keep on a fresh device → integrity can be claimed.
     result.match((_) => fail('unreachable'), (s) {
       expect(s.existingVaultKept, isFalse);

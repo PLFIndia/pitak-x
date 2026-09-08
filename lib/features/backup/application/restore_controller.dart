@@ -60,14 +60,14 @@ class RestoreController extends _$RestoreController {
       state = result.match(
         (failure) => AsyncError(failure, StackTrace.current),
         (summary) {
-          // Restore authoritatively replaced device state, including the
-          // on-disk vault artifacts (borrowers.db + wrapped-key blob) when the
-          // archive carried one. The session controller is keepAlive and
-          // decided "uninitialized vs locked" once at build(), so it must be
-          // rebuilt or the vault page keeps showing "Create vault".
-          // Invalidation also wipes any held session secret via its
-          // ref.onDispose (fail-closed: a pre-restore passphrase no longer
-          // matches the restored vault key).
+          // Restore switched the app onto a new data generation (M02): the
+          // vault-store provider has already been republished, and the
+          // session controller WATCHES it, so it rebuilds on its own (wiping
+          // any held secret via ref.onDispose). The explicit invalidation is
+          // kept as belt-and-braces for the keepAlive session: it costs one
+          // rebuild and guarantees the vault page never shows a stale
+          // "Create vault"/"Unlock" state, even if a future provider change
+          // breaks the watch chain.
           ref.invalidate(vaultSessionControllerProvider);
           return AsyncData(summary);
         },
