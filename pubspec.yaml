@@ -61,11 +61,6 @@ dependencies:
   # Non-secret key-value preferences (theme, library name, maintainer name,
   # sort/filter). Secrets stay in flutter_secure_storage — never here.
   shared_preferences: ^2.3.2
-  # Remote book covers (#31, §2a.4): disk-cached network image loading, used
-  # ONLY for `https://` cover URLs and ONLY when the user opts in via Settings
-  # (default OFF). Local covers never use this. Chosen for disk caching + robust
-  # load/error states; the well-adopted Flutter standard for network images.
-  cached_network_image: ^3.4.1
   # Git blob SHA-1 + salted cover ids for #32 Publish (sha1/sha256). The
   # canonical Dart hashing package; already present transitively.
   crypto: ^3.0.3

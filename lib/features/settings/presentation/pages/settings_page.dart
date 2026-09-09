@@ -124,9 +124,10 @@ class _AppearanceTab extends ConsumerWidget {
           contentPadding: EdgeInsets.zero,
           title: const Text('Load cover images from the internet'),
           subtitle: const Text(
-            'Off by default. When on, books with a web cover link will fetch '
-            'that image, telling the host which books you view. Your own saved '
-            'covers always stay on this device.',
+            'Off by default. When on, a book with a web cover link downloads '
+            'that image once (only from Open Library or Google Books) and '
+            'keeps it like a cover you photographed. Your own photos are never '
+            'replaced.',
           ),
           value: settings.loadRemoteCovers,
           onChanged: (v) => controller.setLoadRemoteCovers(enabled: v),

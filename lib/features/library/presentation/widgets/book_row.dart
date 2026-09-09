@@ -45,7 +45,11 @@ class BookRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
-            BookCover(title: book.title, coverUrl: book.coverUrl),
+            BookCover(
+              title: book.title,
+              coverUrl: book.coverUrl,
+              bookId: book.id,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

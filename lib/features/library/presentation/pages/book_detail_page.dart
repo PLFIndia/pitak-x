@@ -358,6 +358,7 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
           key: ValueKey(_coverUrl),
           title: widget.book.title,
           coverUrl: _coverUrl,
+          bookId: widget.book.id,
           width: 120,
           height: 168,
         ),

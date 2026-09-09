@@ -47,6 +47,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
@@ -393,6 +394,10 @@ SetupGitHubRepo setupGitHubRepo(SetupGitHubRepoRef ref) => SetupGitHubRepo(
 /// with the publish downscale applied. Injected into the publish controller
 /// as a domain function type so the application layer never constructs the
 /// HTTP-backed fetcher itself (§3.1).
+///
+/// M09: this is ALSO the download used to materialise a book's remote cover
+/// on-device — one implementation, so the display path can never fetch
+/// anything publish would refuse.
 @riverpod
 RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
   final client = ref.watch(httpClientProvider);
@@ -404,6 +409,24 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
     // dropped, never published unstripped (REVIEW_FINDINGS_2 S11).
     return ImageDownscaler.downscaleJpeg(raw);
   };
+}
+
+/// Materialises a book's allow-listed remote cover as a local file (M09),
+/// through the same bounded fetcher publishing uses and the same cover store
+/// / janitor a photo replace uses.
+@riverpod
+Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
+  MaterializeRemoteCoverUseCaseRef ref,
+) async {
+  final books = await ref.watch(bookRepositoryProvider.future);
+  final files = await ref.watch(coverStoreProvider.future);
+  final janitor = await ref.watch(coverFileJanitorProvider.future);
+  return MaterializeRemoteCoverUseCase(
+    books: books,
+    files: files,
+    download: ref.watch(remoteCoverFetcherProvider),
+    releaseReference: janitor.releaseReference,
+  );
 }
 
 /// Local cover-file reader for publishing (N14): the file IO the publish

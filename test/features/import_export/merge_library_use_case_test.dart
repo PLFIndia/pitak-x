@@ -539,6 +539,71 @@ void main() {
       expect(row.genre, 'B'); // their field taken
     });
 
+    // M09 (user decision 2026-09-09): even when the user picks "take theirs",
+    // a photo of the physical book taken on this device is kept; the incoming
+    // cover lands only when there is no local cover.
+    test('M09: takeTheirs keeps the local PHOTO over an incoming https '
+        'cover', () async {
+      final repo = _FakeBooks([
+        const Book(
+          id: 7,
+          bookUid: 'u1',
+          title: 'Local',
+          genre: 'A',
+          coverUrl: 'covers/photo.jpg',
+          addedDate: 1,
+        ),
+      ]);
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        settings: _FakeSettings(),
+        replacementGuard: FakeReplacementGuard(),
+      );
+      await useCase.applyResolution(
+        local: repo.books.first,
+        incoming: const Book(
+          id: 999,
+          bookUid: 'uOther',
+          title: 'Local',
+          genre: 'B',
+          coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+          addedDate: 2,
+        ),
+        resolution: MergeResolution.takeTheirs,
+      );
+      final row = repo.books.single;
+      expect(row.genre, 'B', reason: 'their catalogue field taken');
+      expect(row.coverUrl, 'covers/photo.jpg', reason: 'photo wins');
+    });
+
+    test('M09: takeTheirs takes the incoming https cover when there is no '
+        'local cover', () async {
+      final repo = _FakeBooks([
+        const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+      ]);
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        settings: _FakeSettings(),
+        replacementGuard: FakeReplacementGuard(),
+      );
+      await useCase.applyResolution(
+        local: repo.books.first,
+        incoming: const Book(
+          bookUid: 'uOther',
+          title: 'Local',
+          coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+          addedDate: 2,
+        ),
+        resolution: MergeResolution.takeTheirs,
+      );
+      expect(
+        repo.books.single.coverUrl,
+        'https://covers.openlibrary.org/b/id/1-L.jpg',
+      );
+    });
+
     test(
       'keepBoth inserts a fresh-identity duplicate (no uid, no isbn)',
       () async {

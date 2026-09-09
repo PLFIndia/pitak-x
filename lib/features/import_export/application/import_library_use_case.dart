@@ -32,6 +32,7 @@ import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart'
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
+import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -285,15 +286,17 @@ final class ImportLibraryUseCase {
 
   /// The row to write when [incoming] (same bookUid) updates [existing]:
   /// keep this device's `id` (vault loans reference it) and `bookUid`; take
-  /// the incoming catalogue fields; keep the local cover when the file
-  /// carries none (plain-JSON exports drop local cover references).
+  /// the incoming catalogue fields; the cover follows [resolveIncomingCover]
+  /// (M09): a local photo is never replaced by an incoming remote URL, and
+  /// a file carrying no cover keeps the local one.
   static Book _mergeIntoExisting({
     required Book existing,
     required Book incoming,
   }) {
-    final cover = incoming.coverUrl == null || incoming.coverUrl!.trim().isEmpty
-        ? existing.coverUrl
-        : incoming.coverUrl;
+    final cover = resolveIncomingCover(
+      existing: existing.coverUrl,
+      incoming: incoming.coverUrl,
+    );
     return Book(
       id: existing.id,
       bookUid: existing.bookUid,

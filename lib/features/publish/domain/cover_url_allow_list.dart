@@ -11,6 +11,12 @@
 ///
 /// This is the single source of truth for cover origins; the viewer's CSP
 /// `img-src` MUST mirror `allowedHosts`. A snapshot test guards the lockstep.
+///
+/// M09: the same host policy governs the on-device display path. A book's
+/// remote cover is fetched (once, then stored as a local cover) only when
+/// `CoverUrlAllowList.remoteHttpsOf` accepts it — so `PRIVACY.md`'s "fixed
+/// allow-list of cover hosts" holds for every packet the app sends for
+/// covers, not just publish.
 library;
 
 /// Sanitises cover URLs against the publish allow-list.
@@ -38,6 +44,21 @@ abstract final class CoverUrlAllowList {
       return trimmed;
     }
 
+    return _allowListedHttps(trimmed);
+  }
+
+  /// Returns the trimmed URL when [raw] is a FETCHABLE remote cover — https,
+  /// no userinfo, host exactly on [allowedHosts] — otherwise null. Unlike
+  /// [sanitize] it never accepts a local `covers/…` path: this is the question
+  /// "may the device send a request for this?", and local refs are not
+  /// requests.
+  static String? remoteHttpsOf(String? raw) {
+    final trimmed = raw?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    return _allowListedHttps(trimmed);
+  }
+
+  static String? _allowListedHttps(String trimmed) {
     final uri = Uri.tryParse(trimmed);
     if (uri == null) return null;
     if (uri.scheme.toLowerCase() != 'https') return null;

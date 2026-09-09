@@ -66,9 +66,14 @@ Network activity happens only when you explicitly ask for it:
    to Google with those requests (that is what the key is for). Nothing else
    is sent.
 2. **Remote cover images** (optional, OFF by default). If you enable it in
-   Settings, book covers are downloaded over https from a fixed allow-list of
-   cover hosts. Your catalogue is never uploaded; only cover image files are
-   fetched.
+   Settings, a book whose cover is a web link is downloaded **once**, over
+   https, from a fixed allow-list of cover hosts (Open Library and Google
+   Books; a link to any other host is never contacted and simply shows no
+   cover). The downloaded image is then stored on your device exactly like a
+   photo you took yourself — it becomes part of your library, is included in
+   backups, and no request is made for that book again. Your catalogue is
+   never uploaded; only cover image files are fetched. A cover you
+   photographed yourself is never replaced by a downloaded one.
 3. **Publish to web.** If you use Publish, a read-only viewer of your library
    is uploaded to a GitHub repository *you* own, via GitHub's device-flow
    sign-in. The permission you grant ("public_repo") is GitHub's narrowest

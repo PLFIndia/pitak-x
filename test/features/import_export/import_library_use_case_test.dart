@@ -231,6 +231,61 @@ void main() {
       expect(row.addedBy, 'me', reason: 'attribution kept when file has none');
     });
 
+    // M09 (user decision 2026-09-09): a photo the user took of the physical
+    // book is never replaced by a remote URL arriving in an import file.
+    test('M09: same-uid import keeps the local PHOTO over an incoming '
+        'https cover', () async {
+      bookRepo.stored.add(
+        const Book(
+          id: 7,
+          bookUid: 'uid-7',
+          title: 'Old title',
+          coverUrl: 'covers/photo.jpg',
+        ),
+      );
+      final s = ok(
+        await useCase.importText(
+          jsonWith(
+            books: [
+              {
+                'bookUid': 'uid-7',
+                'title': 'New title',
+                'coverUrl': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+              },
+            ],
+          ),
+        ),
+      );
+      expect(s.booksUpdated, 1);
+      final row = bookRepo.stored.single;
+      expect(row.title, 'New title', reason: 'other fields still taken');
+      expect(row.coverUrl, 'covers/photo.jpg', reason: 'photo wins');
+    });
+
+    test('M09: same-uid import takes the incoming https cover when the '
+        'local row has NO cover', () async {
+      bookRepo.stored.add(
+        const Book(id: 7, bookUid: 'uid-7', title: 'Old title'),
+      );
+      ok(
+        await useCase.importText(
+          jsonWith(
+            books: [
+              {
+                'bookUid': 'uid-7',
+                'title': 'New title',
+                'coverUrl': 'https://covers.openlibrary.org/b/id/1-L.jpg',
+              },
+            ],
+          ),
+        ),
+      );
+      expect(
+        bookRepo.stored.single.coverUrl,
+        'https://covers.openlibrary.org/b/id/1-L.jpg',
+      );
+    });
+
     test('re-importing your own export is idempotent (no growth)', () async {
       final first = jsonWith(
         books: [

@@ -60,6 +60,7 @@ class BookGridCard extends StatelessWidget {
                         child: BookCover(
                           title: book.title,
                           coverUrl: book.coverUrl,
+                          bookId: book.id,
                           width: double.infinity,
                           height: double.infinity,
                         ),

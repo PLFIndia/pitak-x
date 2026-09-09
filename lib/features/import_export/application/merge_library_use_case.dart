@@ -32,6 +32,7 @@ import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart'
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
+import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -292,8 +293,21 @@ final class MergeLibraryUseCase {
       case MergeResolution.keepMine:
         return right(unit);
       case MergeResolution.takeTheirs:
+        // M09: "take theirs" takes their CATALOGUE fields. The cover is the
+        // one exception — a photo of the physical book taken on this device
+        // is kept; their cover lands only when there is no local cover.
+        // `copyWith` cannot null a field, so a null resolution (both sides
+        // blank) simply leaves the incoming null in place.
+        final cover = resolveIncomingCover(
+          existing: local.coverUrl,
+          incoming: incoming.coverUrl,
+        );
         final updated = await _bookRepo.update(
-          incoming.copyWith(id: local.id, bookUid: local.bookUid),
+          incoming.copyWith(
+            id: local.id,
+            bookUid: local.bookUid,
+            coverUrl: cover,
+          ),
         );
         return updated.map((_) => unit);
       case MergeResolution.keepBoth:

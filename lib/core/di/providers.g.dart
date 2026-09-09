@@ -687,6 +687,10 @@ String _$remoteCoverFetcherHash() =>
 /// as a domain function type so the application layer never constructs the
 /// HTTP-backed fetcher itself (§3.1).
 ///
+/// M09: this is ALSO the download used to materialise a book's remote cover
+/// on-device — one implementation, so the display path can never fetch
+/// anything publish would refuse.
+///
 /// Copied from [remoteCoverFetcher].
 @ProviderFor(remoteCoverFetcher)
 final remoteCoverFetcherProvider =
@@ -703,6 +707,30 @@ final remoteCoverFetcherProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
+String _$materializeRemoteCoverUseCaseHash() =>
+    r'4b99a3bf2398855e4e30235562e86f1c25af07f3';
+
+/// Materialises a book's allow-listed remote cover as a local file (M09),
+/// through the same bounded fetcher publishing uses and the same cover store
+/// / janitor a photo replace uses.
+///
+/// Copied from [materializeRemoteCoverUseCase].
+@ProviderFor(materializeRemoteCoverUseCase)
+final materializeRemoteCoverUseCaseProvider =
+    AutoDisposeFutureProvider<MaterializeRemoteCoverUseCase>.internal(
+      materializeRemoteCoverUseCase,
+      name: r'materializeRemoteCoverUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$materializeRemoteCoverUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef MaterializeRemoteCoverUseCaseRef =
+    AutoDisposeFutureProviderRef<MaterializeRemoteCoverUseCase>;
 String _$publishLocalCoverReaderHash() =>
     r'e4afffa4a1e4a55a6150cb829b6618cf9705b70f';
 

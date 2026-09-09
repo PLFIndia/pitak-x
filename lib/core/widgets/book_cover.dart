@@ -4,11 +4,17 @@
 /// storage via `Image.file`, falling back to an initial-letter placeholder when
 /// there is no cover or the file is missing.
 ///
-/// Remote `https://` covers are fetched ONLY when the user has opted in via the
-/// Settings "Load cover images from the internet" switch (#31, §2a.4 — silent
-/// network egress is off by default). When the switch is off, a remote cover
-/// shows the placeholder and nothing leaves the device. Only `https://` is ever
-/// fetched (enforced by [CoverPaths.remoteUrlOf]); `http://` is rejected.
+/// **Display is local-only (M09).** A remote `https://` cover reference is a
+/// *pending download*, never an image this widget streams from the network.
+/// When such a reference is on an allow-listed host (`CoverUrlAllowList`) and
+/// the caller supplied the book's id, the widget asks the session-wide
+/// `RemoteCoverMaterializer` — once, after the frame — to download it. That
+/// scheduler holds the consent gate (the Settings "Load cover images from the
+/// internet" switch, default off), the once-per-book rule and the bounded
+/// fetch; on success the book's row is rewritten to a local file and the list
+/// refreshes, so this widget then renders it like any photo cover. Anything
+/// not allow-listed (any other host, `http://`) shows the placeholder and is
+/// never requested.
 ///
 /// Cover classification + safe leaf extraction reuse [CoverPaths] (the single
 /// source of truth, with zip-slip / traversal defence), so this widget does no
@@ -17,20 +23,24 @@ library;
 
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
+import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 
 /// A book cover thumbnail with a graceful initial-letter fallback.
-class BookCover extends ConsumerWidget {
+class BookCover extends ConsumerStatefulWidget {
   /// Creates a cover for [title], rendering [coverUrl] when it is a local file.
+  ///
+  /// [bookId] lets an allow-listed remote cover be materialised for that row;
+  /// without it a remote reference simply shows the placeholder.
   const BookCover({
     required this.title,
     required this.coverUrl,
+    this.bookId,
     this.width = 40,
     this.height = 56,
     super.key,
@@ -42,6 +52,10 @@ class BookCover extends ConsumerWidget {
   /// Cover reference (`covers/<uuid>.jpg`, `file://…`, `https://…`, or null).
   final String? coverUrl;
 
+  /// Persisted id of the book this cover belongs to (null when unknown, e.g.
+  /// a not-yet-saved form preview).
+  final int? bookId;
+
   /// Thumbnail width.
   final double width;
 
@@ -49,37 +63,44 @@ class BookCover extends ConsumerWidget {
   final double height;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final leaf = CoverPaths.leafOf(coverUrl);
+  ConsumerState<BookCover> createState() => _BookCoverState();
+}
+
+class _BookCoverState extends ConsumerState<BookCover> {
+  @override
+  void initState() {
+    super.initState();
+    _requestMaterializationIfRemote();
+  }
+
+  @override
+  void didUpdateWidget(BookCover old) {
+    super.didUpdateWidget(old);
+    // A list row is recycled for a different book: ask again for the new one.
+    if (old.coverUrl != widget.coverUrl || old.bookId != widget.bookId) {
+      _requestMaterializationIfRemote();
+    }
+  }
+
+  /// Side effects stay out of `build` (§7): the request is scheduled once per
+  /// (bookId, coverUrl) from a lifecycle hook, after the frame, so a rebuild
+  /// storm cannot turn into a request storm. The scheduler dedups as well.
+  void _requestMaterializationIfRemote() {
+    final id = widget.bookId;
+    if (id == null) return;
+    if (CoverUrlAllowList.remoteHttpsOf(widget.coverUrl) == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(remoteCoverMaterializerProvider.notifier).request(id);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final leaf = CoverPaths.leafOf(widget.coverUrl);
     if (leaf == null) {
-      // Not a local cover. It may be a remote `https://` one we fetch only on
-      // explicit opt-in; otherwise the placeholder (today's default behaviour).
-      final remoteUrl = CoverPaths.remoteUrlOf(coverUrl);
-      if (remoteUrl == null) {
-        return _Placeholder(title: title, width: width, height: height);
-      }
-      // `select` so only the one boolean drives a rebuild here (§8).
-      final allowRemote = ref.watch(
-        settingsControllerProvider.select(
-          (s) => s.valueOrNull?.loadRemoteCovers ?? false,
-        ),
-      );
-      if (!allowRemote) {
-        return _Placeholder(title: title, width: width, height: height);
-      }
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(6),
-        child: CachedNetworkImage(
-          imageUrl: remoteUrl,
-          width: width,
-          height: height,
-          fit: BoxFit.cover,
-          placeholder: (_, _) =>
-              _Placeholder(title: title, width: width, height: height),
-          errorWidget: (_, _, _) =>
-              _Placeholder(title: title, width: width, height: height),
-        ),
-      );
+      // Not a local cover: blank, remote (pending download), or unsafe.
+      return _placeholder();
     }
 
     // Resolve `<coversDir>/<leaf>` once we know the dir; show the placeholder
@@ -88,25 +109,28 @@ class BookCover extends ConsumerWidget {
     return coversAsync.maybeWhen(
       data: (coversDir) {
         final file = File(p.join(coversDir, leaf));
-        if (!file.existsSync()) {
-          return _Placeholder(title: title, width: width, height: height);
-        }
+        if (!file.existsSync()) return _placeholder();
         return ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: Image.file(
             file,
-            width: width,
-            height: height,
+            width: widget.width,
+            height: widget.height,
             fit: BoxFit.cover,
             // A corrupt/partial file must never crash the list.
-            errorBuilder: (_, _, _) =>
-                _Placeholder(title: title, width: width, height: height),
+            errorBuilder: (_, _, _) => _placeholder(),
           ),
         );
       },
-      orElse: () => _Placeholder(title: title, width: width, height: height),
+      orElse: _placeholder,
     );
   }
+
+  Widget _placeholder() => _Placeholder(
+    title: widget.title,
+    width: widget.width,
+    height: widget.height,
+  );
 }
 
 /// Initial-letter placeholder shown when no local cover renders.

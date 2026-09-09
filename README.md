@@ -51,7 +51,8 @@ bytes and never as Dart `String`s; the GitHub token and the ISBN-lookup key are
 the honest exceptions (their HTTP/plugin APIs are `String`-typed, so they
 transit as immutable strings).
 Network calls happen only on explicit user action (ISBN lookup,
-publish, remote covers — the last is opt-in, default off).
+publish, remote covers — the last is opt-in, default off, host-allow-listed,
+and each cover is downloaded once and then kept as an ordinary local cover).
 
 **Platform matrix (M18):** Android is the only shipping target today.
 Screenshot/recents capture is blocked on Android (`FLAG_SECURE`) while
