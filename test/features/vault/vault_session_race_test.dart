@@ -25,6 +25,7 @@ enum _Step {
   rewrap,
   wrap,
   availability,
+  appLockPrompt,
   prompt,
   hasSecret,
   readSecret,
@@ -68,6 +69,10 @@ class _Biometrics implements BiometricAuthenticator, BiometricKeyStore {
   BiometricAvailability available = BiometricAvailability.available;
   Failure? clearFailure;
   SecretBytes? returnedSecret;
+
+  /// M08: when set, `read()` reports the Keystore key as permanently
+  /// invalidated (biometric re-enrolment) instead of releasing S.
+  bool invalidated = false;
   SecretBytes? storedInput;
 
   @override
@@ -79,9 +84,12 @@ class _Biometrics implements BiometricAuthenticator, BiometricKeyStore {
   @override
   Future<DeviceCredentialStatus> deviceCredentialStatus() async =>
       DeviceCredentialStatus.available;
+
+  /// The app-lock gate. M08: the vault's biometric flows must NOT call this
+  /// — the OS prompt is bound to the Keystore cipher inside [store]/[read].
   @override
   Future<bool> authenticate({required String reason}) async {
-    await steps.reach(_Step.prompt);
+    await steps.reach(_Step.appLockPrompt);
     return true;
   }
 
@@ -91,8 +99,12 @@ class _Biometrics implements BiometricAuthenticator, BiometricKeyStore {
     return enrolled;
   }
 
+  // M08: `prompt` = the system prompt shown by the sealed store, bound to
+  // the cipher; `readSecret`/`storeSecret` = the cipher operation after it.
   @override
   Future<Either<Failure, SecretBytes?>> read() async {
+    await steps.reach(_Step.prompt);
+    if (invalidated) return left(const BiometricInvalidatedFailure());
     await steps.reach(_Step.readSecret);
     return right(returnedSecret = releaseSecret ? _secret(9) : null);
   }
@@ -101,6 +113,7 @@ class _Biometrics implements BiometricAuthenticator, BiometricKeyStore {
   Future<Either<Failure, Unit>> store(SecretBytes secret) async {
     storedInput = secret;
     return secret.useAsync((_) async {
+      await steps.reach(_Step.prompt);
       await steps.reach(_Step.storeSecret);
       enrolled = true;
       return right(unit);
@@ -569,7 +582,17 @@ void main() {
             boundary == _Step.hasSecret ? 'orphan' : isNull,
           );
           expect(h.steps.count(_Step.wrap), wraps);
-          expect(h.steps.count(_Step.storeSecret), stores);
+          // M08: the prompt is INSIDE the seal operation. Ending the session
+          // while the system prompt is up cannot un-dispatch the seal: it
+          // completes, and the controller rolls it back (clearSecret) before
+          // releasing its queue slot — so no sealed S outlives the session.
+          final sealDispatched =
+              boundary == _Step.prompt || boundary == _Step.storeSecret;
+          expect(
+            h.steps.count(_Step.storeSecret),
+            boundary == _Step.prompt ? stores + 1 : stores,
+          );
+          expect(h.steps.count(_Step.clearSecret), sealDispatched ? 1 : 0);
         },
       );
     }
@@ -878,6 +901,68 @@ void main() {
       h.enroll();
       expect((await h.controller.enrollBiometric()).isRight(), isTrue);
       expect(h.steps.count(_Step.wrap), 0);
+    },
+  );
+
+  test(
+    'M08: vault biometric flows never use the app-lock boolean gate',
+    () async {
+      final h = _Harness();
+      await h.open();
+      expect((await h.controller.enrollBiometric()).isRight(), isTrue);
+      await h.controller.lock();
+      expect((await h.controller.unlockWithBiometric()).isRight(), isTrue);
+      // One bound prompt per operation, zero unbound ones.
+      expect(h.steps.count(_Step.prompt), 2);
+      expect(h.steps.count(_Step.appLockPrompt), 0);
+    },
+  );
+
+  for (final ending in ['lock', 'invalidate']) {
+    test('M08: key invalidation racing a $ending still clears both artifacts '
+        'and never unlocks', () async {
+      final h = _Harness();
+      await h.ready();
+      h.enroll();
+      h.bio.invalidated = true;
+      final pause = h.steps.hold(_Step.prompt);
+      final work = h.controller.unlockWithBiometric();
+      await pause.entered.future;
+      if (ending == 'lock') {
+        await h.controller.lock();
+      } else {
+        h.container.invalidate(vaultSessionControllerProvider);
+        await h.ready();
+      }
+      pause.release.complete();
+      final result = await work;
+      expect(result.isLeft(), isTrue);
+      h.expectLocked();
+      // Dead artifacts are removed regardless of session generation.
+      expect(h.steps.count(_Step.clearSecret), 1);
+      expect(h.bio.enrolled, isFalse);
+      expect(h.store.readBioBlob(), isNull);
+      expect(h.steps.count(_Step.read), 0);
+    });
+  }
+
+  test(
+    'M08: a failing clear after invalidation is reported, not hidden',
+    () async {
+      final h = _Harness();
+      await h.ready();
+      h.enroll();
+      h.bio.invalidated = true;
+      h.bio.clearFailure = const StorageFailure('keystore busy');
+      final result = await h.controller.unlockWithBiometric();
+      result.match(
+        (f) => expect(f, isA<StorageFailure>()),
+        (_) => fail('expected the clear failure'),
+      );
+      h.expectLocked();
+      // The blob is still dropped (it is useless without S) even when the
+      // secure-store delete failed; the next attempt retries the clear.
+      expect(h.store.readBioBlob(), isNull);
     },
   );
 }

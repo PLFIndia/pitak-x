@@ -158,3 +158,13 @@ tasks.matching { task ->
         }
     }
 }
+
+dependencies {
+    // M08 (astra-review.md): BiometricSecretVault.kt binds the Keystore cipher
+    // to the system prompt via BiometricPrompt.CryptoObject. The library was
+    // already on the classpath transitively (local_auth_android declares it as
+    // `api`), but our own Kotlin must not depend on another plugin's internal
+    // dependency choices — declare it explicitly, same version, no new
+    // artifacts (F-Droid reproducibility unaffected). User-approved D3.
+    implementation("androidx.biometric:biometric:1.1.0")
+}

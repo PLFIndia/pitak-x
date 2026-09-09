@@ -79,6 +79,9 @@ class _BiometricSettingsPageState extends ConsumerState<BiometricSettingsPage> {
 
   String _messageFor(Failure error) => switch (error) {
     ValidationFailure(:final message) => message,
+    BiometricInvalidatedFailure() =>
+      'Biometric unlock was reset because the biometrics on this device '
+          'changed. Turn it on again to re-enrol.',
     CryptoFailure() => 'Could not set up biometric unlock (crypto error).',
     StorageFailure() => 'Could not access secure storage.',
     _ => 'Something went wrong. Please try again.',
@@ -96,9 +99,13 @@ class _BiometricSettingsPageState extends ConsumerState<BiometricSettingsPage> {
                 Text(
                   'Unlock your vault with your fingerprint or face instead of '
                   'typing the passphrase every time. Your passphrase is never '
-                  'stored — a separate device key is sealed in secure hardware '
-                  'and released only after a successful biometric check. You '
-                  'can still always unlock with your passphrase.',
+                  'stored — a separate random secret is sealed by a key in '
+                  "your phone's secure hardware that Android will only use "
+                  'right after a strong biometric check (fingerprint or '
+                  'Class 3 face unlock; a PIN cannot substitute). If you add '
+                  'or remove a fingerprint or face, that key is destroyed and '
+                  'you re-enrol here. You can still always unlock with your '
+                  'passphrase.',
                   style: Theme.of(context).textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 24),
@@ -106,8 +113,8 @@ class _BiometricSettingsPageState extends ConsumerState<BiometricSettingsPage> {
                     !_enrolled)
                   Text(
                     _availability == BiometricAvailability.notEnrolled
-                        ? 'Set up a fingerprint, face, or device PIN in your '
-                              'system settings to use this.'
+                        ? 'Set up a fingerprint or face unlock in your system '
+                              'settings to use this.'
                         : 'This device does not support biometric unlock.',
                     style: Theme.of(context).textTheme.bodyMedium,
                   )

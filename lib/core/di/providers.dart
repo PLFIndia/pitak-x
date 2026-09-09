@@ -90,9 +90,9 @@ import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/ffi_vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_vault.dart';
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
 import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
-import 'package:pitaka/features/vault/infrastructure/secure_storage_biometric_keystore.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -527,12 +527,14 @@ FileShareService fileShareService(FileShareServiceRef ref) =>
 BiometricAuthenticator biometricAuthenticator(BiometricAuthenticatorRef ref) =>
     LocalAuthBiometricAuthenticator();
 
-/// Hardware-backed store (Keystore/Keychain) for the biometric secret S (#34
-/// B2). S is the only thing persisted for biometric unlock; the passphrase is
-/// never stored.
+/// Sealed, authentication-bound store for the biometric secret S (#34 B2,
+/// M08). S is the only thing persisted for biometric unlock; the passphrase is
+/// never stored. On Android the store encrypts S under a Keystore key that
+/// requires a fresh strong-biometric authentication per use; on any platform
+/// without the native handler it fails closed ("not available").
 @riverpod
 BiometricKeyStore biometricKeyStore(BiometricKeyStoreRef ref) =>
-    SecureStorageBiometricKeyStore();
+    KeystoreBiometricSecretVault();
 
 /// At-rest store for the persistent on-device vault (DB path + wrapped-key
 /// blob), rooted inside the active data generation (M02; was the app documents

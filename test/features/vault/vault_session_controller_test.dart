@@ -174,7 +174,7 @@ class _InMemoryVault implements VaultRepository {
 /// In-memory biometric gate: configurable availability + a scripted prompt
 /// result, so tests drive enroll/unlock deterministically.
 class _FakeBioAuth implements BiometricAuthenticator {
-  _FakeBioAuth({this.promptResult = true});
+  _FakeBioAuth();
 
   /// Test default: the device CAN authenticate (a screen lock exists).
   DeviceCredentialStatus credentialStatus = DeviceCredentialStatus.available;
@@ -183,7 +183,9 @@ class _FakeBioAuth implements BiometricAuthenticator {
   Future<DeviceCredentialStatus> deviceCredentialStatus() async =>
       credentialStatus;
   BiometricAvailability avail = BiometricAvailability.available;
-  bool promptResult;
+
+  /// M08: vault flows must never call this (the sealed store prompts). The
+  /// app-lock does; it always succeeds here.
   int prompts = 0;
 
   @override
@@ -192,23 +194,46 @@ class _FakeBioAuth implements BiometricAuthenticator {
   @override
   Future<bool> authenticate({required String reason}) async {
     prompts++;
-    return promptResult;
+    return true;
   }
 }
 
 /// In-memory hardware store for S.
+///
+/// M08: the store IS the biometric gate — `store`/`read` model the OS prompt
+/// that is cryptographically bound to the Keystore key. [rejectPrompt]
+/// scripts a cancelled/failed prompt; [invalidated] scripts a Keystore key
+/// killed by a biometric re-enrolment (`KeyPermanentlyInvalidatedException`).
 class _FakeBioStore implements BiometricKeyStore {
+  _FakeBioStore({this.rejectPrompt = false});
+
   Uint8List? _secret;
+  bool rejectPrompt;
+  bool invalidated = false;
+
+  /// How many times the (bound) prompt would have been shown.
+  int prompts = 0;
 
   @override
   Future<Either<Failure, Unit>> store(SecretBytes secret) async {
+    prompts++;
+    if (rejectPrompt) {
+      return left(const ValidationFailure('Biometric confirmation failed.'));
+    }
     _secret = secret.copyBytes();
     return right(unit);
   }
 
   @override
-  Future<Either<Failure, SecretBytes?>> read() async =>
-      right(_secret == null ? null : SecretBytes(Uint8List.fromList(_secret!)));
+  Future<Either<Failure, SecretBytes?>> read() async {
+    if (_secret == null) return right(null);
+    prompts++;
+    if (rejectPrompt) {
+      return left(const ValidationFailure('Biometric unlock failed.'));
+    }
+    if (invalidated) return left(const BiometricInvalidatedFailure());
+    return right(SecretBytes(Uint8List.fromList(_secret!)));
+  }
 
   @override
   Future<bool> hasSecret() async => _secret != null;
@@ -628,12 +653,9 @@ void main() {
 
   test('enrollBiometric fails closed when the prompt is rejected', () async {
     final vault = _InMemoryVault();
-    final bioStore = _FakeBioStore();
-    final container = makeContainer(
-      vault,
-      bioAuth: _FakeBioAuth(promptResult: false),
-      bioStore: bioStore,
-    );
+    // M08: the prompt lives inside the sealed store (CryptoObject-bound).
+    final bioStore = _FakeBioStore(rejectPrompt: true);
+    final container = makeContainer(vault, bioStore: bioStore);
     await container.read(vaultSessionControllerProvider.future);
     final notifier = container.read(vaultSessionControllerProvider.notifier);
     await notifier.enable(good());
@@ -687,6 +709,60 @@ void main() {
 
   test('unlockWithBiometric fails on rejection, stays locked', () async {
     final vault = _InMemoryVault();
+    final bioStore = _FakeBioStore();
+    final container = makeContainer(vault, bioStore: bioStore);
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+    await notifier.enrollBiometric();
+    await notifier.lock();
+
+    // M08: the prompt lives inside the sealed store (CryptoObject-bound).
+    bioStore.rejectPrompt = true;
+    final r = await notifier.unlockWithBiometric();
+    r.match(
+      (f) => expect(f, isA<ValidationFailure>()),
+      (_) => fail('expected a rejection failure'),
+    );
+    expect(
+      container.read(vaultSessionControllerProvider).value,
+      isA<VaultLocked>(),
+    );
+    // Still enrolled: a cancelled prompt is not an invalidation.
+    expect(await bioStore.hasSecret(), isTrue);
+    expect(VaultStore(baseDir: tmp.path).hasBioBlob(), isTrue);
+  });
+
+  test('M08: enrolling shows ONE prompt — the key-bound one inside the store; '
+      'no separate local_auth boolean prompt', () async {
+    final vault = _InMemoryVault();
+    final bioAuth = _FakeBioAuth();
+    final bioStore = _FakeBioStore();
+    final container = makeContainer(
+      vault,
+      bioAuth: bioAuth,
+      bioStore: bioStore,
+    );
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+
+    expect((await notifier.enrollBiometric()).isRight(), isTrue);
+    expect(bioStore.prompts, 1, reason: 'the sealed store prompts');
+    expect(
+      bioAuth.prompts,
+      0,
+      reason:
+          'M08: a Dart boolean prompt is not a security boundary and would '
+          'be a second, redundant prompt for the user',
+    );
+  });
+
+  test('M08: biometric unlock shows ONE prompt — the key-bound one; the '
+      'unlock cannot proceed on a Dart boolean alone', () async {
+    final vault = _InMemoryVault();
     final bioAuth = _FakeBioAuth();
     final bioStore = _FakeBioStore();
     final container = makeContainer(
@@ -700,17 +776,45 @@ void main() {
     touchDb();
     await notifier.enrollBiometric();
     await notifier.lock();
+    bioStore.prompts = 0;
+    bioAuth.prompts = 0;
 
-    bioAuth.promptResult = false;
+    expect((await notifier.unlockWithBiometric()).isRight(), isTrue);
+    expect(bioStore.prompts, 1);
+    expect(bioAuth.prompts, 0);
+  });
+
+  test('M08: an invalidated Keystore key (biometrics re-enrolled) fails '
+      'closed — stays locked, typed failure, biometric artifacts removed so '
+      'the user re-enrols with the passphrase', () async {
+    final vault = _InMemoryVault();
+    final bioStore = _FakeBioStore();
+    final container = makeContainer(vault, bioStore: bioStore);
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+    await notifier.enrollBiometric();
+    await notifier.lock();
+    expect(await notifier.isBiometricEnrolled(), isTrue);
+
+    bioStore.invalidated = true;
     final r = await notifier.unlockWithBiometric();
     r.match(
-      (f) => expect(f, isA<ValidationFailure>()),
-      (_) => fail('expected a rejection failure'),
+      (f) => expect(f, isA<BiometricInvalidatedFailure>()),
+      (_) => fail('expected BiometricInvalidatedFailure'),
     );
     expect(
       container.read(vaultSessionControllerProvider).value,
       isA<VaultLocked>(),
     );
+    // The sealed S can never be opened again: drop it AND the blob it opens.
+    expect(await bioStore.hasSecret(), isFalse);
+    expect(VaultStore(baseDir: tmp.path).hasBioBlob(), isFalse);
+    expect(await notifier.isBiometricEnrolled(), isFalse);
+
+    // The passphrase path is untouched: the vault still opens.
+    expect((await notifier.unlock(good())).isRight(), isTrue);
   });
 
   test('disableBiometric removes S and the bio blob', () async {

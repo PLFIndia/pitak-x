@@ -944,11 +944,13 @@ final biometricAuthenticatorProvider =
 // ignore: unused_element
 typedef BiometricAuthenticatorRef =
     AutoDisposeProviderRef<BiometricAuthenticator>;
-String _$biometricKeyStoreHash() => r'91258552dc1fce1f32f32a008f67b1ec0af0eaad';
+String _$biometricKeyStoreHash() => r'532530e30abc69378861ee9b82b2b900c2e97ade';
 
-/// Hardware-backed store (Keystore/Keychain) for the biometric secret S (#34
-/// B2). S is the only thing persisted for biometric unlock; the passphrase is
-/// never stored.
+/// Sealed, authentication-bound store for the biometric secret S (#34 B2,
+/// M08). S is the only thing persisted for biometric unlock; the passphrase is
+/// never stored. On Android the store encrypts S under a Keystore key that
+/// requires a fresh strong-biometric authentication per use; on any platform
+/// without the native handler it fails closed ("not available").
 ///
 /// Copied from [biometricKeyStore].
 @ProviderFor(biometricKeyStore)

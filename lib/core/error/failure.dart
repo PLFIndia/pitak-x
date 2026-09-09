@@ -68,6 +68,18 @@ final class CryptoFailure extends Failure {
   final String reason;
 }
 
+/// The platform key protecting the biometric vault secret is permanently
+/// gone (M08). Android Keystore invalidates an auth-bound key when the user
+/// adds/removes a fingerprint or face or removes the lock screen; the key
+/// entry can also simply be missing. The sealed secret can NEVER be opened
+/// again, so the caller must remove the biometric artifacts (fail closed) and
+/// let the user re-enrol with the passphrase. Distinct from a cancelled or
+/// failed prompt, which leaves enrolment intact.
+final class BiometricInvalidatedFailure extends Failure {
+  /// Creates a biometric-invalidated failure.
+  const BiometricInvalidatedFailure();
+}
+
 /// A persistence/storage operation failed (Drift, file IO, secure storage).
 final class StorageFailure extends Failure {
   /// Creates a storage failure with a short diagnostic [reason].

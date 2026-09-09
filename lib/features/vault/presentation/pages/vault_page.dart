@@ -127,6 +127,9 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
     setState(() {
       _busy = false;
       _error = result.fold((f) => f, (_) => null);
+      // M08: the controller removed the dead biometric artifacts — stop
+      // offering the button until the user re-enrols with the passphrase.
+      if (_error is BiometricInvalidatedFailure) _biometricEnrolled = false;
     });
   }
 
@@ -257,6 +260,10 @@ class _PassphraseFormState extends ConsumerState<_PassphraseForm> {
     WrongPassphraseFailure() =>
       'That passphrase did not unlock the vault. Please try again.',
     ValidationFailure(:final message) => message,
+    BiometricInvalidatedFailure() =>
+      'Biometric unlock was reset because the biometrics on this device '
+          'changed. Unlock with your passphrase, then turn biometric unlock on '
+          'again in Settings.',
     CryptoFailure() => 'Could not open the vault (a crypto error occurred).',
     StorageFailure() => 'Could not write the vault to storage.',
     _ => 'Something went wrong. Please try again.',

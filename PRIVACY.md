@@ -15,9 +15,13 @@ analytics, no advertising, and no tracking of any kind.**
   use it, in a separate database encrypted with AES-256-GCM. It is unlocked
   by a passphrase you choose (strengthened with Argon2id). Your passphrase is
   never stored and never leaves the app. If you enable biometric unlock, a
-  randomly generated vault-wrapping secret is kept in the Android Keystore /
-  platform secure storage and released only after an on-device biometric
-  check. Two honest limits: (1) while the app is open, an unlocked vault
+  randomly generated vault-wrapping secret is stored only in encrypted form,
+  under a key inside your phone's secure hardware (Android Keystore) that the
+  operating system will use only immediately after you pass a strong
+  biometric check (fingerprint or Class 3 face unlock — a PIN cannot stand
+  in). Adding or removing a fingerprint or face destroys that key, so
+  biometric unlock switches itself off and you re-enable it with your
+  passphrase. Two honest limits: (1) while the app is open, an unlocked vault
   stays unlocked in memory until you lock it or the app exits — there is no
   automatic timeout; (2) the optional app-lock biometric gate is a screen
   cover, not a vault lock: it does not encrypt your data or lock an

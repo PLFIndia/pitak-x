@@ -344,10 +344,11 @@ class VaultSessionController extends _$VaultSessionController
 
   /// Enrolls biometric unlock (#34 B2). Requires the vault to be UNLOCKED so
   /// the held secret can authorize wrapping a second copy of MK under a fresh
-  /// random secret S. Prompts for biometric confirmation, generates S, stores
-  /// it in hardware-backed storage, and persists the biometric blob. The user
-  /// passphrase is NEVER stored. Fail-closed: any failure leaves no biometric
-  /// artifacts behind.
+  /// random secret S. Generates S, SEALS it in the auth-bound store (which
+  /// shows the biometric prompt itself — M08: the prompt is part of the
+  /// Keystore operation, not a separate Dart check), and persists the
+  /// biometric blob. The user passphrase is NEVER stored. Fail-closed: any
+  /// failure leaves no biometric artifacts behind.
   Future<Either<Failure, Unit>> enrollBiometric() => _run((
     generation,
     store,
@@ -374,15 +375,11 @@ class VaultSessionController extends _$VaultSessionController
         ),
       );
     }
-    final ok = await _bioAuth.authenticate(
-      reason: 'Confirm to enable unlocking the vault with biometrics',
-    );
-    if (!_isCurrent(generation)) return left(_cancelled);
-    if (!ok) {
-      return left(const ValidationFailure('Biometric confirmation failed.'));
-    }
 
     // Wrap a SECOND copy of MK under a fresh S (held secret authorizes it).
+    // The biometric prompt happens INSIDE bioStore.store below, bound to the
+    // Keystore cipher that seals S; a rejected prompt returns a failure and
+    // nothing is persisted.
     final enrolled = await _vault.wrapForBiometric(
       activeSecret: held,
       blob: activeBlob,
@@ -424,10 +421,14 @@ class VaultSessionController extends _$VaultSessionController
     });
   }, requiresUnlocked: true);
 
-  /// Unlocks the vault using biometrics (#34 B2): prompts, releases S from the
-  /// OS store, and opens the vault via the ORDINARY unlock path with
+  /// Unlocks the vault using biometrics (#34 B2): the sealed store shows the
+  /// system prompt and — only if the OS-bound authentication succeeds —
+  /// releases S (M08), then the vault opens via the ORDINARY unlock path with
   /// (S, bioBlob). Fail-closed: a failed prompt or missing artifact stays
-  /// locked and wipes any transient secret.
+  /// locked and wipes any transient secret. A [BiometricInvalidatedFailure]
+  /// (biometrics re-enrolled / key gone) additionally removes the now-useless
+  /// sealed S and biometric blob so the UI stops offering biometric unlock
+  /// until the user re-enrols with the passphrase.
   Future<Either<Failure, Unit>> unlockWithBiometric() => _run((
     generation,
     store,
@@ -436,39 +437,49 @@ class VaultSessionController extends _$VaultSessionController
     if (bioBlob == null) {
       return left(const ValidationFailure('Biometric unlock is not set up.'));
     }
-    final hasSecret = await _bioStore.hasSecret();
+    final bioStore = _bioStore;
+    final hasSecret = await bioStore.hasSecret();
     if (!_isCurrent(generation)) return left(_cancelled);
     if (!hasSecret) {
       return left(const ValidationFailure('Biometric unlock is not set up.'));
     }
-    final ok = await _bioAuth.authenticate(reason: 'Unlock your vault');
-    if (!_isCurrent(generation)) return left(_cancelled);
-    if (!ok) {
-      return left(const ValidationFailure('Biometric unlock failed.'));
-    }
-    final read = await _bioStore.read();
-    return read.match(left, (secret) async {
-      if (!_isCurrent(generation)) {
-        secret?.dispose();
-        return left(_cancelled);
-      }
-      if (secret == null) {
-        return left(const ValidationFailure('Biometric unlock is not set up.'));
-      }
-      _pendingSecrets.add(secret);
-      try {
-        return await _holdAndLoad(
-          secret,
-          store,
-          blob: bioBlob,
-          isBiometric: true,
-          generation: generation,
-        );
-      } finally {
-        _pendingSecrets.remove(secret);
-        if (!identical(secret, _passphrase)) secret.dispose();
-      }
-    });
+    final read = await bioStore.read();
+    return read.match(
+      (failure) async {
+        if (failure is! BiometricInvalidatedFailure) return left(failure);
+        // The sealed S can never be opened again. Drop it and the blob it
+        // opens — both are dead artifacts even if the session moved on
+        // meanwhile (clearBioBlob is a no-op when the file is already gone).
+        // Then surface the typed failure so the UI can explain re-enrolment.
+        final cleared = await bioStore.clear();
+        store.clearBioBlob();
+        return cleared.match(left, (_) => left(failure));
+      },
+      (secret) async {
+        if (!_isCurrent(generation)) {
+          secret?.dispose();
+          return left(_cancelled);
+        }
+        if (secret == null) {
+          return left(
+            const ValidationFailure('Biometric unlock is not set up.'),
+          );
+        }
+        _pendingSecrets.add(secret);
+        try {
+          return await _holdAndLoad(
+            secret,
+            store,
+            blob: bioBlob,
+            isBiometric: true,
+            generation: generation,
+          );
+        } finally {
+          _pendingSecrets.remove(secret);
+          if (!identical(secret, _passphrase)) secret.dispose();
+        }
+      },
+    );
   });
 
   /// Disables biometric unlock (#34 B2): deletes S from the OS store and the

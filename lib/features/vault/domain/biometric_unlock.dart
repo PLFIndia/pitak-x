@@ -3,15 +3,19 @@
 /// Two narrow interfaces, declared in `domain` and implemented in
 /// `infrastructure`, keep the application layer free of platform plugins:
 ///
-///  - [BiometricAuthenticator] — the device biometric/credential GATE. It only
-///    proves "a live user authenticated"; it never sees the vault key or the
-///    stored secret. Mirrors the Kotlin app's F-06 software gate (a successful
-///    prompt is the capability that authorizes releasing the secret), NOT an
-///    auth-bound hardware key (which the Kotlin audit reverted as fragile).
+///  - [BiometricAuthenticator] — the device biometric/credential GATE used by
+///    the optional APP LOCK (a screen cover, by user decision) and for
+///    availability checks. It only proves "a live user authenticated" with a
+///    Dart boolean; it never sees the vault key or the stored secret, and since
+///    M08 it is NOT what protects the vault's biometric secret.
 ///
-///  - [BiometricKeyStore] — hardware-backed storage (Keystore/Keychain) for the
-///    random secret `S`. `S` is the only thing persisted for biometric unlock;
-///    the user passphrase is never stored, and the vault key never leaves Rust.
+///  - [BiometricKeyStore] — the sealed store for the random secret `S`. `S` is
+///    the only thing persisted for biometric unlock; the user passphrase is
+///    never stored, and the vault key never leaves Rust. M08 (astra-review.md):
+///    on Android the store encrypts `S` under a Keystore key that REQUIRES a
+///    fresh BIOMETRIC_STRONG authentication for every use, enforced by the OS
+///    (`BiometricPrompt.CryptoObject`) — so `store()` and `read()` each show
+///    the system prompt themselves, and no Dart-side check can bypass it.
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -65,24 +69,35 @@ abstract interface class BiometricAuthenticator {
   Future<DeviceCredentialStatus> deviceCredentialStatus();
 }
 
-/// Hardware-backed storage for the biometric secret `S`. Implemented over
-/// `flutter_secure_storage` (Keystore/Keychain).
+/// Sealed, authentication-bound storage for the biometric secret `S` (M08).
 ///
-/// `S` is handled as wipeable [SecretBytes] in memory; at rest it lives only in
-/// the OS secure store. Returns `Either<Failure, T>`; never throws across the
-/// layer.
+/// `S` is handled as wipeable [SecretBytes] in memory; at rest it exists only
+/// as ciphertext under a hardware key that the OS releases solely after a
+/// biometric authentication bound to that very operation. Returns
+/// `Either<Failure, T>`; never throws across the layer.
+///
+/// Contract for callers (the session controller):
+///  - [store] and [read] PROMPT the user themselves (the prompt is part of the
+///    cryptographic operation). Do not show a separate prompt before them.
+///  - A cancelled/failed prompt is a `ValidationFailure`: enrolment stays.
+///  - A `BiometricInvalidatedFailure` means the sealed `S` is unrecoverable
+///    (biometrics re-enrolled / key gone): the caller must [clear] and drop
+///    the biometric blob, then let the user re-enrol with the passphrase.
 abstract interface class BiometricKeyStore {
-  /// Persists [secret] in the platform secure store. Takes a defensive copy;
-  /// the caller still owns and disposes [secret].
+  /// Seals [secret] under the auth-bound platform key and persists the
+  /// ciphertext. Shows the biometric prompt. Takes a defensive copy; the
+  /// caller still owns and disposes [secret].
   Future<Either<Failure, Unit>> store(SecretBytes secret);
 
-  /// Reads the stored secret, or `null` (right) when none is enrolled. The
-  /// caller owns the returned [SecretBytes] and must dispose it.
+  /// Opens and returns the sealed secret, or `null` (right) when none is
+  /// enrolled (no prompt in that case). Shows the biometric prompt otherwise.
+  /// The caller owns the returned [SecretBytes] and must dispose it.
   Future<Either<Failure, SecretBytes?>> read();
 
   /// True when a secret is currently stored (biometric unlock is enrolled).
   Future<bool> hasSecret();
 
-  /// Deletes the stored secret (disable biometric unlock / wipe). Idempotent.
+  /// Deletes the sealed secret and its platform key (disable biometric unlock
+  /// / wipe). No prompt. Idempotent.
   Future<Either<Failure, Unit>> clear();
 }

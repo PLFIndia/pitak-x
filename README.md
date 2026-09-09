@@ -20,7 +20,9 @@ read-only library site to GitHub Pages.
   (Open Library → Google Books, chained + cached).
 - **Borrowers vault** — a persistent, **AES-256-GCM encrypted** store for
   borrowers and loans, unlocked by a passphrase (Argon2id KEK). Optional
-  biometric unlock. The vault key never crosses the Dart/Rust FFI boundary.
+  biometric unlock, bound to an Android Keystore key that requires a fresh
+  strong-biometric authentication per use (see security notes). The vault key
+  never crosses the Dart/Rust FFI boundary.
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
@@ -43,9 +45,11 @@ read-only library site to GitHub Pages.
 ## Privacy posture
 
 Local-first by default. Sensitive data (vault, tokens) lives in
-`flutter_secure_storage` (Keystore/Keychain); secrets are held as wipeable bytes
-where the design allows it (some platform-managed secrets, like the GitHub
-token, transit as immutable strings — see `astra-review.md` trade-offs).
+`flutter_secure_storage` (Keystore/Keychain). Vault secrets — the passphrase
+on its way to the Rust core and the biometric secret — are held as wipeable
+bytes and never as Dart `String`s; the GitHub token and the ISBN-lookup key are
+the honest exceptions (their HTTP/plugin APIs are `String`-typed, so they
+transit as immutable strings).
 Network calls happen only on explicit user action (ISBN lookup,
 publish, remote covers — the last is opt-in, default off).
 
@@ -61,7 +65,21 @@ cover, not a vault lock (see the security notes below).
   memory until you lock it or the app exits. There is deliberately no
   auto-lock timeout (user decision); backgrounding the app does not lock it.
 - **App-lock ≠ vault lock:** the optional biometric app gate covers the
-  screen; it does not lock or encrypt the vault itself.
+  screen; it does not lock or encrypt the vault itself. It is a software
+  check (a yes/no from the OS prompt), unlike the vault's biometric unlock
+  below.
+- **Vault biometric unlock is hardware-bound (Android):** the random secret
+  that opens the vault's biometric key blob is stored only as ciphertext under
+  an Android Keystore AES key created with `setUserAuthenticationRequired`
+  (per use, `BIOMETRIC_STRONG` only) and `setInvalidatedByBiometricEnrollment`.
+  The system prompt and the cipher are one object (`BiometricPrompt.
+  CryptoObject`), so no app code can release the secret without the user
+  authenticating for that exact operation. Consequences: a PIN/pattern cannot
+  substitute for the biometric here; devices with only a Class 2 (weak)
+  biometric cannot enrol; adding or removing a fingerprint/face destroys the
+  key and the user re-enrols with the passphrase. The key is TEE-backed
+  (StrongBox is not requested). Users upgrading from a build before this
+  change re-enrol once. The passphrase path is never affected.
 - **Passphrase change is rewrap, not key rotation:** changing the vault
   passphrase re-wraps the *same* master key (`rust/src/api.rs`). Anyone holding
   an old vault copy *and* the old passphrase can still open that copy; only
