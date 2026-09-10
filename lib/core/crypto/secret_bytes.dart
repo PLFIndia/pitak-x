@@ -24,9 +24,17 @@ import 'dart:typed_data';
 
 /// A mutable byte secret that zeroes itself on [dispose] and rejects use after.
 final class SecretBytes {
-  /// Wraps [_bytes] verbatim and takes ownership of it. The caller must not
-  /// retain or mutate [_bytes] after handing it over.
-  SecretBytes(this._bytes);
+  /// Wraps [bytes] verbatim and takes ownership of it. The caller must not
+  /// retain or mutate [bytes] after handing it over.
+  ///
+  /// Throws [ArgumentError] when [bytes] is read-only: a secret that cannot be
+  /// wiped defeats the purpose of this class. Read-only lists reach Dart from
+  /// platform-channel replies (the engine wraps every reply in
+  /// `asUnmodifiableView()`) and from `List.unmodifiable`; callers at those
+  /// boundaries must copy first (`Uint8List.fromList`). Failing here, at
+  /// construction, keeps a wipe from failing much later at lock/dispose time
+  /// (Session 13 device finding).
+  SecretBytes(Uint8List bytes) : _bytes = _requireWritable(bytes);
 
   /// Allocates a zero-filled secret of [length] bytes for the caller to fill
   /// in place (e.g. char-by-char passphrase entry).
@@ -36,6 +44,30 @@ final class SecretBytes {
   bool _disposed = false;
 
   static final Random _rng = Random.secure();
+
+  /// Proves [bytes] is writable by writing one element back to itself (a
+  /// no-op for the value); an unmodifiable view throws [UnsupportedError],
+  /// which becomes an [ArgumentError] the caller can act on. An empty list has
+  /// nothing to wipe and is accepted as-is.
+  static Uint8List _requireWritable(Uint8List bytes) {
+    if (bytes.isNotEmpty) {
+      try {
+        bytes[0] = bytes[0];
+        // Justified: Dart exposes no public "is this list writable?" query;
+        // a probe write is the only detection, and the Error is converted
+        // into a typed ArgumentError at the boundary rather than swallowed.
+        // ignore: avoid_catching_errors
+      } on UnsupportedError {
+        throw ArgumentError.value(
+          bytes.runtimeType,
+          'bytes',
+          'SecretBytes needs a writable buffer it can wipe; copy the bytes '
+              'first (Uint8List.fromList)',
+        );
+      }
+    }
+    return bytes;
+  }
 
   /// Number of bytes held. Length is not secret.
   int get length {

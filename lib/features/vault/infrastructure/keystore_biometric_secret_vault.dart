@@ -33,6 +33,18 @@
 /// `StandardMethodCodec` maps it to a Kotlin `ByteArray`), via
 /// `SecretBytes.useAsync` so the copy is wiped after the call. The persisted
 /// record is base64 text — that is fine: it is ciphertext, not S.
+///
+/// Reply ownership (device-found regression, Session 13): the engine delivers
+/// every platform-channel reply to Dart as a READ-ONLY view
+/// (`dart:ui` `_wrapUnmodifiableByteData` → `ByteData.asUnmodifiableView()`),
+/// and `StandardMessageCodec` decodes a `Uint8List` as a view over that
+/// buffer. Wrapping that view in [SecretBytes] directly made `dispose()`
+/// throw `UnsupportedError` — which surfaced as a Lock button that silently
+/// did nothing after a biometric unlock, and an S that could never be wiped.
+/// `read()` therefore copies S into memory Dart owns before wrapping it. The
+/// engine's transient read-only copy cannot be wiped from Dart (it is freed
+/// by GC) — the same unavoidable channel-hop residue already recorded in the
+/// threat notes; Kotlin wipes its own plaintext buffer.
 library;
 
 import 'dart:convert';
@@ -141,9 +153,11 @@ final class KeystoreBiometricSecretVault implements BiometricKeyStore {
       if (opened == null || opened.isEmpty) {
         return left(const CryptoFailure('biometric open: empty reply'));
       }
-      // The codec returns a FRESH buffer view; SecretBytes takes ownership and
-      // wipes it on dispose — no un-owned copy of S is left behind (§6.1).
-      return right(SecretBytes(opened));
+      // `opened` is an unmodifiable view over the engine's reply buffer (see
+      // the library doc). SecretBytes must own MUTABLE memory so it can wipe
+      // S on dispose — copy first. `Uint8List.fromList` always allocates a
+      // fresh, writable list.
+      return right(SecretBytes(Uint8List.fromList(opened)));
     } on PlatformException catch (e) {
       return left(_mapCode(e.code));
     } on MissingPluginException {

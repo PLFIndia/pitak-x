@@ -131,11 +131,41 @@ final class _FakeNative {
   static const _pad = 0x5A;
   static final _iv = Uint8List.fromList(List<int>.generate(12, (i) => i + 1));
 
+  /// Installs the fake at the BINARY message level (not
+  /// `setMockMethodCallHandler`) so the reply reaches the store the way the
+  /// real engine delivers it: as a READ-ONLY `ByteData`
+  /// (`sky_engine/lib/ui/platform_dispatcher.dart` `_wrapUnmodifiableByteData`
+  /// → `asUnmodifiableView()`), which `StandardMessageCodec` then exposes as
+  /// an unmodifiable `Uint8List` view. `setMockMethodCallHandler` re-encodes
+  /// replies into a fresh mutable buffer and therefore HID the Session-13
+  /// device regression (S could not be wiped → `lock()` threw).
   void install() {
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      KeystoreBiometricSecretVault.channel,
-      _handle,
-    );
+    const channel = KeystoreBiometricSecretVault.channel;
+    tester.binding.defaultBinaryMessenger.setMockMessageHandler(channel.name, (
+      ByteData? message,
+    ) async {
+      final envelope = await _envelopeFor(
+        channel.codec.decodeMethodCall(message),
+      );
+      return envelope?.asUnmodifiableView();
+    });
+  }
+
+  /// Encodes the scripted reply exactly as `setMockMethodCallHandler` would;
+  /// `null` = no native handler registered (→ MissingPluginException).
+  Future<ByteData?> _envelopeFor(MethodCall call) async {
+    final codec = KeystoreBiometricSecretVault.channel.codec;
+    try {
+      return codec.encodeSuccessEnvelope(await _handle(call));
+    } on PlatformException catch (error) {
+      return codec.encodeErrorEnvelope(
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      );
+    } on MissingPluginException {
+      return null;
+    }
   }
 
   Future<Object?> _handle(MethodCall call) async {
@@ -188,8 +218,8 @@ final class _FakeNative {
   }
 
   void uninstall() {
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      KeystoreBiometricSecretVault.channel,
+    tester.binding.defaultBinaryMessenger.setMockMessageHandler(
+      KeystoreBiometricSecretVault.channel.name,
       null,
     );
   }
@@ -254,6 +284,27 @@ void main() {
     final args = h.native.calls.single.arguments as Map<Object?, Object?>;
     expect(args['iv'], isA<Uint8List>());
     expect(args['ciphertext'], isA<Uint8List>());
+  });
+
+  testWidgets('S released by open is OWNED by Dart: it can be wiped even '
+      'though the engine delivers the channel reply as a read-only view', (
+    tester,
+  ) async {
+    final h = harness(tester);
+    final secret = s([4, 5, 6, 7]);
+    await h.store.store(secret);
+    secret.dispose();
+
+    final read = await h.store.read();
+    final released = read.getOrElse((f) => fail('unexpected failure: $f'));
+    expect(released, isNotNull);
+    expect(released!.use((b) => b.toList()), [4, 5, 6, 7]);
+    // The regression: this threw `UnsupportedError: Cannot modify an
+    // unmodifiable list` from SecretBytes.wipe, which made every
+    // `_forgetSession()` (lock, dispose, error paths) blow up after a
+    // biometric unlock. Owned memory must be wipeable.
+    expect(released.dispose, returnsNormally);
+    expect(() => released.use((b) => b), throwsStateError);
   });
 
   testWidgets('store never consumes or mutates the caller-owned secret, and '

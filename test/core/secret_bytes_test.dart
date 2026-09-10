@@ -79,6 +79,25 @@ void main() {
       expect(buffer.every((b) => b == 0), isTrue);
     });
 
+    test('refuses a read-only buffer at construction (Session 13: a secret '
+        'that cannot be wiped must fail loudly at the boundary, not at '
+        'lock/dispose time)', () {
+      // The shape of every platform-channel reply: the engine wraps replies
+      // in `asUnmodifiableView()` and the codec returns a view over them.
+      final readOnly = Uint8List.fromList([1, 2, 3]).asUnmodifiableView();
+      expect(() => SecretBytes(readOnly), throwsArgumentError);
+      // The documented remedy works and yields a wipeable holder.
+      final owned = SecretBytes(Uint8List.fromList(readOnly));
+      expect(owned.use((b) => b.toList()), [1, 2, 3]);
+      expect(owned.dispose, returnsNormally);
+    });
+
+    test('accepts an empty buffer (nothing to wipe)', () {
+      final secret = SecretBytes(Uint8List(0));
+      expect(secret.length, 0);
+      expect(secret.dispose, returnsNormally);
+    });
+
     test('toString never leaks the value (AGENTS.md §6.2)', () {
       final secret = SecretBytes(Uint8List.fromList([1, 2, 3]));
       expect(secret.toString(), 'SecretBytes(***)');

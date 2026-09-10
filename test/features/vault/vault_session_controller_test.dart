@@ -232,6 +232,8 @@ class _FakeBioStore implements BiometricKeyStore {
       return left(const ValidationFailure('Biometric unlock failed.'));
     }
     if (invalidated) return left(const BiometricInvalidatedFailure());
+    // Like the real store, hand out S in memory the holder OWNS and can wipe.
+    // (SecretBytes refuses a read-only view outright — Session 13.)
     return right(SecretBytes(Uint8List.fromList(_secret!)));
   }
 
@@ -782,6 +784,40 @@ void main() {
     expect((await notifier.unlockWithBiometric()).isRight(), isTrue);
     expect(bioStore.prompts, 1);
     expect(bioAuth.prompts, 0);
+  });
+
+  test('M08 (device-found, Session 13): lock() after a biometric unlock locks '
+      'and wipes S — on the phone the Lock button silently did nothing '
+      'because the held S could not be wiped', () async {
+    final vault = _InMemoryVault();
+    final bioStore = _FakeBioStore();
+    final container = makeContainer(vault, bioStore: bioStore);
+    await container.read(vaultSessionControllerProvider.future);
+    final notifier = container.read(vaultSessionControllerProvider.notifier);
+    await notifier.enable(good());
+    touchDb();
+    await notifier.enrollBiometric();
+    await notifier.lock();
+    expect((await notifier.unlockWithBiometric()).isRight(), isTrue);
+    expect(
+      container.read(vaultSessionControllerProvider).value,
+      isA<VaultUnlocked>(),
+    );
+
+    await expectLater(notifier.lock(), completes);
+    expect(
+      container.read(vaultSessionControllerProvider).value,
+      isA<VaultLocked>(),
+    );
+    expect(notifier.currentLoans, isNull);
+    // Fail-closed follow-through: the locked session refuses work.
+    expect(
+      (await notifier.addBorrower(const Borrower(name: 'x'))).isLeft(),
+      isTrue,
+    );
+    // And the vault still opens again via biometrics (S was re-read, not
+    // reused from a stale in-memory copy).
+    expect((await notifier.unlockWithBiometric()).isRight(), isTrue);
   });
 
   test('M08: an invalidated Keystore key (biometrics re-enrolled) fails '
