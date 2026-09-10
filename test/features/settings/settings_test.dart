@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -66,6 +68,78 @@ class _FalseWriteStore extends InMemorySharedPreferencesStore {
   @override
   Future<bool> setValue(String valueType, String key, Object value) async =>
       false; // never stores, never succeeds
+}
+
+/// A settings repo whose writes finish only when the TEST says so (M16).
+///
+/// Each write parks on a [Completer] keyed by a label; the test releases them
+/// in whatever order it wants. This is the only way to make two setters be
+/// "in flight" at the same moment deterministically — a real prefs store
+/// answers too fast to overlap on purpose.
+class _GatedSettingsRepo implements SettingsRepository {
+  final gates = <String, Completer<Either<Failure, Unit>>>{};
+
+  /// Number of writes that have been *started* (reached the repository).
+  int started = 0;
+
+  /// Lets the write labelled [name] finish with [result] (default: success).
+  /// Releasing a write that has not started yet pre-arms it, so it completes
+  /// the instant the controller reaches the repository — the test then only
+  /// dictates *which writes are fast*, not the exact interleaving.
+  void release(String name, {Either<Failure, Unit>? result}) {
+    _gateFor(name).complete(result ?? right(unit));
+  }
+
+  Completer<Either<Failure, Unit>> _gateFor(String name) =>
+      gates[name] ??= Completer<Either<Failure, Unit>>();
+
+  Future<Either<Failure, Unit>> _gate(String name) {
+    started++;
+    return _gateFor(name).future;
+  }
+
+  @override
+  Future<AppSettings> load() async => AppSettings.defaults;
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
+    final r = await _gate('libraryId');
+    return r.map((_) => 'a' * 32);
+  }
+
+  @override
+  Future<Either<Failure, String>> regenerateLibraryId() async {
+    final r = await _gate('regenerate');
+    return r.map((_) => 'b' * 32);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
+      _gate('appLock');
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) => _gate('setId');
+  @override
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) =>
+      _gate('logo');
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String name) => _gate('name');
+  @override
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) => _gate('sort');
+  @override
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
+      _gate('covers');
+  @override
+  Future<Either<Failure, Unit>> setMaintainerName(String name) =>
+      _gate('maintainer');
+  @override
+  Future<Either<Failure, Unit>> setPublishContact({
+    required String address,
+    required String gps,
+    required String email,
+    required String phone,
+  }) => _gate('contact');
+  @override
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
+      _gate('theme');
 }
 
 void main() {
@@ -446,5 +520,101 @@ void main() {
         '',
       );
     });
+  });
+
+  // M16 (astra-review.md): each setter used to capture a snapshot of ALL
+  // settings before awaiting its write and then publish that whole snapshot
+  // afterwards. Two overlapping setters captured the same "before"; whichever
+  // write finished LAST silently reverted the other's field in memory (disk
+  // stayed right — one prefs key per setter). The reviewer's instance: a slow
+  // theme write publishing `appLockBiometric: false` after the lock was
+  // enabled, so the runtime gate (which reads memory) stayed open.
+  group('M16 — overlapping settings mutations', () {
+    late _GatedSettingsRepo repo;
+    late ProviderContainer container;
+    late SettingsController controller;
+
+    setUp(() async {
+      repo = _GatedSettingsRepo();
+      container = ProviderContainer(
+        overrides: [
+          settingsRepositoryProvider.overrideWith((ref) async => repo),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(settingsControllerProvider.future);
+      controller = container.read(settingsControllerProvider.notifier);
+    });
+
+    AppSettings current() =>
+        container.read(settingsControllerProvider).requireValue;
+
+    test(
+      'a slow theme write cannot revert an app-lock enable that landed first',
+      () async {
+        // Theme is requested first but its write is SLOW; app-lock is
+        // requested second and its write is instant. On the old code both
+        // started at once with the same snapshot, the lock landed first, and
+        // the theme then published `appLockBiometric: false` over it.
+        repo.release('appLock');
+        final theme = controller.setThemeMode(AppThemeMode.light);
+        final lock = controller.setAppLockBiometric(enabled: true);
+        await pumpEventQueue();
+
+        repo.release('theme');
+        await Future.wait([theme, lock]);
+
+        final s = current();
+        expect(s.themeMode, AppThemeMode.light);
+        expect(
+          s.appLockBiometric,
+          isTrue,
+          reason: 'the later theme write must not publish a stale lock=false',
+        );
+      },
+    );
+
+    test(
+      'minting a library ID in parallel with a name change keeps both',
+      () async {
+        // Slow name write, instant ID mint. On the old code the ID landed
+        // first and the name write then published ITS stale snapshot
+        // (libraryId still '') — the clobber, for a path that did not even
+        // go through `_update`.
+        repo.release('libraryId');
+        final name = controller.setLibraryName('Shelf');
+        final id = controller.getOrCreateLibraryId();
+        await pumpEventQueue();
+
+        repo.release('name');
+        await Future.wait([name, id]);
+
+        final s = current();
+        expect(s.libraryName, 'Shelf');
+        expect(s.libraryId, 'a' * 32);
+      },
+    );
+
+    test(
+      'a failed write in the queue neither blocks nor reverts a later write',
+      () async {
+        final sort = controller.setLibrarySort(BookSort.languageAsc);
+        final covers = controller.setLoadRemoteCovers(enabled: true);
+        await pumpEventQueue();
+
+        repo.release('sort', result: left(const StorageFailure('gated')));
+        await pumpEventQueue();
+        // The queue must have let the second write start.
+        expect(repo.gates.containsKey('covers'), isTrue);
+        repo.release('covers');
+        await Future.wait([sort, covers]);
+
+        final s = container.read(settingsControllerProvider);
+        // Last successful publish wins the visible state; the failed field
+        // was never applied (fail closed, M17).
+        expect(s.valueOrNull?.loadRemoteCovers, isTrue);
+        expect(s.valueOrNull?.librarySort, BookSort.recentlyAdded);
+      },
+    );
   });
 }
