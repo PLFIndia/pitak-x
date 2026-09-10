@@ -102,13 +102,35 @@ final class MarkPurchasedAlreadyInLibrary extends MarkPurchasedOutcome {
   final int existingBookId;
 }
 
+/// The entry was already marked purchased, so nothing was written (M13, D1 =
+/// a). Happens on a second concurrent tap or for a row the user earlier marked
+/// "purchased only". Idempotent by construction: no duplicate library books.
+final class MarkPurchasedAlreadyPurchased extends MarkPurchasedOutcome {
+  /// Creates the already-purchased outcome.
+  const MarkPurchasedAlreadyPurchased();
+}
+
 /// Marks a wishlist entry purchased, optionally promoting it into the Library.
 ///
-/// Mirrors Kotlin `MarkWishlistPurchasedUseCase`: always flips `purchased` +
-/// stamps `purchasedDate`; when `moveToLibrary` is true and the ISBN is not
-/// already in the library, inserts a fresh library book (new `addedDate`,
+/// Mirrors Kotlin `MarkWishlistPurchasedUseCase`: flips `purchased` + stamps
+/// `purchasedDate`; when `moveToLibrary` is true and the ISBN is not already
+/// in the library, inserts a fresh library book (new `addedDate`,
 /// `copyCount = 1`). If the ISBN already exists, returns
 /// [MarkPurchasedAlreadyInLibrary] (the D2 dialog hook) without duplicating.
+///
+/// **Atomicity (M13).** The move runs inside ONE database transaction via
+/// [BookRepository.runInTransaction] — both repositories sit on the same
+/// database, and Drift transactions are zone-scoped, so the wishlist update
+/// issued inside the callback joins it. Any `Left` (lookup error, insert
+/// error, row vanished) rolls everything back: the entry is left exactly as
+/// it was, so the user can simply retry. This replaces the old sequence
+/// "mark purchased, then insert", which could leave a purchased row with no
+/// library book and no way to retry.
+///
+/// **Idempotency (M13, D1 = a).** The row is re-read *inside* the transaction
+/// and an already-purchased row is refused with [MarkPurchasedAlreadyPurchased]
+/// without writing. Drift serialises statements around an open transaction,
+/// so a second concurrent tap waits, then sees the first tap's commit.
 class MarkWishlistPurchasedUseCase {
   /// Creates the use case over its collaborators.
   const MarkWishlistPurchasedUseCase(this._repository, {BookRepository? books})
@@ -123,40 +145,85 @@ class MarkWishlistPurchasedUseCase {
     int id, {
     bool moveToLibrary = false,
     int? now,
-  }) async {
-    final found = await _repository.getById(id);
+  }) {
+    final stamp = now ?? DateTime.now().millisecondsSinceEpoch;
+    final books = _books;
+    if (!moveToLibrary || books == null) {
+      // Flag-only: a single row write, already atomic on its own.
+      return _markOnly(id, stamp);
+    }
+    // Move: read + check + insert + update must commit or roll back together.
+    return books.runInTransaction(() => _markAndMove(id, stamp, books));
+  }
+
+  /// Flips the purchased flag without touching the library.
+  Future<Either<Failure, MarkPurchasedOutcome>> _markOnly(
+    int id,
+    int stamp,
+  ) async {
+    final found = await _loadWanted(id);
     if (found.isLeft()) {
       return left((found as Left<Failure, WishlistBook?>).value);
     }
     final book = found.toNullable();
-    if (book == null) return left(const NotFoundFailure());
+    if (book == null) return right(const MarkPurchasedAlreadyPurchased());
+    final stamped = await _stampPurchased(book, stamp);
+    return stamped.map(MarkPurchasedSuccess.new);
+  }
 
-    final stamp = now ?? DateTime.now().millisecondsSinceEpoch;
-    final updatedResult = await _repository.update(
-      book.copyWith(purchased: true, purchasedDate: stamp),
-    );
-    if (updatedResult.isLeft()) {
-      return left((updatedResult as Left<Failure, WishlistBook>).value);
+  /// Body of the transaction. Order matters: the library insert comes BEFORE
+  /// the wishlist update so that, if the insert fails, the wishlist write was
+  /// never even issued (rollback still covers the other order; this keeps the
+  /// failure path short and obvious).
+  Future<Either<Failure, MarkPurchasedOutcome>> _markAndMove(
+    int id,
+    int stamp,
+    BookRepository books,
+  ) async {
+    final found = await _loadWanted(id);
+    if (found.isLeft()) {
+      return left((found as Left<Failure, WishlistBook?>).value);
     }
-    final updated = (updatedResult as Right<Failure, WishlistBook>).value;
+    final book = found.toNullable();
+    if (book == null) return right(const MarkPurchasedAlreadyPurchased());
 
-    if (!moveToLibrary || _books == null) {
-      return right(MarkPurchasedSuccess(updated));
-    }
-
-    // D2: if the ISBN already exists in the library, don't duplicate.
+    // D2: if the ISBN already exists in the library, don't duplicate. A
+    // storage error here is propagated (M13) — not knowing is not "no match".
     final isbn = book.isbn?.trim();
     if (isbn != null && isbn.isNotEmpty) {
-      final existing = await _books.findByIsbn(isbn);
+      final existing = await books.findByIsbn(isbn);
+      if (existing.isLeft()) {
+        return left((existing as Left<Failure, Book?>).value);
+      }
       final hit = existing.toNullable();
-      if (existing.isRight() && hit != null) {
-        return right(MarkPurchasedAlreadyInLibrary(hit.id));
+      if (hit != null) {
+        final stamped = await _stampPurchased(book, stamp);
+        return stamped.map((_) => MarkPurchasedAlreadyInLibrary(hit.id));
       }
     }
 
-    final inserted = await _books.insert(_toLibraryBook(book, stamp));
-    return inserted.fold(left, (_) => right(MarkPurchasedSuccess(updated)));
+    final inserted = await books.insert(_toLibraryBook(book, stamp));
+    if (inserted.isLeft()) {
+      return left((inserted as Left<Failure, Book>).value);
+    }
+    final stamped = await _stampPurchased(book, stamp);
+    return stamped.map(MarkPurchasedSuccess.new);
   }
+
+  /// Loads the entry [id]; `Right(null)` means it exists but is ALREADY
+  /// purchased (the idempotency guard); a missing row is [NotFoundFailure].
+  Future<Either<Failure, WishlistBook?>> _loadWanted(int id) async {
+    final found = await _repository.getById(id);
+    return found.flatMap((book) {
+      if (book == null) return left(const NotFoundFailure());
+      return right(book.purchased ? null : book);
+    });
+  }
+
+  Future<Either<Failure, WishlistBook>> _stampPurchased(
+    WishlistBook book,
+    int stamp,
+  ) => _repository.update(book.copyWith(purchased: true, purchasedDate: stamp));
 
   /// Maps a purchased wishlist entry to a fresh library book (Kotlin
   /// `toLibraryBook`): new acquisition date, single copy.

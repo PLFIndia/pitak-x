@@ -5,6 +5,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -159,6 +160,206 @@ void main() {
       },
     );
   });
+
+  // M13 (astra-review): the purchase + move must be ONE transaction. These
+  // tests use REAL Drift for BOTH repositories on the same in-memory database
+  // so a rollback is observable; the in-memory `_MemBookRepo` above cannot
+  // prove that (its `runInTransaction` is a pass-through — M04 lesson).
+  group('M13 — purchase/move is transactional and idempotent', () {
+    late DriftBookRepository realBooks;
+
+    setUp(() {
+      realBooks = DriftBookRepository(db);
+    });
+
+    test('a failed library insert rolls the wishlist purchase back (row stays '
+        'Wanted, no library book, typed Left returned)', () async {
+      final ins = ok(
+        await repo.insert(const WishlistBook(title: 'Half', isbn: '333')),
+      );
+      final books = _InsertFailsBookRepo(realBooks);
+      final useCase = MarkWishlistPurchasedUseCase(repo, books: books);
+
+      final r = await useCase(ins.id, moveToLibrary: true, now: 77);
+
+      expect(err(r), isA<StorageFailure>());
+      final row = ok(await repo.getById(ins.id))!;
+      expect(row.purchased, isFalse, reason: 'purchase must roll back');
+      expect(row.purchasedDate, isNull);
+      expect(ok(await realBooks.getAll()), isEmpty);
+    });
+
+    test(
+      'a vanished entry inside the move is NotFound; nothing is inserted',
+      () async {
+        final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+        final r = await useCase(424242, moveToLibrary: true);
+        expect(err(r), isA<NotFoundFailure>());
+        expect(ok(await realBooks.getAll()), isEmpty);
+      },
+    );
+
+    test('a failed ISBN lookup is propagated: nothing is written', () async {
+      final ins = ok(
+        await repo.insert(const WishlistBook(title: 'Look', isbn: '444')),
+      );
+      final books = _LookupFailsBookRepo(realBooks);
+      final useCase = MarkWishlistPurchasedUseCase(repo, books: books);
+
+      final r = await useCase(ins.id, moveToLibrary: true);
+
+      expect(err(r), isA<StorageFailure>());
+      expect(books.insertCalls, 0, reason: 'must not insert after a Left');
+      expect(ok(await repo.getById(ins.id))!.purchased, isFalse);
+      expect(ok(await realBooks.getAll()), isEmpty);
+    });
+
+    test('two concurrent moves of a no-ISBN entry create exactly one library '
+        'book; the loser is AlreadyPurchased', () async {
+      final ins = ok(await repo.insert(const WishlistBook(title: 'Twice')));
+      final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+
+      final results = await Future.wait([
+        useCase(ins.id, moveToLibrary: true, now: 1),
+        useCase(ins.id, moveToLibrary: true, now: 2),
+      ]);
+
+      final outcomes = results.map(ok).toList();
+      expect(outcomes.whereType<MarkPurchasedSuccess>(), hasLength(1));
+      expect(outcomes.whereType<MarkPurchasedAlreadyPurchased>(), hasLength(1));
+      expect(ok(await realBooks.getAll()), hasLength(1));
+      expect(ok(await repo.getById(ins.id))!.purchased, isTrue);
+    });
+
+    test(
+      'an already-purchased entry is refused without writing (D1 = a)',
+      () async {
+        final ins = ok(
+          await repo.insert(
+            const WishlistBook(
+              title: 'Done',
+              purchased: true,
+              purchasedDate: 10,
+            ),
+          ),
+        );
+        final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+
+        final move = ok(await useCase(ins.id, moveToLibrary: true, now: 99));
+        final flagOnly = ok(await useCase(ins.id, now: 99));
+
+        expect(move, isA<MarkPurchasedAlreadyPurchased>());
+        expect(flagOnly, isA<MarkPurchasedAlreadyPurchased>());
+        expect(ok(await realBooks.getAll()), isEmpty);
+        final row = ok(await repo.getById(ins.id))!;
+        expect(row.purchasedDate, 10, reason: 'stamp must not be rewritten');
+      },
+    );
+
+    test('happy path on real Drift: row purchased AND book inserted', () async {
+      final ins = ok(
+        await repo.insert(
+          const WishlistBook(
+            title: 'Real',
+            isbn: '555',
+            coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+          ),
+        ),
+      );
+      final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+
+      final outcome = ok(await useCase(ins.id, moveToLibrary: true, now: 5));
+
+      expect(outcome, isA<MarkPurchasedSuccess>());
+      expect(ok(await repo.getById(ins.id))!.purchased, isTrue);
+      final book = ok(await realBooks.getAll()).single;
+      expect(book.isbn, '555');
+      expect(book.addedDate, 5);
+      // The remote cover reference is handed over so M09's consent-gated
+      // pipeline can materialise it for the new library row.
+      expect(book.coverUrl, 'https://covers.openlibrary.org/b/id/1-L.jpg');
+    });
+  });
+}
+
+/// Decorator over a REAL [DriftBookRepository] that fails only `insert` —
+/// everything else (including the transaction) is the real thing, so the test
+/// proves the rollback actually happens in Drift.
+class _InsertFailsBookRepo extends _DelegatingBookRepo {
+  _InsertFailsBookRepo(super.inner);
+
+  @override
+  Future<Either<Failure, Book>> insert(Book book) async =>
+      left(const StorageFailure('insert: disk full'));
+}
+
+/// Decorator that fails only the ISBN lookup and counts insert attempts.
+class _LookupFailsBookRepo extends _DelegatingBookRepo {
+  _LookupFailsBookRepo(super.inner);
+
+  int insertCalls = 0;
+
+  @override
+  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+      left(const StorageFailure('findByIsbn: io error'));
+
+  @override
+  Future<Either<Failure, Book>> insert(Book book) {
+    insertCalls++;
+    return super.insert(book);
+  }
+}
+
+/// Forwards every [BookRepository] call to [inner]; subclasses override the one
+/// method they want to sabotage.
+class _DelegatingBookRepo implements BookRepository {
+  _DelegatingBookRepo(this.inner);
+
+  final BookRepository inner;
+
+  @override
+  Future<Either<Failure, List<Book>>> getAll() => inner.getAll();
+  @override
+  Future<Either<Failure, List<Book>>> query({
+    required BookSort sort,
+    String? language,
+  }) => inner.query(sort: sort, language: language);
+  @override
+  Future<Either<Failure, List<String>>> distinctLanguages() =>
+      inner.distinctLanguages();
+  @override
+  Future<Either<Failure, Book?>> getById(int id) => inner.getById(id);
+  @override
+  Future<Either<Failure, Book>> insert(Book book) => inner.insert(book);
+  @override
+  Future<Either<Failure, Book>> update(Book book) => inner.update(book);
+  @override
+  Future<Either<Failure, Unit>> markRemoved(int id, int at) =>
+      inner.markRemoved(id, at);
+  @override
+  Future<Either<Failure, Unit>> restoreRemoved(int id) =>
+      inner.restoreRemoved(id);
+  @override
+  Future<Either<Failure, Unit>> delete(int id) => inner.delete(id);
+  @override
+  Future<Either<Failure, List<Book>>> search(String query) =>
+      inner.search(query);
+  @override
+  Future<Either<Failure, Book?>> findByIsbn(String isbn) =>
+      inner.findByIsbn(isbn);
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) =>
+      inner.findByUid(bookUid);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => inner.runInTransaction(action);
+  @override
+  Future<Either<Failure, int>> insertAll(List<Book> books) =>
+      inner.insertAll(books);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) =>
+      inner.replaceAll(books);
 }
 
 /// Minimal in-memory BookRepository for the move-to-library tests.

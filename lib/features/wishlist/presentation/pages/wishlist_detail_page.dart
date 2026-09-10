@@ -2,22 +2,25 @@
 ///
 /// Read-only field rows plus actions: edit, mark-purchased, delete. The
 /// mutating actions go through [WishlistController] (which runs the use cases
-/// and refreshes the list); on completion this view pops back to the refreshed
+/// and refreshes the list); on success this view pops back to the refreshed
 /// list rather than show a stale snapshot.
 ///
-/// Move-to-library on purchase is deferred (PLAN Step 14): this slice only
-/// flips the purchased flag.
+/// Purchase actions (M13): both buttons are disabled while a purchase is in
+/// flight (no double-tap), and a failed purchase keeps the user ON this page
+/// with a plain-language message so they can retry — the use case rolled the
+/// write back, so the entry is still "Wanted" and the buttons stay visible.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/add_wishlist_page.dart';
 
 /// Displays a single wishlist entry with edit / purchase / delete actions.
-class WishlistDetailPage extends ConsumerWidget {
+class WishlistDetailPage extends ConsumerStatefulWidget {
   /// Creates the detail page for [book].
   const WishlistDetailPage({required this.book, super.key});
 
@@ -25,7 +28,20 @@ class WishlistDetailPage extends ConsumerWidget {
   final WishlistBook book;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<WishlistDetailPage> createState() => _WishlistDetailPageState();
+}
+
+class _WishlistDetailPageState extends ConsumerState<WishlistDetailPage> {
+  /// True while a purchase is being written. Owned by this State so the two
+  /// purchase buttons share one guard (a `ConsumerWidget` has nowhere to keep
+  /// it). Pattern borrowed from `_DeleteForeverButtonState` in
+  /// `book_detail_page.dart`.
+  bool _purchasing = false;
+
+  WishlistBook get book => widget.book;
+
+  @override
+  Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
     Future<void> popToList() async {
@@ -116,14 +132,15 @@ class WishlistDetailPage extends ConsumerWidget {
             FilledButton.icon(
               icon: const Icon(Icons.library_add),
               label: const Text('Purchased — add to library'),
-              onPressed: () =>
-                  _markPurchased(context, ref, moveToLibrary: true),
+              onPressed: _purchasing
+                  ? null
+                  : () => _markPurchased(moveToLibrary: true),
             ),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               icon: const Icon(Icons.check),
               label: const Text('Mark as purchased only'),
-              onPressed: () => _markPurchased(context, ref),
+              onPressed: _purchasing ? null : _markPurchased,
             ),
           ],
         ],
@@ -131,29 +148,45 @@ class WishlistDetailPage extends ConsumerWidget {
     );
   }
 
-  Future<void> _markPurchased(
-    BuildContext context,
-    WidgetRef ref, {
-    bool moveToLibrary = false,
-  }) async {
+  Future<void> _markPurchased({bool moveToLibrary = false}) async {
+    setState(() => _purchasing = true);
     final result = await ref
         .read(wishlistControllerProvider.notifier)
         .markPurchased(book.id, moveToLibrary: moveToLibrary);
-    if (!context.mounted) return;
-    // D2: surface the already-in-library case (the entry is still purchased).
-    final alreadyIn = result.fold(
-      (_) => false,
-      (outcome) => outcome is MarkPurchasedAlreadyInLibrary,
+    if (!mounted) return;
+    setState(() => _purchasing = false);
+
+    result.match(
+      // M13: the use case rolled back, the entry is unchanged — stay here so
+      // the user can retry, and say what happened in safe words.
+      (failure) => _snack(_purchaseFailureMessage(failure)),
+      (outcome) {
+        switch (outcome) {
+          case MarkPurchasedSuccess():
+            break;
+          case MarkPurchasedAlreadyInLibrary():
+            // D2: the entry is still purchased; just tell the user.
+            _snack('Marked purchased. It was already in your library.');
+          case MarkPurchasedAlreadyPurchased():
+            _snack('This entry was already marked purchased.');
+        }
+        // The list behind us has been refreshed; this snapshot is stale.
+        Navigator.of(context).pop();
+      },
     );
-    if (alreadyIn) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Marked purchased. It was already in your library.'),
-        ),
-      );
-    }
-    if (context.mounted) Navigator.of(context).pop();
   }
+
+  void _snack(String message) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(message)));
+
+  /// Plain-language, non-leaking text for a purchase [failure] (repo AGENTS.md
+  /// §5: never show raw exception text).
+  static String _purchaseFailureMessage(Failure failure) => switch (failure) {
+    NotFoundFailure() => 'This entry no longer exists. Nothing was changed.',
+    ValidationFailure(:final message) => message,
+    _ => 'Could not save the purchase. Nothing was changed — please try again.',
+  };
 
   static bool _has(String? v) => v != null && v.trim().isNotEmpty;
 

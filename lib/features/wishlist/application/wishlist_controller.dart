@@ -52,8 +52,14 @@ class WishlistController extends _$WishlistController {
   }
 
   /// Marks the entry [id] purchased (optionally moving it to the library), then
-  /// refreshes both lists. Returns the use-case outcome so the UI can react to
-  /// the D2 "already in library" case.
+  /// refreshes the wishlist. Returns the use-case outcome so the UI can react
+  /// to the D2 "already in library" / M13 "already purchased" cases and stay
+  /// on screen with a message on a `Left`.
+  ///
+  /// The wishlist is re-read whatever the outcome (a rolled-back write leaves
+  /// the row unchanged, but the list may have been stale anyway); the library
+  /// list is invalidated only when a book was actually inserted, so a failed or
+  /// no-op purchase does not trigger a needless reload.
   Future<Either<Failure, MarkPurchasedOutcome>> markPurchased(
     int id, {
     bool moveToLibrary = false,
@@ -61,10 +67,10 @@ class WishlistController extends _$WishlistController {
     final useCase = await ref.read(markWishlistPurchasedUseCaseProvider.future);
     final result = await useCase(id, moveToLibrary: moveToLibrary);
     await refresh();
-    if (moveToLibrary) {
-      // A new library book may have been inserted — refresh that list too.
-      ref.invalidate(libraryControllerProvider);
-    }
+    final insertedBook =
+        moveToLibrary &&
+        result.fold((_) => false, (o) => o is MarkPurchasedSuccess);
+    if (insertedBook) ref.invalidate(libraryControllerProvider);
     return result;
   }
 }
