@@ -4,10 +4,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/book_cover.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// A 1x1 transparent PNG — the smallest valid image Image.file can decode.
@@ -30,6 +35,30 @@ class _RecordingMaterializer extends RemoteCoverMaterializer {
   void request(int bookId) => requested.add(bookId);
 }
 
+/// Settings repo for the consent-flip tests: loads a fixed snapshot and
+/// accepts the two writes the tests perform (cover toggle, theme).
+class _SettingsRepo implements SettingsRepository {
+  _SettingsRepo({required this.loadRemoteCovers});
+  final bool loadRemoteCovers;
+
+  @override
+  Future<AppSettings> load() async =>
+      AppSettings.defaults.copyWith(loadRemoteCovers: loadRemoteCovers);
+
+  @override
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
+
+  @override
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected settings call');
+}
+
 const _allowListed = 'https://covers.openlibrary.org/b/id/1-L.jpg';
 const _attacker = 'https://example.com/c.jpg';
 
@@ -38,11 +67,14 @@ Widget _host(
   required String? coverUrl,
   required _RecordingMaterializer materializer,
   int? bookId,
+  _SettingsRepo? settings,
 }) {
   return ProviderScope(
     overrides: [
       coversDirProvider.overrideWith((ref) async => coversDir),
       remoteCoverMaterializerProvider.overrideWith(() => materializer),
+      if (settings != null)
+        settingsRepositoryProvider.overrideWith((ref) async => settings),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -110,6 +142,114 @@ void main() {
     await tester.pump();
     await tester.pump();
     expect(materializer.requested, [7]);
+  });
+
+  testWidgets('D-2 (device-found, Session 13): a row already on screen asks '
+      'again when consent flips OFF→ON — the list stays mounted under the '
+      'Settings route, so no lifecycle hook fires and the toggle looked '
+      'broken until a book was opened', (tester) async {
+    final settings = _SettingsRepo(loadRemoteCovers: false);
+    await tester.pumpWidget(
+      _host(
+        tmp.path,
+        coverUrl: _allowListed,
+        bookId: 7,
+        materializer: materializer,
+        settings: settings,
+      ),
+    );
+    await tester.pumpAndSettle();
+    // First display asked (the scheduler drops it: consent is off).
+    expect(materializer.requested, [7]);
+
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(BookCover)),
+    );
+    await container.read(settingsControllerProvider.future);
+    final controller = container.read(settingsControllerProvider.notifier);
+
+    // The user flips the switch: the row must ask once more.
+    await controller.setLoadRemoteCovers(enabled: true);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 7], reason: 'OFF→ON re-asks');
+
+    // Unrelated settings writes republish the whole snapshot but must not
+    // re-ask (select narrows the listener to the consent bit).
+    await controller.setThemeMode(AppThemeMode.dark);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 7], reason: 'theme change is silent');
+
+    // OFF has nothing new to show; ON again is a fresh edge.
+    await controller.setLoadRemoteCovers(enabled: false);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 7], reason: 'ON→OFF is silent');
+    await controller.setLoadRemoteCovers(enabled: true);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 7, 7]);
+  });
+
+  testWidgets('D-2: a recycled row follows its CURRENT book — after it '
+      'switches to a local cover the consent flip is ignored; after it '
+      'switches to a fetchable one the flip re-asks for the new id', (
+    tester,
+  ) async {
+    final settings = _SettingsRepo(loadRemoteCovers: false);
+    Widget host({required String? coverUrl, required int bookId}) => _host(
+      tmp.path,
+      coverUrl: coverUrl,
+      bookId: bookId,
+      materializer: materializer,
+      settings: settings,
+    );
+    await tester.pumpWidget(host(coverUrl: _allowListed, bookId: 7));
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7]);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(BookCover)),
+    );
+    await container.read(settingsControllerProvider.future);
+    final controller = container.read(settingsControllerProvider.notifier);
+
+    // Same State, recycled for a book with a LOCAL cover: nothing pending.
+    await tester.pumpWidget(host(coverUrl: 'covers/x.jpg', bookId: 8));
+    await tester.pumpAndSettle();
+    await controller.setLoadRemoteCovers(enabled: true);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7], reason: 'local cover: flip ignored');
+
+    // Recycled again for a fetchable book while consent is ON: asks on the
+    // recycle itself, and a later OFF→ON edge asks for THAT id, not 7.
+    await tester.pumpWidget(host(coverUrl: _allowListed, bookId: 9));
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 9]);
+    await controller.setLoadRemoteCovers(enabled: false);
+    await controller.setLoadRemoteCovers(enabled: true);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, [7, 9, 9]);
+  });
+
+  testWidgets('D-2: a row whose cover is NOT fetchable ignores the consent '
+      'flip (attacker host / no bookId stay silent)', (tester) async {
+    final settings = _SettingsRepo(loadRemoteCovers: false);
+    await tester.pumpWidget(
+      _host(
+        tmp.path,
+        coverUrl: _attacker,
+        bookId: 7,
+        materializer: materializer,
+        settings: settings,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(BookCover)),
+    );
+    await container.read(settingsControllerProvider.future);
+    await container
+        .read(settingsControllerProvider.notifier)
+        .setLoadRemoteCovers(enabled: true);
+    await tester.pumpAndSettle();
+    expect(materializer.requested, isEmpty);
   });
 
   testWidgets('M09: NON-allow-listed https host is never requested, even '

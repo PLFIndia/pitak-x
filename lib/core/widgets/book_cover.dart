@@ -16,6 +16,16 @@
 /// not allow-listed (any other host, `http://`) shows the placeholder and is
 /// never requested.
 ///
+/// **Consent turning on re-asks (Session 13, device-found).** The request is
+/// made from lifecycle hooks, and a request made while consent was off is
+/// dropped by the scheduler without a trace. When the user flips the Settings
+/// switch, the list underneath the Settings route stays mounted — rows are
+/// neither re-created nor given a different book — so nothing asked again and
+/// the switch looked broken until a book was opened or the app restarted.
+/// Each cover therefore also listens to the consent bit and asks once more on
+/// the OFF→ON edge; the scheduler's once-per-book rule keeps that at a single
+/// download.
+///
 /// Cover classification + safe leaf extraction reuse [CoverPaths] (the single
 /// source of truth, with zip-slip / traversal defence), so this widget does no
 /// path parsing of its own.
@@ -30,6 +40,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// A book cover thumbnail with a graceful initial-letter fallback.
 class BookCover extends ConsumerStatefulWidget {
@@ -67,10 +78,16 @@ class BookCover extends ConsumerStatefulWidget {
 }
 
 class _BookCoverState extends ConsumerState<BookCover> {
+  /// Consent-bit subscription; present only while this cover is a pending
+  /// (fetchable) download. Closed automatically on unmount by flutter_riverpod
+  /// (`ConsumerStatefulElement.unmount`, 2.6.1) — and explicitly when the row
+  /// is recycled for a book that has nothing to fetch.
+  ProviderSubscription<bool?>? _consentSubscription;
+
   @override
   void initState() {
     super.initState();
-    _requestMaterializationIfRemote();
+    _syncPendingDownload();
   }
 
   @override
@@ -78,17 +95,51 @@ class _BookCoverState extends ConsumerState<BookCover> {
     super.didUpdateWidget(old);
     // A list row is recycled for a different book: ask again for the new one.
     if (old.coverUrl != widget.coverUrl || old.bookId != widget.bookId) {
-      _requestMaterializationIfRemote();
+      _syncPendingDownload();
     }
+  }
+
+  /// The book id whose cover is a fetchable remote reference, or null when
+  /// there is nothing to download (blank, local file, unsafe host, no id).
+  int? get _pendingBookId {
+    final id = widget.bookId;
+    if (id == null) return null;
+    if (CoverUrlAllowList.remoteHttpsOf(widget.coverUrl) == null) return null;
+    return id;
+  }
+
+  /// Asks the scheduler for a fetchable cover and keeps (or drops) the
+  /// consent subscription to match. Only fetchable covers touch Riverpod at
+  /// all, so a plain local/blank cover can render without a ProviderScope
+  /// and the ordinary row pays nothing for this.
+  void _syncPendingDownload() {
+    final id = _pendingBookId;
+    if (id == null) {
+      _consentSubscription?.close();
+      _consentSubscription = null;
+      return;
+    }
+    _requestMaterialization(id);
+    // `listenManual` is the initState-safe listener. Narrowed with `select` so
+    // unrelated settings writes (theme, sort, …) never reach this callback;
+    // `null` = settings unknown/loading, so only a real false→true flip
+    // re-asks. One subscription per State — re-syncs for a recycled row
+    // reuse it; the callback reads the CURRENT widget's pending id.
+    _consentSubscription ??= ref.listenManual(
+      settingsControllerProvider.select((s) => s.valueOrNull?.loadRemoteCovers),
+      (previous, next) {
+        if ((previous, next) case (false, true)) {
+          final current = _pendingBookId;
+          if (current != null) _requestMaterialization(current);
+        }
+      },
+    );
   }
 
   /// Side effects stay out of `build` (§7): the request is scheduled once per
   /// (bookId, coverUrl) from a lifecycle hook, after the frame, so a rebuild
   /// storm cannot turn into a request storm. The scheduler dedups as well.
-  void _requestMaterializationIfRemote() {
-    final id = widget.bookId;
-    if (id == null) return;
-    if (CoverUrlAllowList.remoteHttpsOf(widget.coverUrl) == null) return;
+  void _requestMaterialization(int id) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(remoteCoverMaterializerProvider.notifier).request(id);
