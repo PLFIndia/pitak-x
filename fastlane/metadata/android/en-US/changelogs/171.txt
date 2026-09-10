@@ -1,0 +1,4 @@
+* Security: biometric unlock bound to a hardware key released only after your fingerprint/face; vault sessions rejected after lock; restore is all-or-nothing; archive limits enforced before reading.
+* Covers: optional one-time download from Open Library (off by default; the Settings toggle is the consent), saved as a normal local cover.
+* Wishlist purchase is one transaction; on failure the entry stays untouched.
+* App lock covers every screen; narrow-screen layouts; imports keep covers.

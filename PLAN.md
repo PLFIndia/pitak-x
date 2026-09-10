@@ -56,8 +56,10 @@ tooling. OSS reference: none needed (release procedure is this repo's own).
 ## Decision points
 
 - D1 version string: **(b) 1.2.0+17** — decided by user.
-- D2 F-Droid side (tag, changelogs 171–173, recipe bump): deferred; not needed
-  for the AAB. Recorded in Out-of-scope.
+- D2 F-Droid side: user asked for it after the AAB ("so the fdroid bot picks
+  it up"). Mirror recipe blocks copied verbatim from 1.1.10 (option a; the
+  `output:` path divergence from upstream fdroiddata stays as-is — upstream is
+  authoritative and the bot copies upstream's own block).
 
 ## Steps
 
@@ -65,22 +67,39 @@ tooling. OSS reference: none needed (release procedure is this repo's own).
 - [x] 2. Bump `pubspec.yaml` → `1.2.0+17`.
 - [x] 3. Add `fastlane/metadata/android/en-US/changelogs/17.txt` (493 chars ≤ 500).
 - [x] 4. Rewrite `PLAN.md` for this task.
-- [ ] 5. Commit (approval required): `pubspec.yaml`, `changelogs/17.txt`, `PLAN.md`.
-- [ ] 6. `fvm flutter clean` → `fvm flutter pub get --enforce-lockfile`.
-- [ ] 7. `fvm flutter build appbundle --release --flavor play` — expect
-      minutes; ~25 s = stale snapshot → stop.
-- [ ] 8. Verify artifact: versionCode 17 / versionName 1.2.0 in the bundle
-      manifest; package `dev.khoj.pitaka`; `jarsigner` → `CN=Pitak Upload`;
-      `libpitak_crypto.so` present for arm64; 16 KB LOAD alignment;
-      debug symbols metadata present; sentinel string count ≥ 1; control ≥ 1.
-- [ ] 9. Report AAB path + sha256 + verification table. Sideload/phone check
-      and Console upload are the user's (§6 external action).
+- [x] 5. Committed `229e765` (`pubspec.yaml`, `changelogs/17.txt`, `PLAN.md`). Not pushed.
+- [x] 6. `fvm flutter clean` (build/ + .dart_tool/ gone; cargokit's Rust target
+      dir is Gradle `buildDir`, so Android .so files also rebuilt) →
+      `pub get --enforce-lockfile` OK.
+- [x] 7. `fvm flutter build appbundle --release --flavor play` — **188 s**,
+      Rust built for armv7/arm64/x86_64, no debug-signing warning in log
+      (`/tmp/pitak-aab-build.log`).
+- [x] 8. Artifact verified (see Result).
+- [ ] 9. Sideload/phone check and Console upload — user's action.
+
+### F-Droid tag housekeeping (added at user request)
+
+- [x] 10. `changelogs/171.txt 172.txt 173.txt` = byte-identical copies of `17.txt`
+      (`cmp` verified; same pattern as 15 → 151/152/153).
+- [x] 11. `fdroid/metadata/dev.khoj.pitaka.fdroid.yml`: three 1.2.0 blocks
+      (171 x64 / 172 arm / 173 arm64, `commit: 1.2.0`) generated from the
+      1.1.10 blocks — `diff` shows only header/version/code/commit changed;
+      `CurrentVersion: 1.2.0`, `CurrentVersionCode: 173`. YAML parses; 31
+      builds; versionCodes strictly increasing; `UpdateCheckData` on
+      pubspec → 17 → 171/172/173 matches.
+- [ ] 12. Commit (approval): changelogs 171–173 + recipe + PLAN.md.
+- [ ] 13. Annotated tag `1.2.0` on that commit (approval) — the tagged commit
+      must contain the F-Droid changelogs, as 1.1.10 did (`6bcfc96`).
+- [ ] 14. `git push origin main 1.2.0` (approval). Then watch
+      `f-droid.org/api/v1/packages/dev.khoj.pitaka.fdroid` for
+      `suggestedVersionCode` → 173 (bot MR typically within ~1 day).
 
 ## Out-of-scope observations
 
-- F-Droid release for 1.2.0: annotated tag `1.2.0`, changelogs `171/172/173.txt`,
-  three build blocks + `CurrentVersion`/`CurrentVersionCode` in
-  `fdroid/metadata/dev.khoj.pitaka.fdroid.yml`. Not done here.
+- Mirror recipe `output:` paths (`flutter-apk/app-<abi>-fdroid-release.apk`)
+  differ from upstream fdroiddata (`apk/fdroid/release/app-fdroid-<abi>-release.apk`)
+  for every post-flavor block. Cosmetic in the mirror; fix all blocks together
+  in a docs pass, not one at a time.
 - `README.md:10` still says "current release 1.1.10" — update after Play accepts.
 - `appDetails.md` §1 version table needs the 1.2.0+17 row after upload
   (local-only file).
@@ -88,4 +107,30 @@ tooling. OSS reference: none needed (release procedure is this repo's own).
 
 ## Result
 
-_(pending)_
+`build/app/outputs/bundle/playRelease/app-play-release.aab` — 92.3 MB,
+sha256 `f97496563fa143e008833ae900f7f4e47b0619ff15ef5cf9be6fecfdee8c85dc`,
+built from commit `229e765` (code identical to `17e3140` + version/changelog).
+
+| Check | Result |
+|---|---|
+| Bundle manifest | versionCode **17**, versionName **1.2.0**, package `dev.khoj.pitaka` |
+| Signer | `CN=Pitak Upload, OU=Mobile, O=Parallel Line Foundation, C=IN`; `jar verified` |
+| Signer cert SHA-256 | `35:FB:C7:0A:…:67:D9:E3:DB` — identical to keystore + `appDetails.md` §6 |
+| ABIs | arm64-v8a, armeabi-v7a, x86_64 |
+| `libpitak_crypto.so` | present; `frb_pde_ffi_dispatcher` ×2 |
+| 16 KB pages | every arm64 .so LOAD align ≥ 0x4000 |
+| Debug symbols | 15 `BUNDLE-METADATA/…debugsymbols` entries |
+| **Content — M13 (17e3140)** | `This entry was already marked purchased` ×1; `MarkPurchasedAlreadyPurchased` ×1; `Could not save the purchase. Nothing was changed` ×1 (UTF-16LE — see note) |
+| Content — M09 (2b92b1a) | `covers.openlibrary.org` ×1 |
+| Control (1.1.9) | `Google Books API key` ×1 |
+
+Note for future releases: `strings` only finds ASCII runs. Dart stores any
+literal containing a non-ASCII char (here the em dash `—`) as UTF-16 in the
+snapshot, so `strings | rg` returns 0 for it even when present. Use an
+ASCII-only sentinel, or scan with Python `b.count(s.encode('utf-16-le'))`.
+
+Build-log warnings are toolchain noise only (Gradle native-access on JDK 21,
+KGP version hint, plugins compiling with Java 8 target). None from our code.
+
+Not done here: device sideload, Console upload, push of `229e765`, F-Droid tag
+(all user actions / deferred — see Out-of-scope).
