@@ -32,15 +32,18 @@
 <!--
   F-09: Content-Security-Policy.
   default-src 'self' is the catch-all deny; everything else is an
-  explicit grant. img-src mirrors CoverUrlAllowList.ALLOWED_HOSTS
-  in the Kotlin publisher; any drift between the two is caught by
-  PublishViewerCspTest. 'unsafe-inline' on script/style is honest:
+  explicit grant. img-src mirrors CoverUrlAllowList.allowedHosts (+
+  the *.us.archive.org wildcard for CoverUrlAllowList.archiveNodePattern:
+  Open Library redirects about half of its covers through archive.org to
+  ia<digits>.us.archive.org storage nodes, D-3); any drift between the
+  list and this header is caught by viewer_csp_lockstep_test.dart.
+  'unsafe-inline' on script/style is honest:
   the viewer is a single self-contained file built around inline
   <style> and <script>. It does not protect against XSS in this
   document, but the F-09 threat is cross-origin image exfiltration,
   which img-src handles regardless of script-src.
 -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: https://covers.openlibrary.org https://books.google.com https://books.googleusercontent.com https://archive.org https://*.us.archive.org; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'" />
 <title>{{LIBRARY_NAME}}</title>
 <style>
   :root {

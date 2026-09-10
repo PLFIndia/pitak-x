@@ -10,7 +10,18 @@
 /// dropped; the viewer falls back to a placeholder).
 ///
 /// This is the single source of truth for cover origins; the viewer's CSP
-/// `img-src` MUST mirror `allowedHosts`. A snapshot test guards the lockstep.
+/// `img-src` MUST mirror `allowedHosts` (+ `archiveNodePattern` as the
+/// `*.us.archive.org` wildcard source). A snapshot test guards the lockstep.
+///
+/// D-3 (Session 13, verified on a device against the live service): Open
+/// Library serves roughly half of its covers through a two-hop redirect,
+/// `covers.openlibrary.org` → `archive.org/download/…` →
+/// `ia<digits>.us.archive.org/view_archive.php?…` (a rotating pool of
+/// Internet Archive storage nodes). The fetcher checks every hop against this
+/// list, so until those hosts were admitted such covers silently stayed
+/// placeholders. User decision: admit them. Privacy cost, stated in
+/// PRIVACY.md: with the opt-in on, the Internet Archive can also see the
+/// device's IP for those covers.
 ///
 /// M09: the same host policy governs the on-device display path. A book's
 /// remote cover is fetched (once, then stored as a local cover) only when
@@ -27,7 +38,23 @@ abstract final class CoverUrlAllowList {
     'covers.openlibrary.org',
     'books.google.com',
     'books.googleusercontent.com',
+    // Internet Archive front door for Open Library's offloaded covers (D-3).
+    'archive.org',
   };
+
+  /// Internet Archive storage nodes that `archive.org/download/…` redirects
+  /// to (D-3): exactly `ia` + digits + `.us.archive.org`, nothing else — not
+  /// `web.archive.org`, not arbitrary `*.archive.org`. Anchored and
+  /// case-insensitive; matched against the parsed host only, so userinfo /
+  /// suffix tricks are handled by the URL checks before this runs.
+  static final RegExp archiveNodePattern = RegExp(
+    r'^ia[0-9]+\.us\.archive\.org$',
+    caseSensitive: false,
+  );
+
+  /// The CSP `host-source` that admits [archiveNodePattern] hosts in the
+  /// published viewer; the lockstep test checks it appears in `img-src`.
+  static const String archiveNodeCspSource = 'https://*.us.archive.org';
 
   /// Returns [raw] when safe to publish, otherwise null.
   static String? sanitize(String? raw) {
@@ -65,7 +92,9 @@ abstract final class CoverUrlAllowList {
     if (uri.userInfo.isNotEmpty) return null; // reject https://x@host/…
     final host = uri.host.toLowerCase();
     if (host.isEmpty) return null;
-    if (!allowedHosts.contains(host)) return null;
+    if (!allowedHosts.contains(host) && !archiveNodePattern.hasMatch(host)) {
+      return null;
+    }
     return trimmed;
   }
 }
