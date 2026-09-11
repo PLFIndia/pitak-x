@@ -145,10 +145,11 @@ the bug).
 - [x] 7. Gates: format 401/0; analyze 0; build_runner + generated-diff
   check clean; `git diff --check` clean; ci.yml parses. (`actionlint`,
   `shellcheck` not installed — `bash -n` only.)
-- [ ] 8. Ask commit approval with explicit path list; push; watch CI to
-  green and confirm the Node 20 annotation is gone from the Flutter job.
-- [ ] 9. With approval: `git config core.hooksPath .githooks` on this
-  clone; verify with `git config --get core.hooksPath`.
+- [x] 8. Commit `0a7cb84` (approved), pushed `8ec79b0..0a7cb84`. CI run
+  `34627965432`: both jobs green, all 8 Flutter steps + 6 Rust steps ✓,
+  coverage 70.91% (unchanged), **zero annotations** (Node 20 notice gone).
+- [x] 9. `git config core.hooksPath .githooks` (approved) — repo-local
+  only, global unset; hook found executable at that path.
 
 ## Out-of-scope observations
 
@@ -180,5 +181,5 @@ env fact).
 --check` clean. Flutter/cargo suites not re-run (no Dart/Rust source
 changed); CI on the push is the confirmation.
 
-**Pending approvals:** commit + push (step 8); `git config
-core.hooksPath .githooks` on this clone (step 9).
+**Landed:** commit `0a7cb84` on `main` = `origin/main`; CI `34627965432`
+green with zero annotations; hook active on this clone. Nothing pending.

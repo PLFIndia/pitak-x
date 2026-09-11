@@ -1,15 +1,17 @@
 # Pitak
 
-A privacy-first, offline personal **library catalogue** for Android (and other
-Flutter targets). Pitak is a Kotlin→Flutter port of the original Android app:
-catalogue your books, lend them to borrowers from an **encrypted vault**, keep a
-wishlist, import/export (JSON · CSV · PDF), make portable backups, and publish a
-read-only library site to GitHub Pages.
+A privacy-first, offline personal **library catalogue** for Android. Pitak is a
+Kotlin→Flutter port of the original Android app: catalogue your books, lend
+them to borrowers from an **encrypted vault**, keep a wishlist, import/export
+(JSON · CSV · PDF), make portable backups, and publish a read-only library site
+to GitHub Pages with event posters and bookmarks to other libraries.
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`); current release 1.1.10. `PLAN.md`
-> tracks the task in flight; the maintainer's full engineering reference
-> (`appDetails.md`) is kept locally and is not part of this repository.
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.2.0**
+> (`pubspec.yaml`, tag `1.2.0`); F-Droid builds from the tag on its own
+> schedule, so its index may lag by a release. `PLAN.md` tracks the task in
+> flight; the maintainer's full engineering reference (`appDetails.md`) is
+> kept locally and is not part of this repository.
 
 ---
 
@@ -37,6 +39,11 @@ read-only library site to GitHub Pages.
   untouched (the previous folder is deleted right after a successful switch).
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
+- **Events** — attach a small set of event posters (image + optional short
+  description) to the published site; images stay on-device as ordinary files.
+- **Bookmarks** — save labelled links to *other* libraries' published sites.
+  URLs are validated strictly (https only; GitHub Pages / Cloudflare Pages
+  hosts) and stored as a plain, non-secret list.
 - **App-lock** — optional, opt-in biometric/device-credential gate before the
   library screen. It is a **screen cover, not a vault lock**: it deters casual
   access on an unlocked phone but does not encrypt data at rest and does not
@@ -103,12 +110,18 @@ cover, not a vault lock (see the security notes below).
 
 ```
 lib/
-  core/        cross-cutting: crypto, images, platform, DI (core/di/providers.dart), shared widgets
-  features/    library · vault · wishlist · lookup · publish · backup · import_export · settings
+  core/        cross-cutting: app_lock, crypto, database, DI (core/di/providers.dart), error,
+               images, layout, network, platform, storage, shared widgets
+  features/    library · vault · wishlist · lookup · publish · events · bookmarks ·
+               backup · import_export · settings
   src/rust/    flutter_rust_bridge generated bindings (analyzer-excluded)
 rust/          pitak_crypto crate (crypto + vault boundary) + tests
 assets/        publish viewer, PDF fonts (Noto Sans Indic), branding
-test/          Dart tests (unit + widget); test/helpers/ for shared harness
+test/          Dart tests mirroring lib/ (core/, features/); architecture/ holds the
+               domain-purity check; fixtures/ the synthetic hermetic vault
+.githooks/     tracked pre-commit hook (see Getting started)
+fdroid/        the F-Droid build recipe, version-controlled next to the app
+fastlane/      store metadata + per-versionCode changelogs
 ```
 
 The two `AGENTS.md` files (repo + harness) are the binding engineering contract —
@@ -149,7 +162,8 @@ Git does not enable tracked hooks automatically, hence the one-time
 
 ```bash
 flutter run -d <device-id> --flavor fdroid            # debug, with hot reload
-flutter build apk --release --flavor fdroid           # F-Droid APKs (~98 MB; bundled Noto fonts)
+flutter build apk --release --flavor fdroid           # universal APK (large: bundled Noto fonts + 4 Rust ABIs)
+flutter build apk --release --flavor fdroid --split-per-abi   # what the F-Droid recipe builds (one APK per ABI)
 flutter build appbundle --release --flavor play       # Google Play AAB
 flutter install -d <device-id> --release --flavor fdroid
 ```
@@ -170,8 +184,8 @@ dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (794 tests)
-( cd rust && cargo test --release )            # native crate tests (22)
+flutter test                                   # full Dart suite (1441 tests as of 1.2.0 / Sep 2026)
+( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
 These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
