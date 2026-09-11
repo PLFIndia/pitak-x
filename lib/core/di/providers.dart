@@ -6,6 +6,7 @@
 /// [vaultRepository]; the vault key never enters Dart.
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -221,8 +222,13 @@ Future<int> orphanCoverSweep(OrphanCoverSweepRef ref) async {
 }
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
+///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) — watching only the repository OBJECT never fires,
+/// so without this an add/edit/import/restore left the chips stale.
 @riverpod
 Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
+  ref.watch(libraryControllerProvider);
   final repo = await ref.watch(bookRepositoryProvider.future);
   final result = await repo.distinctLanguages();
   return result.getOrElse((_) => const []);
@@ -587,8 +593,12 @@ Map<int, int>? activeLoanCounts(ActiveLoanCountsRef ref) {
 /// Loan-row read model (N06): resolves the catalogue title of a loaned book
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
+///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) so a rename reaches open borrower screens.
 @riverpod
 Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
+  ref.watch(libraryControllerProvider);
   final repo = await ref.watch(bookRepositoryProvider.future);
   final book = (await repo.getById(bookId)).toNullable();
   return book?.title;
@@ -643,13 +653,45 @@ Future<WishlistBook?> wishlistBookById(
   );
 }
 
+/// The wall clock as epoch milliseconds, behind a provider so tests can
+/// inject a fake (N04). Same idiom as the `int Function()? clock` constructor
+/// parameters in the lookup/publish use cases.
+@riverpod
+int Function() clock(ClockRef ref) =>
+    () => DateTime.now().millisecondsSinceEpoch;
+
+/// Periodic "time has passed" signal (N04), watched by providers and widgets
+/// whose output depends on the wall clock (overdue badges, due-soon reminders,
+/// borrower stats) so a screen left open rolls over — a loan due at 15:00
+/// turns overdue at 15:00, not at the next app start.
+///
+/// The value is the current epoch millis (NOT a constant event): Riverpod
+/// only rebuilds dependents when the watched value changes, so a
+/// `Stream.periodic` of identical events would never propagate. A self-
+/// invalidating timer reschedules itself after every rebuild.
+///
+/// AutoDispose on purpose: the timer only runs while a screen is actually
+/// watching, and `onDispose` cancels it (a pending timer would otherwise
+/// outlive widget tests). Tests drive the same rebuild path by overriding
+/// [clockProvider] and invalidating this provider instead of waiting out the
+/// interval.
+@riverpod
+int nowTick(NowTickRef ref) {
+  final timer = Timer(const Duration(seconds: 60), ref.invalidateSelf);
+  ref.onDispose(timer.cancel);
+  return ref.watch(clockProvider)();
+}
+
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
-/// changes (e.g. after a lend/return).
+/// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+/// fires, so overdue stats roll over while the page stays open (N04).
 @riverpod
 BorrowerProfile? borrowerProfile(BorrowerProfileRef ref, int borrowerId) {
   final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
   if (session is! VaultUnlocked) return null;
+  ref.watch(nowTickProvider);
+  final now = ref.watch(clockProvider)();
   final borrower = session.data.borrowers
       .where((b) => b.id == borrowerId)
       .fold<Borrower?>(null, (_, b) => b);
@@ -657,23 +699,33 @@ BorrowerProfile? borrowerProfile(BorrowerProfileRef ref, int borrowerId) {
   return buildBorrowerProfile(
     borrower: borrower,
     allLoans: session.data.loans,
-    now: DateTime.now().millisecondsSinceEpoch,
+    now: now,
   );
 }
 
 /// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
 /// (from the unlocked vault) and needs-metadata books (from the library), or
 /// null when the vault is locked. Recomputes when either source changes.
+///
+/// N04: watches [libraryControllerProvider] as the catalogue mutation signal
+/// (same pattern as [bookById]) — watching only the repository OBJECT never
+/// fired, so a needs-metadata edit, import or restore left the reminders
+/// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
+/// over while the screen stays open.
 @riverpod
 Future<PendingSnapshot?> pendingSnapshot(PendingSnapshotRef ref) async {
   final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
   if (session is! VaultUnlocked) return null;
+  ref
+    ..watch(libraryControllerProvider)
+    ..watch(nowTickProvider);
+  final now = ref.watch(clockProvider)();
   final repo = await ref.watch(bookRepositoryProvider.future);
   final books = (await repo.getAll()).getOrElse((_) => const []);
   return buildPendingSnapshot(
     loans: session.data.loans,
     books: books,
-    now: DateTime.now().millisecondsSinceEpoch,
+    now: now,
   );
 }
 

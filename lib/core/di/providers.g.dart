@@ -261,9 +261,13 @@ final orphanCoverSweepProvider = FutureProvider<int>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef OrphanCoverSweepRef = FutureProviderRef<int>;
-String _$libraryLanguagesHash() => r'3a6110bd1c22af9da9324346134f6ff1342de7eb';
+String _$libraryLanguagesHash() => r'2a364532644d3ec8e92827900f72634de41b9c0b';
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
+///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) — watching only the repository OBJECT never fires,
+/// so without this an add/edit/import/restore left the chips stale.
 ///
 /// Copied from [libraryLanguages].
 @ProviderFor(libraryLanguages)
@@ -1038,7 +1042,7 @@ final activeLoanCountsProvider = AutoDisposeProvider<Map<int, int>?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveLoanCountsRef = AutoDisposeProviderRef<Map<int, int>?>;
-String _$bookTitleHash() => r'18288cb119e846085af5914659110098ed2a0893';
+String _$bookTitleHash() => r'28364f805a0d70587da0bc12c5972ee98c3ec4f5';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -1065,6 +1069,9 @@ class _SystemHash {
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) so a rename reaches open borrower screens.
+///
 /// Copied from [bookTitle].
 @ProviderFor(bookTitle)
 const bookTitleProvider = BookTitleFamily();
@@ -1073,11 +1080,17 @@ const bookTitleProvider = BookTitleFamily();
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) so a rename reaches open borrower screens.
+///
 /// Copied from [bookTitle].
 class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// Loan-row read model (N06): resolves the catalogue title of a loaned book
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// N04: watches [libraryControllerProvider] as the mutation signal (same
+  /// pattern as [bookById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   const BookTitleFamily();
@@ -1085,6 +1098,9 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// Loan-row read model (N06): resolves the catalogue title of a loaned book
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// N04: watches [libraryControllerProvider] as the mutation signal (same
+  /// pattern as [bookById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider call({required int bookId}) {
@@ -1115,11 +1131,17 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
 /// so borrower screens show the book's name instead of the internal row id.
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
+/// N04: watches [libraryControllerProvider] as the mutation signal (same
+/// pattern as [bookById]) so a rename reaches open borrower screens.
+///
 /// Copied from [bookTitle].
 class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
   /// Loan-row read model (N06): resolves the catalogue title of a loaned book
   /// so borrower screens show the book's name instead of the internal row id.
   /// Null when the book no longer exists (the UI falls back to "Book #id").
+  ///
+  /// N04: watches [libraryControllerProvider] as the mutation signal (same
+  /// pattern as [bookById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider({required int bookId})
@@ -1579,11 +1601,66 @@ class _WishlistBookByIdProviderElement
   int get bookId => (origin as WishlistBookByIdProvider).bookId;
 }
 
-String _$borrowerProfileHash() => r'64dd91226f28e204c8931b3f847fc9bf21c4ab76';
+String _$clockHash() => r'95c05edbf47d123a7fa7805bf8535316be77b11c';
+
+/// The wall clock as epoch milliseconds, behind a provider so tests can
+/// inject a fake (N04). Same idiom as the `int Function()? clock` constructor
+/// parameters in the lookup/publish use cases.
+///
+/// Copied from [clock].
+@ProviderFor(clock)
+final clockProvider = AutoDisposeProvider<int Function()>.internal(
+  clock,
+  name: r'clockProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$clockHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ClockRef = AutoDisposeProviderRef<int Function()>;
+String _$nowTickHash() => r'819f71fe0a55e4c93a2f1358cfdc86fcc4381476';
+
+/// Periodic "time has passed" signal (N04), watched by providers and widgets
+/// whose output depends on the wall clock (overdue badges, due-soon reminders,
+/// borrower stats) so a screen left open rolls over — a loan due at 15:00
+/// turns overdue at 15:00, not at the next app start.
+///
+/// The value is the current epoch millis (NOT a constant event): Riverpod
+/// only rebuilds dependents when the watched value changes, so a
+/// `Stream.periodic` of identical events would never propagate. A self-
+/// invalidating timer reschedules itself after every rebuild.
+///
+/// AutoDispose on purpose: the timer only runs while a screen is actually
+/// watching, and `onDispose` cancels it (a pending timer would otherwise
+/// outlive widget tests). Tests drive the same rebuild path by overriding
+/// [clockProvider] and invalidating this provider instead of waiting out the
+/// interval.
+///
+/// Copied from [nowTick].
+@ProviderFor(nowTick)
+final nowTickProvider = AutoDisposeProvider<int>.internal(
+  nowTick,
+  name: r'nowTickProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$nowTickHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef NowTickRef = AutoDisposeProviderRef<int>;
+String _$borrowerProfileHash() => r'd2f99e338c068933632d302d21559f0b5816873e';
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
-/// changes (e.g. after a lend/return).
+/// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+/// fires, so overdue stats roll over while the page stays open (N04).
 ///
 /// Copied from [borrowerProfile].
 @ProviderFor(borrowerProfile)
@@ -1591,20 +1668,23 @@ const borrowerProfileProvider = BorrowerProfileFamily();
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
-/// changes (e.g. after a lend/return).
+/// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+/// fires, so overdue stats roll over while the page stays open (N04).
 ///
 /// Copied from [borrowerProfile].
 class BorrowerProfileFamily extends Family<BorrowerProfile?> {
   /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
   /// null when locked or the borrower is gone (#27a). Recomputes when the session
-  /// changes (e.g. after a lend/return).
+  /// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+  /// fires, so overdue stats roll over while the page stays open (N04).
   ///
   /// Copied from [borrowerProfile].
   const BorrowerProfileFamily();
 
   /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
   /// null when locked or the borrower is gone (#27a). Recomputes when the session
-  /// changes (e.g. after a lend/return).
+  /// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+  /// fires, so overdue stats roll over while the page stays open (N04).
   ///
   /// Copied from [borrowerProfile].
   BorrowerProfileProvider call(int borrowerId) {
@@ -1635,13 +1715,15 @@ class BorrowerProfileFamily extends Family<BorrowerProfile?> {
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
 /// null when locked or the borrower is gone (#27a). Recomputes when the session
-/// changes (e.g. after a lend/return).
+/// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+/// fires, so overdue stats roll over while the page stays open (N04).
 ///
 /// Copied from [borrowerProfile].
 class BorrowerProfileProvider extends AutoDisposeProvider<BorrowerProfile?> {
   /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
   /// null when locked or the borrower is gone (#27a). Recomputes when the session
-  /// changes (e.g. after a lend/return).
+  /// changes (e.g. after a lend/return) and when the [nowTickProvider] tick
+  /// fires, so overdue stats roll over while the page stays open (N04).
   ///
   /// Copied from [borrowerProfile].
   BorrowerProfileProvider(int borrowerId)
@@ -1723,11 +1805,17 @@ class _BorrowerProfileProviderElement
   int get borrowerId => (origin as BorrowerProfileProvider).borrowerId;
 }
 
-String _$pendingSnapshotHash() => r'55dee101a2cc60a4f9fc80ff80cc2cc8992c8000';
+String _$pendingSnapshotHash() => r'6d681104d1107558f0fe25861c405733edac9675';
 
 /// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
 /// (from the unlocked vault) and needs-metadata books (from the library), or
 /// null when the vault is locked. Recomputes when either source changes.
+///
+/// N04: watches [libraryControllerProvider] as the catalogue mutation signal
+/// (same pattern as [bookById]) — watching only the repository OBJECT never
+/// fired, so a needs-metadata edit, import or restore left the reminders
+/// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
+/// over while the screen stays open.
 ///
 /// Copied from [pendingSnapshot].
 @ProviderFor(pendingSnapshot)

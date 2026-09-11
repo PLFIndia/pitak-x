@@ -103,6 +103,10 @@ void main() {
         vaultStoreProvider.overrideWith((ref) async => store),
         vaultRepositoryProvider.overrideWith((ref) => vault),
         bookRepositoryProvider.overrideWith((ref) async => _TitleBooks(books)),
+        // N04: the real tick self-reschedules a 60 s timer; these tests don't
+        // wait on the clock, so stub it out (a pending timer would outlive
+        // the widget tree and fail the test binding's invariant check).
+        nowTickProvider.overrideWith((ref) => 0),
       ],
     );
     addTearDown(container.dispose);

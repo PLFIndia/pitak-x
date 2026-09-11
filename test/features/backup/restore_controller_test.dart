@@ -6,10 +6,14 @@ import 'package:archive/archive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -28,6 +32,59 @@ class _FakeVault with VaultWriteUnsupported implements VaultRepository {
   }) async => right(VaultData.empty);
 }
 
+/// In-memory settings repo that records logo writes (N04 logo-hygiene tests).
+class _LogoSettingsRepo implements SettingsRepository {
+  AppSettings settings = AppSettings.defaults;
+
+  /// Every reference passed to setLibraryLogo, in order.
+  final List<String> logoWrites = [];
+
+  @override
+  Future<AppSettings> load() async => settings;
+  @override
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async {
+    logoWrites.add(reference);
+    settings = settings.copyWith(libraryLogo: reference);
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async =>
+      right('a' * 32);
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) async => right(unit);
+  @override
+  Future<Either<Failure, String>> regenerateLibraryId() async =>
+      right('b' * 32);
+  @override
+  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> setPublishContact({
+    required String address,
+    required String gps,
+    required String email,
+    required String phone,
+  }) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async => right(unit);
+}
+
 void main() {
   late Directory tmp;
 
@@ -43,11 +100,13 @@ void main() {
   /// generation → database / covers / vault store → restorer. Only the Rust
   /// vault is faked. This is what proves the whole app follows a generation
   /// switch, not just the restorer.
-  ProviderContainer makeContainer() {
+  ProviderContainer makeContainer({SettingsRepository? settings}) {
     final container = ProviderContainer(
       overrides: [
         appDocsDirProvider.overrideWith((ref) async => tmp),
         vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+        if (settings != null)
+          settingsRepositoryProvider.overrideWith((ref) async => settings),
       ],
     );
     addTearDown(() async {
@@ -202,5 +261,88 @@ void main() {
     final state = container.read(restoreControllerProvider);
     expect(state.hasValue, isTrue);
     expect(state.value?.booksRestored, 0);
+  });
+
+  group('N04 — dangling library-logo reference after restore (S9 note)', () {
+    // Settings are NOT part of a backup, so a restore can leave the logo
+    // reference pointing at a cover file the restored set does not have.
+    // These archives carry no covers, so the device's set is carried over
+    // verbatim — the logo file is present exactly when the test plants it.
+    Uint8List emptyArchive() {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+        }),
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest));
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    test('a dangling logo reference is cleared after a restore', () async {
+      final settings = _LogoSettingsRepo()
+        ..settings = AppSettings.defaults.copyWith(
+          libraryLogo: 'covers/logo.jpg',
+        );
+      final container = makeContainer(settings: settings);
+      await container.read(settingsControllerProvider.future);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: emptyArchive());
+
+      expect(
+        container.read(restoreControllerProvider).hasValue,
+        isTrue,
+        reason: 'the restore itself must succeed for the hygiene to run',
+      );
+      expect(settings.logoWrites, ['']);
+      expect(
+        container.read(settingsControllerProvider).valueOrNull?.libraryLogo,
+        '',
+      );
+    });
+
+    test('a logo whose file survived the restore is kept', () async {
+      final settings = _LogoSettingsRepo()
+        ..settings = AppSettings.defaults.copyWith(
+          libraryLogo: 'covers/logo.jpg',
+        );
+      final container = makeContainer(settings: settings);
+      await container.read(settingsControllerProvider.future);
+      // Plant the referenced file in the ACTIVE generation's covers dir; a
+      // covers-less archive carries the device's set over, so it survives.
+      final coversDir = await container.read(coversDirProvider.future);
+      Directory(coversDir).createSync(recursive: true);
+      File(p.join(coversDir, 'logo.jpg')).writeAsBytesSync([1, 2, 3]);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: emptyArchive());
+
+      expect(settings.logoWrites, isEmpty);
+      expect(
+        container.read(settingsControllerProvider).valueOrNull?.libraryLogo,
+        'covers/logo.jpg',
+      );
+    });
+
+    test('no logo set means no settings write', () async {
+      final settings = _LogoSettingsRepo();
+      final container = makeContainer(settings: settings);
+      await container.read(settingsControllerProvider.future);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: emptyArchive());
+
+      expect(settings.logoWrites, isEmpty);
+    });
   });
 }

@@ -79,7 +79,11 @@ class _LoanRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
-    final now = DateTime.now().millisecondsSinceEpoch;
+    // N04: injectable clock + tick watch, so the Overdue badge rolls over
+    // while the page stays open (a loan due at 15:00 turns overdue at 15:00,
+    // not at the next app start).
+    ref.watch(nowTickProvider);
+    final now = ref.watch(clockProvider)();
     final overdue = loan.isOverdue(now);
 
     final status = loan.isReturned

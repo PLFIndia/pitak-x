@@ -6,7 +6,7 @@ part of 'restore_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$restoreControllerHash() => r'534d9afacce5c5932f7f9f54e11ef9609beca801';
+String _$restoreControllerHash() => r'f2f768d245b5bce53e671880e9a9123236daf924';
 
 /// Drives a one-shot restore and surfaces its [RestoreSummary].
 ///

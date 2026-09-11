@@ -24,6 +24,7 @@ import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits;
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 
 /// Screen that restores a backup archive over the current device state.
 class RestorePage extends ConsumerStatefulWidget {
@@ -137,9 +138,12 @@ class _RestorePageState extends ConsumerState<RestorePage> {
         .read(restoreControllerProvider.notifier)
         .restore(archiveBytes: bytes, passphrase: secret);
 
-    // On success, refresh the library list so restored books show immediately.
+    // On success, refresh the library AND wishlist lists so restored rows
+    // show immediately (N04: restore replaces both; derived providers —
+    // languages, titles, reminders — follow via their controller watches).
     if (ref.read(restoreControllerProvider).hasValue) {
       await ref.read(libraryControllerProvider.notifier).refresh();
+      await ref.read(wishlistControllerProvider.notifier).refresh();
     }
   }
 

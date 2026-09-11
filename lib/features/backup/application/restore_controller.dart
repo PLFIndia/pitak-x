@@ -18,6 +18,8 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -72,10 +74,35 @@ class RestoreController extends _$RestoreController {
           return AsyncData(summary);
         },
       );
+      if (state.hasValue) await _clearDanglingLogoRef();
     } finally {
       // §6.1: wipe the passphrase regardless of outcome (null for vault-free
       // archives — nothing to wipe).
       passphrase?.dispose();
     }
+  }
+
+  /// N04 (S9 dangling-state note): settings are NOT part of a backup, so a
+  /// restore can leave the library-logo reference pointing at a cover file
+  /// the restored set does not have. Clear such a dangling reference so
+  /// Settings does not keep pointing at a file that will never come back.
+  ///
+  /// Fail-open on purpose: a settings-write Left leaves the reference in
+  /// place, which the logo widget already tolerates (it falls back to the
+  /// default icon when the file is missing) — the pre-fix status quo.
+  Future<void> _clearDanglingLogoRef() async {
+    // State, not future: when settings are not loaded (or failed to load)
+    // there is nothing safe to compare — skip rather than let best-effort
+    // hygiene break a restore that already succeeded. In a running app the
+    // settings are loaded long before a restore (app bar, drawer).
+    final settings = ref.read(settingsControllerProvider).valueOrNull;
+    if (settings == null) return;
+    final leaf = CoverPaths.leafOf(settings.libraryLogo);
+    if (leaf == null) return; // no logo, or nothing sane to check
+    final covers = await ref.read(coverStoreProvider.future);
+    if (covers.listLeaves().contains(leaf)) return;
+    // The Either result is deliberately ignored: worst case is the pre-fix
+    // status quo (display already falls back to the default icon).
+    await ref.read(settingsControllerProvider.notifier).setLibraryLogo('');
   }
 }

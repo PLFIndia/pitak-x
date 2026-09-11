@@ -22,10 +22,18 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
+import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
@@ -71,6 +79,99 @@ class _FakeFileSelector extends FileSelectorPlatform {
     picks++;
     return XFile.fromData(bytes, name: 'test.pitabak', length: reportedLength);
   }
+}
+
+/// N04: a controller whose inspect/restore always succeed (vault-free), so
+/// the page's post-success refresh path runs without the restorer machinery.
+class _SuccessController extends RestoreController {
+  @override
+  RestoreSummary? build() => null;
+
+  @override
+  Future<Either<Failure, BackupManifest>> inspectArchive(
+    Uint8List archiveBytes,
+  ) async => right(
+    const BackupManifest(
+      exportedAt: 123,
+      hasBorrowers: false,
+      hasBackupBlob: false,
+    ),
+  );
+
+  @override
+  Future<void> restore({
+    required Uint8List archiveBytes,
+    SecretBytes? passphrase,
+  }) async {
+    state = const AsyncData(
+      RestoreSummary(
+        booksRestored: 1,
+        wishlistRestored: 1,
+        borrowersRestored: 0,
+        loansRestored: 0,
+        existingVaultKept: true,
+      ),
+    );
+  }
+}
+
+/// Counts `getAll` calls so the test can prove the wishlist was re-read.
+class _CountingWishlistRepo extends DriftWishlistRepository {
+  _CountingWishlistRepo(super.db);
+
+  int getAllCalls = 0;
+
+  @override
+  Future<Either<Failure, List<WishlistBook>>> getAll() {
+    getAllCalls++;
+    return super.getAll();
+  }
+}
+
+/// Minimal in-memory settings repo (the library controller watches the sort).
+class _SettingsRepoStub implements SettingsRepository {
+  AppSettings settings = AppSettings.defaults;
+
+  @override
+  Future<AppSettings> load() async => settings;
+  @override
+  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async =>
+      right('a' * 32);
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) async => right(unit);
+  @override
+  Future<Either<Failure, String>> regenerateLibraryId() async =>
+      right('b' * 32);
+  @override
+  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> setPublishContact({
+    required String address,
+    required String gps,
+    required String email,
+    required String phone,
+  }) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> setAppLockBiometric({
+    required bool enabled,
+  }) async => right(unit);
 }
 
 Uint8List _archive({required bool withVault, int exportedAt = 123}) {
@@ -288,5 +389,56 @@ void main() {
     expect(find.textContaining('No borrowers vault'), findsOneWidget);
     expect(find.textContaining('Made on:'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('N04: a successful restore refreshes the wishlist too', (
+    tester,
+  ) async {
+    // Restore replaces books AND the wishlist (M15), but the page used to
+    // refresh only the library list — a mounted wishlist tab kept showing
+    // pre-restore rows until restart.
+    final wishlist = _CountingWishlistRepo(gen.db);
+    final container = ProviderContainer(
+      overrides: [
+        restoreControllerProvider.overrideWith(_SuccessController.new),
+        bookRepositoryProvider.overrideWith(
+          (ref) async => DriftBookRepository(gen.db),
+        ),
+        settingsRepositoryProvider.overrideWith(
+          (ref) async => _SettingsRepoStub(),
+        ),
+        wishlistRepositoryProvider.overrideWith((ref) async => wishlist),
+      ],
+    );
+    addTearDown(container.dispose);
+    FileSelectorPlatform.instance = _FakeFileSelector(
+      _archive(withVault: false),
+    );
+
+    // Mounted tabs keep both list controllers alive, like the real shell.
+    final wishlistSub = container.listen(
+      wishlistControllerProvider,
+      (_, __) {},
+    );
+    final librarySub = container.listen(libraryControllerProvider, (_, __) {});
+    addTearDown(wishlistSub.close);
+    addTearDown(librarySub.close);
+    await container.read(wishlistControllerProvider.future);
+    expect(wishlist.getAllCalls, 1);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: RestorePage()),
+      ),
+    );
+    await pick(tester);
+    await tester.ensureVisible(find.text('Restore'));
+    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Restore complete'), findsOneWidget);
+    // Initial load + the post-restore refresh.
+    expect(wishlist.getAllCalls, 2);
   });
 }
