@@ -14,7 +14,8 @@ jobs:
     name: Rust core (pitak_crypto)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v5 = v4 on Node 24 (clears the runner's Node 20 deprecation notice).
+      - uses: actions/checkout@v5
       # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
       - uses: dtolnay/rust-toolchain@1.96.0
@@ -41,7 +42,7 @@ jobs:
     name: Flutter (analyze, format, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       # Pinned via .fvmrc — the same file the F-Droid recipe extracts the
       # Flutter version from. One place to bump; CI and F-Droid stay in sync.
       - uses: subosito/flutter-action@v2
@@ -54,7 +55,9 @@ jobs:
       - name: Resolve deps (lockfile must match pinned Flutter)
         run: flutter pub get --enforce-lockfile
       # Generated sources (drift/freezed/riverpod/json) must be regenerable and
-      # leave no uncommitted diff (AGENTS.md §11 CI gate).
+      # leave no uncommitted diff (AGENTS.md §11 CI gate). The tracked
+      # .githooks/pre-commit runs this identical check locally before a commit
+      # exists; keep the two in sync if either changes.
       - name: build_runner (no uncommitted diff)
         run: |
           dart run build_runner build --delete-conflicting-outputs

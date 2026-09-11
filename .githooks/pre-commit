@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+#
+# pre-commit: refuse to commit stale generated Dart code.
+#
+# WHY THIS EXISTS (plain English)
+# -------------------------------
+# Files ending in .g.dart / .freezed.dart are GENERATED from the hand-written
+# .dart file next to them (by build_runner: riverpod_generator, freezed, drift,
+# json_serializable). One line in every riverpod .g.dart is a sha1 of the whole
+# annotated class's source CODE (comments/whitespace excluded) — so adding a
+# field, renaming a private member, or changing any statement inside a
+# @riverpod class silently makes its .g.dart stale.
+#
+# CI (.github/workflows/ci.yml, step "build_runner (no uncommitted diff)")
+# regenerates and fails the build if anything changed. This hook runs the
+# SAME check before the commit is created, so the failure shows up on your
+# machine in ~3 s instead of on GitHub after the push.
+#
+# WHAT IT DOES / DOES NOT DO
+# --------------------------
+# - Runs only when a .dart file under lib/ or test/ is staged.
+# - Regenerates with the Flutter SDK pinned in .fvmrc (never a random `dart`).
+# - If any generated file differs, prints the files and exits 1 (fail closed).
+# - It NEVER stages, stashes, or edits your commit for you. You decide what
+#   goes in. Regenerated files are left in the working tree for you to review
+#   and `git add`.
+#
+# ONE-TIME SETUP (per clone; git never auto-enables tracked hooks):
+#     git config core.hooksPath .githooks
+#
+# EMERGENCY BYPASS (standard git; CI will still catch the drift):
+#     git commit --no-verify
+#
+# Pattern (tracked .githooks + core.hooksPath) adapted from
+# Suwayomi/Suwayomi-Tsumiru .githooks/pre-commit. Their hook auto-stashes and
+# auto-stages; ours deliberately does not (AGENTS.md §0 "No magic").
+
+set -euo pipefail
+
+say()  { printf '[pre-commit] %s\n' "$*"; }
+warn() { printf '[pre-commit] WARNING: %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# 1. Only bother when Dart source is part of this commit.
+# ---------------------------------------------------------------------------
+# --diff-filter=ACMR: Added, Copied, Modified, Renamed. Deleted files cannot
+# make generated code stale on their own, and running build_runner on a
+# deletion-only commit would be wasted time.
+staged_dart="$(git diff --cached --name-only --diff-filter=ACMR -- 'lib/*.dart' 'test/*.dart' || true)"
+
+if [[ -z "${staged_dart}" ]]; then
+  # Nothing generated could have changed; let the commit through quietly.
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 2. Find the PINNED Dart SDK. Order matters: the global `dart` on PATH may be
+#    a different version from .fvmrc, and a different SDK can produce
+#    different generated output — which is exactly the drift we are guarding
+#    against.
+# ---------------------------------------------------------------------------
+repo_root="$(git rev-parse --show-toplevel)"
+dart_cmd=()
+
+if [[ -x "${repo_root}/.fvm/flutter_sdk/bin/dart" ]]; then
+  dart_cmd=("${repo_root}/.fvm/flutter_sdk/bin/dart")
+elif command -v fvm >/dev/null 2>&1; then
+  dart_cmd=(fvm dart)
+elif command -v dart >/dev/null 2>&1; then
+  dart_cmd=(dart)
+  warn "using 'dart' from PATH, not the SDK pinned in .fvmrc."
+  warn "If this check disagrees with CI, run 'fvm install' and retry."
+else
+  # Docs-only contributor without a Flutter toolchain: do not block the
+  # commit. CI remains the authoritative gate for generated code.
+  warn "no Dart SDK found; skipping the generated-code check. CI will run it."
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Regenerate, then compare — the identical two-step check CI performs.
+# ---------------------------------------------------------------------------
+say "Dart source is staged; checking generated code is current..."
+
+# --delete-conflicting-outputs matches CI exactly. Output is suppressed on
+# success to keep commits quiet; on failure we show it so the cause is visible.
+build_log="$(mktemp)"
+trap 'rm -f "${build_log}"' EXIT
+
+if ! (cd "${repo_root}" && "${dart_cmd[@]}" run build_runner build --delete-conflicting-outputs >"${build_log}" 2>&1); then
+  warn "build_runner failed. Output:"
+  cat "${build_log}" >&2
+  exit 1
+fi
+
+if git -C "${repo_root}" diff --quiet -- '*.g.dart' '*.freezed.dart'; then
+  say "generated code is current."
+  exit 0
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Drift found: explain, list, and refuse. Nothing is staged on your behalf.
+# ---------------------------------------------------------------------------
+{
+  echo
+  echo "[pre-commit] REFUSED: generated files are stale (CI would fail the same way)."
+  echo "[pre-commit] build_runner has already regenerated them in your working tree:"
+  echo
+  git -C "${repo_root}" --no-pager diff --stat -- '*.g.dart' '*.freezed.dart'
+  echo
+  echo "[pre-commit] Review the diff, then stage the regenerated files and commit again:"
+  echo
+  echo "    git add \$(git diff --name-only -- '*.g.dart' '*.freezed.dart')"
+  echo "    git commit"
+  echo
+  echo "[pre-commit] Emergency bypass (CI will still catch it): git commit --no-verify"
+} >&2
+
+exit 1

@@ -122,12 +122,28 @@ Prerequisites: Flutter 3.44.2 (pinned in `.fvmrc`) stable, the Android SDK, and 
 ```bash
 flutter pub get
 
+# One-time per clone: enable the tracked pre-commit hook (see below).
+git config core.hooksPath .githooks
+
 # Regenerate codegen after editing @riverpod / freezed / drift / json_serializable:
 dart run build_runner build --delete-conflicting-outputs
 
 # Regenerate FFI bindings after editing rust/src/api.rs:
 flutter_rust_bridge_codegen generate
 ```
+
+**Why the hook:** every `.g.dart` / `.freezed.dart` file is generated from the
+hand-written `.dart` next to it, and riverpod's generated code embeds a hash of
+the annotated class's *source code* — so adding a field, renaming a private
+member, or touching any code inside a `@riverpod` class silently makes its
+`.g.dart` stale (comments and whitespace are ignored), and CI fails with
+"Generated files are stale". `.githooks/pre-commit` runs the same check CI
+runs (regenerate, then `git diff` on generated files) before the commit is
+created, using the Flutter SDK pinned in `.fvmrc`. It never stages or edits
+your commit for you; on drift it lists the regenerated files and refuses.
+Git does not enable tracked hooks automatically, hence the one-time
+`git config` above. Bypass in an emergency with `git commit --no-verify`
+(CI will still catch it).
 
 ### Run / build
 
@@ -150,11 +166,16 @@ command needs a `--flavor`.
 ## Quality gates
 
 ```bash
+dart run build_runner build --delete-conflicting-outputs
+git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
 flutter test                                   # full Dart suite (794 tests)
 ( cd rust && cargo test --release )            # native crate tests (22)
 ```
+
+These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
+`.githooks/pre-commit` runs.
 
 Tip: the full widget suite can be slow under some harnesses — run by directory
 (`flutter test test/features/<area>`) to isolate a slow/hanging file.
