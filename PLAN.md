@@ -1,161 +1,257 @@
-# PLAN.md — Session 19: N04 — derived providers watch real inputs + injectable clock
+# PLAN.md — Session 20: N11 — long-running UI actions: lifecycle ownership, mounted/ref guards, typed terminal results
 
 ## Understanding
 
-`astra-review.md` N04: derived lists and reminders are not refreshed by their
-real inputs. Re-verified against current code (review line numbers stale, the
-patterns are intact):
+`astra-review.md` N11: several long-running UI actions outlive their widgets
+without safe completion handling. Re-verified against current code (review line
+numbers stale; patterns confirmed live):
 
-1. **`libraryLanguages`** (`lib/core/di/providers.dart:224-228`) watches only
-   `bookRepositoryProvider` (the repo *object*, which never changes) and queries
-   `distinctLanguages()` once. Add/edit/delete/import/merge/restore never
-   refresh the filter-chip facets.
-2. **`bookTitle`** (`providers.dart:590-595`) — same shape: a rename never
-   reaches borrower screens ("Book #id" read model, N06). Not explicitly cited
-   by the review (added in S7) but the identical bug class; including it is the
-   same one-line fix. **Flagged as an assumption.**
-3. **`pendingSnapshot`** (`providers.dart:667-677`) watches the session (loans
-   OK) but reads `repo.getAll()` once — a `needsMetadata` edit, import, or
-   restore never updates the reminders while the screen stays mounted.
-4. **No clock invalidation**: `borrowerProfile` (`:649-660`), `pendingSnapshot`
-   (`:676`) and `_LoanRow` (`vault_contents_page.dart:82`) call
-   `DateTime.now()` once at build. Overdue/due-soon status never rolls over
-   while a screen stays open.
-5. **Restore refreshes only the library** (`restore_page.dart:140-143`): a
-   restore replaces the wishlist too (M15), but `wishlistControllerProvider` is
-   never refreshed — the wishlist page shows pre-restore rows until restart.
+**Verified Riverpod 2.6.1 semantics (pub-cache source, not memory):**
+- A widget's `ref.read/watch/invalidate` after unmount **throws**
+  `StateError('Cannot use "ref" after the widget was disposed.')`
+  (`flutter_riverpod-2.6.1/lib/src/consumer.dart:549` `_assertNotDisposed`,
+  called by `read` at `:620`).
+- A notifier's `state =` after provider dispose is silently accepted (no
+  listeners notified) — `riverpod-2.6.1/lib/src/framework/element.dart:128`
+  `setState` has no mounted check. So a disposed autoDispose controller loses
+  its terminal state AND a re-entered page builds a fresh idle element while
+  the old operation still runs → a second concurrent operation becomes
+  possible.
 
-N03 (S16) established the precedent this fix reuses: `ref.watch(
-libraryControllerProvider)` as a mutation signal — every mutation path in the
-app already invalidates or refreshes the list controllers (10 call sites
-verified in S16). The repository has no row streams; when it gains one, the
-watch line is the single line to swap.
+**Live instances (current code):**
+1. `restore_page.dart` `_runRestore` (`:138-147`): after
+   `await ...restore()` it calls `ref.read(restoreControllerProvider)` and
+   `ref.read(libraryControllerProvider.notifier).refresh()` +
+   `wishlistControllerProvider.notifier).refresh()` with **no `mounted`
+   guard** → StateError if the page was popped mid-restore; the refresh is
+   lost exactly when it matters (page gone, underlying list stale).
+2. `RestoreController` (`restore_controller.dart`): no `keepAlive` link, no
+   `_disposed`/`_running` guard, no catch-all. Mid-flight dispose loses the
+   terminal state and permits a second concurrent restore on re-entry; an
+   unexpected throw from the restorer propagates to the page's unawaited
+   future. `ImportController` (same repo) already has the fix pattern.
+3. `import_page.dart` `_importText`/`_importFile` (`:50-87`): post-await
+   `ref.read(importControllerProvider).hasValue` + `_refreshLists()` with no
+   `mounted` guard; `openFile`/`_hasZipMagic`/`readPickedFileBounded` plugin
+   throws are uncaught.
+4. `merge_page.dart`: (a) still length-then-`readAsString` (`:64-70`) instead
+   of the shared `readPickedFileBounded` (S10 note — a lying `length()` buys
+   a full unbounded buffer); (b) `setState` in the `res.match` callbacks is
+   unguarded — a pop mid-merge throws inside `try`, and the `on Object`
+   handler then throws AGAIN calling `setState` on the dead widget;
+   (c) `_join`/`_overwrite` have no catch — a use-case throw escapes as an
+   unhandled async error; (d) `_refreshLibrary()` fire-and-forget from
+   callbacks reads `ref` after possible unmount.
+5. `create_backup_page.dart` `_createAndSave` (`:34-81`): mounted checks are
+   present, but there is **no try/catch** — a throwing share plugin or
+   use-case-provider build failure leaves `_busy = true` forever (stuck
+   spinner) and an unhandled async error.
+6. `RemoteCoverMaterializer._materialize` (`remote_cover_materializer.dart:96-105`):
+   a refused/failed download's `Left` is silently swallowed — no diagnostic
+   surface anywhere (S13 note: a future archive.org naming change would
+   silently re-break covers).
+
+**In-repo fix patterns to reuse (AGENTS.md: borrow, don't invent):**
+- `ImportController._run`: `_running` + `_disposed` flags, `ref.keepAlive()`
+  link closed in `finally`, catch-all → `AsyncError(UnexpectedFailure)`.
+- `PublishController.publish`: keepAlive link with the rationale comment.
+- `ExportController` + `ExportPage`: typed terminal result returned to the
+  page; page does `if (!mounted) return;` before `setState`.
+- `RestoreController` already invalidates `vaultSessionControllerProvider`
+  on success — the precedent for controller-side post-success invalidation.
 
 ## Privacy & threat notes
 
-No new data leaves the device; no new storage. The clock provider exposes only
-epoch millis. No secrets involved. Restore-flow change touches only which
-providers get refreshed after a restore that already happened.
+No new data leaves the device; no new storage; no secrets touched. The
+cover-download diagnostic is `debugPrint` (debug/profile builds only, local
+stderr) carrying a book id + failure type — no URLs, no PII, no telemetry
+(AGENTS.md §3.4/§6.2). Restore remains an authoritative overwrite; the
+keepAlive change only guarantees an in-flight restore finishes and its
+terminal state is not lost — it does not make restore cancellable (M02 made
+the switchover atomic; abandoning mid-way is not possible anyway).
 
 ## Investigation notes
 
-- `LibraryLogo` (`lib/core/widgets/library_logo.dart`) already falls back to
-  the default icon when the referenced file is missing (`existsSync` check) —
-  the S9 dangling-logo note is cosmetically handled; the stale *setting* is
-  what remains (D2 below).
-- Injectable-clock precedent exists: `int Function()? clock` constructor param
-  in `chained_isbn_lookup.dart:33`, `publish_events_use_case.dart:75`,
-  `publish_library_use_case.dart:114`. For providers, a `clockProvider`
-  override plays the same role.
-- Unlocked-vault test harness exists: `_InMemoryVault` + overrides in
-  `vault_session_controller_test.dart:270-296`.
-- No cycle risk: `libraryLanguages`/`bookTitle`/`pendingSnapshot` → watch
-  `libraryControllerProvider`; the controller watches only settings + the
-  language *filter* (selection), never the languages list.
-- Due dates are millisecond-precision: a loan due at 15:00 becomes overdue at
-  15:00, not at midnight. A midnight-only rollover would miss intra-day due
-  times (D1 below).
+- `restore_page.dart`, `import_page.dart`, `merge_page.dart`,
+  `create_backup_page.dart` read in full (current HEAD `1e1eeae`).
+- `restore_controller.dart`, `import_controller.dart`,
+  `publish_controller.dart`, `export_controller.dart`,
+  `remote_cover_materializer.dart`, `bounded_file_read.dart` read in full.
+- Riverpod 2.6.1 disposal semantics verified in pub-cache source (above).
+- Picker test seam: `FileSelectorPlatform.instance` fake returning
+  `XFile.fromData` (existing pattern in `restore_page_test.dart:62`,
+  `import_page_test.dart:104`, `merge_page_test.dart:24`).
+- `restore_controller_test.dart` harness: real M02 storage chain over a temp
+  docs dir, fake vault — reusable for the mid-flight-dispose test.
+- `merge_library_use_case.dart` API: `call(text) → Either<Failure,
+  MergeOutcome>` (`MergeMerged(MergeResult)` / `MergeDiffersDecision`),
+  `applyJoin(decision) → Either<Failure, MergeResult>`,
+  `applyOverwrite(decision) → Either<Failure, Unit>`.
+- Both list controllers are autoDispose AsyncNotifiers → controller-side
+  `ref.invalidate` is safe with or without listeners.
+- No `create_backup_page_test.dart` exists yet; `fileShareServiceProvider`
+  is the share seam (override-able, see `export_page_share_test.dart`).
 
 ## Proposed approach
 
-1. **Signal watches** (N03 pattern, one line each + doc):
-   - `libraryLanguages`: `ref.watch(libraryControllerProvider)`.
-   - `bookTitle`: `ref.watch(libraryControllerProvider)`.
-   - `pendingSnapshot`: `ref.watch(libraryControllerProvider)` for the books
-     part (session already watched for loans).
-2. **Injectable clock + tick**:
-   - `clockProvider`: `@riverpod int Function() clock(...)` defaulting to wall
-     clock; overridable in tests (matches the existing `int Function()` idiom).
-   - `nowTickProvider`: an autoDispose Stream/Notifier provider that emits
-     periodically (granularity = D1) while watched; `borrowerProfile`,
-     `pendingSnapshot`, and `_LoanRow` watch it so time-based display rolls
-     over on mounted screens. Timer cancelled via `ref.onDispose`.
-   - `borrowerProfile`/`pendingSnapshot` take `now` from `ref.watch(
-     clockProvider)()`; `_LoanRow` reads the same.
-3. **Restore refresh**: `restore_page.dart` also refreshes
-   `wishlistControllerProvider` on success (with the signal watches in place,
-   all derived state then follows automatically).
-4. **D2 (if approved)**: after a successful restore, clear the library-logo
-   setting when its file is absent from the restored covers.
+1. **RestoreController** — adopt the ImportController pattern: `_running` +
+   `_disposed` guards, `ref.keepAlive()` for the duration of `restore()`,
+   catch-all `on Object` → `AsyncError(UnexpectedFailure('Restore failed.'))`.
+   On success, invalidate `libraryControllerProvider` +
+   `wishlistControllerProvider` **in the controller** (next to the existing
+   vault-session invalidation) so the lists refresh even when the page is
+   gone. `inspectArchive` stays stateless/thin.
+2. **restore_page.dart** — `_runRestore` drops all post-await `ref` reads
+   (the controller now owns the refresh); wrap `_pickArchive` in try/catch →
+   `_inspectError` with the existing safe copy.
+3. **ImportController** — on success, invalidate both list controllers in
+   `_run` (same ownership move); page drops `_refreshLists` and the post-await
+   `ref.read(...).hasValue` checks.
+4. **import_page.dart** — try/catch around the pick/read path → `_fileError`
+   safe copy; no post-await `ref` use left.
+5. **merge_page.dart + new `MergeController`** — a `@riverpod` AsyncNotifier
+   (keepAlive during runs, `_running` guard) owning the merge state machine:
+   idle → running → `MergeOutcome` (merged / needs-decision) → applying →
+   done/failed, with safe-copy failures only. It invalidates
+   `libraryControllerProvider` on every successful apply. The page becomes a
+   renderer of the controller state (decision card + result counts unchanged
+   visually) and reads the picked file via `readPickedFileBounded` +
+   `utf8.decode(allowMalformed: true)` (same as import page).
+6. **create_backup_page.dart** — try/catch/finally around the whole
+   `_createAndSave` body: unexpected throw → `_busy = false` + existing
+   generic error copy (guarded by `mounted`). No controller: the operation
+   must NOT survive navigation (the share sheet needs the user present), so
+   page scope is the correct ownership — only the failure paths were missing.
+7. **RemoteCoverMaterializer** — on a `Left` from the use case, `debugPrint`
+   the book id + failure runtime type (debug builds only; no URL/PII). The
+   M09 user-facing decision ("a missing thumbnail is not an error they can
+   act on") stands; this is a developer diagnostic only.
 
 ## Regression tests (prove red on HEAD first)
 
-- `test/core/di/derived_providers_test.dart` (new):
-  - languages: mutate repo languages → invalidate/refresh library controller →
-    provider serves the new list (red on HEAD: stale).
-  - bookTitle: rename → same signal → new title (red on HEAD: stale).
-  - pendingSnapshot: unlocked vault + add a `needsMetadata` book → signal →
-    snapshot includes it (red on HEAD: stale).
-  - clock: override `clockProvider`, loan due at T+1h; at T it is due-soon;
-    advance fake clock past T + fire the tick → overdue (compile-red on HEAD:
-    no `clockProvider`).
-- `test/features/backup/restore_page_test.dart` +1: successful restore
-  refreshes the wishlist controller (red on HEAD: only library refreshed).
+- `restore_controller_test.dart` +N11 group: (a) mid-flight dispose — start
+  a gated restore, drop all listeners, complete → re-listen shows the
+  terminal summary and the vault-session invalidation still ran (red on HEAD:
+  element disposed → fresh idle state); (b) a second `restore()` while one is
+  in flight is refused (red on HEAD: both run); (c) a throwing restorer →
+  `AsyncError(UnexpectedFailure)`, passphrase still wiped (red on HEAD:
+  throw propagates); (d) success invalidates library+wishlist controllers
+  controller-side (moves the N04 page-level test to the right owner).
+- `restore_page_test.dart` +navigate-away widget test: start a gated restore,
+  pop the page, complete → no exception, no crash (red on HEAD: StateError
+  from `ref.read` after unmount).
+- `import_page_test.dart` +navigate-away widget test (same shape; red on
+  HEAD at the post-await `ref.read`).
+- `merge_page_test.dart` reworked onto `MergeController` + new cases:
+  navigate-away mid-merge (red on HEAD: setState-after-dispose), throwing
+  use case → safe error copy (red: unhandled), lying-length pick rejected via
+  the bounded read (red: `readAsString` loads it), decision survives… (state
+  now lives in a keepAlive-linked controller).
+- `create_backup_page_test.dart` (new): throwing share plugin → error copy +
+  busy reset (red on HEAD: unhandled + stuck spinner); unavailable →
+  existing copy; success → "Backup saved.".
+- `remote_cover_materializer_test.dart` +1: a `Left` from the use case is
+  reported through `debugPrint` (intercepted) with the book id (red on HEAD:
+  nothing printed).
 
 ## Decision points
 
-- **D1 — tick granularity:** (a) 60-second periodic tick [recommended: covers
-  intra-day due times and day rollover; a few cheap rebuilds/min, only while a
-  watching screen is mounted]; (b) midnight rollover only [review's literal
-  wording; misses a 15:00 due time]; (c) self-scheduled invalidation at the
-  next due boundary [precise, most complex].
-- **D2 — dangling logo setting (S9 note):** (a) include: clear the logo
-  setting after a restore whose covers lack the file [closes the note];
-  (b) defer: display already falls back to the default icon.
-- **D3 — execution:** end-to-end, or pause at each decision point?
+- **D1 — post-success list refresh ownership (restore + import):**
+  (a) move the invalidation INTO the controllers (restore already invalidates
+  the vault session there — same pattern); refresh happens even when the page
+  was popped mid-operation. (b) keep page-level refresh + `mounted` guards
+  (popped page → underlying list stale until re-entry). Recommend (a).
+- **D2 — merge ownership:** (a) new `MergeController` owning the state
+  machine + library invalidation (mirrors ImportController; page becomes a
+  renderer; merge_page_test reworked). (b) page-driven flow kept; only
+  guards + catch + bounded read. Recommend (a) — the write must be owned
+  above the page, and the decision state surviving navigation is a real UX
+  win. (b) leaves "result lost + stale list on pop" by design.
+- **D3 — create-backup scope:** (a) minimal page fix (try/catch/finally +
+  mounted) — the operation should NOT survive navigation because the share
+  sheet needs the user; (b) new CreateBackupController mirroring
+  ExportController. Recommend (a).
+- **D4 — cover-refusal diagnostic:** (a) debug-only `debugPrint` (book id +
+  failure type) in the materializer now; typed refusal reasons stay with N08.
+  (b) defer all of it to N08. Recommend (a).
+- **D5 — execution:** end-to-end, or pause at each decision point?
 
 ## Steps
 
-- [ ] Baseline gates recorded (analyze 0; format 396/0; flutter 1414; cargo 32).
-- [ ] Regression tests written; proved red on HEAD.
-- [ ] Signal watches on `libraryLanguages`, `bookTitle`, `pendingSnapshot`.
-- [ ] `clockProvider` + `nowTickProvider`; wire into `borrowerProfile`,
-      `pendingSnapshot`, `_LoanRow`.
-- [ ] Restore refreshes the wishlist controller.
-- [ ] (D2) Logo-setting cleanup on restore, if approved.
-- [ ] build_runner (providers.dart is `@riverpod`); confirm only expected
-      `.g.dart` diffs.
-- [ ] End gates: analyze / format / flutter test --coverage / cargo test.
-- [ ] PLAN.md Result; fix-schedule.md §1/§3/§5 updates.
+- [ ] 1. Baseline gates recorded (analyze 0; format 397/0; flutter suite
+  detached; cargo 32).
+- [ ] 2. Write the red regression tests (controller + page level).
+- [ ] 3. Prove them red on HEAD (stash/swap technique as in S14–S19).
+- [ ] 4. RestoreController: keepAlive + guards + catch-all + controller-side
+  list invalidation.
+- [ ] 5. restore_page.dart: slim `_runRestore`, try/catch `_pickArchive`.
+- [ ] 6. ImportController: controller-side list invalidation on success.
+- [ ] 7. import_page.dart: drop post-await ref reads; try/catch pick path.
+- [ ] 8. MergeController + merge_page.dart rework + bounded read.
+- [ ] 9. create_backup_page.dart: try/catch/finally.
+- [ ] 10. RemoteCoverMaterializer debugPrint diagnostic.
+- [ ] 11. build_runner (annotated controllers added/changed) → check only
+  expected `.g.dart` diffs; revert `.fvmrc`/`.gitignore` if touched.
+- [ ] 12. Gates: analyze / format / full flutter suite (detached) / cargo.
+- [ ] 13. Update fix-schedule.md (state block, N11 row, §5 log); ask commit
+  approval with explicit path list.
 
 ## Result
 
-DONE (2026-09-11, Session 19). Decisions: D1=(a) 60 s tick, D2=(a) logo
-cleanup included, D3=end-to-end.
+**Decisions:** D1 (a) controller-owned refresh · D2 (a) MergeController ·
+D3 (a) minimal create-backup page fix · D4 (b) cover-refusal diagnostic
+deferred to N08 · D5 end-to-end.
 
-- Regression tests proved red on HEAD: 3 behaviour-red signal tests
-  (languages/bookTitle/pendingSnapshot stale under an active listener), 2
-  compile-red clock tests (no `clockProvider`/`nowTickProvider` existed), 1
-  behaviour-red restore-page test (`getAllCalls` stayed 1), 1 behaviour-red
-  logo test (`logoWrites` stayed empty).
-- `providers.dart`: `libraryLanguages`, `bookTitle`, `pendingSnapshot` now
-  watch `libraryControllerProvider` (N03 signal pattern); new `clockProvider`
-  (injectable `int Function()`, same idiom as the lookup/publish use cases)
-  and `nowTickProvider` (self-invalidating 60 s timer; value = epoch millis
-  because Riverpod only propagates CHANGED values — a `Stream.periodic` of
-  identical events never rebuilds dependents, verified experimentally);
-  `borrowerProfile` + `pendingSnapshot` take `now` from the clock and rebuild
-  on the tick.
-- `vault_contents_page.dart` `_LoanRow`: same clock + tick (overdue badge
-  rolls over on an open page).
-- `restore_page.dart`: success refreshes the wishlist controller too (restore
-  replaces both tables since M15).
-- `restore_controller.dart`: `_clearDanglingLogoRef` after a successful
-  restore — settings are not in backups, so a logo reference whose file is
-  absent from the post-restore covers set is cleared (fail-open: skipped when
-  settings are not loaded, write Left ignored — the logo widget already falls
-  back to the default icon).
-- Found while implementing: (1) `RestoreBackup` is a `final class` — the logo
-  tests use the real restorer over the real storage chain instead of a fake;
-  (2) `restore_controller_test.dart` ALREADY existed with 6 tests — an
-  initial draft overwrote it by mistake; recovered from HEAD and merged (the
-  6 originals + 3 new all pass); (3) the tick timer breaks the widget-test
-  invariant "no pending timers after tree disposal" for self-managed
-  containers — `borrower_profile_page_test` stubs `nowTickProvider` (documented
-  inline); (4) `container.invalidate` only SCHEDULES a rebuild — tests flush
-  with `await container.pump()`.
-- Gates: analyze 0; format 397/0; flutter test 1423 passed (1414 + 9 new);
-  cargo 32 passed (2 expected ignored); coverage 70.30% (+0.16);
-  `restore_controller.dart` 21/21. Lib-diff scan: no print/log/http/Uri/
-  Platform added. build_runner: only the expected `.g.dart` diffs; `.fvmrc`/
-  `.gitignore` untouched.
+**Red-proof:** 11 behaviour-red on HEAD (restore_controller ×4, restore_page
+×1, import_page ×1, merge_page ×3, create_backup_page ×2) + merge_controller
+compile-red. Two red-proof iterations needed: (1) the navigate-away widget
+tests were timing-flaky — the pop ANIMATION must settle (widget fully
+disposed) before the gate opens, otherwise the continuation races disposal;
+(2) `XFile.fromData.readAsString` never throws (maps bytes to code points),
+so the malformed-UTF8 merge test needed a `_StrictXFile` that strictly
+decodes like the real path-backed picker file. All pre-existing tests in the
+touched files stayed green throughout.
+
+**Changes:**
+- `restore_controller.dart`: `_running`/`_disposed` guards, keepAlive link,
+  catch-all → `AsyncError(UnexpectedFailure)`, controller-side invalidation
+  of vault session + library + wishlist on success; a refused call still
+  wipes the handed-over passphrase.
+- `restore_page.dart`: `_runRestore` no longer touches `ref` after the
+  await; `_pickArchive` wrapped in try/catch → safe copy.
+- `import_controller.dart`: success invalidates both list controllers.
+- `import_page.dart`: `_refreshLists` and post-await `ref.read` gone; pick
+  path wrapped in try/catch.
+- `merge_controller.dart` (new): MergeUiState sealed hierarchy
+  (Idle/Running/NeedsDecision/Done/Failed), keepAlive, `_running` guard,
+  typed terminal states on every path, library invalidation on every
+  successful apply; a failed apply keeps the decision with `applyFailure`.
+- `merge_page.dart`: renders MergeUiState; bounded read via
+  `readPickedFileBounded` + lenient decode (replaces length-then-
+  `readAsString`); confirm dialog copy unchanged (dynamic localIsEmpty).
+- `create_backup_page.dart`: try/catch around the whole run → safe copy +
+  busy reset; operation deliberately stays page-scoped (share sheet needs
+  the user).
+- Tests: restore_controller_test +N11 group (4), restore_page_test
+  +navigate-away (the N04 page-level refresh test moved to controller
+  level — its `_SuccessController` fake bypassed the new ownership),
+  import_page_test +1, merge_page_test +3, merge_controller_test (new, 6),
+  create_backup_page_test (new, 4).
+
+**Gates:** analyze 0 · format 401/0 · flutter **1441 passed / 0 failed**
+(/tmp/pitak-s20-flutter-final.txt) · cargo 32 (2 expected ignored) ·
+coverage **70.91%** (+0.61). Touched files: restore_controller 34/34,
+import_controller 36/36, merge_controller 44/48, merge_page 83/104,
+create_backup_page 53/59, restore_page 140/158, import_page 77/88.
+Lib-diff scan: no print/log/http/Uri/Platform added; `git diff --check`
+clean.
+
+**Found while implementing (out of scope, recorded):** cold `build_runner`
+runs on HEAD already drift two committed hashes (`providers.g.dart`
+pendingSnapshot, `restore_controller.g.dart`) — pre-existing codegen drift,
+not caused by this change; the cold-build-correct hashes are included in
+this commit. `XFile.fromData.readAsString` never throws (byte→code-point
+map) — picker-seam tests needing strict UTF-8 failure must bring their own
+XFile. `ExportController` has the typed-result pattern but no keepAlive
+link — same mid-flight-dispose class as N11, not cited by the review;
+candidate follow-up.

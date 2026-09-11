@@ -1,28 +1,28 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'import_controller.dart';
+part of 'merge_controller.dart';
 
 // **************************************************************************
 // RiverpodGenerator
 // **************************************************************************
 
-String _$importControllerHash() => r'd0b5a09ed9a05580290f7ca5cc469819cd29a649';
+String _$mergeControllerHash() => r'807008e57a2dbfac8a95d059810185ab5399769b';
 
-/// Drives one import at a time and surfaces its safe terminal result.
+/// Runs merges for the Merge screen; idle until [mergeText] is called.
 ///
-/// Copied from [ImportController].
-@ProviderFor(ImportController)
-final importControllerProvider =
-    AutoDisposeAsyncNotifierProvider<ImportController, ImportSummary?>.internal(
-      ImportController.new,
-      name: r'importControllerProvider',
+/// Copied from [MergeController].
+@ProviderFor(MergeController)
+final mergeControllerProvider =
+    AutoDisposeNotifierProvider<MergeController, MergeUiState>.internal(
+      MergeController.new,
+      name: r'mergeControllerProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$importControllerHash,
+          : _$mergeControllerHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
-typedef _$ImportController = AutoDisposeAsyncNotifier<ImportSummary?>;
+typedef _$MergeController = AutoDisposeNotifier<MergeUiState>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

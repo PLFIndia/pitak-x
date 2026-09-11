@@ -11,6 +11,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show hasZipLocalFileHeader;
+import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'import_controller.g.dart';
@@ -71,7 +73,15 @@ class ImportController extends _$ImportController {
       if (!_disposed) {
         state = result.match(
           (failure) => AsyncError(failure, StackTrace.current),
-          AsyncData.new,
+          (summary) {
+            // N11: the import ADDS rows to both lists — refresh them from
+            // HERE so a popped Import page cannot leave the lists underneath
+            // stale (this used to be the page's job, lost with its `ref`).
+            ref
+              ..invalidate(libraryControllerProvider)
+              ..invalidate(wishlistControllerProvider);
+            return AsyncData(summary);
+          },
         );
       }
     } on Object catch (_, stack) {

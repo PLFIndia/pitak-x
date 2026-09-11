@@ -19,17 +19,40 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'restore_controller.g.dart';
 
 /// Drives a one-shot restore and surfaces its [RestoreSummary].
+///
+/// Lifecycle ownership (N11): a restore is an authoritative overwrite that
+/// must FINISH once started, so the run is owned here, not by the page —
+/// modelled on `PublishController`/`ImportController`:
+///  - `ref.keepAlive()` pins this autoDispose element for the run, so
+///    navigating away mid-restore cannot dispose it, swallow the terminal
+///    state, or let a rebuilt page start a SECOND concurrent restore;
+///  - `_running` refuses a second call outright;
+///  - an unexpected throw becomes a typed `AsyncError(UnexpectedFailure)`
+///    instead of escaping into the page's unawaited future;
+///  - the post-success list refresh is invalidated HERE (next to the vault
+///    session invalidation), so it happens even when the page is gone.
 @riverpod
 class RestoreController extends _$RestoreController {
+  /// True while a restore runs — a second call is refused (N11).
+  bool _running = false;
+
+  /// True after this element was disposed (container teardown mid-run).
+  bool _disposed = false;
+
   @override
-  FutureOr<RestoreSummary?> build() => null; // idle until restore() is run
+  FutureOr<RestoreSummary?> build() {
+    ref.onDispose(() => _disposed = true);
+    return null; // idle until restore() is run
+  }
 
   /// Inspects the archive's manifest WITHOUT restoring (N13): the Restore
   /// screen runs this right after a file is picked so it can show what the
@@ -52,6 +75,17 @@ class RestoreController extends _$RestoreController {
     required Uint8List archiveBytes,
     SecretBytes? passphrase,
   }) async {
+    if (_running || _disposed) {
+      // Refused — but the caller already handed over the secret, so wipe it
+      // anyway: ownership transfers at call time, never leaks (§6.1).
+      passphrase?.dispose();
+      return;
+    }
+    _running = true;
+    // keepAlive for the duration of the run (PublishController pattern):
+    // without it, popping the page mid-restore lets autoDispose destroy this
+    // element while the restorer is still working.
+    final link = ref.keepAlive();
     state = const AsyncLoading();
     try {
       final restorer = await ref.read(restoreBackupProvider.future);
@@ -59,26 +93,43 @@ class RestoreController extends _$RestoreController {
         archiveBytes: archiveBytes,
         passphrase: passphrase,
       );
-      state = result.match(
-        (failure) => AsyncError(failure, StackTrace.current),
-        (summary) {
-          // Restore switched the app onto a new data generation (M02): the
-          // vault-store provider has already been republished, and the
-          // session controller WATCHES it, so it rebuilds on its own (wiping
-          // any held secret via ref.onDispose). The explicit invalidation is
-          // kept as belt-and-braces for the keepAlive session: it costs one
-          // rebuild and guarantees the vault page never shows a stale
-          // "Create vault"/"Unlock" state, even if a future provider change
-          // breaks the watch chain.
-          ref.invalidate(vaultSessionControllerProvider);
-          return AsyncData(summary);
-        },
-      );
-      if (state.hasValue) await _clearDanglingLogoRef();
+      if (!_disposed) {
+        state = result.match(
+          (failure) => AsyncError(failure, StackTrace.current),
+          (summary) {
+            ref
+              // Restore switched the app onto a new data generation (M02): the
+              // vault-store provider has already been republished, and the
+              // session controller WATCHES it, so it rebuilds on its own
+              // (wiping any held secret via ref.onDispose). The explicit
+              // invalidation is kept as belt-and-braces for the keepAlive
+              // session: it costs one rebuild and guarantees the vault page
+              // never shows a stale "Create vault"/"Unlock" state, even if a
+              // future provider change breaks the watch chain.
+              ..invalidate(vaultSessionControllerProvider)
+              // N11: restore replaces books AND the wishlist (M15) — refresh
+              // both lists from HERE so a popped Restore page cannot leave the
+              // lists underneath stale (this used to be the page's job, lost
+              // with its `ref`).
+              ..invalidate(libraryControllerProvider)
+              ..invalidate(wishlistControllerProvider);
+            return AsyncData(summary);
+          },
+        );
+        if (state.hasValue) await _clearDanglingLogoRef();
+      }
+    } on Object catch (_, stack) {
+      // Unexpected plugin/storage throw → typed terminal state, never an
+      // unhandled error in the page's unawaited future (§5, N11).
+      if (!_disposed) {
+        state = AsyncError(const UnexpectedFailure('Restore failed.'), stack);
+      }
     } finally {
       // §6.1: wipe the passphrase regardless of outcome (null for vault-free
       // archives — nothing to wipe).
       passphrase?.dispose();
+      _running = false;
+      link.close();
     }
   }
 

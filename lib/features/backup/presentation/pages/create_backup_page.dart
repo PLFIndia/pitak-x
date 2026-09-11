@@ -33,47 +33,61 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
       _done = false;
     });
 
-    final useCase = await ref.read(createBackupUseCaseProvider.future);
-    final result = await useCase();
-    if (!mounted) return;
+    // N11: the use-case provider build, the archive build and the share
+    // plugin can all throw unexpectedly — fail closed with safe copy and a
+    // reset busy flag instead of an unhandled async error + stuck spinner.
+    // The operation deliberately does NOT survive navigation: the share
+    // sheet needs the user present, so a popped page simply drops the result.
+    try {
+      final useCase = await ref.read(createBackupUseCaseProvider.future);
+      final result = await useCase();
+      if (!mounted) return;
 
-    await result.match(
-      (failure) async {
-        setState(() {
-          _busy = false;
-          _error = _messageFor(failure);
-        });
-      },
-      (bytes) async {
-        final now = DateTime.now();
-        final stamp =
-            '${now.year}${_two(now.month)}${_two(now.day)}-'
-            '${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
-        final fileName = 'Pitak-backup-$stamp.pitabak';
-        final box = context.findRenderObject() as RenderBox?;
-        final origin = (box != null && box.hasSize)
-            ? box.localToGlobal(Offset.zero) & box.size
-            : null;
-        final outcome = await ref
-            .read(fileShareServiceProvider)
-            .shareBytes(
-              bytes: bytes,
-              fileName: fileName,
-              // .pitabak is an opaque encrypted archive — generic binary type.
-              mimeType: 'application/octet-stream',
-              sharePositionOrigin: origin,
-            );
-        if (mounted) {
+      await result.match(
+        (failure) async {
           setState(() {
             _busy = false;
-            _done = outcome == ShareOutcome.success;
-            if (outcome == ShareOutcome.unavailable) {
-              _error = 'Sharing is unavailable on this device.';
-            }
+            _error = _messageFor(failure);
           });
-        }
-      },
-    );
+        },
+        (bytes) async {
+          final now = DateTime.now();
+          final stamp =
+              '${now.year}${_two(now.month)}${_two(now.day)}-'
+              '${_two(now.hour)}${_two(now.minute)}${_two(now.second)}';
+          final fileName = 'Pitak-backup-$stamp.pitabak';
+          final box = context.findRenderObject() as RenderBox?;
+          final origin = (box != null && box.hasSize)
+              ? box.localToGlobal(Offset.zero) & box.size
+              : null;
+          final outcome = await ref
+              .read(fileShareServiceProvider)
+              .shareBytes(
+                bytes: bytes,
+                fileName: fileName,
+                // .pitabak is an opaque encrypted archive — generic binary.
+                mimeType: 'application/octet-stream',
+                sharePositionOrigin: origin,
+              );
+          if (mounted) {
+            setState(() {
+              _busy = false;
+              _done = outcome == ShareOutcome.success;
+              if (outcome == ShareOutcome.unavailable) {
+                _error = 'Sharing is unavailable on this device.';
+              }
+            });
+          }
+        },
+      );
+    } on Object {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = 'Something went wrong creating the backup.';
+        });
+      }
+    }
   }
 
   static String _two(int n) => n.toString().padLeft(2, '0');

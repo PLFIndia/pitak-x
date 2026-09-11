@@ -6,6 +6,8 @@
 /// library + wishlist lists so imported rows appear immediately.
 library;
 
+import 'dart:typed_data';
+
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,8 +18,6 @@ import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits, hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 
 /// Screen to import a library/wishlist from pasted text or a chosen file.
 class ImportPage extends ConsumerStatefulWidget {
@@ -41,17 +41,14 @@ class _ImportPageState extends ConsumerState<ImportPage> {
     super.dispose();
   }
 
-  Future<void> _refreshLists() async {
-    await ref.read(libraryControllerProvider.notifier).refresh();
-    await ref.read(wishlistControllerProvider.notifier).refresh();
-  }
-
   Future<void> _importText() async {
     final text = _text.text.trim();
     if (text.isEmpty) return;
     setState(() => _fileError = null);
+    // N11: the controller owns the run AND the post-success list refresh —
+    // nothing after this await touches `ref`, so leaving the page mid-import
+    // cannot crash and the refresh cannot be lost with the page.
     await ref.read(importControllerProvider.notifier).importText(text);
-    if (ref.read(importControllerProvider).hasValue) await _refreshLists();
   }
 
   Future<void> _importFile() async {
@@ -59,31 +56,47 @@ class _ImportPageState extends ConsumerState<ImportPage> {
       label: 'Library export',
       extensions: ['json', 'csv', 'zip', 'pitabundle'],
     );
-    final file = await openFile(acceptedTypeGroups: [group]);
-    if (file == null) return;
-    // Bounded read (REVIEW_FINDINGS_2 S4, hardened by M05): the parsers'
-    // limits only run AFTER the whole file is in memory, so the cap has to be
-    // enforced while reading. The cap depends on the format, sniffed from the
-    // first four bytes without loading the file:
-    //  - text (JSON/CSV): ImportLimits.maxTextChars — UTF-8 never has more
-    //    characters than bytes, so a byte cap is a sound early reject and the
-    //    parser re-checks the decoded length regardless;
-    //  - bundle (ZIP magic): ZipLimits.maxArchiveBytes — the extractor
-    //    re-checks it and bounds the decompressed contents separately.
-    // `readPickedFileBounded` counts the bytes that actually arrive, so a
-    // lying file length cannot get around either cap.
-    final maxBytes = await _hasZipMagic(file)
-        ? ZipLimits.pitakaBackup.maxArchiveBytes
-        : ImportLimits.defaults.maxTextChars;
-    final bytes = await readPickedFileBounded(file, maxBytes: maxBytes);
-    if (!mounted) return;
-    if (bytes == null) {
-      setState(() => _fileError = 'File is too large to import safely.');
+    // N11: the picker plugin and the bounded read can throw (platform
+    // errors, disappearing files) — fail closed with safe copy instead of an
+    // unhandled async error.
+    final XFile file;
+    final Uint8List bytes;
+    try {
+      final picked = await openFile(acceptedTypeGroups: [group]);
+      if (picked == null) return;
+      file = picked;
+      // Bounded read (REVIEW_FINDINGS_2 S4, hardened by M05): the parsers'
+      // limits only run AFTER the whole file is in memory, so the cap has to
+      // be enforced while reading. The cap depends on the format, sniffed
+      // from the first four bytes without loading the file:
+      //  - text (JSON/CSV): ImportLimits.maxTextChars — UTF-8 never has more
+      //    characters than bytes, so a byte cap is a sound early reject and
+      //    the parser re-checks the decoded length regardless;
+      //  - bundle (ZIP magic): ZipLimits.maxArchiveBytes — the extractor
+      //    re-checks it and bounds the decompressed contents separately.
+      // `readPickedFileBounded` counts the bytes that actually arrive, so a
+      // lying file length cannot get around either cap.
+      final maxBytes = await _hasZipMagic(file)
+          ? ZipLimits.pitakaBackup.maxArchiveBytes
+          : ImportLimits.defaults.maxTextChars;
+      final read = await readPickedFileBounded(file, maxBytes: maxBytes);
+      if (read == null) {
+        if (!mounted) return;
+        setState(() => _fileError = 'File is too large to import safely.');
+        return;
+      }
+      bytes = read;
+    } on Object {
+      if (!mounted) return;
+      setState(
+        () => _fileError = 'Could not read that file. Please try again.',
+      );
       return;
     }
+    if (!mounted) return;
     setState(() => _fileError = null);
+    // See _importText: the controller owns the run and the refresh.
     await ref.read(importControllerProvider.notifier).importBytes(bytes);
-    if (ref.read(importControllerProvider).hasValue) await _refreshLists();
   }
 
   /// Sniffs the 4-byte ZIP local-file-header magic WITHOUT loading the file,

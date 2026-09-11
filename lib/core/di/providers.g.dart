@@ -1805,7 +1805,7 @@ class _BorrowerProfileProviderElement
   int get borrowerId => (origin as BorrowerProfileProvider).borrowerId;
 }
 
-String _$pendingSnapshotHash() => r'6d681104d1107558f0fe25861c405733edac9675';
+String _$pendingSnapshotHash() => r'49a6e23baf531178e17b9f6f78a12fa400007c62';
 
 /// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
 /// (from the unlocked vault) and needs-metadata books (from the library), or

@@ -22,9 +22,7 @@ import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits;
-import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 
 /// Screen that restores a backup archive over the current device state.
 class RestorePage extends ConsumerStatefulWidget {
@@ -67,51 +65,68 @@ class _RestorePageState extends ConsumerState<RestorePage> {
   void _onPassphraseChanged() => setState(() {});
 
   Future<void> _pickArchive() async {
-    const group = XTypeGroup(label: 'Pitak backup', extensions: ['pitabak']);
-    final file = await openFile(acceptedTypeGroups: [group]);
-    if (file == null) return;
-    // M05: read under the archive cap. The extractor re-checks the same cap,
-    // but enforcing it here means an oversized pick is never buffered at all.
-    final bytes = await readPickedFileBounded(
-      file,
-      maxBytes: ZipLimits.pitakaBackup.maxArchiveBytes,
-    );
-    if (!mounted) return;
-    if (bytes == null) {
+    // N11: the picker plugin and the bounded read can throw (platform
+    // errors, disappearing files) — fail closed with safe copy instead of an
+    // unhandled async error.
+    try {
+      const group = XTypeGroup(label: 'Pitak backup', extensions: ['pitabak']);
+      final file = await openFile(acceptedTypeGroups: [group]);
+      if (file == null) return;
+      // M05: read under the archive cap. The extractor re-checks the same
+      // cap, but enforcing it here means an oversized pick is never buffered
+      // at all.
+      final bytes = await readPickedFileBounded(
+        file,
+        maxBytes: ZipLimits.pitakaBackup.maxArchiveBytes,
+      );
+      if (!mounted) return;
+      if (bytes == null) {
+        setState(() {
+          _archiveBytes = null;
+          _archiveName = null;
+          _manifest = null;
+          _inspectError = const ValidationFailure(
+            'This file is too large to be a Pitak backup.',
+          );
+          _inspecting = false;
+        });
+        return;
+      }
+      setState(() {
+        _archiveBytes = bytes;
+        _archiveName = file.name;
+        _manifest = null;
+        _inspectError = null;
+        _inspecting = true;
+      });
+      // N13: bounded manifest read first — no restore, no passphrase yet.
+      final inspected = await ref
+          .read(restoreControllerProvider.notifier)
+          .inspectArchive(bytes);
+      if (!mounted) return;
+      setState(() {
+        _inspecting = false;
+        inspected.match((failure) {
+          _inspectError = failure;
+          _manifest = null;
+          // An unreadable archive can never be restored; drop it so the
+          // button state cannot lie.
+          _archiveBytes = null;
+          _archiveName = null;
+        }, (manifest) => _manifest = manifest);
+      });
+    } on Object {
+      if (!mounted) return;
       setState(() {
         _archiveBytes = null;
         _archiveName = null;
         _manifest = null;
-        _inspectError = const ValidationFailure(
-          'This file is too large to be a Pitak backup.',
-        );
         _inspecting = false;
+        _inspectError = const ValidationFailure(
+          'Could not read that file. Please try again.',
+        );
       });
-      return;
     }
-    setState(() {
-      _archiveBytes = bytes;
-      _archiveName = file.name;
-      _manifest = null;
-      _inspectError = null;
-      _inspecting = true;
-    });
-    // N13: bounded manifest read first — no restore, no passphrase yet.
-    final inspected = await ref
-        .read(restoreControllerProvider.notifier)
-        .inspectArchive(bytes);
-    if (!mounted) return;
-    setState(() {
-      _inspecting = false;
-      inspected.match((failure) {
-        _inspectError = failure;
-        _manifest = null;
-        // An unreadable archive can never be restored; drop it so the
-        // button state cannot lie.
-        _archiveBytes = null;
-        _archiveName = null;
-      }, (manifest) => _manifest = manifest);
-    });
   }
 
   /// Whether the picked archive needs a passphrase at all (N13): only
@@ -134,17 +149,16 @@ class _RestorePageState extends ConsumerState<RestorePage> {
     final secret = manifest.hasBackupBlob ? _passphrase.takeSecret() : null;
     if (manifest.hasBackupBlob && secret == null) return;
     // The controller takes ownership of `secret` and disposes it.
+    //
+    // N11: the controller owns the whole run — keep-alive, typed terminal
+    // state, and the post-success refresh of the library AND wishlist lists
+    // (N04: restore replaces both; derived providers — languages, titles,
+    // reminders — follow via their controller watches). Nothing after this
+    // await touches `ref`: leaving the page mid-restore must not crash, and
+    // the refresh must not depend on the page still being here.
     await ref
         .read(restoreControllerProvider.notifier)
         .restore(archiveBytes: bytes, passphrase: secret);
-
-    // On success, refresh the library AND wishlist lists so restored rows
-    // show immediately (N04: restore replaces both; derived providers —
-    // languages, titles, reminders — follow via their controller watches).
-    if (ref.read(restoreControllerProvider).hasValue) {
-      await ref.read(libraryControllerProvider.notifier).refresh();
-      await ref.read(wishlistControllerProvider.notifier).refresh();
-    }
   }
 
   @override

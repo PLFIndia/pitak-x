@@ -6,9 +6,21 @@ part of 'restore_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$restoreControllerHash() => r'f2f768d245b5bce53e671880e9a9123236daf924';
+String _$restoreControllerHash() => r'd69ae195c05614b35aee56514dc223cb415109ba';
 
 /// Drives a one-shot restore and surfaces its [RestoreSummary].
+///
+/// Lifecycle ownership (N11): a restore is an authoritative overwrite that
+/// must FINISH once started, so the run is owned here, not by the page —
+/// modelled on `PublishController`/`ImportController`:
+///  - `ref.keepAlive()` pins this autoDispose element for the run, so
+///    navigating away mid-restore cannot dispose it, swallow the terminal
+///    state, or let a rebuilt page start a SECOND concurrent restore;
+///  - `_running` refuses a second call outright;
+///  - an unexpected throw becomes a typed `AsyncError(UnexpectedFailure)`
+///    instead of escaping into the page's unawaited future;
+///  - the post-success list refresh is invalidated HERE (next to the vault
+///    session invalidation), so it happens even when the page is gone.
 ///
 /// Copied from [RestoreController].
 @ProviderFor(RestoreController)

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -235,5 +236,75 @@ void main() {
 
     expect(find.text('Import complete'), findsOneWidget);
     expect(find.text('Books added: 1'), findsOneWidget);
+  });
+
+  testWidgets('N11: leaving the page mid-import neither crashes nor loses '
+      'the import', (tester) async {
+    // The import outlives the page (the controller keep-alives the run and
+    // owns the post-success list refresh). Popping Import mid-run used to
+    // throw StateError in the page's post-await `ref.read` (widget ref dead).
+    final gate = Completer<void>();
+    final books = _MemBookRepo();
+    final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: books,
+      wishlistRepo: _MemWishlistRepo(),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          importLibraryUseCaseProvider.overrideWith((ref) async {
+            await gate.future;
+            return useCase;
+          }),
+          bookRepositoryProvider.overrideWith((ref) async => _MemBookRepo()),
+          wishlistRepositoryProvider.overrideWith(
+            (ref) async => _MemWishlistRepo(),
+          ),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const ImportPage()),
+                ),
+                child: const Text('open import'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open import'));
+    await tester.pumpAndSettle();
+
+    final json = jsonEncode({
+      'schemaVersion': 3,
+      'exportedAt': 0,
+      'books': [
+        {'title': 'Imported', 'isbn': '999'},
+      ],
+      'wishlist': <dynamic>[],
+    });
+    await tester.enterText(find.byType(TextField), json);
+    await tester.tap(find.text('Import text'));
+    await tester.pump(); // the import is now parked on the gated provider
+
+    // Leave the page mid-import. Settle FIRST: the pop animation must
+    // finish so the widget is fully disposed before the import completes —
+    // otherwise the continuation races the disposal and the test is flaky.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(
+      books.stored.single.title,
+      'Imported',
+      reason: 'the import itself must still complete (keep-alive)',
+    );
   });
 }

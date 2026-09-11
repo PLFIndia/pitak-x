@@ -4,6 +4,7 @@
 /// demand a password the user never created.
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -22,18 +23,10 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
-import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
-import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
-import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
-import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
-import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
@@ -81,97 +74,50 @@ class _FakeFileSelector extends FileSelectorPlatform {
   }
 }
 
-/// N04: a controller whose inspect/restore always succeed (vault-free), so
-/// the page's post-success refresh path runs without the restorer machinery.
-class _SuccessController extends RestoreController {
-  @override
-  RestoreSummary? build() => null;
+/// N11: a vault that parks inside `unlockAndRead` until the test says so,
+/// then refuses — this is how a test holds a restore mid-flight.
+class _GatedVault with VaultWriteUnsupported implements VaultRepository {
+  _GatedVault({required this.entered, required this.gate});
+
+  /// Completes once the restore has reached the vault unlock.
+  final Completer<void> entered;
+
+  /// The test's release valve for the parked unlock.
+  final Completer<void> gate;
 
   @override
-  Future<Either<Failure, BackupManifest>> inspectArchive(
-    Uint8List archiveBytes,
-  ) async => right(
-    const BackupManifest(
-      exportedAt: 123,
-      hasBorrowers: false,
-      hasBackupBlob: false,
-    ),
-  );
-
-  @override
-  Future<void> restore({
-    required Uint8List archiveBytes,
-    SecretBytes? passphrase,
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
   }) async {
-    state = const AsyncData(
-      RestoreSummary(
-        booksRestored: 1,
-        wishlistRestored: 1,
-        borrowersRestored: 0,
-        loansRestored: 0,
-        existingVaultKept: true,
-      ),
-    );
+    if (!entered.isCompleted) entered.complete();
+    await gate.future;
+    return left(const WrongPassphraseFailure());
   }
 }
 
-/// Counts `getAll` calls so the test can prove the wishlist was re-read.
-class _CountingWishlistRepo extends DriftWishlistRepository {
-  _CountingWishlistRepo(super.db);
-
-  int getAllCalls = 0;
-
-  @override
-  Future<Either<Failure, List<WishlistBook>>> getAll() {
-    getAllCalls++;
-    return super.getAll();
-  }
-}
-
-/// Minimal in-memory settings repo (the library controller watches the sort).
-class _SettingsRepoStub implements SettingsRepository {
-  AppSettings settings = AppSettings.defaults;
-
-  @override
-  Future<AppSettings> load() async => settings;
-  @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLibraryName(String name) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, String>> getOrCreateLibraryId() async =>
-      right('a' * 32);
-  @override
-  Future<Either<Failure, Unit>> setLibraryId(String id) async => right(unit);
-  @override
-  Future<Either<Failure, String>> regenerateLibraryId() async =>
-      right('b' * 32);
-  @override
-  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLoadRemoteCovers({
-    required bool enabled,
-  }) async => right(unit);
-  @override
-  Future<Either<Failure, Unit>> setPublishContact({
-    required String address,
-    required String gps,
-    required String email,
-    required String phone,
-  }) async => right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setAppLockBiometric({
-    required bool enabled,
-  }) async => right(unit);
+/// A vault-CARRYING archive (manifest + backup_blob + borrowers.db) so the
+/// restorer reaches the vault unlock phase.
+Uint8List _vaultArchive() {
+  final manifest = utf8.encode(
+    jsonEncode({
+      'schemaVersion': 1,
+      'exportedAt': 123,
+      'hasBooks': false,
+      'hasWishlist': false,
+      'hasBorrowers': true,
+      'hasBackupBlob': true,
+      'hasCovers': false,
+    }),
+  );
+  final blob = utf8.encode('blob-from-archive');
+  final borrowersDb = utf8.encode('opaque-encrypted-db');
+  final a = Archive()
+    ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
+    ..addFile(ArchiveFile('backup_blob', blob.length, blob))
+    ..addFile(ArchiveFile('borrowers.db', borrowersDb.length, borrowersDb));
+  return Uint8List.fromList(ZipEncoder().encode(a)!);
 }
 
 Uint8List _archive({required bool withVault, int exportedAt = 123}) {
@@ -391,54 +337,75 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('N04: a successful restore refreshes the wishlist too', (
-    tester,
-  ) async {
-    // Restore replaces books AND the wishlist (M15), but the page used to
-    // refresh only the library list — a mounted wishlist tab kept showing
-    // pre-restore rows until restart.
-    final wishlist = _CountingWishlistRepo(gen.db);
+  testWidgets('N11: leaving the page mid-restore neither crashes nor loses '
+      'the terminal state', (tester) async {
+    // The restore outlives the page (keep-alive in the controller). Popping
+    // Restore mid-run used to throw StateError in the page's post-await
+    // `ref.read` (widget ref dead) AND dispose the controller mid-flight.
+    final entered = Completer<void>();
+    final gate = Completer<void>();
+    final vault = _GatedVault(entered: entered, gate: gate);
     final container = ProviderContainer(
       overrides: [
-        restoreControllerProvider.overrideWith(_SuccessController.new),
-        bookRepositoryProvider.overrideWith(
-          (ref) async => DriftBookRepository(gen.db),
+        restoreBackupProvider.overrideWith(
+          (ref) async =>
+              gen.restorer(vault: vault, guard: FakeReplacementGuard()),
         ),
-        settingsRepositoryProvider.overrideWith(
-          (ref) async => _SettingsRepoStub(),
-        ),
-        wishlistRepositoryProvider.overrideWith((ref) async => wishlist),
+        vaultStoreProvider.overrideWith((ref) async => gen.store),
+        vaultRepositoryProvider.overrideWithValue(vault),
       ],
     );
     addTearDown(container.dispose);
-    FileSelectorPlatform.instance = _FakeFileSelector(
-      _archive(withVault: false),
-    );
+    FileSelectorPlatform.instance = _FakeFileSelector(_vaultArchive());
 
-    // Mounted tabs keep both list controllers alive, like the real shell.
-    final wishlistSub = container.listen(
-      wishlistControllerProvider,
-      (_, __) {},
+    // A listener held by the TEST (not the page) so the terminal state is
+    // observable after the page is gone.
+    AsyncValue<RestoreSummary?> lastSeen = const AsyncLoading();
+    final sub = container.listen(
+      restoreControllerProvider,
+      (_, next) => lastSeen = next,
     );
-    final librarySub = container.listen(libraryControllerProvider, (_, __) {});
-    addTearDown(wishlistSub.close);
-    addTearDown(librarySub.close);
-    await container.read(wishlistControllerProvider.future);
-    expect(wishlist.getAllCalls, 1);
+    addTearDown(sub.close);
 
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(home: RestorePage()),
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const RestorePage()),
+                ),
+                child: const Text('open restore'),
+              ),
+            ),
+          ),
+        ),
       ),
     );
-    await pick(tester);
-    await tester.ensureVisible(find.text('Restore'));
-    await tester.tap(find.text('Restore'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('open restore'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Restore complete'), findsOneWidget);
-    // Initial load + the post-restore refresh.
-    expect(wishlist.getAllCalls, 2);
+    await pick(tester);
+    await tester.enterText(find.byType(TextField), 'abc');
+    await tester.pump();
+    await tester.ensureVisible(find.text('Restore'));
+    await tester.tap(find.text('Restore'));
+    await tester.pump();
+    // The restore is now parked inside the (gated) vault unlock.
+    await entered.future;
+
+    // Leave the page mid-restore. Settle FIRST: the pop animation must
+    // finish so the widget is fully disposed before the restore completes —
+    // otherwise the continuation races the disposal and the test is flaky.
+    await tester.tap(find.byType(BackButton));
+    await tester.pumpAndSettle();
+    gate.complete();
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(lastSeen.error, isA<WrongPassphraseFailure>());
   });
 }

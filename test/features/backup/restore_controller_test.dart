@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -11,6 +12,7 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -18,8 +20,11 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 
+import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
+import 'generation_fixture.dart';
 
 /// Fake vault: never loads the native lib. Returns empty data (unused in the
 /// corrupt-archive path, but required by the RestoreBackup constructor).
@@ -343,6 +348,166 @@ void main() {
           .restore(archiveBytes: emptyArchive());
 
       expect(settings.logoWrites, isEmpty);
+    });
+  });
+
+  group('N11 — restore lifecycle ownership', () {
+    /// Container wired like the page's harness: a real restorer over a real
+    /// on-disk generation, gated so a test can park a restore mid-flight.
+    ProviderContainer gatedContainer({required Completer<void> gate}) {
+      final gen = GenerationFixture(tmp);
+      addTearDown(() async => gen.db.close());
+      final container = ProviderContainer(
+        overrides: [
+          restoreBackupProvider.overrideWith((ref) async {
+            await gate.future;
+            return gen.restorer(
+              vault: _FakeVault(),
+              guard: FakeReplacementGuard(),
+            );
+          }),
+          vaultStoreProvider.overrideWith((ref) async => gen.store),
+          vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => _LogoSettingsRepo(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('an in-flight restore keeps its terminal state when the page goes '
+        'away', () async {
+      // The page watches the controller; popping it removes the last
+      // listener. Without a keep-alive link autoDispose disposes the element
+      // mid-flight: the terminal state is swallowed and a re-entered page
+      // sees a fresh IDLE controller while the restore still runs.
+      final gate = Completer<void>();
+      final container = gatedContainer(gate: gate);
+
+      final sub = container.listen(restoreControllerProvider, (_, __) {});
+      final future = container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: vaultOnlyArchive(),
+            passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
+          );
+      expect(container.read(restoreControllerProvider).isLoading, isTrue);
+
+      sub.close(); // the page is popped: last listener gone
+      await container.pump(); // flush the scheduled autoDispose
+      gate.complete();
+      await future;
+
+      // Read in the same microtask turn: the keep-alive link closed in the
+      // finally schedules disposal on the NEXT event-loop turn (verified in
+      // riverpod-2.6.1 scheduler: `_defaultVsync` = `Future(task)`), so the
+      // element is still here.
+      expect(
+        container.read(restoreControllerProvider).value,
+        isNotNull,
+        reason: 'the terminal summary must survive navigation (keep-alive)',
+      );
+    });
+
+    test('a second restore while one is in flight is refused', () async {
+      // The other half of the hazard: without a re-entrancy guard a rebuilt
+      // page (or a double-tap race) starts a SECOND restore over the one
+      // still running.
+      final gate = Completer<void>();
+      final container = gatedContainer(gate: gate);
+      final sub = container.listen(restoreControllerProvider, (_, __) {});
+      addTearDown(sub.close);
+
+      final first = container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: vaultOnlyArchive(),
+            passphrase: SecretBytes(Uint8List.fromList([1])),
+          );
+      final refusedSecret = SecretBytes(Uint8List.fromList([2]));
+      var secondDone = false;
+      final second = container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: vaultOnlyArchive(), passphrase: refusedSecret)
+          .then((_) => secondDone = true);
+      await pumpEventQueue();
+
+      expect(
+        secondDone,
+        isTrue,
+        reason: 'a concurrent restore must be refused immediately, not queued',
+      );
+      // A refused call still wipes the secret it was handed (§6.1).
+      expect(() => refusedSecret.use((b) => b), throwsStateError);
+
+      gate.complete();
+      await first;
+      await second;
+      expect(container.read(restoreControllerProvider).hasValue, isTrue);
+    });
+
+    test('an unexpected throw becomes AsyncError(UnexpectedFailure) and the '
+        'passphrase is still wiped', () async {
+      // A throwing plugin/provider must not escape into the page's unawaited
+      // future — the controller owns a typed terminal state on EVERY path.
+      final container = ProviderContainer(
+        overrides: [
+          restoreBackupProvider.overrideWith(
+            (ref) async => throw StateError('plugin exploded'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final passphrase = SecretBytes(Uint8List.fromList([7]));
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: Uint8List.fromList([0]),
+            passphrase: passphrase,
+          );
+
+      final state = container.read(restoreControllerProvider);
+      expect(state.error, isA<UnexpectedFailure>());
+      expect(() => passphrase.use((b) => b), throwsStateError);
+    });
+
+    test('a successful restore invalidates the library and wishlist '
+        'controllers', () async {
+      // N04 behaviour, N11 ownership: the refresh used to be the page's job
+      // (lost when the page was popped mid-restore); the controller owns it.
+      final container = makeContainer(settings: _LogoSettingsRepo());
+      var libraryBuilds = 0;
+      var wishlistBuilds = 0;
+      container
+        ..listen(
+          libraryControllerProvider,
+          (_, __) => libraryBuilds++,
+          fireImmediately: true,
+        )
+        ..listen(
+          wishlistControllerProvider,
+          (_, __) => wishlistBuilds++,
+          fireImmediately: true,
+        );
+      await container.read(libraryControllerProvider.future);
+      await container.read(wishlistControllerProvider.future);
+      final libraryBaseline = libraryBuilds;
+      final wishlistBaseline = wishlistBuilds;
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(
+            archiveBytes: vaultOnlyArchive(),
+            passphrase: SecretBytes(Uint8List.fromList([1, 2, 3])),
+          );
+      expect(container.read(restoreControllerProvider).hasValue, isTrue);
+      await container.pump(); // flush the invalidations into rebuilds
+
+      expect(libraryBuilds, greaterThan(libraryBaseline));
+      expect(wishlistBuilds, greaterThan(wishlistBaseline));
     });
   });
 }
