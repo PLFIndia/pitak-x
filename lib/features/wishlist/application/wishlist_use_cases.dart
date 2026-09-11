@@ -210,7 +210,19 @@ class MarkWishlistPurchasedUseCase {
       }
     }
 
-    final inserted = await books.insert(_toLibraryBook(book, stamp));
+    // M15: the wishlist row may predate the S17 validation gate (or come
+    // from a restored backup), so the built library book is validated before
+    // it is inserted. A Left refuses the move INSIDE the transaction, so the
+    // wishlist purchase rolls back with it. The returned entity is the
+    // normalised one (e.g. a hostile cover is dropped, not copied).
+    final checked = Book.validate(_toLibraryBook(book, stamp));
+    final toInsert = checked.fold<Book?>((errors) => null, (valid) => valid);
+    if (toInsert == null) {
+      return left(
+        ValidationFailure(checked.getLeft().toNullable()!.first.userMessage),
+      );
+    }
+    final inserted = await books.insert(toInsert);
     if (inserted.isLeft()) {
       return left((inserted as Left<Failure, Book>).value);
     }

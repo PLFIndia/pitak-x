@@ -10,6 +10,7 @@ import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
+import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 void main() {
@@ -44,6 +45,19 @@ void main() {
     File(path).writeAsBytesSync(bytes);
     return path;
   }
+
+  // M15: the reader now returns Either<Failure, LegacyRows<T>>. These tests
+  // round-trip rows the writer just produced, which are always valid, so the
+  // unwrap-or-fail helpers keep the assertions readable.
+  List<Book> readBooksOk(CommonDatabase db) => LegacyDbReader(db)
+      .readBooks()
+      .fold((f) => fail('readBooks refused a written row: $f'), (r) => r.books);
+
+  List<WishlistBook> readWishlistOk(CommonDatabase db) =>
+      LegacyDbReader(db).readWishlist().fold(
+        (f) => fail('readWishlist refused a written row: $f'),
+        (r) => r.books,
+      );
 
   test('writes a manifest reflecting no vault when none exists', () {
     final bytes = writer.build(
@@ -90,7 +104,7 @@ void main() {
     final booksDb = entry(unzip(bytes), 'books.db')!;
     final db = sqlite3.open(stageDb(booksDb, 'rt_books.db'));
     addTearDown(db.dispose);
-    final read = LegacyDbReader(db).readBooks();
+    final read = readBooksOk(db);
 
     expect(read.length, 2);
     final first = read.firstWhere((b) => b.id == 1);
@@ -127,7 +141,7 @@ void main() {
       );
       expect(ftsTables, isEmpty);
       // Books still round-trip through our own restore reader.
-      expect(LegacyDbReader(db).readBooks().single.title, 'Findable');
+      expect(readBooksOk(db).single.title, 'Findable');
       // Room identity row is still present (no module dependency).
       final master = db.select(
         'SELECT identity_hash FROM room_master_table WHERE id = 42',
@@ -156,7 +170,7 @@ void main() {
       stageDb(entry(unzip(bytes), 'wishlist.db')!, 'rt_wishlist.db'),
     );
     addTearDown(db.dispose);
-    final read = LegacyDbReader(db).readWishlist();
+    final read = readWishlistOk(db);
     expect(read.single.title, 'Wanted');
     expect(read.single.priceEstimate, 12.5);
     expect(read.single.priority, WishlistBook.priorityLow);

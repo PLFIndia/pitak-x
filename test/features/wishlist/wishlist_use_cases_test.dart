@@ -300,6 +300,52 @@ void main() {
       // pipeline can materialise it for the new library row.
       expect(book.coverUrl, 'https://covers.openlibrary.org/b/id/1-L.jpg');
     });
+
+    // M15 part 2: a wishlist row persisted BEFORE the S17 gate (or restored
+    // from a hostile backup) can carry values the move must not copy into
+    // the library. These rows are inserted straight into the repo with the
+    // plain constructor to simulate that pre-gate state.
+    group('M15 — the move validates the built library book', () {
+      test('over-cap notes refuse the move; nothing is written', () async {
+        final ins = ok(
+          await repo.insert(WishlistBook(title: 'Old', notes: 'x' * 8001)),
+        );
+        final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+
+        final r = await useCase(ins.id, moveToLibrary: true, now: 5);
+
+        expect(err(r), isA<ValidationFailure>());
+        expect(ok(await realBooks.getAll()), isEmpty);
+        expect(
+          ok(await repo.getById(ins.id))!.purchased,
+          isFalse,
+          reason: 'the purchase must roll back with the refused insert',
+        );
+      });
+
+      test(
+        'a hostile cover is dropped on the moved book, not copied',
+        () async {
+          final ins = ok(
+            await repo.insert(
+              const WishlistBook(
+                title: 'Old',
+                coverUrl: 'https://tracker.example/c.jpg',
+              ),
+            ),
+          );
+          final useCase = MarkWishlistPurchasedUseCase(repo, books: realBooks);
+
+          final outcome = ok(
+            await useCase(ins.id, moveToLibrary: true, now: 5),
+          );
+
+          expect(outcome, isA<MarkPurchasedSuccess>());
+          final book = ok(await realBooks.getAll()).single;
+          expect(book.coverUrl, isNull);
+        },
+      );
+    });
   });
 }
 

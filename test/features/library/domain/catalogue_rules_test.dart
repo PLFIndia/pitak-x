@@ -61,24 +61,27 @@ void main() {
       expect(CatalogueRules.isValidPrice(double.negativeInfinity), isFalse);
     });
 
-    test('dateFromMillisOrNull: invalid and unset → null, valid → DateTime', () {
-      // Display/export guard for rows persisted before M15: rendering must
-      // never throw on an out-of-range legacy value.
-      expect(CatalogueRules.dateFromMillisOrNull(0), isNull);
-      expect(CatalogueRules.dateFromMillisOrNull(-1), isNull);
-      expect(
-        CatalogueRules.dateFromMillisOrNull(CatalogueRules.maxDateMillis + 1),
-        isNull,
-      );
-      expect(
-        CatalogueRules.dateFromMillisOrNull(1699999999000),
-        DateTime.fromMillisecondsSinceEpoch(1699999999000),
-      );
-      expect(
-        CatalogueRules.dateFromMillisOrNull(CatalogueRules.maxDateMillis),
-        isNotNull,
-      );
-    });
+    test(
+      'dateFromMillisOrNull: invalid and unset → null, valid → DateTime',
+      () {
+        // Display/export guard for rows persisted before M15: rendering must
+        // never throw on an out-of-range legacy value.
+        expect(CatalogueRules.dateFromMillisOrNull(0), isNull);
+        expect(CatalogueRules.dateFromMillisOrNull(-1), isNull);
+        expect(
+          CatalogueRules.dateFromMillisOrNull(CatalogueRules.maxDateMillis + 1),
+          isNull,
+        );
+        expect(
+          CatalogueRules.dateFromMillisOrNull(1699999999000),
+          DateTime.fromMillisecondsSinceEpoch(1699999999000),
+        );
+        expect(
+          CatalogueRules.dateFromMillisOrNull(CatalogueRules.maxDateMillis),
+          isNotNull,
+        );
+      },
+    );
 
     test('isValidFieldText: null or within the cap', () {
       expect(CatalogueRules.isValidFieldText(null), isTrue);

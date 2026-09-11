@@ -73,10 +73,10 @@ class _FakeFileSelector extends FileSelectorPlatform {
   }
 }
 
-Uint8List _archive({required bool withVault}) {
+Uint8List _archive({required bool withVault, int exportedAt = 123}) {
   final manifest = jsonEncode({
     'schemaVersion': 1,
-    'exportedAt': 123,
+    'exportedAt': exportedAt,
     'hasBooks': true,
     'hasWishlist': true,
     'hasBorrowers': withVault,
@@ -272,5 +272,21 @@ void main() {
     await pick(tester);
     expect(find.textContaining('too large'), findsNothing);
     expect(find.textContaining('No borrowers vault'), findsOneWidget);
+  });
+
+  testWidgets('M15: an out-of-range manifest exportedAt renders without a '
+      'date instead of throwing', (tester) async {
+    // The manifest is untrusted: exportedAt above DateTime's range used to
+    // throw RangeError inside _ManifestSummary.build on INSPECT, before any
+    // passphrase or restore.
+    await tester.pumpWidget(
+      wrap(_archive(withVault: false, exportedAt: 8640000000000001)),
+    );
+    await pick(tester);
+
+    // The page renders the summary; the date line is simply absent.
+    expect(find.textContaining('No borrowers vault'), findsOneWidget);
+    expect(find.textContaining('Made on:'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }

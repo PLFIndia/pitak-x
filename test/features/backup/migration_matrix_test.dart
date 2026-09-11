@@ -98,7 +98,8 @@ void main() {
       ..execute('''
         INSERT INTO wishlist_books VALUES(
           9, 'Wanted', 'Wanted-tr', 'Author W', '9991112223334', 'Pub W',
-          2020, 'https://x/c.jpg', 19.99, 2, 'want it', 'SCANNED',
+          2020, 'https://covers.openlibrary.org/b/id/1-L.jpg', 19.99, 2,
+          'want it', 'SCANNED',
           1698000000000, 1, 1699000000000, 1);
       ''')
       ..dispose();
@@ -198,7 +199,10 @@ void main() {
     expect(w.isbn, '9991112223334');
     expect(w.publisher, 'Pub W');
     expect(w.publishedYear, 2020);
-    expect(w.coverUrl, 'https://x/c.jpg');
+    // M15: the fixture uses an allow-listed host so the byte-for-byte
+    // contract is exercised on a cover that is KEPT (a non-allow-listed host
+    // is now normalised to null — covered by the M15 group below).
+    expect(w.coverUrl, 'https://covers.openlibrary.org/b/id/1-L.jpg');
     expect(w.priceEstimate, 19.99);
     expect(w.priority, 2);
     expect(w.notes, 'want it');
@@ -254,5 +258,130 @@ void main() {
     final db = await restored();
     final b = (await db.select(db.books).get()).single;
     expect(b.ageGroup, 'above-10');
+  });
+
+  group('M15 — a hostile books.db is refused before any write', () {
+    // Builds a books.db whose single row carries one hostile column value.
+    // [columnValue] is a SQL literal for [column] (e.g. '1e400', '0'). The
+    // baseline valid row is built as a map so [column] can OVERRIDE any
+    // single column (including added_date / copy_count / title) without
+    // duplicating it in the INSERT.
+    Uint8List hostileBooksDb(String column, String columnValue) {
+      final path = '${tmp.path}/hostile_books.db';
+      final cols = <String, String>{
+        'id': '42',
+        'book_uid': "'uid-42'",
+        'title': "'Godan'",
+        'added_date': '1699999999000',
+        'copy_count': '1',
+        column: columnValue,
+      };
+      sqlite3.open(path)
+        ..execute('''
+          CREATE TABLE books(
+            id INTEGER PRIMARY KEY NOT NULL, book_uid TEXT, title TEXT NOT NULL,
+            title_transliteration TEXT, author TEXT,
+            title_sort TEXT NOT NULL DEFAULT '',
+            author_sort TEXT NOT NULL DEFAULT '', isbn TEXT, publisher TEXT,
+            published_year INTEGER, genre TEXT, cover_url TEXT,
+            page_count INTEGER, language TEXT, notes TEXT, location TEXT,
+            source_type TEXT, source_detail TEXT, age_group TEXT,
+            added_date INTEGER NOT NULL, copy_count INTEGER NOT NULL DEFAULT 1,
+            needs_metadata INTEGER NOT NULL DEFAULT 0,
+            removed INTEGER NOT NULL DEFAULT 0, removed_at INTEGER,
+            added_by TEXT);
+        ''')
+        ..execute(
+          'INSERT INTO books(${cols.keys.join(',')}) '
+          'VALUES(${cols.values.join(',')})',
+        )
+        ..dispose();
+      return File(path).readAsBytesSync();
+    }
+
+    Uint8List hostileArchive(String column, String columnValue) => archive({
+      'manifest.json': utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 1,
+          'hasBackupBlob': false,
+          'hasBorrowers': false,
+          'hasWishlist': false,
+        }),
+      ),
+      'books.db': hostileBooksDb(column, columnValue),
+    });
+
+    // Restores [zip] and asserts: typed ValidationFailure, the pre-restore
+    // generation is untouched, and no builder directory lingers.
+    Future<ValidationFailure> expectRefused(Uint8List zip) async {
+      final p = SecretBytes(Uint8List.fromList([1]));
+      final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+      p.dispose();
+      final failure = result.fold((f) => f, (_) => fail('expected refusal'));
+      expect(failure, isA<ValidationFailure>());
+      // The device is byte-identical on its pre-restore generation.
+      expect(gen.current().name, gen.active.name);
+      final db = await restored();
+      expect(await db.select(db.books).get(), isEmpty);
+      // No half-built generation remains in the data directory.
+      final dataDir = Directory('${tmp.path}/data');
+      final gens = dataDir
+          .listSync()
+          .whereType<Directory>()
+          .where((d) => d.path.contains('gen-'))
+          .toList();
+      expect(gens, hasLength(1), reason: 'only the active generation');
+      return failure as ValidationFailure;
+    }
+
+    test(
+      'added_date above maxDateMillis is refused with a safe message',
+      () async {
+        final f = await expectRefused(
+          hostileArchive('added_date', '8640000000000001'),
+        );
+        expect(f.message, contains('books row 42'));
+        expect(f.message, contains('date added'));
+      },
+    );
+
+    test('copy_count 0 is refused', () async {
+      final f = await expectRefused(hostileArchive('copy_count', '0'));
+      expect(f.message, contains('Copies'));
+    });
+
+    test('a blank title is refused', () async {
+      final f = await expectRefused(hostileArchive('title', "'   '"));
+      expect(f.message, contains('title'));
+    });
+
+    test('over-cap notes are refused, not truncated (D1 = a)', () async {
+      final long = 'x' * 8001;
+      final f = await expectRefused(hostileArchive('notes', "'$long'"));
+      expect(f.message, contains('notes'));
+      expect(f.message, isNot(contains('xxx')));
+    });
+
+    test('added_date REAL Infinity is a typed refusal, not a throw', () async {
+      final f = await expectRefused(hostileArchive('added_date', '1e400'));
+      expect(f.message, contains('date added'));
+    });
+
+    test('a non-allow-listed cover is dropped; restore succeeds and reports '
+        'the drop', () async {
+      final zip = hostileArchive(
+        'cover_url',
+        "'https://tracker.example/c.jpg'",
+      );
+      final p = SecretBytes(Uint8List.fromList([1]));
+      final result = await restorer().restore(archiveBytes: zip, passphrase: p);
+      p.dispose();
+      final summary = result.getOrElse((f) => fail('restore failed: $f'));
+      expect(summary.coversDropped, 1);
+      final db = await restored();
+      final row = (await db.select(db.books).get()).single;
+      expect(row.coverUrl == null, isTrue);
+    });
   });
 }

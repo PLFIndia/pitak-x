@@ -13,6 +13,7 @@ class RestoreSummary {
     required this.loansRestored,
     this.danglingLoans = const [],
     this.existingVaultKept = false,
+    this.coversDropped = 0,
   });
 
   /// Number of library books written.
@@ -35,6 +36,15 @@ class RestoreSummary {
   /// M03: successful retention now requires a fresh unlocked integrity check
   /// and preservation of every loan's book identity, including returned loans.
   final bool existingVaultKept;
+
+  /// Cover references normalised to null by validation (M15): the restored
+  /// row pointed at a site the app no longer loads covers from, so the link
+  /// was removed rather than persisted. The book itself is kept.
+  final int coversDropped;
+
+  /// True when restore changed anything the user should know about beyond
+  /// the row counts (today: dropped cover links).
+  bool get hasAdjustments => coversDropped > 0;
 
   /// True when restored loans resolve, or retained loan links were verified
   /// and preserved. A retained but unchecked vault can no longer succeed.

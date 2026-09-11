@@ -23,6 +23,7 @@ import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits;
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 
 /// Screen that restores a backup archive over the current device state.
 class RestorePage extends ConsumerStatefulWidget {
@@ -241,12 +242,15 @@ class _ManifestSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final exported = DateTime.fromMillisecondsSinceEpoch(manifest.exportedAt);
-    final date = manifest.exportedAt > 0
-        ? '${exported.year}-'
+    // M15: the manifest is untrusted. `dateFromMillisOrNull` returns null for
+    // 0 (unset) AND for a value outside DateTime's range, where
+    // `DateTime.fromMillisecondsSinceEpoch` would throw inside build().
+    final exported = CatalogueRules.dateFromMillisOrNull(manifest.exportedAt);
+    final date = exported == null
+        ? null
+        : '${exported.year}-'
               '${exported.month.toString().padLeft(2, '0')}-'
-              '${exported.day.toString().padLeft(2, '0')}'
-        : null;
+              '${exported.day.toString().padLeft(2, '0')}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -317,6 +321,14 @@ class _RestoreOutcome extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text(integrity, style: textTheme.bodySmall),
+            if (summary.hasAdjustments) ...[
+              const SizedBox(height: 4),
+              Text(
+                '${summary.coversDropped} cover link(s) were removed because '
+                'they pointed to unsupported sites.',
+                style: textTheme.bodySmall,
+              ),
+            ],
           ],
         );
       },

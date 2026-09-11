@@ -328,6 +328,8 @@ final class RestoreBackup {
           // M03: a retained vault was freshly checked by the guard; every
           // loan's book identity was preserved by the plan, or we refused.
           existingVaultKept: scope.retainedLoanBookIds != null,
+          // M15: cover refs dropped by validation (unsupported hosts).
+          coversDropped: legacy.coversDropped,
         ),
       );
     } on _ReplacementRefused catch (e) {
@@ -466,11 +468,18 @@ final class RestoreBackup {
         return left(const BackupCorruptFailure('Archive missing books.db'));
       }
       final path = _stage(work, _booksDbEntry, bytes);
+      // M15: the reader validates every row; a Left here is either a typed
+      // ValidationFailure (an invalid row — surfaced verbatim) or a
+      // BackupCorruptFailure from _withDb (the DB could not be opened/read).
       final readResult = _withDb(path, (db) => LegacyDbReader(db).readBooks());
-      if (readResult.isLeft()) {
-        return readResult.match(left, (_) => throw StateError('unreachable'));
+      final validated = _flatten(readResult);
+      if (validated.isLeft()) {
+        return left(validated.getLeft().toNullable()!);
       }
-      rows.books = readResult.getOrElse((_) => const []);
+      final books = validated.getOrElse((_) => throw StateError('x'));
+      rows
+        ..books = books.books
+        ..coversDropped = rows.coversDropped + books.coversDropped;
     }
     if (manifest.hasWishlist) {
       final bytes = files[_wishlistDbEntry];
@@ -482,13 +491,23 @@ final class RestoreBackup {
         path,
         (db) => LegacyDbReader(db).readWishlist(),
       );
-      if (readResult.isLeft()) {
-        return readResult.match(left, (_) => throw StateError('unreachable'));
+      final validated = _flatten(readResult);
+      if (validated.isLeft()) {
+        return left(validated.getLeft().toNullable()!);
       }
-      rows.wishlist = readResult.getOrElse((_) => const []);
+      final wishlist = validated.getOrElse((_) => throw StateError('x'));
+      rows
+        ..wishlist = wishlist.books
+        ..coversDropped = rows.coversDropped + wishlist.coversDropped;
     }
     return right(rows);
   }
+
+  /// Flattens `_withDb`'s outer Either (open/read failure) with the reader's
+  /// inner Either (a refused row), preserving the typed failure either way.
+  static Either<Failure, LegacyRows<T>> _flatten<T>(
+    Either<Failure, Either<Failure, LegacyRows<T>>> nested,
+  ) => nested.match(left, (inner) => inner);
 
   Either<Failure, T> _withDb<T>(
     String path,
@@ -525,4 +544,8 @@ final class _ReplacementRefused implements Exception {
 class _LegacyRows {
   List<Book> books = const [];
   List<WishlistBook> wishlist = const [];
+
+  /// Cover references normalised to null by validation (M15), surfaced in
+  /// the [RestoreSummary] so the user knows a link was removed.
+  int coversDropped = 0;
 }
