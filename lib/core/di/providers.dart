@@ -47,10 +47,12 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
+import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -95,7 +97,9 @@ import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_v
 import 'package:pitaka/features/vault/infrastructure/local_auth_biometric_authenticator.dart';
 import 'package:pitaka/features/vault/infrastructure/open_vault_from_archive.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
+import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -588,6 +592,55 @@ Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
   final repo = await ref.watch(bookRepositoryProvider.future);
   final book = (await repo.getById(bookId)).toNullable();
   return book?.title;
+}
+
+/// One library book, observed by id, for a detail screen (N03).
+///
+/// Why a provider and not the `Book` the list row was tapped with: a detail
+/// page can stay open while the row changes underneath it — a cover captured
+/// on that very page rewrites `coverUrl`, the remote-cover materializer may
+/// swap an `https://` reference for a local file, an edit saves new fields.
+/// A snapshot handed in at push time never learns any of this, and passing it
+/// on to the edit form wrote stale values back over the fresh row (a cover
+/// file the janitor had already deleted came back as the row's cover).
+///
+/// Freshness signal: every mutation path in the app already invalidates or
+/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move). Watching it here —
+/// value ignored — makes this provider re-read the row on the same signal,
+/// with no new plumbing. The repository has no row streams (N04); when it
+/// gains one this dependency is the single line to swap.
+///
+/// `null` = the row no longer exists. A repository `Left` is thrown so the
+/// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+@riverpod
+Future<Book?> bookById(BookByIdRef ref, int bookId) async {
+  ref.watch(libraryControllerProvider);
+  final repo = await ref.watch(bookRepositoryProvider.future);
+  final result = await repo.getById(bookId);
+  return result.fold(
+    // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
+    (failure) => throw failure,
+    (book) => book,
+  );
+}
+
+/// One wishlist entry, observed by id, for its detail screen (N03).
+/// Same shape and rationale as [bookById]; the freshness signal is
+/// [wishlistControllerProvider], which every wishlist mutation refreshes.
+@riverpod
+Future<WishlistBook?> wishlistBookById(
+  WishlistBookByIdRef ref,
+  int bookId,
+) async {
+  ref.watch(wishlistControllerProvider);
+  final repo = await ref.watch(wishlistRepositoryProvider.future);
+  final result = await repo.getById(bookId);
+  return result.fold(
+    // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
+    (failure) => throw failure,
+    (book) => book,
+  );
 }
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or

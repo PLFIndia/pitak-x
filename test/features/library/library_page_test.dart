@@ -40,8 +40,12 @@ class _FakeBookRepo implements BookRepository {
 
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  // N03: the detail page observes its row by id, so the fake must answer
+  // from the same list the rows came from.
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, Book?>> getById(int id) async => failWith != null
+      ? left(failWith!)
+      : right(_all.where((b) => b.id == id).firstOrNull);
   @override
   Future<Either<Failure, List<Book>>> query({
     required BookSort sort,
@@ -78,10 +82,12 @@ Widget _app(BookRepository repo) {
 }
 
 void main() {
+  // Distinct ids: rows are opened by id (N03), and three books sharing the
+  // `emptyId` sentinel would be indistinguishable to the detail page.
   const books = [
-    Book(title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
-    Book(title: 'Dune', author: 'Herbert'),
-    Book(title: 'Old Tales', removed: true),
+    Book(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    Book(id: 2, title: 'Dune', author: 'Herbert'),
+    Book(id: 3, title: 'Old Tales', removed: true),
   ];
 
   testWidgets('renders all books newest-first on load', (tester) async {

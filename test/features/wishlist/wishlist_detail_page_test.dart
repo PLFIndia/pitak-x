@@ -9,6 +9,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_detail_page.dart';
@@ -134,7 +135,10 @@ Widget _host(_MemWishlistRepo wishlist, _ScriptedBookRepo books) =>
               child: TextButton(
                 onPressed: () => Navigator.of(context).push(
                   MaterialPageRoute<void>(
-                    builder: (_) => const WishlistDetailPage(book: _entry),
+                    builder: (_) => WishlistDetailPage(
+                      bookId: _entry.id,
+                      initialBook: _entry,
+                    ),
                   ),
                 ),
                 child: const Text('open detail'),
@@ -160,7 +164,98 @@ final _flagButton = find.widgetWithText(
   'Mark as purchased only',
 );
 
+/// What the application layer does after a background write to the wishlist.
+void _signalWishlistChanged(WidgetTester tester) {
+  ProviderScope.containerOf(
+    tester.element(find.byType(WishlistDetailPage)),
+  ).invalidate(wishlistControllerProvider);
+}
+
 void main() {
+  testWidgets(
+    'N03: a row rewritten while the page is open is shown without re-entry',
+    (tester) async {
+      final wishlist = _MemWishlistRepo([_entry]);
+      await tester.pumpWidget(_host(wishlist, _ScriptedBookRepo()));
+      await _openDetail(tester);
+      expect(find.text('Wanted'), findsOneWidget, reason: 'Status row');
+
+      wishlist.books[0] = _entry.copyWith(
+        title: 'Wanted One (2nd ed.)',
+        purchased: true,
+        purchasedDate: 1,
+      );
+      _signalWishlistChanged(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Wanted One (2nd ed.)'), findsOneWidget);
+      expect(find.text('Wanted One'), findsNothing);
+      expect(find.text('Purchased'), findsOneWidget);
+      // Purchase buttons disappear because the CURRENT row is purchased.
+      expect(_moveButton, findsNothing);
+      expect(_flagButton, findsNothing);
+    },
+  );
+
+  testWidgets('N03: an entry deleted underneath shows a safe empty state', (
+    tester,
+  ) async {
+    final wishlist = _MemWishlistRepo([_entry]);
+    await tester.pumpWidget(_host(wishlist, _ScriptedBookRepo()));
+    await _openDetail(tester);
+
+    wishlist.books.clear();
+    _signalWishlistChanged(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('no longer'), findsOneWidget);
+    expect(find.text('Wanted One'), findsNothing);
+    expect(find.byTooltip('Edit'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'N03: Edit from the detail page saves on top of the CURRENT row',
+    (tester) async {
+      final wishlist = _MemWishlistRepo([_entry]);
+      await tester.pumpWidget(_host(wishlist, _ScriptedBookRepo()));
+      await _openDetail(tester);
+
+      // The row moved on after the page was pushed (cover materialised).
+      wishlist.books[0] = _entry.copyWith(coverUrl: 'covers/new.jpg');
+      _signalWishlistChanged(tester);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit wishlist item'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Title *'),
+        'Wanted One (revised)',
+      );
+      // Drop focus first: a focused field scrolls itself back into view once
+      // the fling settles, which would unbuild the lazily built save button.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pump();
+      final saveBtn = find.byType(FilledButton);
+      await tester.scrollUntilVisible(
+        saveBtn,
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(saveBtn);
+      await tester.pumpAndSettle();
+
+      final saved = wishlist.books.single;
+      expect(saved.title, 'Wanted One (revised)');
+      expect(saved.coverUrl, 'covers/new.jpg', reason: 'fresh cover kept');
+      // Back on the detail page showing the edited row (no pop to the list).
+      expect(find.text('Wanted One (revised)'), findsOneWidget);
+      expect(find.text('open detail'), findsNothing);
+    },
+  );
+
   testWidgets(
     'M13: a failed purchase stays on the page, shows a safe message, and '
     'keeps the purchase buttons for a retry',

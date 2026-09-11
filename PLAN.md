@@ -1,144 +1,210 @@
-# PLAN.md — Release 1.2.0+17: Play AAB build
+# PLAN.md — Session 16: N03 (detail page observes the book by ID)
+
+Roadmap: `fix-schedule.md` §3 row N03. Review source: `astra-review.md` N03.
 
 ## Understanding
 
-Build the Google Play `.aab` for the 23 commits landed since the last Play
-upload (`6219438`, 1.1.10+16, accepted 2026-09-04). Remaining review findings
-(N03, M15, N04, N11, N08, N07, N09, N10 in `fix-schedule.md`) are deferred by
-user decision — this release ships what is on `main` now.
+`BookDetailPage` (`lib/features/library/presentation/pages/book_detail_page.dart:55–59`)
+is a `ConsumerWidget` handed a `Book` snapshot from the list
+(`library_page.dart:204`). Everything on the page renders `book.*` from that
+snapshot, and the Edit action (`:80–92`) pushes `AddBookPage(book: book)` with
+the same snapshot. Two things mutate the row while the page is open:
 
-User constraints: signing must be the SAME upload key Play already knows;
-build must run after `flutter clean` so no stale Dart snapshot is packaged
-(the 1.1.10+15 incident, `appDetails.md` §5).
+1. `_EditableCover` → `BookCoverController.replaceCover(widget.book, raw)`
+   (`book_cover_controller.dart:38–68`) — writes `coverUrl = covers/<new>.jpg`
+   to the DB, then `janitor.releaseReference(book.coverUrl)` deletes the OLD
+   file. Only `_EditableCoverState._coverUrl` is updated; the page's `book`
+   still says `coverUrl = covers/<old>.jpg`.
+2. `RemoteCoverMaterializer` (M09) may rewrite `coverUrl` from an `https://`
+   URL to a local file at any time while the page is open (asked from
+   `BookCover`, which already takes `bookId`).
 
-Version: **1.2.0+17** (user chose minor bump for the security release;
-17 > every code Play has ever seen, including discarded 15).
+The bug: **capture cover → tap Edit → change the title → Save.**
+`AddBookPage._buildBook()` (`add_book_page.dart:202–237`) copies
+`base?.coverUrl` (the stale snapshot) into the saved `Book`, and
+`UpdateBookUseCase` → `DriftBookRepository.update` writes it verbatim. The
+row now points at `covers/<old>.jpg`, whose file the janitor already deleted
+→ placeholder; and `covers/<new>.jpg` becomes an orphan the janitor will
+sweep on next startup. The user's photo is lost.
+
+Secondary (same root cause): a second `replaceCover` in the same visit passes
+the ORIGINAL snapshot's `coverUrl` to `releaseReference`, so the intermediate
+file is not released until the startup sweep (review note); and all detail
+rows show pre-edit values after Edit, which is why the page currently pops
+itself after Edit (`:87–91`) instead of showing the fresh row.
+
+Verified live on HEAD `1cf334b` by reading every file above; the review's
+line numbers are stale but the shapes are intact.
 
 ## Privacy & threat notes
 
-- No code changes in this task — only `pubspec.yaml` version, a Play changelog
-  and this file. Permissions unchanged (`CAMERA`, `INTERNET`, `USE_BIOMETRIC`),
-  `allowBackup=false` unchanged.
-- Signing secrets stay where they are: `~/pitak-upload.jks` (chmod 600, outside
-  repo) + `android/key.properties` (git-ignored). Neither is printed or copied.
-- Threat: a debug-signed or stale artifact reaching Play. Mitigations:
-  `build.gradle.kts` fails closed without key.properties; post-build
-  `jarsigner` + content-string checks below.
+No new data, no network, no new permission. All changes are in-process reads
+of the local Drift row already displayed. Threat model unchanged: the cover
+file lives under app-private storage; the fix only stops a stale reference
+from being persisted. No secrets touched. No logging added.
 
-## Investigation notes (verified 2026-09-10, HEAD `17e3140` = `origin/main`)
+## Investigation notes
 
-- Keystore: PKCS12, alias `pitak-upload`, RSA 2048, valid to 2053, SHA-256
-  `35:FB:C7:0A:4F:4D:FB:5B:2A:D4:2D:EE:70:53:DE:E6:1E:93:18:F0:38:69:E3:7F:CE:FE:3A:2D:67:D9:E3:DB`
-  — matches the upload cert recorded in `appDetails.md` §6. `key.properties`
-  alias matches.
-- `android/app/build.gradle.kts:130-153`: `bundlePlayRelease` throws when
-  key.properties is absent (fail closed). Play flavor applicationId
-  `dev.khoj.pitaka`.
-- Toolchain: FVM Flutter 3.44.2 (`.fvmrc`), Dart 3.12.2, JDK 21 via
-  `~/.gradle/gradle.properties`, NDK 28.2.13676358 (matches
-  `FlutterExtension.kt`), Rust android targets ×4, cmdline-tools present, no
-  `cargokit.yaml` → Rust built from source.
-- targetSdk/compileSdk 36 (Flutter defaults). minSdk 23.
-- Gates on HEAD before bump: analyze 0; format 389/0; `flutter test` 1322
-  passed; `cargo test --release` 32 passed; build_runner 0 outputs, no diff.
-- `pubspec.yaml:24` was `1.1.10+16` → code 16 already used on Play → bump
-  mandatory.
-- Sentinel strings for the content check (exist ONLY in post-16 code):
-  `Could not save the purchase. Nothing was changed`
-  (`lib/features/wishlist/presentation/pages/wishlist_detail_page.dart:188`, M13).
-  Control string from 1.1.9: `Google Books API key`.
+- `BookRepository.getById(int)` exists (`book_repository.dart:27`) and returns
+  `Either<Failure, Book?>`. Drift 2.28.2 is present; there is no stream API on
+  the repository (N04 territory — NOT added here).
+- Existing single-row read-model precedent: `bookTitleProvider`
+  (`providers.dart:586–591`) — a `@riverpod` family over `getById`. Same shape
+  is the natural home for a `bookByIdProvider`.
+- Every mutation path already signals via `libraryControllerProvider`
+  (`invalidate`/`refresh` in `book_cover_controller.dart:66`,
+  `remote_cover_materializer.dart:86`, `add_book_page.dart:258`,
+  `library_controller.dart` remove/restore). A `bookById` family that
+  `ref.watch`es `libraryControllerProvider` is rebuilt by all of them with
+  zero new plumbing — the "consistent mutation-version signal" the review's
+  N04 direction names, reused rather than invented.
+- `AddBookPage` is `ConsumerStatefulWidget`; `_buildBook()` uses
+  `widget.book` as `base`. In edit mode it needs the FRESH row at save time
+  for the fields it does not edit (`coverUrl`, `removed`, `removedAt`,
+  `addedBy`, `bookUid`), while form fields stay the user's typed values.
+- 29 `implements BookRepository` fakes exist — adding a repository method is
+  a 29-file change; adding a provider is not. Provider route chosen.
+- `WishlistDetailPage` has the same snapshot shape but NO in-page mutation
+  that changes the row while it is open (purchase pops on success, edit pops
+  after). The lost-write bug cannot occur there today — the decision below
+  asks whether to touch it anyway.
 
-## Proposed approach
+## Proposed approach (OSS references)
 
-Follow `appDetails.md` §5 "Play release — step by step" exactly. No new
-tooling. OSS reference: none needed (release procedure is this repo's own).
+Riverpod's own documented pattern for "one entity by id that stays fresh":
+a family provider the page watches (Riverpod docs, "Passing arguments to your
+requests"; same as this repo's `bookTitleProvider` / `borrowerProfileProvider`).
+
+1. **`bookByIdProvider(int id)`** in `core/di/providers.dart` (`@riverpod`
+   family, autoDispose): `ref.watch(libraryControllerProvider)` for the
+   invalidation signal (value ignored), then `repo.getById(id)`; Left → throw
+   the `Failure` (Riverpod → `AsyncError`, same idiom as `library_controller.dart`).
+   Null → the book is gone.
+2. **`BookDetailPage(bookId:)`** replaces `BookDetailPage(book:)`. The page
+   `ref.watch(bookByIdProvider(bookId))` and renders loading / safe error /
+   "no longer exists" / data. The data branch is the existing body, unchanged
+   except that `book` comes from the provider. `_EditableCover` drops its
+   `_coverUrl` copy and renders the observed book's `coverUrl`; `replaceCover`
+   gets the observed (fresh) book, so the second-replace janitor case is fixed
+   too. The post-Edit `pop()` is removed: the page now shows truth.
+   Keep the initial `Book` as an optional `initialBook` so the first frame is
+   not a spinner when pushed from the list (render it until the provider has
+   data). Decision D2 below.
+3. **`AddBookPage` edit mode uses a fresh snapshot at save.** In `_save()`,
+   when `_isEdit`, re-read `getById(widget.book!.id)` and pass THAT as the
+   base for the non-form fields. If the row is gone → `NotFoundFailure`
+   surfaced through the existing `AddBookController` error path. Cheapest
+   robust form: give `_buildBook` a `Book base` parameter. This alone closes
+   the lost-cover bug even if some other caller passes a stale snapshot.
+4. **Tests (regression first, prove red on HEAD):**
+   - `test/features/library/book_detail_page_test.dart` (new): (A) row
+     changes (`coverUrl` rewritten in the repo + `libraryController`
+     invalidated) → page re-renders with the new value without re-entry;
+     (B) capture-then-edit: after the repo's cover changed, tapping Edit
+     opens `AddBookPage` and Save keeps the NEW cover — red on HEAD;
+     (C) book deleted while open → safe "no longer exists" state, no crash;
+     (D) repo Left → safe error text, no raw exception.
+   - `test/features/library/add_book_page_test.dart`: (E) edit mode with a
+     stale `book:` whose `coverUrl` differs from the repo row → saved row
+     keeps the repo's cover — red on HEAD.
+   - `book_cover_controller_test.dart`: unchanged contract; add (F) only if
+     the controller signature changes (it does not).
 
 ## Decision points
 
-- D1 version string: **(b) 1.2.0+17** — decided by user.
-- D2 F-Droid side: user asked for it after the AAB ("so the fdroid bot picks
-  it up"). Mirror recipe blocks copied verbatim from 1.1.10 (option a; the
-  `output:` path divergence from upstream fdroiddata stays as-is — upstream is
-  authoritative and the bot copies upstream's own block).
+- **D1 (asked first, per fix-schedule §3 row):** scope — library detail page
+  only, or also `WishlistDetailPage`? → **(b) both pages** (user, S16).
+  Wishlist gets the same shape: `wishlistBookByIdProvider(id)` family
+  watching `wishlistControllerProvider` as its signal; `WishlistDetailPage`
+  observes by id; `AddWishlistPage` edit mode re-reads the row at save.
+- **D2:** first-frame behaviour — (a) accept `initialBook` and render it until
+  the provider resolves (no spinner flash); (b) `bookId` only, spinner on
+  first frame. Proposed: (a). → **(a)** taken as the proposed default under
+  the end-to-end go-ahead (user did not object).
+- **D3:** execute end-to-end or pause at each decision point? →
+  **end-to-end** (user, S16); pause only if an assumption breaks.
 
 ## Steps
 
-- [x] 1. Verify signing consistency, toolchain, gates (above).
-- [x] 2. Bump `pubspec.yaml` → `1.2.0+17`.
-- [x] 3. Add `fastlane/metadata/android/en-US/changelogs/17.txt` (493 chars ≤ 500).
-- [x] 4. Rewrite `PLAN.md` for this task.
-- [x] 5. Committed `229e765` (`pubspec.yaml`, `changelogs/17.txt`, `PLAN.md`). Not pushed.
-- [x] 6. `fvm flutter clean` (build/ + .dart_tool/ gone; cargokit's Rust target
-      dir is Gradle `buildDir`, so Android .so files also rebuilt) →
-      `pub get --enforce-lockfile` OK.
-- [x] 7. `fvm flutter build appbundle --release --flavor play` — **188 s**,
-      Rust built for armv7/arm64/x86_64, no debug-signing warning in log
-      (`/tmp/pitak-aab-build.log`).
-- [x] 8. Artifact verified (see Result).
-- [ ] 9. Sideload/phone check and Console upload — user's action.
-
-### F-Droid tag housekeeping (added at user request)
-
-- [x] 10. `changelogs/171.txt 172.txt 173.txt` = byte-identical copies of `17.txt`
-      (`cmp` verified; same pattern as 15 → 151/152/153).
-- [x] 11. `fdroid/metadata/dev.khoj.pitaka.fdroid.yml`: three 1.2.0 blocks
-      (171 x64 / 172 arm / 173 arm64, `commit: 1.2.0`) generated from the
-      1.1.10 blocks — `diff` shows only header/version/code/commit changed;
-      `CurrentVersion: 1.2.0`, `CurrentVersionCode: 173`. YAML parses; 31
-      builds; versionCodes strictly increasing; `UpdateCheckData` on
-      pubspec → 17 → 171/172/173 matches.
-- [x] 12. Committed `1a67086` (changelogs 171–173 + recipe + PLAN.md).
-- [x] 13. Annotated tag `1.2.0` → `1a67086`; `git ls-tree 1.2.0` shows
-      171/172/173.txt present at the tagged commit (as 1.1.10 did).
-- [x] 14. `git push origin main 1.2.0`: `17e3140..1a67086 main -> main`,
-      `[new tag] 1.2.0`; `ls-remote` confirms tag object `603abba` →
-      `1a67086`; HEAD = `origin/main`. Watch
-      `f-droid.org/api/v1/packages/dev.khoj.pitaka.fdroid` for
-      `suggestedVersionCode` → 173 (bot MR typically within ~1 day).
+- [x] 1. D1/D2/D3 answered (b / a / end-to-end).
+- [x] 2. Regression tests written; run on HEAD. Red: `add_book_page_test`
+      N03 → `Expected 'covers/new.jpg' / Actual 'covers/old.jpg'`;
+      `add_wishlist_page_edit_test` N03 → same. `book_detail_page_test` and
+      the N03 cases in `wishlist_detail_page_test` do not compile on HEAD
+      (`bookId` parameter absent) — API-change red. Test-harness note: a
+      focused `TextField` scrolls itself back into view after a fling settles,
+      unbuilding the lazily built save button — helpers unfocus first.
+- [x] 3. `bookByIdProvider` + `wishlistBookByIdProvider` families in
+      `core/di/providers.dart`; build_runner rerun (`.fvmrc`/`.gitignore`
+      untouched).
+- [x] 4. `BookDetailPage(bookId, initialBook?)` observes by id; body split into
+      `_BookDetailBody` + gone/failed/loading scaffolds; `_EditableCover`
+      dropped its `_coverUrl` copy; post-Edit `pop()` removed.
+      `WishlistDetailPage` same shape (`_WishlistDetailBody` keeps the M13
+      busy flag).
+- [x] 5. Call sites: `library_page.dart` `openDetail`, `wishlist_page.dart`
+      `_row`.
+- [x] 6. `AddBookController.saveEdit(id, applyEdits)` /
+      `AddWishlistController.saveEdit` re-read the row and build on it;
+      `save()` now refuses a persisted id. Forms pass `_buildBook(base)` /
+      `_build(base)` as the callback; maintainer stamp read before any await.
+- [x] 7. Gates green (see Result); coverage of touched files checked.
+- [x] 8. fix-schedule.md §1/§3/§5 updated; commit approval requested.
 
 ## Out-of-scope observations
 
-- Mirror recipe `output:` paths (`flutter-apk/app-<abi>-fdroid-release.apk`)
-  differ from upstream fdroiddata (`apk/fdroid/release/app-fdroid-<abi>-release.apk`)
-  for every post-flavor block. Cosmetic in the mirror; fix all blocks together
-  in a docs pass, not one at a time.
-- `README.md:10` still says "current release 1.1.10" — update after Play accepts.
-- `appDetails.md` §1 version table needs the 1.2.0+17 row after upload
-  (local-only file).
-- Open review findings remain: N03, M15, N04, N11, N08, N07, N09, N10.
+- Repository has no reactive streams (N04) — this session reuses the existing
+  invalidation signal; N04 may later replace `bookById`'s dependency with a
+  real stream without touching the page.
+- `WishlistDetailPage` snapshot shape (see D1).
 
 ## Result
 
-`build/app/outputs/bundle/playRelease/app-play-release.aab` — 92.3 MB,
-sha256 `f97496563fa143e008833ae900f7f4e47b0619ff15ef5cf9be6fecfdee8c85dc`,
-built from commit `229e765` (code identical to `17e3140` + version/changelog).
+**Root cause fixed, not patched.** Both detail pages now observe their row by
+id and both edit forms save on top of a freshly re-read row. The stale
+snapshot that resurrected a deleted cover file no longer exists anywhere in
+the flow: the list row is used for the first frame only and never reaches an
+action.
 
-| Check | Result |
-|---|---|
-| Bundle manifest | versionCode **17**, versionName **1.2.0**, package `dev.khoj.pitaka` |
-| Signer | `CN=Pitak Upload, OU=Mobile, O=Parallel Line Foundation, C=IN`; `jar verified` |
-| Signer cert SHA-256 | `35:FB:C7:0A:…:67:D9:E3:DB` — identical to keystore + `appDetails.md` §6 |
-| ABIs | arm64-v8a, armeabi-v7a, x86_64 |
-| `libpitak_crypto.so` | present; `frb_pde_ffi_dispatcher` ×2 |
-| 16 KB pages | every arm64 .so LOAD align ≥ 0x4000 |
-| Debug symbols | 15 `BUNDLE-METADATA/…debugsymbols` entries |
-| **Content — M13 (17e3140)** | `This entry was already marked purchased` ×1; `MarkPurchasedAlreadyPurchased` ×1; `Could not save the purchase. Nothing was changed` ×1 (UTF-16LE — see note) |
-| Content — M09 (2b92b1a) | `covers.openlibrary.org` ×1 |
-| Control (1.1.9) | `Google Books API key` ×1 |
+What changed (plain English):
+- Two tiny read-model providers (`bookById`, `wishlistBookById`) that re-read
+  one row whenever the list controller is invalidated — the signal every
+  mutation already fires. No repository interface change (29 fakes untouched).
+- The detail pages render whatever those providers say: current row, "no
+  longer exists", or a safe error. A row rewritten underneath swaps in without
+  a spinner (Riverpod keeps the previous value during a reload). A failed
+  re-read AFTER data was shown keeps the last-known row on screen by design
+  (actions surface their own failures); a failed FIRST read shows the error
+  page.
+- The edit controllers gained `saveEdit(id, applyEdits)`: read the row now,
+  let the form overlay its fields, write. `save()` refuses a persisted id so
+  nobody can bypass this by accident.
+- `_EditableCover` no longer keeps its own copy of the cover reference; the
+  janitor now receives the row's real current reference (fixes the review's
+  second-capture-in-one-visit note too).
 
-Note for future releases: `strings` only finds ASCII runs. Dart stores any
-literal containing a non-ASCII char (here the em dash `—`) as UTF-16 in the
-snapshot, so `strings | rg` returns 0 for it even when present. Use an
-ASCII-only sentinel, or scan with Python `b.count(s.encode('utf-16-le'))`.
+Tests: 13 new (6 `book_detail_page_test`, 2 `add_book_page_test`, 3 new N03
+cases in `wishlist_detail_page_test`, 2 `add_wishlist_page_edit_test`). Red
+on HEAD: the two `add_*_page` N03 saves (`covers/old.jpg` written back), and
+every detail-page N03 case (constructor change → compile red). Existing
+`library_page_test` fake given distinct ids + a real `getById` (its rows all
+shared `emptyId`, which the by-id page cannot distinguish).
 
-Build-log warnings are toolchain noise only (Gradle native-access on JDK 21,
-KGP version hint, plugins compiling with Java 8 target). None from our code.
+Gates (pinned SDK 3.44.2): analyze 0; format 391 files / 0 changed; flutter
+test `--coverage` **1335 passed / 0 failed** (`/tmp/pitak-s16-flutter-final3.txt`,
+0 `[E]`); cargo 32 passed / 2 expected ignored; `git diff --check` clean;
+build_runner → expected `.g.dart` diffs only; lib-diff scan: no
+print/log/http/Uri/Platform added. Coverage: `add_book_controller` 19/22,
+`add_wishlist_controller` 20/23, `book_detail_page` 118/233 (misses are the
+camera/crop plugin path, remove/restore dialogs, lend — all pre-existing and
+untestable without plugins), `wishlist_detail_page` 98/125; project 69.66%
+(+0.40).
 
-F-Droid: tag `1.2.0` → `1a67086` (Play AAB is from `229e765`; the delta is
-changelogs + recipe + PLAN.md only — no `lib/`, `rust/`, `android/` change, so
-the shipped code is identical, same situation as 1.1.10's `6219438`/`6bcfc96`).
-Both commits and the tag are on `origin`. The checkupdates bot should open the
-fdroiddata MR from the tag; nothing else needed unless the build command
-changed (it did not).
+Test-harness lesson (recorded for later sessions): a focused `TextField`
+scrolls itself back into view after a fling settles, which unbuilds the lazily
+built save button. Save helpers now unfocus, scroll, settle, tap. Also: the
+full suite must be launched fully detached (`nohup script &` inside a
+subshell) — the tool's own timeout kills child `flutter_tester` processes.
 
-Not done here: device sideload, Play Console upload (user actions).
+Not done: no device verification (static finding; reproduced deterministically
+in widget tests). Remote CI not checked.

@@ -7,7 +7,7 @@ part of 'add_wishlist_controller.dart';
 // **************************************************************************
 
 String _$addWishlistControllerHash() =>
-    r'b005d310f4d49c1fb094897420e6eb21c452831f';
+    r'a4f0e1c39fa75330c5433fb855384b546a45eeb6';
 
 /// Drives a one-shot add or edit and surfaces the saved entry.
 ///

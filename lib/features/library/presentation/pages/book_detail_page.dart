@@ -4,7 +4,17 @@
 /// header, a "Removed" badge, then the labeled detail rows in the same order
 /// (ISBN, publisher, published, genre, language, pages, shelf, quantity,
 /// source, source detail, age group, added date, added by) and a notes block.
-/// Shows the book it is handed, with Edit + Remove/Restore actions.
+/// Edit + Remove/Restore actions.
+///
+/// **Observes the book by id (N03).** The page is pushed with a `bookId` (and,
+/// optionally, the list row's `Book` so the first frame is not a spinner) and
+/// watches `bookByIdProvider(bookId)` from then on. Everything that can change
+/// the row while this page is open — a cover captured right here, the
+/// remote-cover materializer, the edit form — signals through the library
+/// controller, and this page re-reads the row on that signal. So a new cover
+/// appears in place, Edit always opens on the CURRENT row, and there is no
+/// stale snapshot left to write back. A row that vanished shows a safe empty
+/// state; a repository failure shows a safe message, never raw text.
 library;
 
 import 'package:flutter/material.dart';
@@ -51,12 +61,114 @@ const List<CropAspectRatioPresetData> _coverCropPresets = [
 /// [_coverCropPresets]; also required for the custom list to apply on Android.
 const CropAspectRatioPresetData _coverInitPreset = _Ratio2x3Preset();
 
-/// Displays a single [Book]'s fields with Edit and Remove/Restore actions.
+/// Displays the book with id [bookId], kept current, with Edit and
+/// Remove/Restore actions.
 class BookDetailPage extends ConsumerWidget {
-  /// Creates the detail page for [book].
-  const BookDetailPage({required this.book, super.key});
+  /// Creates the detail page for the book with [bookId]. [initialBook] is the
+  /// row the caller already has (the tapped list row); it is shown only until
+  /// the observed row arrives, so the first frame is not a spinner.
+  const BookDetailPage({required this.bookId, this.initialBook, super.key});
 
-  /// The book to display.
+  /// Per-device id of the book to observe.
+  final int bookId;
+
+  /// Optional snapshot for the first frame; never used once the provider has
+  /// resolved, and never handed to any action.
+  final Book? initialBook;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final observed = ref.watch(bookByIdProvider(bookId));
+    // `valueOrNull` keeps the previous value during a reload, so a rewritten
+    // row swaps in without a loading flash; `hasValue` distinguishes "resolved
+    // to null" (the row is gone) from "not resolved yet".
+    if (observed.hasValue) {
+      final book = observed.valueOrNull;
+      if (book == null) return const _BookGoneScaffold();
+      return _BookDetailBody(book: book);
+    }
+    if (observed.hasError) return const _BookLoadFailedScaffold();
+    final first = initialBook;
+    if (first != null && first.id == bookId) {
+      return _BookDetailBody(book: first);
+    }
+    return const Scaffold(
+      appBar: _DetailAppBar(),
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+/// The plain "Book" app bar shared by the loading / gone / failed states.
+class _DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _DetailAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) => AppBar(title: const Text('Book'));
+}
+
+/// Shown when the observed row no longer exists (deleted from another screen
+/// or device while this page was open). No actions: there is nothing to
+/// edit, remove or lend.
+class _BookGoneScaffold extends StatelessWidget {
+  const _BookGoneScaffold();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const _DetailAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'This book is no longer in your library.',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when the row could not be read. Plain-language only (repo AGENTS.md
+/// §5: never raw exception text).
+class _BookLoadFailedScaffold extends StatelessWidget {
+  const _BookLoadFailedScaffold();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const _DetailAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            "Couldn't load this book. Please go back and try again.",
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: scheme.error),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The detail screen proper, rendered for the CURRENT [book]. Every action
+/// here uses this observed row — the edit form, the cover pipeline and the
+/// janitor all see fresh values.
+class _BookDetailBody extends ConsumerWidget {
+  const _BookDetailBody({required this.book});
+
   final Book book;
 
   @override
@@ -79,17 +191,12 @@ class BookDetailPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Edit',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AddBookPage(book: book),
-                ),
-              );
-              // The edit screen refreshes the library list on save. This
-              // detail view holds the pre-edit snapshot, so return to the
-              // (refreshed) list rather than show stale fields.
-              if (context.mounted) Navigator.of(context).pop();
-            },
+            // The edit form gets the CURRENT row and re-reads it again at
+            // save time. When it pops, this page is already observing the
+            // edited row, so there is nothing stale to escape from.
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => AddBookPage(book: book)),
+            ),
           ),
           if (book.removed)
             IconButton(
@@ -263,6 +370,13 @@ class BookDetailPage extends ConsumerWidget {
 /// The widget owns only the plugin steps (camera capture + crop); the raw
 /// bytes then go to `BookCoverController`, which downscales, stores, and
 /// persists them (§7). The capture stays entirely on-device.
+///
+/// N03: the cover shown is the OBSERVED row's `coverUrl` — this widget keeps
+/// no copy of its own. `replaceCover` invalidates the library, the page
+/// re-reads the row, and the new image arrives through `widget.book`. The
+/// controller also receives the observed row, so the janitor releases the
+/// reference the row really held (a second capture in one visit used to
+/// release the ORIGINAL snapshot's file and leave the intermediate one).
 class _EditableCover extends ConsumerStatefulWidget {
   const _EditableCover({required this.book});
 
@@ -274,13 +388,6 @@ class _EditableCover extends ConsumerStatefulWidget {
 
 class _EditableCoverState extends ConsumerState<_EditableCover> {
   bool _busy = false;
-  String? _coverUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _coverUrl = widget.book.coverUrl;
-  }
 
   Future<void> _capture() async {
     setState(() => _busy = true);
@@ -334,10 +441,12 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
           .read(bookCoverControllerProvider.notifier)
           .replaceCover(widget.book, raw);
       if (!mounted) return;
-      result.match((_) => _snack('Could not save the new cover.'), (coverRef) {
-        setState(() => _coverUrl = coverRef);
-        _snack('Cover updated.');
-      });
+      result.match(
+        (_) => _snack('Could not save the new cover.'),
+        // The row is rewritten and the library signalled; the observed book
+        // above us re-renders with the new reference — nothing to keep here.
+        (_) => _snack('Cover updated.'),
+      );
     } on Exception {
       // Plugin (camera/crop) failure only — pipeline errors are typed above.
       _snack('Could not capture a photo.');
@@ -355,9 +464,9 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
       children: [
         BookCover(
           // Key on the cover ref so a new capture forces an image reload.
-          key: ValueKey(_coverUrl),
+          key: ValueKey(widget.book.coverUrl),
           title: widget.book.title,
-          coverUrl: _coverUrl,
+          coverUrl: widget.book.coverUrl,
           bookId: widget.book.id,
           width: 120,
           height: 168,

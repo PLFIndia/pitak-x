@@ -2,8 +2,16 @@
 ///
 /// Read-only field rows plus actions: edit, mark-purchased, delete. The
 /// mutating actions go through [WishlistController] (which runs the use cases
-/// and refreshes the list); on success this view pops back to the refreshed
-/// list rather than show a stale snapshot.
+/// and refreshes the list).
+///
+/// **Observes the entry by id (N03).** Pushed with a `bookId` (plus,
+/// optionally, the tapped row for the first frame) and watching
+/// `wishlistBookByIdProvider(bookId)` from then on, so a row rewritten while
+/// this page is open (edit saved, purchased elsewhere, cover materialised) is
+/// shown in place and Edit always opens on the CURRENT row. Delete and
+/// purchase still pop — the entry is gone or the user's task is complete —
+/// but Edit no longer has to pop to escape a stale snapshot. A vanished row
+/// shows a safe empty state; a read failure a safe message.
 ///
 /// Purchase actions (M13): both buttons are disabled while a purchase is in
 /// flight (no double-tap), and a failed purchase keeps the user ON this page
@@ -13,25 +21,123 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/add_wishlist_page.dart';
 
-/// Displays a single wishlist entry with edit / purchase / delete actions.
-class WishlistDetailPage extends ConsumerStatefulWidget {
-  /// Creates the detail page for [book].
-  const WishlistDetailPage({required this.book, super.key});
+/// Displays the wishlist entry with id [bookId], kept current, with edit /
+/// purchase / delete actions.
+class WishlistDetailPage extends ConsumerWidget {
+  /// Creates the detail page for the entry with [bookId]. [initialBook] is
+  /// the tapped list row, shown only until the observed row arrives.
+  const WishlistDetailPage({required this.bookId, this.initialBook, super.key});
 
-  /// The entry to display.
+  /// Id of the entry to observe.
+  final int bookId;
+
+  /// Optional snapshot for the first frame; never handed to any action.
+  final WishlistBook? initialBook;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final observed = ref.watch(wishlistBookByIdProvider(bookId));
+    // `valueOrNull` keeps the previous value during a reload (no loading
+    // flash); `hasValue` separates "resolved to null" from "not yet".
+    if (observed.hasValue) {
+      final book = observed.valueOrNull;
+      if (book == null) return const _EntryGoneScaffold();
+      return _WishlistDetailBody(book: book);
+    }
+    if (observed.hasError) return const _EntryLoadFailedScaffold();
+    final first = initialBook;
+    if (first != null && first.id == bookId) {
+      return _WishlistDetailBody(book: first);
+    }
+    return const Scaffold(
+      appBar: _DetailAppBar(),
+      body: Center(child: CircularProgressIndicator()),
+    );
+  }
+}
+
+/// The plain app bar shared by the loading / gone / failed states.
+class _DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _DetailAppBar();
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+
+  @override
+  Widget build(BuildContext context) =>
+      AppBar(title: const Text('Wishlist item'));
+}
+
+/// Shown when the observed row no longer exists. No actions.
+class _EntryGoneScaffold extends StatelessWidget {
+  const _EntryGoneScaffold();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const _DetailAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'This entry is no longer on your wishlist.',
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Shown when the row could not be read (repo AGENTS.md §5: safe words only).
+class _EntryLoadFailedScaffold extends StatelessWidget {
+  const _EntryLoadFailedScaffold();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Scaffold(
+      appBar: const _DetailAppBar(),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            "Couldn't load this entry. Please go back and try again.",
+            textAlign: TextAlign.center,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyLarge?.copyWith(color: scheme.error),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The detail screen proper, rendered for the CURRENT [book]. Stateful only
+/// for the purchase busy flag (M13).
+class _WishlistDetailBody extends ConsumerStatefulWidget {
+  const _WishlistDetailBody({required this.book});
+
   final WishlistBook book;
 
   @override
-  ConsumerState<WishlistDetailPage> createState() => _WishlistDetailPageState();
+  ConsumerState<_WishlistDetailBody> createState() =>
+      _WishlistDetailBodyState();
 }
 
-class _WishlistDetailPageState extends ConsumerState<WishlistDetailPage> {
+class _WishlistDetailBodyState extends ConsumerState<_WishlistDetailBody> {
   /// True while a purchase is being written. Owned by this State so the two
   /// purchase buttons share one guard (a `ConsumerWidget` has nowhere to keep
   /// it). Pattern borrowed from `_DeleteForeverButtonState` in
@@ -55,14 +161,13 @@ class _WishlistDetailPageState extends ConsumerState<WishlistDetailPage> {
           IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Edit',
-            onPressed: () async {
-              await Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => AddWishlistPage(book: book),
-                ),
-              );
-              await popToList();
-            },
+            // N03: the form gets the CURRENT row and re-reads it at save;
+            // when it pops, this page already observes the edited row.
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => AddWishlistPage(book: book),
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.delete_outline),

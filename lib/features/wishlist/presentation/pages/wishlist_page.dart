@@ -83,10 +83,14 @@ class _WishlistList extends StatelessWidget {
     );
   }
 
+  // N03: the detail page observes the row by id; the tapped row is only the
+  // first frame's content.
   Widget _row(BuildContext context, WishlistBook book) => WishlistRow(
     book: book,
     onTap: () => Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => WishlistDetailPage(book: book)),
+      MaterialPageRoute<void>(
+        builder: (_) => WishlistDetailPage(bookId: book.id, initialBook: book),
+      ),
     ),
   );
 }

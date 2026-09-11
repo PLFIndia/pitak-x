@@ -258,4 +258,56 @@ void main() {
 
     expect(repo.books.single.coverUrl, 'covers/local.jpg');
   });
+
+  // N03 regression: the form used to copy the non-editable fields (cover,
+  // removed flag, attribution) from the snapshot it was OPENED with. When the
+  // row had changed underneath (a cover captured on the detail page), saving
+  // an unrelated edit wrote the stale cover back — pointing at a file the
+  // janitor had already deleted.
+  testWidgets('N03: edit saves on top of the CURRENT row, not the snapshot', (
+    tester,
+  ) async {
+    final repo = _MemRepo();
+    final stale = (await repo.insert(
+      const Book(title: 'Original', coverUrl: 'covers/old.jpg'),
+    )).getOrElse((_) => throw StateError('seed failed'));
+    // The row moved on after the snapshot was taken.
+    await repo.update(
+      stale.copyWith(coverUrl: 'covers/new.jpg', addedBy: 'Maintainer'),
+    );
+
+    await tester.pumpWidget(_host(repo, book: stale));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Title *'),
+      'Revised',
+    );
+    await _tapSave(tester);
+
+    final saved = repo.books.single;
+    expect(saved.title, 'Revised');
+    expect(saved.coverUrl, 'covers/new.jpg', reason: 'fresh cover kept');
+    expect(saved.addedBy, 'Maintainer', reason: 'fresh attribution kept');
+  });
+
+  testWidgets('N03: editing a row that vanished shows a safe message', (
+    tester,
+  ) async {
+    final repo = _MemRepo();
+    final gone = (await repo.insert(
+      const Book(title: 'Ghost'),
+    )).getOrElse((_) => throw StateError('seed failed'));
+    repo.books.clear();
+
+    await tester.pumpWidget(_host(repo, book: gone));
+    await tester.pumpAndSettle();
+    await _tapSave(tester);
+
+    expect(repo.books, isEmpty, reason: 'no resurrection by insert');
+    expect(
+      find.text('This book no longer exists and could not be saved.'),
+      findsOneWidget,
+    );
+  });
 }

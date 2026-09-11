@@ -2,7 +2,12 @@
 ///
 /// One screen for both modes: no book → "Add", a [WishlistBook] → "Edit"
 /// (prefilled). View state only; persistence + validation go through
-/// [AddWishlistController]. On success it pops and the list refreshes.
+/// [AddWishlistController]. On success it refreshes the list and pops.
+///
+/// N03: in edit mode the entry passed in only PREFILLS the form. At save time
+/// the controller re-reads the row and this form builds the new value on top
+/// of that fresh row — fields the form does not edit (cover, purchased state,
+/// source, added date) come from the database as it is now.
 ///
 /// ISBN entry supports a barcode scan (#29) and a metadata lookup (#30),
 /// reusing the same Open Library -> Google Books chain as the library form; a
@@ -163,8 +168,10 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  WishlistBook _build() {
-    final base = widget.book;
+  /// Assembles the entry to persist from the form fields, taking every field
+  /// the form does not edit from [base]: null in add mode, the FRESH row in
+  /// edit mode (N03).
+  WishlistBook _build(WishlistBook? base) {
     return WishlistBook(
       id: base?.id ?? WishlistBook.emptyId,
       title: _title.text.trim(),
@@ -194,7 +201,15 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
       setState(() => _titleError = true);
       return;
     }
-    await ref.read(addWishlistControllerProvider.notifier).save(_build());
+    final controller = ref.read(addWishlistControllerProvider.notifier);
+    final editing = widget.book;
+    if (editing == null) {
+      await controller.save(_build(null));
+    } else {
+      // The controller re-reads the row and calls back with it; the form
+      // fields win, everything else is the row as it is NOW.
+      await controller.saveEdit(editing.id, _build);
+    }
     final state = ref.read(addWishlistControllerProvider);
     if (!mounted) return;
     if (state.hasValue && state.value != null) {

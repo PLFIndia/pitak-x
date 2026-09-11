@@ -199,9 +199,13 @@ class _BookList extends ConsumerWidget {
           copyCount: book.copyCount,
           activeCounts: activeCounts,
         );
-    void openDetail(Book book) => Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => BookDetailPage(book: book)));
+    // N03: the detail page observes the row by id; the tapped row is only the
+    // first frame's content.
+    void openDetail(Book book) => Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BookDetailPage(bookId: book.id, initialBook: book),
+      ),
+    );
 
     // Adaptive layout: decide on the *available width* the parent gives us, not
     // the device type — a single column on phones, a cover grid once there is

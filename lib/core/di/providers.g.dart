@@ -1200,6 +1200,385 @@ class _BookTitleProviderElement
   int get bookId => (origin as BookTitleProvider).bookId;
 }
 
+String _$bookByIdHash() => r'f7ac65edbecd807956445160bedf1cfac802390d';
+
+/// One library book, observed by id, for a detail screen (N03).
+///
+/// Why a provider and not the `Book` the list row was tapped with: a detail
+/// page can stay open while the row changes underneath it — a cover captured
+/// on that very page rewrites `coverUrl`, the remote-cover materializer may
+/// swap an `https://` reference for a local file, an edit saves new fields.
+/// A snapshot handed in at push time never learns any of this, and passing it
+/// on to the edit form wrote stale values back over the fresh row (a cover
+/// file the janitor had already deleted came back as the row's cover).
+///
+/// Freshness signal: every mutation path in the app already invalidates or
+/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move). Watching it here —
+/// value ignored — makes this provider re-read the row on the same signal,
+/// with no new plumbing. The repository has no row streams (N04); when it
+/// gains one this dependency is the single line to swap.
+///
+/// `null` = the row no longer exists. A repository `Left` is thrown so the
+/// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+///
+/// Copied from [bookById].
+@ProviderFor(bookById)
+const bookByIdProvider = BookByIdFamily();
+
+/// One library book, observed by id, for a detail screen (N03).
+///
+/// Why a provider and not the `Book` the list row was tapped with: a detail
+/// page can stay open while the row changes underneath it — a cover captured
+/// on that very page rewrites `coverUrl`, the remote-cover materializer may
+/// swap an `https://` reference for a local file, an edit saves new fields.
+/// A snapshot handed in at push time never learns any of this, and passing it
+/// on to the edit form wrote stale values back over the fresh row (a cover
+/// file the janitor had already deleted came back as the row's cover).
+///
+/// Freshness signal: every mutation path in the app already invalidates or
+/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move). Watching it here —
+/// value ignored — makes this provider re-read the row on the same signal,
+/// with no new plumbing. The repository has no row streams (N04); when it
+/// gains one this dependency is the single line to swap.
+///
+/// `null` = the row no longer exists. A repository `Left` is thrown so the
+/// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+///
+/// Copied from [bookById].
+class BookByIdFamily extends Family<AsyncValue<Book?>> {
+  /// One library book, observed by id, for a detail screen (N03).
+  ///
+  /// Why a provider and not the `Book` the list row was tapped with: a detail
+  /// page can stay open while the row changes underneath it — a cover captured
+  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
+  /// swap an `https://` reference for a local file, an edit saves new fields.
+  /// A snapshot handed in at push time never learns any of this, and passing it
+  /// on to the edit form wrote stale values back over the fresh row (a cover
+  /// file the janitor had already deleted came back as the row's cover).
+  ///
+  /// Freshness signal: every mutation path in the app already invalidates or
+  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move). Watching it here —
+  /// value ignored — makes this provider re-read the row on the same signal,
+  /// with no new plumbing. The repository has no row streams (N04); when it
+  /// gains one this dependency is the single line to swap.
+  ///
+  /// `null` = the row no longer exists. A repository `Left` is thrown so the
+  /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+  ///
+  /// Copied from [bookById].
+  const BookByIdFamily();
+
+  /// One library book, observed by id, for a detail screen (N03).
+  ///
+  /// Why a provider and not the `Book` the list row was tapped with: a detail
+  /// page can stay open while the row changes underneath it — a cover captured
+  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
+  /// swap an `https://` reference for a local file, an edit saves new fields.
+  /// A snapshot handed in at push time never learns any of this, and passing it
+  /// on to the edit form wrote stale values back over the fresh row (a cover
+  /// file the janitor had already deleted came back as the row's cover).
+  ///
+  /// Freshness signal: every mutation path in the app already invalidates or
+  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move). Watching it here —
+  /// value ignored — makes this provider re-read the row on the same signal,
+  /// with no new plumbing. The repository has no row streams (N04); when it
+  /// gains one this dependency is the single line to swap.
+  ///
+  /// `null` = the row no longer exists. A repository `Left` is thrown so the
+  /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+  ///
+  /// Copied from [bookById].
+  BookByIdProvider call(int bookId) {
+    return BookByIdProvider(bookId);
+  }
+
+  @override
+  BookByIdProvider getProviderOverride(covariant BookByIdProvider provider) {
+    return call(provider.bookId);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'bookByIdProvider';
+}
+
+/// One library book, observed by id, for a detail screen (N03).
+///
+/// Why a provider and not the `Book` the list row was tapped with: a detail
+/// page can stay open while the row changes underneath it — a cover captured
+/// on that very page rewrites `coverUrl`, the remote-cover materializer may
+/// swap an `https://` reference for a local file, an edit saves new fields.
+/// A snapshot handed in at push time never learns any of this, and passing it
+/// on to the edit form wrote stale values back over the fresh row (a cover
+/// file the janitor had already deleted came back as the row's cover).
+///
+/// Freshness signal: every mutation path in the app already invalidates or
+/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+/// save, remove/restore, import, restore, wishlist move). Watching it here —
+/// value ignored — makes this provider re-read the row on the same signal,
+/// with no new plumbing. The repository has no row streams (N04); when it
+/// gains one this dependency is the single line to swap.
+///
+/// `null` = the row no longer exists. A repository `Left` is thrown so the
+/// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+///
+/// Copied from [bookById].
+class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
+  /// One library book, observed by id, for a detail screen (N03).
+  ///
+  /// Why a provider and not the `Book` the list row was tapped with: a detail
+  /// page can stay open while the row changes underneath it — a cover captured
+  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
+  /// swap an `https://` reference for a local file, an edit saves new fields.
+  /// A snapshot handed in at push time never learns any of this, and passing it
+  /// on to the edit form wrote stale values back over the fresh row (a cover
+  /// file the janitor had already deleted came back as the row's cover).
+  ///
+  /// Freshness signal: every mutation path in the app already invalidates or
+  /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
+  /// save, remove/restore, import, restore, wishlist move). Watching it here —
+  /// value ignored — makes this provider re-read the row on the same signal,
+  /// with no new plumbing. The repository has no row streams (N04); when it
+  /// gains one this dependency is the single line to swap.
+  ///
+  /// `null` = the row no longer exists. A repository `Left` is thrown so the
+  /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
+  ///
+  /// Copied from [bookById].
+  BookByIdProvider(int bookId)
+    : this._internal(
+        (ref) => bookById(ref as BookByIdRef, bookId),
+        from: bookByIdProvider,
+        name: r'bookByIdProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$bookByIdHash,
+        dependencies: BookByIdFamily._dependencies,
+        allTransitiveDependencies: BookByIdFamily._allTransitiveDependencies,
+        bookId: bookId,
+      );
+
+  BookByIdProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.bookId,
+  }) : super.internal();
+
+  final int bookId;
+
+  @override
+  Override overrideWith(FutureOr<Book?> Function(BookByIdRef provider) create) {
+    return ProviderOverride(
+      origin: this,
+      override: BookByIdProvider._internal(
+        (ref) => create(ref as BookByIdRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        bookId: bookId,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<Book?> createElement() {
+    return _BookByIdProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is BookByIdProvider && other.bookId == bookId;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, bookId.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin BookByIdRef on AutoDisposeFutureProviderRef<Book?> {
+  /// The parameter `bookId` of this provider.
+  int get bookId;
+}
+
+class _BookByIdProviderElement extends AutoDisposeFutureProviderElement<Book?>
+    with BookByIdRef {
+  _BookByIdProviderElement(super.provider);
+
+  @override
+  int get bookId => (origin as BookByIdProvider).bookId;
+}
+
+String _$wishlistBookByIdHash() => r'176febc233f1cf5a199182f23de5b012c91873dd';
+
+/// One wishlist entry, observed by id, for its detail screen (N03).
+/// Same shape and rationale as [bookById]; the freshness signal is
+/// [wishlistControllerProvider], which every wishlist mutation refreshes.
+///
+/// Copied from [wishlistBookById].
+@ProviderFor(wishlistBookById)
+const wishlistBookByIdProvider = WishlistBookByIdFamily();
+
+/// One wishlist entry, observed by id, for its detail screen (N03).
+/// Same shape and rationale as [bookById]; the freshness signal is
+/// [wishlistControllerProvider], which every wishlist mutation refreshes.
+///
+/// Copied from [wishlistBookById].
+class WishlistBookByIdFamily extends Family<AsyncValue<WishlistBook?>> {
+  /// One wishlist entry, observed by id, for its detail screen (N03).
+  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// [wishlistControllerProvider], which every wishlist mutation refreshes.
+  ///
+  /// Copied from [wishlistBookById].
+  const WishlistBookByIdFamily();
+
+  /// One wishlist entry, observed by id, for its detail screen (N03).
+  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// [wishlistControllerProvider], which every wishlist mutation refreshes.
+  ///
+  /// Copied from [wishlistBookById].
+  WishlistBookByIdProvider call(int bookId) {
+    return WishlistBookByIdProvider(bookId);
+  }
+
+  @override
+  WishlistBookByIdProvider getProviderOverride(
+    covariant WishlistBookByIdProvider provider,
+  ) {
+    return call(provider.bookId);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'wishlistBookByIdProvider';
+}
+
+/// One wishlist entry, observed by id, for its detail screen (N03).
+/// Same shape and rationale as [bookById]; the freshness signal is
+/// [wishlistControllerProvider], which every wishlist mutation refreshes.
+///
+/// Copied from [wishlistBookById].
+class WishlistBookByIdProvider
+    extends AutoDisposeFutureProvider<WishlistBook?> {
+  /// One wishlist entry, observed by id, for its detail screen (N03).
+  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// [wishlistControllerProvider], which every wishlist mutation refreshes.
+  ///
+  /// Copied from [wishlistBookById].
+  WishlistBookByIdProvider(int bookId)
+    : this._internal(
+        (ref) => wishlistBookById(ref as WishlistBookByIdRef, bookId),
+        from: wishlistBookByIdProvider,
+        name: r'wishlistBookByIdProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$wishlistBookByIdHash,
+        dependencies: WishlistBookByIdFamily._dependencies,
+        allTransitiveDependencies:
+            WishlistBookByIdFamily._allTransitiveDependencies,
+        bookId: bookId,
+      );
+
+  WishlistBookByIdProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.bookId,
+  }) : super.internal();
+
+  final int bookId;
+
+  @override
+  Override overrideWith(
+    FutureOr<WishlistBook?> Function(WishlistBookByIdRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: WishlistBookByIdProvider._internal(
+        (ref) => create(ref as WishlistBookByIdRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        bookId: bookId,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<WishlistBook?> createElement() {
+    return _WishlistBookByIdProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is WishlistBookByIdProvider && other.bookId == bookId;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, bookId.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin WishlistBookByIdRef on AutoDisposeFutureProviderRef<WishlistBook?> {
+  /// The parameter `bookId` of this provider.
+  int get bookId;
+}
+
+class _WishlistBookByIdProviderElement
+    extends AutoDisposeFutureProviderElement<WishlistBook?>
+    with WishlistBookByIdRef {
+  _WishlistBookByIdProviderElement(super.provider);
+
+  @override
+  int get bookId => (origin as WishlistBookByIdProvider).bookId;
+}
+
 String _$borrowerProfileHash() => r'64dd91226f28e204c8931b3f847fc9bf21c4ab76';
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or

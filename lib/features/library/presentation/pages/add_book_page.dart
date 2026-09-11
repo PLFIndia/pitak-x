@@ -3,8 +3,14 @@
 /// One screen for both modes: passed no book → "Add", passed a [Book] →
 /// "Edit" (prefilled). The form owns only view state (text controllers,
 /// dropdown selections); all persistence + validation goes through
-/// [AddBookController]. On a successful save it pops and the caller refreshes
-/// the library.
+/// [AddBookController]. On a successful save it refreshes the library and
+/// pops.
+///
+/// N03: in edit mode the [Book] passed in only PREFILLS the form. At save
+/// time the controller re-reads the row and this form builds the new value on
+/// top of that fresh row — fields the form does not edit (cover, removed
+/// flag, attribution, uid) come from the database as it is now, never from
+/// the snapshot the screen was opened with.
 ///
 /// ISBN entry supports a barcode scan (#29) and a metadata lookup (#30):
 /// Open Library → Google Books, chained over a cache. A successful lookup
@@ -199,8 +205,11 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Book _buildBook() {
-    final base = widget.book;
+  /// Assembles the [Book] to persist from the form fields, taking every
+  /// field the form does not edit from [base]: null in add mode, the FRESH
+  /// row in edit mode (N03). [maintainerStamp] attributes a new book that has
+  /// no `addedBy` yet; it is read before any await so this stays pure.
+  Book _buildBook(Book? base, {required String? maintainerStamp}) {
     final qty = int.tryParse(_quantity.text.trim()) ?? 1;
     return Book(
       // Preserve identity in edit mode; add mode uses the sentinel.
@@ -232,7 +241,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       removedAt: base?.removedAt,
       // Stamp the maintainer name onto a NEW book that has none yet (mirrors
       // Kotlin AddBookUseCase's attribution); edits keep the existing value.
-      addedBy: base?.addedBy ?? _maintainerStamp(),
+      addedBy: base?.addedBy ?? maintainerStamp,
     );
   }
 
@@ -251,7 +260,19 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       setState(() => _titleError = true);
       return;
     }
-    await ref.read(addBookControllerProvider.notifier).save(_buildBook());
+    final controller = ref.read(addBookControllerProvider.notifier);
+    final stamp = _maintainerStamp();
+    final editing = widget.book;
+    if (editing == null) {
+      await controller.save(_buildBook(null, maintainerStamp: stamp));
+    } else {
+      // The controller re-reads the row and calls back with it; the form
+      // fields win, everything else is the row as it is NOW.
+      await controller.saveEdit(
+        editing.id,
+        (current) => _buildBook(current, maintainerStamp: stamp),
+      );
+    }
     final state = ref.read(addBookControllerProvider);
     if (!mounted) return;
     if (state.hasValue && state.value != null) {
