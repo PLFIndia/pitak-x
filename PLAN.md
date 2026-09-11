@@ -87,10 +87,12 @@ tooling. OSS reference: none needed (release procedure is this repo's own).
       `CurrentVersion: 1.2.0`, `CurrentVersionCode: 173`. YAML parses; 31
       builds; versionCodes strictly increasing; `UpdateCheckData` on
       pubspec → 17 → 171/172/173 matches.
-- [ ] 12. Commit (approval): changelogs 171–173 + recipe + PLAN.md.
-- [ ] 13. Annotated tag `1.2.0` on that commit (approval) — the tagged commit
-      must contain the F-Droid changelogs, as 1.1.10 did (`6bcfc96`).
-- [ ] 14. `git push origin main 1.2.0` (approval). Then watch
+- [x] 12. Committed `1a67086` (changelogs 171–173 + recipe + PLAN.md).
+- [x] 13. Annotated tag `1.2.0` → `1a67086`; `git ls-tree 1.2.0` shows
+      171/172/173.txt present at the tagged commit (as 1.1.10 did).
+- [x] 14. `git push origin main 1.2.0`: `17e3140..1a67086 main -> main`,
+      `[new tag] 1.2.0`; `ls-remote` confirms tag object `603abba` →
+      `1a67086`; HEAD = `origin/main`. Watch
       `f-droid.org/api/v1/packages/dev.khoj.pitaka.fdroid` for
       `suggestedVersionCode` → 173 (bot MR typically within ~1 day).
 
@@ -132,5 +134,11 @@ ASCII-only sentinel, or scan with Python `b.count(s.encode('utf-16-le'))`.
 Build-log warnings are toolchain noise only (Gradle native-access on JDK 21,
 KGP version hint, plugins compiling with Java 8 target). None from our code.
 
-Not done here: device sideload, Console upload, push of `229e765`, F-Droid tag
-(all user actions / deferred — see Out-of-scope).
+F-Droid: tag `1.2.0` → `1a67086` (Play AAB is from `229e765`; the delta is
+changelogs + recipe + PLAN.md only — no `lib/`, `rust/`, `android/` change, so
+the shipped code is identical, same situation as 1.1.10's `6219438`/`6bcfc96`).
+Both commits and the tag are on `origin`. The checkupdates bot should open the
+fdroiddata MR from the tag; nothing else needed unless the build command
+changed (it did not).
+
+Not done here: device sideload, Play Console upload (user actions).
