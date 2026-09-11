@@ -93,9 +93,11 @@ final class GoodreadsCsvImporter implements Importer {
       final notes = _nonBlank(_cell(row, index, 'My Review'));
       final shelf = _cell(row, index, 'Exclusive Shelf')?.toLowerCase().trim();
 
-      // M4: clamp every persisted text field at the boundary.
+      // M4: clamp every persisted text field at the boundary. M15: build
+      // through the shared validators so a hostile CSV (e.g. a 20-digit
+      // "year") is rejected + reported exactly like a hostile JSON row.
       if (shelf == 'to-read') {
-        wishlist.add(
+        WishlistBook.validate(
           WishlistBook(
             title: limits.clampField(title)!,
             author: limits.clampField(author),
@@ -104,9 +106,15 @@ final class GoodreadsCsvImporter implements Importer {
             publishedYear: year,
             notes: limits.clampField(notes),
           ),
+        ).match(
+          (errs) => errors.add(
+            'Row $rowNum skipped: '
+            '${errs.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+          ),
+          wishlist.add,
         );
       } else {
-        books.add(
+        Book.validate(
           Book(
             title: limits.clampField(title)!,
             author: limits.clampField(author),
@@ -116,6 +124,12 @@ final class GoodreadsCsvImporter implements Importer {
             pageCount: pages,
             notes: limits.clampField(notes),
           ),
+        ).match(
+          (errs) => errors.add(
+            'Row $rowNum skipped: '
+            '${errs.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+          ),
+          books.add,
         );
       }
     }

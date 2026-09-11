@@ -27,6 +27,7 @@ import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
@@ -355,10 +356,11 @@ class _BookDetailBody extends ConsumerWidget {
   }
 
   /// Formats an epoch-millis added date as a plain `YYYY-MM-DD`, or null when
-  /// unset (addedDate == 0 means "no date recorded").
+  /// unset (addedDate == 0 means "no date recorded"). M15: an out-of-range
+  /// value from a pre-M15 row renders as no date instead of throwing.
   static String? _formatDate(int epochMillis) {
-    if (epochMillis <= 0) return null;
-    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis).toLocal();
+    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
+    if (d == null) return null;
     final mm = d.month.toString().padLeft(2, '0');
     final dd = d.day.toString().padLeft(2, '0');
     return '${d.year}-$mm-$dd';

@@ -276,6 +276,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('M15: a pre-M15 row with an out-of-range addedDate renders', (
+    tester,
+  ) async {
+    // Rows persisted before M15 (or by a hostile file on an old build) can
+    // hold an addedDate that DateTime cannot represent. The detail page must
+    // render the row without a date instead of throwing a RangeError.
+    const hostile = Book(
+      id: 7,
+      bookUid: 'uid-7',
+      title: 'Dune',
+      addedDate: 8640000000000001, // maxDateMillis + 1
+    );
+    final repo = _MemBookRepo([hostile]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: hostile));
+    await _openDetail(tester);
+
+    expect(find.text('Dune'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('N03: a repository failure shows a safe message, not raw text', (
     tester,
   ) async {

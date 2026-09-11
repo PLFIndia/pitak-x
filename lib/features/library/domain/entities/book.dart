@@ -5,6 +5,9 @@
 /// `copyWith` for edits.
 library;
 
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+
 /// Fixed provenance categories for `Book.sourceType`. Stored as the Dart enum
 /// constant name (e.g. `purchased`) — mirrors Kotlin where it is persisted as
 /// the enum `name`. Tolerant parse via [BookSourceTypeX.fromToken].
@@ -212,6 +215,112 @@ class Book {
 
   /// Self-asserted maintainer handle that first catalogued this book.
   final String? addedBy;
+
+  /// Validates [book] against the shared [CatalogueRules] (M15) and returns
+  /// a normalised copy (title trimmed) or every field error found.
+  ///
+  /// This is the single gate every ingress — add/edit forms, JSON/CSV import,
+  /// merge, backup restore — must pass a row through BEFORE persistence, so a
+  /// crafted file cannot plant values that crash normal screens later (see
+  /// `catalogue_rules.dart` for the threat model). The plain constructor stays
+  /// for already-trusted data (DB mapper, `copyWith` on a persisted row).
+  static Either<List<FieldError>, Book> validate(Book book) {
+    final errors = <FieldError>[];
+
+    final title = book.title.trim();
+    if (title.isEmpty) {
+      errors.add(const FieldError('title', 'is required'));
+    }
+
+    // Every persisted text field is capped (M4/M15): one giant cell must not
+    // bloat the database. Importers truncate + report; forms reject.
+    final textFields = <String, String?>{
+      'title': title,
+      'bookUid': book.bookUid,
+      'titleTransliteration': book.titleTransliteration,
+      'author': book.author,
+      'isbn': book.isbn,
+      'publisher': book.publisher,
+      'genre': book.genre,
+      'language': book.language,
+      'notes': book.notes,
+      'location': book.location,
+      'sourceDetail': book.sourceDetail,
+      'addedBy': book.addedBy,
+    };
+    for (final entry in textFields.entries) {
+      if (!CatalogueRules.isValidFieldText(entry.value)) {
+        errors.add(
+          FieldError(
+            entry.key,
+            'must be at most ${CatalogueRules.maxFieldChars} characters',
+          ),
+        );
+      }
+    }
+
+    if (!CatalogueRules.isValidDateMillis(book.addedDate)) {
+      errors.add(const FieldError('addedDate', 'is not a representable date'));
+    }
+    if (!CatalogueRules.isValidOptionalDateMillis(book.removedAt)) {
+      errors.add(const FieldError('removedAt', 'is not a representable date'));
+    }
+    if (!CatalogueRules.isValidCount(book.copyCount)) {
+      errors.add(const FieldError('copyCount', 'must be at least 1'));
+    }
+    if (!CatalogueRules.isValidCount(book.pageCount)) {
+      errors.add(const FieldError('pageCount', 'must be at least 1'));
+    }
+    if (!CatalogueRules.isValidYear(book.publishedYear)) {
+      errors.add(
+        const FieldError(
+          'publishedYear',
+          'must be between ${CatalogueRules.minYear} and '
+              '${CatalogueRules.maxYear}',
+        ),
+      );
+    }
+    // The cover is NORMALISED, never a rejection (M15): a row already in the
+    // database from before this rule could carry a now-disallowed URL, and
+    // rejecting would make that book uneditable forever — the edit form
+    // copies `base.coverUrl` verbatim and has no UI to clear it. The ref is
+    // inert regardless (display and publish re-check the allow-list), so it
+    // is simply dropped. Importers notice the drop and report it as a
+    // warning; `copyWith` cannot null a field, so rebuild explicitly.
+    final safeCover = CatalogueRules.isValidCoverRef(book.coverUrl)
+        ? (book.coverUrl?.trim().isEmpty ?? true ? null : book.coverUrl!.trim())
+        : null;
+
+    if (errors.isNotEmpty) return left(errors);
+    if (title == book.title && safeCover == book.coverUrl) return right(book);
+    return right(
+      Book(
+        id: book.id,
+        bookUid: book.bookUid,
+        title: title,
+        titleTransliteration: book.titleTransliteration,
+        author: book.author,
+        isbn: book.isbn,
+        publisher: book.publisher,
+        publishedYear: book.publishedYear,
+        genre: book.genre,
+        coverUrl: safeCover,
+        pageCount: book.pageCount,
+        language: book.language,
+        notes: book.notes,
+        location: book.location,
+        sourceType: book.sourceType,
+        sourceDetail: book.sourceDetail,
+        ageGroup: book.ageGroup,
+        addedDate: book.addedDate,
+        copyCount: book.copyCount,
+        needsMetadata: book.needsMetadata,
+        removed: book.removed,
+        removedAt: book.removedAt,
+        addedBy: book.addedBy,
+      ),
+    );
+  }
 
   /// Returns a copy with the given fields replaced.
   Book copyWith({

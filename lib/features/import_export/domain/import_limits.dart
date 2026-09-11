@@ -13,6 +13,8 @@
 /// throwing, so a partially-valid file still imports what it safely can.
 library;
 
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+
 /// Caps applied to a single import operation.
 final class ImportLimits {
   /// Creates limits; all values must be positive.
@@ -40,9 +42,11 @@ final class ImportLimits {
   /// Defaults for the Pitaka import formats. 100k rows comfortably exceeds any
   /// real personal/community library; 8k chars is generous for a notes field;
   /// 64 MiB of text is far beyond a legitimate catalogue export.
+  /// [CatalogueRules.maxFieldChars] is the single source of truth for the
+  /// field cap (M15) so the validators and the importers can never drift.
   static const ImportLimits defaults = ImportLimits(
     maxRows: 100000,
-    maxFieldChars: 8000,
+    maxFieldChars: CatalogueRules.maxFieldChars,
     maxTextChars: 64 * 1024 * 1024,
   );
 

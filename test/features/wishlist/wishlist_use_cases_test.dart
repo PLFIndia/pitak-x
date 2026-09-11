@@ -71,6 +71,20 @@ void main() {
       );
       expect(saved.id, isNot(WishlistBook.emptyId));
     });
+
+    test('M15: rejects a priority outside 0..2', () async {
+      final r = await AddWishlistBookUseCase(repo)(
+        const WishlistBook(title: 'X', priority: 7),
+      );
+      expect(err(r), isA<ValidationFailure>());
+    });
+
+    test('M15: rejects a non-finite priceEstimate', () async {
+      final r = await AddWishlistBookUseCase(repo)(
+        const WishlistBook(title: 'X', priceEstimate: double.infinity),
+      );
+      expect(err(r), isA<ValidationFailure>());
+    });
   });
 
   group('UpdateWishlistBookUseCase', () {
@@ -100,6 +114,13 @@ void main() {
       );
       final saved = ok(await uc(ins.copyWith(title: 'Kept', addedDate: 5)));
       expect(saved.title, 'Kept');
+    });
+
+    test('M15: rejects a negative priceEstimate on update', () async {
+      final uc = UpdateWishlistBookUseCase(repo);
+      final ins = ok(await repo.insert(const WishlistBook(title: 'Y')));
+      final r = await uc(ins.copyWith(priceEstimate: -1));
+      expect(err(r), isA<ValidationFailure>());
     });
   });
 

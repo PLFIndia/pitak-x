@@ -137,6 +137,20 @@ void main() {
       expect(saved.id, isNot(Book.emptyId));
       expect(saved.bookUid, isNotNull);
     });
+
+    test('M15: rejects copyCount 0 with ValidationFailure', () async {
+      final useCase = AddBookUseCase(repo);
+      final r = await useCase(const Book(title: 'Valid', copyCount: 0));
+      expect(err(r), isA<ValidationFailure>());
+    });
+
+    test('M15: rejects an out-of-range addedDate', () async {
+      final useCase = AddBookUseCase(repo);
+      final r = await useCase(
+        const Book(title: 'Valid', addedDate: 8640000000000001),
+      );
+      expect(err(r), isA<ValidationFailure>());
+    });
   });
 
   group('UpdateBookUseCase', () {
@@ -160,5 +174,23 @@ void main() {
       expect(saved.title, 'After');
       expect(saved.id, inserted.id);
     });
+
+    test(
+      'M15: a non-allow-listed remote cover is dropped, not rejected',
+      () async {
+        // Normalise-don't-reject: a pre-M15 row could already carry such a URL;
+        // rejecting would make the book uneditable forever (the form copies
+        // base.coverUrl verbatim). The inert link is dropped instead.
+        final useCase = UpdateBookUseCase(repo);
+        final inserted = ok(await repo.insert(const Book(title: 'Before')));
+        final saved = ok(
+          await useCase(
+            inserted.copyWith(coverUrl: 'https://evil.example/c.jpg'),
+          ),
+        );
+        expect(saved.coverUrl, isNull);
+        expect(ok(await repo.getById(inserted.id))!.coverUrl, isNull);
+      },
+    );
   });
 }

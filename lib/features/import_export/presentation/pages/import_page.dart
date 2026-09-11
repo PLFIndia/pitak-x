@@ -208,6 +208,12 @@ class _Summary extends StatelessWidget {
           for (final e in summary.parseErrors)
             Text('• $e', style: textTheme.bodySmall),
         ],
+        if (summary.warnings.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('Adjustments', style: textTheme.titleSmall),
+          for (final w in summary.warnings)
+            Text('• $w', style: textTheme.bodySmall),
+        ],
       ],
     );
   }

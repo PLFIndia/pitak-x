@@ -24,6 +24,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
@@ -282,7 +283,16 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   }
 
   Future<void> _pickDate() async {
-    final initial = DateTime.fromMillisecondsSinceEpoch(_addedDate);
+    // M15: a pre-M15 row could hold an out-of-range addedDate; fall back to
+    // today rather than throwing (or tripping the picker's range asserts).
+    final now = DateTime.now();
+    final stored = CatalogueRules.dateFromMillisOrNull(_addedDate);
+    final initial =
+        (stored == null ||
+            stored.isBefore(DateTime(1900)) ||
+            stored.isAfter(now))
+        ? now
+        : stored;
     final picked = await showDatePicker(
       context: context,
       initialDate: initial,
@@ -496,7 +506,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   };
 
   static String _formatDate(int epochMillis) {
-    final d = DateTime.fromMillisecondsSinceEpoch(epochMillis).toLocal();
+    // M15: out-of-range legacy values render as no date instead of throwing.
+    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
+    if (d == null) return '';
     final mm = d.month.toString().padLeft(2, '0');
     final dd = d.day.toString().padLeft(2, '0');
     return '${d.year}-$mm-$dd';

@@ -4,6 +4,9 @@
 /// data. Pure Dart (AGENTS.md §3.1).
 library;
 
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+
 /// How a wishlist entry was created. Stored as enum `name` (upper-case).
 enum WishlistSource {
   /// Manually entered by the user.
@@ -110,6 +113,100 @@ class WishlistBook {
 
   /// True if metadata enrichment is still pending.
   final bool needsMetadata;
+
+  /// Validates [book] against the shared [CatalogueRules] (M15) and returns
+  /// a normalised copy (title trimmed) or every field error found.
+  ///
+  /// Same contract as `Book.validate`: every ingress (form, JSON/CSV import,
+  /// merge, restore) passes a row through here BEFORE persistence. A priority
+  /// outside 0..2 has no matching dropdown item (the edit form asserts), and
+  /// a non-finite price makes `jsonEncode` throw on the next export — so both
+  /// are rejected here, once, instead of at every consumer.
+  static Either<List<FieldError>, WishlistBook> validate(WishlistBook book) {
+    final errors = <FieldError>[];
+
+    final title = book.title.trim();
+    if (title.isEmpty) {
+      errors.add(const FieldError('title', 'is required'));
+    }
+
+    final textFields = <String, String?>{
+      'title': title,
+      'titleTransliteration': book.titleTransliteration,
+      'author': book.author,
+      'isbn': book.isbn,
+      'publisher': book.publisher,
+      'notes': book.notes,
+    };
+    for (final entry in textFields.entries) {
+      if (!CatalogueRules.isValidFieldText(entry.value)) {
+        errors.add(
+          FieldError(
+            entry.key,
+            'must be at most ${CatalogueRules.maxFieldChars} characters',
+          ),
+        );
+      }
+    }
+
+    if (!CatalogueRules.isValidDateMillis(book.addedDate)) {
+      errors.add(const FieldError('addedDate', 'is not a representable date'));
+    }
+    if (!CatalogueRules.isValidOptionalDateMillis(book.purchasedDate)) {
+      errors.add(
+        const FieldError('purchasedDate', 'is not a representable date'),
+      );
+    }
+    if (!CatalogueRules.isValidYear(book.publishedYear)) {
+      errors.add(
+        const FieldError(
+          'publishedYear',
+          'must be between ${CatalogueRules.minYear} and '
+              '${CatalogueRules.maxYear}',
+        ),
+      );
+    }
+    if (book.priority < priorityLow || book.priority > priorityHigh) {
+      errors.add(const FieldError('priority', 'must be 0 (low), 1 or 2'));
+    }
+    if (!CatalogueRules.isValidPrice(book.priceEstimate)) {
+      errors.add(
+        const FieldError(
+          'priceEstimate',
+          'must be a finite number, zero or more',
+        ),
+      );
+    }
+    // Cover is NORMALISED, never rejected — same rationale as Book.validate
+    // (a pre-M15 row must stay editable; the ref is inert because display and
+    // publish re-check the allow-list). Importers report the drop.
+    final safeCover = CatalogueRules.isValidCoverRef(book.coverUrl)
+        ? (book.coverUrl?.trim().isEmpty ?? true ? null : book.coverUrl!.trim())
+        : null;
+
+    if (errors.isNotEmpty) return left(errors);
+    if (title == book.title && safeCover == book.coverUrl) return right(book);
+    return right(
+      WishlistBook(
+        id: book.id,
+        title: title,
+        titleTransliteration: book.titleTransliteration,
+        author: book.author,
+        isbn: book.isbn,
+        publisher: book.publisher,
+        publishedYear: book.publishedYear,
+        coverUrl: safeCover,
+        priceEstimate: book.priceEstimate,
+        priority: book.priority,
+        notes: book.notes,
+        source: book.source,
+        addedDate: book.addedDate,
+        purchased: book.purchased,
+        purchasedDate: book.purchasedDate,
+        needsMetadata: book.needsMetadata,
+      ),
+    );
+  }
 
   /// Returns a copy with the given fields replaced.
   WishlistBook copyWith({

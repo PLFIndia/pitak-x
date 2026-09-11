@@ -17,6 +17,7 @@ import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -321,9 +322,10 @@ const List<String> _monthAbbr = [
 ];
 
 /// `d MMM yyyy` (e.g. "5 Jun 2026"), matching Kotlin's PDF date format. A zero
-/// epoch (no added-date recorded) renders blank.
+/// epoch (no added-date recorded) renders blank. M15: an out-of-range value
+/// from a pre-M15 row also renders blank instead of throwing mid-export.
 String _formatDate(int epochMillis) {
-  if (epochMillis <= 0) return '';
-  final d = DateTime.fromMillisecondsSinceEpoch(epochMillis).toLocal();
+  final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
+  if (d == null) return '';
   return '${d.day} ${_monthAbbr[d.month - 1]} ${d.year}';
 }

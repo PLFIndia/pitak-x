@@ -1,210 +1,294 @@
-# PLAN.md — Session 16: N03 (detail page observes the book by ID)
+# PLAN.md — Session 17: M15 (import field-level validation), part 1 of 2
 
-Roadmap: `fix-schedule.md` §3 row N03. Review source: `astra-review.md` N03.
+Roadmap: `fix-schedule.md` §3 row M15. Review source: `astra-review.md` M15.
 
 ## Understanding
 
-`BookDetailPage` (`lib/features/library/presentation/pages/book_detail_page.dart:55–59`)
-is a `ConsumerWidget` handed a `Book` snapshot from the list
-(`library_page.dart:204`). Everything on the page renders `book.*` from that
-snapshot, and the Edit action (`:80–92`) pushes `AddBookPage(book: book)` with
-the same snapshot. Two things mutate the row while the page is open:
+The catalogue entities `Book` (`lib/features/library/domain/entities/book.dart:113`)
+and `WishlistBook` (`lib/features/wishlist/domain/entities/wishlist_book.dart:33`)
+accept any value: there is no validated construction anywhere. The only rule
+enforced today is "title is not blank", and only in the four form use cases
+(`add_book_use_case.dart:27`, `update_book_use_case.dart:27`,
+`wishlist_use_cases.dart:26, :49`). Every other ingress **coerces** instead
+of validating, and none of them pass through those use cases:
 
-1. `_EditableCover` → `BookCoverController.replaceCover(widget.book, raw)`
-   (`book_cover_controller.dart:38–68`) — writes `coverUrl = covers/<new>.jpg`
-   to the DB, then `janitor.releaseReference(book.coverUrl)` deletes the OLD
-   file. Only `_EditableCoverState._coverUrl` is updated; the page's `book`
-   still says `coverUrl = covers/<old>.jpg`.
-2. `RemoteCoverMaterializer` (M09) may rewrite `coverUrl` from an `https://`
-   URL to a local file at any time while the page is open (asked from
-   `BookCover`, which already takes `bookId`).
+| Ingress | File | What happens today |
+|---|---|---|
+| Pitaka JSON import / merge / bundle catalogue | `import_export/infrastructure/pitaka_json_importer.dart:135–190` | `_asInt` turns any integer into `addedDate` / `copyCount` / `removedAt` / `priority` / `purchasedDate`; `title` falls back to `''`; `_asDouble` accepts `1e400` → `Infinity` and the strings `NaN`/`Infinity`; `addedBy` is the ONE text field that skips `limits.clampField` (`:168`); any `https://` `coverUrl` passes through (`:136–141`); wishlist local cover refs are kept even in plain-JSON mode (`:182`, S6 note) |
+| Goodreads CSV | `import_export/domain/goodreads_csv_importer.dart:72–121` | title checked per row; nothing else can go wrong (year/pages are display-only ints) — but it builds entities by hand, so a future column would bypass the rules |
+| Import apply | `import_export/application/import_library_use_case.dart:170–260` | writes `_bookRepo.insert/update` and `_wishlistRepo.insert/upsert` directly — never the add/update use cases |
+| Backup restore | `backup/infrastructure/legacy_db_reader.dart:55–98` → `restore_backup.dart:400–410` | reads `books.db`/`wishlist.db` from the (untrusted) archive and batch-inserts into Drift, no rules at all — **session 2** |
+| Wishlist → library move | `wishlist/application/wishlist_use_cases.dart:230` | copies `w.coverUrl` unsanitised into the library book (S15 note 3) — **session 2** |
+| Forms | `add_book_page.dart:212–247`, `add_wishlist_page.dart:175–192` | `qty < 1 ? 1 : qty` silently coerces; price `double.tryParse` accepts `-5`, `NaN`, `Infinity`; no field length cap |
 
-The bug: **capture cover → tap Edit → change the title → Save.**
-`AddBookPage._buildBook()` (`add_book_page.dart:202–237`) copies
-`base?.coverUrl` (the stale snapshot) into the saved `Book`, and
-`UpdateBookUseCase` → `DriftBookRepository.update` writes it verbatim. The
-row now points at `covers/<old>.jpg`, whose file the janitor already deleted
-→ placeholder; and `covers/<new>.jpg` becomes an orphan the janitor will
-sweep on next startup. The user's photo is lost.
+Consequences, each verified this session (not from memory):
 
-Secondary (same root cause): a second `replaceCover` in the same visit passes
-the ORIGINAL snapshot's `coverUrl` to `releaseReference`, so the intermediate
-file is not released until the startup sweep (review note); and all detail
-rows show pre-edit values after Edit, which is why the page currently pops
-itself after Edit (`:87–91`) instead of showing the fresh row.
+- `DateTime.fromMillisecondsSinceEpoch(8640000000000001)` throws `RangeError`
+  (probe run with the pinned SDK). Call sites that would throw on such a row:
+  `book_detail_page.dart:361`, `add_book_page.dart:285` (`_pickDate`),
+  `export_library_use_case.dart:251, :327` (CSV/PDF export). `showDatePicker`
+  additionally asserts `initialDate` within `[1900, now]`
+  (`flutter/.../date_picker.dart:235–239`).
+- A wishlist `priority` outside {0,1,2} hits the `DropdownButtonFormField`
+  assertion "exactly one item with [DropdownButton]'s value"
+  (`flutter/.../dropdown.dart:1035`) from `add_wishlist_page.dart:295`.
+- `copyCount ≤ 0`: `lending_policy.dart:25` and `availability.dart:32` clamp
+  defensively, but `publish_library_use_case.dart:338` (`active >= copyCount`)
+  publishes a zero-copy book as "out" with no loans.
+- `jsonEncode({'p': double.infinity})` throws `JsonUnsupportedObjectError`
+  (probe) → an imported non-finite `priceEstimate` makes the next **export**
+  crash (`pitaka_json_exporter.dart:84`).
+- `ImportLimits.defaults.maxFieldChars = 8000` (`import_limits.dart:48`) is
+  the advertised field cap; `addedBy` evades it.
 
-Verified live on HEAD `1cf334b` by reading every file above; the review's
-line numbers are stale but the shapes are intact.
+Root cause: validation was never centralised — the rules live implicitly in
+UI widgets (dropdown items, `qty < 1` clamp) and one use-case check, so each
+parser re-invented (or skipped) them. This is the "coercion mistaken for
+validation" the review names.
 
 ## Privacy & threat notes
 
-No new data, no network, no new permission. All changes are in-process reads
-of the local Drift row already displayed. Threat model unchanged: the cover
-file lives under app-private storage; the fix only stops a stale reference
-from being persisted. No secrets touched. No logging added.
+- **Threat:** a crafted `.json`/`.csv`/`.pitabak`/backup file (shared by
+  another library, downloaded, or tampered in transit) plants rows that crash
+  the detail page, the edit form, the wishlist editor, or the exporter —
+  a data-driven denial of service on the user's own catalogue, persisting
+  across restarts. Also seeds arbitrary `https://` cover URLs into the DB
+  (M09's fetch path re-checks the allow-list, so they are inert for network,
+  but they survive re-export and are how S13's hostile rows were seeded).
+- **Who can exploit:** anyone who can hand the user a file. No device access
+  needed. Restore path (session 2) has the same shape.
+- **What stops it after this fix:** one pure domain rule set applied at every
+  ingress before persistence; invalid rows are rejected and reported, never
+  coerced. Bundles stay all-or-nothing (M04). Fail closed everywhere.
+- No new data collected, no network, no permissions, no logging. Error
+  strings shown to the user contain a truncated title and a field name —
+  never raw exception text.
 
 ## Investigation notes
 
-- `BookRepository.getById(int)` exists (`book_repository.dart:27`) and returns
-  `Either<Failure, Book?>`. Drift 2.28.2 is present; there is no stream API on
-  the repository (N04 territory — NOT added here).
-- Existing single-row read-model precedent: `bookTitleProvider`
-  (`providers.dart:586–591`) — a `@riverpod` family over `getById`. Same shape
-  is the natural home for a `bookByIdProvider`.
-- Every mutation path already signals via `libraryControllerProvider`
-  (`invalidate`/`refresh` in `book_cover_controller.dart:66`,
-  `remote_cover_materializer.dart:86`, `add_book_page.dart:258`,
-  `library_controller.dart` remove/restore). A `bookById` family that
-  `ref.watch`es `libraryControllerProvider` is rebuilt by all of them with
-  zero new plumbing — the "consistent mutation-version signal" the review's
-  N04 direction names, reused rather than invented.
-- `AddBookPage` is `ConsumerStatefulWidget`; `_buildBook()` uses
-  `widget.book` as `base`. In edit mode it needs the FRESH row at save time
-  for the fields it does not edit (`coverUrl`, `removed`, `removedAt`,
-  `addedBy`, `bookUid`), while form fields stay the user's typed values.
-- 29 `implements BookRepository` fakes exist — adding a repository method is
-  a 29-file change; adding a provider is not. Provider route chosen.
-- `WishlistDetailPage` has the same snapshot shape but NO in-page mutation
-  that changes the row while it is open (purchase pops on success, edit pops
-  after). The lost-write bug cannot occur there today — the decision below
-  asks whether to touch it anyway.
+- Existing validated-construction precedents in this repo: `EventPoster.create`
+  (`events/domain/entities/event_poster.dart:29–38`, nullable static factory),
+  `LibraryId.normalizeOrNull` (`library/domain/value_objects/library_id.dart`),
+  and the Rust FFI guards `validate_text`/`validate_date`
+  (`rust/src/api.rs:171–186`: `MAX_DATE_MILLIS = 8_640_000_000_000_000`,
+  `value <= 0 || value > MAX` → reject). Dart's `DateTime` accepts exactly the
+  same bound (probe: `8640000000000000` ok, `+1` throws).
+- `Failure` hierarchy (`core/error/failure.dart`): `ValidationFailure(message)`
+  exists; the import page already lists `parseErrors` (`import_page.dart:202`);
+  merge turns the first parse error into a `ValidationFailure`
+  (`merge_library_use_case.dart:156`); bundle refuses any parse error
+  (`import_bundle.dart:23`).
+- `ImportLimits` (`import_export/domain/import_limits.dart`) is already the
+  single source of caps; `clampField` truncates. The review asks to REJECT
+  rather than silently coerce — but truncating an 8 001-char note to 8 000 is
+  a loss the user probably wants (M4 decision: "keep what's valid"). Decision
+  point D2 below.
+- `CoverUrlAllowList` lives in `publish/domain/` and is already imported by
+  `library/application`, `wishlist/presentation`, `core/widgets` — a
+  cross-feature domain import is allowed by the purity gate
+  (`test/architecture/domain_purity_test.dart:70–73`).
+- Domain purity gate forbids `dart:convert`, so the rule set must be pure
+  Dart with no JSON knowledge — it validates already-typed fields.
+- The exporter writes `coverUrl` verbatim (`pitaka_json_exporter.dart:60`) so
+  local `covers/<uuid>.jpg` refs appear in plain JSON; the importer drops them
+  for books (`:139`) but not for wishlist (`:182`). `ImportBundle.validate`
+  (`import_bundle.dart:26–30`) checks wishlist refs too, so bundles are fine;
+  plain JSON wishlist rows can carry a dangling local ref → placeholder (no
+  traversal: `CoverPaths.leafOf` guards every file access).
+- `LegacyDbReader` (`legacy_db_reader.dart:110`) `_int` does `v.toInt()` on
+  any double → throws on NaN/Infinity from a REAL column (SQLite can store
+  them). Same class of bug; belongs to session 2 with the restore ingress.
+- 29 `implements BookRepository` fakes exist (S16 note) — adding a repository
+  method is out of the question; the rule set is a pure function called by the
+  ingress code, not a repository concern.
+- Existing tests that pin current coercion behaviour and will need updating:
+  `pitaka_json_importer_test.dart:12–64` expects
+  `coverUrl == 'https://example.com/c.jpg'` to pass through (not allow-listed
+  → must now be dropped); `:100` "out-of-range numbers never throw" stays
+  valid (still must not throw — now reported).
 
 ## Proposed approach (OSS references)
 
-Riverpod's own documented pattern for "one entity by id that stays fresh":
-a family provider the page watches (Riverpod docs, "Passing arguments to your
-requests"; same as this repo's `bookTitleProvider` / `borrowerProfileProvider`).
+Borrowed shape: **"Parse, don't validate"** (Alexis King) as practised by
+`freezed`/`dartz`-style Dart codebases and by this repo's own
+`EventPoster.create` — a pure domain function that either returns a
+normalised entity or a typed list of field errors; the entity's plain
+constructor stays for already-trusted values (DB mapper, `copyWith`). The
+per-field rule table follows the Rust FFI guards in `rust/src/api.rs` so the
+two trusted cores agree on what a valid date/text is.
 
-1. **`bookByIdProvider(int id)`** in `core/di/providers.dart` (`@riverpod`
-   family, autoDispose): `ref.watch(libraryControllerProvider)` for the
-   invalidation signal (value ignored), then `repo.getById(id)`; Left → throw
-   the `Failure` (Riverpod → `AsyncError`, same idiom as `library_controller.dart`).
-   Null → the book is gone.
-2. **`BookDetailPage(bookId:)`** replaces `BookDetailPage(book:)`. The page
-   `ref.watch(bookByIdProvider(bookId))` and renders loading / safe error /
-   "no longer exists" / data. The data branch is the existing body, unchanged
-   except that `book` comes from the provider. `_EditableCover` drops its
-   `_coverUrl` copy and renders the observed book's `coverUrl`; `replaceCover`
-   gets the observed (fresh) book, so the second-replace janitor case is fixed
-   too. The post-Edit `pop()` is removed: the page now shows truth.
-   Keep the initial `Book` as an optional `initialBook` so the first frame is
-   not a spinner when pushed from the list (render it until the provider has
-   data). Decision D2 below.
-3. **`AddBookPage` edit mode uses a fresh snapshot at save.** In `_save()`,
-   when `_isEdit`, re-read `getById(widget.book!.id)` and pass THAT as the
-   base for the non-form fields. If the row is gone → `NotFoundFailure`
-   surfaced through the existing `AddBookController` error path. Cheapest
-   robust form: give `_buildBook` a `Book base` parameter. This alone closes
-   the lost-cover bug even if some other caller passes a stale snapshot.
-4. **Tests (regression first, prove red on HEAD):**
-   - `test/features/library/book_detail_page_test.dart` (new): (A) row
-     changes (`coverUrl` rewritten in the repo + `libraryController`
-     invalidated) → page re-renders with the new value without re-entry;
-     (B) capture-then-edit: after the repo's cover changed, tapping Edit
-     opens `AddBookPage` and Save keeps the NEW cover — red on HEAD;
-     (C) book deleted while open → safe "no longer exists" state, no crash;
-     (D) repo Left → safe error text, no raw exception.
-   - `test/features/library/add_book_page_test.dart`: (E) edit mode with a
-     stale `book:` whose `coverUrl` differs from the repo row → saved row
-     keeps the repo's cover — red on HEAD.
-   - `book_cover_controller_test.dart`: unchanged contract; add (F) only if
-     the controller signature changes (it does not).
+### Session 1 (this session) — the rule set + text ingresses
+
+1. **`lib/features/library/domain/catalogue_rules.dart`** (pure): shared
+   constants + primitive checks used by both entities —
+   `maxDateMillis = 8640000000000000`, `maxFieldChars` (taken from a new
+   const so `ImportLimits.defaults.maxFieldChars` references it — single
+   source), `isValidDateMillis(int)` (`0 < v ≤ max`), `isValidOptionalDate`,
+   `isValidYear` (0 < y ≤ 9999 — publishedYear is displayed as text only, but
+   a 20-digit year is still junk), `isValidCount` (page/copy ≥ 1),
+   `isValidPrice` (finite, ≥ 0). Plain-English doc on each.
+2. **`Book.validated({...})` / `WishlistBook.validated({...})`** static
+   factories on the existing entities returning
+   `Either<List<FieldError>, Book>` where `FieldError(field, problem)` is a
+   small pure value (`catalogue_rules.dart`). Rules: title non-blank after
+   trim; every text field ≤ cap (D2 decides reject vs truncate); `addedDate`
+   0 (unset) or valid millis; `removedAt`/`purchasedDate` null or valid;
+   `removed == true ⇒ removedAt` not required (Kotlin legacy rows have
+   removed without stamp — keep tolerant); `copyCount ≥ 1`; `pageCount` null
+   or ≥ 1; `publishedYear` null or 1..9999; `priority ∈ {0,1,2}`;
+   `priceEstimate` null or finite ≥ 0; `coverUrl` null, a safe local ref
+   (`CoverPaths.leafOf != null`) or `CoverUrlAllowList.sanitize` non-null.
+   `copyWith` is unchanged (it is used on already-valid rows).
+3. **`PitakaJsonImporter`**: `_book`/`_wishlistBook` build through
+   `.validated(...)`; a `Left` becomes one `parseErrors` line
+   `'Book "<title…>" (row N) skipped: <field>: <problem>'` and the row is
+   dropped. `coverUrl` for books: local kept/dropped as today, remote via
+   the factory (allow-list). Wishlist: apply the same `keepLocalCovers`
+   rule as books (fixes the S6 asymmetry). `addedBy` clamped like every
+   other field. `_asDouble` rejects non-finite (`double.tryParse('NaN')`
+   returns NaN — probe verified).
+4. **`GoodreadsCsvImporter`**: build through `.validated(...)` too (one
+   blessed way); message shape identical to today's `'Row N: missing title.'`
+   for the title case so the existing test stays meaningful.
+5. **Form use cases** (`AddBookUseCase`, `UpdateBookUseCase`,
+   `AddWishlistBookUseCase`, `UpdateWishlistBookUseCase`): replace the
+   hand-written title check with `.validated(...)` re-check → first
+   `FieldError` → `ValidationFailure(message)`. Forms already map
+   `ValidationFailure.message` to the user (`add_book_page.dart:506`,
+   `add_wishlist_page.dart:377`). `add_book_page.dart:239` `qty < 1 ? 1 : qty`
+   stays (UI convenience), the use case is now the gate.
+6. **`ImportLibraryUseCase._applyInside`**: payload rows are already
+   validated by the parsers; add a defensive re-check per row (cheap, pure)
+   so a future parser cannot bypass it — a `Left` here is a bug, mapped to
+   `ValidationFailure` and rolling the transaction back.
+7. Tests (red first): boundary tests per field on both factories; importer
+   tests for each hostile row shape (max+1 date, 0/negative copyCount,
+   priority 3, `1e400`/`"NaN"` price, 8 001-char `addedBy`, non-allow-listed
+   https cover, wishlist local ref in plain mode); use-case tests for one
+   representative rejection each; update the two existing pinned tests.
+
+### Session 2 (next) — binary ingresses
+
+Restore (`LegacyDbReader` → validate rows, refuse the archive on a `Left`
+with `BackupCorruptFailure`, fix `_int` on NaN), wishlist→library move
+(`_toLibraryBook` via `Book.validated`, cover through the allow-list), and a
+legacy-fixture migration-matrix test for a hostile `books.db`.
 
 ## Decision points
 
-- **D1 (asked first, per fix-schedule §3 row):** scope — library detail page
-  only, or also `WishlistDetailPage`? → **(b) both pages** (user, S16).
-  Wishlist gets the same shape: `wishlistBookByIdProvider(id)` family
-  watching `wishlistControllerProvider` as its signal; `WishlistDetailPage`
-  observes by id; `AddWishlistPage` edit mode re-reads the row at save.
-- **D2:** first-frame behaviour — (a) accept `initialBook` and render it until
-  the provider resolves (no spinner flash); (b) `bookId` only, spinner on
-  first frame. Proposed: (a). → **(a)** taken as the proposed default under
-  the end-to-end go-ahead (user did not object).
-- **D3:** execute end-to-end or pause at each decision point? →
-  **end-to-end** (user, S16); pause only if an assumption breaks.
+- **D1 — where the rules live.** (a) static `validated` factories on the
+  existing entities + one shared `catalogue_rules.dart` (proposed: minimal
+  surface, no new types beyond `FieldError`, mirrors `EventPoster.create`);
+  (b) separate Value Object classes per field (`Title`, `EpochMillis`,
+  `CopyCount`…) as repo AGENTS §3.3 literally says — heavier (29 fakes and
+  every `Book(...)` call site would change type) and gains nothing the
+  factory doesn't. Proposing (a).
+- **D2 — over-long text fields on import: reject the row or truncate.**
+  Review says reject; M4 (S4) deliberately truncates so "a partially-valid
+  file still imports what it safely can". Proposing: truncate + report one
+  warning line per affected row (`'…notes shortened to 8000 characters'`) —
+  the row is kept, the user is told. Rejecting would silently lose a whole
+  book over a long note. The form use cases REJECT (the user can shorten).
+- **D3 — `addedDate == 0`.** Today means "no date recorded" (detail page
+  renders nothing, `_mergeIntoExisting` treats 0 as "keep existing"). Keep 0
+  as the valid "unset" sentinel; reject only negatives and > max.
+- **D4 — execute end-to-end or pause at each decision point?**
+
+**Answers (user, 2026-09-11):** D1 = **(a)** factories + shared `catalogue_rules.dart`;
+D2 = **(a)** truncate + report on import, reject in forms; D3 = **(a)** 0 stays the
+valid "unset" sentinel; D4 = **(a)** end-to-end (pause on broken assumption /
+new decision / privacy trade-off).
 
 ## Steps
 
-- [x] 1. D1/D2/D3 answered (b / a / end-to-end).
-- [x] 2. Regression tests written; run on HEAD. Red: `add_book_page_test`
-      N03 → `Expected 'covers/new.jpg' / Actual 'covers/old.jpg'`;
-      `add_wishlist_page_edit_test` N03 → same. `book_detail_page_test` and
-      the N03 cases in `wishlist_detail_page_test` do not compile on HEAD
-      (`bookId` parameter absent) — API-change red. Test-harness note: a
-      focused `TextField` scrolls itself back into view after a fling settles,
-      unbuilding the lazily built save button — helpers unfocus first.
-- [x] 3. `bookByIdProvider` + `wishlistBookByIdProvider` families in
-      `core/di/providers.dart`; build_runner rerun (`.fvmrc`/`.gitignore`
-      untouched).
-- [x] 4. `BookDetailPage(bookId, initialBook?)` observes by id; body split into
-      `_BookDetailBody` + gone/failed/loading scaffolds; `_EditableCover`
-      dropped its `_coverUrl` copy; post-Edit `pop()` removed.
-      `WishlistDetailPage` same shape (`_WishlistDetailBody` keeps the M13
-      busy flag).
-- [x] 5. Call sites: `library_page.dart` `openDetail`, `wishlist_page.dart`
-      `_row`.
-- [x] 6. `AddBookController.saveEdit(id, applyEdits)` /
-      `AddWishlistController.saveEdit` re-read the row and build on it;
-      `save()` now refuses a persisted id. Forms pass `_buildBook(base)` /
-      `_build(base)` as the callback; maintainer stamp read before any await.
-- [x] 7. Gates green (see Result); coverage of touched files checked.
-- [x] 8. fix-schedule.md §1/§3/§5 updated; commit approval requested.
+- [x] 1. Baseline gates (analyze 0 / format 391·0 / flutter 1335 / cargo 32)
+- [x] 2. Ask D1–D4; record answers here
+- [x] 3. Red tests: `catalogue_rules_test.dart`, `book_validated_test.dart`,
+      `wishlist_book_validated_test.dart` (compile-red), 11 importer hostile-row
+      tests + 4 use-case tests (behaviour-red: 15 failed on HEAD)
+- [x] 4. `catalogue_rules.dart` + `Book.validate` + `WishlistBook.validate`
+      (static validators taking the built entity — simpler than 23-param
+      factories; same D1(a) approach)
+- [x] 5. `ImportLimits.defaults.maxFieldChars` → `CatalogueRules.maxFieldChars`
+- [x] 6. `PitakaJsonImporter` through the validators via a `_RowReader`
+      context; wishlist local-ref rule aligned with books; `addedBy` capped;
+      truncation + dropped covers reported via a new `ImportPayload.warnings`
+      channel (kept separate from `parseErrors` so a warning can't sink a
+      bundle — `ImportBundle.validate` refuses on ANY parse error)
+- [x] 7. `GoodreadsCsvImporter` through the validators
+- [x] 8. Four form use cases through the validators (`FieldError.userMessage`
+      feeds the existing snackbar mapping)
+- [x] 9. `ImportLibraryUseCase` defensive re-check per row (a Left there means
+      a parser bug → whole import fails, transaction rolls back)
+- [x] 10. Updated the two pinned importer tests (example.com → allow-listed
+      host); `ImportSummary.warnings` rendered on the import page
+- [x] 10b. Display/export hardening for PRE-M15 rows already in a database:
+      `CatalogueRules.dateFromMillisOrNull` used by the detail page, the edit
+      form's date picker + label, and the PDF/CSV export date — out-of-range
+      legacy values render as no-date instead of throwing (the review's
+      "breaks normal screens" impact applies to rows already persisted)
+- [x] 11. Gates; build_runner check (no annotated code touched — no `.g.dart`
+      diff, confirmed via `git status`)
+- [x] 12. Result section; update `fix-schedule.md` §1/§3/§5
 
 ## Out-of-scope observations
 
-- Repository has no reactive streams (N04) — this session reuses the existing
-  invalidation signal; N04 may later replace `bookById`'s dependency with a
-  real stream without touching the page.
-- `WishlistDetailPage` snapshot shape (see D1).
+- `LegacyDbReader._int` throws on NaN/Infinity doubles (session 2).
+- `_toLibraryBook` copies wishlist `coverUrl` unsanitised (session 2, S15 note).
+- `add_book_page.dart:285` `_pickDate` would still assert if a row somehow
+  had `addedDate > now` (future date): not a crash of the page, only of the
+  picker; the rule set does not forbid future dates (a device clock can be
+  wrong; the Kotlin app never forbade it). Noted, not changed.
+- `_mergeIntoExisting` (`import_library_use_case.dart:300`) rebuilds a `Book`
+  by hand — after this session it should also go through `.validated` for
+  consistency; deferred to keep the diff reviewable (it only combines two
+  already-validated rows).
 
 ## Result
 
-**Root cause fixed, not patched.** Both detail pages now observe their row by
-id and both edit forms save on top of a freshly re-read row. The stale
-snapshot that resurrected a deleted cover file no longer exists anywhere in
-the flow: the list row is used for the first frame only and never reaches an
-action.
+**Session 17 (2026-09-11) — M15 part 1 of 2 DONE, uncommitted (approval pending).**
 
-What changed (plain English):
-- Two tiny read-model providers (`bookById`, `wishlistBookById`) that re-read
-  one row whenever the list controller is invalidated — the signal every
-  mutation already fires. No repository interface change (29 fakes untouched).
-- The detail pages render whatever those providers say: current row, "no
-  longer exists", or a safe error. A row rewritten underneath swaps in without
-  a spinner (Riverpod keeps the previous value during a reload). A failed
-  re-read AFTER data was shown keeps the last-known row on screen by design
-  (actions surface their own failures); a failed FIRST read shows the error
-  page.
-- The edit controllers gained `saveEdit(id, applyEdits)`: read the row now,
-  let the form overlay its fields, write. `save()` refuses a persisted id so
-  nobody can bypass this by accident.
-- `_EditableCover` no longer keeps its own copy of the cover reference; the
-  janitor now receives the row's real current reference (fixes the review's
-  second-capture-in-one-visit note too).
+Red-first: 15 behaviour-red failures on HEAD across the importer and use-case
+tests (out-of-range date kept, copyCount 0 kept, priority 7 kept, Infinity/NaN
+price kept, blank title kept, 9 000-char `addedBy` uncapped, evil-host cover
+kept, wishlist local ref kept in plain mode); the three new domain test files
+were compile-red. All green after the fix.
 
-Tests: 13 new (6 `book_detail_page_test`, 2 `add_book_page_test`, 3 new N03
-cases in `wishlist_detail_page_test`, 2 `add_wishlist_page_edit_test`). Red
-on HEAD: the two `add_*_page` N03 saves (`covers/old.jpg` written back), and
-every detail-page N03 case (constructor change → compile red). Existing
-`library_page_test` fake given distinct ids + a real `getById` (its rows all
-shared `emptyId`, which the by-id page cannot distinguish).
+What shipped:
+- `library/domain/catalogue_rules.dart` (new): `CatalogueRules` primitives
+  (date bound = Rust `MAX_DATE_MILLIS`, field cap, year/count/price/cover
+  checks, `dateFromMillisOrNull` display guard) + `FieldError` with a
+  beginner-friendly `userMessage`.
+- `Book.validate` / `WishlistBook.validate` static validators on the entities:
+  reject (title blank, bad dates, copyCount/pageCount < 1, year outside
+  1..9999, priority outside 0..2, non-finite/negative price, over-cap text);
+  NORMALISE the cover (trim, blank→null, disallowed→null) so a pre-M15 row
+  can never become uneditable.
+- `PitakaJsonImporter`: every row through the validators via a `_RowReader`
+  context; rejections land in `parseErrors` naming row + fields; truncations
+  and dropped covers land in a NEW `ImportPayload.warnings` channel (separate
+  so a warning can't sink a bundle — `ImportBundle.validate` refuses on any
+  parse error); `addedBy` now capped; wishlist local covers follow the same
+  keepLocalCovers rule as books (S6 asymmetry closed); bundle mode rejects an
+  unsafe local cover ref outright (tampering evidence, M04 fail-closed).
+- `GoodreadsCsvImporter`: rows through the same validators.
+- The four form use cases route through the validators; the forms' existing
+  `ValidationFailure → message` mapping shows `FieldError.userMessage`.
+- `ImportLibraryUseCase` re-validates each row before writing (defence in
+  depth; a Left = parser bug → whole import rolls back). `ImportSummary`
+  carries `warnings`, rendered as "Adjustments" on the import page.
+- Pre-M15 rows already in a database no longer crash normal screens:
+  `dateFromMillisOrNull` guards the detail page, the edit form's date
+  picker/label, and the PDF/CSV export date.
+- `ImportLimits.defaults.maxFieldChars` now references
+  `CatalogueRules.maxFieldChars` (single source of truth).
 
-Gates (pinned SDK 3.44.2): analyze 0; format 391 files / 0 changed; flutter
-test `--coverage` **1335 passed / 0 failed** (`/tmp/pitak-s16-flutter-final3.txt`,
-0 `[E]`); cargo 32 passed / 2 expected ignored; `git diff --check` clean;
-build_runner → expected `.g.dart` diffs only; lib-diff scan: no
-print/log/http/Uri/Platform added. Coverage: `add_book_controller` 19/22,
-`add_wishlist_controller` 20/23, `book_detail_page` 118/233 (misses are the
-camera/crop plugin path, remove/restore dialogs, lend — all pre-existing and
-untestable without plugins), `wishlist_detail_page` 98/125; project 69.66%
-(+0.40).
+Gates: analyze 0; format 395/0; flutter test **1381 passed / 0 failed**
+(1335 baseline + 46); cargo **32 passed** (2 expected ignored); coverage
+**70.04%** (+0.38); `git diff --check` clean; no `.g.dart` diffs; lib scan:
+no print/log/http/Uri/Platform added.
 
-Test-harness lesson (recorded for later sessions): a focused `TextField`
-scrolls itself back into view after a fling settles, which unbuilds the lazily
-built save button. Save helpers now unfocus, scroll, settle, tap. Also: the
-full suite must be launched fully detached (`nohup script &` inside a
-subshell) — the tool's own timeout kills child `flutter_tester` processes.
-
-Not done: no device verification (static finding; reproduced deterministically
-in widget tests). Remote CI not checked.
+Carried to session 18 (M15 part 2): backup restore ingress
+(`LegacyDbReader` → validate rows, refuse the archive on a Left, fix `_int`
+on NaN/Infinity doubles), `_toLibraryBook` cover sanitising on the
+wishlist→library move, and a hostile-`books.db` migration-matrix test.

@@ -21,17 +21,20 @@ class UpdateBookUseCase {
 
   final BookRepository _repository;
 
-  /// Updates [book] after checking the title is present and the id is set.
+  /// Updates [book] after validating it against the shared catalogue rules
+  /// (M15: `Book.validate` is the single gate) and checking the id is set.
   /// Returns the updated book or a typed [Failure].
   Future<Either<Failure, Book>> call(Book book) {
-    if (book.title.trim().isEmpty) {
-      return Future.value(
-        left(const ValidationFailure('A title is required.')),
-      );
-    }
-    if (book.id == Book.emptyId) {
-      return Future.value(left(const NotFoundFailure()));
-    }
-    return _repository.update(book);
+    return Book.validate(book).match(
+      (errors) {
+        return Future.value(left(ValidationFailure(errors.first.userMessage)));
+      },
+      (valid) {
+        if (valid.id == Book.emptyId) {
+          return Future.value(left(const NotFoundFailure()));
+        }
+        return _repository.update(valid);
+      },
+    );
   }
 }

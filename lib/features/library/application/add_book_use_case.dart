@@ -21,14 +21,16 @@ class AddBookUseCase {
 
   final BookRepository _repository;
 
-  /// Inserts [book] after checking the title is present. Returns the persisted
-  /// book (with its assigned id + minted uid) or a typed [Failure].
+  /// Inserts [book] after validating it against the shared catalogue rules
+  /// (M15: `Book.validate` is the single gate every ingress passes through —
+  /// the form pre-checks the title, but the use case is the source of truth).
+  /// Returns the persisted book (with its assigned id + minted uid) or a
+  /// typed [Failure].
   Future<Either<Failure, Book>> call(Book book) {
-    if (book.title.trim().isEmpty) {
-      return Future.value(
-        left(const ValidationFailure('A title is required.')),
-      );
-    }
-    return _repository.insert(book);
+    return Book.validate(book).match(
+      (errors) =>
+          Future.value(left(ValidationFailure(errors.first.userMessage))),
+      _repository.insert,
+    );
   }
 }

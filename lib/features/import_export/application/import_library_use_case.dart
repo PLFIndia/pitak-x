@@ -31,6 +31,7 @@ import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -49,6 +50,7 @@ class ImportSummary {
     this.wishlistAdded = 0,
     this.wishlistReplaced = 0,
     this.parseErrors = const [],
+    this.warnings = const [],
   });
 
   /// Detected format (null only when sniffing failed — a failure case).
@@ -71,6 +73,10 @@ class ImportSummary {
 
   /// Per-row / file-level parse errors surfaced to the user.
   final List<String> parseErrors;
+
+  /// Non-fatal adjustments applied to kept rows (M15: truncated fields,
+  /// dropped cover links), surfaced alongside [parseErrors].
+  final List<String> warnings;
 }
 
 /// Imports a text payload (JSON/CSV) or an already-parsed bundle payload.
@@ -169,7 +175,22 @@ final class ImportLibraryUseCase {
     var wishlistAdded = 0;
     var wishlistReplaced = 0;
 
-    for (final book in payload.books) {
+    for (final rawBook in payload.books) {
+      // M15 defence in depth: parsers already validate each row, but the
+      // write path re-checks so a FUTURE parser can never bypass the gate.
+      // A Left here means a parser bug — fail the whole import (the
+      // transaction rolls back) rather than persist an invalid row.
+      final checked = Book.validate(rawBook);
+      if (checked.isLeft()) {
+        final errs = (checked as Left<List<FieldError>, Book>).value;
+        return left(
+          ValidationFailure(
+            'A parsed book failed validation: '
+            '${errs.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+          ),
+        );
+      }
+      final book = checked.toNullable()!;
       // 1. Same stable identity already here → update that row in place.
       final uid = book.bookUid?.trim();
       if (uid != null && uid.isNotEmpty) {
@@ -226,7 +247,19 @@ final class ImportLibraryUseCase {
       booksAdded++;
     }
 
-    for (final w in payload.wishlist) {
+    for (final rawW in payload.wishlist) {
+      // M15 defence in depth, same as the book loop above.
+      final checkedW = WishlistBook.validate(rawW);
+      if (checkedW.isLeft()) {
+        final errs = (checkedW as Left<List<FieldError>, WishlistBook>).value;
+        return left(
+          ValidationFailure(
+            'A parsed wishlist entry failed validation: '
+            '${errs.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+          ),
+        );
+      }
+      final w = checkedW.toNullable()!;
       final isbn = w.isbn?.trim();
       if (isbn != null && isbn.isNotEmpty) {
         final found = await _wishlistRepo.findByIsbn(isbn);
@@ -280,6 +313,7 @@ final class ImportLibraryUseCase {
         wishlistAdded: wishlistAdded,
         wishlistReplaced: wishlistReplaced,
         parseErrors: payload.parseErrors,
+        warnings: payload.warnings,
       ),
     );
   }

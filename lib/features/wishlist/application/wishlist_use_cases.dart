@@ -10,6 +10,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -22,14 +23,17 @@ class AddWishlistBookUseCase {
 
   final WishlistRepository _repository;
 
-  /// Inserts [book] after checking the title is present.
+  /// Inserts [book] after validating it against the shared catalogue rules
+  /// (M15: `WishlistBook.validate` is the single gate every ingress passes
+  /// through — it also catches a priority outside 0..2 and a non-finite
+  /// price, which the form's dropdown/keyboard can't produce but a crafted
+  /// call could).
   Future<Either<Failure, WishlistBook>> call(WishlistBook book) {
-    if (book.title.trim().isEmpty) {
-      return Future.value(
-        left(const ValidationFailure('A title is required.')),
-      );
-    }
-    return _repository.insert(book);
+    return WishlistBook.validate(book).match(
+      (errors) =>
+          Future.value(left(ValidationFailure(errors.first.userMessage))),
+      _repository.insert,
+    );
   }
 }
 
@@ -44,26 +48,30 @@ class UpdateWishlistBookUseCase {
 
   final WishlistRepository _repository;
 
-  /// Updates [book]; rejects a blank title, a missing row, or an `addedDate`
-  /// change. Returns the updated entry or a typed [Failure].
+  /// Updates [book]; rejects an invalid row (M15: shared
+  /// `WishlistBook.validate` gate), a missing row, or an `addedDate` change.
+  /// Returns the updated entry or a typed [Failure].
   Future<Either<Failure, WishlistBook>> call(WishlistBook book) async {
-    if (book.title.trim().isEmpty) {
-      return left(const ValidationFailure('A title is required.'));
+    final validated = WishlistBook.validate(book);
+    if (validated.isLeft()) {
+      final errors = (validated as Left<List<FieldError>, WishlistBook>).value;
+      return left(ValidationFailure(errors.first.userMessage));
     }
-    if (book.id == WishlistBook.emptyId) {
+    final valid = validated.toNullable()!;
+    if (valid.id == WishlistBook.emptyId) {
       return left(const NotFoundFailure());
     }
-    final existing = await _repository.getById(book.id);
+    final existing = await _repository.getById(valid.id);
     // Propagate a storage error from the lookup unchanged.
     if (existing.isLeft()) {
       return left((existing as Left<Failure, WishlistBook?>).value);
     }
     final found = existing.toNullable();
     if (found == null) return left(const NotFoundFailure());
-    if (found.addedDate != book.addedDate) {
+    if (found.addedDate != valid.addedDate) {
       return left(const ValidationFailure('The date added cannot be changed.'));
     }
-    return _repository.update(book);
+    return _repository.update(valid);
   }
 }
 

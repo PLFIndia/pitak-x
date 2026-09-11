@@ -16,6 +16,7 @@ class ImportPayload {
     this.books = const [],
     this.wishlist = const [],
     this.parseErrors = const [],
+    this.warnings = const [],
   });
 
   /// Books to import (ids not yet assigned).
@@ -24,8 +25,16 @@ class ImportPayload {
   /// Wishlist entries to import (ids not yet assigned).
   final List<WishlistBook> wishlist;
 
-  /// Per-row / file-level parse errors, safe to surface to the user.
+  /// Per-row / file-level parse errors, safe to surface to the user. A row
+  /// named here was SKIPPED (M15: invalid values are rejected, not coerced).
   final List<String> parseErrors;
+
+  /// Non-fatal adjustments applied to KEPT rows (M15, D2 = truncate + report):
+  /// an over-long text field was shortened, or a disallowed cover link was
+  /// dropped. Separate from [parseErrors] because `ImportBundle.validate`
+  /// refuses a bundle with ANY parse error — a warning must not sink a
+  /// bundle.
+  final List<String> warnings;
 
   /// True when nothing parseable was found.
   bool get isEmpty => books.isEmpty && wishlist.isEmpty;
