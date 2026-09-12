@@ -1,322 +1,237 @@
-# PLAN.md — Session 23: N07 (part 1 of 2) — merge: honest summary, preserved warnings, namespace adoption coordinated with data + settings
+# PLAN.md — Session 24 — N07 part 2 of 2: per-row conflict review UI
+
+Roadmap: `fix-schedule.md` §1 (NEXT). Finding: `astra-review.md` N07
+("conflicts/possible duplicates are counts only, with no way to inspect or
+apply the implemented resolutions"). Part 1 (S23, `418d17a`, unpushed by
+user decision — rides with this session's commit) fixed the namespace order,
+the honest summary, warnings, and the cover rule. This session wires the
+already-implemented `MergeLibraryUseCase.applyResolution` to a per-row UI.
 
 ## Understanding
 
-`astra-review.md` N07: "Merge cannot resolve conflicts and can partially change
-namespace state." Re-read this session; the review's line numbers are stale,
-every cited pattern is live in current code:
+After a merge, `MergeResult.conflicts` (`MergeConflict{local, incoming,
+matchedBy}`) and `MergeResult.possibleDuplicates` (`PossibleDuplicate{local,
+incoming, similarity}`) reach the page inside `MergeDone`, but `_ResultView`
+(`merge_page.dart:250-320`) renders only a count line. The user cannot see
+what differs or act on it. `applyResolution` (use case `:365-395`) exists,
+is unit-tested (5 cases), and has NO caller in `lib/` (grep, this session).
 
-1. **Conflicts are counts only.** `merge_page.dart:245-279` `_ResultView`
-   prints "`N book(s)` appear on both devices but differ … reviewing each one
-   … is coming in a later update." `MergeLibraryUseCase.applyResolution`
-   (`merge_library_use_case.dart:275-316`, keep-mine / take-theirs / keep-both)
-   is implemented and unit-tested but has **no caller in `lib/`** (grep).
-   `MergeConflict` / `PossibleDuplicate` (`library_merge_engine.dart:56-115`)
-   already carry both `Book`s + `matchedBy` / `similarity` — enough for a
-   review row. → **Session 24** (UI + controller `resolve`).
-2. **Join adopts the namespace BEFORE the data lands.**
-   `merge_library_use_case.dart:200-218` `applyJoin`: `setLibraryId` →
-   `setLibraryName` → `_applyEngineMerge`. If `insertAll` fails the device now
-   carries the OTHER library's ID with none of its books; the next merge of the
-   same file passes the ID gate and auto-applies the union with no Join
-   decision — exactly the "failed Join can still change future merge identity"
-   the reviewer describes. `applyOverwrite` (`:230-277`) already does data
-   first, ID second.
-3. **Settings state goes stale.** The use case writes through
-   `SettingsRepository` directly (`_settings.setLibraryId/…Name`), bypassing
-   `SettingsController` — the keep-alive in-memory `AppSettings` (M16's single
-   serialised writer). `MergeController._merged` (`merge_controller.dart:185`)
-   invalidates only `libraryControllerProvider`. After a Join/Overwrite the
-   drawer header (`app_drawer.dart:35`), the library AppBar
-   (`library_page.dart:58`), the Settings name field (`settings_page.dart:108`),
-   the PDF/JSON export envelope name (`export_controller.dart:97-100`) and the
-   publish site title (`publish_controller.dart:92`) all keep showing the OLD
-   library name until restart. (The ID self-heals on the next export/QR because
-   those call the controller's `getOrCreateLibraryId`, which re-reads prefs.)
-4. **Parse warnings are discarded.** `merge_library_use_case.dart:152-155`
-   surfaces `payload.parseErrors` ONLY when zero books parsed; a file with 99
-   good rows and 1 invalid row (M15 rejects, not coerces) silently drops the
-   row. `payload.warnings` (M15 truncations / dropped covers) is never read.
-   `MergeResult` and `MergeDiffersDecision` have no field for either, so
-   nothing can be shown after Join/Overwrite.
-5. **Overwrite is reported as a zeroed merge.** `merge_controller.dart:135-147`
-   maps a successful Overwrite to `MergeResult(added: 0, identical: 0, …)`;
-   the page then says "Merge complete / Books added: 0 / Already matched: 0"
-   for a catalogue that was just REPLACED. Reviewer: "Do not describe a partial
-   merge as complete without explaining omissions."
-6. **S12/S13 N07 note — `_mergeCover`** (`library_merge_engine.dart:351`).
-   After M09 a device with remote covers ON materialises `https://…` into
-   `covers/<uuid>.jpg`; a device with it OFF keeps the URL. Merging the two:
-   `remoteUrlOf(local photo)` = null vs `remoteUrlOf(url)` = the URL → a
-   conflict. Under M09's precedence (`resolveIncomingCover`), take-theirs
-   keeps the local photo anyway, so this conflict is unresolvable-to-anything
-   and pure noise. `library_merge_engine_test.dart:300` currently LOCKS the
-   opposite ("local cover vs remote cover is a real conflict"). → D2.
-
-Scope split (the schedule allots 2 sessions):
-- **Session 23 (this):** items 2–6 — application-layer foundation + honest
-  result surface. Everything a review UI will need must be true first.
-- **Session 24:** item 1 — per-row conflict / possible-duplicate review
-  (controller `resolve`, `applyResolution` guard for in-file collisions whose
-  `local` is a not-yet-persisted row, widget tests).
+What "done" means here: every review item is shown as a card with what
+differs (or why it looks like a duplicate), with actions keep-mine /
+take-theirs / keep-both that call `applyResolution` through the controller,
+per-item progress + typed failure + retry, library refresh after every
+write, and honest labels for the in-file-collision case where "take theirs"
+is impossible.
 
 ## Privacy & threat notes
 
-- No new data collected, no network, no new permissions. Merge stays local.
-- Who can influence this path: whoever hands the user a `.json` file. Threat is
-  **namespace poisoning** (item 2): a crafted file that makes `insertAll` fail
-  (e.g. a UNIQUE collision the planner misses) after the ID was adopted leaves
-  the device silently re-identified. Fix: data first, ID only after success.
-- Surfaced text: `parseErrors` / `warnings` are our OWN messages built by
-  `_RowReader` (M15) — row number, a ≤40-char title so the user can find the
-  row (`pitaka_json_importer.dart:333-338`, verified in step 4 when a test
-  assumption said "no title"), and the field names at fault. The INVALID
-  VALUES are never echoed. `MergeResult` copy must stay that way (step 9).
-- Settings writes stay behind the M16 FIFO (D1-b) — no second writer race.
-- `debugPrint`/logging: none added.
+- Data shown: this device's catalogue fields and the fields of a file the
+  user picked themselves. Displayed on-device only; nothing logged
+  (`kDebugMode` or otherwise), nothing leaves the device. FLAG_SECURE is
+  app-wide (`MainActivity.kt:13`), so the review cards are screenshot-safe
+  like every other page. Notes/location (private, stripped at publish) may
+  appear in a diff — that is the user's own data on their own screen.
+- Threat: a crafted file plants values that crash the review card. Incoming
+  rows already passed M15 (`PitakaJsonImporter` → `Book.validate`), and this
+  session adds `Book.validate` as the LAST gate before `update`/`insert`
+  inside `applyResolution` (defence in depth, S17 obs. 2). Display uses
+  `maxLines` + ellipsis so an 8000-char note cannot blow up the layout.
+- Failure copy: `_messageFor` shows `ValidationFailure.message` (our own
+  text) and a generic line for every other type — no raw exception text.
+- Fail closed: one resolution in flight at a time; a new file pick is refused
+  while a row write is running; a resolution completion is dropped if the
+  controller has moved on (generation check).
 
-## Investigation notes
+## Investigation notes (verified this session, file:line current)
 
-- `MergeController` (S20, N11): keep-alive, `_running`, sealed `MergeUiState`
-  (`Idle/Running/NeedsDecision{applyFailure, applying}/Done/Failed`).
-  `_apply` KEEPS the decision on a failed apply so the user can retry or pick
-  the other option — that contract assumes NOTHING landed. Once the union has
-  landed, offering "Replace my library" again would replace an already-merged
-  catalogue → a post-data adoption failure must go to `MergeDone` with an
-  explicit omission, not back to the decision (D3).
-- `SettingsController` (M16): `_serialised` FIFO + `_update(persist, patch)`
-  patch-on-current; `setLibraryId`/`setLibraryName` are `Future<void>` and fold
-  failures into `AsyncError` — no `Either` for a caller to branch on.
-  `_mintLibraryId` returns `Either<Failure, String>` and patches state.
-  Precedent for a controller implementing a domain port consumed by a use
-  case: `VaultSessionController implements CatalogueReplacementGuard`
-  (`vault_session_controller.dart:53-54`), wired in `providers.dart:884`
-  via `ref.read(vaultSessionControllerProvider.notifier)`.
-- Riverpod 2.6.1 (pub-cache, not memory): `when/maybeWhen` default
-  `skipLoadingOnRefresh = true` (`common.dart:674`) — an `invalidate` of a
-  keep-alive AsyncNotifier keeps the previous value visible in `maybeWhen(data:)`
-  consumers; `AsyncNotifierProviderElement.create` caches the notifier
-  (`_notifierNotifier.result ??=`, `base.dart:534`) so the FIFO survives a
-  rebuild. (Relevant only if D1-a is chosen.)
-- `ImportPayload.warnings` (M15) exists and is populated by
-  `PitakaJsonImporter`; `ImportSummary` + `import_page.dart:215-229` already
-  render "Issues" + "Adjustments" — the merge summary should mirror that copy.
-- The JSON importer never sets `Book.id` → incoming rows have `id == emptyId`.
-  `PossibleDuplicate.local` for an in-file collision is such a row
-  (`library_merge_engine.dart:236-240`) → `takeTheirs` would `update()` id 0
-  (NotFound). Session-24 guard; recorded here so it is not forgotten.
-- Existing tests: `merge_library_use_case_test.dart` (646 lines,
-  `_FakeBooks`/`_FakeSettings implements SettingsRepository`),
-  `merge_controller_test.dart` (361, own fakes, `makeContainer` with live
-  listener), `merge_page_test.dart` (269, `ReplacementSettings` from
-  `test/features/library/replacement_harness.dart`), engine test (405).
-  `merge_controller_test.dart:241` "a failed applyJoin keeps the decision" does
-  NOT assert settings unchanged — the hole item 2 lives in.
+- `merge_library_use_case.dart:365-395` `applyResolution`: `takeTheirs` →
+  `_bookRepo.update(incoming.copyWith(id: local.id, bookUid: local.bookUid,
+  coverUrl: resolveIncomingCover(...)))`; `keepBoth` → `insert(_freshCopyOf
+  (incoming))`. No `Book.validate`. No `emptyId` guard.
+- `drift_book_repository.dart:148-150`: `update` with `id == emptyId` →
+  `left(NotFoundFailure())` — the in-file collision would surface as a
+  misleading "not found" instead of a clear refusal.
+- `library_merge_engine.dart:236-240`: for a key collision the engine stores
+  the KEY HOLDER as `PossibleDuplicate.local`; for an in-file collision that
+  is the earlier incoming row — `id == emptyId`, never persisted under that
+  object. `PossibleDuplicate` has no `reason`; `similarity == 1.0` is also a
+  legitimate fuzzy score (identical title+author tokens), so kind cannot be
+  inferred from the score.
+- `mergeEquals` (`:291-311`) is a hand-written `&&` chain over 18 fields; no
+  per-field diff exists anywhere. Cover equality is `_coversEqual` (S23).
+- `merge_controller.dart`: `MergeDone(result)` is terminal; `_apply` uses a
+  keep-alive link + `applying` flag; `mergeText` guards only `_running`.
+  Nothing stops `mergeText` during a future row write, and a stale
+  completion would write into whatever `MergeDone` is current.
+- `merge_page.dart:250-320` `_ResultView`: one `bodySmall` line for the
+  review count. Page `busy` = `MergeRunning` only.
+- Tests: `merge_controller_test.dart` (`makeContainer` over the REAL
+  `SettingsController`, `_FakeBooks` with `update` returning `right(book)`
+  WITHOUT storing — must store for these tests); `merge_page_test.dart`
+  (`_DoneController` pins `MergeDone`; `_Books` fake has only `getAll`);
+  `merge_library_use_case_test.dart` `applyResolution` group (5) with
+  `_FakeBooks.update` → NotFound on a missing id; engine test (427 lines).
+- Precedents: `import_page.dart:185-233` `_Summary` (list-in-column copy
+  style); `UpdateBookUseCase` (`update_book_use_case.dart:28-30`) is the
+  in-repo model for `Book.validate(...).match(errors → ValidationFailure
+  (errors.first.userMessage), ok → repo.update(ok))`.
 
 ## Proposed approach
 
-### A. `applyJoin`: data first, namespace second, honest result
-- Run `_applyEngineMerge` FIRST. Only on `Right` adopt the incoming ID + name.
-- Adoption failure after data success → `Right(MergeResult(…, namespace:
-  MergeNamespaceOutcome.adoptionFailed))` — the books are there, the page says
-  so and explains the omission ("… but this device could not adopt the
-  library's identity; the next merge from this library will ask you to Join
-  again"). Self-healing: the next Join finds every row identical and only
-  adopts. (D3.)
-- `applyOverwrite` → returns `Either<Failure, MergeResult>` with
-  `replaced: true, added: incoming.length` and the same namespace outcome.
-  The controller's zeroed mapping goes away.
+1. **Domain (engine)** — additive:
+   - `enum DuplicateReason { similarTitle, identityKey }` +
+     `PossibleDuplicate.reason` (default `similarTitle` so existing
+     constructors compile; the engine sets `identityKey` at `:236-240`).
+   - `enum MergeField` (the 18 compared fields) + `MergeFieldDifference
+     {field, local, incoming}` + `List<MergeFieldDifference>
+     mergeDifferences(Book a, Book b)`. `mergeEquals` iterates the SAME
+     private field-spec list with early return — one source of truth, no
+     allocation on the hot path, engine tests pin equivalence.
+2. **Use case** — `applyResolution.takeTheirs` refuses `local.id ==
+   Book.emptyId` with a `ValidationFailure` naming the situation (no repo
+   call); both writing branches pass the built book through
+   `Book.validate` (model: `UpdateBookUseCase`).
+3. **Controller** — review state lives INSIDE `MergeDone` (one owner, same
+   keep-alive lifecycle): `MergeReviewItem{index, kind, local, incoming,
+   similarity, status}` with sealed `MergeReviewStatus` = `ReviewPending |
+   ReviewApplying | ReviewResolved(resolution) | ReviewFailed(failure)`;
+   `MergeDone.review` built from the result; `MergeDone.openCount` /
+   `isResolving`. New `resolve(int index, MergeResolution)`: refuses unless
+   `MergeDone`, item open, nothing else applying, not disposed; keep-alive
+   link for the write; generation counter so a completion after a new
+   `mergeText` is dropped; `mergeText` refuses while resolving; library
+   invalidated after a successful `takeTheirs`/`keepBoth` (not `keepMine`);
+   catch-all → `ReviewFailed(UnexpectedFailure)`.
+4. **Page** — `_ResultView` gains a "Needs your review" section: one
+   `_ReviewCard` per item (headline by kind; differing fields as
+   "Label: yours → theirs" for conflicts, both titles + similarity for
+   fuzzy, plain-English explanation for a key collision); actions
+   `Keep mine` / `Take theirs` / `Keep both` (for an in-file collision:
+   `Skip` / `Add as a separate book`, no take-theirs); applying → disabled +
+   spinner; failed → safe copy + retry; resolved → one status line. The
+   file-pick button is disabled while a row write runs.
+5. `build_runner` LAST (controller is `@riverpod`), gates, PLAN Result,
+   schedule §1/§3/§5.
 
-### B. Settings written through the single writer (D1)
-- (b, recommended) new domain port `LibraryNamespace` in
-  `lib/features/settings/domain/library_namespace.dart`:
-  `Future<Either<Failure, LibraryIdentity>> current()` (id via
-  get-or-create + current name) and
-  `Future<Either<Failure, Unit>> adopt({required String id, required String
-  name})`. `SettingsController implements LibraryNamespace`: `current()` awaits
-  its own `future` then `_mintLibraryId`; `adopt()` runs BOTH prefs writes in
-  ONE `_serialised` turn and patches state once. `MergeLibraryUseCase` drops
-  its `SettingsRepository` dependency for the port; `providers.dart` wires
-  `ref.read(settingsControllerProvider.notifier)` (the replacement-guard
-  precedent). Result: no code path writes library identity behind M16's FIFO,
-  and every watcher (drawer, AppBar, export, publish) sees the new name at
-  once.
-- (a, alternative) keep the repo writes; `MergeController._merged` also
-  `ref.invalidate(settingsControllerProvider)` when a namespace was adopted.
-  Smaller diff; leaves the second writer in place.
-
-### C. Warnings and skipped rows preserved
-- `MergeResult` gains `skippedRows: List<String>` (= `parseErrors`, rows NOT
-  imported) and `adjustments: List<String>` (= `warnings`). `MergeDiffersDecision`
-  carries both so Join/Overwrite forward them. `call()` keeps the existing
-  "zero books + errors → Left" rule.
-- `_ResultView` renders them with the Import page's wording ("Issues" /
-  "Adjustments"), plus: a "Library replaced — N books now on this device" head
-  for `replaced`, the namespace omission line, and — until Session 24 — the
-  review count with copy that no longer promises "a later update" but says the
-  rows were left unchanged and can be reviewed below (S24 adds the rows).
-
-### D. Engine cover rule (D2)
-- (a, recommended) `mergeEquals` treats a LOCAL cover on one side vs a REMOTE
-  https cover on the other as equal (M09 precedence makes take-theirs a
-  no-op for that field; after materialisation both devices show the same
-  picture). Flip `library_merge_engine_test.dart:300` with the M09 rationale;
-  keep "remote vs remote differ" and "remote vs null" as conflicts.
-- (b) leave as is; note remains open on the N07 row.
-
-### E. Tests (regression first, red on HEAD)
-- `merge_library_use_case_test.dart`: failed `insertAll` on Join → settings
-  UNCHANGED (behaviour-red); adoption fails after data → `Right` with
-  `adoptionFailed` + books present (behaviour-red: HEAD returns Left);
-  1 good + 1 invalid row → `skippedRows` (compile-red); truncated field →
-  `adjustments`; decision path carries both; overwrite returns `replaced`
-  result (compile-red).
-- `merge_controller_test.dart`: after `applyJoin` the `settingsControllerProvider`
-  state shows the new id + name (behaviour-red); overwrite → `MergeDone`
-  with `replaced` (compile-red).
-- `settings_test.dart` (D1-b): `adopt` is one FIFO turn — a slow theme write
-  in flight cannot revert id/name (M16 gated fake).
-- `library_merge_engine_test.dart` (D2-a): flipped case + a new "remote vs
-  remote still conflicts" guard already exists (`:278`).
-- `merge_page_test.dart`: summary shows Issues/Adjustments; overwrite shows
-  the replaced head; namespace omission line.
-
-OSS reference: none new — the `Either`-typed port + controller-implements-port
-shape is this repo's own `CatalogueReplacementGuard`; result-with-omissions is
-the same idea as `ImportSummary.warnings` (M15).
+OSS reference: the card-per-item review with tri-state actions mirrors the
+Kotlin origin's intent (`LibraryMergeEngine` port comments); no external
+code copied.
 
 ## Decision points
 
-- **D1 — settings coordination:** (a) invalidate `settingsControllerProvider`
-  after adoption · (b) `LibraryNamespace` port implemented by
-  `SettingsController`, use case stops touching `SettingsRepository`.
-  → **(b)** (user, 2026-09-12)
-- **D2 — cover rule:** (a) local photo vs remote https = equal · (b) keep the
-  conflict. → **(a)** (user)
-- **D3 — adoption fails AFTER data landed:** proposed **`MergeDone` with
-  `adoptionFailed` omission** (staying on the decision would re-offer
-  "Replace my library" against an already-merged catalogue).
-  → **confirmed** (no objection).
-- **D4 — execution mode:** end-to-end, or pause at each decision point?
-  → **end-to-end** (user)
+- **D1 — `Book.validate` inside `applyResolution`?** (a) yes, both writing
+  branches (recommended — M15 rule "every ingress passes the gate", cost is
+  ~6 lines + 2 tests); (b) defer. → **(a)** (user, this session)
+- **D2 — in-file collision `takeTheirs`:** refuse in the use case AND hide
+  the button (fix-schedule NEXT already says "must refuse"; resolving the
+  real persisted row by uid/ISBN would make "take theirs" mean overwriting
+  a row the same file just added — not what the label promises). Taken as
+  settled; flagged here, not re-asked.
+- **D3 — concurrency:** one resolution at a time, file pick refused while a
+  row write runs. Design choice (fail closed, simplest testable state);
+  flagged, not asked.
+- **D4 — execution mode:** end-to-end or pause at each decision point. →
+  **(a) end-to-end** (user, this session); pause only if an assumption
+  breaks.
 
 ## Steps
 
-- [x] 1. Protocol start: repo matches S22 handoff (`98f1d5b` = origin/main;
-  only the recorded 2-line PLAN.md tick-off dirty). Baseline gates recorded.
-- [x] 2. Re-read N07 + all cited files; evidence re-verified (above).
-- [x] 3. Ask D1, D2 (one at a time), confirm D3, ask D4 — b / a / confirmed / end-to-end.
-- [x] 4. Regression tests written and proved red on HEAD (E).
-- [x] 5. Domain: `LibraryNamespace` port (D1-b) / engine cover rule (D2-a).
-- [x] 6. `SettingsController implements LibraryNamespace` (+ `.g.dart`).
-- [x] 7. `MergeLibraryUseCase`: result types, data-first Join, typed overwrite
-  result, warnings forwarded; `providers.dart` wiring.
-- [x] 8. `MergeController`: drop the zeroed mapping; `MergePage._ResultView`
-  honest summary.
-- [x] 9. Privacy pass on the lib diff (no values from the file in copy, no
-  logs). Gates: analyze, format, `build_runner` LAST, full suite detached,
-  cargo.
-- [ ] 10. fix-schedule.md §1/§3/§5; commit approval with explicit paths.
+- [x] 1. Regression tests, proved red on HEAD: use case `N07 — guards` (4)
+  **behaviour-red** — collision `takeTheirs` returned `NotFoundFailure` (the
+  misleading path), copyCount 0 / year 0 written unvalidated, evil-host
+  cover written verbatim. Engine (8), controller (11), page (6): compile-red;
+  every analyzer error names a new symbol (`review`, `resolve`,
+  `MergeField`, `DuplicateReason`, `reason`, `openCount`, `isResolving`,
+  `MergeReviewKind`, `withItemStatus`, `Review*`, `mergeDifferences`,
+  `canTakeTheirs`) — no unrelated error.
+- [x] 2. Engine: `DuplicateReason`, `MergeField`, `MergeFieldDifference`,
+  `mergeDifferences`, `mergeEquals` over the shared `_mergeFieldSpecs` list
+  (equivalence pinned by a test over all 18 fields). Domain purity green.
+- [x] 3. Use case: `emptyId` guard (typed `ValidationFailure`, no repo call)
+  + `Book.validate` on both writes via `_validated` (normalised book lands).
+- [x] 4. Controller: `MergeReviewItem`/`MergeReviewKind`/`MergeReviewStatus`
+  inside `MergeDone` (`openCount`, `isResolving`, `withItemStatus`),
+  `resolve(index, resolution)` with keep-alive + one-at-a-time + `mergeText`
+  refused while resolving. The planned generation counter was DROPPED: since
+  `mergeText` is refused while a row is applying, the state cannot leave
+  `MergeDone` under a resolution — a counter would guard an unreachable
+  path ("no magic"). `.g.dart` regenerated.
+- [x] 5. Page: `_ReviewSection` + `_ReviewCard` (headline/explanation by
+  kind, field diffs via `mergeDifferences` with `maxLines`, tri-state
+  actions, collision → Skip / Add as a separate book, applying → spinner,
+  failed → safe copy + retry), pick button disabled while resolving; header
+  doc updated; count-only line removed.
+- [x] 6. Privacy pass on the lib diff: no print/debugPrint/log/http/Uri/
+  Platform added; the only `toString()` is `_num` on an `int` for display;
+  failure → copy goes through `_failureLine`/`_messageFor` (own
+  `ValidationFailure.message`, generic line otherwise); card text is the
+  user's own catalogue values with `maxLines` + ellipsis.
+- [x] 7. `build_runner` LAST (1 `.g.dart` hash, `.fvmrc`/`.gitignore`
+  untouched); analyze 0; format 404/0; Flutter **1516 passed / 0 failed**
+  (`/tmp/pitak-s24-flutter-final.txt`, EXIT=0, 0 `[E]`); cargo 32 (2
+  expected ignored); `git diff --check` clean.
+- [ ] 8. `fix-schedule.md` §1/§3 (N07 → DONE ledger)/§5; commit approval with
+  explicit paths; push approval (carries `418d17a`).
 
 ## Out-of-scope observations
 
-- (S24) per-row review UI; `applyResolution` must refuse `takeTheirs` when
-  `local.id == Book.emptyId` (in-file collision).
-- `_mergeIntoExisting`-style hand-built books in `applyResolution.takeTheirs`
-  bypass `Book.validate` (S17 obs. 2) — S24 candidate when the rows get a UI.
-- `ReplacementSettings` / `_FakeSettings` ×2 hand-roll `SettingsRepository`
-  (17 files now) — a shared `test/support/` fake keeps growing in value.
+- `takeTheirs` on a FUZZY duplicate keeps the local uid and drops the
+  incoming uid, so the next merge of the same file re-surfaces the pair
+  (similarity 1.0). Pre-existing Kotlin-port semantics; a uid-adoption
+  option is a separate design question.
+- `MergeController._running` and `MergeNeedsDecision.applying` and the new
+  resolve guard are three flags for "busy" — a single `_busy` state would be
+  cleaner; left alone to keep the diff reviewable.
+- Long review lists (100+ conflicts) render as one Column inside the page
+  `ListView` — N10 territory (pagination).
+- `test/features/import_export/*` fakes: `_FakeBooks` now exists in three
+  files with slightly different `update` semantics — the S14–S23 shared
+  `test/support/` fake note keeps growing.
 
 ## Result
 
-**N07 part 1 implemented end-to-end; uncommitted, pending commit approval.**
+**N07 part 2 implemented end-to-end; uncommitted, pending commit approval.**
+With part 1 (`418d17a`) this closes N07.
 
 - Gates: analyzer **0**; format **404 / 0 changed**; Flutter `--coverage`
-  **1487 passed / 0 failed** (`/tmp/pitak-s23-flutter-final2.txt`, 0 `[E]`;
-  a final3 confirmation run after the last non-annotated edit is recorded in
-  fix-schedule.md §5); cargo **32 passed**, 2 ignored; `build_runner` re-run
-  LAST → only the 3 expected `.g.dart` diffs (`providers`, `merge_controller`,
-  `settings_controller`), `.fvmrc`/`.gitignore` untouched; `git diff --check`
-  clean; domain-purity gate green (`library_namespace.dart` imports only
-  fpdart + `core/error`).
-- Coverage: project **71.42%** (+0.29 vs S22); `merge_library_use_case.dart`
-  137/141, `merge_controller.dart` 44/47, `merge_page.dart` 111/121,
-  `library_merge_engine.dart` 114/117, `settings_controller.dart` 75/84 (the
-  misses are the pre-existing `setPublishContact`/`setLibraryLogo` lines).
-- Regression evidence (red on HEAD behaviour): **12 tests red** against a
-  HEAD-shaped graft of the use case (identity adopted before the union,
-  adoption failure → Left, warnings dropped) + HEAD's engine file; 1 engine
-  test red on HEAD directly (`Expected: true / Actual: <false>`); 2 new tests
-  green by design (no-ID file, zero-rows-still-Left). Widget summary tests
-  and `settings_test.dart` `adopt`/`current` tests are compile-red on HEAD
-  (new API).
-- What changed, plain English:
-  1. **Join no longer changes who you are before it has your books.** The
-     union is inserted first; only then is the other library's ID + name
-     adopted. A failed insert leaves the device's identity untouched
-     (`merge_library_use_case_test.dart` "a failed Join insert leaves the
-     local identity untouched": `adoptCalls == 0`).
-  2. **One owner for the library identity.** New domain port
-     `LibraryNamespace` (`settings/domain/library_namespace.dart`);
-     `SettingsController implements` it: `current()` (mint/read via the M16
-     FIFO + loaded name) and `adopt(id, name)` (both prefs writes in ONE
-     queued turn, one state patch). The use case depends on the port; the
-     `settingsRepositoryProvider` dependency is gone from
-     `mergeLibraryUseCaseProvider`. Every screen watching settings sees the
-     new name at once (`merge_controller_test.dart` "after applyJoin the
-     settings controller shows the new id + name").
-  3. **Honest result.** `MergeResult` gained `replaced`, `skippedRows`,
-     `adjustments`, `namespace` (`MergeNamespaceOutcome`), `hasOmissions`,
-     `withNamespace`; `MergeDiffersDecision` carries `skippedRows`/
-     `adjustments` so Join/Overwrite forward them. `applyOverwrite` returns a
-     `MergeResult` (`replaced: true`, `added` = the repository's real insert
-     count). The controller's zeroed Overwrite mapping is deleted.
-  4. **D3:** books landed + identity write failed → `Right` with
-     `adoptionFailed`; the page says the next merge will ask to Join again.
-     `catalogue_replacement_failure_test.dart` "settings ID failure" flipped
-     from expecting a Left to expecting the omission — the old expectation
-     WAS the reviewer's "partial namespace state" bug.
-  5. **Page** (`merge_page.dart` `_ResultView`): "Library replaced / Books
-     now on this device: N" vs "Merge complete / Books added / Already
-     matched"; "Not imported" (M15 row messages) and "Adjustments" (Import
-     page wording); the identity-omission line; review copy no longer
-     promises "a later update".
-  6. **Engine (D2-a):** `_coversEqual` — a local file on either side is never
-     a cover conflict against a remote URL (M09 precedence makes take-theirs
-     a no-op there); remote-vs-different-remote and remote-vs-nothing stay
-     conflicts. `CoverPaths.remoteUrlOf` remains the single classifier.
-- Test fixtures: `merge_library_use_case_test.dart` `_FakeSettings` →
-  `_FakeNamespace implements LibraryNamespace` (+ `insertAllFailure` on
-  `_FakeBooks`; the M03 case now builds through the real provider over
-  `ReplacementSettings`); `merge_controller_test.dart` builds the use case
-  over the container's REAL `SettingsController` (production wiring);
-  `merge_page_test.dart` likewise + `_DoneController` for summary rendering;
-  `replacement_harness.dart` exposes `namespace` and `overwrite()` returns
-  `Either<Failure, MergeResult>`.
-- Privacy pass: lib diff adds no print/log/http/Uri/Platform; the one new
-  `StorageFailure` reason carries `e.runtimeType` only; summary text is
-  M15's own row/field messages (short title + row number + field names, the
-  invalid values never echoed — verified against `_RowReader.label`).
-- Not done (Session 24): per-row conflict / possible-duplicate review UI
-  (`applyResolution` + controller `resolve`; guard `takeTheirs` when
-  `local.id == Book.emptyId`); no device verification (static finding,
-  reproduced deterministically in tests).
+  **1516 passed / 0 failed** (+29 vs S23; 0 `[E]`); cargo **32 passed**, 2
+  expected ignored; `git diff --check` clean; `build_runner` run last → one
+  expected `merge_controller.g.dart` hash. Coverage **71.89%** (+0.47);
+  `merge_controller.dart` 110/113, `merge_library_use_case.dart` 143/147,
+  `merge_page.dart` 215/235, `library_merge_engine.dart` 165/168.
+- Regression evidence: use-case guards **behaviour-red on HEAD** (collision
+  `takeTheirs` → `NotFoundFailure`; copyCount 0 / year 0 / evil-host cover
+  written unvalidated); engine/controller/page groups compile-red with only
+  new-symbol errors. All 29 new tests green after the change; the 5
+  pre-existing `applyResolution` tests unchanged and green.
+- Behaviour now: after a merge, every conflict / possible duplicate is a
+  card. Conflicts list the differing fields "yours → theirs" (via the new
+  `mergeDifferences`, which shares its field list with `mergeEquals`).
+  Fuzzy duplicates show both titles + a percentage. A key collision against
+  a persisted local row explains the situation and keeps all three actions.
+  An in-file collision (local never persisted) offers only Skip / Add as a
+  separate book — and the use case refuses `takeTheirs` for it with a typed
+  message even if called. One row writes at a time; the file picker is
+  disabled meanwhile and `mergeText` is refused; a failed row keeps its
+  actions for a retry; a completed write refreshes the library list from
+  the controller (keep-mine refreshes nothing). Both writing branches pass
+  the built book through `Book.validate` (D1-a).
+- Deviation from the plan, recorded in step 4: no generation counter
+  (unreachable path once `mergeText` is refused while resolving).
+- No device verification (static finding, reproduced deterministically in
+  tests).
 
-### Commit paths (17, explicit)
+### Commit paths (explicit, never `-A`)
 
-`lib/core/di/providers.dart`, `lib/core/di/providers.g.dart`,
-`lib/features/import_export/application/merge_controller.dart`,
-`lib/features/import_export/application/merge_controller.g.dart`,
-`lib/features/import_export/application/merge_library_use_case.dart`,
-`lib/features/import_export/presentation/pages/merge_page.dart`,
-`lib/features/library/domain/merge/library_merge_engine.dart`,
-`lib/features/settings/application/settings_controller.dart`,
-`lib/features/settings/application/settings_controller.g.dart`,
-`lib/features/settings/domain/library_namespace.dart` (new),
-`test/features/import_export/merge_controller_test.dart`,
-`test/features/import_export/merge_library_use_case_test.dart`,
-`test/features/import_export/merge_page_test.dart`,
-`test/features/library/catalogue_replacement_failure_test.dart`,
-`test/features/library/library_merge_engine_test.dart`,
-`test/features/library/replacement_harness.dart`,
-`test/features/settings/settings_test.dart`, `PLAN.md`.
+```
+lib/features/import_export/application/merge_controller.dart
+lib/features/import_export/application/merge_controller.g.dart
+lib/features/import_export/application/merge_library_use_case.dart
+lib/features/import_export/presentation/pages/merge_page.dart
+lib/features/library/domain/merge/library_merge_engine.dart
+test/features/import_export/merge_controller_test.dart
+test/features/import_export/merge_library_use_case_test.dart
+test/features/import_export/merge_page_test.dart
+test/features/library/library_merge_engine_test.dart
+PLAN.md
+```

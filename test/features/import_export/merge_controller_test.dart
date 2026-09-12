@@ -36,6 +36,18 @@ class _FakeBooks implements BookRepository {
   /// Test-only failure injection for [insertAll].
   Failure? insertAllFailure;
 
+  /// Test-only failure injection for [update] (N07: a failed row resolution).
+  Failure? updateFailure;
+
+  /// When set, [update] parks until completed (N07: an in-flight resolution).
+  Completer<void>? updateGate;
+
+  /// When set, [update] throws (N07: an unexpected repository throw).
+  bool updateThrows = false;
+
+  /// How many times [update] was called.
+  int updateCalls = 0;
+
   List<Book> get books => _books;
 
   @override
@@ -75,9 +87,21 @@ class _FakeBooks implements BookRepository {
     return right(books.length);
   }
 
-  // Unused by the merge use case.
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, Book>> update(Book book) async {
+    updateCalls++;
+    if (updateThrows) throw StateError('db exploded');
+    final gate = updateGate;
+    if (gate != null) await gate.future;
+    final failure = updateFailure;
+    if (failure != null) return left(failure);
+    final i = _books.indexWhere((b) => b.id == book.id);
+    if (i < 0) return left(const NotFoundFailure());
+    _books[i] = book;
+    return right(book);
+  }
+
+  // Unused by the merge use case.
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
@@ -484,4 +508,359 @@ void main() {
       );
     },
   );
+
+  // N07 part 2 (astra-review.md): "conflicts/possible duplicates are counts
+  // only, with no way to inspect or apply the implemented resolutions". The
+  // controller now carries one review item per conflict / possible duplicate
+  // inside MergeDone and applies the user's choice through the use case.
+  group('N07 — per-row review', () {
+    /// A same-ID file whose one row conflicts with the local row (genre).
+    String conflictingFile() => exportJson(
+      libraryId: matchingId,
+      books: [
+        {'bookUid': 'u1', 'title': 'Godaan', 'genre': 'Classic'},
+      ],
+    );
+
+    _FakeBooks localWithGodaan() => _FakeBooks([
+      const Book(
+        id: 1,
+        bookUid: 'u1',
+        title: 'Godaan',
+        genre: 'Fiction',
+        addedDate: 1,
+      ),
+    ]);
+
+    Future<MergeDone> mergeToDone(
+      ProviderContainer container,
+      String text,
+    ) async {
+      await container.read(mergeControllerProvider.notifier).mergeText(text);
+      final state = container.read(mergeControllerProvider);
+      expect(state, isA<MergeDone>());
+      return state as MergeDone;
+    }
+
+    test('MergeDone carries one pending review item per conflict, in the '
+        "engine's order", () async {
+      final container = makeContainer(books: localWithGodaan());
+
+      final done = await mergeToDone(container, conflictingFile());
+
+      expect(done.review, hasLength(1));
+      final item = done.review.single;
+      expect(item.kind, MergeReviewKind.conflict);
+      expect(item.local.genre, 'Fiction');
+      expect(item.incoming.genre, 'Classic');
+      expect(item.status, isA<ReviewPending>());
+      expect(done.openCount, 1);
+      expect(done.isResolving, isFalse);
+    });
+
+    test('resolve(takeTheirs) writes the row, marks it resolved and refreshes '
+        'the library', () async {
+      final books = localWithGodaan();
+      final container = makeContainer(books: books);
+      var libraryBuilds = 0;
+      container.listen(
+        libraryControllerProvider,
+        (_, __) => libraryBuilds++,
+        fireImmediately: true,
+      );
+      await container.read(libraryControllerProvider.future);
+      await mergeToDone(container, conflictingFile());
+      // The merge itself invalidated the list; let that rebuild LAND (its
+      // AsyncData is a listener event too) before taking the baseline.
+      await container.pump();
+      await container.read(libraryControllerProvider.future);
+      final baseline = libraryBuilds;
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+
+      final done = container.read(mergeControllerProvider) as MergeDone;
+      final status = done.review.single.status;
+      expect(status, isA<ReviewResolved>());
+      expect((status as ReviewResolved).resolution, MergeResolution.takeTheirs);
+      expect(done.openCount, 0);
+      expect(books.books.single.genre, 'Classic');
+      expect(books.books.single.id, 1, reason: 'in place');
+      await container.pump();
+      expect(libraryBuilds, greaterThan(baseline));
+    });
+
+    test('resolve(keepMine) resolves without a write and without a '
+        'refresh', () async {
+      final books = localWithGodaan();
+      final container = makeContainer(books: books);
+      var libraryBuilds = 0;
+      container.listen(
+        libraryControllerProvider,
+        (_, __) => libraryBuilds++,
+        fireImmediately: true,
+      );
+      await container.read(libraryControllerProvider.future);
+      await mergeToDone(container, conflictingFile());
+      await container.pump();
+      await container.read(libraryControllerProvider.future);
+      final baseline = libraryBuilds;
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.keepMine);
+
+      final done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.review.single.status, isA<ReviewResolved>());
+      expect(books.updateCalls, 0);
+      expect(books.books.single.genre, 'Fiction');
+      await container.pump();
+      expect(libraryBuilds, baseline, reason: 'nothing changed on disk');
+    });
+
+    test('a failed resolution keeps the item open with the typed failure; '
+        'a retry can then succeed', () async {
+      final books = localWithGodaan()
+        ..updateFailure = const StorageFailure('disk full');
+      final container = makeContainer(books: books);
+      await mergeToDone(container, conflictingFile());
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+
+      var done = container.read(mergeControllerProvider) as MergeDone;
+      var status = done.review.single.status;
+      expect(status, isA<ReviewFailed>());
+      expect((status as ReviewFailed).failure, isA<StorageFailure>());
+      expect(done.openCount, 1, reason: 'still open for a retry');
+
+      books.updateFailure = null;
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+
+      done = container.read(mergeControllerProvider) as MergeDone;
+      status = done.review.single.status;
+      expect(status, isA<ReviewResolved>());
+      expect(books.books.single.genre, 'Classic');
+    });
+
+    test(
+      'a throwing repository becomes ReviewFailed(UnexpectedFailure)',
+      () async {
+        final books = localWithGodaan()..updateThrows = true;
+        final container = makeContainer(books: books);
+        await mergeToDone(container, conflictingFile());
+
+        await container
+            .read(mergeControllerProvider.notifier)
+            .resolve(0, MergeResolution.takeTheirs);
+
+        final done = container.read(mergeControllerProvider) as MergeDone;
+        final status = done.review.single.status;
+        expect(status, isA<ReviewFailed>());
+        expect((status as ReviewFailed).failure, isA<UnexpectedFailure>());
+      },
+    );
+
+    test('only one resolution runs at a time; a second call on another item '
+        'is refused while the first is in flight', () async {
+      final books = _FakeBooks([
+        const Book(
+          id: 1,
+          bookUid: 'u1',
+          title: 'Godaan',
+          genre: 'Fiction',
+          addedDate: 1,
+        ),
+        const Book(
+          id: 2,
+          bookUid: 'u2',
+          title: 'Nirmala',
+          genre: 'Fiction',
+          addedDate: 1,
+        ),
+      ]);
+      final gate = Completer<void>();
+      books.updateGate = gate;
+      final container = makeContainer(books: books);
+      await mergeToDone(
+        container,
+        exportJson(
+          libraryId: matchingId,
+          books: [
+            {'bookUid': 'u1', 'title': 'Godaan', 'genre': 'Classic'},
+            {'bookUid': 'u2', 'title': 'Nirmala', 'genre': 'Classic'},
+          ],
+        ),
+      );
+
+      final first = container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      await pumpEventQueue();
+      var done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.isResolving, isTrue);
+      expect(done.review[0].status, isA<ReviewApplying>());
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(1, MergeResolution.takeTheirs);
+      done = container.read(mergeControllerProvider) as MergeDone;
+      expect(
+        done.review[1].status,
+        isA<ReviewPending>(),
+        reason: 'refused, not queued',
+      );
+      expect(books.updateCalls, 1);
+
+      gate.complete();
+      await first;
+      done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.review[0].status, isA<ReviewResolved>());
+      expect(done.review[1].status, isA<ReviewPending>());
+      expect(done.isResolving, isFalse);
+    });
+
+    test('a resolved item cannot be resolved again', () async {
+      final books = localWithGodaan();
+      final container = makeContainer(books: books);
+      await mergeToDone(container, conflictingFile());
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.keepMine);
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+
+      expect(books.updateCalls, 0);
+      expect(books.books.single.genre, 'Fiction');
+    });
+
+    test('resolve outside MergeDone or with a bad index is a no-op', () async {
+      final books = localWithGodaan();
+      final container = makeContainer(books: books);
+
+      // Idle: nothing to resolve.
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      expect(container.read(mergeControllerProvider), isA<MergeIdle>());
+
+      await mergeToDone(container, conflictingFile());
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(5, MergeResolution.takeTheirs);
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(-1, MergeResolution.takeTheirs);
+      expect(books.updateCalls, 0);
+      final done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.review.single.status, isA<ReviewPending>());
+    });
+
+    test('mergeText is refused while a resolution is in flight', () async {
+      final books = localWithGodaan();
+      final gate = Completer<void>();
+      books.updateGate = gate;
+      final container = makeContainer(books: books);
+      await mergeToDone(container, conflictingFile());
+
+      final resolving = container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      await pumpEventQueue();
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .mergeText(conflictingFile());
+      expect(
+        container.read(mergeControllerProvider),
+        isA<MergeDone>(),
+        reason: 'the new pick was refused; still the same MergeDone',
+      );
+
+      gate.complete();
+      await resolving;
+      final done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.review.single.status, isA<ReviewResolved>());
+    });
+
+    test('an in-file collision item offers no take-theirs (local was never '
+        'persisted)', () async {
+      final container = makeContainer(books: _FakeBooks([]));
+
+      final done = await mergeToDone(
+        container,
+        exportJson(
+          libraryId: matchingId,
+          books: [
+            {'bookUid': 'uB', 'title': 'Godaan'},
+            {'bookUid': 'uB', 'title': 'Godaan (duplicate row)'},
+          ],
+        ),
+      );
+
+      final item = done.review.single;
+      expect(item.kind, MergeReviewKind.inFileCollision);
+      expect(item.canTakeTheirs, isFalse);
+
+      // Belt and braces: even if a caller ignores `canTakeTheirs`, the use
+      // case refuses and the item stays open with a typed failure.
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      final after = container.read(mergeControllerProvider) as MergeDone;
+      expect(after.review.single.status, isA<ReviewFailed>());
+      expect(
+        (after.review.single.status as ReviewFailed).failure,
+        isA<ValidationFailure>(),
+      );
+    });
+
+    test('an in-flight resolution survives the page going away (keep-alive) '
+        'and its completion lands in the same MergeDone', () async {
+      final books = localWithGodaan();
+      final gate = Completer<void>();
+      books.updateGate = gate;
+      // Own container: the test controls the ONLY listener (the "page").
+      final container = ProviderContainer(
+        overrides: [
+          mergeLibraryUseCaseProvider.overrideWith(
+            (ref) async => MergeLibraryUseCase(
+              bookRepo: books,
+              namespace: ref.read(settingsControllerProvider.notifier),
+              jsonParser: const PitakaJsonImporter(),
+              replacementGuard: FakeReplacementGuard(),
+            ),
+          ),
+          bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => _FakeSettings(libraryId: matchingId),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final sub = container.listen(mergeControllerProvider, (_, __) {});
+      await mergeToDone(container, conflictingFile());
+
+      final resolving = container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      await pumpEventQueue();
+
+      sub.close(); // the page is popped: last listener gone
+      await container.pump(); // flush the scheduled autoDispose
+      gate.complete();
+      await resolving;
+
+      // Same-microtask read (see the N11 test above for why this is valid).
+      final done = container.read(mergeControllerProvider) as MergeDone;
+      expect(done.review.single.status, isA<ReviewResolved>());
+      expect(books.books.single.genre, 'Classic');
+    });
+  });
 }

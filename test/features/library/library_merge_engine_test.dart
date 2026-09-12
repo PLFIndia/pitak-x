@@ -424,4 +424,190 @@ void main() {
       expect(tokens, isNot(contains(',')));
     });
   });
+
+  // N07 part 2 (astra-review.md): the review UI needs to SHOW what differs
+  // and WHY a row is a possible duplicate — the engine only said "differs"
+  // (a boolean) and "similarity 1.0" (which is also a legitimate fuzzy score
+  // for identical title+author tokens, so kind cannot be inferred from it).
+  group('N07 — review detail', () {
+    test('a key collision is tagged identityKey; a fuzzy hit similarTitle', () {
+      final local = [
+        book(id: 1, uid: 'uA', title: 'Sapiens', isbn: '9780001'),
+        // No ISBN: the fuzzy candidate. Tokens {sapiens, brief, history}.
+        book(id: 5, uid: 'uE', title: 'Sapiens Brief History'),
+      ];
+      final incoming = [
+        book(id: 2, uid: 'uB', title: 'Sapiens', isbn: '9780001'),
+        book(id: 3, uid: 'uC', title: 'Sapiens (copy)', isbn: '9780001'),
+        // Tokens {sapiens, brief} → Jaccard 2/3 ≈ 0.67 ≥ threshold, < 1.0.
+        book(id: 4, uid: 'uD', title: 'Sapiens Brief'),
+      ];
+
+      final plan = planMerge(local, incoming);
+
+      final byTitle = {
+        for (final d in plan.possibleDuplicates) d.incoming.title: d,
+      };
+      expect(byTitle, hasLength(2));
+      expect(
+        byTitle['Sapiens (copy)']!.reason,
+        DuplicateReason.identityKey,
+        reason: 'ISBN held by the claimed local row',
+      );
+      expect(byTitle['Sapiens Brief']!.reason, DuplicateReason.similarTitle);
+      expect(byTitle['Sapiens Brief']!.similarity, lessThan(1.0));
+    });
+
+    test('an in-file collision is tagged identityKey with the unpersisted '
+        'earlier row as local', () {
+      final incoming = [
+        // Both unpersisted (id defaults to emptyId), like the importer's rows.
+        book(uid: 'uB', title: 'Godaan'),
+        book(uid: 'uB', title: 'Godaan (duplicate row)'),
+      ];
+
+      final plan = planMerge(const [], incoming);
+
+      final dup = plan.possibleDuplicates.single;
+      expect(dup.reason, DuplicateReason.identityKey);
+      expect(dup.local.id, Book.emptyId);
+    });
+
+    test('a fuzzy hit with identical tokens scores 1.0 but is still '
+        'similarTitle', () {
+      // The ONLY reason the enum exists: 1.0 alone cannot tell the two apart.
+      final local = [book(id: 1, uid: 'uA', title: 'Dohe', author: 'Kabir')];
+      final incoming = [book(uid: 'uZ', title: 'Dohe', author: 'Kabir')];
+
+      final plan = planMerge(local, incoming);
+
+      final dup = plan.possibleDuplicates.single;
+      expect(dup.similarity, 1.0);
+      expect(dup.reason, DuplicateReason.similarTitle);
+    });
+
+    test('mergeDifferences lists exactly the differing fields, both sides', () {
+      final a = book(id: 1, uid: 'u1', title: 'Godaan', genre: 'Fiction');
+      final b = book(
+        id: 2,
+        uid: 'u2',
+        title: 'Godaan',
+        genre: 'Classic',
+        copyCount: 3,
+      );
+
+      final diffs = mergeDifferences(a, b);
+
+      expect(diffs.map((d) => d.field), [
+        MergeField.genre,
+        MergeField.copyCount,
+      ]);
+      final genre = diffs.first;
+      expect(genre.local, 'Fiction');
+      expect(genre.incoming, 'Classic');
+      final copies = diffs.last;
+      expect(copies.local, '1');
+      expect(copies.incoming, '3');
+    });
+
+    test('mergeDifferences renders an unset side as null, not "null"', () {
+      final a = book(id: 1, title: 'Godaan');
+      final b = book(id: 2, title: 'Godaan', author: 'Premchand');
+
+      final diff = mergeDifferences(a, b).single;
+
+      expect(diff.field, MergeField.author);
+      expect(diff.local, isNull);
+      expect(diff.incoming, 'Premchand');
+    });
+
+    test('mergeDifferences follows the cover rule (local file is never a '
+        'difference)', () {
+      final a = book(id: 1, title: 'T', coverUrl: 'covers/abc.jpg');
+      final b = book(
+        id: 2,
+        title: 'T',
+        coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+      );
+      expect(mergeDifferences(a, b), isEmpty);
+
+      final c = book(id: 3, title: 'T');
+      final diff = mergeDifferences(c, b).single;
+      expect(diff.field, MergeField.cover);
+      expect(diff.local, isNull);
+      expect(diff.incoming, 'https://covers.openlibrary.org/b/id/1-L.jpg');
+    });
+
+    test('mergeDifferences ignores per-device bookkeeping (id, uid, '
+        'addedDate, addedBy)', () {
+      const a = Book(
+        id: 1,
+        bookUid: 'u1',
+        title: 'T',
+        addedDate: 1,
+        addedBy: 'me',
+      );
+      const b = Book(
+        id: 2,
+        bookUid: 'u2',
+        title: 'T',
+        addedDate: 2,
+        addedBy: 'you',
+      );
+      expect(mergeDifferences(a, b), isEmpty);
+    });
+
+    test('mergeEquals is exactly "mergeDifferences is empty" over every '
+        'compared field', () {
+      // Both must read the SAME field list, or a future field added to one
+      // and not the other would make the summary lie about a conflict.
+      const base = Book(
+        id: 1,
+        title: 'T',
+        titleTransliteration: 'tt',
+        author: 'a',
+        isbn: '111',
+        publisher: 'p',
+        publishedYear: 2000,
+        genre: 'g',
+        coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
+        pageCount: 10,
+        language: 'hi',
+        notes: 'n',
+        location: 'l',
+        sourceType: BookSourceType.gift,
+        sourceDetail: 'sd',
+        ageGroup: AgeGroup.above6,
+        addedDate: 1,
+        copyCount: 2,
+      );
+      final variants = <Book>[
+        base.copyWith(title: 'X'),
+        base.copyWith(titleTransliteration: 'X'),
+        base.copyWith(author: 'X'),
+        base.copyWith(isbn: '222'),
+        base.copyWith(publisher: 'X'),
+        base.copyWith(publishedYear: 2001),
+        base.copyWith(genre: 'X'),
+        base.copyWith(coverUrl: 'https://covers.openlibrary.org/b/id/2-L.jpg'),
+        base.copyWith(pageCount: 11),
+        base.copyWith(language: 'en'),
+        base.copyWith(notes: 'X'),
+        base.copyWith(location: 'X'),
+        base.copyWith(sourceType: BookSourceType.donated),
+        base.copyWith(sourceDetail: 'X'),
+        base.copyWith(ageGroup: AgeGroup.advanced),
+        base.copyWith(copyCount: 3),
+        base.copyWith(needsMetadata: true),
+        base.copyWith(removed: true),
+      ];
+      expect(variants, hasLength(MergeField.values.length));
+      expect(mergeEquals(base, base), isTrue);
+      expect(mergeDifferences(base, base), isEmpty);
+      for (final v in variants) {
+        expect(mergeEquals(base, v), isFalse);
+        expect(mergeDifferences(base, v), hasLength(1));
+      }
+    });
+  });
 }

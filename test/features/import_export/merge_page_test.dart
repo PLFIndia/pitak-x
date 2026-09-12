@@ -16,6 +16,7 @@ import 'package:pitaka/features/import_export/application/merge_library_use_case
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
@@ -376,6 +377,255 @@ void main() {
       expect(find.textContaining('later update'), findsNothing);
     });
   });
+
+  // N07 part 2 (astra-review.md): "conflicts/possible duplicates are counts
+  // only, with no way to inspect or apply the implemented resolutions". Each
+  // review item is a card showing what differs (or why it looks like a
+  // duplicate) with the three resolutions as buttons.
+  group('N07 — per-row review cards', () {
+    const local = Book(
+      id: 1,
+      bookUid: 'u1',
+      title: 'Godaan',
+      author: 'Premchand',
+      genre: 'Fiction',
+      addedDate: 1,
+    );
+    const incoming = Book(
+      bookUid: 'u1',
+      title: 'Godaan',
+      author: 'Premchand',
+      genre: 'Classic',
+      notes: 'Their note',
+      addedDate: 2,
+    );
+
+    MergeResult resultWith({
+      List<MergeConflict> conflicts = const [],
+      List<PossibleDuplicate> duplicates = const [],
+    }) => MergeResult(
+      added: 0,
+      identical: 0,
+      conflicts: conflicts,
+      possibleDuplicates: duplicates,
+    );
+
+    Future<_ScriptedController> pumpReview(
+      WidgetTester tester,
+      MergeResult result, {
+      Failure? failWith,
+    }) async {
+      final controller = _ScriptedController(result, failWith: failWith);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [mergeControllerProvider.overrideWith(() => controller)],
+          child: const MaterialApp(home: MergePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return controller;
+    }
+
+    testWidgets('a conflict card shows the differing fields, yours → theirs, '
+        'and all three actions', (tester) async {
+      await pumpReview(
+        tester,
+        resultWith(
+          conflicts: const [
+            MergeConflict(
+              local: local,
+              incoming: incoming,
+              matchedBy: MatchKind.uid,
+            ),
+          ],
+        ),
+      );
+
+      expect(find.text('Needs your review'), findsOneWidget);
+      expect(find.text('Godaan'), findsOneWidget);
+      expect(find.textContaining('Genre'), findsOneWidget);
+      expect(find.textContaining('Fiction'), findsOneWidget);
+      expect(find.textContaining('Classic'), findsOneWidget);
+      expect(find.textContaining('Notes'), findsOneWidget);
+      expect(find.textContaining('Their note'), findsOneWidget);
+      // Unchanged fields are not listed.
+      expect(find.textContaining('Premchand'), findsNothing);
+      expect(find.text('Keep mine'), findsOneWidget);
+      expect(find.text('Take theirs'), findsOneWidget);
+      expect(find.text('Keep both'), findsOneWidget);
+      // The old count-only line is gone.
+      expect(find.textContaining('Your versions were kept'), findsNothing);
+    });
+
+    testWidgets('tapping Take theirs calls resolve with the row index and '
+        'the card shows the resolved line', (tester) async {
+      final controller = await pumpReview(
+        tester,
+        resultWith(
+          conflicts: const [
+            MergeConflict(
+              local: local,
+              incoming: incoming,
+              matchedBy: MatchKind.uid,
+            ),
+          ],
+        ),
+      );
+
+      await tester.tap(find.text('Take theirs'));
+      await tester.pumpAndSettle();
+
+      expect(controller.calls, [(0, MergeResolution.takeTheirs)]);
+      expect(find.text('Take theirs'), findsNothing);
+      expect(find.textContaining('Took theirs'), findsOneWidget);
+    });
+
+    testWidgets('a fuzzy possible duplicate shows both titles and the '
+        'similarity; a key collision shows a plain explanation and NO Take '
+        'theirs', (tester) async {
+      const earlierIncoming = Book(
+        bookUid: 'uB',
+        title: 'Godaan',
+        addedDate: 1,
+      );
+      await pumpReview(
+        tester,
+        resultWith(
+          duplicates: const [
+            PossibleDuplicate(
+              local: Book(id: 3, title: 'Kabir ke Dohe', addedDate: 1),
+              incoming: Book(title: 'Kabir Dohe', addedDate: 1),
+              similarity: 0.75,
+            ),
+            PossibleDuplicate(
+              local: earlierIncoming,
+              incoming: Book(
+                bookUid: 'uB',
+                title: 'Godaan (duplicate row)',
+                addedDate: 1,
+              ),
+              similarity: 1,
+              reason: DuplicateReason.identityKey,
+            ),
+          ],
+        ),
+      );
+
+      // Fuzzy card.
+      expect(find.textContaining('Kabir ke Dohe'), findsOneWidget);
+      expect(find.textContaining('Kabir Dohe'), findsOneWidget);
+      expect(find.textContaining('75%'), findsOneWidget);
+      // Collision card: explains the same-file situation, offers skip/add.
+      expect(find.textContaining('Godaan (duplicate row)'), findsOneWidget);
+      expect(find.textContaining('same file'), findsOneWidget);
+      expect(find.text('Skip'), findsOneWidget);
+      expect(find.text('Add as a separate book'), findsOneWidget);
+      // Exactly one Take theirs on screen: the fuzzy card's.
+      expect(find.text('Take theirs'), findsOneWidget);
+    });
+
+    testWidgets('a failed resolution shows safe copy and keeps the actions '
+        'for a retry', (tester) async {
+      final controller = await pumpReview(
+        tester,
+        resultWith(
+          conflicts: const [
+            MergeConflict(
+              local: local,
+              incoming: incoming,
+              matchedBy: MatchKind.uid,
+            ),
+          ],
+        ),
+        failWith: const StorageFailure('disk full: /data/x'),
+      );
+
+      await tester.tap(find.text('Take theirs'));
+      await tester.pumpAndSettle();
+
+      expect(controller.calls, hasLength(1));
+      expect(find.textContaining('disk full'), findsNothing);
+      expect(find.textContaining('Could not apply'), findsOneWidget);
+      expect(find.text('Take theirs'), findsOneWidget, reason: 'retry');
+    });
+
+    testWidgets('while one row is applying, its buttons and the file picker '
+        'are disabled', (tester) async {
+      final controller = await pumpReview(
+        tester,
+        resultWith(
+          conflicts: const [
+            MergeConflict(
+              local: local,
+              incoming: incoming,
+              matchedBy: MatchKind.uid,
+            ),
+          ],
+        ),
+      );
+      controller.hold = true;
+
+      await tester.tap(find.text('Take theirs'));
+      await tester.pump();
+
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('Take theirs'), findsNothing);
+      final pick = tester.widget<FilledButton>(
+        find.widgetWithText(FilledButton, 'Choose a library file'),
+      );
+      expect(pick.onPressed, isNull);
+
+      controller.release();
+      await tester.pumpAndSettle();
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('a summary with nothing to review shows no review section', (
+      tester,
+    ) async {
+      await pumpReview(tester, resultWith());
+      expect(find.text('Needs your review'), findsNothing);
+    });
+  });
+}
+
+/// A merge controller pinned to [MergeDone] whose `resolve` is scripted: it
+/// records every call, optionally parks ([hold]) and optionally fails with
+/// the failure given at construction. Lets the page tests drive the review
+/// cards without a repository.
+class _ScriptedController extends MergeController {
+  _ScriptedController(this._result, {Failure? failWith}) : _failWith = failWith;
+
+  final MergeResult _result;
+  final Failure? _failWith;
+
+  /// Every `(index, resolution)` the page asked for.
+  final calls = <(int, MergeResolution)>[];
+
+  /// When true, `resolve` stays in [ReviewApplying] until [release].
+  bool hold = false;
+  Completer<void>? _gate;
+
+  void release() => _gate?.complete();
+
+  @override
+  MergeUiState build() => MergeDone(_result);
+
+  @override
+  Future<void> resolve(int index, MergeResolution resolution) async {
+    calls.add((index, resolution));
+    final done = state as MergeDone;
+    state = done.withItemStatus(index, const ReviewApplying());
+    if (hold) {
+      _gate = Completer<void>();
+      await _gate!.future;
+    }
+    final failure = _failWith;
+    state = (state as MergeDone).withItemStatus(
+      index,
+      failure == null ? ReviewResolved(resolution) : ReviewFailed(failure),
+    );
+  }
 }
 
 /// A merge controller pinned to one terminal state, for rendering the

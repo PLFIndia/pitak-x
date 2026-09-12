@@ -79,22 +79,41 @@ class MergeConflict {
   );
 }
 
+/// Why an incoming row was surfaced as a [PossibleDuplicate] (N07). The UI
+/// needs this to explain the row and to offer the right actions — the score
+/// alone cannot tell the two apart, because a fuzzy hit with identical
+/// title+author tokens also scores exactly 1.0.
+enum DuplicateReason {
+  /// A no-ISBN incoming book whose normalised title+author resembles a local
+  /// no-ISBN book ([PossibleDuplicate.similarity] is the Jaccard score).
+  similarTitle,
+
+  /// The incoming row's uid/ISBN is already held by another row (a claimed
+  /// local row, or an earlier row from the same file), so it can never be
+  /// inserted as-is (UNIQUE indexes).
+  identityKey,
+}
+
 /// An incoming book that resembles a book already on the winning side of the
 /// merge but is not an exact match. Surfaced for the user to either merge
-/// (same book) or add separately. Two shapes:
-///  - **fuzzy**: a no-ISBN incoming book resembling a local no-ISBN book;
-///    [similarity] is the token-set Jaccard score in (0,1].
-///  - **identity-key collision**: the incoming row's uid/ISBN is already held
-///    by a claimed local row or an earlier incoming row from the SAME file,
-///    so inserting it would violate the UNIQUE indexes; [similarity] is 1.0
-///    and [local] is whichever row holds the key (for an in-file collision
-///    that is the earlier INCOMING row, not a persisted local book).
+/// (same book) or add separately. Two shapes, told apart by [reason]:
+///  - **fuzzy** ([DuplicateReason.similarTitle]): a no-ISBN incoming book
+///    resembling a local no-ISBN book; [similarity] is the token-set Jaccard
+///    score in (0,1].
+///  - **identity-key collision** ([DuplicateReason.identityKey]): the
+///    incoming row's uid/ISBN is already held by a claimed local row or an
+///    earlier incoming row from the SAME file, so inserting it would violate
+///    the UNIQUE indexes; [similarity] is 1.0 and [local] is whichever row
+///    holds the key (for an in-file collision that is the earlier INCOMING
+///    row — `id == Book.emptyId`, not a persisted local book, so "take
+///    theirs" has no row to overwrite).
 class PossibleDuplicate {
   /// Creates a possible-duplicate pair.
   const PossibleDuplicate({
     required this.local,
     required this.incoming,
     required this.similarity,
+    this.reason = DuplicateReason.similarTitle,
   });
 
   /// The book already on the winning side (a local row, or — for an in-file
@@ -107,6 +126,9 @@ class PossibleDuplicate {
   /// Token-set Jaccard similarity in (0,1]; exactly 1.0 for an identity-key
   /// collision.
   final double similarity;
+
+  /// Why this pair was surfaced.
+  final DuplicateReason reason;
 }
 
 /// The result of [planMerge]: what to auto-add and what to surface.
@@ -239,7 +261,12 @@ MergePlan planMerge(
         (incIsbn.isNotEmpty ? addedByIsbn[incIsbn] : null);
     if (keyHolder != null) {
       possibleDuplicates.add(
-        PossibleDuplicate(local: keyHolder, incoming: inc, similarity: 1),
+        PossibleDuplicate(
+          local: keyHolder,
+          incoming: inc,
+          similarity: 1,
+          reason: DuplicateReason.identityKey,
+        ),
       );
       continue;
     }
@@ -311,40 +338,230 @@ class _FuzzyHit {
   final double score;
 }
 
-/// Field equality for merge purposes: do the two books describe the SAME
-/// catalogue state? Compares the user-meaningful catalogue fields plus the
-/// soft-delete flag. Deliberately IGNORES the per-device `id` and `addedDate`
-/// (local bookkeeping, expected to differ across devices), `bookUid` (already
+/// The catalogue fields the merge compares (N07). One entry per field in
+/// [_mergeFieldSpecs]; the review card labels rows by this enum.
+enum MergeField {
+  /// `Book.title`.
+  title,
+
+  /// `Book.titleTransliteration`.
+  titleTransliteration,
+
+  /// `Book.author`.
+  author,
+
+  /// `Book.isbn` (compared normalised).
+  isbn,
+
+  /// `Book.publisher`.
+  publisher,
+
+  /// `Book.publishedYear`.
+  publishedYear,
+
+  /// `Book.genre`.
+  genre,
+
+  /// `Book.coverUrl` (compared via [_coversEqual]).
+  cover,
+
+  /// `Book.pageCount`.
+  pageCount,
+
+  /// `Book.language`.
+  language,
+
+  /// `Book.notes`.
+  notes,
+
+  /// `Book.location`.
+  location,
+
+  /// `Book.sourceType`.
+  sourceType,
+
+  /// `Book.sourceDetail`.
+  sourceDetail,
+
+  /// `Book.ageGroup`.
+  ageGroup,
+
+  /// `Book.copyCount`.
+  copyCount,
+
+  /// `Book.needsMetadata`.
+  needsMetadata,
+
+  /// `Book.removed` (soft-delete state).
+  removed,
+}
+
+/// One field on which two matched books differ, with both sides rendered as
+/// display text (null = unset on that side). Values are the books' own
+/// catalogue text — the caller decides how much of it to show.
+class MergeFieldDifference {
+  /// Creates a difference.
+  const MergeFieldDifference({
+    required this.field,
+    required this.local,
+    required this.incoming,
+  });
+
+  /// Which field differs.
+  final MergeField field;
+
+  /// The local book's value as text, or null when unset.
+  final String? local;
+
+  /// The incoming book's value as text, or null when unset.
+  final String? incoming;
+}
+
+/// How one field is compared and shown. `equals` is the merge-equality rule
+/// for that field; `show` renders one side for the review card.
+class _MergeFieldSpec {
+  const _MergeFieldSpec(this.field, this.equals, this.show);
+  final MergeField field;
+  final bool Function(Book a, Book b) equals;
+  final String? Function(Book b) show;
+}
+
+String? _text(String? s) => (s == null || s.trim().isEmpty) ? null : s;
+String? _num(num? n) => n?.toString();
+String? _flag(bool b) => b ? 'yes' : 'no';
+
+/// The SINGLE list both [mergeEquals] and [mergeDifferences] read, so the
+/// summary can never call something a conflict that the diff cannot show (or
+/// the other way round). Order = display order on the review card.
+///
+/// Deliberately ABSENT: the per-device `id` and `addedDate` (local
+/// bookkeeping, expected to differ across devices), `bookUid` (already
 /// established equal by the caller, or irrelevant for an ISBN match), and
 /// `addedBy` (attribution travels but is not a catalogue-state difference).
-///
-/// Cover refs are compared via [_coversEqual]: LOCAL refs (`covers/<uuid>.jpg`,
-/// legacy `file://…`) are per-device artifacts — the JSON importer nulls them
-/// on the receiving device (`keepLocalCovers=false`), so comparing them raw
-/// makes every book with a camera-captured cover a PHANTOM conflict on every
-/// cross-device exchange (REVIEW_FINDINGS_2 S5). Only remote https refs carry
-/// catalogue meaning across devices, so those are what get compared — and a
-/// local file on one side is never a conflict with a remote ref on the other
-/// (N07/M09, see [_coversEqual]).
-bool mergeEquals(Book a, Book b) =>
-    a.title == b.title &&
-    a.titleTransliteration == b.titleTransliteration &&
-    a.author == b.author &&
-    normIsbn(a.isbn) == normIsbn(b.isbn) &&
-    a.publisher == b.publisher &&
-    a.publishedYear == b.publishedYear &&
-    a.genre == b.genre &&
-    _coversEqual(a.coverUrl, b.coverUrl) &&
-    a.pageCount == b.pageCount &&
-    a.language == b.language &&
-    a.notes == b.notes &&
-    a.location == b.location &&
-    a.sourceType == b.sourceType &&
-    a.sourceDetail == b.sourceDetail &&
-    a.ageGroup == b.ageGroup &&
-    a.copyCount == b.copyCount &&
-    a.needsMetadata == b.needsMetadata &&
-    a.removed == b.removed;
+final List<_MergeFieldSpec> _mergeFieldSpecs = [
+  _MergeFieldSpec(
+    MergeField.title,
+    (a, b) => a.title == b.title,
+    (b) => _text(b.title),
+  ),
+  _MergeFieldSpec(
+    MergeField.titleTransliteration,
+    (a, b) => a.titleTransliteration == b.titleTransliteration,
+    (b) => _text(b.titleTransliteration),
+  ),
+  _MergeFieldSpec(
+    MergeField.author,
+    (a, b) => a.author == b.author,
+    (b) => _text(b.author),
+  ),
+  _MergeFieldSpec(
+    MergeField.isbn,
+    (a, b) => normIsbn(a.isbn) == normIsbn(b.isbn),
+    (b) => _text(b.isbn),
+  ),
+  _MergeFieldSpec(
+    MergeField.publisher,
+    (a, b) => a.publisher == b.publisher,
+    (b) => _text(b.publisher),
+  ),
+  _MergeFieldSpec(
+    MergeField.publishedYear,
+    (a, b) => a.publishedYear == b.publishedYear,
+    (b) => _num(b.publishedYear),
+  ),
+  _MergeFieldSpec(
+    MergeField.genre,
+    (a, b) => a.genre == b.genre,
+    (b) => _text(b.genre),
+  ),
+  // Cover refs go through [_coversEqual]: LOCAL refs (`covers/<uuid>.jpg`,
+  // legacy `file://…`) are per-device artifacts — the JSON importer nulls
+  // them on the receiving device (`keepLocalCovers=false`), so comparing
+  // them raw made every camera-captured cover a PHANTOM conflict on every
+  // cross-device exchange (REVIEW_FINDINGS_2 S5). Only remote https refs
+  // carry catalogue meaning across devices, and a local file on one side is
+  // never a conflict with a remote ref on the other (N07/M09).
+  _MergeFieldSpec(
+    MergeField.cover,
+    (a, b) => _coversEqual(a.coverUrl, b.coverUrl),
+    (b) => CoverPaths.remoteUrlOf(b.coverUrl),
+  ),
+  _MergeFieldSpec(
+    MergeField.pageCount,
+    (a, b) => a.pageCount == b.pageCount,
+    (b) => _num(b.pageCount),
+  ),
+  _MergeFieldSpec(
+    MergeField.language,
+    (a, b) => a.language == b.language,
+    (b) => _text(b.language),
+  ),
+  _MergeFieldSpec(
+    MergeField.notes,
+    (a, b) => a.notes == b.notes,
+    (b) => _text(b.notes),
+  ),
+  _MergeFieldSpec(
+    MergeField.location,
+    (a, b) => a.location == b.location,
+    (b) => _text(b.location),
+  ),
+  _MergeFieldSpec(
+    MergeField.sourceType,
+    (a, b) => a.sourceType == b.sourceType,
+    (b) => b.sourceType?.name,
+  ),
+  _MergeFieldSpec(
+    MergeField.sourceDetail,
+    (a, b) => a.sourceDetail == b.sourceDetail,
+    (b) => _text(b.sourceDetail),
+  ),
+  _MergeFieldSpec(
+    MergeField.ageGroup,
+    (a, b) => a.ageGroup == b.ageGroup,
+    (b) => b.ageGroup?.token,
+  ),
+  _MergeFieldSpec(
+    MergeField.copyCount,
+    (a, b) => a.copyCount == b.copyCount,
+    (b) => _num(b.copyCount),
+  ),
+  _MergeFieldSpec(
+    MergeField.needsMetadata,
+    (a, b) => a.needsMetadata == b.needsMetadata,
+    (b) => _flag(b.needsMetadata),
+  ),
+  _MergeFieldSpec(
+    MergeField.removed,
+    (a, b) => a.removed == b.removed,
+    (b) => _flag(b.removed),
+  ),
+];
+
+/// Field equality for merge purposes: do the two books describe the SAME
+/// catalogue state? Compares the user-meaningful catalogue fields plus the
+/// soft-delete flag — exactly the fields in [_mergeFieldSpecs], so this is
+/// always `mergeDifferences(a, b).isEmpty` without the allocation (this runs
+/// once per matched pair inside [planMerge]).
+bool mergeEquals(Book a, Book b) {
+  for (final spec in _mergeFieldSpecs) {
+    if (!spec.equals(a, b)) return false;
+  }
+  return true;
+}
+
+/// The fields on which [a] (local) and [b] (incoming) differ for merge
+/// purposes, in display order, each with both sides rendered as text (N07).
+/// Empty exactly when [mergeEquals] is true.
+List<MergeFieldDifference> mergeDifferences(Book a, Book b) => [
+  for (final spec in _mergeFieldSpecs)
+    if (!spec.equals(a, b))
+      MergeFieldDifference(
+        field: spec.field,
+        local: spec.show(a),
+        incoming: spec.show(b),
+      ),
+];
 
 /// Whether two cover refs describe the same catalogue state for merge purposes.
 ///

@@ -58,6 +58,13 @@ class _FakeBooks implements BookRepository {
   /// Test-only failure injection for [insertAll] (N07: a failed Join union).
   Failure? insertAllFailure;
 
+  /// How many times [update] was called (N07: a refused resolution must not
+  /// reach the repository at all).
+  int updateCalls = 0;
+
+  /// How many times [insert] was called.
+  int insertCalls = 0;
+
   List<Book> get books => _books;
 
   @override
@@ -65,6 +72,7 @@ class _FakeBooks implements BookRepository {
 
   @override
   Future<Either<Failure, Book>> insert(Book book) async {
+    insertCalls++;
     final stored = book.copyWith(
       id: book.id == Book.emptyId ? _nextId++ : book.id,
       bookUid: book.bookUid ?? 'minted-$_nextId',
@@ -75,6 +83,7 @@ class _FakeBooks implements BookRepository {
 
   @override
   Future<Either<Failure, Book>> update(Book book) async {
+    updateCalls++;
     final i = _books.indexWhere((b) => b.id == book.id);
     if (i < 0) return left(const NotFoundFailure());
     _books[i] = book;
@@ -622,6 +631,132 @@ void main() {
         expect(dup.genre, 'extra'); // catalogue fields preserved
       },
     );
+
+    // N07 part 2: the review UI can now reach these branches, so they get
+    // the same two guards every other write path has.
+    group('N07 — guards', () {
+      test('takeTheirs on an in-file collision (local never persisted) is '
+          'refused with a clear message and no repository call', () async {
+        // `PossibleDuplicate.local` for an in-file key collision is the
+        // EARLIER INCOMING row (engine `keyHolder`), id == emptyId. Before,
+        // this reached `update(id: 0)` and came back as a misleading
+        // NotFoundFailure.
+        final repo = _FakeBooks([]);
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: repo,
+          namespace: _FakeNamespace(),
+          replacementGuard: FakeReplacementGuard(),
+        );
+
+        final result = await useCase.applyResolution(
+          local: const Book(bookUid: 'uB', title: 'Godaan', addedDate: 1),
+          incoming: const Book(
+            bookUid: 'uB',
+            title: 'Godaan (duplicate row)',
+            addedDate: 1,
+          ),
+          resolution: MergeResolution.takeTheirs,
+        );
+
+        expect(result.isLeft(), isTrue);
+        final failure = result.getLeft().toNullable();
+        expect(failure, isA<ValidationFailure>());
+        expect(
+          (failure! as ValidationFailure).message,
+          contains('same file'),
+          reason: 'the copy must explain WHY, not say "not found"',
+        );
+        expect(repo.updateCalls, 0);
+        expect(repo.insertCalls, 0);
+      });
+
+      test(
+        'takeTheirs validates the built book before writing (M15 gate)',
+        () async {
+          final repo = _FakeBooks([
+            const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+          ]);
+          final useCase = MergeLibraryUseCase(
+            jsonParser: const PitakaJsonImporter(),
+            bookRepo: repo,
+            namespace: _FakeNamespace(),
+            replacementGuard: FakeReplacementGuard(),
+          );
+
+          final result = await useCase.applyResolution(
+            local: repo.books.first,
+            incoming: const Book(
+              bookUid: 'uOther',
+              title: 'Local',
+              copyCount: 0, // invalid: must be at least 1
+              addedDate: 1,
+            ),
+            resolution: MergeResolution.takeTheirs,
+          );
+
+          expect(result.getLeft().toNullable(), isA<ValidationFailure>());
+          expect(repo.updateCalls, 0);
+          expect(repo.books.single.copyCount, 1, reason: 'row untouched');
+        },
+      );
+
+      test('keepBoth validates the fresh copy before inserting', () async {
+        final repo = _FakeBooks([
+          const Book(id: 1, bookUid: 'u1', title: 'Dohe', addedDate: 1),
+        ]);
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: repo,
+          namespace: _FakeNamespace(),
+          replacementGuard: FakeReplacementGuard(),
+        );
+
+        final result = await useCase.applyResolution(
+          local: repo.books.first,
+          incoming: const Book(
+            bookUid: 'u1',
+            title: 'Dohe',
+            publishedYear: 0, // invalid: outside 1..9999
+            addedDate: 1,
+          ),
+          resolution: MergeResolution.keepBoth,
+        );
+
+        expect(result.getLeft().toNullable(), isA<ValidationFailure>());
+        expect(repo.insertCalls, 0);
+        expect(repo.books, hasLength(1));
+      });
+
+      test('takeTheirs writes the NORMALISED book (cover dropped when '
+          'disallowed)', () async {
+        // `Book.validate` normalises rather than rejects a bad cover ref (M15)
+        // — the row that lands must be the normalised one.
+        final repo = _FakeBooks([
+          const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+        ]);
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: repo,
+          namespace: _FakeNamespace(),
+          replacementGuard: FakeReplacementGuard(),
+        );
+
+        final result = await useCase.applyResolution(
+          local: repo.books.first,
+          incoming: const Book(
+            bookUid: 'uOther',
+            title: 'Local',
+            coverUrl: 'https://evil.example/x.jpg',
+            addedDate: 1,
+          ),
+          resolution: MergeResolution.takeTheirs,
+        );
+
+        expect(result.isRight(), isTrue);
+        expect(repo.books.single.coverUrl, isNull);
+      });
+    });
   });
 
   // N07 (astra-review.md): "a failed Join can still change future merge

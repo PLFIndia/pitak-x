@@ -398,6 +398,19 @@ final class MergeLibraryUseCase {
   ///    book with a FRESH identity (null uid so the mapper mints one; dropped
   ///    ISBN since it is unique and still held by the original row — D2: two
   ///    rows never share one ISBN).
+  ///
+  /// N07 guards (this is a catalogue ingress like any other):
+  ///  - take-theirs is REFUSED when [local] was never persisted
+  ///    (`id == Book.emptyId`). That is the in-file key-collision shape —
+  ///    `PossibleDuplicate.local` is then the earlier row from the SAME file,
+  ///    not a book on this device — so there is no row to overwrite. Before,
+  ///    this reached the repository and came back as a misleading "not
+  ///    found". The page hides the button too; this is the belt.
+  ///  - both writing branches pass the built book through [Book.validate]
+  ///    (M15, same as `UpdateBookUseCase`): the incoming rows were validated
+  ///    by the parser, but the row written here is BUILT from them, and the
+  ///    gate belongs right before the write. The normalised book is what
+  ///    lands (a disallowed cover ref is dropped, not rejected).
   Future<Either<Failure, Unit>> applyResolution({
     required Book local,
     required Book incoming,
@@ -407,6 +420,15 @@ final class MergeLibraryUseCase {
       case MergeResolution.keepMine:
         return right(unit);
       case MergeResolution.takeTheirs:
+        if (local.id == Book.emptyId) {
+          return left(
+            const ValidationFailure(
+              'Both of these rows come from the same file, so there is no '
+              'book on this device to replace. Skip it or add it as a '
+              'separate book.',
+            ),
+          );
+        }
         // M09: "take theirs" takes their CATALOGUE fields. The cover is the
         // one exception — a photo of the physical book taken on this device
         // is kept; their cover lands only when there is no local cover.
@@ -416,22 +438,31 @@ final class MergeLibraryUseCase {
           existing: local.coverUrl,
           incoming: incoming.coverUrl,
         );
-        final updated = await _bookRepo.update(
+        return _validated(
           incoming.copyWith(
             id: local.id,
             bookUid: local.bookUid,
             coverUrl: cover,
           ),
+        ).match(
+          (failure) async => left(failure),
+          (book) async => (await _bookRepo.update(book)).map((_) => unit),
         );
-        return updated.map((_) => unit);
       case MergeResolution.keepBoth:
         // copyWith cannot null a field (it uses `??`), and a true "keep both"
         // MUST drop the incoming uid + ISBN (both UNIQUE columns still held by
         // the original row) or the duplicate would collide. Build it fresh.
-        final inserted = await _bookRepo.insert(_freshCopyOf(incoming));
-        return inserted.map((_) => unit);
+        return _validated(_freshCopyOf(incoming)).match(
+          (failure) async => left(failure),
+          (book) async => (await _bookRepo.insert(book)).map((_) => unit),
+        );
     }
   }
+
+  /// The M15 gate as a typed failure (first field error, user wording).
+  static Either<Failure, Book> _validated(Book book) => Book.validate(
+    book,
+  ).mapLeft((errors) => ValidationFailure(errors.first.userMessage));
 
   /// A separate-entry copy of [b] with a CLEARED cross-device identity: no uid
   /// (the repo mints one), no ISBN (unique, still held by the original row),
