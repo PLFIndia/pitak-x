@@ -318,12 +318,14 @@ class _FuzzyHit {
 /// established equal by the caller, or irrelevant for an ISBN match), and
 /// `addedBy` (attribution travels but is not a catalogue-state difference).
 ///
-/// Cover refs are compared via [_mergeCover]: LOCAL refs (`covers/<uuid>.jpg`,
+/// Cover refs are compared via [_coversEqual]: LOCAL refs (`covers/<uuid>.jpg`,
 /// legacy `file://…`) are per-device artifacts — the JSON importer nulls them
 /// on the receiving device (`keepLocalCovers=false`), so comparing them raw
 /// makes every book with a camera-captured cover a PHANTOM conflict on every
 /// cross-device exchange (REVIEW_FINDINGS_2 S5). Only remote https refs carry
-/// catalogue meaning across devices, so those are what get compared.
+/// catalogue meaning across devices, so those are what get compared — and a
+/// local file on one side is never a conflict with a remote ref on the other
+/// (N07/M09, see [_coversEqual]).
 bool mergeEquals(Book a, Book b) =>
     a.title == b.title &&
     a.titleTransliteration == b.titleTransliteration &&
@@ -332,7 +334,7 @@ bool mergeEquals(Book a, Book b) =>
     a.publisher == b.publisher &&
     a.publishedYear == b.publishedYear &&
     a.genre == b.genre &&
-    _mergeCover(a.coverUrl) == _mergeCover(b.coverUrl) &&
+    _coversEqual(a.coverUrl, b.coverUrl) &&
     a.pageCount == b.pageCount &&
     a.language == b.language &&
     a.notes == b.notes &&
@@ -344,11 +346,26 @@ bool mergeEquals(Book a, Book b) =>
     a.needsMetadata == b.needsMetadata &&
     a.removed == b.removed;
 
-/// The cover ref as merge-relevant state: the validated remote https URL, or
-/// null for local/blank/non-https refs (per-device or undisplayable — neither
-/// is cross-device catalogue state). Single source of truth:
-/// [CoverPaths.remoteUrlOf].
-String? _mergeCover(String? coverUrl) => CoverPaths.remoteUrlOf(coverUrl);
+/// Whether two cover refs describe the same catalogue state for merge purposes.
+///
+/// Three shapes exist: a LOCAL file (`covers/…`, `file://…`), a REMOTE https
+/// URL, or nothing. The rules, in order:
+///  - **Local on either side → equal.** A local file is this device's own
+///    photo, or a remote cover it already downloaded (M09 materialisation).
+///    Against another local file: per-device artefacts, same book. Against a
+///    remote URL: the other device simply has not downloaded it yet (or has
+///    remote covers off) — and M09's precedence rule never replaces a local
+///    file with an incoming URL, so "take theirs" could not change anything
+///    here anyway. Surfacing it gave the user an unresolvable conflict
+///    (N07). Against nothing: same reasoning as before (S5).
+///  - **Otherwise compare the validated remote URLs**
+///    ([CoverPaths.remoteUrlOf], the single classifier): two different URLs,
+///    or a URL vs nothing, ARE real differences — taking theirs changes what
+///    this device shows.
+bool _coversEqual(String? a, String? b) {
+  if (CoverPaths.isLocal(a) || CoverPaths.isLocal(b)) return true;
+  return CoverPaths.remoteUrlOf(a) == CoverPaths.remoteUrlOf(b);
+}
 
 /// Normalises an ISBN for comparison: strip spaces/hyphens, uppercase (X check
 /// digit). Null/blank → empty string. (Kotlin `String?.normIsbn`.)

@@ -14,10 +14,14 @@
 /// refresh) — this page only renders [MergeUiState] and forwards intents, so
 /// navigating away mid-merge can neither crash nor lose the result.
 ///
-/// v1 surfaces conflicts / possible-duplicates as COUNTS only (matching the
-/// Kotlin app's shipped scope); the per-row keep-mine/take-theirs/keep-both
-/// review screen is a deliberate follow-up (`applyResolution` is implemented +
-/// unit-tested, it just has no per-row UI yet).
+/// N07: the result view is an HONEST summary — a replacement is described as
+/// a replacement, rows the parser skipped and adjustments it made are listed
+/// (same wording as the Import page), and a library identity that could not
+/// be adopted after the books landed is called out so the user knows the next
+/// merge will ask them to Join again. Conflicts / possible-duplicates are
+/// still surfaced as a count with the rows left unchanged; the per-row
+/// keep-mine / take-theirs / keep-both review is the second N07 slice
+/// (`MergeLibraryUseCase.applyResolution` is implemented + unit-tested).
 library;
 
 import 'dart:convert';
@@ -242,7 +246,7 @@ class _DecisionView extends StatelessWidget {
   }
 }
 
-/// Shown after a merge is applied: the counts.
+/// Shown after a merge is applied: the counts plus every omission (N07).
 class _ResultView extends StatelessWidget {
   const _ResultView({required this.result});
 
@@ -254,25 +258,55 @@ class _ResultView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final reviewCount =
         result.conflicts.length + result.possibleDuplicates.length;
+    final omissionStyle = textTheme.bodySmall?.copyWith(color: scheme.error);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Merge complete',
+          result.replaced ? 'Library replaced' : 'Merge complete',
           style: textTheme.titleMedium?.copyWith(color: scheme.primary),
         ),
         const SizedBox(height: 8),
-        Text('Books added: ${result.added}'),
-        Text('Already matched (no change): ${result.identical}'),
+        if (result.replaced)
+          Text('Books now on this device: ${result.added}')
+        else ...[
+          Text('Books added: ${result.added}'),
+          Text('Already matched (no change): ${result.identical}'),
+        ],
         if (reviewCount > 0) ...[
           const SizedBox(height: 8),
           Text(
-            '$reviewCount book(s) appear on both devices but differ. They were '
-            'left unchanged on your device for now \u2014 reviewing each one '
-            'pick a version is coming in a later update.',
+            '$reviewCount book(s) appear on both devices but differ. Your '
+            'versions were kept unchanged; nothing from the file replaced '
+            'them.',
             style: textTheme.bodySmall?.copyWith(color: scheme.secondary),
           ),
+        ],
+        if (result.namespace == MergeNamespaceOutcome.adoptionFailed) ...[
+          const SizedBox(height: 8),
+          Text(
+            'The books were ${result.replaced ? 'replaced' : 'added'}, but '
+            'this device could not take on the other library\u2019s identity. '
+            'It still counts as a separate library, so the next merge from '
+            'that library will ask you to Join again.',
+            style: omissionStyle,
+          ),
+        ],
+        if (result.skippedRows.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Not imported',
+            style: textTheme.titleSmall?.copyWith(color: scheme.error),
+          ),
+          for (final row in result.skippedRows)
+            Text('\u2022 $row', style: textTheme.bodySmall),
+        ],
+        if (result.adjustments.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text('Adjustments', style: textTheme.titleSmall),
+          for (final adjustment in result.adjustments)
+            Text('\u2022 $adjustment', style: textTheme.bodySmall),
         ],
       ],
     );

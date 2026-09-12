@@ -2069,11 +2069,14 @@ final pdfTextRasterizerProvider =
 // ignore: unused_element
 typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
-    r'25091255548aad2ede63bdf161788c05ed2e2b12';
+    r'dd8306325086e26ce1ba3c7120788e3a6adcb0f6';
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID
-/// gate. Reuses the book repo + settings (for the ID gate / adoption).
+/// gate. The library identity (ID gate + Join/Overwrite adoption) goes through
+/// `SettingsController` — the single serialised settings writer — via the
+/// `LibraryNamespace` port, so the drawer/title/export name update the moment
+/// a merge adopts a library (N07; same shape as the replacement guard below).
 ///
 /// Copied from [mergeLibraryUseCase].
 @ProviderFor(mergeLibraryUseCase)

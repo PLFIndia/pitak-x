@@ -24,6 +24,22 @@
 ///  decision the caller invokes `applyJoin` (non-destructive union + adopt the
 ///  incoming ID) or `applyOverwrite` (replace local catalogue + adopt the ID —
 ///  destructive, the guarded secondary).
+///
+/// N07 (astra-review.md) — three rules every apply path follows:
+///  1. **Data first, identity second.** The incoming library ID is adopted
+///     only AFTER the books have landed. A failed insert therefore leaves
+///     this device's identity untouched — the next merge of the same file
+///     still stops at the Join decision instead of auto-applying under an
+///     adopted-but-empty namespace.
+///  2. **Identity goes through its owner.** Adoption calls the
+///     [LibraryNamespace] port (implemented by `SettingsController`), never
+///     the settings repository directly, so the in-memory settings every
+///     screen watches update with the disk.
+///  3. **Nothing is silently dropped.** Rows the parser rejected (M15) and
+///     the adjustments it made ride along in [MergeResult.skippedRows] /
+///     [MergeResult.adjustments]; an identity adoption that failed after the
+///     data landed is reported in [MergeResult.namespace] instead of turning
+///     a successful merge into an error.
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -37,9 +53,26 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
-import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 
-/// Result of an engine merge (library IDs matched, or applied via Join).
+/// What happened to this device's library identity during an apply (N07).
+enum MergeNamespaceOutcome {
+  /// The IDs already matched — nothing to adopt.
+  unchanged,
+
+  /// The incoming ID (and name, when present) was adopted.
+  adopted,
+
+  /// The books landed but the identity write failed. This device still has
+  /// its OLD ID: the next merge from the same library will ask to Join again
+  /// (every row will then be identical, so only the identity is adopted).
+  adoptionFailed,
+}
+
+/// Result of an applied merge: the engine union (IDs matched or Join), or a
+/// full replacement (Overwrite). Carries every omission the user should know
+/// about — skipped rows, adjustments, review items, identity outcome — so the
+/// page never describes a partial merge as simply "complete" (N07).
 class MergeResult {
   /// Creates a merge result.
   const MergeResult({
@@ -47,9 +80,14 @@ class MergeResult {
     required this.identical,
     required this.conflicts,
     required this.possibleDuplicates,
+    this.replaced = false,
+    this.skippedRows = const [],
+    this.adjustments = const [],
+    this.namespace = MergeNamespaceOutcome.unchanged,
   });
 
-  /// Books added automatically (add-only union).
+  /// Books added automatically (add-only union), or — for a replacement — the
+  /// number of books now on this device.
   final int added;
 
   /// Matched + field-equal; no action taken.
@@ -58,12 +96,47 @@ class MergeResult {
   /// Matched but differing — await user resolution.
   final List<MergeConflict> conflicts;
 
-  /// No-ISBN fuzzy near-misses — await user confirmation.
+  /// No-ISBN fuzzy near-misses and in-file key collisions — await user
+  /// confirmation.
   final List<PossibleDuplicate> possibleDuplicates;
+
+  /// True when the local catalogue was REPLACED (Overwrite) rather than
+  /// unioned. The page must not present this as "books added".
+  final bool replaced;
+
+  /// Rows in the file the parser REJECTED (M15) — they are not on this device.
+  /// M15's own messages: row number, a short title so the user can find the
+  /// row, and the field names at fault — never the invalid values themselves.
+  final List<String> skippedRows;
+
+  /// Non-fatal changes the parser made to kept rows (M15: shortened text,
+  /// dropped cover links).
+  final List<String> adjustments;
+
+  /// What happened to the library identity.
+  final MergeNamespaceOutcome namespace;
 
   /// True when there is anything for the user to review.
   bool get hasReviewItems =>
       conflicts.isNotEmpty || possibleDuplicates.isNotEmpty;
+
+  /// True when the summary must explain something beyond the counts.
+  bool get hasOmissions =>
+      skippedRows.isNotEmpty ||
+      adjustments.isNotEmpty ||
+      namespace == MergeNamespaceOutcome.adoptionFailed;
+
+  /// The same result with the identity outcome set.
+  MergeResult withNamespace(MergeNamespaceOutcome outcome) => MergeResult(
+    added: added,
+    identical: identical,
+    conflicts: conflicts,
+    possibleDuplicates: possibleDuplicates,
+    replaced: replaced,
+    skippedRows: skippedRows,
+    adjustments: adjustments,
+    namespace: outcome,
+  );
 }
 
 /// Top-level outcome of [MergeLibraryUseCase.call].
@@ -91,10 +164,19 @@ final class MergeDiffersDecision extends MergeOutcome {
     required this.incomingLibraryName,
     required this.localLibraryName,
     required this.localIsEmpty,
+    this.skippedRows = const [],
+    this.adjustments = const [],
   });
 
   /// The parsed incoming books (not yet applied).
   final List<Book> incomingBooks;
+
+  /// Rows the parser rejected — forwarded into the apply's [MergeResult] so
+  /// a Join/Overwrite still tells the user what the file lost (N07).
+  final List<String> skippedRows;
+
+  /// Parser adjustments to kept rows — forwarded like [skippedRows].
+  final List<String> adjustments;
 
   /// The incoming file's validated library ID (blank when absent/malformed).
   final String incomingLibraryId;
@@ -126,19 +208,21 @@ final class MergeLibraryUseCase {
   /// Creates the use case over its collaborators.
   const MergeLibraryUseCase({
     required BookRepository bookRepo,
-    required SettingsRepository settings,
+    // N07: the library identity is read/adopted through its single owner
+    // (`SettingsController`), not the settings repository.
+    required LibraryNamespace namespace,
     // N14: the concrete JSON codec lives in infrastructure; the use case
     // depends on the domain port and gets the implementation via DI.
     required LibraryJsonParser jsonParser,
     required CatalogueReplacementGuard replacementGuard,
   }) : _bookRepo = bookRepo,
-       _settings = settings,
+       _namespace = namespace,
        _json = jsonParser,
        _replacementGuard = replacementGuard;
 
   final CatalogueReplacementGuard _replacementGuard;
   final BookRepository _bookRepo;
-  final SettingsRepository _settings;
+  final LibraryNamespace _namespace;
   final LibraryJsonParser _json;
 
   /// Runs the ID gate and (on a match) the engine merge.
@@ -166,57 +250,61 @@ final class MergeLibraryUseCase {
 
     // M17: a failed ID read/mint must not be papered over with a blank ID —
     // that would route every file into the "differing IDs" decision path.
-    final localIdResult = await _settings.getOrCreateLibraryId();
-    if (localIdResult.isLeft()) {
-      return localIdResult.match(left, (_) => throw StateError('unreachable'));
+    final identity = await _namespace.current();
+    if (identity.isLeft()) {
+      return identity.match(left, (_) => throw StateError('unreachable'));
     }
-    final localLibraryId = localIdResult.getOrElse((_) => '').trim();
-    final settings = await _settings.load();
+    final local = identity.getOrElse((_) => throw StateError('unreachable'));
+    final localLibraryId = local.id.trim();
 
     // ID gate (D40). Match → merge. Differ (or incoming has no ID) → decision.
     final idsMatch =
         incomingLibraryId.isNotEmpty && incomingLibraryId == localLibraryId;
     if (!idsMatch) {
-      final local = await _bookRepo.getAll();
-      return local.flatMap(
+      final localBooks = await _bookRepo.getAll();
+      return localBooks.flatMap(
         (books) => right(
           MergeDiffersDecision(
             incomingBooks: payload.books,
             incomingLibraryId: incomingLibraryId,
             incomingLibraryName: incomingLibraryName,
-            localLibraryName: settings.libraryName,
+            localLibraryName: local.name,
             localIsEmpty: books.isEmpty,
+            skippedRows: payload.parseErrors,
+            adjustments: payload.warnings,
           ),
         ),
       );
     }
 
-    return (await _applyEngineMerge(payload.books)).map(MergeMerged.new);
+    final merged = await _applyEngineMerge(
+      payload.books,
+      skippedRows: payload.parseErrors,
+      adjustments: payload.warnings,
+    );
+    return merged.map(MergeMerged.new);
   }
 
   /// JOIN (D40, the non-destructive default for a differ-IDs file): union the
   /// incoming books via the engine, AND adopt the incoming library ID + name so
   /// the two devices share a namespace going forward. Nobody loses data.
+  ///
+  /// N07 order: books FIRST, identity SECOND. If the union fails, the left is
+  /// returned and this device keeps its own ID (the decision stays valid —
+  /// nothing changed). If the union lands and the identity write then fails,
+  /// the result is still a right, with [MergeNamespaceOutcome.adoptionFailed]
+  /// so the page can say exactly what did not happen.
   Future<Either<Failure, MergeResult>> applyJoin(
     MergeDiffersDecision decision,
   ) async {
-    if (decision.incomingLibraryId.isNotEmpty) {
-      // M17: namespace adoption is fail-closed — a silent half-adoption
-      // would poison future merge identity (see also N07).
-      final adopted = await _settings.setLibraryId(decision.incomingLibraryId);
-      if (adopted.isLeft()) {
-        return adopted.match(left, (_) => throw StateError('unreachable'));
-      }
-      if (decision.incomingLibraryName.isNotEmpty) {
-        final named = await _settings.setLibraryName(
-          decision.incomingLibraryName,
-        );
-        if (named.isLeft()) {
-          return named.match(left, (_) => throw StateError('unreachable'));
-        }
-      }
-    }
-    return _applyEngineMerge(decision.incomingBooks);
+    final merged = await _applyEngineMerge(
+      decision.incomingBooks,
+      skippedRows: decision.skippedRows,
+      adjustments: decision.adjustments,
+    );
+    if (merged.isLeft()) return merged;
+    final result = merged.getOrElse((_) => throw StateError('unreachable'));
+    return right(result.withNamespace(await _adoptNamespace(decision)));
   }
 
   /// OVERWRITE (D40, the guarded secondary): replace the local catalogue with
@@ -228,52 +316,78 @@ final class MergeLibraryUseCase {
   /// ([BookRepository.replaceAll]): a failure mid-way (e.g. a UNIQUE violation
   /// on a crafted file) rolls back, so the device is never left with a
   /// partially-deleted catalogue (REVIEW_FINDINGS_2 S5).
-  Future<Either<Failure, Unit>> applyOverwrite(
+  ///
+  /// Returns a [MergeResult] with `replaced: true` and `added` = the number of
+  /// books now on the device, so the page can describe a replacement as a
+  /// replacement (N07) — not as a zero-count merge.
+  Future<Either<Failure, MergeResult>> applyOverwrite(
     MergeDiffersDecision decision,
   ) => _replacementGuard.protectReplacement((scope) async {
     // The snapshot and replacement share a transaction, while the guard
     // prevents a vault write from changing the loan set between them (M03).
-    final replaced = await _bookRepo.runInTransaction<Unit>(() async {
+    final replaced = await _bookRepo.runInTransaction<int>(() async {
       var incoming = decision.incomingBooks
           .map((b) => b.copyWith(id: Book.emptyId))
           .toList();
       final loanIds = scope.retainedLoanBookIds;
       if (loanIds != null) {
         final local = await _bookRepo.getAll();
-        if (local.isLeft()) return local.map((_) => unit);
+        if (local.isLeft()) return local.map((_) => 0);
         final plan = CatalogueReplacementPlan.build(
           local: local.getOrElse((_) => const []),
           incoming: incoming,
           loanBookIds: loanIds,
         );
-        if (plan.isLeft()) return plan.map((_) => unit);
+        if (plan.isLeft()) return plan.map((_) => 0);
         incoming = plan.getOrElse((_) => const []);
       }
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+      // The repository reports how many rows it actually inserted — that is
+      // the number the summary shows, not the file's row count.
       final result = await _bookRepo.replaceAll(incoming);
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
-      return result.map((_) => unit);
+      return result;
     });
-    if (replaced.isLeft()) return replaced;
-    if (decision.incomingLibraryId.isNotEmpty) {
-      // M17: the catalogue was already replaced above; a failed ID adoption
-      // still surfaces as an error so the user knows the namespace was NOT
-      // adopted (data replaced + old ID is reported, never silent).
-      final adopted = await _settings.setLibraryId(decision.incomingLibraryId);
-      if (adopted.isLeft()) {
-        return adopted.match(left, (_) => throw StateError('unreachable'));
-      }
-      if (decision.incomingLibraryName.isNotEmpty) {
-        final named = await _settings.setLibraryName(
-          decision.incomingLibraryName,
-        );
-        if (named.isLeft()) {
-          return named.match(left, (_) => throw StateError('unreachable'));
-        }
-      }
+    if (replaced.isLeft()) {
+      return replaced.match(left, (_) => throw StateError('unreachable'));
     }
-    return right(unit);
+    // The catalogue is already replaced. A failed identity adoption is NOT
+    // an error for the whole operation any more (N07): the data is exactly
+    // what the user asked for, so report the outcome and let the page say
+    // "identity not adopted" — never silent, never a false failure either.
+    return right(
+      MergeResult(
+        added: replaced.getOrElse((_) => 0),
+        identical: 0,
+        conflicts: const [],
+        possibleDuplicates: const [],
+        replaced: true,
+        skippedRows: decision.skippedRows,
+        adjustments: decision.adjustments,
+        namespace: await _adoptNamespace(decision),
+      ),
+    );
   });
+
+  /// Adopts the incoming identity through its owner AFTER the data landed.
+  /// A file without an ID has nothing to adopt ([MergeNamespaceOutcome
+  /// .unchanged]); a failed write is reported, not thrown, because the books
+  /// are already on the device and the user must hear both facts.
+  Future<MergeNamespaceOutcome> _adoptNamespace(
+    MergeDiffersDecision decision,
+  ) async {
+    if (decision.incomingLibraryId.isEmpty) {
+      return MergeNamespaceOutcome.unchanged;
+    }
+    final adopted = await _namespace.adopt(
+      id: decision.incomingLibraryId,
+      name: decision.incomingLibraryName,
+    );
+    return adopted.match(
+      (_) => MergeNamespaceOutcome.adoptionFailed,
+      (_) => MergeNamespaceOutcome.adopted,
+    );
+  }
 
   /// Applies the user's choice for one surfaced conflict / possible-duplicate.
   ///  - keep-mine   → no-op.
@@ -355,18 +469,13 @@ final class MergeLibraryUseCase {
   /// 1..N and then reported total failure when row N+1 violated a UNIQUE
   /// index).
   Future<Either<Failure, MergeResult>> _applyEngineMerge(
-    List<Book> incoming,
-  ) async {
+    List<Book> incoming, {
+    required List<String> skippedRows,
+    required List<String> adjustments,
+  }) async {
     final localRes = await _bookRepo.getAll();
     if (localRes.isLeft()) {
-      return localRes.map(
-        (_) => const MergeResult(
-          added: 0,
-          identical: 0,
-          conflicts: [],
-          possibleDuplicates: [],
-        ),
-      );
+      return localRes.match(left, (_) => throw StateError('unreachable'));
     }
     final local = localRes.getOrElse((_) => const <Book>[]);
     final plan = planMerge(local, incoming);
@@ -375,14 +484,7 @@ final class MergeLibraryUseCase {
         plan.toAdd.map((b) => b.copyWith(id: Book.emptyId)).toList(),
       );
       if (ins.isLeft()) {
-        return ins.map(
-          (_) => const MergeResult(
-            added: 0,
-            identical: 0,
-            conflicts: [],
-            possibleDuplicates: [],
-          ),
-        );
+        return ins.match(left, (_) => throw StateError('unreachable'));
       }
     }
     return right(
@@ -391,6 +493,8 @@ final class MergeLibraryUseCase {
         identical: plan.identical,
         conflicts: plan.conflicts,
         possibleDuplicates: plan.possibleDuplicates,
+        skippedRows: skippedRows,
+        adjustments: adjustments,
       ),
     );
   }

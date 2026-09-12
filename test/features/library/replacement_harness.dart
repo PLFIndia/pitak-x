@@ -14,7 +14,9 @@ import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -192,6 +194,11 @@ class ReplacementHarness {
   VaultSessionController get session =>
       container.read(vaultSessionControllerProvider.notifier);
 
+  /// The library identity port (N07): the container's REAL
+  /// `SettingsController` over [settings], as production wires it.
+  LibraryNamespace get namespace =>
+      container.read(settingsControllerProvider.notifier);
+
   Future<void> initialize({bool exists = true, bool unlock = true}) async {
     if (exists) {
       File(store.dbPath).writeAsBytesSync([1, 2, 3]);
@@ -207,7 +214,7 @@ class ReplacementHarness {
   static SecretBytes secret() =>
       SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]));
 
-  Future<Either<Failure, Unit>> overwrite(List<Book> incoming) async {
+  Future<Either<Failure, MergeResult>> overwrite(List<Book> incoming) async {
     final useCase = await container.read(mergeLibraryUseCaseProvider.future);
     return useCase.applyOverwrite(
       MergeDiffersDecision(

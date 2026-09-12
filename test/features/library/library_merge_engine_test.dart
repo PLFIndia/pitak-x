@@ -297,12 +297,33 @@ void main() {
         expect(plan.conflicts, hasLength(1));
       });
 
-      test('local cover vs remote cover is a real conflict', () {
-        // One device fetched a fetchable cover the other doesn't have — a
-        // genuine catalogue-state difference the maintainer should see.
-        final local = [
+      test('N07/M09: a local photo vs a remote cover is NOT a conflict', () {
+        // After M09 a device with remote covers ON downloads the https cover
+        // and stores it as a local file; a device with it OFF keeps the URL.
+        // Both show the same picture, and M09's precedence (a local photo is
+        // never replaced by an incoming URL) makes "take theirs" a no-op for
+        // this field — so surfacing it gave the user a conflict they could
+        // not resolve into anything different. Either direction is identical.
+        final photo = [
           book(id: 1, uid: 'u1', title: 'Godaan', coverUrl: 'covers/a.jpg'),
         ];
+        final url = [
+          book(
+            id: 99,
+            uid: 'u1',
+            title: 'Godaan',
+            coverUrl: 'https://covers.openlibrary.org/b/1-L.jpg',
+          ),
+        ];
+
+        expect(planMerge(photo, url).isNoOp, isTrue);
+        expect(planMerge(url, photo).isNoOp, isTrue);
+      });
+
+      test('a remote cover vs NO cover is still a real conflict', () {
+        // One device has a cover the other has nothing for: taking theirs
+        // DOES change the local row, so the maintainer must see it.
+        final local = [book(id: 1, uid: 'u1', title: 'Godaan')];
         final incoming = [
           book(
             id: 99,
@@ -313,6 +334,7 @@ void main() {
         ];
 
         expect(planMerge(local, incoming).conflicts, hasLength(1));
+        expect(planMerge(incoming, local).conflicts, hasLength(1));
       });
     });
 

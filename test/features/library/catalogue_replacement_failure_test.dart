@@ -56,7 +56,8 @@ void main() {
     await h.initialize();
     useCase = MergeLibraryUseCase(
       bookRepo: books,
-      settings: h.settings,
+      // N07: identity goes through the harness's real SettingsController.
+      namespace: h.namespace,
       jsonParser: const PitakaJsonImporter(),
       replacementGuard: h.session,
     );
@@ -102,14 +103,17 @@ void main() {
   );
 
   test(
-    'settings ID failure is surfaced without breaking preserved loans',
+    'settings ID failure is reported as an omission, loans still preserved',
     () async {
       h.settings.failure = const StorageFailure('synthetic settings failure');
-      expect(
-        (await useCase.applyOverwrite(_decision)).getLeft().toNullable(),
-        isA<StorageFailure>(),
-      );
-      // N07 is still separate: catalogue committed, namespace adoption failed.
+      final result = (await useCase.applyOverwrite(
+        _decision,
+      )).getOrElse((f) => fail('the replacement itself succeeded: $f'));
+      // N07: the catalogue was committed exactly as asked, so this is a
+      // success WITH an explicit omission — not a failure that would hide
+      // the fact that the books were replaced.
+      expect(result.replaced, isTrue);
+      expect(result.namespace, MergeNamespaceOutcome.adoptionFailed);
       expect((await h.books.getById(7)).toNullable()!.title, 'Updated');
       expect(h.settings.id, 'local');
     },

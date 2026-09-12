@@ -1,359 +1,322 @@
-# PLAN.md — Session 22: N08 — network deadlines that actually stop the work
+# PLAN.md — Session 23: N07 (part 1 of 2) — merge: honest summary, preserved warnings, namespace adoption coordinated with data + settings
 
 ## Understanding
 
-`astra-review.md` N08: "Network deadlines do not reliably stop the underlying
-work." Every cited pattern is LIVE in current code (re-read this session; the
-review's line numbers are stale, the code is not):
+`astra-review.md` N07: "Merge cannot resolve conflicts and can partially change
+namespace state." Re-read this session; the review's line numbers are stale,
+every cited pattern is live in current code:
 
-1. **`bounded_cover_fetcher.dart:73`** — `_fetchBounded(uri).timeout(timeout)`.
-   `Future.timeout` (SDK `future_impl.dart:1032-1075`) only stops *waiting*:
-   when the timer fires it completes the outer future with `TimeoutException`
-   and does nothing to the inner future. The socket stays open, the body keeps
-   streaming into the `BytesBuilder`, and the redirect loop keeps hopping
-   until the inner `_fetchBounded` finishes on its own. A slow-loris host
-   holds a connection + memory for as long as it likes; the caller merely
-   stopped watching.
-2. **`bounded_cover_fetcher.dart:116-140`** — rejected responses (redirect
-   hops, non-2xx, oversized Content-Length) are `drain()`ed **without a byte
-   bound**: `unawaited(response.stream.drain<void>())` reads the whole body
-   to /dev/null. An attacker's 404 page can be gigabytes; we download all of
-   it. The cap only protects the ACCEPTED path.
-3. **`lookup_http_client.dart:63-76`** — the retry decorator gets `first`
-   (429/5xx), backs off, sends the retry and returns it. `first.stream` is
-   **never listened to or cancelled** — a dangling connection per retried
-   request (the `http` package's own `RetryClient` explicitly cancels it,
-   `retry.dart:139-141`).
-4. **`timeout_http_client.dart:38-61`** — the shared client bounds connect
-   (`send().timeout`) and per-chunk idle (`Stream.timeout`) but has **no total
-   deadline** and **no body byte cap**. A body trickling one byte every 59 s
-   never times out; a `Response.fromStream` (`BaseClient.get` → `toBytes()`)
-   buffers an unbounded body. Every JSON call (`HttpGitHubApi`, both lookup
-   services) and the publish read-back (`providers.dart:457-468`
-   `client.get(...).bodyBytes`) go through this path unbounded. And the
-   connect timeout is again `Future.timeout` — the dead-socket request is
-   abandoned, not aborted.
-5. The read-back budget in `publish_library_use_case.dart:139-145` counts 12
-   × 5 s sleeps only; each poll's own HTTP time (up to 60 s connect + 60 s
-   idle chunks × N) is unbounded on top — "60 s budget" is not what happens.
-   (Bounding each request with a total deadline at the shared client fixes
-   the arithmetic without touching the use case.)
+1. **Conflicts are counts only.** `merge_page.dart:245-279` `_ResultView`
+   prints "`N book(s)` appear on both devices but differ … reviewing each one
+   … is coming in a later update." `MergeLibraryUseCase.applyResolution`
+   (`merge_library_use_case.dart:275-316`, keep-mine / take-theirs / keep-both)
+   is implemented and unit-tested but has **no caller in `lib/`** (grep).
+   `MergeConflict` / `PossibleDuplicate` (`library_merge_engine.dart:56-115`)
+   already carry both `Book`s + `matchedBy` / `similarity` — enough for a
+   review row. → **Session 24** (UI + controller `resolve`).
+2. **Join adopts the namespace BEFORE the data lands.**
+   `merge_library_use_case.dart:200-218` `applyJoin`: `setLibraryId` →
+   `setLibraryName` → `_applyEngineMerge`. If `insertAll` fails the device now
+   carries the OTHER library's ID with none of its books; the next merge of the
+   same file passes the ID gate and auto-applies the union with no Join
+   decision — exactly the "failed Join can still change future merge identity"
+   the reviewer describes. `applyOverwrite` (`:230-277`) already does data
+   first, ID second.
+3. **Settings state goes stale.** The use case writes through
+   `SettingsRepository` directly (`_settings.setLibraryId/…Name`), bypassing
+   `SettingsController` — the keep-alive in-memory `AppSettings` (M16's single
+   serialised writer). `MergeController._merged` (`merge_controller.dart:185`)
+   invalidates only `libraryControllerProvider`. After a Join/Overwrite the
+   drawer header (`app_drawer.dart:35`), the library AppBar
+   (`library_page.dart:58`), the Settings name field (`settings_page.dart:108`),
+   the PDF/JSON export envelope name (`export_controller.dart:97-100`) and the
+   publish site title (`publish_controller.dart:92`) all keep showing the OLD
+   library name until restart. (The ID self-heals on the next export/QR because
+   those call the controller's `getOrCreateLibraryId`, which re-reads prefs.)
+4. **Parse warnings are discarded.** `merge_library_use_case.dart:152-155`
+   surfaces `payload.parseErrors` ONLY when zero books parsed; a file with 99
+   good rows and 1 invalid row (M15 rejects, not coerces) silently drops the
+   row. `payload.warnings` (M15 truncations / dropped covers) is never read.
+   `MergeResult` and `MergeDiffersDecision` have no field for either, so
+   nothing can be shown after Join/Overwrite.
+5. **Overwrite is reported as a zeroed merge.** `merge_controller.dart:135-147`
+   maps a successful Overwrite to `MergeResult(added: 0, identical: 0, …)`;
+   the page then says "Merge complete / Books added: 0 / Already matched: 0"
+   for a catalogue that was just REPLACED. Reviewer: "Do not describe a partial
+   merge as complete without explaining omissions."
+6. **S12/S13 N07 note — `_mergeCover`** (`library_merge_engine.dart:351`).
+   After M09 a device with remote covers ON materialises `https://…` into
+   `covers/<uuid>.jpg`; a device with it OFF keeps the URL. Merging the two:
+   `remoteUrlOf(local photo)` = null vs `remoteUrlOf(url)` = the URL → a
+   conflict. Under M09's precedence (`resolveIncomingCover`), take-theirs
+   keeps the local photo anyway, so this conflict is unresolvable-to-anything
+   and pure noise. `library_merge_engine_test.dart:300` currently LOCKS the
+   opposite ("local cover vs remote cover is a real conflict"). → D2.
 
-**What the platform offers (verified in pub-cache source, not memory):**
-
-- `http` **1.6.0** is what `pubspec.lock:579-586` resolves (constraint
-  `^1.2.2`). 1.5.0 added `Abortable` (`CHANGELOG.md:11-15`):
-  `AbortableRequest(method, url, {abortTrigger})` (`request.dart:216-220`);
-  `IOClient.send` (`io_client.dart:141-147, 165-173`) calls
-  `HttpClientRequest.abort()` before headers arrive and injects
-  `RequestAbortedException` + cancels the socket subscription while the body
-  streams. **No new package is needed.** `MockClient` does not abort by
-  itself (`mock_client.dart:31-33`) — tests use a hand-rolled inner client
-  that honours `abortTrigger`, plus one real loopback `HttpServer` test to
-  prove the socket really closes.
-- `BaseClient.get/post/patch` build a plain `Request` (`base_client.dart:77`)
-  — callers cannot pass an abortable one. So the abort has to be added INSIDE
-  our decorator: `TimeoutHttpClient.send` wraps the incoming request in an
-  `AbortableRequest` whose trigger is our deadline timer. Body bytes of a
-  finalised `Request` are copyable (`bodyBytes`), so the copy is lossless for
-  every request type this app sends (no `MultipartRequest`/`StreamedRequest`
-  anywhere in `lib/` — grep confirmed).
-- `Stream.timeout`'s `onTimeout` sink close → `controller.close()` →
-  `onCancel` → `subscription.cancel()` (`stream.dart:2094-2102`), so the idle
-  path already cancels its source; the **connect** path and the **caller-side
-  `Future.timeout`** do not.
+Scope split (the schedule allots 2 sessions):
+- **Session 23 (this):** items 2–6 — application-layer foundation + honest
+  result surface. Everything a review UI will need must be true first.
+- **Session 24:** item 1 — per-row conflict / possible-duplicate review
+  (controller `resolve`, `applyResolution` guard for in-file collisions whose
+  `local` is a not-yet-persisted row, widget tests).
 
 ## Privacy & threat notes
 
-No new data leaves the device; no new hosts; no storage change; no secrets
-touched. The change REDUCES exposure:
-
-- **Who could act:** any host we talk to — GitHub (auth'd), Open Library,
-  Google Books, the allow-listed cover hosts, and a GitHub Pages origin for
-  the read-back — or a network middlebox on the path.
-- **What they could do today:** hold a connection open indefinitely (battery,
-  data, a wedged publish that the 60 s "budget" does not actually bound);
-  make the device download an unbounded rejected body (data, memory); make
-  a retried lookup leak one open connection per retry.
-- **What stops them after this session:** a per-request total deadline that
-  aborts the socket; a body byte cap on every response, accepted or rejected;
-  cancellation of every discarded stream. Fail closed: over-cap/over-deadline
-  → `ClientException` (same family callers already map to safe messages —
-  `HttpGitHubApi._guard`, lookup `on Object` → fixed copy, fetcher → null).
-- **Diagnostic (N11 D4-b):** a refused cover download currently vanishes
-  silently. Adding a typed refusal reason to the fetcher's return and a
-  debug-only `debugPrint` in `RemoteCoverMaterializer` (book id + reason
-  enum, NEVER the URL — S17 precedent: `ClientException.toString()` embeds
-  the URL) keeps AGENTS.md §6.2 (no URLs/PII in logs) and §3.4 (no
-  telemetry). `debugPrint` is a no-op in release builds only if wrapped in
-  `kDebugMode`; `screen_security.dart:69` is the existing precedent.
-  **Layer check:** `RemoteCoverMaterializer` is `application/`;
-  `package:flutter/foundation.dart` is NOT on the N14 forbidden list
-  (`domain_purity_test.dart:142-150`) but no application file imports Flutter
-  today except via riverpod. Decision D4 below.
+- No new data collected, no network, no new permissions. Merge stays local.
+- Who can influence this path: whoever hands the user a `.json` file. Threat is
+  **namespace poisoning** (item 2): a crafted file that makes `insertAll` fail
+  (e.g. a UNIQUE collision the planner misses) after the ID was adopted leaves
+  the device silently re-identified. Fix: data first, ID only after success.
+- Surfaced text: `parseErrors` / `warnings` are our OWN messages built by
+  `_RowReader` (M15) — row number, a ≤40-char title so the user can find the
+  row (`pitaka_json_importer.dart:333-338`, verified in step 4 when a test
+  assumption said "no title"), and the field names at fault. The INVALID
+  VALUES are never echoed. `MergeResult` copy must stay that way (step 9).
+- Settings writes stay behind the M16 FIFO (D1-b) — no second writer race.
+- `debugPrint`/logging: none added.
 
 ## Investigation notes
 
-- Consumers of the shared client (`providers.dart`): `httpClient` (60 s) →
-  `HttpGitHubApi`, `remoteCoverFetcher` (→ `BoundedCoverFetcher`),
-  `publishedFileFetcher`; `lookupHttpClient` (10 s, + `LookupHttpClient`) →
-  `OpenLibraryLookupService`, `GoogleBooksLookupService`.
-- `BoundedCoverFetcher` (S12) is the single cover path for publish AND
-  display (`materialize_remote_cover_use_case.dart:75`). Both typedefs
-  (`RemoteCoverFetcher`, `BoundedCoverDownload`) are `Future<List<int>?>
-  Function(String)`; 7 test call sites construct fakes for them.
-- Largest legitimate responses through the shared client: GitHub
-  `/git/trees/…?recursive=1` for a big library (≈150 B/entry; 100 k covers ≈
-  15 MiB — GitHub truncates at 100 k entries/7 MB anyway), the publish
-  read-back of `books.json` (the app's own file; a 100 k-row catalogue ≈
-  30–50 MiB), lookup JSON (KBs). GitHub blob uploads are REQUEST bodies (not
-  capped by this change; the fetcher's 8 MiB cap already bounds their
-  source).
-- Existing tests: `timeout_http_client_test.dart` (3, hand-rolled inner
-  clients), `lookup_http_client_test.dart` (9, `MockClient`),
-  `bounded_cover_fetcher_test.dart` (17, `MockClient.streaming`). None
-  observes whether the SOURCE stopped — exactly the gap the review names.
-- Baseline (this session, pinned SDK): analyzer 0; format 401/0; Flutter
-  **1441 passed / 0 failed** (`/tmp/pitak-s22-flutter-baseline.txt`, 0
-  `[E]`); cargo **32 passed**, 2 expected ignored. HEAD = `origin/main` =
-  `da540a8`; tracked tree clean.
+- `MergeController` (S20, N11): keep-alive, `_running`, sealed `MergeUiState`
+  (`Idle/Running/NeedsDecision{applyFailure, applying}/Done/Failed`).
+  `_apply` KEEPS the decision on a failed apply so the user can retry or pick
+  the other option — that contract assumes NOTHING landed. Once the union has
+  landed, offering "Replace my library" again would replace an already-merged
+  catalogue → a post-data adoption failure must go to `MergeDone` with an
+  explicit omission, not back to the decision (D3).
+- `SettingsController` (M16): `_serialised` FIFO + `_update(persist, patch)`
+  patch-on-current; `setLibraryId`/`setLibraryName` are `Future<void>` and fold
+  failures into `AsyncError` — no `Either` for a caller to branch on.
+  `_mintLibraryId` returns `Either<Failure, String>` and patches state.
+  Precedent for a controller implementing a domain port consumed by a use
+  case: `VaultSessionController implements CatalogueReplacementGuard`
+  (`vault_session_controller.dart:53-54`), wired in `providers.dart:884`
+  via `ref.read(vaultSessionControllerProvider.notifier)`.
+- Riverpod 2.6.1 (pub-cache, not memory): `when/maybeWhen` default
+  `skipLoadingOnRefresh = true` (`common.dart:674`) — an `invalidate` of a
+  keep-alive AsyncNotifier keeps the previous value visible in `maybeWhen(data:)`
+  consumers; `AsyncNotifierProviderElement.create` caches the notifier
+  (`_notifierNotifier.result ??=`, `base.dart:534`) so the FIFO survives a
+  rebuild. (Relevant only if D1-a is chosen.)
+- `ImportPayload.warnings` (M15) exists and is populated by
+  `PitakaJsonImporter`; `ImportSummary` + `import_page.dart:215-229` already
+  render "Issues" + "Adjustments" — the merge summary should mirror that copy.
+- The JSON importer never sets `Book.id` → incoming rows have `id == emptyId`.
+  `PossibleDuplicate.local` for an in-file collision is such a row
+  (`library_merge_engine.dart:236-240`) → `takeTheirs` would `update()` id 0
+  (NotFound). Session-24 guard; recorded here so it is not forgotten.
+- Existing tests: `merge_library_use_case_test.dart` (646 lines,
+  `_FakeBooks`/`_FakeSettings implements SettingsRepository`),
+  `merge_controller_test.dart` (361, own fakes, `makeContainer` with live
+  listener), `merge_page_test.dart` (269, `ReplacementSettings` from
+  `test/features/library/replacement_harness.dart`), engine test (405).
+  `merge_controller_test.dart:241` "a failed applyJoin keeps the decision" does
+  NOT assert settings unchanged — the hole item 2 lives in.
 
 ## Proposed approach
 
-Fix the foundation once, at the shared client, so every consumer inherits
-it; then remove the caller-side `Future.timeout` that hid the problem.
+### A. `applyJoin`: data first, namespace second, honest result
+- Run `_applyEngineMerge` FIRST. Only on `Right` adopt the incoming ID + name.
+- Adoption failure after data success → `Right(MergeResult(…, namespace:
+  MergeNamespaceOutcome.adoptionFailed))` — the books are there, the page says
+  so and explains the omission ("… but this device could not adopt the
+  library's identity; the next merge from this library will ask you to Join
+  again"). Self-healing: the next Join finds every row identical and only
+  adopts. (D3.)
+- `applyOverwrite` → returns `Either<Failure, MergeResult>` with
+  `replaced: true, added: incoming.length` and the same namespace outcome.
+  The controller's zeroed mapping goes away.
 
-### A. `TimeoutHttpClient` → real deadlines + byte cap (core/network)
+### B. Settings written through the single writer (D1)
+- (b, recommended) new domain port `LibraryNamespace` in
+  `lib/features/settings/domain/library_namespace.dart`:
+  `Future<Either<Failure, LibraryIdentity>> current()` (id via
+  get-or-create + current name) and
+  `Future<Either<Failure, Unit>> adopt({required String id, required String
+  name})`. `SettingsController implements LibraryNamespace`: `current()` awaits
+  its own `future` then `_mintLibraryId`; `adopt()` runs BOTH prefs writes in
+  ONE `_serialised` turn and patches state once. `MergeLibraryUseCase` drops
+  its `SettingsRepository` dependency for the port; `providers.dart` wires
+  `ref.read(settingsControllerProvider.notifier)` (the replacement-guard
+  precedent). Result: no code path writes library identity behind M16's FIFO,
+  and every watcher (drawer, AppBar, export, publish) sees the new name at
+  once.
+- (a, alternative) keep the repo writes; `MergeController._merged` also
+  `ref.invalidate(settingsControllerProvider)` when a namespace was adopted.
+  Smaller diff; leaves the second writer in place.
 
-Rename nothing (one blessed way; the DI wiring stays). New behaviour:
+### C. Warnings and skipped rows preserved
+- `MergeResult` gains `skippedRows: List<String>` (= `parseErrors`, rows NOT
+  imported) and `adjustments: List<String>` (= `warnings`). `MergeDiffersDecision`
+  carries both so Join/Overwrite forward them. `call()` keeps the existing
+  "zero books + errors → Left" rule.
+- `_ResultView` renders them with the Import page's wording ("Issues" /
+  "Adjustments"), plus: a "Library replaced — N books now on this device" head
+  for `replaced`, the namespace omission line, and — until Session 24 — the
+  review count with copy that no longer promises "a later update" but says the
+  rows were left unchanged and can be reviewed below (S24 adds the rows).
 
-1. **Abortable send.** Wrap the incoming request in an `AbortableRequest`
-   (copy method/url/headers/bodyBytes/followRedirects/maxRedirects/
-   persistentConnection — same copy the `http` `RetryClient` does,
-   `retry.dart:151-176`). The `abortTrigger` is a `Completer` we complete
-   when EITHER the connect timer, the idle timer, or the total-deadline
-   timer fires. `IOClient` then tears down the socket. Replaces
-   `send().timeout(...)` (which only abandoned the future).
-2. **Total deadline** (`Duration totalDeadline`, default: 60 s shared /
-   30 s lookup — D1 below) — a single timer armed before `send`, cancelled on
-   stream done/cancel/error; on expiry completes the abort trigger AND
-   errors the response stream with `ClientException('Request exceeded …')`.
-3. **Body byte cap** (`int maxResponseBytes`, default 64 MiB — D2 below):
-   counted in a `StreamTransformer` on the body; on overflow → cancel the
-   source subscription, complete the abort trigger, `addError(ClientException
-   ('Response exceeded N bytes'))`, close. `Response.fromStream` then throws
-   instead of buffering — callers already handle `ClientException`.
-4. Wire all three timers to ONE `_Deadline` helper so a body that completes
-   normally cancels every timer (no leaked timers — the widget-test "pending
-   timer" invariant, S19 lesson).
-
-Reference: `package:http` `RetryClient` request copy + stream cancel
-(BSD-3, dart-lang/http); `IOClient` abort semantics (same package).
-
-### B. `LookupHttpClient` — cancel the discarded first response
-
-On the retry path, `unawaited(first.stream.listen((_) {}).cancel())` before
-sending the retry — verbatim the `RetryClient` idiom (`retry.dart:139-141`).
-Also cancel the retry's stream when we fall back to `first` after the retry
-throws (nothing to cancel — the throw means no response — noted for
-completeness).
-
-### C. `BoundedCoverFetcher` — no caller-side `Future.timeout`; bounded
-rejects; typed refusal
-
-1. Drop `.timeout(timeout)` around `_fetchBounded`. Instead pass the
-   deadline INTO the request via `AbortableRequest` + a per-fetch
-   `Completer` — the fetcher's own 15 s stays (it is tighter than the shared
-   60 s) but now aborts the socket. (The fetcher builds its own
-   `http.Request` at `:112`, so it can make it abortable directly.)
-2. Every rejected response (redirect hop, non-2xx, oversized declared
-   length): **cancel** the stream (`listen((_){}).cancel()`) instead of
-   `drain()`. Connection reuse is not worth an unbounded read; `IOClient`
-   closes the socket on cancel (`io_client.dart:198 onCancel`).
-3. The accepted path's over-cap `return null` inside `await for` already
-   cancels the subscription (Dart semantics) — keep, but ALSO complete the
-   abort trigger so `IOClient` tears the socket down immediately rather than
-   on GC.
-4. **Typed refusal (N11 D4-b):** `fetch` returns `CoverFetchResult` — sealed:
-   `CoverFetched(bytes)` | `CoverRefused(CoverRefusal reason)` with
-   `enum CoverRefusal { disallowedUrl, redirectRefused, tooManyRedirects,
-   httpStatus, tooLarge, timedOut, transport, notAnImage }`. The `List<int>?`
-   port typedefs (`RemoteCoverFetcher`, `BoundedCoverDownload`) stay as they
-   are (publish only needs bytes-or-null) — the DI adapter in `providers.dart`
-   maps the result and, for the materialise path, feeds the reason to the
-   diagnostic. D3 decides how far the type travels.
-
-### D. `RemoteCoverMaterializer` — debug-only refusal diagnostic
-
-On a `Left`: `if (kDebugMode) debugPrint('remote cover: book <id> refused
-(<reason>)')`. No URL, no host. Needs the reason to reach the materializer —
-D3.
+### D. Engine cover rule (D2)
+- (a, recommended) `mergeEquals` treats a LOCAL cover on one side vs a REMOTE
+  https cover on the other as equal (M09 precedence makes take-theirs a
+  no-op for that field; after materialisation both devices show the same
+  picture). Flip `library_merge_engine_test.dart:300` with the M09 rationale;
+  keep "remote vs remote differ" and "remote vs null" as conflicts.
+- (b) leave as is; note remains open on the N07 row.
 
 ### E. Tests (regression first, red on HEAD)
+- `merge_library_use_case_test.dart`: failed `insertAll` on Join → settings
+  UNCHANGED (behaviour-red); adoption fails after data → `Right` with
+  `adoptionFailed` + books present (behaviour-red: HEAD returns Left);
+  1 good + 1 invalid row → `skippedRows` (compile-red); truncated field →
+  `adjustments`; decision path carries both; overwrite returns `replaced`
+  result (compile-red).
+- `merge_controller_test.dart`: after `applyJoin` the `settingsControllerProvider`
+  state shows the new id + name (behaviour-red); overwrite → `MergeDone`
+  with `replaced` (compile-red).
+- `settings_test.dart` (D1-b): `adopt` is one FIFO turn — a slow theme write
+  in flight cannot revert id/name (M16 gated fake).
+- `library_merge_engine_test.dart` (D2-a): flipped case + a new "remote vs
+  remote still conflicts" guard already exists (`:278`).
+- `merge_page_test.dart`: summary shows Issues/Adjustments; overwrite shows
+  the replaced head; namespace omission line.
 
-- `test/core/timeout_http_client_test.dart` +N08 group:
-  (a) **connect timeout aborts the request**: inner client records whether
-  `request is Abortable && abortTrigger completed` — red on HEAD (plain
-  `Request`, never aborted);
-  (b) **total deadline** — a body that emits one byte every 30 ms with a
-  40 ms idle timeout but a 100 ms total deadline errors out — red on HEAD
-  (no total deadline; the idle timer keeps re-arming);
-  (c) **byte cap** — a 3-chunk body over `maxResponseBytes` → `get()` throws
-  `ClientException`, source subscription cancelled (inner `onCancel` flag) —
-  red on HEAD (buffers all);
-  (d) timers: a normal completion leaves no pending timers (`fakeAsync`).
-  (e) **loopback proof**: a real `HttpServer` on 127.0.0.1 that never
-  answers; assert the server's connection count drops to 0 after the
-  timeout (the review explicitly asks for cancellation to be tested, not
-  just the returned error) — red on HEAD (socket stays open until test
-  teardown).
-- `test/core/lookup_http_client_test.dart` +1: the discarded 429 response's
-  stream is cancelled (`MockClient.streaming` with an `onCancel` hook) — red
-  on HEAD.
-- `test/features/publish/bounded_cover_fetcher_test.dart` +N08 group:
-  a rejected 404 body is NOT read past the first chunk (chunk counter) — red;
-  a redirect hop body is cancelled — red; the timeout completes the abort
-  trigger — red (no trigger exists); each `CoverRefusal` variant is returned
-  for its case — compile-red.
-- `test/features/library/remote_cover_materializer_test.dart` +1: a refused
-  download emits exactly one debug line containing the book id and reason
-  and NOT the URL (capture via `debugPrint = …` override).
+OSS reference: none new — the `Either`-typed port + controller-implements-port
+shape is this repo's own `CatalogueReplacementGuard`; result-with-omissions is
+the same idea as `ImportSummary.warnings` (M15).
 
 ## Decision points
 
-- **D1 — total-deadline defaults:** (a) shared client 60 s total, lookup
-  client 30 s total (interactive; 3× its 10 s connect/idle so a healthy slow
-  response still finishes); (b) equal to the existing per-phase timeout
-  (60/10) — simpler but makes a legitimately slow 8 MiB cover on 2G fail.
-  **Recommend (a).**
-- **D2 — shared response byte cap:** (a) 64 MiB (matches
-  `ImportLimits.maxTextChars`; covers a 100 k-row `books.json` read-back with
-  headroom); (b) 16 MiB (tighter; a >~30 k-book read-back would then fail
-  "not live" every time — a silent false negative). **Recommend (a)**; the
-  cover path keeps its own 8 MiB.
-- **D3 — how far the typed refusal travels:** (a) the fetcher returns the
-  sealed result; `providers.dart` maps it to bytes-or-null for publish, and
-  the `MaterializeRemoteCoverUseCase` port becomes
-  `Future<Either<CoverRefusal, List<int>>>` so the use case's `Left` carries
-  the reason (`NetworkFailure` stays the outward `Failure`; the reason rides
-  in a new `CoverDownloadFailure(reason) extends Failure`… **or** simpler)
-  (b) keep both ports `List<int>?`; the fetcher exposes the reason via a
-  second, optional `onRefused` callback injected only on the materialise
-  path — smaller diff, no `Failure` hierarchy change, publish untouched.
-  **Recommend (b)** — the reason is a developer diagnostic, not a domain
-  outcome (M09 decision: "a missing thumbnail is not an error the user can
-  act on" stands).
-- **D4 — where `debugPrint` lives:** (a) in `RemoteCoverMaterializer`
-  (application) importing `package:flutter/foundation.dart` — first Flutter
-  import in an application file; allowed by the N14 gate, but a precedent;
-  (b) inject a `void Function(String)? log` port from `providers.dart`
-  (composition root already imports Flutter) — keeps application Flutter-
-  free, one more ctor param. **Recommend (b)** (AGENTS.md §3.1 spirit).
-- **D5 — execution:** end-to-end, or pause at each decision point?
-
-**Answers (2026-09-12):** D1 **(a)** 60 s / 30 s total · D2 **(a)** 64 MiB ·
-D3 **(b)**, refined to **(a)**: the library-side port `BoundedCoverDownload`
-returns the sealed `CoverFetchResult` so the use case (which knows the book
-id) can call an injected `onRefused(bookId, reason)`; the publish port
-`RemoteCoverFetcher` and the `Failure` hierarchy stay untouched · D4 **(b)**
-log port injected from `providers.dart` · D5 **(a)** end-to-end.
+- **D1 — settings coordination:** (a) invalidate `settingsControllerProvider`
+  after adoption · (b) `LibraryNamespace` port implemented by
+  `SettingsController`, use case stops touching `SettingsRepository`.
+  → **(b)** (user, 2026-09-12)
+- **D2 — cover rule:** (a) local photo vs remote https = equal · (b) keep the
+  conflict. → **(a)** (user)
+- **D3 — adoption fails AFTER data landed:** proposed **`MergeDone` with
+  `adoptionFailed` omission** (staying on the decision would re-offer
+  "Replace my library" against an already-merged catalogue).
+  → **confirmed** (no objection).
+- **D4 — execution mode:** end-to-end, or pause at each decision point?
+  → **end-to-end** (user)
 
 ## Steps
 
-- [x] 1. Baseline recorded (above). Tracked tree clean at `da540a8`.
-- [x] 2. Regression tests for `TimeoutHttpClient` — 4 compile-red (new
-  params), 2 behaviour-red on HEAD: abort-on-connect (`abortTriggered`
-  false) and the LOOPBACK socket test ("server still holds 1 connection 2 s
-  after the client deadline"). Probe: a HEAD-shaped `Future.timeout`
-  decorator left the raw server socket OPEN at 2209 ms; the new client
-  closed it at 218 ms.
-- [x] 3. Implemented A (`timeout_http_client.dart`): `_RequestDeadline`
-  (total timer + shared abort completer), `AbortableRequest` re-issue,
-  `_boundedBody` (idle / total / size, cancel + abort on any trip,
-  `onCancel` aborts when the caller drops the body). 12 tests green.
-- [x] 4. `LookupHttpClient`: cancel-before-retry — red on HEAD
-  (`firstBodyCancelled` false) → green. Retry-failed fallback returns the
-  first STATUS with an empty body (the real body was cancelled).
-- [x] 5. `BoundedCoverFetcher`: sealed `CoverFetchResult` (moved to
-  `publish/domain/cover_fetch_result.dart` so application code can name it
-  without importing infrastructure), `AbortableRequest` per hop wired to one
-  15 s deadline, `_discard` = cancel-not-drain, over-cap completes the abort.
-  5 N08 tests proved red against a HEAD-behaviour graft (rejected bodies
-  drained all 10 chunks; abort never fired). 21 tests green.
-- [x] 6. `MaterializeRemoteCoverUseCase`: `BoundedCoverDownload` returns the
-  typed result; optional `onRefused(bookId, reason)` port. `providers.dart`:
-  new `boundedCoverDownload` (single implementation, downscale → typed
-  `notAnImage`), `remoteCoverFetcher` maps to bytes-or-null for publish,
-  `materializeRemoteCoverUseCase` injects the `kDebugMode`+`debugPrint` port.
-  New `test/core/di/remote_cover_diagnostic_test.dart` drives the REAL
-  provider and asserts the line has id + reason and NOT the URL/host.
-- [x] 7. D1/D2 values + beginner comments on both client providers.
-- [x] 8. `build_runner` last: only the expected hash diffs + the new
-  provider in `providers.g.dart`; `.fvmrc`/`.gitignore` untouched; warm
-  re-run = no diff.
-- [x] 9. Gates green (see Result). Lib-diff privacy scan: the ONLY new log
-  line is `debugPrint('remote cover: book $bookId refused (${reason.name})')`
-  behind `kDebugMode`; no URL/host/exception text reaches any log or
-  message; new `ClientException` messages carry a duration/byte count only.
+- [x] 1. Protocol start: repo matches S22 handoff (`98f1d5b` = origin/main;
+  only the recorded 2-line PLAN.md tick-off dirty). Baseline gates recorded.
+- [x] 2. Re-read N07 + all cited files; evidence re-verified (above).
+- [x] 3. Ask D1, D2 (one at a time), confirm D3, ask D4 — b / a / confirmed / end-to-end.
+- [x] 4. Regression tests written and proved red on HEAD (E).
+- [x] 5. Domain: `LibraryNamespace` port (D1-b) / engine cover rule (D2-a).
+- [x] 6. `SettingsController implements LibraryNamespace` (+ `.g.dart`).
+- [x] 7. `MergeLibraryUseCase`: result types, data-first Join, typed overwrite
+  result, warnings forwarded; `providers.dart` wiring.
+- [x] 8. `MergeController`: drop the zeroed mapping; `MergePage._ResultView`
+  honest summary.
+- [x] 9. Privacy pass on the lib diff (no values from the file in copy, no
+  logs). Gates: analyze, format, `build_runner` LAST, full suite detached,
+  cargo.
 - [ ] 10. fix-schedule.md §1/§3/§5; commit approval with explicit paths.
 
 ## Out-of-scope observations
 
-1. `HttpGitHubApi` `_excerpt(resp.body)` still puts up to 200 chars of a
-   GitHub response body into `GitHubApiException`/`PublishCommitHttpError`
-   messages; the publish use case already drops it for the user-facing copy
-   (S4). Unchanged.
-2. `TimeoutHttpClient._abortable` passes a non-`Request` (`MultipartRequest`
-   / `StreamedRequest`) through unchanged — bounded but not abortable. None
-   exists in `lib/` today; if one is ever added it should become abortable
-   too (a test asserting "every request the app sends is `Abortable`" would
-   catch it — not added, no producer to test).
-3. The publish read-back budget (`readBackAttempts × readBackInterval`) is
-   now bounded per poll by the shared 60 s total, i.e. worst case ≈ 12 × (5 s
-   + 60 s) — still finite, but the "60 s budget" comment in
-   `publish_library_use_case.dart:139-141` understates it. Wording only.
-4. GitHub token and lookup key remain `String` (recorded on the N08 row;
-   README narrowed in S7). Untouched.
-5. `flutter_test`'s `TestWidgetsFlutterBinding` makes `HttpClient()` a
-   400-only stub for the whole suite; the one loopback test opts out via
-   `HttpOverrides.runWithHttpOverrides` + a bare `HttpOverrides` subclass.
-   Worth a `test/support/` helper if a second real-socket test appears.
-6. 16 test files now hand-roll repository/settings fakes (this session added
-   `_OneBookRepo`/`_NoWishlist`/`_NoSettings` in the new DI test) — the
-   S14–S21 shared-fake hygiene note keeps growing.
+- (S24) per-row review UI; `applyResolution` must refuse `takeTheirs` when
+  `local.id == Book.emptyId` (in-file collision).
+- `_mergeIntoExisting`-style hand-built books in `applyResolution.takeTheirs`
+  bypass `Book.validate` (S17 obs. 2) — S24 candidate when the rows get a UI.
+- `ReplacementSettings` / `_FakeSettings` ×2 hand-roll `SettingsRepository`
+  (17 files now) — a shared `test/support/` fake keeps growing in value.
 
 ## Result
 
-**N08 implemented end-to-end; uncommitted pending approval.**
+**N07 part 1 implemented end-to-end; uncommitted, pending commit approval.**
 
-- Gates: analyzer **0**; format **403 / 0 changed**; Flutter `--coverage`
-  **1463 passed / 0 failed** (`/tmp/pitak-s22-flutter-final.txt`, 0 `[E]`;
-  baseline 1441, +22); cargo **32 passed**, 2 expected ignored; `git diff
-  --check` clean; `build_runner` warm re-run = no diff. Coverage **71.13%**
-  (+0.22): `timeout_http_client.dart` 89/102 (misses: pause/resume
-  forwarding, the headers-phase abort branch), `lookup_http_client.dart` 30/32, `bounded_cover_fetcher.dart`
-  44/46, `materialize_remote_cover_use_case.dart` 21/21,
-  `cover_fetch_result.dart` 3/3.
-- Red evidence: 2 behaviour-red + 4 compile-red (`TimeoutHttpClient`);
-  1 behaviour-red (`LookupHttpClient`); 5 behaviour-red against a HEAD graft
-  + compile-red typed results (`BoundedCoverFetcher`); 3 compile-red
-  (`onRefused`, typed port) + the DI diagnostic test (compile-red — no
-  `boundedCoverDownloadProvider` on HEAD).
-- Verified on the wire, not just by return value: a raw loopback
-  `ServerSocket` sees the client's FIN 18 ms after the 200 ms deadline; a
-  HEAD-shaped decorator left it open past 2 s.
-- No device verification (network-layer finding; deterministic in tests).
-  Remote CI not checked (nothing pushed).
+- Gates: analyzer **0**; format **404 / 0 changed**; Flutter `--coverage`
+  **1487 passed / 0 failed** (`/tmp/pitak-s23-flutter-final2.txt`, 0 `[E]`;
+  a final3 confirmation run after the last non-annotated edit is recorded in
+  fix-schedule.md §5); cargo **32 passed**, 2 ignored; `build_runner` re-run
+  LAST → only the 3 expected `.g.dart` diffs (`providers`, `merge_controller`,
+  `settings_controller`), `.fvmrc`/`.gitignore` untouched; `git diff --check`
+  clean; domain-purity gate green (`library_namespace.dart` imports only
+  fpdart + `core/error`).
+- Coverage: project **71.42%** (+0.29 vs S22); `merge_library_use_case.dart`
+  137/141, `merge_controller.dart` 44/47, `merge_page.dart` 111/121,
+  `library_merge_engine.dart` 114/117, `settings_controller.dart` 75/84 (the
+  misses are the pre-existing `setPublishContact`/`setLibraryLogo` lines).
+- Regression evidence (red on HEAD behaviour): **12 tests red** against a
+  HEAD-shaped graft of the use case (identity adopted before the union,
+  adoption failure → Left, warnings dropped) + HEAD's engine file; 1 engine
+  test red on HEAD directly (`Expected: true / Actual: <false>`); 2 new tests
+  green by design (no-ID file, zero-rows-still-Left). Widget summary tests
+  and `settings_test.dart` `adopt`/`current` tests are compile-red on HEAD
+  (new API).
+- What changed, plain English:
+  1. **Join no longer changes who you are before it has your books.** The
+     union is inserted first; only then is the other library's ID + name
+     adopted. A failed insert leaves the device's identity untouched
+     (`merge_library_use_case_test.dart` "a failed Join insert leaves the
+     local identity untouched": `adoptCalls == 0`).
+  2. **One owner for the library identity.** New domain port
+     `LibraryNamespace` (`settings/domain/library_namespace.dart`);
+     `SettingsController implements` it: `current()` (mint/read via the M16
+     FIFO + loaded name) and `adopt(id, name)` (both prefs writes in ONE
+     queued turn, one state patch). The use case depends on the port; the
+     `settingsRepositoryProvider` dependency is gone from
+     `mergeLibraryUseCaseProvider`. Every screen watching settings sees the
+     new name at once (`merge_controller_test.dart` "after applyJoin the
+     settings controller shows the new id + name").
+  3. **Honest result.** `MergeResult` gained `replaced`, `skippedRows`,
+     `adjustments`, `namespace` (`MergeNamespaceOutcome`), `hasOmissions`,
+     `withNamespace`; `MergeDiffersDecision` carries `skippedRows`/
+     `adjustments` so Join/Overwrite forward them. `applyOverwrite` returns a
+     `MergeResult` (`replaced: true`, `added` = the repository's real insert
+     count). The controller's zeroed Overwrite mapping is deleted.
+  4. **D3:** books landed + identity write failed → `Right` with
+     `adoptionFailed`; the page says the next merge will ask to Join again.
+     `catalogue_replacement_failure_test.dart` "settings ID failure" flipped
+     from expecting a Left to expecting the omission — the old expectation
+     WAS the reviewer's "partial namespace state" bug.
+  5. **Page** (`merge_page.dart` `_ResultView`): "Library replaced / Books
+     now on this device: N" vs "Merge complete / Books added / Already
+     matched"; "Not imported" (M15 row messages) and "Adjustments" (Import
+     page wording); the identity-omission line; review copy no longer
+     promises "a later update".
+  6. **Engine (D2-a):** `_coversEqual` — a local file on either side is never
+     a cover conflict against a remote URL (M09 precedence makes take-theirs
+     a no-op there); remote-vs-different-remote and remote-vs-nothing stay
+     conflicts. `CoverPaths.remoteUrlOf` remains the single classifier.
+- Test fixtures: `merge_library_use_case_test.dart` `_FakeSettings` →
+  `_FakeNamespace implements LibraryNamespace` (+ `insertAllFailure` on
+  `_FakeBooks`; the M03 case now builds through the real provider over
+  `ReplacementSettings`); `merge_controller_test.dart` builds the use case
+  over the container's REAL `SettingsController` (production wiring);
+  `merge_page_test.dart` likewise + `_DoneController` for summary rendering;
+  `replacement_harness.dart` exposes `namespace` and `overwrite()` returns
+  `Either<Failure, MergeResult>`.
+- Privacy pass: lib diff adds no print/log/http/Uri/Platform; the one new
+  `StorageFailure` reason carries `e.runtimeType` only; summary text is
+  M15's own row/field messages (short title + row number + field names, the
+  invalid values never echoed — verified against `_RowReader.label`).
+- Not done (Session 24): per-row conflict / possible-duplicate review UI
+  (`applyResolution` + controller `resolve`; guard `takeTheirs` when
+  `local.id == Book.emptyId`); no device verification (static finding,
+  reproduced deterministically in tests).
 
-Files for the commit (14): `lib/core/network/timeout_http_client.dart`,
-`lib/core/network/lookup_http_client.dart`,
-`lib/features/publish/domain/cover_fetch_result.dart` (new),
-`lib/features/publish/infrastructure/bounded_cover_fetcher.dart`,
-`lib/features/library/application/materialize_remote_cover_use_case.dart`,
+### Commit paths (17, explicit)
+
 `lib/core/di/providers.dart`, `lib/core/di/providers.g.dart`,
-`test/core/timeout_http_client_test.dart`,
-`test/core/lookup_http_client_test.dart`,
-`test/core/di/remote_cover_diagnostic_test.dart` (new),
-`test/features/publish/bounded_cover_fetcher_test.dart`,
-`test/features/library/materialize_remote_cover_use_case_test.dart`,
-`test/features/library/remote_cover_materializer_test.dart`, `PLAN.md`.
+`lib/features/import_export/application/merge_controller.dart`,
+`lib/features/import_export/application/merge_controller.g.dart`,
+`lib/features/import_export/application/merge_library_use_case.dart`,
+`lib/features/import_export/presentation/pages/merge_page.dart`,
+`lib/features/library/domain/merge/library_merge_engine.dart`,
+`lib/features/settings/application/settings_controller.dart`,
+`lib/features/settings/application/settings_controller.g.dart`,
+`lib/features/settings/domain/library_namespace.dart` (new),
+`test/features/import_export/merge_controller_test.dart`,
+`test/features/import_export/merge_library_use_case_test.dart`,
+`test/features/import_export/merge_page_test.dart`,
+`test/features/library/catalogue_replacement_failure_test.dart`,
+`test/features/library/library_merge_engine_test.dart`,
+`test/features/library/replacement_harness.dart`,
+`test/features/settings/settings_test.dart`, `PLAN.md`.

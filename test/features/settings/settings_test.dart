@@ -616,5 +616,138 @@ void main() {
         expect(s.valueOrNull?.librarySort, BookSort.recentlyAdded);
       },
     );
+
+    // N07: the merge use case adopts an incoming library ID + name THROUGH
+    // this controller (the `LibraryNamespace` port) so the in-memory settings
+    // follow the disk. Both writes must sit in ONE queued turn.
+    group('LibraryNamespace.adopt (N07)', () {
+      test('adopts id + name in one turn; a slow theme write in flight cannot '
+          'revert either', () async {
+        repo
+          ..release('setId')
+          ..release('name');
+        final theme = controller.setThemeMode(AppThemeMode.dark);
+        final adopt = controller.adopt(id: 'b' * 32, name: 'Riverside');
+        await pumpEventQueue();
+
+        // The adopt is queued behind the slow theme write — not published yet.
+        expect(current().libraryId, '');
+        repo.release('theme');
+        final adopted = await adopt;
+        await theme;
+
+        expect(adopted.isRight(), isTrue);
+        final s = current();
+        expect(s.themeMode, AppThemeMode.dark);
+        expect(s.libraryId, 'b' * 32);
+        expect(s.libraryName, 'Riverside');
+      });
+
+      test('a failed id write returns left and publishes nothing', () async {
+        repo.release(
+          'setId',
+          result: left(const StorageFailure('prefs write failed')),
+        );
+        final adopted = await controller.adopt(id: 'b' * 32, name: 'Riverside');
+
+        expect(adopted.getLeft().toNullable(), isA<StorageFailure>());
+        expect(current().libraryId, '');
+        expect(current().libraryName, '');
+        expect(repo.gates.containsKey('name'), isFalse, reason: 'name skipped');
+      });
+
+      test('a failed name write (after the id landed) returns left and '
+          'publishes neither', () async {
+        repo
+          ..release('setId')
+          ..release(
+            'name',
+            result: left(const StorageFailure('prefs write failed')),
+          );
+        final adopted = await controller.adopt(id: 'b' * 32, name: 'Riverside');
+
+        expect(adopted.isLeft(), isTrue);
+        // Disk may already hold the ID; memory stays on the last good state
+        // (the merge reports the adoption as failed, the next Join retries).
+        expect(current().libraryId, '');
+        expect(current().libraryName, '');
+      });
+
+      test(
+        'a blank name adopts only the id and keeps the current name',
+        () async {
+          repo.release('setId');
+          final adopted = await controller.adopt(id: 'b' * 32, name: '   ');
+
+          expect(adopted.isRight(), isTrue);
+          expect(current().libraryId, 'b' * 32);
+          expect(repo.gates.containsKey('name'), isFalse);
+        },
+      );
+
+      test('current() returns the minted id and the loaded name', () async {
+        repo.release('libraryId');
+        final identity = await controller.current();
+
+        final value = identity.getOrElse((f) => fail('current failed: $f'));
+        expect(value.id, 'a' * 32);
+        expect(value.name, '');
+        expect(current().libraryId, 'a' * 32, reason: 'reflected into state');
+      });
+
+      test('a THROWING write is a typed left; current() still answers when '
+          'an earlier setter left the state in error', () async {
+        // `_FailingSettingsRepo` throws from every setter (not a left).
+        final failing = ProviderContainer(
+          overrides: [
+            settingsRepositoryProvider.overrideWith(
+              (ref) async => _FailingSettingsRepo(),
+            ),
+          ],
+        );
+        addTearDown(failing.dispose);
+        await failing.read(settingsControllerProvider.future);
+        final c = failing.read(settingsControllerProvider.notifier);
+
+        final adopted = await c.adopt(id: 'b' * 32, name: 'Riverside');
+        expect(adopted.getLeft().toNullable(), isA<StorageFailure>());
+        expect(
+          failing.read(settingsControllerProvider).requireValue.libraryId,
+          '',
+          reason: 'nothing published on a thrown write',
+        );
+
+        // Mint the ID first (so the mint inside `current()` has nothing new
+        // to publish), then put the state into AsyncError via a plain setter
+        // (M17 fold). `current()` must still answer: `future` rejects, so the
+        // name comes from the cached last-good state.
+        expect((await c.getOrCreateLibraryId()).isRight(), isTrue);
+        await c.setThemeMode(AppThemeMode.light);
+        expect(failing.read(settingsControllerProvider).hasError, isTrue);
+        final identity = await c.current();
+        final value = identity.getOrElse((f) => fail('current failed: $f'));
+        expect(value.id, 'a' * 32);
+        expect(value.name, '');
+        expect(
+          failing.read(settingsControllerProvider).hasError,
+          isTrue,
+          reason: 'reading the identity must not mask the failed write',
+        );
+      });
+
+      test(
+        'current() is left when the mint fails (no phantom id, M17)',
+        () async {
+          repo.release(
+            'libraryId',
+            result: left(const StorageFailure('prefs write failed')),
+          );
+          final identity = await controller.current();
+
+          expect(identity.isLeft(), isTrue);
+          expect(current().libraryId, '');
+        },
+      );
+    });
   });
 }

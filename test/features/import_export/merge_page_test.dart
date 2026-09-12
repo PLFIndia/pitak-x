@@ -11,11 +11,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/application/merge_controller.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
@@ -115,16 +117,18 @@ void main() {
         ),
       );
       final settings = ReplacementSettings();
-      final useCase = MergeLibraryUseCase(
-        bookRepo: _Books(),
-        settings: settings,
-        jsonParser: const PitakaJsonImporter(),
-        replacementGuard: guard,
-      );
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            mergeLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+            settingsRepositoryProvider.overrideWith((ref) async => settings),
+            mergeLibraryUseCaseProvider.overrideWith(
+              (ref) async => MergeLibraryUseCase(
+                bookRepo: _Books(),
+                namespace: ref.read(settingsControllerProvider.notifier),
+                jsonParser: const PitakaJsonImporter(),
+                replacementGuard: guard,
+              ),
+            ),
           ],
           child: const MaterialApp(home: MergePage()),
         ),
@@ -157,18 +161,20 @@ void main() {
     final previous = FileSelectorPlatform.instance;
     addTearDown(() => FileSelectorPlatform.instance = previous);
     FileSelectorPlatform.instance = _Picker();
-    final useCase = MergeLibraryUseCase(
-      bookRepo: _Books(),
-      settings: ReplacementSettings(),
-      jsonParser: const PitakaJsonImporter(),
-      replacementGuard: FakeReplacementGuard(),
-    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => ReplacementSettings(),
+          ),
           mergeLibraryUseCaseProvider.overrideWith((ref) async {
             await gate.future;
-            return useCase;
+            return MergeLibraryUseCase(
+              bookRepo: _Books(),
+              namespace: ref.read(settingsControllerProvider.notifier),
+              jsonParser: const PitakaJsonImporter(),
+              replacementGuard: FakeReplacementGuard(),
+            );
           }),
         ],
         child: MaterialApp(
@@ -241,16 +247,20 @@ void main() {
     FileSelectorPlatform.instance = _Picker.file(
       _StrictXFile(Uint8List.fromList([0xFF, 0xFE, 0xFD, 0x00, 0x01])),
     );
-    final useCase = MergeLibraryUseCase(
-      bookRepo: _Books(),
-      settings: ReplacementSettings(),
-      jsonParser: const PitakaJsonImporter(),
-      replacementGuard: FakeReplacementGuard(),
-    );
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          mergeLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => ReplacementSettings(),
+          ),
+          mergeLibraryUseCaseProvider.overrideWith(
+            (ref) async => MergeLibraryUseCase(
+              bookRepo: _Books(),
+              namespace: ref.read(settingsControllerProvider.notifier),
+              jsonParser: const PitakaJsonImporter(),
+              replacementGuard: FakeReplacementGuard(),
+            ),
+          ),
         ],
         child: const MaterialApp(home: MergePage()),
       ),
@@ -266,4 +276,115 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  // N07 (astra-review.md): "do not describe a partial merge as complete
+  // without explaining omissions". The result view must say what happened —
+  // a replacement is a replacement, skipped rows and adjustments are listed,
+  // and an identity that could not be adopted is called out.
+  group('N07 — the summary is honest about omissions', () {
+    /// Pumps the page with the merge controller already in [MergeDone].
+    Future<void> pumpDone(WidgetTester tester, MergeResult result) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            mergeControllerProvider.overrideWith(() => _DoneController(result)),
+          ],
+          child: const MaterialApp(home: MergePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a replacement is described as one, with the real count', (
+      tester,
+    ) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 12,
+          identical: 0,
+          conflicts: [],
+          possibleDuplicates: [],
+          replaced: true,
+        ),
+      );
+
+      expect(find.text('Library replaced'), findsOneWidget);
+      expect(find.text('Books now on this device: 12'), findsOneWidget);
+      expect(find.text('Merge complete'), findsNothing);
+      expect(find.textContaining('Books added'), findsNothing);
+    });
+
+    testWidgets('skipped rows and adjustments are listed', (tester) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 1,
+          identical: 0,
+          conflicts: [],
+          possibleDuplicates: [],
+          skippedRows: ['Book 2 skipped: copyCount must be at least 1.'],
+          adjustments: ['Book 1: notes shortened to 8000 characters.'],
+        ),
+      );
+
+      expect(find.text('Merge complete'), findsOneWidget);
+      expect(find.text('Not imported'), findsOneWidget);
+      expect(find.textContaining('Book 2 skipped: copyCount'), findsOneWidget);
+      expect(find.text('Adjustments'), findsOneWidget);
+      expect(find.textContaining('notes shortened'), findsOneWidget);
+    });
+
+    testWidgets('a failed identity adoption is called out', (tester) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 3,
+          identical: 0,
+          conflicts: [],
+          possibleDuplicates: [],
+          namespace: MergeNamespaceOutcome.adoptionFailed,
+        ),
+      );
+
+      expect(find.text('Books added: 3'), findsOneWidget);
+      expect(
+        find.textContaining('could not take on the other library'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('ask you to Join again'), findsOneWidget);
+    });
+
+    testWidgets('a clean merge shows no omission sections', (tester) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 2,
+          identical: 5,
+          conflicts: [],
+          possibleDuplicates: [],
+          namespace: MergeNamespaceOutcome.adopted,
+        ),
+      );
+
+      expect(find.text('Merge complete'), findsOneWidget);
+      expect(find.text('Books added: 2'), findsOneWidget);
+      expect(find.text('Already matched (no change): 5'), findsOneWidget);
+      expect(find.text('Not imported'), findsNothing);
+      expect(find.text('Adjustments'), findsNothing);
+      expect(find.textContaining('could not take on'), findsNothing);
+      expect(find.textContaining('later update'), findsNothing);
+    });
+  });
+}
+
+/// A merge controller pinned to one terminal state, for rendering the
+/// summary without driving a whole merge through the picker.
+class _DoneController extends MergeController {
+  _DoneController(this._result);
+
+  final MergeResult _result;
+
+  @override
+  MergeUiState build() => MergeDone(_result);
 }

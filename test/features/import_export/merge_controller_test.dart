@@ -19,6 +19,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
@@ -100,11 +101,16 @@ class _FakeBooks implements BookRepository {
   Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
 }
 
-/// In-memory settings: tracks the library id/name the use case adopts.
+/// In-memory settings repo behind the REAL `SettingsController` (N07: the
+/// use case adopts the library identity THROUGH the controller, so these
+/// tests can assert on the controller's in-memory state, not just on disk).
 class _FakeSettings implements SettingsRepository {
   _FakeSettings({this.libraryId = ''});
   String libraryId;
   String libraryName = '';
+
+  /// When set, `setLibraryId` fails with it (a failed identity write).
+  Failure? setIdFailure;
 
   @override
   Future<AppSettings> load() async =>
@@ -116,6 +122,8 @@ class _FakeSettings implements SettingsRepository {
 
   @override
   Future<Either<Failure, Unit>> setLibraryId(String id) async {
+    final failure = setIdFailure;
+    if (failure != null) return left(failure);
     libraryId = id;
     return right(unit);
   }
@@ -145,33 +153,35 @@ void main() {
     'wishlist': <Object>[],
   });
 
-  MergeLibraryUseCase useCase({
+  /// A container holding a live listener on the merge controller (like the
+  /// page does). The merge use case is built over [books]/[guard] and the
+  /// container's REAL `SettingsController` (over [settings]) as its
+  /// `LibraryNamespace` — exactly the production wiring. The use case can be
+  /// parked on [gate], or replaced wholesale via [useCaseOverride].
+  ProviderContainer makeContainer({
     _FakeBooks? books,
     _FakeSettings? settings,
     FakeReplacementGuard? guard,
-  }) => MergeLibraryUseCase(
-    bookRepo: books ?? _FakeBooks([]),
-    settings: settings ?? _FakeSettings(libraryId: matchingId),
-    jsonParser: const PitakaJsonImporter(),
-    replacementGuard: guard ?? FakeReplacementGuard(),
-  );
-
-  /// A container holding a live listener on the merge controller (like the
-  /// page does), with the use case optionally parked on [gate].
-  ProviderContainer makeContainer({
-    required MergeLibraryUseCase useCase,
     Completer<void>? gate,
+    Future<MergeLibraryUseCase> Function()? useCaseOverride,
   }) {
+    final repo = settings ?? _FakeSettings(libraryId: matchingId);
     final container = ProviderContainer(
       overrides: [
         mergeLibraryUseCaseProvider.overrideWith((ref) async {
           await gate?.future;
-          return useCase;
+          if (useCaseOverride != null) return useCaseOverride();
+          return MergeLibraryUseCase(
+            bookRepo: books ?? _FakeBooks([]),
+            namespace: ref.read(settingsControllerProvider.notifier),
+            jsonParser: const PitakaJsonImporter(),
+            replacementGuard: guard ?? FakeReplacementGuard(),
+          );
         }),
         // The library controller (invalidated on a successful merge) needs a
         // repo + settings to build.
         bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
-        settingsRepositoryProvider.overrideWith((ref) async => _FakeSettings()),
+        settingsRepositoryProvider.overrideWith((ref) async => repo),
       ],
     );
     addTearDown(container.dispose);
@@ -184,7 +194,7 @@ void main() {
     'a same-ID file merges and invalidates the library controller',
     () async {
       final books = _FakeBooks([]);
-      final container = makeContainer(useCase: useCase(books: books));
+      final container = makeContainer(books: books);
       var libraryBuilds = 0;
       container.listen(
         libraryControllerProvider,
@@ -216,9 +226,7 @@ void main() {
       'adopts the incoming ID', () async {
     final settings = _FakeSettings(libraryId: matchingId);
     final books = _FakeBooks([]);
-    final container = makeContainer(
-      useCase: useCase(books: books, settings: settings),
-    );
+    final container = makeContainer(books: books, settings: settings);
 
     await container
         .read(mergeControllerProvider.notifier)
@@ -243,7 +251,8 @@ void main() {
     () async {
       final books = _FakeBooks([])
         ..insertAllFailure = const StorageFailure('disk full');
-      final container = makeContainer(useCase: useCase(books: books));
+      final settings = _FakeSettings(libraryId: matchingId);
+      final container = makeContainer(books: books, settings: settings);
 
       await container
           .read(mergeControllerProvider.notifier)
@@ -268,12 +277,124 @@ void main() {
         reason: 'a failed apply must not drop the user off the decision',
       );
       expect((state as MergeNeedsDecision).applyFailure, isA<StorageFailure>());
+      // N07: nothing landed, so this device's identity must be untouched —
+      // on disk AND in the controller's memory. Before, the ID was adopted
+      // first and the failed insert left the device re-identified.
+      expect(settings.libraryId, matchingId);
+      expect(
+        container.read(settingsControllerProvider).requireValue.libraryId,
+        matchingId,
+      );
     },
   );
 
+  // N07 (astra-review.md): the use case used to write the adopted ID/name
+  // straight into the settings repository, so `SettingsController`'s
+  // in-memory state — what the drawer, the library title and the export
+  // envelope watch — kept the OLD name until restart.
+  group('N07 — settings state follows a namespace adoption', () {
+    test(
+      'after applyJoin the settings controller shows the new id + name',
+      () async {
+        final settings = _FakeSettings(libraryId: matchingId)
+          ..libraryName = 'Mine';
+        final container = makeContainer(settings: settings);
+        await container.read(settingsControllerProvider.future);
+        expect(
+          container.read(settingsControllerProvider).requireValue.libraryName,
+          'Mine',
+        );
+
+        await container
+            .read(mergeControllerProvider.notifier)
+            .mergeText(exportJson(libraryId: 'b' * 32));
+        await container.read(mergeControllerProvider.notifier).applyJoin();
+
+        final state = container.read(mergeControllerProvider);
+        expect(state, isA<MergeDone>());
+        expect(
+          (state as MergeDone).result.namespace,
+          MergeNamespaceOutcome.adopted,
+        );
+        final current = container.read(settingsControllerProvider).requireValue;
+        expect(current.libraryId, 'b' * 32);
+        expect(current.libraryName, 'Other');
+        // Disk agrees.
+        expect(settings.libraryId, 'b' * 32);
+        expect(settings.libraryName, 'Other');
+      },
+    );
+
+    test('an overwrite finishes in MergeDone as a REPLACEMENT with the real '
+        'count', () async {
+      final books = _FakeBooks([
+        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+      ]);
+      final container = makeContainer(books: books);
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .mergeText(
+            exportJson(
+              libraryId: 'b' * 32,
+              books: [
+                {'bookUid': 'u9', 'title': 'Their book'},
+              ],
+            ),
+          );
+      await container.read(mergeControllerProvider.notifier).applyOverwrite();
+
+      final state = container.read(mergeControllerProvider);
+      expect(state, isA<MergeDone>());
+      final result = (state as MergeDone).result;
+      expect(result.replaced, isTrue);
+      expect(result.added, 1);
+      expect(books.books.single.title, 'Their book');
+    });
+
+    test('books land but the identity write fails → MergeDone with the '
+        'omission, not back to the decision', () async {
+      final settings = _FakeSettings(libraryId: matchingId)
+        ..setIdFailure = const StorageFailure('prefs write failed');
+      final books = _FakeBooks([]);
+      final container = makeContainer(books: books, settings: settings);
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .mergeText(
+            exportJson(
+              libraryId: 'b' * 32,
+              books: [
+                {'bookUid': 'u9', 'title': 'Their book'},
+              ],
+            ),
+          );
+      await container.read(mergeControllerProvider.notifier).applyJoin();
+
+      final state = container.read(mergeControllerProvider);
+      expect(
+        state,
+        isA<MergeDone>(),
+        reason:
+            'the union landed; re-offering "Replace my library" against '
+            'an already-merged catalogue would be wrong',
+      );
+      expect(
+        (state as MergeDone).result.namespace,
+        MergeNamespaceOutcome.adoptionFailed,
+      );
+      expect(books.books.single.title, 'Their book');
+      expect(settings.libraryId, matchingId, reason: 'old ID still in force');
+      expect(
+        container.read(settingsControllerProvider).requireValue.libraryId,
+        matchingId,
+      );
+    });
+  });
+
   test('a second mergeText while one is running is refused', () async {
     final gate = Completer<void>();
-    final container = makeContainer(useCase: useCase(), gate: gate);
+    final container = makeContainer(gate: gate);
 
     final first = container
         .read(mergeControllerProvider.notifier)
@@ -328,11 +449,16 @@ void main() {
         overrides: [
           mergeLibraryUseCaseProvider.overrideWith((ref) async {
             await gate.future;
-            return useCase();
+            return MergeLibraryUseCase(
+              bookRepo: _FakeBooks([]),
+              namespace: ref.read(settingsControllerProvider.notifier),
+              jsonParser: const PitakaJsonImporter(),
+              replacementGuard: FakeReplacementGuard(),
+            );
           }),
           bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
           settingsRepositoryProvider.overrideWith(
-            (ref) async => _FakeSettings(),
+            (ref) async => _FakeSettings(libraryId: matchingId),
           ),
         ],
       );

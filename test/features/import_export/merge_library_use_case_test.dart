@@ -12,13 +12,14 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
-import 'package:pitaka/features/settings/domain/settings_repository.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
@@ -53,6 +54,9 @@ class _FakeBooks implements BookRepository {
 
   /// Test-only failure injection for [replaceAll].
   Failure? replaceAllFailure;
+
+  /// Test-only failure injection for [insertAll] (N07: a failed Join union).
+  Failure? insertAllFailure;
 
   List<Book> get books => _books;
 
@@ -105,6 +109,9 @@ class _FakeBooks implements BookRepository {
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async {
+    // Mirrors the atomic contract: failure leaves the store untouched.
+    final failure = insertAllFailure;
+    if (failure != null) return left(failure);
     for (final b in books) {
       await insert(b);
     }
@@ -124,68 +131,38 @@ class _FakeBooks implements BookRepository {
   }
 }
 
-/// In-memory settings: tracks the library id/name the use case adopts.
-class _FakeSettings implements SettingsRepository {
-  _FakeSettings({this.libraryId = '', this.libraryName = ''});
+/// In-memory library identity: tracks the id/name the use case adopts (N07:
+/// the use case talks to the `LibraryNamespace` port, never the settings
+/// repository). [adoptFailure] injects a failed identity write.
+class _FakeNamespace implements LibraryNamespace {
+  _FakeNamespace({this.libraryId = '', this.libraryName = ''});
   String libraryId;
   String libraryName;
 
-  @override
-  Future<AppSettings> load() async =>
-      AppSettings(libraryName: libraryName, libraryId: libraryId);
+  /// When set, [adopt] fails with it and changes nothing.
+  Failure? adoptFailure;
+
+  /// How many times [adopt] was called (any outcome).
+  int adoptCalls = 0;
 
   @override
-  Future<Either<Failure, String>> getOrCreateLibraryId() async {
+  Future<Either<Failure, LibraryIdentity>> current() async {
     if (libraryId.isEmpty) libraryId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-    return right(libraryId);
+    return right(LibraryIdentity(id: libraryId, name: libraryName));
   }
 
   @override
-  Future<Either<Failure, Unit>> setLibraryId(String id) async {
+  Future<Either<Failure, Unit>> adopt({
+    required String id,
+    required String name,
+  }) async {
+    adoptCalls++;
+    final failure = adoptFailure;
+    if (failure != null) return left(failure);
     libraryId = id;
+    if (name.isNotEmpty) libraryName = name;
     return right(unit);
   }
-
-  @override
-  Future<Either<Failure, String>> regenerateLibraryId() async {
-    libraryId = 'cccccccccccccccccccccccccccccccc';
-    return right(libraryId);
-  }
-
-  @override
-  Future<Either<Failure, Unit>> setLibraryName(String name) async {
-    libraryName = name;
-    return right(unit);
-  }
-
-  // Unused.
-  @override
-  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLoadRemoteCovers({
-    required bool enabled,
-  }) async => right(unit);
-  @override
-  Future<Either<Failure, Unit>> setPublishContact({
-    required String address,
-    required String gps,
-    required String email,
-    required String phone,
-  }) async => right(unit);
-  @override
-  Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
-      right(unit);
-  @override
-  Future<Either<Failure, Unit>> setAppLockBiometric({
-    required bool enabled,
-  }) async => right(unit);
 }
 
 /// Builds a minimal Pitaka-JSON export string with the given envelope + books.
@@ -224,7 +201,10 @@ void main() {
     final books = _FakeBooks([
       const Book(id: 7, bookUid: 'loaned', title: 'Loaned book'),
     ]);
-    final settings = _FakeSettings(libraryId: matchingId);
+    // Built through the REAL provider: the identity port is the real
+    // SettingsController over this settings repo (N07), so the assertion
+    // below checks the ID that actually reaches disk.
+    final settings = ReplacementSettings()..id = matchingId;
     final container = ProviderContainer(
       overrides: [
         vaultStoreProvider.overrideWith((ref) async => store),
@@ -252,7 +232,7 @@ void main() {
     expect(result.isLeft(), isTrue);
     expect(books.books.single.bookUid, 'loaned');
     expect(books.books.single.id, 7);
-    expect(settings.libraryId, matchingId);
+    expect(settings.id, matchingId);
   });
 
   test('rejects a non-Pitak file with a validation failure', () async {
@@ -260,7 +240,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _FakeBooks([]),
       replacementGuard: FakeReplacementGuard(),
-      settings: _FakeSettings(libraryId: matchingId),
+      namespace: _FakeNamespace(libraryId: matchingId),
     );
     final res = await useCase.call('title,author\nFoo,Bar');
     expect(res.isLeft(), isTrue);
@@ -280,7 +260,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
-      settings: _FakeSettings(libraryId: matchingId),
+      namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
@@ -307,7 +287,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
-      settings: _FakeSettings(libraryId: matchingId, libraryName: 'Mine'),
+      namespace: _FakeNamespace(libraryId: matchingId, libraryName: 'Mine'),
       replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
@@ -335,7 +315,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
-      settings: _FakeSettings(libraryId: matchingId),
+      namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
     );
     final json = exportJson(
@@ -353,11 +333,11 @@ void main() {
 
   test('applyJoin unions books and adopts the incoming id+name', () async {
     final repo = _FakeBooks([]);
-    final settings = _FakeSettings(libraryId: matchingId, libraryName: 'Mine');
+    final settings = _FakeNamespace(libraryId: matchingId, libraryName: 'Mine');
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
-      settings: settings,
+      namespace: settings,
       replacementGuard: FakeReplacementGuard(),
     );
 
@@ -383,11 +363,11 @@ void main() {
     final repo = _FakeBooks([
       const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
     ]);
-    final settings = _FakeSettings(libraryId: matchingId, libraryName: 'Mine');
+    final settings = _FakeNamespace(libraryId: matchingId, libraryName: 'Mine');
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
-      settings: settings,
+      namespace: settings,
       replacementGuard: FakeReplacementGuard(),
     );
 
@@ -416,7 +396,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: _FakeSettings(libraryId: matchingId),
+        namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
       );
       final json = exportJson(
@@ -447,14 +427,14 @@ void main() {
       final repo = _FakeBooks([
         const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
       ])..replaceAllFailure = const StorageFailure('disk full');
-      final settings = _FakeSettings(
+      final settings = _FakeNamespace(
         libraryId: matchingId,
         libraryName: 'Mine',
       );
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: settings,
+        namespace: settings,
         replacementGuard: FakeReplacementGuard(),
       );
 
@@ -490,7 +470,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: _FakeSettings(),
+        namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
@@ -519,7 +499,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: _FakeSettings(),
+        namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
@@ -557,7 +537,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: _FakeSettings(),
+        namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
@@ -585,7 +565,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
-        settings: _FakeSettings(),
+        namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
       );
       await useCase.applyResolution(
@@ -619,7 +599,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
-          settings: _FakeSettings(),
+          namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
         );
         await useCase.applyResolution(
@@ -640,6 +620,272 @@ void main() {
         expect(dup.bookUid, isNot('u1'));
         expect(dup.isbn, isNull);
         expect(dup.genre, 'extra'); // catalogue fields preserved
+      },
+    );
+  });
+
+  // N07 (astra-review.md): "a failed Join can still change future merge
+  // identity" — the incoming library ID used to be adopted BEFORE the books
+  // were inserted, so a failed insert left this device re-identified with
+  // none of the data; the next merge of the same file then auto-applied
+  // under the adopted ID with no Join decision. Data first, identity second.
+  group('N07 — namespace adoption is coordinated with the data', () {
+    const decision = MergeDiffersDecision(
+      incomingBooks: [
+        Book(bookUid: 'u9', title: 'Their book', isbn: '999', addedDate: 1),
+      ],
+      incomingLibraryId: otherId,
+      incomingLibraryName: 'Riverside',
+      localLibraryName: 'Mine',
+      localIsEmpty: false,
+    );
+
+    test('a failed Join insert leaves the local identity untouched', () async {
+      final repo = _FakeBooks([])
+        ..insertAllFailure = const StorageFailure('disk full');
+      final namespace = _FakeNamespace(
+        libraryId: matchingId,
+        libraryName: 'Mine',
+      );
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final res = await useCase.applyJoin(decision);
+
+      expect(res.isLeft(), isTrue);
+      expect(repo.books, isEmpty);
+      expect(namespace.adoptCalls, 0, reason: 'identity must not be touched');
+      expect(namespace.libraryId, matchingId);
+      expect(namespace.libraryName, 'Mine');
+    });
+
+    test('Join: books land, identity write fails → success with the omission '
+        'reported, NOT an error', () async {
+      final repo = _FakeBooks([]);
+      final namespace = _FakeNamespace(
+        libraryId: matchingId,
+        libraryName: 'Mine',
+      )..adoptFailure = const StorageFailure('prefs write failed');
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final res = await useCase.applyJoin(decision);
+
+      final result = res.getOrElse((f) => fail('join must succeed: $f'));
+      expect(result.added, 1);
+      expect(repo.books.single.title, 'Their book');
+      expect(result.namespace, MergeNamespaceOutcome.adoptionFailed);
+      expect(result.hasOmissions, isTrue);
+      expect(namespace.libraryId, matchingId, reason: 'old ID still in force');
+    });
+
+    test('Join success reports the identity as adopted (id + name)', () async {
+      final namespace = _FakeNamespace(
+        libraryId: matchingId,
+        libraryName: 'Mine',
+      );
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: _FakeBooks([]),
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final result = (await useCase.applyJoin(
+        decision,
+      )).getOrElse((f) => fail('join failed: $f'));
+
+      expect(result.namespace, MergeNamespaceOutcome.adopted);
+      expect(result.replaced, isFalse);
+      expect(namespace.libraryId, otherId);
+      expect(namespace.libraryName, 'Riverside');
+    });
+
+    test('a file with no library ID has nothing to adopt', () async {
+      final namespace = _FakeNamespace(libraryId: matchingId);
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: _FakeBooks([]),
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+      );
+      const noId = MergeDiffersDecision(
+        incomingBooks: [Book(bookUid: 'u9', title: 'Their book', addedDate: 1)],
+        incomingLibraryId: '',
+        incomingLibraryName: 'Riverside',
+        localLibraryName: 'Mine',
+        localIsEmpty: false,
+      );
+
+      final result = (await useCase.applyJoin(
+        noId,
+      )).getOrElse((f) => fail('join failed: $f'));
+
+      expect(result.namespace, MergeNamespaceOutcome.unchanged);
+      expect(namespace.adoptCalls, 0);
+      expect(namespace.libraryId, matchingId);
+    });
+
+    test(
+      'Overwrite is reported as a replacement with the real count',
+      () async {
+        final repo = _FakeBooks([
+          const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+        ]);
+        final namespace = _FakeNamespace(
+          libraryId: matchingId,
+          libraryName: 'Mine',
+        );
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: repo,
+          namespace: namespace,
+          replacementGuard: FakeReplacementGuard(),
+        );
+
+        final result = (await useCase.applyOverwrite(
+          decision,
+        )).getOrElse((f) => fail('overwrite failed: $f'));
+
+        expect(result.replaced, isTrue);
+        expect(
+          result.added,
+          1,
+          reason: 'books now on the device, not "added 0"',
+        );
+        expect(result.namespace, MergeNamespaceOutcome.adopted);
+        expect(repo.books.single.title, 'Their book');
+      },
+    );
+
+    test('Overwrite: catalogue replaced, identity write fails → success with '
+        'the omission reported', () async {
+      final repo = _FakeBooks([
+        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+      ]);
+      final namespace = _FakeNamespace(
+        libraryId: matchingId,
+        libraryName: 'Mine',
+      )..adoptFailure = const StorageFailure('prefs write failed');
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        namespace: namespace,
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final result = (await useCase.applyOverwrite(
+        decision,
+      )).getOrElse((f) => fail('overwrite must succeed: $f'));
+
+      expect(result.replaced, isTrue);
+      expect(result.namespace, MergeNamespaceOutcome.adoptionFailed);
+      expect(repo.books.single.title, 'Their book');
+      expect(namespace.libraryId, matchingId);
+    });
+  });
+
+  // N07: "nonempty parsed payloads also discard parse warnings, including
+  // skipped rows". A file with one good row and one invalid row used to
+  // import the good row and say nothing about the other.
+  group('N07 — skipped rows and adjustments are preserved', () {
+    // Row 2 has copyCount 0, which M15 rejects (a book has at least one copy).
+    final mixed = exportJson(
+      libraryId: matchingId,
+      books: [
+        {'bookUid': 'u1', 'title': 'Good row', 'isbn': '111'},
+        {'bookUid': 'u2', 'title': 'Bad row', 'copyCount': 0},
+      ],
+    );
+    // A notes field over `CatalogueRules.maxFieldChars` (8000) is truncated +
+    // reported (M15 D2).
+    final long = exportJson(
+      libraryId: matchingId,
+      books: [
+        {'bookUid': 'u1', 'title': 'Long notes', 'notes': 'x' * 9000},
+      ],
+    );
+
+    test('same-ID merge carries skipped rows and adjustments', () async {
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: _FakeBooks([]),
+        namespace: _FakeNamespace(libraryId: matchingId),
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final merged =
+          (await useCase.call(mixed)).getOrElse((f) => fail('merge failed: $f'))
+              as MergeMerged;
+      expect(merged.result.added, 1);
+      expect(merged.result.skippedRows, hasLength(1));
+      expect(merged.result.skippedRows.single, contains('copyCount'));
+      // M15's row label (short title + row number + field) so the user can
+      // find the row; the INVALID VALUE itself is never echoed.
+      expect(merged.result.skippedRows.single, contains('row 2'));
+      expect(merged.result.skippedRows.single, isNot(contains(': 0')));
+      expect(merged.result.hasOmissions, isTrue);
+
+      final adjusted =
+          (await useCase.call(long)).getOrElse((f) => fail('merge failed: $f'))
+              as MergeMerged;
+      expect(adjusted.result.adjustments, hasLength(1));
+      expect(adjusted.result.adjustments.single, contains('notes'));
+    });
+
+    test('the differ decision carries them into Join and Overwrite', () async {
+      final repo = _FakeBooks([]);
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        namespace: _FakeNamespace(libraryId: otherId),
+        replacementGuard: FakeReplacementGuard(),
+      );
+
+      final outcome = (await useCase.call(
+        mixed,
+      )).getOrElse((f) => fail('merge failed: $f'));
+      final decision = outcome as MergeDiffersDecision;
+      expect(decision.skippedRows, hasLength(1));
+      expect(decision.incomingBooks, hasLength(1));
+
+      final joined = (await useCase.applyJoin(
+        decision,
+      )).getOrElse((f) => fail('join failed: $f'));
+      expect(joined.skippedRows, decision.skippedRows);
+
+      final replaced = (await useCase.applyOverwrite(
+        decision,
+      )).getOrElse((f) => fail('overwrite failed: $f'));
+      expect(replaced.skippedRows, decision.skippedRows);
+    });
+
+    test(
+      'zero good rows + errors is still a hard validation failure',
+      () async {
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: _FakeBooks([]),
+          namespace: _FakeNamespace(libraryId: matchingId),
+          replacementGuard: FakeReplacementGuard(),
+        );
+        final allBad = exportJson(
+          libraryId: matchingId,
+          books: [
+            {'bookUid': 'u2', 'title': 'Bad row', 'copyCount': 0},
+          ],
+        );
+
+        final res = await useCase.call(allBad);
+        expect(res.getLeft().toNullable(), isA<ValidationFailure>());
       },
     );
   });

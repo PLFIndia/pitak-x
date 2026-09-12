@@ -84,6 +84,7 @@ import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
@@ -872,16 +873,18 @@ PdfTextRasterizer pdfTextRasterizer(PdfTextRasterizerRef ref) =>
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID
-/// gate. Reuses the book repo + settings (for the ID gate / adoption).
+/// gate. The library identity (ID gate + Join/Overwrite adoption) goes through
+/// `SettingsController` — the single serialised settings writer — via the
+/// `LibraryNamespace` port, so the drawer/title/export name update the moment
+/// a merge adopts a library (N07; same shape as the replacement guard below).
 @riverpod
 Future<MergeLibraryUseCase> mergeLibraryUseCase(
   MergeLibraryUseCaseRef ref,
 ) async {
   final bookRepo = await ref.watch(bookRepositoryProvider.future);
-  final settings = await ref.watch(settingsRepositoryProvider.future);
   return MergeLibraryUseCase(
     bookRepo: bookRepo,
-    settings: settings,
+    namespace: ref.read(settingsControllerProvider.notifier),
     jsonParser: const PitakaJsonImporter(),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
   );

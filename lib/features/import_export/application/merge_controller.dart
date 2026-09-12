@@ -61,13 +61,14 @@ final class MergeNeedsDecision extends MergeUiState {
   final bool applying;
 }
 
-/// The merge was applied. For an overwrite the result is the zeroed summary
-/// the page has always shown (N07 owns the real conflict-summary UI).
+/// The merge was applied. [result] carries the counts AND every omission the
+/// user must hear about — skipped rows, adjustments, a replaced catalogue, an
+/// identity that could not be adopted (N07) — so the page can be honest.
 final class MergeDone extends MergeUiState {
   /// Creates the done state with [result].
   const MergeDone(this.result);
 
-  /// The merge counts.
+  /// The applied merge (or replacement) result.
   final MergeResult result;
 }
 
@@ -132,19 +133,11 @@ class MergeController extends _$MergeController {
   Future<void> applyJoin() =>
       _apply((useCase, decision) => useCase.applyJoin(decision));
 
-  /// OVERWRITE (replace the local catalogue; the page confirms first).
-  Future<void> applyOverwrite() => _apply(
-    (useCase, decision) async => (await useCase.applyOverwrite(decision)).map(
-      // Keep the page's long-standing "zeroed summary" behaviour; N07 owns
-      // the real post-overwrite summary.
-      (_) => const MergeResult(
-        added: 0,
-        identical: 0,
-        conflicts: [],
-        possibleDuplicates: [],
-      ),
-    ),
-  );
+  /// OVERWRITE (replace the local catalogue; the page confirms first). The
+  /// use case reports it as a replacement (`replaced: true`), not as a
+  /// zero-count merge (N07).
+  Future<void> applyOverwrite() =>
+      _apply((useCase, decision) => useCase.applyOverwrite(decision));
 
   Future<void> _apply(
     Future<Either<Failure, MergeResult>> Function(

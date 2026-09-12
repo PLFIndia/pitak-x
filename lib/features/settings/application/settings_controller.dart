@@ -19,6 +19,12 @@
 ///  2. **Patch, don't replace.** `_update` applies a `copyWith` patch to the
 ///     state *as it is after the write*, so a setter can only ever change the
 ///     field it owns — even if some future caller bypasses the queue.
+///
+/// **N07 — the library identity has one owner.** This controller implements
+/// [LibraryNamespace] so the merge use case adopts an incoming library ID +
+/// name THROUGH the FIFO above (one queued turn for both keys, one state
+/// patch). Before, the use case wrote the repository directly and every
+/// screen watching this state showed the old library name until restart.
 library;
 
 import 'dart:async';
@@ -27,6 +33,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -34,7 +41,8 @@ part 'settings_controller.g.dart';
 
 /// Loads and mutates the app-wide [AppSettings].
 @Riverpod(keepAlive: true)
-class SettingsController extends _$SettingsController {
+class SettingsController extends _$SettingsController
+    implements LibraryNamespace {
   /// Tail of the mutation FIFO; null when idle. Adapted from synchronized
   /// 3.4.0+1 `BasicLock` (Tekartik, MIT) via `CoverFileCoordinator` — no new
   /// dependency, no reentrancy (a mutator must never call another mutator).
@@ -140,6 +148,69 @@ class SettingsController extends _$SettingsController {
   /// (M17) — the old ID then stays in force.
   Future<Either<Failure, String>> regenerateLibraryId() =>
       _mintLibraryId((repo) => repo.regenerateLibraryId());
+
+  /// The merge use case's read of this device's identity (N07): the ID via
+  /// the FIFO like [getOrCreateLibraryId], the name from the loaded settings.
+  @override
+  Future<Either<Failure, LibraryIdentity>> current() async {
+    final id = await getOrCreateLibraryId();
+    final name = await _loadedLibraryName();
+    return id.map((value) => LibraryIdentity(id: value, name: name));
+  }
+
+  /// The library name once the first load has finished. `future` rejects when
+  /// an earlier setter published an [AsyncError] (a failed prefs write); the
+  /// last good value is still cached on that state, so use it — the name only
+  /// feeds the merge's "which library is this?" copy, never a gate.
+  Future<String> _loadedLibraryName() async {
+    try {
+      return (await future).libraryName;
+    } on Object {
+      return _current.libraryName;
+    }
+  }
+
+  /// Adopts an incoming library ID + name in ONE queued turn (N07). Both
+  /// repository writes happen while the FIFO is held, so no other setter can
+  /// interleave and publish a half-adopted identity; the state is patched
+  /// once, after both succeeded. A failed write leaves memory untouched (the
+  /// caller decides what to tell the user — disk may hold the ID already).
+  @override
+  Future<Either<Failure, Unit>> adopt({
+    required String id,
+    required String name,
+  }) => _serialised(() async {
+    final repo = await ref.read(settingsRepositoryProvider.future);
+    final trimmedId = id.trim();
+    final trimmedName = name.trim();
+    final Either<Failure, Unit> written;
+    try {
+      written = await _adoptOnDisk(repo, trimmedId, trimmedName);
+    } on Object catch (e) {
+      return left(StorageFailure('settings write threw: ${e.runtimeType}'));
+    }
+    if (written.isRight()) {
+      state = AsyncData(
+        _current.copyWith(
+          libraryId: trimmedId,
+          libraryName: trimmedName.isEmpty ? _current.libraryName : trimmedName,
+        ),
+      );
+    }
+    return written;
+  });
+
+  /// The two prefs writes behind [adopt]: ID first (it is the merge gate), name
+  /// only when the incoming file carried one.
+  static Future<Either<Failure, Unit>> _adoptOnDisk(
+    SettingsRepository repo,
+    String id,
+    String name,
+  ) async {
+    final idWritten = await repo.setLibraryId(id);
+    if (idWritten.isLeft() || name.isEmpty) return idWritten;
+    return repo.setLibraryName(name);
+  }
 
   /// Sets the maintainer name (stamped onto newly-added books).
   Future<void> setMaintainerName(String name) => _update(
