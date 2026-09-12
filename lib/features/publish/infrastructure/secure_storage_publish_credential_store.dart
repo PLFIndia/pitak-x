@@ -73,4 +73,7 @@ final class SecureStoragePublishCredentialStore
   @override
   Future<void> setTargetRepo(String target) =>
       _storage.write(key: _kRepo, value: target);
+
+  @override
+  Future<void> clearTargetRepo() => _storage.delete(key: _kRepo);
 }

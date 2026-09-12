@@ -30,4 +30,8 @@ abstract interface class PublishCredentialStore
 
   /// Persists the "owner/repo" publish [target].
   Future<void> setTargetRepo(String target);
+
+  /// Forgets the publish target (N09, D3-a). Called on sign-out so the next
+  /// account to sign in never inherits a repository it may not own.
+  Future<void> clearTargetRepo();
 }

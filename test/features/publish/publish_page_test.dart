@@ -37,6 +37,11 @@ class _FakeCreds implements PublishCredentialStore {
   }
 
   @override
+  Future<void> clearTargetRepo() async {
+    _target = null;
+  }
+
+  @override
   Future<void> setToken(String token) async {
     _token = token;
   }
@@ -48,11 +53,26 @@ class _FakeGitHubApi implements GitHubApi {
   _FakeGitHubApi({
     this.pollResult = const PollAuthorized('tok-123', 'public_repo'),
     this.intervalSeconds = 0,
+    this.listing = const RepoListing(repos: [], truncated: false),
+    this.details,
+    this.pages,
+    this.throwOnUserRepos = false,
   });
 
   final PollResult pollResult;
   final int intervalSeconds;
   int polls = 0;
+
+  /// What `userRepos` answers (N09).
+  final RepoListing listing;
+  final bool throwOnUserRepos;
+
+  /// What `repository()` answers for any owner/repo (null = 404).
+  final GitHubRepoDetails? details;
+
+  /// What `pagesSite()` answers (null = Pages off).
+  final PagesSite? pages;
+  int repositoryCalls = 0;
 
   @override
   Future<DeviceCodeGrant> requestDeviceCode({
@@ -99,13 +119,27 @@ class _FakeGitHubApi implements GitHubApi {
   }
 
   @override
-  Future<List<GitHubRepo>> userRepos(String token) async => const [];
+  Future<RepoListing> userRepos(String token) async {
+    if (throwOnUserRepos) throw const GitHubApiException('boom');
+    return listing;
+  }
+
   @override
-  Future<String?> defaultBranch({
+  Future<GitHubRepoDetails?> repository({
     required String owner,
     required String repo,
     required String token,
-  }) async => 'main';
+  }) async {
+    repositoryCalls++;
+    return details;
+  }
+
+  @override
+  Future<PagesSite?> pagesSite({
+    required String owner,
+    required String repo,
+    required String token,
+  }) async => pages;
   @override
   Future<Map<String, String>> headTreeShas({
     required String owner,
@@ -422,5 +456,205 @@ void main() {
     // A RenderFlex overflow would fail the test via the binding; reaching
     // here with the row built is the assertion.
     expect(tester.takeException(), isNull);
+  });
+
+  group('N09 — existing-repository setup', () {
+    GitHubRepoDetails owned({
+      String owner = 'user',
+      String repo = 'shelf',
+      bool canAdmin = true,
+    }) => GitHubRepoDetails(
+      fullName: '$owner/$repo',
+      ownerLogin: owner,
+      isPrivate: false,
+      isArchived: false,
+      defaultBranch: 'main',
+      canPush: true,
+      canAdmin: canAdmin,
+    );
+
+    Future<void> pumpSignedIn(
+      WidgetTester tester, {
+      required _FakeCreds creds,
+      required _FakeGitHubApi api,
+    }) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            publishCredentialStoreProvider.overrideWithValue(creds),
+            gitHubApiProvider.overrideWithValue(api),
+            eventsRepositoryProvider.overrideWith(
+              (ref) async => _EmptyEventsRepo(),
+            ),
+          ],
+          child: const MaterialApp(home: PublishPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> openList(WidgetTester tester) async {
+      await tester.tap(find.text('Choose an existing repo (advanced)'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'picking a repo verifies it and enables Pages before storing it',
+      (tester) async {
+        final creds = _FakeCreds(token: 'TKN');
+        final api = _FakeGitHubApi(
+          listing: const RepoListing(
+            repos: [GitHubRepo(fullName: 'user/shelf', isPrivate: false)],
+            truncated: false,
+          ),
+          details: owned(),
+          // `pages` left null: Pages off → the adopt path must turn it on.
+        );
+        await pumpSignedIn(tester, creds: creds, api: api);
+        await openList(tester);
+        expect(find.text('user/shelf'), findsOneWidget);
+
+        await tester.tap(find.text('user/shelf'));
+        await tester.pumpAndSettle();
+
+        expect(api.repositoryCalls, 1);
+        expect(api.pagesEnabled, isTrue);
+        expect(await creds.targetRepo(), 'user/shelf');
+        expect(find.text('Current: user/shelf'), findsOneWidget);
+        expect(
+          find.text(
+            'Connected to your existing user/shelf — ready to publish!',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('a repo the account does not own is refused and NOT stored', (
+      tester,
+    ) async {
+      final creds = _FakeCreds(token: 'TKN');
+      final api = _FakeGitHubApi(
+        // The list can only contain owned repos (affiliation=owner), but
+        // the server's answer is what counts: it says another owner.
+        listing: const RepoListing(
+          repos: [GitHubRepo(fullName: 'user/shelf', isPrivate: false)],
+          truncated: false,
+        ),
+        details: owned(owner: 'someone-else'),
+      );
+      await pumpSignedIn(tester, creds: creds, api: api);
+      await openList(tester);
+      await tester.tap(find.text('user/shelf'));
+      await tester.pumpAndSettle();
+
+      expect(await creds.targetRepo(), isNull);
+      expect(api.pagesEnabled, isFalse);
+      expect(find.textContaining('Current:'), findsNothing);
+      expect(
+        find.textContaining('owned by the GitHub account'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets(
+      'a Pages layout the app cannot publish to is refused with guidance',
+      (tester) async {
+        final creds = _FakeCreds(token: 'TKN');
+        final api = _FakeGitHubApi(
+          listing: const RepoListing(
+            repos: [GitHubRepo(fullName: 'user/shelf', isPrivate: false)],
+            truncated: false,
+          ),
+          details: owned(),
+          pages: const PagesSite(
+            sourceBranch: 'main',
+            sourcePath: '/docs',
+            isWorkflowBuild: false,
+          ),
+        );
+        await pumpSignedIn(tester, creds: creds, api: api);
+        await openList(tester);
+        await tester.tap(find.text('user/shelf'));
+        await tester.pumpAndSettle();
+
+        expect(await creds.targetRepo(), isNull);
+        expect(find.textContaining('Deploy from a branch'), findsOneWidget);
+      },
+    );
+
+    testWidgets('sign-out clears the target repo too (D3-a)', (tester) async {
+      final creds = _FakeCreds(token: 'TKN', targetRepo: 'user/old');
+      final api = _FakeGitHubApi();
+      await pumpSignedIn(tester, creds: creds, api: api);
+      expect(find.text('Current: user/old'), findsOneWidget);
+
+      await tester.tap(find.text('Sign out'));
+      await tester.pumpAndSettle();
+
+      expect(await creds.token(), isNull);
+      expect(await creds.targetRepo(), isNull);
+      expect(find.text('Signed out.'), findsOneWidget);
+      // Signing back in as a fresh account now prompts for a repo (no
+      // inherited target).
+      await tester.tap(find.text('Sign in to GitHub'));
+      await tester.pumpAndSettle();
+      expect(find.text('Name your library repository'), findsOneWidget);
+    });
+
+    testWidgets(
+      'a truncated list says so instead of pretending to be complete (D4-a)',
+      (tester) async {
+        final creds = _FakeCreds(token: 'TKN');
+        final api = _FakeGitHubApi(
+          listing: RepoListing(
+            repos: [
+              for (var i = 0; i < 3; i++)
+                GitHubRepo(fullName: 'user/r$i', isPrivate: false),
+            ],
+            truncated: true,
+          ),
+        );
+        await pumpSignedIn(tester, creds: creds, api: api);
+        await openList(tester);
+        expect(find.text('user/r0'), findsOneWidget);
+        expect(
+          find.textContaining('most recently updated repositories'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('a complete list shows no truncation notice', (tester) async {
+      final creds = _FakeCreds(token: 'TKN');
+      final api = _FakeGitHubApi(
+        listing: const RepoListing(
+          repos: [GitHubRepo(fullName: 'user/r0', isPrivate: false)],
+          truncated: false,
+        ),
+      );
+      await pumpSignedIn(tester, creds: creds, api: api);
+      await openList(tester);
+      expect(
+        find.textContaining('most recently updated repositories'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a failed list load shows a safe message', (tester) async {
+      final creds = _FakeCreds(token: 'TKN');
+      final api = _FakeGitHubApi(throwOnUserRepos: true);
+      await pumpSignedIn(tester, creds: creds, api: api);
+      await openList(tester);
+      expect(
+        find.text('Could not list your repositories. Try again.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('boom'), findsNothing);
+    });
   });
 }

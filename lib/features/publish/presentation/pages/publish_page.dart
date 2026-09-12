@@ -2,7 +2,11 @@
 ///
 /// A 3-tab home for everything that lands on the published site:
 ///   1. Connection — GitHub account + target repo (Cloudflare is shown as a
-///      disabled "coming soon" target; real upload is a later stage).
+///      disabled "coming soon" target; real upload is a later stage). Both
+///      ways of getting a target — one-tap create and the advanced picker —
+///      run through `SetupGitHubRepo`, so a stored target is always owned by
+///      the signed-in account and serves GitHub Pages from a branch root
+///      (N09). Sign-out forgets the target with the token.
 ///   2. Basic Info — library name + public address / GPS / email / phone (the
 ///      info shown on the published page). These moved here from Settings.
 ///   3. Events — the poster editor (embedded EventsView); the library campaign
@@ -96,6 +100,10 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   /// copy + share actions.
   String? _publishedUrl;
   List<GitHubRepo> _repos = const [];
+
+  /// True when the repo list hit its page budget (N09, D4-a) — the UI then
+  /// says so instead of implying the list is complete.
+  bool _reposTruncated = false;
   String? _status;
   bool _busy = false;
 
@@ -364,12 +372,21 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     );
   }
 
+  /// Sign-out forgets BOTH the token and the target repo (N09, D3-a). The
+  /// target belongs to the account that chose it; a different account
+  /// signing in next must never inherit a repository it may not own. The
+  /// publish manifest is kept: the last published site still exists, so the
+  /// drawer's share link stays truthful.
   Future<void> _signOut() async {
-    await ref.read(publishCredentialStoreProvider).clearToken();
+    final creds = ref.read(publishCredentialStoreProvider);
+    await creds.clearToken();
+    await creds.clearTargetRepo();
     if (!mounted) return;
     setState(() {
       _signedIn = false;
+      _targetRepo = null;
       _repos = const [];
+      _reposTruncated = false;
       _status = 'Signed out.';
     });
   }
@@ -380,9 +397,12 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     if (token == null) return;
     setState(() => _busy = true);
     try {
-      final repos = await ref.read(gitHubApiProvider).userRepos(token);
+      final listing = await ref.read(gitHubApiProvider).userRepos(token);
       if (!mounted) return;
-      setState(() => _repos = repos);
+      setState(() {
+        _repos = listing.repos;
+        _reposTruncated = listing.truncated;
+      });
     } on GitHubApiException {
       if (!mounted) return;
       // Fixed message (§5): exception text can carry transport/API detail.
@@ -392,10 +412,41 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     }
   }
 
+  /// Adopts an existing repo through the SAME rules as the one-tap setup
+  /// (N09): ownership, push rights, and a Pages layout the app can publish
+  /// to are verified — and Pages is enabled when off — before the target is
+  /// stored. "Connected" therefore always means "ready to publish".
   Future<void> _pickRepo(String fullName) async {
-    await ref.read(publishCredentialStoreProvider).setTargetRepo(fullName);
+    final token = await ref.read(publishCredentialStoreProvider).token();
+    if (token == null || !mounted) return;
+    setState(() {
+      _busy = true;
+      _status = 'Checking $fullName…';
+    });
+    final result = await ref
+        .read(setupGitHubRepoProvider)
+        .adopt(token: token, fullName: fullName);
     if (!mounted) return;
-    setState(() => _targetRepo = fullName);
+    setState(() => _busy = false);
+    result.match(
+      (failure) {
+        // A ValidationFailure carries our own fixed, actionable copy; every
+        // other failure ends with a safe generic line (§5).
+        setState(
+          () => _status = failure is ValidationFailure
+              ? failure.message
+              : 'Could not connect that repository. Check your connection '
+                    'and try again.',
+        );
+      },
+      (r) {
+        setState(
+          () => _status =
+              'Connected to your existing ${r.fullName} — ready to publish!',
+        );
+      },
+    );
+    await _refresh();
   }
 
   Future<void> _publish() async {
@@ -550,6 +601,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
                 for (final r in _repos)
                   ListTile(
                     dense: true,
+                    enabled: !_busy,
                     leading: Icon(
                       r.fullName == _targetRepo
                           ? Icons.radio_button_checked
@@ -560,6 +612,16 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
                         ? const Text('private (Pages needs a paid plan)')
                         : null,
                     onTap: () => _pickRepo(r.fullName),
+                  ),
+                if (_reposTruncated)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Showing your ${_repos.length} most recently updated '
+                      'repositories. If yours is not listed, use "Create a '
+                      'new repository" instead.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
               ],
             ),

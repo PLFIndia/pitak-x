@@ -5,7 +5,9 @@
 /// atomic, incremental commit via [GitHubApi].
 ///
 /// Pipeline:
-///  1. Resolve token + target repo + Pages branch.
+///  1. Resolve token + target repo + the branch Pages SERVES from (N09: read
+///     live from the Pages configuration, never assumed to be the default
+///     branch; Pages off or re-pointed → typed failure before any write).
 ///  2. Load (or rebuild) the incremental manifest.
 ///  3. Redact every non-removed book (F-01) + coarse availability (gated).
 ///  4. Decide covers: local read / remote fetch, salted paths, sha-diff vs
@@ -166,13 +168,28 @@ final class PublishLibraryUseCase {
     }
     final owner = parts[0];
     final repo = parts[1];
+    // The address is derived by the shared resolver (user site vs project
+    // site); a target that cannot be resolved is refused before any write.
+    final pagesUrl = githubPagesUrlFor(ownerRepo);
+    if (pagesUrl == null) {
+      return const PublishFailure('Pick a target repo first.');
+    }
 
     final now = _clock();
     final library = books.where((b) => !b.removed).toList();
 
-    final branch =
-        await _api.defaultBranch(owner: owner, repo: repo, token: token) ??
-        'main';
+    // N09 (D2-a): commit to the branch Pages actually serves. Publishing to
+    // any other branch would "succeed" without changing the live site.
+    final String branch;
+    try {
+      final site = await _api.pagesSite(owner: owner, repo: repo, token: token);
+      if (site == null || !site.isPublishableByApp) {
+        return const PublishFailure(gitHubPagesNotServingMessage);
+      }
+      branch = site.sourceBranch!;
+    } on GitHubApiException {
+      return const PublishFailure(gitHubNetworkErrorMessage);
+    }
 
     // Load manifest; rebuild from the repo tree if missing / for another repo.
     var manifest = _manifest.load();
@@ -283,10 +300,8 @@ final class PublishLibraryUseCase {
           ),
         );
         phase(PublishPhase.pagesBuilding);
-        // Single source of truth for the site URL (github_pages_url.dart),
-        // shared with the drawer's "Share Library Website" action.
-        final pagesUrl =
-            githubPagesUrlFor(ownerRepo) ?? 'https://$owner.github.io/$repo/';
+        // `pagesUrl` came from the single resolver (github_pages_url.dart),
+        // shared with the events publish and the drawer's share action.
         // Read-back verification (à la Localcart Orange github_pages.rs §6):
         // poll the LIVE books.json with a cache-buster until it serves
         // exactly the bytes we just published. Bounded — it can never spin

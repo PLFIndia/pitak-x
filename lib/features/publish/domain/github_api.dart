@@ -173,8 +173,28 @@ abstract interface class GitHubApi {
   /// Returns the authenticated user's login for [token].
   Future<String> currentUserLogin(String token);
 
-  /// Lists repos the [token] can publish to (sorted by recently updated).
-  Future<List<GitHubRepo>> userRepos(String token);
+  /// Lists the repositories OWNED by the authenticated user (N09, D1-a),
+  /// most recently updated first. Follows GitHub's pagination up to a fixed
+  /// page budget; [RepoListing.truncated] reports when it ran out.
+  Future<RepoListing> userRepos(String token);
+
+  /// Reads ownership, permissions and the default branch of [owner]/[repo]
+  /// (N09). Null when the repository does not exist or the token cannot see
+  /// it (404); transport failures throw [GitHubApiException].
+  Future<GitHubRepoDetails?> repository({
+    required String owner,
+    required String repo,
+    required String token,
+  });
+
+  /// Reads the GitHub Pages configuration of [owner]/[repo] (N09). Null when
+  /// Pages is not enabled (404); transport failures throw
+  /// [GitHubApiException].
+  Future<PagesSite?> pagesSite({
+    required String owner,
+    required String repo,
+    required String token,
+  });
 
   /// Creates a public repo [name] on the authenticated user's account with
   /// `auto_init` (so the branch exists for the first publish commit).
@@ -191,13 +211,6 @@ abstract interface class GitHubApi {
     required String owner,
     required String repo,
     required String branch,
-    required String token,
-  });
-
-  /// Resolves the Pages-serving (default) branch of [owner]/[repo], or null.
-  Future<String?> defaultBranch({
-    required String owner,
-    required String repo,
     required String token,
   });
 

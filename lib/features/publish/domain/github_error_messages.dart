@@ -35,3 +35,11 @@ String gitHubHttpErrorMessage(int code) => switch (code) {
 /// responses). Exception text is deliberately not included.
 const String gitHubNetworkErrorMessage =
     'Could not reach GitHub. Check your connection and try again.';
+
+/// Fixed message when the target repository no longer serves GitHub Pages
+/// from a branch root (turned off, moved to `/docs`, or switched to a
+/// workflow build) — a commit would land but never reach the live site
+/// (N09, D2-a).
+const String gitHubPagesNotServingMessage =
+    'GitHub Pages is not serving this repository from a branch any more. '
+    'Open Publish › Connection and set up the repository again.';

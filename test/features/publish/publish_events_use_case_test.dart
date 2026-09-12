@@ -12,12 +12,13 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 
 class _FakeCreds implements PublishCredentialReader {
-  _FakeCreds({this.tok = 'TKN'});
+  _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
   final String? tok;
+  final String? repo;
   @override
   Future<String?> token() async => tok;
   @override
-  Future<String?> targetRepo() async => 'me/lib';
+  Future<String?> targetRepo() async => repo;
 }
 
 class _MemManifest implements PublishManifestGateway {
@@ -31,16 +32,27 @@ class _MemManifest implements PublishManifestGateway {
 }
 
 class _CapturingApi implements GitHubApi {
+  _CapturingApi({
+    this.pages = const PagesSite(
+      sourceBranch: 'main',
+      sourcePath: '/',
+      isWorkflowBuild: false,
+    ),
+  });
+
+  /// What `pagesSite()` answers (null = Pages off).
+  final PagesSite? pages;
   List<DesiredFile>? committed;
   List<String> deleted = [];
+  String? committedBranch;
   PublishCommitResult result = const PublishCommitSuccess('NEW', ['x']);
 
   @override
-  Future<String?> defaultBranch({
+  Future<PagesSite?> pagesSite({
     required String owner,
     required String repo,
     required String token,
-  }) async => 'main';
+  }) async => pages;
 
   @override
   Future<PublishCommitResult> commitFiles({
@@ -53,6 +65,7 @@ class _CapturingApi implements GitHubApi {
     List<String> deletePaths = const [],
   }) async {
     committed = files;
+    committedBranch = branch;
     deleted = deletePaths;
     return result;
   }
@@ -90,8 +103,13 @@ class _CapturingApi implements GitHubApi {
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<List<GitHubRepo>> userRepos(String token) =>
-      throw UnimplementedError();
+  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
+  @override
+  Future<GitHubRepoDetails?> repository({
+    required String owner,
+    required String repo,
+    required String token,
+  }) => throw UnimplementedError();
 }
 
 void main() {
@@ -281,5 +299,52 @@ void main() {
     ).call(twoPosters());
     expect(result, isA<PublishEventsFailure>());
     expect((result as PublishEventsFailure).reason, contains('422'));
+  });
+
+  group("N09 — events share the catalogue's Pages resolution", () {
+    test('a user site (me/me.github.io) links events at the ROOT', () async {
+      const manifest = PublishManifest(
+        repo: 'me/me.github.io',
+        fileShas: {'index.html': 'abc'},
+      );
+      final result = await make(
+        api: _CapturingApi(),
+        manifest: _MemManifest(manifest),
+        creds: _FakeCreds(repo: 'me/me.github.io'),
+      ).call(twoPosters());
+      expect(
+        (result as PublishEventsSuccess).eventsUrl,
+        'https://me.github.io/events.html',
+      );
+    });
+
+    test('commits to the Pages SOURCE branch, not the default', () async {
+      final api = _CapturingApi(
+        pages: const PagesSite(
+          sourceBranch: 'gh-pages',
+          sourcePath: '/',
+          isWorkflowBuild: false,
+        ),
+      );
+      final result = await make(
+        api: api,
+        manifest: _MemManifest(published()),
+      ).call(twoPosters());
+      expect(result, isA<PublishEventsSuccess>());
+      expect(api.committedBranch, 'gh-pages');
+    });
+
+    test('Pages turned off → typed failure, no commit', () async {
+      final api = _CapturingApi(pages: null);
+      final manifest = _MemManifest(published());
+      final result = await make(
+        api: api,
+        manifest: manifest,
+      ).call(twoPosters());
+      expect(result, isA<PublishEventsFailure>());
+      expect((result as PublishEventsFailure).reason, contains('GitHub Pages'));
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    });
   });
 }

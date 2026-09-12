@@ -24,6 +24,7 @@ import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 
@@ -103,6 +104,12 @@ final class PublishEventsUseCase {
     }
     final owner = parts[0];
     final repo = parts[1];
+    // N09: ONE resolver for every published address (user site vs project
+    // site) — shared with the catalogue publish and the drawer.
+    final eventsUrl = githubPagesFileUrl(ownerRepo, 'events.html');
+    if (eventsUrl == null) {
+      return const PublishEventsFailure('Pick a target repo first.');
+    }
 
     // Gate (Q8=A): the catalogue must have been published to THIS repo.
     final manifest = _manifest.load();
@@ -113,9 +120,18 @@ final class PublishEventsUseCase {
       );
     }
 
-    final branch =
-        await _api.defaultBranch(owner: owner, repo: repo, token: token) ??
-        'main';
+    // N09 (D2-a): commit to the branch Pages actually serves (see the
+    // catalogue use case for the reasoning).
+    final String branch;
+    try {
+      final site = await _api.pagesSite(owner: owner, repo: repo, token: token);
+      if (site == null || !site.isPublishableByApp) {
+        return const PublishEventsFailure(gitHubPagesNotServingMessage);
+      }
+      branch = site.sourceBranch!;
+    } on GitHubApiException {
+      return const PublishEventsFailure(gitHubNetworkErrorMessage);
+    }
 
     // Resolve poster bytes + their published repo paths. A poster whose local
     // image is missing is dropped (never publishes a broken <img>).
@@ -199,7 +215,7 @@ final class PublishEventsUseCase {
           ),
         );
         return PublishEventsSuccess(
-          eventsUrl: 'https://$owner.github.io/$repo/events.html',
+          eventsUrl: eventsUrl,
           uploadedPaths: uploadedPaths,
         );
       case PublishCommitHttpError(:final code):

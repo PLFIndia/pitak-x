@@ -403,4 +403,414 @@ void main() {
       expect((result as PublishCommitHttpError).code, 403);
     });
   });
+
+  group('N09 — userRepos pagination (owned repos only)', () {
+    String repoJson(int i) =>
+        jsonEncode({'full_name': 'me/r$i', 'private': false});
+    String pageBody(int from, int count) =>
+        '[${List.generate(count, (i) => repoJson(from + i)).join(',')}]';
+
+    test('asks for OWNED repos, 100 per page, most recently updated', () async {
+      Uri? seen;
+      final svc = api(
+        MockClient((req) async {
+          seen = req.url;
+          return http.Response('[]', 200);
+        }),
+      );
+      await svc.userRepos('tok');
+      expect(seen!.path, '/user/repos');
+      expect(seen!.queryParameters['affiliation'], 'owner');
+      expect(seen!.queryParameters['per_page'], '100');
+      expect(seen!.queryParameters['sort'], 'updated');
+    });
+
+    test('follows Link rel="next" until the last page', () async {
+      final pagesAsked = <String>[];
+      final svc = api(
+        MockClient((req) async {
+          final page = req.url.queryParameters['page'] ?? '1';
+          pagesAsked.add(page);
+          switch (page) {
+            case '1':
+              return http.Response(
+                pageBody(0, 100),
+                200,
+                headers: {
+                  'link':
+                      '<https://api.github.test/user/repos?page=2>; '
+                      'rel="next", <https://api.github.test/user/repos?page=3>; '
+                      'rel="last"',
+                },
+              );
+            case '2':
+              return http.Response(
+                pageBody(100, 100),
+                200,
+                headers: {
+                  'link':
+                      '<https://api.github.test/user/repos?page=1>; '
+                      'rel="prev", <https://api.github.test/user/repos?page=3>; '
+                      'rel="next"',
+                },
+              );
+            default:
+              // Last page: no `next` link at all.
+              return http.Response(
+                pageBody(200, 7),
+                200,
+                headers: {
+                  'link':
+                      '<https://api.github.test/user/repos?page=2>; '
+                      'rel="prev"',
+                },
+              );
+          }
+        }),
+      );
+      final listing = await svc.userRepos('tok');
+      expect(pagesAsked, ['1', '2', '3']);
+      expect(listing.repos.length, 207);
+      expect(listing.repos.first.fullName, 'me/r0');
+      expect(listing.repos.last.fullName, 'me/r206');
+      expect(listing.truncated, isFalse);
+    });
+
+    test('a single page with no Link header is complete', () async {
+      final svc = api(
+        MockClient((_) async => http.Response(pageBody(0, 3), 200)),
+      );
+      final listing = await svc.userRepos('tok');
+      expect(listing.repos.length, 3);
+      expect(listing.truncated, isFalse);
+    });
+
+    test(
+      'stops at the page budget and reports the list as truncated (D4-a)',
+      () async {
+        var calls = 0;
+        final svc = api(
+          MockClient((req) async {
+            calls++;
+            final page = int.parse(req.url.queryParameters['page'] ?? '1');
+            // Every page claims there is a next one — an endless account.
+            return http.Response(
+              pageBody((page - 1) * 100, 100),
+              200,
+              headers: {
+                'link':
+                    '<https://api.github.test/user/repos?page=${page + 1}>; '
+                    'rel="next"',
+              },
+            );
+          }),
+        );
+        final listing = await svc.userRepos('tok');
+        expect(calls, HttpGitHubApi.maxRepoPages);
+        expect(listing.repos.length, HttpGitHubApi.maxRepoPages * 100);
+        expect(listing.truncated, isTrue);
+      },
+    );
+
+    test('a `next` link pointing at another host is not followed', () async {
+      // The Link header is server-controlled text; only the page NUMBER is
+      // taken from it, and requests always go to our own API base.
+      final hosts = <String>[];
+      final svc = api(
+        MockClient((req) async {
+          hosts.add(req.url.host);
+          if (hosts.length == 1) {
+            return http.Response(
+              pageBody(0, 1),
+              200,
+              headers: {
+                'link': '<https://evil.example/steal?page=2>; rel="next"',
+              },
+            );
+          }
+          return http.Response(pageBody(1, 1), 200);
+        }),
+      );
+      final listing = await svc.userRepos('tok');
+      expect(hosts.every((h) => h == 'api.github.test'), isTrue);
+      expect(listing.repos.length, 2);
+    });
+
+    test('an HTTP error on any page throws (no partial list)', () async {
+      final svc = api(
+        MockClient((req) async {
+          final page = req.url.queryParameters['page'] ?? '1';
+          if (page == '1') {
+            return http.Response(
+              pageBody(0, 100),
+              200,
+              headers: {
+                'link':
+                    '<https://api.github.test/user/repos?page=2>; rel="next"',
+              },
+            );
+          }
+          return http.Response('{"message":"rate limited"}', 403);
+        }),
+      );
+      expect(() => svc.userRepos('tok'), throwsA(isA<GitHubApiException>()));
+    });
+
+    test('a malformed page body throws', () async {
+      final svc = api(
+        MockClient((_) async => http.Response('{"not":"a list"}', 200)),
+      );
+      expect(() => svc.userRepos('tok'), throwsA(isA<GitHubApiException>()));
+    });
+  });
+
+  group('N09 — repository()', () {
+    test('parses owner, permissions, default branch and flags', () async {
+      final svc = api(
+        MockClient((req) async {
+          expect(req.url.path, '/repos/me/lib');
+          expect(req.headers['Authorization'], 'Bearer tok');
+          return http.Response(
+            jsonEncode({
+              'full_name': 'me/lib',
+              'owner': {'login': 'me'},
+              'private': false,
+              'archived': false,
+              'default_branch': 'trunk',
+              'permissions': {'admin': true, 'push': true, 'pull': true},
+            }),
+            200,
+          );
+        }),
+      );
+      final d = await svc.repository(owner: 'me', repo: 'lib', token: 'tok');
+      expect(d, isNotNull);
+      expect(d!.fullName, 'me/lib');
+      expect(d.ownerLogin, 'me');
+      expect(d.isPrivate, isFalse);
+      expect(d.isArchived, isFalse);
+      expect(d.defaultBranch, 'trunk');
+      expect(d.canPush, isTrue);
+      expect(d.canAdmin, isTrue);
+    });
+
+    test(
+      'missing permissions object means NO push/admin (fail closed)',
+      () async {
+        final svc = api(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'full_name': 'me/lib',
+                'owner': {'login': 'me'},
+                'private': false,
+                'archived': false,
+                'default_branch': 'main',
+              }),
+              200,
+            ),
+          ),
+        );
+        final d = await svc.repository(owner: 'me', repo: 'lib', token: 'tok');
+        expect(d!.canPush, isFalse);
+        expect(d.canAdmin, isFalse);
+      },
+    );
+
+    test('404 → null (not found or not visible to this token)', () async {
+      final svc = api(
+        MockClient((_) async => http.Response('{"message":"Not Found"}', 404)),
+      );
+      expect(
+        await svc.repository(owner: 'me', repo: 'gone', token: 'tok'),
+        isNull,
+      );
+    });
+
+    test('other HTTP errors throw', () async {
+      final svc = api(
+        MockClient((_) async => http.Response('{"message":"nope"}', 403)),
+      );
+      expect(
+        () => svc.repository(owner: 'me', repo: 'lib', token: 'tok'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test('a default branch outside the safe charset throws', () async {
+      // The branch becomes a URL path segment in every later Git Data call.
+      final svc = api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'full_name': 'me/lib',
+              'owner': {'login': 'me'},
+              'private': false,
+              'archived': false,
+              'default_branch': '../../evil',
+            }),
+            200,
+          ),
+        ),
+      );
+      expect(
+        () => svc.repository(owner: 'me', repo: 'lib', token: 'tok'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test('missing required fields throw (malformed, not guessed)', () async {
+      final svc = api(
+        MockClient((_) async => http.Response(jsonEncode({'x': 1}), 200)),
+      );
+      expect(
+        () => svc.repository(owner: 'me', repo: 'lib', token: 'tok'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+  });
+
+  group('N09 — pagesSite()', () {
+    test('parses a legacy branch build from the root', () async {
+      final svc = api(
+        MockClient((req) async {
+          expect(req.url.path, '/repos/me/lib/pages');
+          return http.Response(
+            jsonEncode({
+              'url': 'https://api.github.test/repos/me/lib/pages',
+              'status': 'built',
+              'cname': null,
+              'custom_404': false,
+              'public': true,
+              'html_url': 'https://me.github.io/lib/',
+              'build_type': 'legacy',
+              'source': {'branch': 'gh-pages', 'path': '/'},
+            }),
+            200,
+          );
+        }),
+      );
+      final site = await svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok');
+      expect(site, isNotNull);
+      expect(site!.sourceBranch, 'gh-pages');
+      expect(site.sourcePath, '/');
+      expect(site.isWorkflowBuild, isFalse);
+      expect(site.isPublishableByApp, isTrue);
+    });
+
+    test('a /docs source is reported and not publishable', () async {
+      final svc = api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'build_type': 'legacy',
+              'source': {'branch': 'main', 'path': '/docs'},
+            }),
+            200,
+          ),
+        ),
+      );
+      final site = await svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok');
+      expect(site!.sourcePath, '/docs');
+      expect(site.isPublishableByApp, isFalse);
+    });
+
+    test(
+      'a workflow build has no branch source and is not publishable',
+      () async {
+        final svc = api(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'build_type': 'workflow',
+                'source': {'branch': 'main', 'path': '/'},
+              }),
+              200,
+            ),
+          ),
+        );
+        final site = await svc.pagesSite(
+          owner: 'me',
+          repo: 'lib',
+          token: 'tok',
+        );
+        expect(site!.isWorkflowBuild, isTrue);
+        expect(site.isPublishableByApp, isFalse);
+      },
+    );
+
+    test(
+      'a missing build_type is treated as legacy (older API shape)',
+      () async {
+        final svc = api(
+          MockClient(
+            (_) async => http.Response(
+              jsonEncode({
+                'source': {'branch': 'main', 'path': '/'},
+              }),
+              200,
+            ),
+          ),
+        );
+        final site = await svc.pagesSite(
+          owner: 'me',
+          repo: 'lib',
+          token: 'tok',
+        );
+        expect(site!.isPublishableByApp, isTrue);
+      },
+    );
+
+    test('404 → null (Pages not enabled)', () async {
+      final svc = api(
+        MockClient((_) async => http.Response('{"message":"Not Found"}', 404)),
+      );
+      expect(
+        await svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok'),
+        isNull,
+      );
+    });
+
+    test('other HTTP errors throw', () async {
+      final svc = api(MockClient((_) async => http.Response('boom', 500)));
+      expect(
+        () => svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test('a source branch outside the safe charset throws', () async {
+      final svc = api(
+        MockClient(
+          (_) async => http.Response(
+            jsonEncode({
+              'build_type': 'legacy',
+              'source': {'branch': 'main?x=1', 'path': '/'},
+            }),
+            200,
+          ),
+        ),
+      );
+      expect(
+        () => svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test(
+      'a legacy build with no source object is malformed → throws',
+      () async {
+        final svc = api(
+          MockClient(
+            (_) async =>
+                http.Response(jsonEncode({'build_type': 'legacy'}), 200),
+          ),
+        );
+        expect(
+          () => svc.pagesSite(owner: 'me', repo: 'lib', token: 'tok'),
+          throwsA(isA<GitHubApiException>()),
+        );
+      },
+    );
+  });
 }

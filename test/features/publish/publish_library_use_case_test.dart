@@ -12,9 +12,9 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 
 class _FakeCreds implements PublishCredentialReader {
-  _FakeCreds({this.tok = 'TKN'});
+  _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
   final String? tok;
-  final String? repo = 'me/lib';
+  final String? repo;
   @override
   Future<String?> token() async => tok;
   @override
@@ -38,18 +38,37 @@ class _FixedSalt implements PublishCoverSaltStore {
 
 /// Records the commit it received; returns a scripted result.
 class _CapturingApi implements GitHubApi {
-  _CapturingApi();
+  _CapturingApi({
+    this.pages = const PagesSite(
+      sourceBranch: 'main',
+      sourcePath: '/',
+      isWorkflowBuild: false,
+    ),
+    this.throwOnPagesSite = false,
+  });
   final Map<String, String> headShas = const {};
-  final String? branch = 'main';
+
+  /// What `pagesSite()` answers (null = Pages off).
+  final PagesSite? pages;
+  final bool throwOnPagesSite;
   final PublishCommitResult? commitResult = null;
   List<DesiredFile>? committed;
 
+  /// Branch the commit was made to (N09: must be the Pages source branch).
+  String? committedBranch;
+
+  /// Branch the head tree was read from.
+  String? headTreeBranch;
+
   @override
-  Future<String?> defaultBranch({
+  Future<PagesSite?> pagesSite({
     required String owner,
     required String repo,
     required String token,
-  }) async => branch;
+  }) async {
+    if (throwOnPagesSite) throw const GitHubApiException('boom');
+    return pages;
+  }
 
   @override
   Future<Map<String, String>> headTreeShas({
@@ -57,7 +76,10 @@ class _CapturingApi implements GitHubApi {
     required String repo,
     required String branch,
     required String token,
-  }) async => headShas;
+  }) async {
+    headTreeBranch = branch;
+    return headShas;
+  }
 
   @override
   Future<PublishCommitResult> commitFiles({
@@ -70,6 +92,7 @@ class _CapturingApi implements GitHubApi {
     List<String> deletePaths = const [],
   }) async {
     committed = files;
+    committedBranch = branch;
     return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
 
@@ -99,8 +122,13 @@ class _CapturingApi implements GitHubApi {
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<List<GitHubRepo>> userRepos(String token) =>
-      throw UnimplementedError();
+  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
+  @override
+  Future<GitHubRepoDetails?> repository({
+    required String owner,
+    required String repo,
+    required String token,
+  }) => throw UnimplementedError();
 }
 
 void main() {
@@ -120,9 +148,10 @@ void main() {
     GitHubApi api,
     PublishManifestGateway manifest, {
     PublishedFileFetcher? fetchPublishedFile,
+    PublishCredentialReader? credentials,
   }) => PublishLibraryUseCase(
     api: api,
-    credentials: _FakeCreds(),
+    credentials: credentials ?? _FakeCreds(),
     manifest: manifest,
     coverIds: PublishCoverIds(_FixedSalt()),
     readLocalCover: (_) async => null,
@@ -356,4 +385,95 @@ void main() {
       expect(json, contains(coverFile.path));
     },
   );
+
+  group('N09 — the publish goes where Pages actually serves from', () {
+    test(
+      'commits to the Pages SOURCE branch, not the default branch',
+      () async {
+        final api = _CapturingApi(
+          pages: const PagesSite(
+            sourceBranch: 'gh-pages',
+            sourcePath: '/',
+            isWorkflowBuild: false,
+          ),
+        );
+        final result = await makeUseCase(api, _MemManifest()).call(
+          books: [book()],
+          activeLoanCounts: const {},
+          encodeBooksJson: encode,
+        );
+        expect(result, isA<PublishSuccess>());
+        expect(api.committedBranch, 'gh-pages');
+        expect(api.headTreeBranch, 'gh-pages');
+      },
+    );
+
+    test('Pages turned off since setup → typed failure, no commit', () async {
+      final api = _CapturingApi(pages: null);
+      final manifest = _MemManifest();
+      final result = await makeUseCase(api, manifest).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+      );
+      expect(result, isA<PublishFailure>());
+      expect((result as PublishFailure).reason, contains('GitHub Pages'));
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    });
+
+    test('Pages re-pointed at /docs or a workflow → typed failure', () async {
+      for (final site in const [
+        PagesSite(
+          sourceBranch: 'main',
+          sourcePath: '/docs',
+          isWorkflowBuild: false,
+        ),
+        PagesSite(sourceBranch: null, sourcePath: null, isWorkflowBuild: true),
+      ]) {
+        final api = _CapturingApi(pages: site);
+        final result = await makeUseCase(api, _MemManifest()).call(
+          books: [book()],
+          activeLoanCounts: const {},
+          encodeBooksJson: encode,
+        );
+        expect(result, isA<PublishFailure>());
+        expect(api.committed, isNull);
+      }
+    });
+
+    test('a transport failure reading Pages is the network message', () async {
+      final api = _CapturingApi(throwOnPagesSite: true);
+      final result = await makeUseCase(api, _MemManifest()).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+      );
+      expect(result, isA<PublishFailure>());
+      expect((result as PublishFailure).reason, contains('connection'));
+      expect(api.committed, isNull);
+    });
+
+    test('a user site (me/me.github.io) reports the ROOT address', () async {
+      final api = _CapturingApi();
+      final polled = <String>[];
+      final result =
+          await makeUseCase(
+            api,
+            _MemManifest(),
+            credentials: _FakeCreds(repo: 'me/me.github.io'),
+            fetchPublishedFile: (url) async {
+              polled.add(url);
+              return null;
+            },
+          ).call(
+            books: [book()],
+            activeLoanCounts: const {},
+            encodeBooksJson: encode,
+          );
+      expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
+      // The read-back polls the same resolved address.
+      expect(polled.first, startsWith('https://me.github.io/books.json?rb='));
+    });
+  });
 }

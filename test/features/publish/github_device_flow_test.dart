@@ -54,7 +54,13 @@ class _ScriptedApi implements GitHubApi {
     List<String> deletePaths = const [],
   }) => throw UnimplementedError();
   @override
-  Future<String?> defaultBranch({
+  Future<PagesSite?> pagesSite({
+    required String owner,
+    required String repo,
+    required String token,
+  }) => throw UnimplementedError();
+  @override
+  Future<GitHubRepoDetails?> repository({
     required String owner,
     required String repo,
     required String token,
@@ -81,8 +87,7 @@ class _ScriptedApi implements GitHubApi {
     required String token,
   }) => throw UnimplementedError();
   @override
-  Future<List<GitHubRepo>> userRepos(String token) =>
-      throw UnimplementedError();
+  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
 }
 
 void main() {

@@ -37,6 +37,27 @@ final class HttpGitHubApi implements GitHubApi {
 
   static final RegExp _gitSha = RegExp(r'^[0-9a-fA-F]{40}$');
 
+  /// Git branch names the app will put into a URL path. Git allows far more,
+  /// but every branch the app creates or serves Pages from is plain
+  /// (`main`, `gh-pages`, `release/1.2`); anything else is refused rather
+  /// than URL-encoded, because a `..` or `?` here would change which
+  /// endpoint later Git Data calls hit.
+  static final RegExp _branchChars = RegExp(r'^[A-Za-z0-9._/-]{1,200}$');
+
+  /// Page budget for [userRepos] (N09, D4-a): 10 × 100 = at most 1000
+  /// repositories, ~10 sequential requests. Bounds both network time and
+  /// memory on a phone; the listing is flagged `truncated` past this.
+  static const int maxRepoPages = 10;
+
+  /// Parses `rel="next"` out of a `Link` header into the page NUMBER only.
+  /// The URL inside the header is server-controlled text and is never
+  /// fetched as-is; the next request is rebuilt against our own API base.
+  /// (Adapted from `github` 9.17.0 `PaginationHelper`, MIT, DirectCode —
+  /// which follows the link URL verbatim; here only the number survives.)
+  static final RegExp _nextPage = RegExp(
+    r'<[^>]*[?&]page=(\d+)[^>]*>\s*;\s*rel="next"',
+  );
+
   Map<String, String> _authHeaders(String token) => {
     'Authorization': 'Bearer $token',
     'Accept': _accept,
@@ -126,25 +147,150 @@ final class HttpGitHubApi implements GitHubApi {
   }
 
   @override
-  Future<List<GitHubRepo>> userRepos(String token) async {
+  Future<RepoListing> userRepos(String token) async {
+    final repos = <GitHubRepo>[];
+    var page = 1;
+    while (true) {
+      final resp = await _get(
+        _apiBase.replace(
+          path: '/user/repos',
+          queryParameters: {
+            // D1-a: only repositories this account OWNS. The Pages URL is
+            // then always `<login>.github.io/...`, and org/collaborator
+            // repositories never reach the device at all.
+            'affiliation': 'owner',
+            'per_page': '100',
+            'sort': 'updated',
+            'page': '$page',
+          },
+        ),
+        headers: _authHeaders(token),
+      );
+      if (resp.statusCode >= 400) {
+        throw GitHubApiException('repo list: HTTP ${resp.statusCode}');
+      }
+      final list = jsonDecode(resp.body);
+      if (list is! List) throw const GitHubApiException('Malformed repo list');
+      repos.addAll([
+        for (final e in list.whereType<Map<String, dynamic>>())
+          if (e['full_name'] is String)
+            GitHubRepo(
+              fullName: e['full_name'] as String,
+              isPrivate: (e['private'] as bool?) ?? false,
+              htmlUrl: e['html_url'] as String?,
+            ),
+      ]);
+      final next = _nextPageOf(resp.headers['link']);
+      if (next == null) return RepoListing(repos: repos, truncated: false);
+      if (page >= maxRepoPages) {
+        return RepoListing(repos: repos, truncated: true);
+      }
+      page = next;
+    }
+  }
+
+  /// The page number in a `Link` header's `rel="next"` entry, or null when
+  /// there is no next page.
+  int? _nextPageOf(String? linkHeader) {
+    if (linkHeader == null) return null;
+    final m = _nextPage.firstMatch(linkHeader);
+    if (m == null) return null;
+    return int.tryParse(m.group(1)!);
+  }
+
+  @override
+  Future<GitHubRepoDetails?> repository({
+    required String owner,
+    required String repo,
+    required String token,
+  }) async {
     final resp = await _get(
-      _apiBase.replace(
-        path: '/user/repos',
-        queryParameters: {'per_page': '100', 'sort': 'updated'},
-      ),
+      _apiBase.replace(path: '/repos/$owner/$repo'),
       headers: _authHeaders(token),
     );
-    final list = jsonDecode(resp.body);
-    if (list is! List) throw const GitHubApiException('Malformed repo list');
-    return [
-      for (final e in list.whereType<Map<String, dynamic>>())
-        if (e['full_name'] is String)
-          GitHubRepo(
-            fullName: e['full_name'] as String,
-            isPrivate: (e['private'] as bool?) ?? false,
-            htmlUrl: e['html_url'] as String?,
-          ),
-    ];
+    if (resp.statusCode == 404) return null;
+    if (resp.statusCode >= 400) {
+      throw GitHubApiException('repository: HTTP ${resp.statusCode}');
+    }
+    final json = _decodeMapSafe(resp.body);
+    final fullName = json['full_name'];
+    final ownerLogin = (json['owner'] as Map?)?['login'];
+    final isPrivate = json['private'];
+    final isArchived = json['archived'];
+    final defaultBranch = json['default_branch'];
+    if (fullName is! String ||
+        ownerLogin is! String ||
+        isPrivate is! bool ||
+        isArchived is! bool ||
+        defaultBranch is! String) {
+      throw const GitHubApiException('Malformed repository response');
+    }
+    _requireBranchName(defaultBranch);
+    // `permissions` is only present for authenticated calls. Missing means
+    // we cannot prove push rights → treat as none (fail closed).
+    final permissions = json['permissions'];
+    final canPush = permissions is Map && permissions['push'] == true;
+    final canAdmin = permissions is Map && permissions['admin'] == true;
+    return GitHubRepoDetails(
+      fullName: fullName,
+      ownerLogin: ownerLogin,
+      isPrivate: isPrivate,
+      isArchived: isArchived,
+      defaultBranch: defaultBranch,
+      canPush: canPush,
+      canAdmin: canAdmin,
+    );
+  }
+
+  @override
+  Future<PagesSite?> pagesSite({
+    required String owner,
+    required String repo,
+    required String token,
+  }) async {
+    final resp = await _get(
+      _apiBase.replace(path: '/repos/$owner/$repo/pages'),
+      headers: _authHeaders(token),
+    );
+    if (resp.statusCode == 404) return null;
+    if (resp.statusCode >= 400) {
+      throw GitHubApiException('pages: HTTP ${resp.statusCode}');
+    }
+    final json = _decodeMapSafe(resp.body);
+    // `build_type` is absent on older API shapes; GitHub's default for a
+    // branch-sourced site is `legacy`.
+    final buildType = json['build_type'] ?? 'legacy';
+    if (buildType == 'workflow') {
+      return const PagesSite(
+        sourceBranch: null,
+        sourcePath: null,
+        isWorkflowBuild: true,
+      );
+    }
+    if (buildType != 'legacy') {
+      throw const GitHubApiException('Malformed Pages response');
+    }
+    final source = json['source'];
+    final branch = source is Map ? source['branch'] : null;
+    final path = source is Map ? source['path'] : null;
+    if (branch is! String || path is! String) {
+      throw const GitHubApiException('Malformed Pages response');
+    }
+    _requireBranchName(branch);
+    return PagesSite(
+      sourceBranch: branch,
+      sourcePath: path,
+      isWorkflowBuild: false,
+    );
+  }
+
+  /// Refuses a branch name the app must not put into a URL path.
+  void _requireBranchName(String branch) {
+    final segments = branch.split('/');
+    if (!_branchChars.hasMatch(branch) ||
+        segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
+      throw const GitHubApiException('Unsafe branch name');
+    }
   }
 
   @override
@@ -195,20 +341,6 @@ final class HttpGitHubApi implements GitHubApi {
         'enable Pages: HTTP ${resp.statusCode} ${_excerpt(resp.body)}',
       );
     }
-  }
-
-  @override
-  Future<String?> defaultBranch({
-    required String owner,
-    required String repo,
-    required String token,
-  }) async {
-    final resp = await _client.get(
-      _apiBase.replace(path: '/repos/$owner/$repo'),
-      headers: _authHeaders(token),
-    );
-    if (resp.statusCode >= 400) return null;
-    return _decodeMap(resp.body)['default_branch'] as String?;
   }
 
   // --- Git Data: read head tree (manifest rebuild) -------------------------
@@ -451,6 +583,16 @@ final class HttpGitHubApi implements GitHubApi {
       throw const GitHubApiException('Expected a JSON object');
     }
     return decoded;
+  }
+
+  /// [_decodeMap] that also turns a JSON syntax error into the typed
+  /// exception (a `FormatException` would embed response text).
+  Map<String, dynamic> _decodeMapSafe(String body) {
+    try {
+      return _decodeMap(body);
+    } on FormatException {
+      throw const GitHubApiException('Malformed JSON response');
+    }
   }
 
   String _excerpt(String body) =>

@@ -414,13 +414,17 @@ class _Api implements GitHubApi {
   final commits = <List<DesiredFile>>[];
 
   @override
-  Future<String?> defaultBranch({
+  Future<PagesSite?> pagesSite({
     required String owner,
     required String repo,
     required String token,
   }) async {
     reads++;
-    return 'main';
+    return const PagesSite(
+      sourceBranch: 'main',
+      sourcePath: '/',
+      isWorkflowBuild: false,
+    );
   }
 
   @override
