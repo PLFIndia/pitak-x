@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -104,4 +106,41 @@ void main() {
     expect((await c.post(url)).statusCode, 503);
     expect(calls, 1);
   });
+
+  // N08: the retry path used to leave the discarded 429/5xx response stream
+  // unlistened — a dangling connection per retried request.
+  test(
+    'the discarded first response stream is cancelled before retrying',
+    () async {
+      var calls = 0;
+      var firstBodyCancelled = false;
+      final inner = MockClient.streaming((req, _) async {
+        calls++;
+        if (calls == 1) {
+          // A 503 whose body never ends — the only way to tell "listened and
+          // cancelled" from "never touched".
+          final controller = StreamController<List<int>>(
+            onCancel: () => firstBodyCancelled = true,
+          );
+          return http.StreamedResponse(controller.stream, 503, request: req);
+        }
+        return http.StreamedResponse(
+          http.ByteStream.fromBytes('ok'.codeUnits),
+          200,
+          request: req,
+        );
+      });
+      final c = LookupHttpClient(inner, sleep: noSleep);
+
+      final resp = await c.get(url);
+
+      expect(resp.statusCode, 200);
+      expect(calls, 2);
+      expect(
+        firstBodyCancelled,
+        isTrue,
+        reason: 'the 503 body must be cancelled, not left dangling',
+      );
+    },
+  );
 }

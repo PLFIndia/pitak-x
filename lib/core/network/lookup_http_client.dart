@@ -20,6 +20,7 @@
 /// own protocol-level retry policy, and blind retries there would fight it.
 library;
 
+import 'dart:async';
 import 'dart:math';
 
 import 'package:http/http.dart' as http;
@@ -68,13 +69,30 @@ final class LookupHttpClient extends http.BaseClient {
     }
     if (!_retryable(first.statusCode)) return first;
 
+    // N08: `first` is being discarded. Its body was never listened to, so the
+    // connection would stay open (and keep receiving) until GC. Cancel it
+    // before the retry — the same idiom as `package:http`'s RetryClient.
+    // The retry-failed fallback below returns `first` to the caller, so
+    // only its status/headers are used from then on; the body is gone.
+    unawaited(first.stream.listen(null).cancel().catchError((_) {}));
+
     await _backoff();
     try {
       return await _inner.send(_copy(request));
     } on http.ClientException {
-      // Retry also failed: surface the original response rather than a
-      // thrown error so callers keep their status-code handling.
-      return first;
+      // Retry also failed: surface the original STATUS rather than a thrown
+      // error so callers keep their status-code handling. The body was
+      // cancelled above; return an empty one instead of a dead stream.
+      return http.StreamedResponse(
+        const http.ByteStream(Stream<List<int>>.empty()),
+        first.statusCode,
+        contentLength: 0,
+        request: first.request,
+        headers: first.headers,
+        isRedirect: first.isRedirect,
+        persistentConnection: first.persistentConnection,
+        reasonPhrase: first.reasonPhrase,
+      );
     }
   }
 

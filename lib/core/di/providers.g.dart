@@ -497,11 +497,18 @@ final vaultRepositoryProvider = AutoDisposeProvider<VaultRepository>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef VaultRepositoryRef = AutoDisposeProviderRef<VaultRepository>;
-String _$httpClientHash() => r'82c4477c8bb11828af05825f58ded7ada98e8f2a';
+String _$httpClientHash() => r'648965b3207e4b12fb288ad3ef972854752613c6';
 
-/// Shared HTTP client (#30, closes audit m1). Timeout-bounded so a dead
-/// socket (OEM app freezers, dropped mobile data) fails closed instead of
-/// hanging callers forever. Closed when disposed.
+/// Shared HTTP client (#30, closes audit m1; N08). Every request through it
+/// is bounded four ways and ABORTED (socket closed) when a bound trips, so a
+/// dead socket (OEM app freezers, dropped mobile data), a trickling body or
+/// an oversized reply fails closed instead of hanging or filling memory:
+///  - 60 s to connect, 60 s between body chunks (per-phase `timeout`);
+///  - 60 s for the whole request (`totalDeadline`; a body that sends one
+///    byte every 59 s used to live forever);
+///  - 64 MiB of body (`maxResponseBytes`, the default — sized to the largest
+///    legitimate reply, a 100 000-row `books.json` read-back).
+/// Closed when disposed.
 ///
 /// Copied from [httpClient].
 @ProviderFor(httpClient)
@@ -537,13 +544,14 @@ final isbnCacheProvider = Provider<IsbnCache>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef IsbnCacheRef = ProviderRef<IsbnCache>;
-String _$lookupHttpClientHash() => r'ae1a1e6fd07615bd614129b579735fdfe05218e0';
+String _$lookupHttpClientHash() => r'b3c4ea0272408aceb7afd2c145148c0243ba1d72';
 
 /// HTTP client for the public book-metadata APIs only. Differs from the
 /// shared [httpClient] in two ways (REVIEW: lookup — "fails quite often"):
-///  - 10 s timeout, not 60: lookups are interactive (user watching a
-///    spinner); a slow provider should fail over to the fallback quickly,
-///    not pin the button for a minute.
+///  - 10 s per phase and 30 s total, not 60: lookups are interactive (user
+///    watching a spinner); a slow provider should fail over to the fallback
+///    quickly, not pin the button for a minute. 30 s total is 3× the phase
+///    limit so a healthy-but-slow JSON reply still completes (N08, D1).
 ///  - [LookupHttpClient] on top: descriptive User-Agent (Open Library's API
 ///    policy throttles anonymous clients) + one jittered retry on 429/5xx.
 ///
@@ -683,17 +691,39 @@ final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
-String _$remoteCoverFetcherHash() =>
-    r'501722a897227e9a5d7a1b2a0bfe78e0f02e7a31';
+String _$boundedCoverDownloadHash() =>
+    r'01522357ad2ef65c99f4950654c67474aa1c094e';
 
-/// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
-/// with the publish downscale applied. Injected into the publish controller
-/// as a domain function type so the application layer never constructs the
-/// HTTP-backed fetcher itself (§3.1).
+/// Bounded, typed remote-cover download (M1: allow-list + deadline + byte
+/// cap; N08: the deadline aborts the socket) with the publish downscale
+/// applied. THE single implementation both the publish path and the M09
+/// on-device materialisation use, so the display path can never fetch
+/// anything publish would refuse. Returns the publish-domain
+/// [CoverFetchResult] so the caller can tell WHY a cover was refused.
 ///
-/// M09: this is ALSO the download used to materialise a book's remote cover
-/// on-device — one implementation, so the display path can never fetch
-/// anything publish would refuse.
+/// Copied from [boundedCoverDownload].
+@ProviderFor(boundedCoverDownload)
+final boundedCoverDownloadProvider =
+    AutoDisposeProvider<BoundedCoverDownload>.internal(
+      boundedCoverDownload,
+      name: r'boundedCoverDownloadProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$boundedCoverDownloadHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef BoundedCoverDownloadRef = AutoDisposeProviderRef<BoundedCoverDownload>;
+String _$remoteCoverFetcherHash() =>
+    r'742d985f4f48dcb51857da1b934c748cd33799d6';
+
+/// Publish-side view of [boundedCoverDownload]: bytes or null. Injected into
+/// the publish controller as a domain function type so the application layer
+/// never constructs the HTTP-backed fetcher itself (§3.1). Publish only needs
+/// "did we get a cover"; the refusal reason is a display-path diagnostic.
 ///
 /// Copied from [remoteCoverFetcher].
 @ProviderFor(remoteCoverFetcher)
@@ -712,11 +742,17 @@ final remoteCoverFetcherProvider =
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
 String _$materializeRemoteCoverUseCaseHash() =>
-    r'4b99a3bf2398855e4e30235562e86f1c25af07f3';
+    r'b734d46f7ab9ab5d4c25d8746023e1bd9bafabf9';
 
 /// Materialises a book's allow-listed remote cover as a local file (M09),
-/// through the same bounded fetcher publishing uses and the same cover store
+/// through the same bounded download publishing uses and the same cover store
 /// / janitor a photo replace uses.
+///
+/// N11 D4-b: a refused download is reported here as ONE debug-build log line
+/// carrying the book id and the coarse [CoverRefusal] — never the URL or host
+/// (AGENTS.md §6.2). `kDebugMode` makes it a no-op in release builds; no
+/// telemetry (§3.4). The composition root owns the Flutter import so the
+/// application layer stays framework-free.
 ///
 /// Copied from [materializeRemoteCoverUseCase].
 @ProviderFor(materializeRemoteCoverUseCase)

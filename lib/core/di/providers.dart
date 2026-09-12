@@ -11,6 +11,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -69,6 +70,7 @@ import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway, PublishedFileFetcher, RemoteCoverFetcher;
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
+import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
@@ -321,12 +323,22 @@ Future<MarkWishlistPurchasedUseCase> markWishlistPurchasedUseCase(
 VaultRepository vaultRepository(VaultRepositoryRef ref) =>
     const FfiVaultRepository();
 
-/// Shared HTTP client (#30, closes audit m1). Timeout-bounded so a dead
-/// socket (OEM app freezers, dropped mobile data) fails closed instead of
-/// hanging callers forever. Closed when disposed.
+/// Shared HTTP client (#30, closes audit m1; N08). Every request through it
+/// is bounded four ways and ABORTED (socket closed) when a bound trips, so a
+/// dead socket (OEM app freezers, dropped mobile data), a trickling body or
+/// an oversized reply fails closed instead of hanging or filling memory:
+///  - 60 s to connect, 60 s between body chunks (per-phase `timeout`);
+///  - 60 s for the whole request (`totalDeadline`; a body that sends one
+///    byte every 59 s used to live forever);
+///  - 64 MiB of body (`maxResponseBytes`, the default — sized to the largest
+///    legitimate reply, a 100 000-row `books.json` read-back).
+/// Closed when disposed.
 @Riverpod(keepAlive: true)
 http.Client httpClient(HttpClientRef ref) {
-  final client = TimeoutHttpClient(http.Client());
+  final client = TimeoutHttpClient(
+    http.Client(),
+    totalDeadline: const Duration(seconds: 60),
+  );
   ref.onDispose(client.close);
   return client;
 }
@@ -337,15 +349,20 @@ IsbnCache isbnCache(IsbnCacheRef ref) => InMemoryIsbnCache();
 
 /// HTTP client for the public book-metadata APIs only. Differs from the
 /// shared [httpClient] in two ways (REVIEW: lookup — "fails quite often"):
-///  - 10 s timeout, not 60: lookups are interactive (user watching a
-///    spinner); a slow provider should fail over to the fallback quickly,
-///    not pin the button for a minute.
+///  - 10 s per phase and 30 s total, not 60: lookups are interactive (user
+///    watching a spinner); a slow provider should fail over to the fallback
+///    quickly, not pin the button for a minute. 30 s total is 3× the phase
+///    limit so a healthy-but-slow JSON reply still completes (N08, D1).
 ///  - [LookupHttpClient] on top: descriptive User-Agent (Open Library's API
 ///    policy throttles anonymous clients) + one jittered retry on 429/5xx.
 @Riverpod(keepAlive: true)
 http.Client lookupHttpClient(LookupHttpClientRef ref) {
   final client = LookupHttpClient(
-    TimeoutHttpClient(http.Client(), timeout: const Duration(seconds: 10)),
+    TimeoutHttpClient(
+      http.Client(),
+      timeout: const Duration(seconds: 10),
+      totalDeadline: const Duration(seconds: 30),
+    ),
   );
   ref.onDispose(client.close);
   return client;
@@ -400,30 +417,50 @@ SetupGitHubRepo setupGitHubRepo(SetupGitHubRepoRef ref) => SetupGitHubRepo(
   ref.watch(publishCredentialStoreProvider),
 );
 
-/// Bounded remote-cover fetch port (M1: allow-list + timeout + byte cap),
-/// with the publish downscale applied. Injected into the publish controller
-/// as a domain function type so the application layer never constructs the
-/// HTTP-backed fetcher itself (§3.1).
-///
-/// M09: this is ALSO the download used to materialise a book's remote cover
-/// on-device — one implementation, so the display path can never fetch
-/// anything publish would refuse.
+/// Bounded, typed remote-cover download (M1: allow-list + deadline + byte
+/// cap; N08: the deadline aborts the socket) with the publish downscale
+/// applied. THE single implementation both the publish path and the M09
+/// on-device materialisation use, so the display path can never fetch
+/// anything publish would refuse. Returns the publish-domain
+/// [CoverFetchResult] so the caller can tell WHY a cover was refused.
 @riverpod
-RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
+BoundedCoverDownload boundedCoverDownload(BoundedCoverDownloadRef ref) {
   final client = ref.watch(httpClientProvider);
   return (url) async {
-    final raw = await BoundedCoverFetcher(client: client).fetch(url);
-    if (raw == null) return null;
+    final result = await BoundedCoverFetcher(client: client).fetch(url);
+    if (result is! CoverFetched) return result;
     // Downscale before publishing (400x600 q80): small git push AND EXIF/GPS
     // stripped. No raw fallback — a cover that can't be re-encoded is
     // dropped, never published unstripped (REVIEW_FINDINGS_2 S11).
-    return ImageDownscaler.downscaleJpeg(raw);
+    final jpeg = ImageDownscaler.downscaleJpeg(result.bytes);
+    return jpeg == null
+        ? const CoverRefused(CoverRefusal.notAnImage)
+        : CoverFetched(jpeg);
+  };
+}
+
+/// Publish-side view of [boundedCoverDownload]: bytes or null. Injected into
+/// the publish controller as a domain function type so the application layer
+/// never constructs the HTTP-backed fetcher itself (§3.1). Publish only needs
+/// "did we get a cover"; the refusal reason is a display-path diagnostic.
+@riverpod
+RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
+  final download = ref.watch(boundedCoverDownloadProvider);
+  return (url) async => switch (await download(url)) {
+    CoverFetched(:final bytes) => bytes,
+    CoverRefused() => null,
   };
 }
 
 /// Materialises a book's allow-listed remote cover as a local file (M09),
-/// through the same bounded fetcher publishing uses and the same cover store
+/// through the same bounded download publishing uses and the same cover store
 /// / janitor a photo replace uses.
+///
+/// N11 D4-b: a refused download is reported here as ONE debug-build log line
+/// carrying the book id and the coarse [CoverRefusal] — never the URL or host
+/// (AGENTS.md §6.2). `kDebugMode` makes it a no-op in release builds; no
+/// telemetry (§3.4). The composition root owns the Flutter import so the
+/// application layer stays framework-free.
 @riverpod
 Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
   MaterializeRemoteCoverUseCaseRef ref,
@@ -434,8 +471,13 @@ Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
   return MaterializeRemoteCoverUseCase(
     books: books,
     files: files,
-    download: ref.watch(remoteCoverFetcherProvider),
+    download: ref.watch(boundedCoverDownloadProvider),
     releaseReference: janitor.releaseReference,
+    onRefused: (bookId, reason) {
+      if (kDebugMode) {
+        debugPrint('remote cover: book $bookId refused (${reason.name})');
+      }
+    },
   );
 }
 

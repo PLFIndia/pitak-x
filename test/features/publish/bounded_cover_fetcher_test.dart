@@ -3,35 +3,97 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
 
-/// Builds a streaming MockClient whose body is [chunks], emitted in order.
-/// [recordHosts] captures every host the client was asked to hit, so a test can
-/// assert that a rejected URL never produced a network call.
+/// Builds a streaming MockClient whose body is [chunks], emitted in order,
+/// one per [chunkDelay] tick. [recordHosts] captures every host the client
+/// was asked to hit, so a test can assert that a rejected URL never produced
+/// a network call. [probe] records what the SERVER side saw.
+///
+/// Honours `abortTrigger` the way `IOClient` does (inject the abort error,
+/// close the body) — `MockClient` itself never aborts, it documents that the
+/// handler must.
 MockClient _streaming(
   List<List<int>> chunks, {
   int status = 200,
   int? contentLength,
   List<String>? recordHosts,
   Duration chunkDelay = Duration.zero,
+  _BodyProbe? probe,
 }) {
   return MockClient.streaming((request, _) async {
     recordHosts?.add(request.url.host);
-    Stream<List<int>> body() async* {
-      for (final c in chunks) {
-        if (chunkDelay != Duration.zero) await Future<void>.delayed(chunkDelay);
-        yield c;
+    var next = 0;
+    Timer? timer;
+    late StreamController<List<int>> body;
+    void emit() {
+      if (body.isClosed) return;
+      if (next >= chunks.length) {
+        timer?.cancel();
+        unawaited(body.close());
+        return;
       }
+      probe?.chunksPulled++;
+      body.add(chunks[next++]);
     }
 
+    body = StreamController<List<int>>(
+      onListen: () {
+        if (chunkDelay == Duration.zero) {
+          // Emit everything in one go, then close.
+          while (!body.isClosed) {
+            emit();
+          }
+        } else {
+          timer = Timer.periodic(chunkDelay, (_) => emit());
+        }
+      },
+      onCancel: () {
+        timer?.cancel();
+        probe?.bodyClosed = true;
+      },
+    );
+    if (request case http.Abortable(:final abortTrigger?)) {
+      unawaited(
+        abortTrigger.whenComplete(() {
+          probe?.aborted = true;
+          timer?.cancel();
+          if (!body.isClosed) {
+            body
+              ..addError(http.RequestAbortedException(request.url))
+              ..close();
+          }
+        }),
+      );
+    }
     return http.StreamedResponse(
-      body(),
+      body.stream,
       status,
       contentLength: contentLength,
       request: request,
     );
   });
 }
+
+/// What the SERVER side observed: how many chunks were actually pulled,
+/// whether the body was torn down, and whether the request's abort trigger
+/// fired. A leak looks like every chunk pulled on a rejected response.
+class _BodyProbe {
+  int chunksPulled = 0;
+  bool bodyClosed = false;
+  bool aborted = false;
+}
+
+List<int>? _bytesOf(CoverFetchResult r) => switch (r) {
+  CoverFetched(:final bytes) => bytes,
+  CoverRefused() => null,
+};
+
+CoverRefusal? _reasonOf(CoverFetchResult r) => switch (r) {
+  CoverFetched() => null,
+  CoverRefused(:final reason) => reason,
+};
 
 void main() {
   const allowed = 'https://covers.openlibrary.org/b/id/123-L.jpg';
@@ -47,7 +109,7 @@ void main() {
 
       final result = await fetcher.fetch('https://evil.example.com/track.jpg');
 
-      expect(result, isNull);
+      expect(_reasonOf(result), CoverRefusal.disallowedUrl);
       expect(hosts, isEmpty, reason: 'poisoned URL must not leave the device');
     });
 
@@ -60,8 +122,10 @@ void main() {
       );
 
       expect(
-        await fetcher.fetch('http://covers.openlibrary.org/b/id/1-L.jpg'),
-        isNull,
+        _reasonOf(
+          await fetcher.fetch('http://covers.openlibrary.org/b/id/1-L.jpg'),
+        ),
+        CoverRefusal.disallowedUrl,
       );
       expect(hosts, isEmpty);
     });
@@ -75,8 +139,10 @@ void main() {
       );
 
       expect(
-        await fetcher.fetch('https://x@covers.openlibrary.org/1.jpg'),
-        isNull,
+        _reasonOf(
+          await fetcher.fetch('https://x@covers.openlibrary.org/1.jpg'),
+        ),
+        CoverRefusal.disallowedUrl,
       );
       expect(hosts, isEmpty);
     });
@@ -92,7 +158,7 @@ void main() {
         maxBytes: 5,
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.tooLarge);
     });
 
     test('rejects on an honest oversized Content-Length', () async {
@@ -103,7 +169,7 @@ void main() {
         maxBytes: 5,
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.tooLarge);
     });
 
     test('accepts a body exactly at the cap', () async {
@@ -114,7 +180,7 @@ void main() {
         maxBytes: 5,
       );
 
-      expect(await fetcher.fetch(allowed), equals([1, 2, 3, 4, 5]));
+      expect(_bytesOf(await fetcher.fetch(allowed)), equals([1, 2, 3, 4, 5]));
     });
   });
 
@@ -126,7 +192,7 @@ void main() {
         ], status: 404),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.httpStatus);
     });
 
     test('returns null when the request exceeds the timeout', () async {
@@ -137,7 +203,7 @@ void main() {
         timeout: const Duration(milliseconds: 20),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.timedOut);
     });
   });
 
@@ -149,7 +215,7 @@ void main() {
       ], contentLength: 4),
     );
 
-    expect(await fetcher.fetch(allowed), equals([10, 20, 30, 40]));
+    expect(_bytesOf(await fetcher.fetch(allowed)), equals([10, 20, 30, 40]));
   });
 
   // REVIEW_FINDINGS_2 S6: http.Request defaults to followRedirects = true,
@@ -200,7 +266,10 @@ void main() {
         }, hits: hits),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(
+        _reasonOf(await fetcher.fetch(allowed)),
+        CoverRefusal.redirectRefused,
+      );
       expect(hits, ['covers.openlibrary.org/b/id/123-L.jpg']);
     });
 
@@ -214,7 +283,7 @@ void main() {
         }),
       );
 
-      expect(await fetcher.fetch(start), equals([9, 9]));
+      expect(_bytesOf(await fetcher.fetch(start)), equals([9, 9]));
     });
 
     test('a relative Location resolves against the current URL', () async {
@@ -226,7 +295,7 @@ void main() {
         }),
       );
 
-      expect(await fetcher.fetch(allowed), equals([7]));
+      expect(_bytesOf(await fetcher.fetch(allowed)), equals([7]));
     });
 
     test('a redirect to plain http is refused', () async {
@@ -237,7 +306,10 @@ void main() {
         }),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(
+        _reasonOf(await fetcher.fetch(allowed)),
+        CoverRefusal.redirectRefused,
+      );
     });
 
     test('a redirect loop is abandoned after maxRedirects hops', () async {
@@ -246,7 +318,10 @@ void main() {
         client: router({allowed: (req) => redirect(req, allowed)}, hits: hits),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(
+        _reasonOf(await fetcher.fetch(allowed)),
+        CoverRefusal.tooManyRedirects,
+      );
       // Initial request + maxRedirects follows, then the loop is cut.
       expect(hits, hasLength(1 + BoundedCoverFetcher.maxRedirects));
     });
@@ -262,7 +337,123 @@ void main() {
         ),
       );
 
-      expect(await fetcher.fetch(allowed), isNull);
+      expect(
+        _reasonOf(await fetcher.fetch(allowed)),
+        CoverRefusal.redirectRefused,
+      );
+    });
+  });
+
+  // N08 (astra-review): "rejected oversized/non-success cover responses are
+  // drained without a byte bound" and "Future.timeout stops waiting, not the
+  // source request". These observe the SERVER side of each rejection.
+  group('N08 — rejected responses are cancelled, not drained', () {
+    // Ten chunks, but the fetcher must stop after the FIRST decision point.
+    List<List<int>> tenChunks() => List.generate(10, (_) => [1, 2, 3]);
+
+    test('a non-2xx body is not read past the status line', () async {
+      final probe = _BodyProbe();
+      final fetcher = BoundedCoverFetcher(
+        client: _streaming(
+          tenChunks(),
+          status: 404,
+          chunkDelay: const Duration(milliseconds: 1),
+          probe: probe,
+        ),
+      );
+
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.httpStatus);
+      // Let any stray drain run before we look.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(probe.chunksPulled, 0, reason: 'nothing drained');
+      expect(probe.bodyClosed, isTrue, reason: 'source cancelled');
+    });
+
+    test('an oversized Content-Length body is not read at all', () async {
+      final probe = _BodyProbe();
+      final fetcher = BoundedCoverFetcher(
+        client: _streaming(
+          tenChunks(),
+          contentLength: 1000,
+          chunkDelay: const Duration(milliseconds: 1),
+          probe: probe,
+        ),
+        maxBytes: 5,
+      );
+
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.tooLarge);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(probe.chunksPulled, 0);
+      expect(probe.bodyClosed, isTrue);
+    });
+
+    test('a redirect hop body is cancelled, not drained', () async {
+      final probe = _BodyProbe();
+      final fetcher = BoundedCoverFetcher(
+        client: _streaming(
+          tenChunks(),
+          status: 302,
+          chunkDelay: const Duration(milliseconds: 1),
+          probe: probe,
+        ),
+      );
+
+      // No Location header → refused after the hop's status is read.
+      expect(
+        _reasonOf(await fetcher.fetch(allowed)),
+        CoverRefusal.redirectRefused,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(probe.chunksPulled, 0);
+      expect(probe.bodyClosed, isTrue);
+    });
+
+    test('an over-cap body stops at the crossing chunk and aborts', () async {
+      final probe = _BodyProbe();
+      final fetcher = BoundedCoverFetcher(
+        client: _streaming(
+          tenChunks(),
+          chunkDelay: const Duration(milliseconds: 1),
+          probe: probe,
+        ),
+        maxBytes: 5, // chunk 2 crosses (6 > 5)
+      );
+
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.tooLarge);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(probe.chunksPulled, 2, reason: 'no chunk pulled after the cap');
+      expect(probe.bodyClosed, isTrue);
+      expect(probe.aborted, isTrue, reason: 'socket torn down, not just left');
+    });
+
+    test('the timeout ABORTS the request and stops the body', () async {
+      final probe = _BodyProbe();
+      final fetcher = BoundedCoverFetcher(
+        client: _streaming(
+          tenChunks(),
+          chunkDelay: const Duration(milliseconds: 30),
+          probe: probe,
+        ),
+        timeout: const Duration(milliseconds: 50),
+      );
+
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.timedOut);
+      final pulledAtTimeout = probe.chunksPulled;
+      expect(probe.aborted, isTrue, reason: 'abortTrigger must fire');
+      // HEAD kept streaming after the caller gave up; a real deadline does
+      // not pull a single further chunk.
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(probe.chunksPulled, pulledAtTimeout);
+      expect(probe.bodyClosed, isTrue);
+    });
+
+    test('a transport error is a typed refusal', () async {
+      final fetcher = BoundedCoverFetcher(
+        client: MockClient.streaming(
+          (request, _) async => throw http.ClientException('reset'),
+        ),
+      );
+      expect(_reasonOf(await fetcher.fetch(allowed)), CoverRefusal.transport);
     });
   });
 }

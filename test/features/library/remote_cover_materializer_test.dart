@@ -11,6 +11,7 @@ import 'package:pitaka/features/library/application/remote_cover_materializer.da
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -25,7 +26,7 @@ class _ScriptedUseCase {
   MaterializeRemoteCoverUseCase build() => MaterializeRemoteCoverUseCase(
     books: _CountingBooks(this),
     files: _NoFiles(),
-    download: (_) async => null,
+    download: (_) async => const CoverRefused(CoverRefusal.transport),
     releaseReference: (_) async {},
   );
 }

@@ -19,6 +19,14 @@
 /// Pipeline borrowed from `BookCoverController.replaceCover` (this repo):
 /// save file → update row (delete the new file if that fails) → release the
 /// previous reference → refresh the list. Every failure is a typed `Either`.
+///
+/// N08 / N11 D4-b: a refused download used to disappear without trace (S13
+/// note: a cover-host naming change would silently re-break covers). The
+/// download port now returns a typed [CoverFetchResult]; on a refusal this
+/// use case — the one place that knows BOTH the book id and the reason —
+/// reports the pair through the optional [ReportCoverRefusal] port. The
+/// composition root decides what to do with it (a debug-only log line); no
+/// URL ever travels with it.
 library;
 
 import 'dart:typed_data';
@@ -27,16 +35,22 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 
-/// Fetches an allow-listed remote cover and returns publish-ready JPEG bytes,
-/// or null when the URL is refused, the host fails, the body exceeds the cap,
-/// the request times out, or the image cannot be re-encoded. Same signature
-/// as the publish port so DI wires ONE implementation for both.
-typedef BoundedCoverDownload = Future<List<int>?> Function(String url);
+/// Fetches an allow-listed remote cover: [CoverFetched] with publish-ready
+/// JPEG bytes, or [CoverRefused] naming why (URL refused, host failed, body
+/// over the cap, deadline exceeded, not an image). Wired by DI to the SAME
+/// bounded fetcher the publish path uses, so the display path can never
+/// fetch anything publish would refuse.
+typedef BoundedCoverDownload = Future<CoverFetchResult> Function(String url);
 
 /// Releases a cover reference that no row points at any more (janitor).
 typedef ReleaseCoverReference = Future<void> Function(String? coverRef);
+
+/// Receives (book id, refusal reason) for a download that did not produce a
+/// cover. Diagnostic only — the user-facing outcome is unchanged.
+typedef ReportCoverRefusal = void Function(int bookId, CoverRefusal reason);
 
 /// Materialises one book's remote cover as a local file.
 final class MaterializeRemoteCoverUseCase {
@@ -46,15 +60,18 @@ final class MaterializeRemoteCoverUseCase {
     required CoverFiles files,
     required BoundedCoverDownload download,
     required ReleaseCoverReference releaseReference,
+    ReportCoverRefusal? onRefused,
   }) : _books = books,
        _files = files,
        _download = download,
-       _release = releaseReference;
+       _release = releaseReference,
+       _onRefused = onRefused;
 
   final BookRepository _books;
   final CoverFiles _files;
   final BoundedCoverDownload _download;
   final ReleaseCoverReference _release;
+  final ReportCoverRefusal? _onRefused;
 
   /// Fetches and stores the cover of book [bookId].
   ///
@@ -72,8 +89,14 @@ final class MaterializeRemoteCoverUseCase {
       final url = CoverUrlAllowList.remoteHttpsOf(book.coverUrl);
       if (url == null) return right(unit);
 
-      final jpeg = await _download(url);
-      if (jpeg == null) return left(const NetworkFailure());
+      final List<int> jpeg;
+      switch (await _download(url)) {
+        case CoverFetched(:final bytes):
+          jpeg = bytes;
+        case CoverRefused(:final reason):
+          _onRefused?.call(book.id, reason);
+          return left(const NetworkFailure());
+      }
 
       final String localRef;
       try {
