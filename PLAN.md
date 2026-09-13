@@ -175,7 +175,7 @@ assumption.
   provider body changes only if D1 = a … `providers.dart:907` IS inside a
   `@riverpod` function → `.g.dart` hash changes → run `build_runner`).
 - [x] 9. Lib-diff privacy scan (print/log/http/Uri added? isolate captures?).
-- [ ] 10. Commit approval (explicit paths), push approval, CI check.
+- [x] 10. Commit approval (explicit paths), push approval, CI check.
 
 ## Out-of-scope observations
 
@@ -222,7 +222,12 @@ assumption.
 - **Privacy:** lib-diff scan — no print/log/http/Uri/Platform added; the two
   isolate closures capture `job` (paths, rows, ints, ciphertext blob string)
   and two `List<Book>` respectively. The vault passphrase/key never appears.
-- Commit + push: pending approval (see §Commit paths).
+- **Committed `9264dbf`** (17 paths, pre-commit hook: "generated code is
+  current"), **pushed** `f3f23b0..9264dbf main -> main` (no force). CI run
+  `34761708480` — result recorded in `fix-schedule.md` S28 addendum.
+  Housekeeping: README test count 1596 → 1604; `appDetails.md` (local)
+  backup/merge entries + 3 gotchas (sqlite3 tear-off, N14's second
+  gate, `planMergeInline`).
 
 ## Commit paths (explicit — never `git add -A`)
 
