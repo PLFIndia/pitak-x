@@ -7,10 +7,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// N03 widget tests: the detail page must show the CURRENT row, not the
 /// snapshot it was pushed with, and an Edit started from it must save on top
@@ -57,16 +58,19 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(books);
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) async => right(books);
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String q, {
-    required BookSort sort,
-    String? language,
-  }) async => right(const []);
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? const <Book>[] : books;
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+    );
+  }
+
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);

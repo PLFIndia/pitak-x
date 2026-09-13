@@ -4,28 +4,37 @@
 /// typed [Failure]s (fail-closed). UUIDs are minted here at first persist,
 /// mirroring Kotlin `BookMapper.toEntity`.
 ///
-/// ## Ordering and filtering happen INSIDE SQLite (N10-d, astra-review.md N10)
+/// ## Ordering, filtering AND paging happen INSIDE SQLite (N10-d, review N10)
 ///
-/// Both list reads — [DriftBookRepository.query] (blank search box) and
-/// [DriftBookRepository.search] (typed query, FTS5) — return rows in their
-/// FINAL order, already narrowed to the language facet. Nothing is re-sorted
-/// or re-filtered in Dart afterwards. Why that matters: a later `LIMIT`/page
-/// (N10-d part 2) can only be correct if SQLite's first N rows ARE the first
-/// N rows the user should see. Until this change the Age-group sort ordered
-/// by the raw token in SQL (`above-10 < above-15 < above-3`, alphabetical)
-/// and fixed the order in Dart — fine for a whole-table read, wrong for any
-/// page.
+/// The one list read, [DriftBookRepository.page], has two statements behind
+/// it — a typed Drift select for a blank search box and a hand-written FTS5
+/// join for typed text — and both return rows in their FINAL order, already
+/// narrowed to the language facet, already cut to the requested window.
+/// Nothing is re-sorted, re-filtered or sliced in Dart afterwards. Why that
+/// matters: a `LIMIT/OFFSET` page can only be correct if SQLite's rows
+/// `offset..offset+limit` ARE the rows the user should see there. Until S29
+/// the Age-group sort ordered by the raw token in SQL (`above-10 < above-15 <
+/// above-3`, alphabetical) and fixed the order in Dart — fine for a
+/// whole-table read, wrong for any page. Until S30 the controller read the
+/// whole catalogue on every load.
 ///
 /// The ordering rules are the domain's `BookSorter` contract (N05). The SQL
 /// here is its twin, and `drift_book_repository_test.dart` proves the two
-/// agree for every sort × filter combination on a seeded fixture.
+/// agree for every sort × filter combination on a seeded fixture, read back
+/// through small pages so every seam is crossed.
+///
+/// `hasMore` is decided here by asking for `limit + 1` rows and dropping the
+/// extra one: one statement, no `COUNT(*)` (which over the FTS join would be
+/// a second full walk of the index).
 library;
 
 import 'package:drift/drift.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -52,33 +61,55 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
   }) async {
+    // Boundary clamps (AGENTS.md §6.5): the window is produced by the
+    // controller, never by the user, but a bug or a hostile caller must not
+    // be able to ask SQLite for a negative window or the whole catalogue.
+    final size = limit.clamp(1, maxLibraryPageSize);
+    final skip = offset < 0 ? 0 : offset;
     try {
-      final q = _db.select(_db.books);
-      final lang = _languageFacet(language);
-      if (lang != null) {
-        // D1-a: exact match on the STORED string. The facet value comes from
-        // `distinctLanguages()` (the stored spelling verbatim), so equality
-        // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
-        // previous `lower(language) = lower(?)` silently missed every
-        // non-Latin language name (e.g. `Ελληνικά`).
-        q.where((t) => t.language.equals(lang));
-      }
-      q.orderBy(_orderingTerms(sort));
-      final rows = await q.get();
-      return right(rows.map((r) => r.toDomain()).toList());
+      // +1 probe row: if it comes back, another page exists. Dropped below.
+      final rows = query.isSearch
+          ? await _searchRows(query, limit: size + 1, offset: skip)
+          : await _listRows(query, limit: size + 1, offset: skip);
+      final hasMore = rows.length > size;
+      final items = (hasMore ? rows.take(size) : rows)
+          .map((r) => r.toDomain())
+          .toList(growable: false);
+      return right(BookPage(items: items, hasMore: hasMore));
     } on Object catch (e) {
-      return left(StorageFailure('query: $e'));
+      return left(StorageFailure('page: $e'));
     }
   }
 
-  /// Normalises the language facet: trimmed, blank → null ("all languages").
-  static String? _languageFacet(String? language) {
-    final lang = language?.trim();
-    return (lang == null || lang.isEmpty) ? null : lang;
+  /// Blank search box: typed Drift select, ordered by [_orderingTerms],
+  /// narrowed to the facet, windowed by SQLite.
+  Future<List<BookRow>> _listRows(
+    LibraryQuery query, {
+    required int limit,
+    required int offset,
+  }) {
+    final q = _db.select(_db.books);
+    final lang = query.language;
+    if (lang != null) {
+      // D1-a: exact match on the STORED string. The facet value comes from
+      // `distinctLanguages()` (the stored spelling verbatim), so equality
+      // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
+      // previous `lower(language) = lower(?)` silently missed every
+      // non-Latin language name (e.g. `Ελληνικά`).
+      q.where((t) => t.language.equals(lang));
+    }
+    q
+      ..orderBy(_orderingTerms(query.sort))
+      // Drift writes `LIMIT n OFFSET m` from these two ints (verified in
+      // drift 2.28.2 `components/limit.dart`); they are clamped ints, never
+      // user text.
+      ..limit(limit, offset: offset);
+    return q.get();
   }
 
   /// Age band as an integer rank, in SQL. `AgeGroup.sortRank` (not the token's
@@ -137,8 +168,8 @@ class DriftBookRepository implements BookRepository {
     ];
   }
 
-  /// The raw-SQL ORDER BY for [sort], for the FTS statement in [search] (which
-  /// is hand-written SQL because `books_fts` is a virtual table Drift does not
+  /// The raw-SQL ORDER BY for [sort], for the FTS statement in [_searchRows]
+  /// (hand-written SQL because `books_fts` is a virtual table Drift does not
   /// model). `b` is the alias of `books` in that statement. MUST order exactly
   /// like [_orderingTerms] — `drift_book_repository_test.dart` checks both
   /// paths against the same oracle. Contains only compile-time constants
@@ -364,39 +395,40 @@ class DriftBookRepository implements BookRepository {
     }
   }
 
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String query, {
-    required BookSort sort,
-    String? language,
+  /// Typed search box: match the FTS5 index, join back to `books` for full
+  /// rows, then narrow, order AND window in the SAME statement so the page
+  /// is final (N10-d). The search text and the facet are bound variables
+  /// (never interpolated); the ORDER BY text is built from enum constants
+  /// only; LIMIT/OFFSET are bound clamped ints.
+  Future<List<BookRow>> _searchRows(
+    LibraryQuery query, {
+    required int limit,
+    required int offset,
   }) async {
-    final trimmed = query.trim();
-    if (trimmed.isEmpty) return right(const []);
-    try {
-      // Match against the FTS5 index, join back to books for full rows, then
-      // narrow and order in the SAME statement so the result is final (N10-d).
-      // The language facet is a bound variable (never interpolated); the
-      // ORDER BY text is built from enum constants only.
-      final lang = _languageFacet(language);
-      final rows = await _db
-          .customSelect(
-            'SELECT b.* FROM books_fts f '
-            'JOIN books b ON b.id = f.rowid '
-            'WHERE books_fts MATCH ?1 '
-            '${lang == null ? '' : 'AND b.language = ?2 '}'
-            '${_orderSql(sort)}',
-            variables: [
-              Variable<String>(_ftsQuery(trimmed)),
-              if (lang != null) Variable<String>(lang),
-            ],
-            readsFrom: {_db.books},
-          )
-          .get();
-      final books = rows.map((r) => _db.books.map(r.data).toDomain()).toList();
-      return right(books);
-    } on Object catch (e) {
-      return left(StorageFailure('search: $e'));
-    }
+    final lang = query.language;
+    // Positional binding: ?1 match, ?2/?3 limit+offset when there is no
+    // facet, or ?2 facet then ?3/?4 limit+offset. Built as a list so the
+    // indices in the SQL text and the variables list cannot drift apart.
+    final variables = <Variable<Object>>[
+      Variable<String>(_ftsQuery(query.text)),
+      if (lang != null) Variable<String>(lang),
+      Variable<int>(limit),
+      Variable<int>(offset),
+    ];
+    final limitIndex = lang == null ? 2 : 3;
+    final rows = await _db
+        .customSelect(
+          'SELECT b.* FROM books_fts f '
+          'JOIN books b ON b.id = f.rowid '
+          'WHERE books_fts MATCH ?1 '
+          '${lang == null ? '' : 'AND b.language = ?2 '}'
+          '${_orderSql(query.sort)} '
+          'LIMIT ?$limitIndex OFFSET ?${limitIndex + 1}',
+          variables: variables,
+          readsFrom: {_db.books},
+        )
+        .get();
+    return rows.map((r) => _db.books.map(r.data)).toList(growable: false);
   }
 
   /// Turns free text into a safe FTS5 prefix query, quoting each token to

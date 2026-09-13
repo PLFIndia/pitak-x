@@ -5,12 +5,28 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 T ok<T>(Either<Failure, T> e) =>
     e.getOrElse((f) => fail('unexpected failure: $f'));
+
+/// First page of the list for the given intent (these tests seed a few rows,
+/// so one page IS the list). N10-d part 2: `page` is the only list read.
+Future<List<Book>> firstPage(
+  DriftBookRepository repo, {
+  required BookSort sort,
+  String text = '',
+  String? language,
+}) async => ok<BookPage>(
+  await repo.page(
+    LibraryQuery(text: text, sort: sort, language: language),
+    limit: libraryPageSize,
+  ),
+).items;
 
 Failure err<T>(Either<Failure, T> e) =>
     e.fold((f) => f, (_) => fail('expected a failure'));
@@ -69,9 +85,17 @@ void main() {
     test('updated book is findable by new title via FTS search', () async {
       final inserted = ok(await repo.insert(const Book(title: 'Alpha')));
       await repo.update(inserted.copyWith(title: 'Bravo'));
-      final hits = ok(await repo.search('Bravo', sort: BookSort.recentlyAdded));
+      final hits = await firstPage(
+        repo,
+        text: 'Bravo',
+        sort: BookSort.recentlyAdded,
+      );
       expect(hits.map((b) => b.title), contains('Bravo'));
-      final old = ok(await repo.search('Alpha', sort: BookSort.recentlyAdded));
+      final old = await firstPage(
+        repo,
+        text: 'Alpha',
+        sort: BookSort.recentlyAdded,
+      );
       expect(old, isEmpty);
     });
 
@@ -82,19 +106,23 @@ void main() {
         await repo.insert(const Book(title: 'NoLang'));
         await repo.insert(const Book(title: 'Hin1', language: 'Hindi'));
 
-        final byLang = ok(await repo.query(sort: BookSort.languageAsc));
+        final byLang = await firstPage(repo, sort: BookSort.languageAsc);
         // English < Hindi, blank language sorts last.
         expect(byLang.map((b) => b.title).toList(), ['Eng1', 'Hin1', 'NoLang']);
 
         // N10-d D1-a: the facet is the STORED spelling (what the chip shows),
         // matched exactly — SQLite's lower() is ASCII-only, so a case-folded
         // compare silently missed non-Latin languages.
-        final filtered = ok(
-          await repo.query(sort: BookSort.recentlyAdded, language: 'Hindi'),
+        final filtered = await firstPage(
+          repo,
+          sort: BookSort.recentlyAdded,
+          language: 'Hindi',
         );
         expect(filtered.map((b) => b.title), ['Hin1']);
-        final otherCase = ok(
-          await repo.query(sort: BookSort.recentlyAdded, language: 'hindi'),
+        final otherCase = await firstPage(
+          repo,
+          sort: BookSort.recentlyAdded,
+          language: 'hindi',
         );
         expect(otherCase, isEmpty);
       },
@@ -113,7 +141,7 @@ void main() {
       await repo.insert(const Book(title: 'adv', ageGroup: AgeGroup.advanced));
       await repo.insert(const Book(title: 'none'));
       await repo.insert(const Book(title: 'a3', ageGroup: AgeGroup.above3));
-      final byAge = ok(await repo.query(sort: BookSort.ageGroupAsc));
+      final byAge = await firstPage(repo, sort: BookSort.ageGroupAsc);
       expect(byAge.map((b) => b.title).toList(), ['a3', 'adv', 'none']);
     });
 

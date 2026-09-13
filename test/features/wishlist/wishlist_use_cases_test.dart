@@ -3,10 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
@@ -387,10 +388,11 @@ class _DelegatingBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() => inner.getAll();
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) => inner.query(sort: sort, language: language);
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) => inner.page(query, limit: limit, offset: offset);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() =>
       inner.distinctLanguages();
@@ -408,12 +410,6 @@ class _DelegatingBookRepo implements BookRepository {
       inner.restoreRemoved(id);
   @override
   Future<Either<Failure, Unit>> delete(int id) => inner.delete(id);
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String query, {
-    required BookSort sort,
-    String? language,
-  }) => inner.search(query, sort: sort, language: language);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) =>
       inner.findByIsbn(isbn);
@@ -458,10 +454,19 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(stored);
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) async => right(stored);
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? const <Book>[] : stored;
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+    );
+  }
+
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
@@ -478,12 +483,6 @@ class _MemBookRepo implements BookRepository {
 
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String q, {
-    required BookSort sort,
-    String? language,
-  }) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
   @override

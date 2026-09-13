@@ -5,10 +5,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Two languages; `query` honours the language facet like the real repo.
 class _Repo implements BookRepository {
@@ -29,25 +30,27 @@ class _Repo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(all);
   @override
-  Future<Either<Failure, List<Book>>> search(
-    String q, {
-    required BookSort sort,
-    String? language,
-  }) async => right(all);
-  @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override
   Future<Either<Failure, Book?>> getById(int id) async => right(null);
+
+  /// Narrows by the facet like the real store (exact match, D1-a) so the
+  /// chip tests can see the list change; a search returns everything.
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
   }) async {
     queryCalls++;
+    final lang = query.language;
+    final rows = (query.isSearch || lang == null)
+        ? all
+        : all.where((b) => b.language == lang).toList();
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
     return right(
-      language == null
-          ? all
-          : all.where((b) => b.language == language).toList(),
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
     );
   }
 

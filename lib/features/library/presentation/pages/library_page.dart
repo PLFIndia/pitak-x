@@ -4,6 +4,11 @@
 /// to it. No business logic, no direct repository/DB access. Mirrors the Kotlin
 /// `LibraryScreen` (search field, sort/filter controls, row list with covers,
 /// empty state).
+///
+/// N10-d part 2: the list renders the controller's [LibraryWindow] — the rows
+/// loaded so far — and asks for the next window as the user nears the end
+/// (`loadMore`), with a footer indicator while it is in flight. The screen
+/// never holds the whole catalogue.
 library;
 
 import 'package:flutter/material.dart';
@@ -17,6 +22,7 @@ import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
@@ -157,7 +163,7 @@ class LibraryPage extends ConsumerWidget {
                 isSearching: controller.query.trim().isNotEmpty,
                 onRetry: controller.refresh,
               ),
-              data: (books) => books.isEmpty
+              data: (window) => window.books.isEmpty
                   ? EmptyLibraryState(
                       isSearching: controller.query.trim().isNotEmpty,
                       query: controller.query,
@@ -172,7 +178,7 @@ class LibraryPage extends ConsumerWidget {
                         ),
                       ),
                     )
-                  : _BookList(books: books),
+                  : _BookList(window: window, onLoadMore: controller.loadMore),
             ),
           ),
         ],
@@ -181,13 +187,36 @@ class LibraryPage extends ConsumerWidget {
   }
 }
 
-class _BookList extends ConsumerWidget {
-  const _BookList({required this.books});
+/// How close to the end (in logical pixels of remaining scroll extent) the
+/// next page is requested — about one and a half phone screens ahead, so the
+/// rows are usually there before the user reaches them.
+const double _loadMoreThreshold = 600;
 
-  final List<Book> books;
+/// Key of the footer indicator shown while the next page is in flight
+/// (tests locate it by this key).
+const _loadMoreKey = ValueKey('library-load-more');
+
+class _BookList extends ConsumerWidget {
+  const _BookList({required this.window, required this.onLoadMore});
+
+  final LibraryWindow window;
+  final Future<void> Function() onLoadMore;
+
+  /// Asks for the next window when the user is near the end. The controller
+  /// de-duplicates concurrent calls and ignores it once nothing is left, so
+  /// firing on every notification is cheap and safe.
+  bool _onScroll(ScrollNotification notification) {
+    if (window.hasMore &&
+        !window.isLoadingMore &&
+        notification.metrics.extentAfter < _loadMoreThreshold) {
+      onLoadMore();
+    }
+    return false; // let the notification keep bubbling
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final books = window.books;
     // Active-loan counts are non-null only when the vault is unlocked; the
     // "Not available" badge is hidden otherwise (availability unknown).
     final activeCounts = ref.watch(activeLoanCountsProvider);
@@ -207,46 +236,80 @@ class _BookList extends ConsumerWidget {
       ),
     );
 
+    // Footer: a small progress row while the next page is in flight. Rendered
+    // as its own sliver after the rows so both layouts share it.
+    final footer = SliverToBoxAdapter(
+      child: window.isLoadingMore
+          ? const Padding(
+              key: _loadMoreKey,
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator.adaptive()),
+            )
+          : const SizedBox.shrink(),
+    );
+
     // Adaptive layout: decide on the *available width* the parent gives us, not
     // the device type — a single column on phones, a cover grid once there is
     // room for it (tablets, foldables, resized desktop windows).
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth >= largeScreenMinWidth) {
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              // Target column width; Flutter picks the column count that fits.
-              maxCrossAxisExtent: 200,
-              mainAxisExtent: 280,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemCount: books.length,
-            itemBuilder: (context, index) {
-              final book = books[index];
-              return BookGridCard(
-                book: book,
-                unavailable: unavailableOf(book),
-                onTap: () => openDetail(book),
-              );
-            },
-          );
-        }
-        return ListView.separated(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          itemCount: books.length,
-          separatorBuilder: (_, _) => const Divider(height: 1),
-          itemBuilder: (context, index) {
-            final book = books[index];
-            return BookRow(
-              book: book,
-              unavailable: unavailableOf(book),
-              onTap: () => openDetail(book),
+    return NotificationListener<ScrollNotification>(
+      onNotification: _onScroll,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth >= largeScreenMinWidth) {
+            return CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverGrid.builder(
+                    gridDelegate:
+                        const SliverGridDelegateWithMaxCrossAxisExtent(
+                          // Target column width; Flutter picks the column
+                          // count that fits.
+                          maxCrossAxisExtent: 200,
+                          mainAxisExtent: 280,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                        ),
+                    itemCount: books.length,
+                    itemBuilder: (context, index) {
+                      final book = books[index];
+                      return BookGridCard(
+                        book: book,
+                        unavailable: unavailableOf(book),
+                        onTap: () => openDetail(book),
+                      );
+                    },
+                  ),
+                ),
+                footer,
+              ],
             );
-          },
-        );
-      },
+          }
+          return CustomScrollView(
+            slivers: [
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
+                sliver: SliverList.separated(
+                  itemCount: books.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final book = books[index];
+                    return BookRow(
+                      book: book,
+                      unavailable: unavailableOf(book),
+                      onTap: () => openDetail(book),
+                    );
+                  },
+                ),
+              ),
+              footer,
+            ],
+          );
+        },
+      ),
     );
   }
 }

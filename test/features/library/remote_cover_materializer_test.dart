@@ -6,6 +6,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
@@ -80,9 +81,9 @@ class _Settings implements SettingsRepository {
 class _LibraryRebuilds extends LibraryController {
   static int count = 0;
   @override
-  FutureOr<List<Book>> build() {
+  FutureOr<LibraryWindow> build() {
     count++;
-    return const [];
+    return const LibraryWindow(books: [], hasMore: false);
   }
 }
 

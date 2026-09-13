@@ -4,12 +4,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Minimal in-memory repo returning a fixed list (mirrors library_page_test).
 class _FakeBookRepo implements BookRepository {
@@ -28,16 +29,19 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, List<Book>>> search(
-    String query, {
-    required BookSort sort,
-    String? language,
-  }) async => right(_all);
-  @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) async => right(_all);
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? _all : _all;
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+    );
+  }
+
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override

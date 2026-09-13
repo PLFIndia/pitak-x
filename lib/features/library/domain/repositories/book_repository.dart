@@ -6,22 +6,41 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 
 /// Read/write access to the library books store.
 abstract interface class BookRepository {
   /// All books (including soft-removed), newest first.
   Future<Either<Failure, List<Book>>> getAll();
 
-  /// Books ordered by [sort], optionally narrowed to [language] (exact match
-  /// on the stored string; null/blank = all). Used by the library list's
-  /// sort/filter controls. The returned order is FINAL and total (ties broken
-  /// newest-first, then by id) — the caller must not re-sort or re-filter
-  /// (N10-d: a later page relies on the store producing the exact order).
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
+  /// ONE window of the library list for [query] (N10-d, astra-review.md N10).
+  ///
+  /// This is the only list read the Library screen uses. A blank
+  /// `query.text` lists every book; non-blank text is a full-text search over
+  /// the FTS5 index. Either way the rows are narrowed to `query.language`
+  /// (exact match on the stored string; null = all) and ordered by
+  /// `query.sort` with the domain's `BookSorter` rules. The order is FINAL
+  /// and TOTAL (ties broken newest-first, then by id), and the window is cut
+  /// by SQLite on the SAME statement that orders — so `offset` rows in, the
+  /// next `limit` rows out, are exactly the rows the user should see there.
+  ///
+  /// [limit] is clamped to `1..maxLibraryPageSize` and [offset] to `>= 0` by
+  /// the implementation: a caller can never turn a page back into a whole-
+  /// catalogue read. `hasMore` on the result is true when at least one row
+  /// follows the window.
+  ///
+  /// OFFSET semantics (user decision S30, D1-a): if a row that sorts BEFORE
+  /// the window is inserted or removed between two reads, the next window
+  /// shifts by one (a repeated or skipped row at the seam). Every write path
+  /// in the app refreshes the list controller, which reloads from offset 0,
+  /// so the UI never pages across its own write; the limitation is pinned by
+  /// a test in `drift_book_repository_test.dart` so it stays visible.
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
   });
 
   /// Distinct non-blank languages present, A→Z — the filter-chip facet values.
@@ -51,16 +70,6 @@ abstract interface class BookRepository {
   /// responsible for purging the book's vault loans FIRST (a vault-write op);
   /// this only removes the Drift row. Idempotent: deleting a missing id is ok.
   Future<Either<Failure, Unit>> delete(int id);
-
-  /// Full-text search over the FTS5 index. Matches are narrowed to [language]
-  /// and ordered by [sort] with the SAME rules as [query], so the result is
-  /// final — the caller shows it as-is (N10-d). A blank [query] yields an
-  /// empty list.
-  Future<Either<Failure, List<Book>>> search(
-    String query, {
-    required BookSort sort,
-    String? language,
-  });
 
   /// Finds a book by exact ISBN, or null when none / [isbn] blank. Used by
   /// import dedup (existing ISBN → skip).

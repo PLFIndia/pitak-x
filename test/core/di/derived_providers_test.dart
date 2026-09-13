@@ -19,7 +19,9 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -39,10 +41,18 @@ class _FakeBookRepo implements BookRepository {
   Future<Either<Failure, List<Book>>> getAll() async => right(List.of(books));
 
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) async => right(List.of(books));
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? const <Book>[] : List.of(books);
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+    );
+  }
 
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async {
@@ -70,12 +80,6 @@ class _FakeBookRepo implements BookRepository {
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String query, {
-    required BookSort sort,
-    String? language,
-  }) async => right(const []);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override

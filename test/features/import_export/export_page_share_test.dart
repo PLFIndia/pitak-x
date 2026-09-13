@@ -11,9 +11,10 @@ import 'package:pitaka/features/import_export/application/export_library_use_cas
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -57,10 +58,19 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(_books);
   @override
-  Future<Either<Failure, List<Book>>> query({
-    required BookSort sort,
-    String? language,
-  }) async => right(_books);
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? const <Book>[] : _books;
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+    );
+  }
+
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
@@ -77,12 +87,6 @@ class _Books implements BookRepository {
   Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
-  @override
-  Future<Either<Failure, List<Book>>> search(
-    String q, {
-    required BookSort sort,
-    String? language,
-  }) async => right(const []);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String i) async => right(null);
   @override

@@ -1,48 +1,42 @@
 import 'dart:math';
 
-// Narrowed: drift's `isNull`/`isNotNull` expression helpers would shadow the
-// flutter_test matchers of the same name.
-import 'package:drift/drift.dart'
-    show ApplyInterceptor, QueryExecutor, QueryInterceptor;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/book_sorter.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 T ok<T>(Either<Failure, T> either) =>
     either.getOrElse((f) => fail('unexpected failure: $f'));
 
-/// N10-d (D3-a): a test-only Drift interceptor that appends `LIMIT n` to
-/// every SELECT touching `books`. It lets the test observe what SQLite
-/// ITSELF returns as "the first n rows" of the repository's statement — the
-/// exact question a paginated read (N10-d part 2) will ask. If the order is
-/// finished in Dart after the query, the first n SQL rows are the wrong n.
-final class _LimitBooksSelects extends QueryInterceptor {
-  _LimitBooksSelects(this.limit);
-  final int limit;
-
-  @override
-  Future<List<Map<String, Object?>>> runSelect(
-    QueryExecutor executor,
-    String statement,
-    List<Object?> args,
-  ) {
-    final isBooksSelect =
-        statement.trimLeft().toUpperCase().startsWith('SELECT') &&
-        statement.contains('books') &&
-        !statement.contains('LIMIT');
-    // Drift terminates its statements with ';' — the LIMIT must go BEFORE it.
-    final body = statement.trimRight().endsWith(';')
-        ? statement.trimRight().substring(0, statement.trimRight().length - 1)
-        : statement;
-    final sql = isBooksSelect ? '$body LIMIT $limit' : statement;
-    return executor.runSelect(sql, args);
+/// Reads the WHOLE list for [query] through the paged API, page by page,
+/// with a deliberately small [pageSize] so every test crosses several page
+/// seams. This is how the controller consumes the repository (N10-d part 2);
+/// there is no whole-list read any more.
+Future<List<Book>> _allPages(
+  DriftBookRepository repo,
+  LibraryQuery query, {
+  int pageSize = 7,
+}) async {
+  final out = <Book>[];
+  var page = ok<BookPage>(await repo.page(query, limit: pageSize));
+  out.addAll(page.items);
+  // Guard against a repository that never says "done".
+  var hops = 0;
+  while (page.hasMore) {
+    if (++hops > 1000) fail('hasMore never became false');
+    page = ok<BookPage>(
+      await repo.page(query, limit: pageSize, offset: out.length),
+    );
+    out.addAll(page.items);
   }
+  return out;
 }
 
 /// Seeded fixture for the order/filter equivalence tests: every age band
@@ -128,17 +122,24 @@ void main() {
     );
     await repo.insert(const Book(title: 'Gandhi', addedDate: 2));
 
-    final hits = ok<List<Book>>(
-      await repo.search('witt', sort: BookSort.recentlyAdded), // prefix
+    final hits = ok<BookPage>(
+      await repo.page(
+        LibraryQuery(text: 'witt', sort: BookSort.recentlyAdded), // prefix
+        limit: libraryPageSize,
+      ),
     );
-    expect(hits.length, 1);
-    expect(hits.single.title, 'Wittgenstein');
+    expect(hits.items.length, 1);
+    expect(hits.items.single.title, 'Wittgenstein');
+    expect(hits.hasMore, isFalse);
   });
 
   test('search neutralises FTS operators in user input', () async {
     await repo.insert(const Book(title: 'C++ Programming', addedDate: 1));
     // A bare '+' / quote must not crash the query.
-    final res = await repo.search('C++ "', sort: BookSort.recentlyAdded);
+    final res = await repo.page(
+      LibraryQuery(text: 'C++ "', sort: BookSort.recentlyAdded),
+      limit: libraryPageSize,
+    );
     expect(res.isRight(), isTrue);
   });
 
@@ -282,11 +283,13 @@ void main() {
     });
   });
 
-  // N10-d part 1 (astra-review.md N10): a paginated read can only be correct
-  // if SQLite produces the FINAL order and filter. These tests pin that for
-  // both list reads (blank query → `query`, typed query → `search`) against
-  // the domain's ordering contract (`BookSorter`, N05).
-  group('N10-d — order and filter are final in SQL', () {
+  // N10-d (astra-review.md N10): a paginated read can only be correct if
+  // SQLite produces the FINAL order and filter (part 1, S29) AND the page
+  // boundary sits on that same statement (part 2). These tests pin both for
+  // both list reads (blank text → plain select, typed text → FTS) against the
+  // domain's ordering contract (`BookSorter`, N05), reading the fixture back
+  // through SMALL pages so every seam is crossed.
+  group('N10-d — order, filter and page are final in SQL', () {
     late List<Book> persisted;
 
     Future<void> seed(DriftBookRepository into) async {
@@ -296,68 +299,51 @@ void main() {
       }
     }
 
-    test('query(ageGroupAsc): the first 3 rows SQLite returns ARE the first 3 '
-        'of the band order (no Dart re-sort left to fix them)', () async {
-      // Interceptor applied to a fresh DB — the shared `db` stays clean.
-      final limited = AppDatabase(
-        NativeDatabase.memory().interceptWith(_LimitBooksSelects(3)),
-      );
-      addTearDown(limited.close);
-      final limitedRepo = DriftBookRepository(limited);
-      // Insert order = alphabetical-token order, so an ORDER BY on the raw
-      // token hands SQLite's first 3 rows to above-10/above-15/above-3.
-      final ids = <AgeGroup, int>{};
-      for (final band in [
-        AgeGroup.above10,
-        AgeGroup.above15,
-        AgeGroup.above3,
-        AgeGroup.above6,
-        AgeGroup.advanced,
-      ]) {
-        ids[band] = ok<Book>(
-          await limitedRepo.insert(
-            Book(title: band.token, ageGroup: band, addedDate: 1),
-          ),
-        ).id;
-      }
-      ok(await limitedRepo.insert(const Book(title: 'none', addedDate: 1)));
-
-      final page = ok<List<Book>>(
-        await limitedRepo.query(sort: BookSort.ageGroupAsc),
-      );
-      expect(page, hasLength(3), reason: 'LIMIT 3 reached SQLite');
-      expect(page.map((b) => b.id).toList(), [
-        ids[AgeGroup.above3],
-        ids[AgeGroup.above6],
-        ids[AgeGroup.above10],
-      ]);
-    });
-
-    test('query(): every sort × language filter matches BookSorter on a seeded '
-        'fixture (D1-a: exact match on the stored language)', () async {
-      await seed(repo);
-      for (final sort in BookSort.values) {
-        for (final lang in [null, 'Hindi', 'Ελληνικά']) {
-          final got = ok<List<Book>>(
-            await repo.query(sort: sort, language: lang),
-          ).map((b) => b.id).toList();
-          final want = _expectedIds(persisted, sort, lang);
-          expect(want, isNotEmpty, reason: 'fixture guard $sort/$lang');
-          expect(got, want, reason: 'sort=$sort language=$lang');
+    test(
+      'page(ageGroupAsc, limit 3): the first 3 rows SQLite returns ARE the '
+      'first 3 of the band order (no Dart re-sort left to fix them)',
+      () async {
+        // Insert order = alphabetical-token order, so an ORDER BY on the raw
+        // token would hand the first page to above-10/above-15/above-3.
+        final ids = <AgeGroup, int>{};
+        for (final band in [
+          AgeGroup.above10,
+          AgeGroup.above15,
+          AgeGroup.above3,
+          AgeGroup.above6,
+          AgeGroup.advanced,
+        ]) {
+          ids[band] = ok<Book>(
+            await repo.insert(
+              Book(title: band.token, ageGroup: band, addedDate: 1),
+            ),
+          ).id;
         }
-      }
-    });
+        ok(await repo.insert(const Book(title: 'none', addedDate: 1)));
+
+        final page = ok<BookPage>(
+          await repo.page(LibraryQuery(sort: BookSort.ageGroupAsc), limit: 3),
+        );
+        expect(page.items.map((b) => b.id).toList(), [
+          ids[AgeGroup.above3],
+          ids[AgeGroup.above6],
+          ids[AgeGroup.above10],
+        ]);
+        expect(page.hasMore, isTrue);
+      },
+    );
 
     test(
-      'search(): every sort × language filter matches BookSorter — the FTS '
-      'path returns the FINAL list, nothing left for the controller',
+      'listing: every sort × language filter, read page by page, matches '
+      'BookSorter on a seeded fixture (D1-a: exact stored language)',
       () async {
         await seed(repo);
         for (final sort in BookSort.values) {
           for (final lang in [null, 'Hindi', 'Ελληνικά']) {
-            final got = ok<List<Book>>(
-              await repo.search('probe', sort: sort, language: lang),
-            ).map((b) => b.id).toList();
+            final got = (await _allPages(
+              repo,
+              LibraryQuery(sort: sort, language: lang),
+            )).map((b) => b.id).toList();
             final want = _expectedIds(persisted, sort, lang);
             expect(want, isNotEmpty, reason: 'fixture guard $sort/$lang');
             expect(got, want, reason: 'sort=$sort language=$lang');
@@ -366,8 +352,24 @@ void main() {
       },
     );
 
+    test('search: every sort × language filter, read page by page, matches '
+        'BookSorter — the FTS path pages the FINAL list too', () async {
+      await seed(repo);
+      for (final sort in BookSort.values) {
+        for (final lang in [null, 'Hindi', 'Ελληνικά']) {
+          final got = (await _allPages(
+            repo,
+            LibraryQuery(text: 'probe', sort: sort, language: lang),
+          )).map((b) => b.id).toList();
+          final want = _expectedIds(persisted, sort, lang);
+          expect(want, isNotEmpty, reason: 'fixture guard $sort/$lang');
+          expect(got, want, reason: 'sort=$sort language=$lang');
+        }
+      }
+    });
+
     test(
-      'search() still narrows by the FTS match before ordering/filtering',
+      'search still narrows by the FTS match before ordering/filtering',
       () async {
         await repo.insert(
           const Book(title: 'Wittgenstein', language: 'Hindi', addedDate: 1),
@@ -378,14 +380,17 @@ void main() {
         await repo.insert(
           const Book(title: 'Wittgenstein 2', language: 'Tamil', addedDate: 3),
         );
-        final hits = ok<List<Book>>(
-          await repo.search(
-            'witt',
-            sort: BookSort.recentlyAdded,
-            language: 'Hindi',
+        final hits = ok<BookPage>(
+          await repo.page(
+            LibraryQuery(
+              text: 'witt',
+              sort: BookSort.recentlyAdded,
+              language: 'Hindi',
+            ),
+            limit: libraryPageSize,
           ),
         );
-        expect(hits.map((b) => b.title).toList(), ['Wittgenstein']);
+        expect(hits.items.map((b) => b.title).toList(), ['Wittgenstein']);
       },
     );
 
@@ -397,18 +402,24 @@ void main() {
       await repo.insert(
         const Book(title: 'probe hindi', language: 'Hindi', addedDate: 2),
       );
-      final listed = ok<List<Book>>(
-        await repo.query(sort: BookSort.recentlyAdded, language: 'Ελληνικά'),
-      );
-      expect(listed.map((b) => b.title).toList(), ['probe greek']);
-      final searched = ok<List<Book>>(
-        await repo.search(
-          'probe',
-          sort: BookSort.recentlyAdded,
-          language: 'Ελληνικά',
+      final listed = ok<BookPage>(
+        await repo.page(
+          LibraryQuery(sort: BookSort.recentlyAdded, language: 'Ελληνικά'),
+          limit: libraryPageSize,
         ),
       );
-      expect(searched.map((b) => b.title).toList(), ['probe greek']);
+      expect(listed.items.map((b) => b.title).toList(), ['probe greek']);
+      final searched = ok<BookPage>(
+        await repo.page(
+          LibraryQuery(
+            text: 'probe',
+            sort: BookSort.recentlyAdded,
+            language: 'Ελληνικά',
+          ),
+          limit: libraryPageSize,
+        ),
+      );
+      expect(searched.items.map((b) => b.title).toList(), ['probe greek']);
     });
 
     test(
@@ -425,17 +436,124 @@ void main() {
           ),
         );
         for (final sort in BookSort.values) {
-          final listed = ok<List<Book>>(await repo.query(sort: sort));
+          final listed = await _allPages(repo, LibraryQuery(sort: sort));
           expect(listed.map((x) => x.id).toList(), [
             a.id,
             b.id,
           ], reason: '$sort');
-          final searched = ok<List<Book>>(
-            await repo.search('probe', sort: sort),
+          final searched = await _allPages(
+            repo,
+            LibraryQuery(text: 'probe', sort: sort),
           );
           expect(searched.map((x) => x.id).toList(), [a.id, b.id]);
         }
       },
     );
+
+    // Part 2 proper: the page contract itself.
+    test('hasMore is true exactly while rows remain — both reads', () async {
+      await seed(repo); // 40 rows
+      for (final query in [
+        LibraryQuery(sort: BookSort.recentlyAdded),
+        LibraryQuery(text: 'probe', sort: BookSort.recentlyAdded),
+      ]) {
+        final first = ok<BookPage>(await repo.page(query, limit: 30));
+        expect(first.items, hasLength(30), reason: '$query');
+        expect(first.hasMore, isTrue, reason: '$query');
+        final last = ok<BookPage>(
+          await repo.page(query, limit: 30, offset: 30),
+        );
+        expect(last.items, hasLength(10), reason: '$query');
+        expect(last.hasMore, isFalse, reason: '$query');
+        // A page that ends EXACTLY on the last row must not claim more.
+        final exact = ok<BookPage>(
+          await repo.page(query, limit: 10, offset: 30),
+        );
+        expect(exact.items, hasLength(10));
+        expect(exact.hasMore, isFalse, reason: 'exact end $query');
+        final beyond = ok<BookPage>(
+          await repo.page(query, limit: 10, offset: 40),
+        );
+        expect(beyond.items, isEmpty);
+        expect(beyond.hasMore, isFalse);
+      }
+    });
+
+    test('a page never contains more than limit rows (the +1 probe row is '
+        'dropped, not leaked)', () async {
+      await seed(repo);
+      final page = ok<BookPage>(
+        await repo.page(LibraryQuery(sort: BookSort.languageAsc), limit: 5),
+      );
+      expect(page.items, hasLength(5));
+    });
+
+    test('limit and offset are clamped at the boundary: a hostile caller '
+        'cannot turn a page into a whole-catalogue read or ask SQLite for a '
+        'negative window', () async {
+      await seed(repo);
+      final query = LibraryQuery(sort: BookSort.recentlyAdded);
+      // limit <= 0 → the smallest useful page (1), not an error and not all.
+      final zero = ok<BookPage>(await repo.page(query, limit: 0));
+      expect(zero.items, hasLength(1));
+      expect(zero.hasMore, isTrue);
+      final negative = ok<BookPage>(await repo.page(query, limit: -9));
+      expect(negative.items, hasLength(1));
+      // offset < 0 → 0.
+      final head = ok<BookPage>(await repo.page(query, limit: 3));
+      final negOffset = ok<BookPage>(
+        await repo.page(query, limit: 3, offset: -100),
+      );
+      expect(
+        negOffset.items.map((b) => b.id).toList(),
+        head.items.map((b) => b.id).toList(),
+      );
+      // limit > maxLibraryPageSize → maxLibraryPageSize. Seed enough rows to
+      // prove the cap bites (40 fixture rows + 500 more = 540 > 500).
+      for (var i = 0; i < maxLibraryPageSize; i++) {
+        ok(await repo.insert(Book(title: 'bulk $i', addedDate: 5000 + i)));
+      }
+      final capped = ok<BookPage>(
+        await repo.page(query, limit: maxLibraryPageSize * 10),
+      );
+      expect(capped.items, hasLength(maxLibraryPageSize));
+      expect(capped.hasMore, isTrue);
+    });
+
+    test('a blank text with surrounding whitespace lists (not searches); the '
+        'FTS path is only taken for real text', () async {
+      await repo.insert(const Book(title: 'Solo', addedDate: 1));
+      final listed = ok<BookPage>(
+        await repo.page(
+          LibraryQuery(text: '   ', sort: BookSort.recentlyAdded),
+          limit: libraryPageSize,
+        ),
+      );
+      expect(listed.items.map((b) => b.title).toList(), ['Solo']);
+    });
+
+    // D1-a (OFFSET, user decision S30): documented seam behaviour, not a
+    // hidden one. A row inserted between two page reads that sorts BEFORE the
+    // seam shifts everything down by one, so the next page repeats the last
+    // row of the previous page. In the app every write path invalidates or
+    // refreshes the list controller, which reloads from the top, so the UI
+    // never reads page N+1 across its own write — this test exists so the
+    // limitation is visible the day that stops being true.
+    test('OFFSET seam (documented D1-a): an insert that sorts before the seam '
+        'makes the next page repeat one row', () async {
+      for (var i = 0; i < 6; i++) {
+        ok(await repo.insert(Book(title: 'row $i', addedDate: 10 + i)));
+      }
+      final query = LibraryQuery(sort: BookSort.recentlyAdded);
+      final first = ok<BookPage>(await repo.page(query, limit: 3));
+      // Newest first: a row newer than everything lands at position 0.
+      ok(await repo.insert(const Book(title: 'newest', addedDate: 999)));
+      final second = ok<BookPage>(await repo.page(query, limit: 3, offset: 3));
+      expect(second.items.first.id, first.items.last.id, reason: 'seam repeat');
+      // Reloading from the top (what the controller does after a write) is
+      // consistent again.
+      final reloaded = await _allPages(repo, query, pageSize: 3);
+      expect(reloaded.map((b) => b.id).toSet(), hasLength(7));
+    });
   });
 }
