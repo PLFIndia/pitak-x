@@ -194,7 +194,9 @@ N10-c; Drift `limit(count, offset:)` for N10-d; Flutter's own
 - [x] 5. Regression tests, proved red on HEAD (see Result).
 - [x] 6. Implementation (N10-a).
 - [x] 7. Gates green; `build_runner` run LAST (3 hash-only `.g.dart` diffs).
-- [ ] 8. `PLAN.md` Result + `fix-schedule.md` S26 log entry; commit approval.
+- [x] 8. `PLAN.md` Result + `fix-schedule.md` S26 log entry; commit `773cf25`
+  + push approved and done; docs housekeeping (`README.md` test count,
+  `appDetails.md` downscaler facts) in a follow-up docs commit.
 
 ## Out-of-scope observations
 
@@ -224,7 +226,7 @@ N10-c; Drift `limit(count, offset:)` for N10-d; Flutter's own
 
 ## Result
 
-**N10-a DONE (uncommitted; commit approval pending).**
+**N10-a DONE — committed `773cf25`, pushed (`d058966..773cf25 main`, fast-forward).**
 
 - **Red evidence.** Graft copy of the new test file with the new symbols
   replaced by literals (`40000000`, `8192`) and the async group removed, run

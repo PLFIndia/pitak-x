@@ -184,7 +184,7 @@ dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (1441 tests as of 1.2.0 / Sep 2026)
+flutter test                                   # full Dart suite (1589 tests on main as of 13 Sep 2026; 1441 at the 1.2.0 tag)
 ( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
