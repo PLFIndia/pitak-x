@@ -151,7 +151,10 @@ same `_jaccardFromIntersection(inter, |a|, |b|)` helper.
 
 ## Result
 
-**N10-b implemented; gates green; commit approval pending.**
+**N10-b DONE — committed `e79fca7`, pushed (`aa6a7b0..e79fca7 main`, fast-forward).**
+Pre-commit codegen gate passed; CI run `34754461782` queued at push time
+(result recorded in `fix-schedule.md` S27 log). Housekeeping commit follows
+(README test count, this record).
 
 - Red evidence: the two `tokenizer`-seam tests were **compile-red** on HEAD
   (`undefined_named_parameter` × 2); the wall-clock test was
