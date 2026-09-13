@@ -296,7 +296,12 @@ app almost certainly used Room + Paging). Riverpod's own docs show
       `remote_cover_materializer_test.dart` `_LibraryRebuilds.build` type;
       unused `app_settings.dart` imports dropped where `BookSort` vanished.
 - [x] 9. Gates green; `build_runner` LAST → 1 hash-only `.g.dart` diff.
-- [ ] 10. Commit (approval) — explicit paths only.
+- [x] 10. Commit + push approved ("go"): 35 paths staged explicitly;
+      forbidden-list / `--check` / secret scan clean; pre-commit hook
+      "generated code is current"; commit `e19528f` perf(library) N10-d
+      part 2; push `c5c4ea5..e19528f main -> main` (`PLFIndia/pitak-x`,
+      no force); HEAD = `origin/main` verified after fetch. CI run
+      `34770918770` — result recorded in `fix-schedule.md` S30 addendum.
 
 ## Out-of-scope observations
 
@@ -322,7 +327,7 @@ app almost certainly used Room + Paging). Riverpod's own docs show
 
 ## Result
 
-**Done (uncommitted, awaiting approval).** The Library screen reads the
+**Done — committed `e19528f`, pushed.** The Library screen reads the
 catalogue in 60-row windows; SQLite orders, filters AND cuts the window in
 one statement for both the plain listing and the FTS search; the controller
 appends pages on scroll, reloads to the user's depth after a write, and
