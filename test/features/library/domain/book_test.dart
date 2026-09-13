@@ -9,6 +9,20 @@ void main() {
       }
     });
 
+    // N10-d: the repository renders each token into a raw-SQL `CASE … WHEN
+    // '<token>'` for the FTS search ORDER BY. That is only safe while tokens
+    // stay in this charset (no quotes, no whitespace). Ranks must also be
+    // distinct or two bands would tie in SQL and break the equivalence with
+    // BookSorter.
+    test('tokens are SQL-literal-safe and ranks are distinct', () {
+      final safe = RegExp(r'^[a-z0-9-]+$');
+      for (final v in AgeGroup.values) {
+        expect(safe.hasMatch(v.token), isTrue, reason: v.token);
+      }
+      final ranks = AgeGroup.values.map((v) => v.sortRank).toSet();
+      expect(ranks, hasLength(AgeGroup.values.length));
+    });
+
     test('current enum names (above_3 …) parse', () {
       expect(AgeGroup.fromToken('above_3'), AgeGroup.above3);
       expect(AgeGroup.fromToken('above_6'), AgeGroup.above6);

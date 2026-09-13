@@ -122,7 +122,11 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
 }
 
 /// In-memory settings repo behind the REAL `SettingsController` (N07: the

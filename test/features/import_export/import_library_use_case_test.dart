@@ -67,7 +67,11 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async {
     stored.addAll(books);
@@ -373,7 +377,11 @@ class _FailingBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Book>> update(Book book) async => right(book);
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async => right(0);
   @override

@@ -28,7 +28,11 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async => right(_all);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async => right(_all);
   @override
   Future<Either<Failure, List<Book>>> query({
     required BookSort sort,

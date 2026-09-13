@@ -32,7 +32,11 @@ class _FakeBookRepo implements BookRepository {
       failWith != null ? left(failWith!) : right(_all);
 
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async {
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async {
     if (failWith != null) return left(failWith!);
     final q = query.trim().toLowerCase();
     return right(_all.where((b) => b.title.toLowerCase().contains(q)).toList());

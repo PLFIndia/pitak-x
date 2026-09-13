@@ -409,8 +409,11 @@ class _DelegatingBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) => inner.delete(id);
   @override
-  Future<Either<Failure, List<Book>>> search(String query) =>
-      inner.search(query);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) => inner.search(query, sort: sort, language: language);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) =>
       inner.findByIsbn(isbn);
@@ -476,7 +479,11 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
   @override

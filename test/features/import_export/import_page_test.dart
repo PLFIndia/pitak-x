@@ -63,7 +63,11 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<Book>>> getAll() async => right(stored);
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
   @override

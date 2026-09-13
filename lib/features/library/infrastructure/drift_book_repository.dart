@@ -3,6 +3,22 @@
 /// Side effects live at this edge; expected failures are caught and returned as
 /// typed [Failure]s (fail-closed). UUIDs are minted here at first persist,
 /// mirroring Kotlin `BookMapper.toEntity`.
+///
+/// ## Ordering and filtering happen INSIDE SQLite (N10-d, astra-review.md N10)
+///
+/// Both list reads — [DriftBookRepository.query] (blank search box) and
+/// [DriftBookRepository.search] (typed query, FTS5) — return rows in their
+/// FINAL order, already narrowed to the language facet. Nothing is re-sorted
+/// or re-filtered in Dart afterwards. Why that matters: a later `LIMIT`/page
+/// (N10-d part 2) can only be correct if SQLite's first N rows ARE the first
+/// N rows the user should see. Until this change the Age-group sort ordered
+/// by the raw token in SQL (`above-10 < above-15 < above-3`, alphabetical)
+/// and fixed the order in Dart — fine for a whole-table read, wrong for any
+/// page.
+///
+/// The ordering rules are the domain's `BookSorter` contract (N05). The SQL
+/// here is its twin, and `drift_book_repository_test.dart` proves the two
+/// agree for every sort × filter combination on a seeded fixture.
 library;
 
 import 'package:drift/drift.dart';
@@ -42,62 +58,109 @@ class DriftBookRepository implements BookRepository {
   }) async {
     try {
       final q = _db.select(_db.books);
-      final lang = language?.trim();
-      if (lang != null && lang.isNotEmpty) {
-        q.where((t) => t.language.lower().equals(lang.toLowerCase()));
+      final lang = _languageFacet(language);
+      if (lang != null) {
+        // D1-a: exact match on the STORED string. The facet value comes from
+        // `distinctLanguages()` (the stored spelling verbatim), so equality
+        // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
+        // previous `lower(language) = lower(?)` silently missed every
+        // non-Latin language name (e.g. `Ελληνικά`).
+        q.where((t) => t.language.equals(lang));
       }
-      switch (sort) {
-        case BookSort.recentlyAdded:
-          q.orderBy([(t) => OrderingTerm.desc(t.addedDate)]);
-        case BookSort.languageAsc:
-          // Blank/null languages sort LAST, then by language A→Z (mirrors the
-          // Kotlin CASE-prefix; Drift's plain asc would put NULL first).
-          q.orderBy([
-            (t) => OrderingTerm.asc(
-              CaseWhenExpression<int>(
-                cases: [
-                  CaseWhen(
-                    t.language.isNull() | t.language.trim().equals(''),
-                    then: const Constant(1),
-                  ),
-                ],
-                orElse: const Constant(0),
-              ),
-            ),
-            (t) => OrderingTerm.asc(t.language),
-            (t) => OrderingTerm.desc(t.addedDate),
-          ]);
-        case BookSort.ageGroupAsc:
-          // age_group is a TEXT token; order by its sortRank, nulls last.
-          q.orderBy([
-            (t) => OrderingTerm.asc(t.ageGroup),
-            (t) => OrderingTerm.desc(t.addedDate),
-          ]);
-      }
+      q.orderBy(_orderingTerms(sort));
       final rows = await q.get();
-      var books = rows.map((r) => r.toDomain()).toList();
-      if (sort == BookSort.ageGroupAsc) {
-        // Token alpha-order != band order; re-sort by AgeGroup.sortRank in Dart
-        // (nulls last) to match Kotlin's CASE-mapped ordering exactly.
-        books = _byAgeRank(books);
-      }
-      return right(books);
+      return right(rows.map((r) => r.toDomain()).toList());
     } on Object catch (e) {
       return left(StorageFailure('query: $e'));
     }
   }
 
-  /// Stable sort by age-band rank (nulls last), preserving the SQL tiebreak
-  /// (newest-added) within each band.
-  List<Book> _byAgeRank(List<Book> books) {
-    final indexed = books.asMap().entries.toList()
-      ..sort((a, b) {
-        final ra = a.value.ageGroup?.sortRank ?? 1 << 30;
-        final rb = b.value.ageGroup?.sortRank ?? 1 << 30;
-        if (ra != rb) return ra.compareTo(rb);
-        return a.key.compareTo(b.key); // stable: keep query order in a band
-      });
-    return indexed.map((e) => e.value).toList();
+  /// Normalises the language facet: trimmed, blank → null ("all languages").
+  static String? _languageFacet(String? language) {
+    final lang = language?.trim();
+    return (lang == null || lang.isEmpty) ? null : lang;
+  }
+
+  /// Age band as an integer rank, in SQL. `AgeGroup.sortRank` (not the token's
+  /// alphabetical order) defines band order; NULL — and any token the domain
+  /// parser would not recognise — falls to `ELSE` and sorts LAST, exactly as
+  /// `AgeGroup.fromToken` → null does on the Dart side. Built from the enum
+  /// so a new band is picked up without touching this file.
+  static Expression<int> _ageRank($BooksTable t) => t.ageGroup.caseMatch<int>(
+    when: {
+      for (final band in AgeGroup.values)
+        Constant<String>(band.token): Constant<int>(band.sortRank),
+    },
+    orElse: const Constant<int>(_unrankedAge),
+  );
+
+  /// Rank for rows with no (recognised) age band: after every real band.
+  static const _unrankedAge = 1 << 30;
+
+  /// 1 when the language is NULL or blank, else 0 — blanks sort LAST.
+  static Expression<int> _languageBlank($BooksTable t) =>
+      CaseWhenExpression<int>(
+        cases: [
+          CaseWhen(
+            t.language.isNull() | t.language.trim().equals(''),
+            then: const Constant(1),
+          ),
+        ],
+        orElse: const Constant(0),
+      );
+
+  /// The language as `BookSorter` compares it: `(language ?? '').trim()`.
+  /// Without the COALESCE, SQLite would put NULL before `''` inside the
+  /// "blank" bucket, while the domain treats both as the same key.
+  static Expression<String> _languageKey($BooksTable t) =>
+      coalesce<String>([t.language, const Constant('')]).trim();
+
+  /// The typed ORDER BY for [sort]. Every sort ends with the shared
+  /// tie-breaks `added_date DESC, id ASC` so the order is TOTAL: two rows can
+  /// never swap between two runs (or two pages) of the same statement.
+  /// Twin of [_orderSql]; both must match `BookSorter` (tested).
+  static List<_OrderingOf> _orderingTerms(BookSort sort) {
+    final byKey = switch (sort) {
+      BookSort.recentlyAdded => const <_OrderingOf>[],
+      BookSort.languageAsc => <_OrderingOf>[
+        (t) => OrderingTerm.asc(_languageBlank(t)),
+        (t) => OrderingTerm.asc(_languageKey(t)),
+      ],
+      BookSort.ageGroupAsc => <_OrderingOf>[
+        (t) => OrderingTerm.asc(_ageRank(t)),
+      ],
+    };
+    return [
+      ...byKey,
+      (t) => OrderingTerm.desc(t.addedDate),
+      (t) => OrderingTerm.asc(t.id),
+    ];
+  }
+
+  /// The raw-SQL ORDER BY for [sort], for the FTS statement in [search] (which
+  /// is hand-written SQL because `books_fts` is a virtual table Drift does not
+  /// model). `b` is the alias of `books` in that statement. MUST order exactly
+  /// like [_orderingTerms] — `drift_book_repository_test.dart` checks both
+  /// paths against the same oracle. Contains only compile-time constants
+  /// (enum tokens), never user input.
+  static String _orderSql(BookSort sort) {
+    final byKey = switch (sort) {
+      BookSort.recentlyAdded => '',
+      BookSort.languageAsc =>
+        "CASE WHEN b.language IS NULL OR TRIM(b.language) = '' "
+            'THEN 1 ELSE 0 END ASC, '
+            "TRIM(COALESCE(b.language, '')) ASC, ",
+      BookSort.ageGroupAsc => '${_ageRankSql('b.age_group')} ASC, ',
+    };
+    return 'ORDER BY ${byKey}b.added_date DESC, b.id ASC';
+  }
+
+  /// Textual twin of [_ageRank] over [column].
+  static String _ageRankSql(String column) {
+    final whens = AgeGroup.values
+        .map((band) => "WHEN '${band.token}' THEN ${band.sortRank}")
+        .join(' ');
+    return 'CASE $column $whens ELSE $_unrankedAge END';
   }
 
   @override
@@ -302,18 +365,30 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async {
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return right(const []);
     try {
-      // Match against the FTS5 index, join back to books for full rows.
+      // Match against the FTS5 index, join back to books for full rows, then
+      // narrow and order in the SAME statement so the result is final (N10-d).
+      // The language facet is a bound variable (never interpolated); the
+      // ORDER BY text is built from enum constants only.
+      final lang = _languageFacet(language);
       final rows = await _db
           .customSelect(
             'SELECT b.* FROM books_fts f '
             'JOIN books b ON b.id = f.rowid '
             'WHERE books_fts MATCH ?1 '
-            'ORDER BY b.added_date DESC',
-            variables: [Variable<String>(_ftsQuery(trimmed))],
+            '${lang == null ? '' : 'AND b.language = ?2 '}'
+            '${_orderSql(sort)}',
+            variables: [
+              Variable<String>(_ftsQuery(trimmed)),
+              if (lang != null) Variable<String>(lang),
+            ],
             readsFrom: {_db.books},
           )
           .get();
@@ -334,6 +409,9 @@ class DriftBookRepository implements BookRepository {
     return tokens.join(' ');
   }
 }
+
+/// One ORDER BY term over the `books` table (Drift's `orderBy` callback shape).
+typedef _OrderingOf = OrderingTerm Function($BooksTable t);
 
 /// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
 /// [DriftBookRepository.runInTransaction]. Never escapes the repository.

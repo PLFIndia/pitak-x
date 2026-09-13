@@ -6,13 +6,17 @@
 /// avoid hammering SQLite on every keystroke. The repository returns
 /// `Either<Failure, _>`; a left becomes `AsyncError(Failure)` so the UI can
 /// render a safe message (raw exception text is never surfaced).
+///
+/// N10-d: the controller hands the repository the WHOLE intent (query text,
+/// sort, language facet) and shows what comes back. It no longer filters or
+/// sorts in Dart — the store produces the final order, which is what a
+/// paginated read (part 2) needs.
 library;
 
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
-import 'package:pitaka/features/library/domain/book_sorter.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -117,10 +121,11 @@ class LibraryController extends _$LibraryController {
     );
   }
 
-  /// Fetches books for [query], applying the persisted sort (watched in
-  /// [build]) and the active language filter. A non-empty query takes the FTS
-  /// path (then the filter is applied in Dart); a blank query uses the
-  /// sorted+filtered repository query. The repository's `Either` is unwrapped
+  /// Fetches books for [query] with the persisted sort (watched in [build])
+  /// and the active language filter. A blank query takes the repository's
+  /// sorted+filtered `query`; a non-blank one takes the FTS `search` with the
+  /// same sort and facet (N05: search results honour the selected sort;
+  /// N10-d: both are final in SQL). The repository's `Either` is unwrapped
   /// into a value or a thrown `Failure`, which Riverpod's
   /// `build`/`AsyncValue.guard` turn into `AsyncError`.
   Future<List<Book>> _load(String query) async {
@@ -128,34 +133,14 @@ class LibraryController extends _$LibraryController {
     final sort = _sort;
     final lang = _languageFilter;
 
-    if (query.trim().isEmpty) {
-      final result = await repo.query(sort: sort, language: lang);
-      return result.fold(
-        (failure) =>
-            // ignore: only_throw_errors, Riverpod surfaces errors via throw
-            throw failure,
-        (books) => books,
-      );
-    }
-    // Search path: FTS5 matches, then narrow by language in Dart (the FTS
-    // query doesn't carry the facet), then apply the SAME sort the unsearched
-    // list uses (N05: search results used to ignore the selected sort).
-    final result = await repo.search(query);
+    final result = query.trim().isEmpty
+        ? await repo.query(sort: sort, language: lang)
+        : await repo.search(query, sort: sort, language: lang);
     return result.fold(
       (failure) =>
-          // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
+          // ignore: only_throw_errors, Riverpod surfaces errors via throw
           throw failure,
-      (books) {
-        final filtered = lang == null || lang.trim().isEmpty
-            ? books
-            : books
-                  .where(
-                    (b) =>
-                        (b.language ?? '').toLowerCase() == lang.toLowerCase(),
-                  )
-                  .toList();
-        return BookSorter.sort(filtered, sort);
-      },
+      (books) => books,
     );
   }
 }

@@ -114,7 +114,11 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async => right([]);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async => right([]);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override

@@ -3,18 +3,23 @@
 ///
 /// Why this exists (N05, astra-review.md): the search path used to return
 /// the repository's hardcoded newest-first rows even when the user had picked
-/// Language or Age-group sort. The SQL-backed `query()` orders in SQL; the
-/// FTS search path cannot reuse that SQL, so it sorts its matches here with
-/// the SAME rules:
+/// Language or Age-group sort. This class states the ONE ordering contract:
 ///
 ///  - recentlyAdded → newest `addedDate` first;
-///  - languageAsc   → blank/null languages LAST, then language A→Z
-///                    (binary code-unit order, matching SQLite's default
-///                    collation), ties newest-first;
+///  - languageAsc   → blank/null languages LAST (null and `''` are the same
+///                    key), then language A→Z (binary code-unit order,
+///                    matching SQLite's default collation), ties newest-first;
 ///  - ageGroupAsc   → [AgeGroup.sortRank] order (NOT token-alphabetical),
 ///                    nulls last, ties newest-first.
 ///
 /// All sorts are stable: equal keys keep their incoming order.
+///
+/// Who uses it (N10-d): production no longer sorts in Dart — both repository
+/// reads (`query` and the FTS `search`) produce this order inside SQLite, so
+/// a later page can be correct. This class is the ORACLE the repository's SQL
+/// is tested against (`drift_book_repository_test.dart`), and the contract
+/// any future in-memory implementation must follow. Changing a rule here
+/// without changing the SQL twin makes that test fail loudly — intended.
 library;
 
 import 'package:pitaka/features/library/domain/entities/book.dart';

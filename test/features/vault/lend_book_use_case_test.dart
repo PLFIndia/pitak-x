@@ -28,7 +28,11 @@ class _Books implements BookRepository {
   Future<Either<Failure, List<Book>>> getAll() async =>
       right(byId.values.toList());
   @override
-  Future<Either<Failure, List<Book>>> search(String q) async => right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String q, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override

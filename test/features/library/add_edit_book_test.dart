@@ -69,9 +69,9 @@ void main() {
     test('updated book is findable by new title via FTS search', () async {
       final inserted = ok(await repo.insert(const Book(title: 'Alpha')));
       await repo.update(inserted.copyWith(title: 'Bravo'));
-      final hits = ok(await repo.search('Bravo'));
+      final hits = ok(await repo.search('Bravo', sort: BookSort.recentlyAdded));
       expect(hits.map((b) => b.title), contains('Bravo'));
-      final old = ok(await repo.search('Alpha'));
+      final old = ok(await repo.search('Alpha', sort: BookSort.recentlyAdded));
       expect(old, isEmpty);
     });
 
@@ -86,10 +86,17 @@ void main() {
         // English < Hindi, blank language sorts last.
         expect(byLang.map((b) => b.title).toList(), ['Eng1', 'Hin1', 'NoLang']);
 
+        // N10-d D1-a: the facet is the STORED spelling (what the chip shows),
+        // matched exactly — SQLite's lower() is ASCII-only, so a case-folded
+        // compare silently missed non-Latin languages.
         final filtered = ok(
-          await repo.query(sort: BookSort.recentlyAdded, language: 'hindi'),
+          await repo.query(sort: BookSort.recentlyAdded, language: 'Hindi'),
         );
         expect(filtered.map((b) => b.title), ['Hin1']);
+        final otherCase = ok(
+          await repo.query(sort: BookSort.recentlyAdded, language: 'hindi'),
+        );
+        expect(otherCase, isEmpty);
       },
     );
 

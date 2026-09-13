@@ -14,8 +14,11 @@ abstract interface class BookRepository {
   /// All books (including soft-removed), newest first.
   Future<Either<Failure, List<Book>>> getAll();
 
-  /// Books ordered by [sort], optionally narrowed to [language] (exact, case-
-  /// insensitive; null = all). Used by the library list's sort/filter controls.
+  /// Books ordered by [sort], optionally narrowed to [language] (exact match
+  /// on the stored string; null/blank = all). Used by the library list's
+  /// sort/filter controls. The returned order is FINAL and total (ties broken
+  /// newest-first, then by id) — the caller must not re-sort or re-filter
+  /// (N10-d: a later page relies on the store producing the exact order).
   Future<Either<Failure, List<Book>>> query({
     required BookSort sort,
     String? language,
@@ -49,8 +52,15 @@ abstract interface class BookRepository {
   /// this only removes the Drift row. Idempotent: deleting a missing id is ok.
   Future<Either<Failure, Unit>> delete(int id);
 
-  /// Full-text search over the FTS5 index; returns matching books.
-  Future<Either<Failure, List<Book>>> search(String query);
+  /// Full-text search over the FTS5 index. Matches are narrowed to [language]
+  /// and ordered by [sort] with the SAME rules as [query], so the result is
+  /// final — the caller shows it as-is (N10-d). A blank [query] yields an
+  /// empty list.
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  });
 
   /// Finds a book by exact ISBN, or null when none / [isbn] blank. Used by
   /// import dedup (existing ISBN → skip).

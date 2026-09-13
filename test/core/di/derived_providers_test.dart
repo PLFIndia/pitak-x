@@ -71,8 +71,11 @@ class _FakeBookRepo implements BookRepository {
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async =>
-      right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async => right(const []);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
   @override

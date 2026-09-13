@@ -6,6 +6,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -34,6 +35,11 @@ class _FakeBookRepo implements BookRepository {
   /// Sorts seen by query(), to prove the watched sort reaches the repo.
   final List<BookSort> sortsSeen = [];
 
+  /// (query, sort, language) triples seen by search() — N10-d: the
+  /// controller must hand the FULL intent to the repository, which now
+  /// returns the final list (no Dart filter/sort left in the controller).
+  final List<(String, BookSort, String?)> searchesSeen = [];
+
   int markRemovedCalls = 0;
 
   @override
@@ -49,8 +55,14 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async =>
-      right(const []);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async {
+    searchesSeen.add((query, sort, language));
+    return right(const []);
+  }
 
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async {
@@ -93,18 +105,30 @@ class _GatedSearchRepo extends _FakeBookRepo {
   final Map<String, Completer<List<Book>>> gates = {};
 
   @override
-  Future<Either<Failure, List<Book>>> search(String query) =>
-      (gates[query] ??= Completer<List<Book>>()).future.then(right);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) => (gates[query] ??= Completer<List<Book>>()).future.then(right);
 }
 
-/// Repo whose search always returns a fixed unsorted list (N05 sort check).
+/// Repo whose search returns a fixed list VERBATIM. N10-d: the repository
+/// owns the final order and filter, so whatever it returns must reach the
+/// UI untouched — a controller that still re-sorted or re-filtered would
+/// change this list.
 class _FixedSearchRepo extends _FakeBookRepo {
   _FixedSearchRepo(super.all, this.searchResults);
   final List<Book> searchResults;
 
   @override
-  Future<Either<Failure, List<Book>>> search(String query) async =>
-      right(searchResults);
+  Future<Either<Failure, List<Book>>> search(
+    String query, {
+    required BookSort sort,
+    String? language,
+  }) async {
+    searchesSeen.add((query, sort, language));
+    return right(searchResults);
+  }
 }
 
 /// In-memory settings repo so the settings controller (and its sort value)
@@ -268,8 +292,16 @@ void main() {
     expect(list.single.title, 'FAST');
   });
 
-  test('N05: search results honor the persisted sort', () async {
-    final repo = _FixedSearchRepo(const [], [
+  // N05 pinned "search results honor the persisted sort" by having the
+  // controller re-sort in Dart. N10-d moves that duty into the repository's
+  // SQL (so a later page can be correct), so the controller's contract is
+  // now: forward the sort AND the language facet, and show what comes back.
+  // The ordering itself is pinned in drift_book_repository_test.dart.
+  test('N05/N10-d: search forwards the persisted sort and the language facet '
+      'to the repository and shows its list verbatim', () async {
+    // Deliberately NOT in languageAsc order and NOT all Zulu: a controller
+    // that still sorted or filtered would change this list.
+    final fromRepo = [
       const Book(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
       const Book(
         id: 2,
@@ -277,13 +309,15 @@ void main() {
         addedDate: 2,
         language: 'Afrikaans',
       ),
-    ]);
+    ];
+    final repo = _FixedSearchRepo(const [], fromRepo);
     final settings = _FakeSettingsRepo()
       ..settings = AppSettings.defaults.copyWith(
         librarySort: BookSort.languageAsc,
       );
     final container = makeContainer(repo, settings: settings)
       ..listen(libraryControllerProvider, (_, _) {}); // keep alive
+    container.read(libraryLanguageFilterProvider.notifier).set('Zulu');
     final notifier = container.read(libraryControllerProvider.notifier);
     await container.read(libraryControllerProvider.future);
 
@@ -291,11 +325,12 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 150));
     await container.read(libraryControllerProvider.future);
 
+    expect(repo.searchesSeen, [('x', BookSort.languageAsc, 'Zulu')]);
     final titles = container
         .read(libraryControllerProvider)
         .value!
         .map((x) => x.title)
         .toList();
-    expect(titles, ['afrikaans', 'zulu']);
+    expect(titles, ['zulu', 'afrikaans']);
   });
 }
