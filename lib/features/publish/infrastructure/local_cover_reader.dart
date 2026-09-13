@@ -31,7 +31,9 @@ Future<List<int>?> Function(String coverUrl) localCoverReader(
   final file = File(p.join(coversDir, leaf));
   if (!file.existsSync()) return null;
   try {
-    return ImageDownscaler.downscaleJpeg(await file.readAsBytes());
+    // Worker isolate (N10-a): publish re-encodes EVERY local cover, so a
+    // large library would otherwise stall the UI for the whole loop.
+    return await ImageDownscaler.downscaleJpegAsync(await file.readAsBytes());
   } on Exception {
     return null;
   }

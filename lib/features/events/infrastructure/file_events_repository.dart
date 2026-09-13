@@ -9,7 +9,7 @@
 ///
 /// Image bytes are produced by the injected [DownscaleFn] so the repo stays
 /// unit-testable without the real `image` package; the provider wires the real
-/// `ImageDownscaler.downscaleJpeg`.
+/// `ImageDownscaler.downscaleJpegAsync` (worker isolate, N10-a).
 library;
 
 import 'dart:convert';
@@ -25,7 +25,8 @@ import 'package:pitaka/features/events/domain/repositories/events_repository.dar
 import 'package:uuid/uuid.dart';
 
 /// Downscales raw image bytes to bounded JPEG, or null when undecodable.
-typedef DownscaleFn = Uint8List? Function(List<int> bytes);
+/// Asynchronous because the real implementation runs off the UI isolate.
+typedef DownscaleFn = Future<Uint8List?> Function(List<int> bytes);
 
 /// Persists events metadata + poster images under [baseDir].
 final class FileEventsRepository implements EventsRepository {
@@ -85,7 +86,7 @@ final class FileEventsRepository implements EventsRepository {
     Uint8List rawImageBytes,
   ) async {
     // Downscale + re-encode FIRST: bounds the file size and strips EXIF/GPS.
-    final jpeg = _downscale(rawImageBytes);
+    final jpeg = await _downscale(rawImageBytes);
     if (jpeg == null) {
       return left(const ValidationFailure('That image could not be read.'));
     }

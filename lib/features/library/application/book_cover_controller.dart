@@ -38,7 +38,9 @@ class BookCoverController extends _$BookCoverController {
     Book book,
     Uint8List rawBytes,
   ) async {
-    final jpeg = ImageDownscaler.downscaleJpeg(rawBytes);
+    // Worker isolate (N10-a): a fresh camera capture is a multi-megapixel
+    // decode + resize; on the UI isolate that froze the detail page.
+    final jpeg = await ImageDownscaler.downscaleJpegAsync(rawBytes);
     if (jpeg == null) {
       return left(const ValidationFailure('image could not be decoded'));
     }

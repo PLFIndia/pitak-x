@@ -18,7 +18,8 @@ void main() {
 
   // A downscale stub: echoes the bytes (pretending they decoded) unless they
   // are the sentinel "BAD", simulating an undecodable image (returns null).
-  Uint8List? fakeDownscale(List<int> bytes) {
+  // Async since N10-a: the real downscale runs in a worker isolate.
+  Future<Uint8List?> fakeDownscale(List<int> bytes) async {
     if (bytes.length == 3 &&
         bytes[0] == 0x42 &&
         bytes[1] == 0x41 &&

@@ -29,7 +29,9 @@ class LibraryLogoController extends _$LibraryLogoController {
   /// Downscales [rawBytes], stores the JPEG under `covers/`, and persists the
   /// reference in settings. Returns the stored reference on success.
   Future<Either<Failure, String>> setLogo(Uint8List rawBytes) async {
-    final jpeg = ImageDownscaler.downscaleJpeg(rawBytes);
+    // Worker isolate (N10-a): keeps the settings page responsive while a
+    // gallery photo is decoded and resized.
+    final jpeg = await ImageDownscaler.downscaleJpegAsync(rawBytes);
     if (jpeg == null) {
       return left(const ValidationFailure('image could not be decoded'));
     }

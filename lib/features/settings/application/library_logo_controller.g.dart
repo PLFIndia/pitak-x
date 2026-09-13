@@ -7,7 +7,7 @@ part of 'library_logo_controller.dart';
 // **************************************************************************
 
 String _$libraryLogoControllerHash() =>
-    r'61edf7e4085c7344a99cd790e09f4d300d934c34';
+    r'383ddf9d0be46b534922ee622551e56a0d1a5322';
 
 /// Sets or clears the user's library logo image.
 ///

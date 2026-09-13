@@ -432,8 +432,9 @@ BoundedCoverDownload boundedCoverDownload(BoundedCoverDownloadRef ref) {
     if (result is! CoverFetched) return result;
     // Downscale before publishing (400x600 q80): small git push AND EXIF/GPS
     // stripped. No raw fallback — a cover that can't be re-encoded is
-    // dropped, never published unstripped (REVIEW_FINDINGS_2 S11).
-    final jpeg = ImageDownscaler.downscaleJpeg(result.bytes);
+    // dropped, never published unstripped (REVIEW_FINDINGS_2 S11). Runs in a
+    // worker isolate (N10-a) — a publish of many covers must not stall the UI.
+    final jpeg = await ImageDownscaler.downscaleJpegAsync(result.bytes);
     return jpeg == null
         ? const CoverRefused(CoverRefusal.notAnImage)
         : CoverFetched(jpeg);
@@ -947,6 +948,6 @@ Future<EventsRepository> eventsRepository(EventsRepositoryRef ref) async {
   return FileEventsRepository(
     baseDir: dir.path,
     downscale: (bytes) =>
-        ImageDownscaler.downscaleJpeg(bytes, maxW: 1080, maxH: 1440),
+        ImageDownscaler.downscaleJpegAsync(bytes, maxW: 1080, maxH: 1440),
   );
 }

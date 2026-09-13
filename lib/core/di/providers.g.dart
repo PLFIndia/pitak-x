@@ -692,7 +692,7 @@ final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
 // ignore: unused_element
 typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
 String _$boundedCoverDownloadHash() =>
-    r'01522357ad2ef65c99f4950654c67474aa1c094e';
+    r'26bb6879ed58b99cd14babb330131c1e1d3b94a0';
 
 /// Bounded, typed remote-cover download (M1: allow-list + deadline + byte
 /// cap; N08: the deadline aborts the socket) with the publish downscale
@@ -2144,7 +2144,7 @@ final restoreBackupProvider = AutoDisposeFutureProvider<RestoreBackup>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef RestoreBackupRef = AutoDisposeFutureProviderRef<RestoreBackup>;
-String _$eventsRepositoryHash() => r'fcff3cd04659820293505f831d60dde0d4a48e64';
+String _$eventsRepositoryHash() => r'1394ab4191a80a78c84e94f9d87022e666648a6d';
 
 /// Events (poster) persistence: `events.json` + `posters/<uuid>.jpg` under the
 /// app docs dir. Poster images are downscaled (EXIF/GPS stripped) before save.
