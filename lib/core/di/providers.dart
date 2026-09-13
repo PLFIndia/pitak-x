@@ -38,6 +38,7 @@ import 'package:pitaka/features/import_export/application/merge_library_use_case
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
+import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/logo_file_reader.dart';
@@ -108,7 +109,6 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:sqlite3/sqlite3.dart';
 
 part 'providers.g.dart';
 
@@ -888,6 +888,8 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
     namespace: ref.read(settingsControllerProvider.notifier),
     jsonParser: const PitakaJsonImporter(),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
+    // N10-c: the plan is computed on a worker isolate.
+    planner: planMergeInBackground,
   );
 }
 
@@ -903,11 +905,9 @@ Future<CreateBackupUseCase> createBackupUseCase(
   final store = await ref.watch(vaultStoreProvider.future);
   final coversDir = await ref.watch(coversDirProvider.future);
   final dir = await ref.watch(appDocsDirProvider.future);
-  final writer = BackupArchiveWriter(
-    openDatabase: sqlite3.open,
-    vaultStore: store,
-    coversDir: coversDir,
-  );
+  // N10-c: the writer opens SQLite itself inside its worker isolate (an
+  // `sqlite3.open` tear-off is not sendable across isolates).
+  final writer = BackupArchiveWriter(vaultStore: store, coversDir: coversDir);
   return CreateBackupUseCase(
     books: books,
     wishlist: wishlist,

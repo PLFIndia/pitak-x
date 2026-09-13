@@ -2069,7 +2069,7 @@ final pdfTextRasterizerProvider =
 // ignore: unused_element
 typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
-    r'dd8306325086e26ce1ba3c7120788e3a6adcb0f6';
+    r'3be3d0337d2d255a58b32cb5c4aa18a49e1ab251';
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID
@@ -2096,7 +2096,7 @@ final mergeLibraryUseCaseProvider =
 typedef MergeLibraryUseCaseRef =
     AutoDisposeFutureProviderRef<MergeLibraryUseCase>;
 String _$createBackupUseCaseHash() =>
-    r'26c2970f397dd08822a1616b02b7c30547572b51';
+    r'cde9a9cd8e0f40a1b167cefe49dec8e4b05ea7d6';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and

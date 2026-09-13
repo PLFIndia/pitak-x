@@ -15,9 +15,15 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 abstract interface class BackupArchiveBuilder {
   /// Builds the archive bytes from [books] + [wishlist], including the vault
   /// and covers when present. [workDir] is a scratch directory for transient
-  /// files; [exportedAt] stamps the manifest (epoch millis). Throws on IO
-  /// failure so the caller can fail closed.
-  Uint8List build({
+  /// files; [exportedAt] stamps the manifest (epoch millis). The returned
+  /// future completes with an error on IO failure so the caller can fail
+  /// closed.
+  ///
+  /// Asynchronous on purpose (N10-c): building a backup means writing two
+  /// SQLite files, reading every cover and deflating the lot — seconds of
+  /// work for a large library. Implementations are expected to do that off
+  /// the calling isolate so the UI keeps painting.
+  Future<Uint8List> build({
     required List<Book> books,
     required List<WishlistBook> wishlist,
     required String workDir,

@@ -10,6 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
@@ -249,6 +250,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _FakeBooks([]),
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
       namespace: _FakeNamespace(libraryId: matchingId),
     );
     final res = await useCase.call('title,author\nFoo,Bar');
@@ -271,6 +273,7 @@ void main() {
       bookRepo: repo,
       namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
     );
     final json = exportJson(
       libraryId: matchingId,
@@ -289,6 +292,88 @@ void main() {
     expect(repo.books.firstWhere((b) => b.title == '1984').bookUid, 'u2');
   });
 
+  group('N10-c — the plan is computed through the injected planner', () {
+    test('the use case awaits the planner and applies ITS plan', () async {
+      // The planner is the seam that moves planMerge off the UI isolate. The
+      // use case must call it (not planMerge directly) and act on what it
+      // returns — here a planner that reports an empty plan, so nothing is
+      // inserted even though the file has a genuinely new book.
+      final repo = _FakeBooks([
+        const Book(
+          id: 1,
+          bookUid: 'u1',
+          title: 'Godaan',
+          isbn: '111',
+          addedDate: 1,
+        ),
+      ]);
+      var calls = 0;
+      List<Book>? seenLocal;
+      List<Book>? seenIncoming;
+      final useCase = MergeLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: repo,
+        namespace: _FakeNamespace(libraryId: matchingId),
+        replacementGuard: FakeReplacementGuard(),
+        planner: (local, incoming) async {
+          calls++;
+          seenLocal = local;
+          seenIncoming = incoming;
+          return const MergePlan(
+            toAdd: [],
+            conflicts: [],
+            possibleDuplicates: [],
+            identical: 0,
+          );
+        },
+      );
+      final json = exportJson(
+        libraryId: matchingId,
+        books: [
+          {'bookUid': 'u2', 'title': '1984', 'isbn': '222'},
+        ],
+      );
+
+      final res = await useCase.call(json);
+      final outcome = res.getOrElse((f) => fail('merge failed: $f'));
+      expect(calls, 1);
+      expect(seenLocal!.single.bookUid, 'u1');
+      expect(seenIncoming!.single.bookUid, 'u2');
+      expect((outcome as MergeMerged).result.added, 0);
+      expect(repo.books.any((b) => b.title == '1984'), isFalse);
+    });
+
+    test('the composition root wires the worker-isolate planner', () async {
+      // N14 makes `planner` a required port; this pins that production DI
+      // injects the infrastructure implementation and not a stub, by driving
+      // a matching-ID merge through the REAL provider and checking the union
+      // lands (the plan must have been computed somewhere).
+      final repo = _FakeBooks([
+        const Book(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
+      ]);
+      final settings = ReplacementSettings()..id = matchingId;
+      final container = ProviderContainer(
+        overrides: [
+          bookRepositoryProvider.overrideWith((ref) async => repo),
+          settingsRepositoryProvider.overrideWith((ref) async => settings),
+        ],
+      );
+      addTearDown(container.dispose);
+      final useCase = await container.read(mergeLibraryUseCaseProvider.future);
+      final res = await useCase.call(
+        exportJson(
+          libraryId: matchingId,
+          books: [
+            {'bookUid': 'u2', 'title': 'Brand New'},
+          ],
+        ),
+      );
+      final outcome = res.getOrElse((f) => fail('merge failed: $f'));
+      expect((outcome as MergeMerged).result.added, 1);
+      expect(repo.books.any((b) => b.title == 'Brand New'), isTrue);
+    });
+  });
+
   test('differing library id returns a decision, applies nothing', () async {
     final repo = _FakeBooks([
       const Book(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
@@ -298,6 +383,7 @@ void main() {
       bookRepo: repo,
       namespace: _FakeNamespace(libraryId: matchingId, libraryName: 'Mine'),
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
     );
     final json = exportJson(
       libraryId: otherId,
@@ -326,6 +412,7 @@ void main() {
       bookRepo: repo,
       namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
     );
     final json = exportJson(
       libraryId: 'NOT-A-VALID-ID',
@@ -348,6 +435,7 @@ void main() {
       bookRepo: repo,
       namespace: settings,
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
     );
 
     const decision = MergeDiffersDecision(
@@ -378,6 +466,7 @@ void main() {
       bookRepo: repo,
       namespace: settings,
       replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
     );
 
     const decision = MergeDiffersDecision(
@@ -407,6 +496,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       final json = exportJson(
         libraryId: matchingId,
@@ -445,6 +535,7 @@ void main() {
         bookRepo: repo,
         namespace: settings,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       const decision = MergeDiffersDecision(
@@ -481,6 +572,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -510,6 +602,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -548,6 +641,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -576,6 +670,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       await useCase.applyResolution(
         local: repo.books.first,
@@ -610,6 +705,7 @@ void main() {
           bookRepo: repo,
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
         await useCase.applyResolution(
           local: repo.books.first,
@@ -647,6 +743,7 @@ void main() {
           bookRepo: repo,
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
 
         final result = await useCase.applyResolution(
@@ -682,6 +779,7 @@ void main() {
             bookRepo: repo,
             namespace: _FakeNamespace(),
             replacementGuard: FakeReplacementGuard(),
+            planner: planMergeInline,
           );
 
           final result = await useCase.applyResolution(
@@ -710,6 +808,7 @@ void main() {
           bookRepo: repo,
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
 
         final result = await useCase.applyResolution(
@@ -740,6 +839,7 @@ void main() {
           bookRepo: repo,
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
 
         final result = await useCase.applyResolution(
@@ -787,6 +887,7 @@ void main() {
         bookRepo: repo,
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final res = await useCase.applyJoin(decision);
@@ -810,6 +911,7 @@ void main() {
         bookRepo: repo,
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final res = await useCase.applyJoin(decision);
@@ -832,6 +934,7 @@ void main() {
         bookRepo: _FakeBooks([]),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final result = (await useCase.applyJoin(
@@ -851,6 +954,7 @@ void main() {
         bookRepo: _FakeBooks([]),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
       const noId = MergeDiffersDecision(
         incomingBooks: [Book(bookUid: 'u9', title: 'Their book', addedDate: 1)],
@@ -884,6 +988,7 @@ void main() {
           bookRepo: repo,
           namespace: namespace,
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
 
         final result = (await useCase.applyOverwrite(
@@ -915,6 +1020,7 @@ void main() {
         bookRepo: repo,
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final result = (await useCase.applyOverwrite(
@@ -955,6 +1061,7 @@ void main() {
         bookRepo: _FakeBooks([]),
         namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final merged =
@@ -983,6 +1090,7 @@ void main() {
         bookRepo: repo,
         namespace: _FakeNamespace(libraryId: otherId),
         replacementGuard: FakeReplacementGuard(),
+        planner: planMergeInline,
       );
 
       final outcome = (await useCase.call(
@@ -1011,6 +1119,7 @@ void main() {
           bookRepo: _FakeBooks([]),
           namespace: _FakeNamespace(libraryId: matchingId),
           replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
         );
         final allBad = exportJson(
           libraryId: matchingId,

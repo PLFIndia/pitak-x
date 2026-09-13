@@ -27,10 +27,27 @@
 ///
 /// No secrets pass through here: the vault DB is opaque ciphertext on disk and
 /// the blob is already ciphertext. This writer never sees the vault key.
+///
+/// **Where the work runs (N10-c).** Everything heavy — the two SQLite files,
+/// every cover read, the deflate pass — happens inside a one-shot worker
+/// isolate (`Isolate.run`), so the UI isolate keeps painting while a large
+/// backup is assembled. The calling isolate only resolves the cheap, plain
+/// facts the worker needs (paths, "is there a vault", the ciphertext blob
+/// string) into a [_BackupJob] and ships that across. Two consequences worth
+/// knowing before you change this file:
+///  - the worker opens SQLite ITSELF through [_openSqlite] (a top-level
+///    function). The `sqlite3.open` tear-off cannot be sent to an isolate —
+///    it drags a `NativeFinalizer` along and the send fails at runtime — so
+///    there is deliberately no `openDatabase` constructor seam any more;
+///  - covers are streamed into the encoder ONE AT A TIME
+///    (`ZipEncoder.startEncode` / `addFile` / `endEncode`, verified in
+///    `archive` 3.6.1), so peak memory is one cover plus the growing ZIP,
+///    not every cover plus every deflated copy plus the ZIP.
 library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -41,6 +58,7 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 /// Stable archive entry names (mirror of the restore reader's contract).
 const String _manifestEntry = 'manifest.json';
@@ -56,22 +74,38 @@ const String _booksIdentityHash = 'f4f033ebb290bd84fc04bd3d303d0e5f';
 const int _wishlistDbVersion = 1;
 const String _wishlistIdentityHash = 'ef4bdbbc39ca94fef44d980ecc902f28';
 
+/// Opens (creating) a SQLite database file at [path]. Top-level on purpose:
+/// the worker isolate calls it, and each isolate lazily builds its own
+/// `sqlite3` binding, so no FFI handle ever has to cross the isolate boundary.
+CommonDatabase _openSqlite(String path) => sqlite3.open(path);
+
+/// Everything the worker isolate needs, as plain sendable data (paths,
+/// strings, ints, entity lists). No closures, no `ref`, no FFI handles.
+///
+/// A record type rather than a class: there is nothing to encapsulate, and a
+/// record makes it visually obvious at the `Isolate.run` call that only data
+/// crosses.
+typedef _BackupJob = ({
+  List<Book> books,
+  List<WishlistBook> wishlist,
+  String workDir,
+  int exportedAt,
+  bool hasVault,
+  String? vaultDbPath,
+  String? blob,
+  String coversDir,
+});
+
 /// Builds a `.pitabak` archive as bytes.
 class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Creates the writer.
   ///
-  /// [openDatabase] opens a fresh empty SQLite database at a path (injected so
-  /// tests can use an in-memory/native factory without a platform binding);
   /// [vaultStore] locates the persistent vault artifacts; [coversDir] is where
   /// user cover images live.
   const BackupArchiveWriter({
-    required this.openDatabase,
     required this.vaultStore,
     required this.coversDir,
   });
-
-  /// Opens (creating) a SQLite database file at the given path.
-  final CommonDatabase Function(String path) openDatabase;
 
   /// Persistent vault locations (DB + blob), copied verbatim when present.
   final VaultArtifactsStore vaultStore;
@@ -83,66 +117,96 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// and covers when present. [workDir] is a scratch directory for the
   /// transient Room DB files; it is created fresh and removed afterward.
   /// [exportedAt] stamps the manifest (epoch millis).
+  ///
+  /// The heavy lifting runs in a worker isolate (see the library doc). The
+  /// vault facts are read HERE, on the calling isolate, because
+  /// [VaultArtifactsStore] is an interface whose implementation is not
+  /// guaranteed sendable; they are two `existsSync` calls and a tiny file
+  /// read, and the blob is ciphertext that already lives as a plain file.
   @override
-  Uint8List build({
+  Future<Uint8List> build({
     required List<Book> books,
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,
   }) {
-    final work = Directory(workDir);
+    final hasVault = vaultStore.isInitialized();
+    // Typed by `_buildInWorker`'s parameter (`_BackupJob`): plain data only.
+    final job = (
+      books: books,
+      wishlist: wishlist,
+      workDir: workDir,
+      exportedAt: exportedAt,
+      hasVault: hasVault,
+      vaultDbPath: hasVault ? vaultStore.dbPath : null,
+      blob: hasVault ? vaultStore.readBlob() : null,
+      coversDir: coversDir,
+    );
+    return Isolate.run(
+      () => _buildInWorker(job),
+      debugName: 'pitaka-backup-build',
+    );
+  }
+
+  /// The whole build, run inside the worker isolate. Static so it cannot
+  /// accidentally capture `this` (and with it the non-sendable store).
+  static Uint8List _buildInWorker(_BackupJob job) {
+    final work = Directory(job.workDir);
     if (work.existsSync()) work.deleteSync(recursive: true);
     work.createSync(recursive: true);
     try {
       final booksDbPath = p.join(work.path, _booksDbEntry);
       final wishlistDbPath = p.join(work.path, _wishlistDbEntry);
-      _writeBooksDb(booksDbPath, books);
-      _writeWishlistDb(wishlistDbPath, wishlist);
+      _writeBooksDb(booksDbPath, job.books);
+      _writeWishlistDb(wishlistDbPath, job.wishlist);
 
-      final hasVault = vaultStore.isInitialized();
-      final blob = hasVault ? vaultStore.readBlob() : null;
-      final coverFiles = _coverFiles();
+      final coverFiles = _coverFiles(job.coversDir);
 
       final manifest = BackupManifest(
-        exportedAt: exportedAt,
-        hasBorrowers: hasVault,
-        hasBackupBlob: hasVault && blob != null,
+        exportedAt: job.exportedAt,
+        hasBorrowers: job.hasVault,
+        hasBackupBlob: job.hasVault && job.blob != null,
         hasCovers: coverFiles.isNotEmpty,
       );
 
-      final archive = Archive()
+      // Incremental encoding: each addFile deflates ONE entry, appends it to
+      // `out` and drops the compressed copy, so nothing but the growing ZIP
+      // is retained between entries.
+      final out = OutputStream();
+      final encoder = ZipEncoder()
+        ..startEncode(out)
         ..addFile(_entry(_manifestEntry, _utf8(manifest.toJson())))
         ..addFile(_entry(_booksDbEntry, File(booksDbPath).readAsBytesSync()))
         ..addFile(
           _entry(_wishlistDbEntry, File(wishlistDbPath).readAsBytesSync()),
         );
 
-      if (hasVault) {
-        archive.addFile(
-          _entry(_borrowersDbEntry, File(vaultStore.dbPath).readAsBytesSync()),
+      if (job.hasVault) {
+        encoder.addFile(
+          _entry(_borrowersDbEntry, File(job.vaultDbPath!).readAsBytesSync()),
         );
+        final blob = job.blob;
         if (blob != null) {
-          archive.addFile(_entry(_backupBlobEntry, _utf8(blob)));
+          encoder.addFile(_entry(_backupBlobEntry, _utf8(blob)));
         }
       }
       for (final f in coverFiles) {
-        archive.addFile(
+        encoder.addFile(
           _entry(_coverEntryPrefix + p.basename(f.path), f.readAsBytesSync()),
         );
       }
+      encoder.endEncode();
 
-      final encoded = ZipEncoder().encode(archive);
-      if (encoded == null) {
-        throw StateError('Failed to encode backup archive');
-      }
-      return Uint8List.fromList(encoded);
+      // `getBytes()` is a view over an over-allocated buffer; copy to exact
+      // size so the caller (and the share sheet) hold only the real archive.
+      return Uint8List.fromList(out.getBytes());
     } finally {
       if (work.existsSync()) work.deleteSync(recursive: true);
     }
   }
 
-  /// Cover files under `coversDir`, sorted by name; empty when none.
-  List<File> _coverFiles() {
+  /// Cover files under [coversDir], sorted by name; empty when none.
+  static List<File> _coverFiles(String coversDir) {
     final dir = Directory(coversDir);
     if (!dir.existsSync()) return const [];
     final files = dir.listSync().whereType<File>().toList()
@@ -153,8 +217,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Writes a Room-compatible `books.db` with the books table and the Room
   /// identity row. No FTS mirror is written (see class doc / the inline note):
   /// the bundled SQLite lacks the FTS4 module and restore never reads it.
-  void _writeBooksDb(String path, List<Book> books) {
-    final db = openDatabase(path);
+  static void _writeBooksDb(String path, List<Book> books) {
+    final db = _openSqlite(path);
     try {
       db
         ..execute('PRAGMA user_version = $_booksDbVersion')
@@ -232,8 +296,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
 
   /// Writes a Room-compatible `wishlist.db` with the wishlist_books table and
   /// the Room identity row.
-  void _writeWishlistDb(String path, List<WishlistBook> wishlist) {
-    final db = openDatabase(path);
+  static void _writeWishlistDb(String path, List<WishlistBook> wishlist) {
+    final db = _openSqlite(path);
     try {
       db
         ..execute('PRAGMA user_version = $_wishlistDbVersion')
@@ -287,7 +351,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
 
   /// Writes Room's `room_master_table` identity row so Room's open-time
   /// integrity check passes (id=42 is Room's fixed sentinel row).
-  void _writeRoomMaster(CommonDatabase db, String identityHash) {
+  static void _writeRoomMaster(CommonDatabase db, String identityHash) {
     db
       ..execute(
         'CREATE TABLE IF NOT EXISTS room_master_table '

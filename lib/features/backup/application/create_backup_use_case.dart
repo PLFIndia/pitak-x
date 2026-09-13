@@ -51,7 +51,9 @@ class CreateBackupUseCase {
       return left(wishlistResult.getLeft().toNullable()!);
     }
     try {
-      final bytes = writer.build(
+      // N10-c: the builder runs on a worker isolate; awaiting here keeps the
+      // UI isolate free while the archive is assembled.
+      final bytes = await writer.build(
         books: allBooks,
         wishlist: allWishlist,
         workDir: workDir,

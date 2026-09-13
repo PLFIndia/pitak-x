@@ -200,6 +200,7 @@ void main() {
             namespace: ref.read(settingsControllerProvider.notifier),
             jsonParser: const PitakaJsonImporter(),
             replacementGuard: guard ?? FakeReplacementGuard(),
+            planner: planMergeInline,
           );
         }),
         // The library controller (invalidated on a successful merge) needs a
@@ -478,6 +479,7 @@ void main() {
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
+              planner: planMergeInline,
             );
           }),
           bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
@@ -835,6 +837,7 @@ void main() {
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
+              planner: planMergeInline,
             ),
           ),
           bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),

@@ -128,6 +128,7 @@ void main() {
                 namespace: ref.read(settingsControllerProvider.notifier),
                 jsonParser: const PitakaJsonImporter(),
                 replacementGuard: guard,
+                planner: planMergeInline,
               ),
             ),
           ],
@@ -175,6 +176,7 @@ void main() {
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
+              planner: planMergeInline,
             );
           }),
         ],
@@ -260,6 +262,7 @@ void main() {
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
+              planner: planMergeInline,
             ),
           ),
         ],

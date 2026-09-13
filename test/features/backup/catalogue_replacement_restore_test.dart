@@ -10,7 +10,6 @@ import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
-import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_harness.dart';
 
@@ -47,9 +46,8 @@ void main() {
   });
   tearDown(() => h.close());
 
-  Uint8List archive(List<Book> incoming) =>
+  Future<Uint8List> archive(List<Book> incoming) =>
       BackupArchiveWriter(
-        openDatabase: sqlite3.open,
         vaultStore: VaultStore(baseDir: '${h.directory.path}/no_source_vault'),
         coversDir: '${h.directory.path}/incoming_covers',
       ).build(
@@ -71,7 +69,7 @@ void main() {
       () async {
         await existing(returned: returned);
         final restorer = await h.container.read(restoreBackupProvider.future);
-        final bytes = archive([
+        final bytes = await archive([
           const Book(id: 7, bookUid: 'new', title: 'New'),
           _book.copyWith(id: 99, title: 'Changed'),
         ]);
@@ -120,7 +118,7 @@ void main() {
       source.writeAsBytesSync([8, 8]);
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: archive([
+        archiveBytes: await archive([
           const Book(id: 7, bookUid: 'unrelated', title: 'Other'),
         ]),
       );
@@ -145,7 +143,7 @@ void main() {
       hooks.afterRebuild = () => h.session.lock();
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: archive([_book.copyWith(id: 99, title: 'Changed')]),
+        archiveBytes: await archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
       final books = await h.currentBooks();
@@ -163,7 +161,7 @@ void main() {
           throw StateError('synthetic FTS failure');
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
-        archiveBytes: archive([_book.copyWith(id: 99, title: 'Changed')]),
+        archiveBytes: await archive([_book.copyWith(id: 99, title: 'Changed')]),
       );
       expect(result.getLeft().toNullable(), isA<StorageFailure>());
       final books = await h.currentBooks();
@@ -179,7 +177,7 @@ void main() {
       await existing();
       await h.session.lock();
       final restorer = await h.container.read(restoreBackupProvider.future);
-      final bytes = archive([_book.copyWith(id: 99)]);
+      final bytes = await archive([_book.copyWith(id: 99)]);
       expect((await restorer.restore(archiveBytes: bytes)).isLeft(), isTrue);
       expect(
         Directory('${h.directory.path}/restore_work').existsSync(),
@@ -194,7 +192,7 @@ void main() {
     await existing(returned: true);
     final restorer = await h.container.read(restoreBackupProvider.future);
     expect(
-      (await restorer.restore(archiveBytes: archive([]))).isLeft(),
+      (await restorer.restore(archiveBytes: await archive([]))).isLeft(),
       isTrue,
     );
     final books = await h.currentBooks();

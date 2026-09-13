@@ -44,6 +44,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/application/merge_planner.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
@@ -215,12 +216,20 @@ final class MergeLibraryUseCase {
     // depends on the domain port and gets the implementation via DI.
     required LibraryJsonParser jsonParser,
     required CatalogueReplacementGuard replacementGuard,
+    // N10-c: where the (CPU-heavy) plan is computed. Production injects the
+    // worker-isolate planner from infrastructure (N14: application code
+    // never touches `dart:isolate`); tests inject a synchronous or recording
+    // one. Required on purpose — a silently synchronous default would put the
+    // plan back on the UI isolate the moment someone forgot to wire it.
+    required MergePlanner planner,
   }) : _bookRepo = bookRepo,
        _namespace = namespace,
        _json = jsonParser,
-       _replacementGuard = replacementGuard;
+       _replacementGuard = replacementGuard,
+       _planner = planner;
 
   final CatalogueReplacementGuard _replacementGuard;
+  final MergePlanner _planner;
   final BookRepository _bookRepo;
   final LibraryNamespace _namespace;
   final LibraryJsonParser _json;
@@ -509,7 +518,7 @@ final class MergeLibraryUseCase {
       return localRes.match(left, (_) => throw StateError('unreachable'));
     }
     final local = localRes.getOrElse((_) => const <Book>[]);
-    final plan = planMerge(local, incoming);
+    final plan = await _planner(local, incoming);
     if (plan.toAdd.isNotEmpty) {
       final ins = await _bookRepo.insertAll(
         plan.toAdd.map((b) => b.copyWith(id: Book.emptyId)).toList(),

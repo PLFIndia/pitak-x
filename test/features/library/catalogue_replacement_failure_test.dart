@@ -8,6 +8,7 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 import 'replacement_harness.dart';
+import 'replacement_test_guard.dart';
 
 class _InterceptBooks implements BookRepository {
   _InterceptBooks(this.delegate);
@@ -60,6 +61,7 @@ void main() {
       namespace: h.namespace,
       jsonParser: const PitakaJsonImporter(),
       replacementGuard: h.session,
+      planner: planMergeInline,
     );
   });
   tearDown(() => h.close());
