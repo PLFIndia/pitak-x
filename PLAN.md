@@ -222,7 +222,13 @@ test-only `QueryInterceptor` appending `LIMIT`; D4 → **(a)** end-to-end
       site printed and counted; the wishlist decorator forwards the args.
 - [x] 8. `book_sorter.dart` header: role = contract / test oracle.
 - [x] 9. Gates green; `build_runner` LAST → 1 hash-only `.g.dart` diff.
-- [ ] 10. Commit approval.
+- [x] 10. Commit + push approved ("commit and push and do housekeeping"):
+      commit `2ef9381` perf(library) N10-d part 1, 31 paths staged
+      explicitly, pre-commit hook "generated code is current"; push
+      `2e14b67..2ef9381 main -> main` (no force); CI run `34766651432`
+      **success** (Flutter analyze/format/test + Rust). Housekeeping:
+      README test count 1604 → 1611; `appDetails.md` (local) §3/§5/§9/§10/§11
+      updated with the N10-d facts.
 
 ## Out-of-scope observations
 
@@ -303,8 +309,8 @@ standalone → **1611** total); cargo **32 passed** (Rust untouched);
 scan: no print/log/http/Uri/Platform/isolate added; the language facet is a
 bound `Variable`, the ORDER BY text is enum constants only.
 
-**Not done:** the commit. N10-d part 2 (`queryPage`/`searchPage` +
-windowed controller state) and N10-e remain. No device verification (a
+**Committed `2ef9381`, pushed, CI `34766651432` green.** N10-d part 2
+(`queryPage`/`searchPage` + windowed controller state) and N10-e remain. No device verification (a
 static ordering change, deterministic in tests).
 
 ## Commit paths (explicit — never `git add -A`)
