@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
@@ -610,4 +612,238 @@ void main() {
       }
     });
   });
+
+  // N10-b (astra-review.md N10): the fuzzy pass re-tokenised EVERY local
+  // no-ISBN candidate for EVERY incoming no-ISBN row — I·L regex passes per
+  // plan, 10^10 at the 100k import cap. The engine now tokenises each local
+  // candidate once and scores only candidates sharing at least one token.
+  // The plan it produces must be indistinguishable from the old full scan.
+  group('N10-b — fuzzy-token cache', () {
+    test('each local no-ISBN candidate is tokenised exactly once per plan, '
+        'ISBN-bearing locals never', () {
+      final local = [
+        for (var i = 0; i < 50; i++)
+          book(id: i + 1, uid: 'L$i', title: 'Local Title $i', author: 'A$i'),
+        // With an ISBN a local row is matched by key, never fuzzily.
+        for (var i = 0; i < 10; i++)
+          book(id: 100 + i, uid: 'K$i', title: 'Keyed $i', isbn: '97800$i'),
+      ];
+      final incoming = [
+        for (var i = 0; i < 40; i++)
+          book(uid: 'N$i', title: 'Incoming Title $i', author: 'W$i'),
+      ];
+      final calls = <String, int>{};
+      Set<String> counting(Book b) {
+        calls.update(b.bookUid!, (n) => n + 1, ifAbsent: () => 1);
+        return tokenSet(b);
+      }
+
+      planMerge(local, incoming, tokenizer: counting);
+
+      for (final l in local) {
+        if (normIsbn(l.isbn).isNotEmpty) {
+          expect(calls[l.bookUid], isNull, reason: '${l.bookUid} has an ISBN');
+        } else {
+          expect(calls[l.bookUid], 1, reason: '${l.bookUid} tokenised twice');
+        }
+      }
+      for (final inc in incoming) {
+        expect(calls[inc.bookUid], 1, reason: '${inc.bookUid}');
+      }
+      // 50 local candidates + 40 incoming rows. The old scan did 50·40 + 40.
+      expect(calls.values.fold<int>(0, (a, b) => a + b), 90);
+    });
+
+    test('an incoming file of ISBN-only rows tokenises nothing', () {
+      // The cache is built on the FIRST fuzzy query, so a plan that never
+      // needs the fuzzy pass does no more work than before.
+      final local = [
+        for (var i = 0; i < 20; i++) book(id: i + 1, uid: 'L$i', title: 'T$i'),
+      ];
+      final incoming = [
+        for (var i = 0; i < 20; i++)
+          book(uid: 'N$i', title: 'New $i', isbn: '9780$i'),
+      ];
+      var calls = 0;
+      final plan = planMerge(
+        local,
+        incoming,
+        tokenizer: (b) {
+          calls++;
+          return tokenSet(b);
+        },
+      );
+
+      expect(plan.toAdd, hasLength(20));
+      expect(calls, 0);
+    });
+
+    test('ties go to the earliest local candidate, as before', () {
+      final local = [
+        book(id: 7, uid: 'uA', title: 'Dohe', author: 'Kabir'),
+        book(id: 3, uid: 'uB', title: 'Dohe', author: 'Kabir'),
+      ];
+      final incoming = [book(uid: 'uZ', title: 'Dohe', author: 'Kabir')];
+
+      final dup = planMerge(local, incoming).possibleDuplicates.single;
+
+      expect(dup.local.id, 7);
+      expect(dup.similarity, 1.0);
+    });
+
+    test('a claimed candidate is skipped and the next best is surfaced', () {
+      final local = [
+        book(id: 1, uid: 'uA', title: 'Dohe', author: 'Kabir'),
+        book(id: 2, uid: 'uB', title: 'Dohe', author: 'Kabir Das'),
+      ];
+      final incoming = [
+        book(uid: 'uX', title: 'Dohe', author: 'Kabir'),
+        book(uid: 'uY', title: 'Dohe', author: 'Kabir'),
+      ];
+
+      final plan = planMerge(local, incoming);
+
+      expect(plan.possibleDuplicates, hasLength(2));
+      expect(plan.possibleDuplicates[0].local.id, 1);
+      expect(plan.possibleDuplicates[0].similarity, 1.0);
+      expect(plan.possibleDuplicates[1].local.id, 2);
+      expect(plan.possibleDuplicates[1].similarity, closeTo(2 / 3, 1e-9));
+    });
+
+    test(
+      'a candidate sharing no token is never chosen, even at threshold 0',
+      () {
+        // The old scan scored it 0 and `0 > 0.0` is false; the index never
+        // reaches it at all. Both must add the row instead of surfacing it.
+        final local = [book(id: 1, uid: 'uA', title: 'Godaan', author: 'Prem')];
+        final incoming = [book(uid: 'uZ', title: 'Sapiens', author: 'Harari')];
+
+        final plan = planMerge(local, incoming, fuzzyThreshold: 0);
+
+        expect(plan.possibleDuplicates, isEmpty);
+        expect(plan.toAdd.map((b) => b.bookUid), ['uZ']);
+      },
+    );
+
+    test('the indexed pass picks exactly what a brute-force scan picks', () {
+      // Seeded, so the 25 rounds are the same every run. A tiny vocabulary
+      // forces heavy token overlap, near-ties and exact ties.
+      final rng = Random(20260913);
+      const vocab = [
+        'kabir',
+        'dohe',
+        'ramayan',
+        'tulsi',
+        'godaan',
+        'premchand',
+        'sapiens',
+        'history',
+        'brief',
+        'nirmala',
+        'gaban',
+        'harari',
+        'yuval',
+        'homo',
+      ];
+      String phrase(int n) =>
+          List.generate(n, (_) => vocab[rng.nextInt(vocab.length)]).join(' ');
+      Book row(String uid, int id) => book(
+        id: id,
+        uid: uid,
+        title: phrase(1 + rng.nextInt(3)),
+        author: rng.nextBool() ? phrase(1 + rng.nextInt(2)) : null,
+      );
+
+      for (var round = 0; round < 25; round++) {
+        final local = [for (var i = 0; i < 40; i++) row('L$round-$i', i + 1)];
+        final incoming = [
+          for (var i = 0; i < 40; i++) row('N$round-$i', Book.emptyId),
+        ];
+        final threshold = const [0.3, 0.5, 0.6, 0.8][rng.nextInt(4)];
+
+        final plan = planMerge(local, incoming, fuzzyThreshold: threshold);
+        final expected = _bruteForceFuzzy(local, incoming, threshold);
+
+        expect(
+          plan.possibleDuplicates
+              .map((d) => (d.incoming.bookUid, d.local.id, d.similarity))
+              .toList(),
+          expected.surfaced,
+          reason: 'round $round, threshold $threshold',
+        );
+        expect(
+          plan.toAdd.map((b) => b.bookUid).toList(),
+          expected.added,
+          reason: 'round $round, threshold $threshold',
+        );
+      }
+    });
+
+    test(
+      'a 3000 × 3000 no-ISBN plan finishes well inside a generous budget',
+      () {
+        // 9,000,000 tokenisations on the old path (tens of seconds); ~6,000 on
+        // the cached path. The budget is ~25× the fixed code's local time so a
+        // slow CI runner cannot trip it, while the old code cannot pass it.
+        final rng = Random(7);
+        String phrase(int n) =>
+            List.generate(n, (_) => 'w${rng.nextInt(400)}x').join(' ');
+        final local = [
+          for (var i = 0; i < 3000; i++)
+            book(id: i + 1, uid: 'L$i', title: phrase(4), author: phrase(2)),
+        ];
+        final incoming = [
+          for (var i = 0; i < 3000; i++)
+            book(uid: 'N$i', title: phrase(4), author: phrase(2)),
+        ];
+
+        final sw = Stopwatch()..start();
+        final plan = planMerge(local, incoming);
+        sw.stop();
+
+        expect(plan.toAdd.length + plan.possibleDuplicates.length, 3000);
+        expect(
+          sw.elapsed,
+          lessThan(const Duration(seconds: 5)),
+          reason: 'fuzzy pass took ${sw.elapsedMilliseconds} ms',
+        );
+      },
+    );
+  });
+}
+
+/// The OLD fuzzy pass, written out in full as the oracle for the equivalence
+/// test: every incoming row scans every unclaimed local candidate, keeps the
+/// highest Jaccard (earliest on ties), claims it when ≥ threshold. All rows
+/// are no-ISBN with unique uids, so the key-matching steps never fire.
+({List<(String?, int, double)> surfaced, List<String?> added}) _bruteForceFuzzy(
+  List<Book> local,
+  List<Book> incoming,
+  double threshold,
+) {
+  final claimed = <int>{};
+  final surfaced = <(String?, int, double)>[];
+  final added = <String?>[];
+  for (final inc in incoming) {
+    final incTokens = tokenSet(inc);
+    Book? best;
+    var bestScore = 0.0;
+    if (incTokens.isNotEmpty) {
+      for (final c in local) {
+        if (claimed.contains(c.id)) continue;
+        final score = jaccard(incTokens, tokenSet(c));
+        if (score > bestScore) {
+          bestScore = score;
+          best = c;
+        }
+      }
+    }
+    if (best != null && bestScore >= threshold) {
+      claimed.add(best.id);
+      surfaced.add((inc.bookUid, best.id, bestScore));
+    } else {
+      added.add(inc.bookUid);
+    }
+  }
+  return (surfaced: surfaced, added: added);
 }

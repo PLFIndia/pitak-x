@@ -35,6 +35,14 @@
 /// Each incoming book matches AT MOST one local book, and two incoming books
 /// never match the same local book (first-claim wins, so a messy incoming file
 /// can't fan-in onto one local row).
+///
+/// Cost (N10-b): the fuzzy pass tokenises each local no-ISBN candidate ONCE
+/// per plan and looks candidates up through an inverted index (token →
+/// candidates), so an incoming row is scored only against candidates that
+/// share at least one token with it. Before, every incoming no-ISBN row
+/// re-tokenised and re-scored the whole local pool — I·L regex passes, which
+/// at the 100k-row import cap is 10¹⁰. The index changes nothing about WHICH
+/// candidate wins (see [_FuzzyIndex]).
 library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
@@ -42,6 +50,12 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 
 /// Default Jaccard-token similarity threshold for the no-ISBN fuzzy pass.
 const double kDefaultFuzzyThreshold = 0.6;
+
+/// Builds the fuzzy-match token set for one book. [planMerge] takes one so a
+/// test can count how often each book is tokenised; production always uses
+/// [tokenSet]. (Same dependency-injection shape as the use cases' optional
+/// `clock` parameter: a plain function, defaulted, never a framework.)
+typedef Tokenizer = Set<String> Function(Book book);
 
 /// How an incoming book was matched to a local book (for UI explanation).
 enum MatchKind {
@@ -164,10 +178,13 @@ class MergePlan {
 }
 
 /// Plans a merge of [incoming] into [local]. Pure: no IO, no mutation.
+///
+/// [tokenizer] is a test seam (see [Tokenizer]); leave it at the default.
 MergePlan planMerge(
   List<Book> local,
   List<Book> incoming, {
   double fuzzyThreshold = kDefaultFuzzyThreshold,
+  Tokenizer tokenizer = tokenSet,
 }) {
   // Indexes for O(1) exact matching. Blank keys are ignored.
   final localByUid = <String, Book>{};
@@ -183,8 +200,12 @@ MergePlan planMerge(
     }
   }
 
-  // Local no-ISBN books are the fuzzy-match candidate pool.
-  final localNoIsbn = local.where((b) => normIsbn(b.isbn).isEmpty).toList();
+  // Local no-ISBN books are the fuzzy-match candidate pool. The index is
+  // lazy: a file whose rows all carry ISBNs never tokenises anything.
+  final fuzzyIndex = _FuzzyIndex(
+    local.where((b) => normIsbn(b.isbn).isEmpty).toList(),
+    tokenizer,
+  );
 
   final toAdd = <Book>[];
   final conflicts = <MergeConflict>[];
@@ -279,9 +300,8 @@ MergePlan planMerge(
       continue;
     }
 
-    final candidate = _bestFuzzyMatch(
-      inc,
-      localNoIsbn,
+    final candidate = fuzzyIndex.best(
+      tokenizer(inc),
       claimedLocalIds,
       fuzzyThreshold,
     );
@@ -307,29 +327,87 @@ MergePlan planMerge(
   );
 }
 
-/// Best unclaimed local no-ISBN book whose similarity ≥ [threshold], or null.
-_FuzzyHit? _bestFuzzyMatch(
-  Book incoming,
-  List<Book> candidates,
-  Set<int> claimedLocalIds,
-  double threshold,
-) {
-  final incTokens = tokenSet(incoming);
-  if (incTokens.isEmpty) return null;
-  Book? best;
-  var bestScore = 0.0;
-  for (final c in candidates) {
-    if (claimedLocalIds.contains(c.id)) continue;
-    final score = jaccard(incTokens, tokenSet(c));
-    if (score > bestScore) {
-      bestScore = score;
-      best = c;
+/// The local no-ISBN candidate pool, tokenised once and indexed by token.
+///
+/// Why the index gives the SAME answer as scanning every candidate: Jaccard
+/// is |A∩B| / |A∪B|, so a candidate that shares no token with the incoming
+/// row scores exactly 0. The old scan kept a candidate only when its score
+/// was strictly greater than the running best (which starts at 0), so a
+/// 0-scoring candidate could never win. Walking the incoming tokens through
+/// the postings visits precisely the candidates with a non-zero score — and
+/// counts |A∩B| for free along the way — so skipping the rest drops nothing.
+/// Ties are still resolved to the candidate that comes FIRST in the pool,
+/// exactly like the scan did.
+///
+/// Both tables are built on the first query (`late final`), never earlier.
+class _FuzzyIndex {
+  _FuzzyIndex(this._candidates, this._tokenizer);
+
+  final List<Book> _candidates;
+  final Tokenizer _tokenizer;
+
+  /// Token set per candidate, parallel to [_candidates]. Only the SIZE is
+  /// read at query time (for the union); the sets themselves feed the
+  /// postings.
+  late final List<Set<String>> _tokens = [
+    for (final c in _candidates) _tokenizer(c),
+  ];
+
+  /// token → indices (into [_candidates]) of every candidate containing it,
+  /// in pool order. A token set has no duplicates, so each candidate appears
+  /// at most once per posting list.
+  late final Map<String, List<int>> _postings = () {
+    final map = <String, List<int>>{};
+    for (var i = 0; i < _tokens.length; i++) {
+      for (final t in _tokens[i]) {
+        (map[t] ??= <int>[]).add(i);
+      }
     }
+    return map;
+  }();
+
+  /// Best unclaimed candidate whose similarity to [incTokens] is ≥
+  /// [threshold], or null.
+  _FuzzyHit? best(
+    Set<String> incTokens,
+    Set<int> claimedLocalIds,
+    double threshold,
+  ) {
+    if (incTokens.isEmpty || _candidates.isEmpty) return null;
+
+    // |incoming ∩ candidate| for every candidate reached through a token.
+    final intersections = <int, int>{};
+    for (final t in incTokens) {
+      final posting = _postings[t];
+      if (posting == null) continue;
+      for (final i in posting) {
+        intersections.update(i, (n) => n + 1, ifAbsent: () => 1);
+      }
+    }
+
+    var bestIndex = -1;
+    var bestScore = 0.0;
+    for (final entry in intersections.entries) {
+      final i = entry.key;
+      if (claimedLocalIds.contains(_candidates[i].id)) continue;
+      final score = _jaccardFromIntersection(
+        entry.value,
+        incTokens.length,
+        _tokens[i].length,
+      );
+      // Strictly better score wins; on an exact tie the lower pool index
+      // wins (the scan visited candidates in pool order and only replaced on
+      // `>`). Map iteration order is not pool order, hence the explicit rule.
+      if (score > bestScore || (score == bestScore && i < bestIndex)) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+    if (bestIndex >= 0 && bestScore >= threshold) {
+      return _FuzzyHit(_candidates[bestIndex], bestScore);
+    }
+    return null;
   }
-  if (best != null && bestScore >= threshold) {
-    return _FuzzyHit(best, bestScore);
-  }
-  return null;
 }
 
 class _FuzzyHit {
@@ -618,9 +696,12 @@ Set<String> tokenSet(Book book) {
 }
 
 /// Jaccard similarity of two token sets: |A∩B| / |A∪B|. 0 when both empty.
-double jaccard(Set<String> a, Set<String> b) {
-  if (a.isEmpty && b.isEmpty) return 0;
-  final inter = a.where(b.contains).length;
-  final union = a.length + b.length - inter;
+double jaccard(Set<String> a, Set<String> b) =>
+    _jaccardFromIntersection(a.where(b.contains).length, a.length, b.length);
+
+/// The Jaccard formula once the intersection size is known — shared by
+/// [jaccard] and [_FuzzyIndex] so the two can never disagree on a score.
+double _jaccardFromIntersection(int inter, int sizeA, int sizeB) {
+  final union = sizeA + sizeB - inter;
   return union == 0 ? 0 : inter / union;
 }
