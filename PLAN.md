@@ -258,11 +258,18 @@ them to `render`. Nothing else changes (JSON/CSV ignore them).
       + `fraction` null branch uncovered), `export_library_use_case.dart` 64/80
       (pre-existing misses). Lib-diff privacy scan: no print/log/http/Uri/
       Platform/io/isolate added; progress values are counts only.
-- [ ] 8. Update `fix-schedule.md` §1/§3/§5, `appDetails.md`; propose commit.
+- [x] 8. `fix-schedule.md` §1/§1.1/§1.2/§3/§5 updated; commit approved ("go
+      ahead") → **`13511b6`** perf(import_export) N10-e, 11 paths staged
+      explicitly (forbidden-list, `--check`, secret scan clean; pre-commit
+      hook: "generated code is current"); push `5223a79..13511b6 main ->
+      main` on `PLFIndia/pitak-x`, no force; HEAD = `origin/main` verified
+      after `git fetch`. Housekeeping: README test count 1634 → 1651;
+      `appDetails.md` §3 export map, §5 count, §9 D1–D5 decision, §10 two
+      gotchas, §11 N10 CLOSED + two unscheduled leftovers.
 
 ## Result
 
-**N10-e implemented; N10 CLOSES with this commit; Phase 5 done.**
+**N10-e committed `13511b6` + pushed; N10 CLOSED; Phase 5 done.** CI result in `fix-schedule.md` S31 addendum.
 
 What changed, in plain English: exporting a PDF used to rasterise every text
 run of every book before drawing anything, keep all of them in memory until
