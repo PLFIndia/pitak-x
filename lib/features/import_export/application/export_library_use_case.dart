@@ -16,6 +16,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -100,6 +101,10 @@ class ExportLibraryUseCase {
   ///  - [textRasterizer]: when supplied, PDF text is shaped by Flutter's engine
   ///    and embedded as images so complex scripts (Devanagari half-letters /
   ///    matra reordering) render correctly; null keeps the Latin-only path.
+  ///  - [onProgress] / [cancelToken] (N10-e): forwarded to the PDF renderer.
+  ///    A cancelled render throws [PdfRenderCancelled] — deliberately NOT
+  ///    mapped to a `Failure` here, because nothing failed: the caller that
+  ///    owns the token asked to stop and is the one that catches it (D3-a).
   Future<Either<Failure, ExportResult>> call({
     required ExportScope scope,
     required ExportFormat format,
@@ -112,6 +117,8 @@ class ExportLibraryUseCase {
     PdfFontBundle pdfRegularFonts = const [],
     PdfFontBundle pdfBoldFonts = const [],
     PdfTextRasterizer? textRasterizer,
+    PdfRenderProgressListener? onProgress,
+    RenderCancelToken? cancelToken,
   }) async {
     final stamp = now ?? DateTime.now().millisecondsSinceEpoch;
 
@@ -171,6 +178,8 @@ class ExportLibraryUseCase {
           regularFonts: pdfRegularFonts,
           boldFonts: pdfBoldFonts,
           textRasterizer: textRasterizer,
+          onProgress: onProgress,
+          cancelToken: cancelToken,
         );
         return right(
           ExportResult(

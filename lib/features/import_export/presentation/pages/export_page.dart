@@ -8,6 +8,12 @@
 /// Pure presentation: the whole export pipeline (input resolution, use-case
 /// invocation, share flow) lives in `ExportController`; this widget collects
 /// choices and maps the typed outcome to copy.
+///
+/// N10-e: while a run is in flight the page watches the controller's
+/// `ExportRunning` progress (a determinate bar + "page P · R of N books" for
+/// PDF; indeterminate for JSON/CSV) and offers a Cancel button. The run
+/// itself survives navigation (controller keep-alive), so coming back shows
+/// the live progress or the finished outcome.
 library;
 
 import 'package:flutter/material.dart';
@@ -30,15 +36,12 @@ class _ExportPageState extends ConsumerState<ExportPage> {
   ExportFormat _format = ExportFormat.json;
   // PDF column selection (Title is mandatory and always included).
   final Set<PdfColumn> _pdfColumns = PdfColumn.defaultSelection.toSet();
-  bool _busy = false;
-  String? _status;
 
-  Future<void> _export() async {
-    setState(() {
-      _busy = true;
-      _status = null;
-    });
-    final result = await ref
+  void _export() {
+    // Fire and forget: the controller owns the run and publishes its state;
+    // the page reacts through `ref.watch` below, so nothing here needs to
+    // survive an await (N11).
+    ref
         .read(exportControllerProvider.notifier)
         .export(
           scope: _scope,
@@ -48,18 +51,17 @@ class _ExportPageState extends ConsumerState<ExportPage> {
               : null,
           sharePositionOrigin: _shareOrigin(),
         );
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _status = switch (result.outcome) {
-        ExportOutcome.shared => 'Shared ${result.fileName}.',
-        ExportOutcome.dismissed => null,
-        ExportOutcome.shareUnavailable =>
-          'Sharing is unavailable on this device.',
-        ExportOutcome.failed => 'Export failed.',
-      };
-    });
   }
+
+  void _cancel() => ref.read(exportControllerProvider.notifier).cancel();
+
+  static String? _statusFor(ExportRunResult result) => switch (result.outcome) {
+    ExportOutcome.shared => 'Shared ${result.fileName}.',
+    ExportOutcome.dismissed => null,
+    ExportOutcome.shareUnavailable => 'Sharing is unavailable on this device.',
+    ExportOutcome.failed => 'Export failed.',
+    ExportOutcome.cancelled => 'Export cancelled.',
+  };
 
   /// The source rect for the iPad share popover (ignored on phones).
   Rect? _shareOrigin() {
@@ -74,6 +76,13 @@ class _ExportPageState extends ConsumerState<ExportPage> {
     final csv = _format == ExportFormat.csv;
     final pdf = _format == ExportFormat.pdf;
     final scopeLocked = csv || pdf; // both formats are library-only
+
+    final runState = ref.watch(exportControllerProvider);
+    final running = runState is ExportRunning;
+    final status = switch (runState) {
+      ExportFinished(:final result) => _statusFor(result),
+      ExportIdle() || ExportRunning() => null,
+    };
 
     return Scaffold(
       appBar: AppBar(title: const Text('Export')),
@@ -144,8 +153,8 @@ class _ExportPageState extends ConsumerState<ExportPage> {
           ],
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _busy ? null : _export,
-            icon: _busy
+            onPressed: running ? null : _export,
+            icon: running
                 ? const SizedBox(
                     height: 18,
                     width: 18,
@@ -154,12 +163,61 @@ class _ExportPageState extends ConsumerState<ExportPage> {
                 : const Icon(Icons.save_alt),
             label: const Text('Export to file'),
           ),
-          if (_status != null) ...[
+          if (runState is ExportRunning) ...[
             const SizedBox(height: 16),
-            Text(_status!, style: textTheme.bodyMedium),
+            _ExportProgress(state: runState, onCancel: _cancel),
+          ],
+          if (status != null) ...[
+            const SizedBox(height: 16),
+            Text(status, style: textTheme.bodyMedium),
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Progress bar + counter + Cancel for an in-flight export (N10-e).
+class _ExportProgress extends StatelessWidget {
+  const _ExportProgress({required this.state, required this.onCancel});
+
+  final ExportRunning state;
+  final VoidCallback onCancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final p = state.progress;
+    final label = p == null
+        ? 'Preparing export…'
+        : 'Rendering page ${p.pagesDone} · ${p.rowsDone} of ${p.rowsTotal} '
+              'books';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        LinearProgressIndicator(
+          key: const Key('export-progress'),
+          // null = indeterminate (before the first report / non-PDF).
+          value: p?.fraction,
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: textTheme.bodySmall,
+                key: const Key('export-progress-label'),
+              ),
+            ),
+            OutlinedButton(
+              key: const Key('export-cancel'),
+              onPressed: onCancel,
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

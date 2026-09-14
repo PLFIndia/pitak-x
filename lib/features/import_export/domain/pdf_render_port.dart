@@ -10,6 +10,7 @@ library;
 import 'dart:typed_data';
 
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 
@@ -32,6 +33,12 @@ abstract interface class LibraryPdfRenderer {
   /// first, then script fallbacks); when empty, a Latin-only built-in font is
   /// used. [textRasterizer] (optional) shapes complex scripts via the
   /// platform engine; [logoBytes]/[footerIconBytes] are optional images.
+  ///
+  /// N10-e: [onProgress] is called once before the first row, once after
+  /// every row and once at the end; [cancelToken] is checked at every row
+  /// boundary and a cancelled render throws [PdfRenderCancelled] (no bytes
+  /// are produced). The renderer holds at most [maxCachedTiles] rasterized
+  /// text tiles at any time.
   Future<Uint8List> render({
     required String libraryName,
     required List<Book> books,
@@ -42,5 +49,8 @@ abstract interface class LibraryPdfRenderer {
     Uint8List? logoBytes,
     Uint8List? footerIconBytes,
     PdfTextRasterizer? textRasterizer,
+    PdfRenderProgressListener? onProgress,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles,
   });
 }
