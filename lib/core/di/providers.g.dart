@@ -925,6 +925,29 @@ final publishedSiteUrlProvider = AutoDisposeFutureProvider<String?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PublishedSiteUrlRef = AutoDisposeFutureProviderRef<String?>;
+String _$shareCardStyleStoreHash() =>
+    r'd1b6332dd37f8854e2cb309a809d39489e9ad38d';
+
+/// Remembers which look the user last chose for the library share card
+/// (visiting-card PNG). Non-secret preference in shared_preferences.
+///
+/// Copied from [shareCardStyleStore].
+@ProviderFor(shareCardStyleStore)
+final shareCardStyleStoreProvider =
+    AutoDisposeFutureProvider<ShareCardStyleStore>.internal(
+      shareCardStyleStore,
+      name: r'shareCardStyleStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$shareCardStyleStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ShareCardStyleStoreRef =
+    AutoDisposeFutureProviderRef<ShareCardStyleStore>;
 String _$screenSecurityHash() => r'e9cf5896b361c1d071b4ac76293d15cf98e29b89';
 
 /// OS-level screen-capture protection toggle (Android FLAG_SECURE) for vault

@@ -31,6 +31,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
+import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -502,9 +503,9 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   Future<void> _sharePublishedUrl() async {
     final url = _publishedUrl;
     if (url == null) return;
-    // Through the FileShareService seam (not share_plus directly) so widget
-    // tests can fake it — same pattern as PDF/backup export.
-    await ref.read(fileShareServiceProvider).shareText(url);
+    // The sheet offers the visiting-card PNG or the plain link; both go
+    // through the FileShareService seam so widget tests can fake them.
+    await showShareLibrarySheet(context, url: url);
   }
 
   @override

@@ -77,11 +77,13 @@ import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
+import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
+import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
@@ -548,6 +550,16 @@ Future<PublishManifestGateway> publishManifestStore(
 Future<String?> publishedSiteUrl(PublishedSiteUrlRef ref) async {
   final store = await ref.watch(publishManifestStoreProvider.future);
   return githubPagesUrlFor(store.load().repo);
+}
+
+/// Remembers which look the user last chose for the library share card
+/// (visiting-card PNG). Non-secret preference in shared_preferences.
+@riverpod
+Future<ShareCardStyleStore> shareCardStyleStore(
+  ShareCardStyleStoreRef ref,
+) async {
+  final prefs = await ref.watch(sharedPreferencesProvider.future);
+  return PrefsShareCardStyleStore(prefs);
 }
 
 /// OS-level screen-capture protection toggle (Android FLAG_SECURE) for vault

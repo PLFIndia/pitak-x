@@ -13,6 +13,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/bookmarks/presentation/pages/bookmarks_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
+import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
@@ -97,10 +98,14 @@ class AppDrawer extends ConsumerWidget {
                       leading: const Icon(Icons.ios_share),
                       title: const Text('Share Library Website'),
                       onTap: () {
-                        Navigator.of(context).pop(); // close the drawer
-                        // Through the FileShareService seam so tests can
-                        // fake the OS share sheet.
-                        ref.read(fileShareServiceProvider).shareText(siteUrl);
+                        // The drawer's own context dies with the drawer, so
+                        // grab the Scaffold's navigator BEFORE popping.
+                        final navigator = Navigator.of(context);
+                        final hostContext = navigator.context;
+                        navigator.pop(); // close the drawer
+                        // Card PNG or plain link — the sheet decides; both
+                        // go through the FileShareService seam.
+                        showShareLibrarySheet(hostContext, url: siteUrl);
                       },
                     ),
                 ],

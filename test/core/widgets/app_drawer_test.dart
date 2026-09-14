@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
+import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
+import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeShare implements FileShareService {
@@ -87,27 +89,38 @@ void main() {
     expect(find.text('Share Library Website'), findsNothing);
   });
 
-  testWidgets('"Share Library Website" shares the published site URL', (
-    tester,
-  ) async {
-    SharedPreferences.setMockInitialValues({});
-    final share = _FakeShare();
-    await tester.pumpWidget(
-      await _app(
-        publishedUrl: 'https://user.github.io/my-library/',
-        share: share,
-      ),
-    );
-    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
-    await tester.pumpAndSettle();
+  testWidgets(
+    '"Share Library Website" closes the drawer and opens the share sheet '
+    'for the published site URL',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      tester.view.physicalSize = const Size(1080, 2280);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final share = _FakeShare();
+      await tester.pumpWidget(
+        await _app(
+          publishedUrl: 'https://user.github.io/my-library/',
+          share: share,
+        ),
+      );
+      tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Share Library Website'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Share Library Website'));
+      await tester.pumpAndSettle();
 
-    expect(share.sharedText, 'https://user.github.io/my-library/');
-    // The drawer closed on tap.
-    expect(find.text('Share Library Website'), findsNothing);
-  });
+      // The drawer closed and the card/link sheet took over.
+      expect(find.text('Share Library Website'), findsNothing);
+      expect(find.byType(ShareLibrarySheet), findsOneWidget);
+      expect(find.byType(LibraryShareCard), findsOneWidget);
+
+      // The plain-link path still shares exactly the published URL.
+      await tester.tap(find.text('Share link only'));
+      await tester.pumpAndSettle();
+      expect(share.sharedText, 'https://user.github.io/my-library/');
+    },
+  );
 
   testWidgets('Settings is pinned below the primary destinations', (
     tester,
