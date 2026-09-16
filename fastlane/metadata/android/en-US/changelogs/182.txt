@@ -1,0 +1,4 @@
+* Share your library as a visiting card: a PNG with logo, name, address, QR and link in 4 styles (Classic, Dark, Gradient, Framed). "Share link only" remains.
+* Faster: the library list loads in pages; backups, merges, PDF export and cover downscaling run off the UI thread; PDF export shows progress and can be cancelled.
+* Merge review: resolve conflicts and duplicates row by row.
+* Fixes: publish targets the live Pages branch; network deadlines and size caps; stricter import validation.

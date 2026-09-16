@@ -7,8 +7,8 @@ them to borrowers from an **encrypted vault**, keep a wishlist, import/export
 to GitHub Pages with event posters and bookmarks to other libraries.
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.2.0**
-> (`pubspec.yaml`, tag `1.2.0`); F-Droid builds from the tag on its own
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.3.0**
+> (`pubspec.yaml`, tag `1.3.0`); F-Droid builds from the tag on its own
 > schedule, so its index may lag by a release. `PLAN.md` tracks the task in
 > flight; the maintainer's full engineering reference (`appDetails.md`) is
 > kept locally and is not part of this repository.
