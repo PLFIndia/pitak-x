@@ -137,6 +137,136 @@ void main() {
       expect(langs, ['English', 'Hindi']);
     });
 
+    // Session 33: one spelling per language, enforced at the repository so
+    // every ingress (form, import, merge, restore) obeys it.
+    group('language canonicalisation on write', () {
+      test(
+        'insert snaps a case/space variant to the stored spelling',
+        () async {
+          await repo.insert(const Book(title: 'a', language: 'English'));
+          final b = ok(
+            await repo.insert(const Book(title: 'b', language: ' english ')),
+          );
+          final c = ok(
+            await repo.insert(const Book(title: 'c', language: 'ENGLISH')),
+          );
+          expect(b.language, 'English');
+          expect(c.language, 'English');
+          expect(ok(await repo.getById(b.id))?.language, 'English');
+          expect(ok(await repo.distinctLanguages()), ['English']);
+          // The exact-match facet (D1-a) now finds all three.
+          final filtered = await firstPage(
+            repo,
+            sort: BookSort.recentlyAdded,
+            language: 'English',
+          );
+          expect(filtered.map((b) => b.title).toSet(), {'a', 'b', 'c'});
+        },
+      );
+
+      test(
+        'insert keeps the FIRST spelling even when it is lowercase',
+        () async {
+          await repo.insert(const Book(title: 'a', language: 'isiZulu'));
+          final b = ok(
+            await repo.insert(const Book(title: 'b', language: 'IsiZulu')),
+          );
+          expect(b.language, 'isiZulu');
+          expect(ok(await repo.distinctLanguages()), ['isiZulu']);
+        },
+      );
+
+      test(
+        'insert converts an ISO 639-1 code to the stored/table name',
+        () async {
+          final first = ok(
+            await repo.insert(const Book(title: 'a', language: 'hi')),
+          );
+          expect(first.language, 'Hindi'); // nothing stored yet → table name
+          await repo.insert(const Book(title: 'b', language: 'english'));
+          final viaCode = ok(
+            await repo.insert(const Book(title: 'c', language: 'en-GB')),
+          );
+          expect(viaCode.language, 'english'); // snaps to the stored spelling
+          expect(ok(await repo.distinctLanguages()), ['english', 'Hindi']);
+        },
+      );
+
+      test(
+        'non-Latin spellings round-trip and dedupe by Unicode case',
+        () async {
+          await repo.insert(const Book(title: 'a', language: 'Ελληνικά'));
+          final b = ok(
+            await repo.insert(const Book(title: 'b', language: 'ΕΛΛΗΝΙΚΆ')),
+          );
+          expect(b.language, 'Ελληνικά');
+          expect(ok(await repo.distinctLanguages()), ['Ελληνικά']);
+        },
+      );
+
+      test(
+        'update snaps too, and a lone book keeps its own spelling',
+        () async {
+          final only = ok(
+            await repo.insert(const Book(title: 'a', language: 'English')),
+          );
+          final edited = ok(
+            await repo.update(only.copyWith(language: 'english')),
+          );
+          // Its own row is part of the stored set, so `English` stays.
+          expect(edited.language, 'English');
+          expect(ok(await repo.getById(only.id))?.language, 'English');
+        },
+      );
+
+      test(
+        'insertAll dedupes within the batch AND against stored rows',
+        () async {
+          await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+          final n = ok(
+            await repo.insertAll(const [
+              Book(title: 'a', language: 'english'),
+              Book(title: 'b', language: 'English'),
+              Book(title: 'c', language: 'en'),
+              Book(title: 'd', language: 'HINDI'),
+              Book(title: 'e', language: 'Tamil'),
+            ]),
+          );
+          expect(n, 5);
+          // First spelling in the batch wins for the new language.
+          expect(ok(await repo.distinctLanguages()), [
+            'english',
+            'Hindi',
+            'Tamil',
+          ]);
+        },
+      );
+
+      test('replaceAll resolves only within the incoming file', () async {
+        await repo.insert(const Book(title: 'old', language: 'English'));
+        final n = ok(
+          await repo.replaceAll(const [
+            Book(title: 'a', language: 'english'),
+            Book(title: 'b', language: 'ENGLISH'),
+            Book(title: 'c', language: 'hi'),
+          ]),
+        );
+        expect(n, 3);
+        // The old row is gone, so the file's own first spelling wins.
+        expect(ok(await repo.distinctLanguages()), ['english', 'Hindi']);
+      });
+
+      test('absent language stays absent; blank stays blank', () async {
+        final none = ok(await repo.insert(const Book(title: 'a')));
+        expect(none.language, isNull);
+        final blank = ok(
+          await repo.insert(const Book(title: 'b', language: '   ')),
+        );
+        expect(blank.language, '   ');
+        expect(ok(await repo.distinctLanguages()), isEmpty);
+      });
+    });
+
     test('query ageGroupAsc orders by band rank, nulls last', () async {
       await repo.insert(const Book(title: 'adv', ageGroup: AgeGroup.advanced));
       await repo.insert(const Book(title: 'none'));

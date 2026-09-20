@@ -47,6 +47,7 @@ library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 
 /// Default Jaccard-token similarity threshold for the no-ISBN fuzzy pass.
 const double kDefaultFuzzyThreshold = 0.6;
@@ -505,6 +506,14 @@ class _MergeFieldSpec {
 }
 
 String? _text(String? s) => (s == null || s.trim().isEmpty) ? null : s;
+
+/// Same language ignoring case/spacing; blank and null are the same "none".
+bool _languagesEqual(String? a, String? b) {
+  final ka = a == null ? '' : LanguageName.key(a);
+  final kb = b == null ? '' : LanguageName.key(b);
+  return ka == kb;
+}
+
 String? _num(num? n) => n?.toString();
 String? _flag(bool b) => b ? 'yes' : 'no';
 
@@ -569,9 +578,14 @@ final List<_MergeFieldSpec> _mergeFieldSpecs = [
     (a, b) => a.pageCount == b.pageCount,
     (b) => _num(b.pageCount),
   ),
+  // Session 33: two catalogues that are each internally consistent can still
+  // spell one language differently (`English` here, `english` there). That
+  // is the SAME language, not a conflict worth a decision — and the
+  // repository snaps the incoming spelling to the local one on write anyway.
+  // Compare by `LanguageName.key` (Unicode case-fold + whitespace collapse).
   _MergeFieldSpec(
     MergeField.language,
-    (a, b) => a.language == b.language,
+    (a, b) => _languagesEqual(a.language, b.language),
     (b) => _text(b.language),
   ),
   _MergeFieldSpec(

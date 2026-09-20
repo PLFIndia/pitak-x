@@ -76,9 +76,20 @@ class _MemRepo implements BookRepository {
 
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  // Session 33: derived from the stored books, like the real repository, so
+  // the Language dropdown in these tests is live.
   @override
-  Future<Either<Failure, List<String>>> distinctLanguages() async =>
-      right(const []);
+  Future<Either<Failure, List<String>>> distinctLanguages() async {
+    final langs =
+        books
+            .map((b) => b.language?.trim() ?? '')
+            .where((l) => l.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return right(langs);
+  }
+
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -319,5 +330,164 @@ void main() {
       find.text('This book no longer exists and could not be saved.'),
       findsOneWidget,
     );
+  });
+
+  // Session 33: the Language field is a dropdown of the library's languages
+  // + "Other…", so a second spelling of an existing language is a deliberate
+  // act, not a slip of the keyboard.
+  group('Language dropdown (Session 33)', () {
+    final dropdown = find.byKey(const ValueKey('language-dropdown'));
+    final otherBox = find.widgetWithText(TextField, 'Other language');
+
+    Future<void> scrollToDropdown(WidgetTester tester) =>
+        tester.scrollUntilVisible(
+          dropdown,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+
+    Future<void> pick(WidgetTester tester, String label) async {
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      // The menu overlay duplicates the selected item's text; `.last` is the
+      // one inside the open menu.
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('empty library: offers Not set, English and Other… only', (
+      tester,
+    ) async {
+      final repo = _MemRepo();
+      await tester.pumpWidget(_host(repo));
+      await tester.pumpAndSettle();
+      await scrollToDropdown(tester);
+
+      await tester.tap(dropdown);
+      await tester.pumpAndSettle();
+      expect(find.text('English'), findsWidgets);
+      expect(find.text('Other…'), findsWidgets);
+      expect(find.text('Hindi'), findsNothing);
+      expect(otherBox, findsNothing);
+    });
+
+    testWidgets("lists the library's own languages; picking one saves it", (
+      tester,
+    ) async {
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'seed1', language: 'Hindi'));
+      await repo.insert(const Book(title: 'seed2', language: 'Tamil'));
+      await tester.pumpWidget(_host(repo));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Title *'), 'New');
+      await scrollToDropdown(tester);
+      await pick(tester, 'Tamil');
+      expect(otherBox, findsNothing);
+
+      await _tapSave(tester);
+      expect(repo.books.last.title, 'New');
+      expect(repo.books.last.language, 'Tamil');
+    });
+
+    testWidgets('Other… reveals a text box; the typed value is saved', (
+      tester,
+    ) async {
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      await tester.pumpWidget(_host(repo));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(find.widgetWithText(TextField, 'Title *'), 'New');
+      await scrollToDropdown(tester);
+      await pick(tester, 'Other…');
+      expect(otherBox, findsOneWidget);
+      await tester.enterText(otherBox, 'Marathi');
+
+      await _tapSave(tester);
+      expect(repo.books.last.language, 'Marathi');
+    });
+
+    testWidgets('edit: a language not in the list shows as Other…, editable', (
+      tester,
+    ) async {
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      // Bypass the repo list on purpose: an old-backup spelling.
+      const stray = Book(id: 42, title: 'Old', language: 'Sanskrit');
+      repo.books.add(stray);
+      // Only `Hindi` is offered: the stray row is not in the list.
+      repo.books.removeWhere((b) => b.id == 42);
+
+      await tester.pumpWidget(_host(repo, book: stray));
+      await tester.pumpAndSettle();
+      await scrollToDropdown(tester);
+
+      expect(find.text('Other…'), findsOneWidget); // the closed dropdown
+      expect(otherBox, findsOneWidget);
+      expect(find.text('Sanskrit'), findsOneWidget); // the box's content
+    });
+
+    testWidgets('edit: a listed language is pre-selected, no Other box', (
+      tester,
+    ) async {
+      final repo = _MemRepo();
+      final existing = (await repo.insert(
+        const Book(title: 'Seed', language: 'Hindi'),
+      )).getOrElse((_) => throw StateError('seed failed'));
+
+      await tester.pumpWidget(_host(repo, book: existing));
+      await tester.pumpAndSettle();
+      await scrollToDropdown(tester);
+
+      expect(find.text('Hindi'), findsOneWidget);
+      expect(otherBox, findsNothing);
+    });
+
+    testWidgets('lookup: a listed language name selects it in the dropdown', (
+      tester,
+    ) async {
+      // The lookup boundary already maps `en` → `English`; the form sees
+      // the name and, since it is in the list, selects it.
+      const meta = BookMetadata(isbn: '9780140449136', language: 'English');
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'seed', language: 'English'));
+      await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'ISBN'),
+        '9780140449136',
+      );
+      await tester.tap(find.byTooltip('Look up details'));
+      await tester.pumpAndSettle();
+      await _letSnackBarExpire(tester);
+      await scrollToDropdown(tester);
+
+      expect(find.text('English'), findsOneWidget);
+      expect(otherBox, findsNothing);
+    });
+
+    testWidgets('lookup: an unlisted language shows as Other… + text', (
+      tester,
+    ) async {
+      const meta = BookMetadata(isbn: '9780140449136', language: 'Greek');
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'ISBN'),
+        '9780140449136',
+      );
+      await tester.tap(find.byTooltip('Look up details'));
+      await tester.pumpAndSettle();
+      await _letSnackBarExpire(tester);
+      await scrollToDropdown(tester);
+
+      expect(otherBox, findsOneWidget);
+      expect(find.text('Greek'), findsOneWidget);
+    });
   });
 }

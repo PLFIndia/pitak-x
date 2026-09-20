@@ -68,8 +68,29 @@ void main() {
       expect(m.title, 'The Odyssey');
       expect(m.author, 'Homer');
       expect(m.publishedYear, 2003);
-      expect(m.language, 'en');
+      // Session 33: the ISO code is converted to a name at this boundary.
+      expect(m.language, 'English');
       expect(m.coverUrl, 'https://x/t.jpg');
+    });
+
+    test('language codes become names; unknown codes pass through', () async {
+      Future<String?> languageFor(String json) async {
+        final svc = withClient(
+          (_) async => http.Response(
+            '{"items":[{"id":"x","volumeInfo":{"title":"T",'
+            '"language":$json}}]}',
+            200,
+          ),
+        );
+        final result = await svc.lookupByIsbn(isbn);
+        return (result as LookupFound).metadata.language;
+      }
+
+      expect(await languageFor('"hi"'), 'Hindi');
+      expect(await languageFor('"en-GB"'), 'English');
+      expect(await languageFor('"xx"'), 'xx');
+      expect(await languageFor('"English"'), 'English');
+      expect(await languageFor('null'), isNull);
     });
 
     test('wrong-typed fields never throw (hostile JSON)', () async {

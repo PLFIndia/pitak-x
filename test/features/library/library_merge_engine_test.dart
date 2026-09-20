@@ -16,6 +16,7 @@ void main() {
     String? isbn,
     String? genre,
     String? coverUrl,
+    String? language,
     bool removed = false,
     int copyCount = 1,
   }) => Book(
@@ -26,6 +27,7 @@ void main() {
     isbn: isbn,
     genre: genre,
     coverUrl: coverUrl,
+    language: language,
     addedDate: 1000,
     copyCount: copyCount,
     removed: removed,
@@ -538,6 +540,34 @@ void main() {
       expect(diff.field, MergeField.cover);
       expect(diff.local, isNull);
       expect(diff.incoming, 'https://covers.openlibrary.org/b/id/1-L.jpg');
+    });
+
+    test('mergeDifferences treats language spellings that differ only by '
+        'case/spacing as the same language (Session 33)', () {
+      // Two internally-consistent libraries, one says `English`, the other
+      // `english`: no decision to make. The repository snaps the incoming
+      // spelling to the local one on write.
+      final a = book(id: 1, title: 'T', language: 'English');
+      final b = book(id: 2, title: 'T', language: ' english ');
+      expect(mergeDifferences(a, b), isEmpty);
+      expect(mergeEquals(a, b), isTrue);
+
+      // Unicode case too (SQLite lower() could not do this; Dart can).
+      final g1 = book(id: 3, title: 'T', language: 'Ελληνικά');
+      final g2 = book(id: 4, title: 'T', language: 'ΕΛΛΗΝΙΚΆ');
+      expect(mergeDifferences(g1, g2), isEmpty);
+
+      // A genuinely different language is still a difference.
+      final c = book(id: 5, title: 'T', language: 'Hindi');
+      final diff = mergeDifferences(a, c).single;
+      expect(diff.field, MergeField.language);
+      expect(diff.local, 'English');
+      expect(diff.incoming, 'Hindi');
+
+      // Blank and absent are the same "no language".
+      final none = book(id: 6, title: 'T');
+      final blank = book(id: 7, title: 'T', language: '  ');
+      expect(mergeDifferences(none, blank), isEmpty);
     });
 
     test('mergeDifferences ignores per-device bookkeeping (id, uid, '

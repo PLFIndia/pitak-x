@@ -36,6 +36,7 @@ import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:uuid/uuid.dart';
@@ -197,18 +198,25 @@ class DriftBookRepository implements BookRepository {
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async {
     try {
-      final rows = await _db
-          .customSelect(
-            'SELECT DISTINCT language FROM books '
-            "WHERE language IS NOT NULL AND TRIM(language) != '' "
-            'ORDER BY language COLLATE NOCASE ASC',
-            readsFrom: {_db.books},
-          )
-          .get();
-      return right(rows.map((r) => r.read<String>('language')).toList());
+      return right(await _storedLanguages());
     } on Object catch (e) {
       return left(StorageFailure('distinctLanguages: $e'));
     }
+  }
+
+  /// The distinct non-blank language spellings currently stored, A→Z
+  /// case-insensitively. Shared by [distinctLanguages] and by every write,
+  /// which snaps an incoming language to one of these (Session 33).
+  Future<List<String>> _storedLanguages() async {
+    final rows = await _db
+        .customSelect(
+          'SELECT DISTINCT language FROM books '
+          "WHERE language IS NOT NULL AND TRIM(language) != '' "
+          'ORDER BY language COLLATE NOCASE ASC',
+          readsFrom: {_db.books},
+        )
+        .get();
+    return rows.map((r) => r.read<String>('language')).toList();
   }
 
   @override
@@ -228,11 +236,18 @@ class DriftBookRepository implements BookRepository {
   @override
   Future<Either<Failure, Book>> insert(Book book) async {
     try {
-      final withUid = book.bookUid == null
-          ? book.copyWith(bookUid: _uuid.v4())
-          : book;
-      final id = await _db.into(_db.books).insert(withUid.toCompanion());
-      return right(withUid.copyWith(id: id));
+      // One transaction: the "which spellings exist" read and the insert
+      // cannot interleave with another write, so two concurrent adds of
+      // `english` and `English` still end up as one spelling.
+      return await _db.transaction(() async {
+        final resolver = _LanguageResolver(await _storedLanguages());
+        final resolved = resolver.resolve(book);
+        final withUid = resolved.bookUid == null
+            ? resolved.copyWith(bookUid: _uuid.v4())
+            : resolved;
+        final id = await _db.into(_db.books).insert(withUid.toCompanion());
+        return right<Failure, Book>(withUid.copyWith(id: id));
+      });
     } on Object catch (e) {
       return left(StorageFailure('insert: $e'));
     }
@@ -244,21 +259,32 @@ class DriftBookRepository implements BookRepository {
       return left(const NotFoundFailure());
     }
     try {
-      // Preserve the stable book_uid: an edit must never lose the cross-device
-      // merge key. If the incoming book dropped it, recover it from the row.
-      final existing =
-          await (_db.select(_db.books)
-                ..where((t) => t.id.equals(book.id))
-                ..limit(1))
-              .getSingleOrNull();
-      if (existing == null) return left(const NotFoundFailure());
-      final preserved = book.bookUid == null
-          ? book.copyWith(bookUid: existing.bookUid)
-          : book;
-      // `update().replace` matches on the primary key; FTS5 stays in sync via
-      // the AFTER UPDATE trigger in app_database.dart.
-      await _db.update(_db.books).replace(preserved.toCompanion());
-      return right(preserved);
+      return await _db.transaction(() async {
+        // Preserve the stable book_uid: an edit must never lose the
+        // cross-device merge key. If the incoming book dropped it, recover it
+        // from the row.
+        final existing =
+            await (_db.select(_db.books)
+                  ..where((t) => t.id.equals(book.id))
+                  ..limit(1))
+                .getSingleOrNull();
+        if (existing == null) {
+          return left<Failure, Book>(const NotFoundFailure());
+        }
+        // The row's own current spelling is part of the stored set, so
+        // re-typing `english` on the only English book keeps `English`:
+        // one spelling per language, consistently. (A library-wide
+        // "rename language" is a separate feature, not an edit side-effect.)
+        final resolver = _LanguageResolver(await _storedLanguages());
+        final resolved = resolver.resolve(book);
+        final preserved = resolved.bookUid == null
+            ? resolved.copyWith(bookUid: existing.bookUid)
+            : resolved;
+        // `update().replace` matches on the primary key; FTS5 stays in sync
+        // via the AFTER UPDATE trigger in app_database.dart.
+        await _db.update(_db.books).replace(preserved.toCompanion());
+        return right<Failure, Book>(preserved);
+      });
     } on Object catch (e) {
       return left(StorageFailure('update: $e'));
     }
@@ -301,19 +327,24 @@ class DriftBookRepository implements BookRepository {
   @override
   Future<Either<Failure, int>> insertAll(List<Book> books) async {
     try {
-      var count = 0;
-      // `batch` outside an explicit transaction implicitly runs in one
-      // (drift docs, ConnectionUser.batch) — so this is all-or-nothing.
-      await _db.batch((b) {
-        for (final book in books) {
-          final withUid = book.bookUid == null
-              ? book.copyWith(bookUid: _uuid.v4())
-              : book;
-          b.insert(_db.books, withUid.toCompanion());
-          count++;
-        }
+      // One explicit transaction around the spellings read + the batch, so
+      // the whole import is all-or-nothing AND every row is snapped against
+      // the same snapshot (plus the spellings accepted earlier in the batch).
+      return await _db.transaction(() async {
+        final resolver = _LanguageResolver(await _storedLanguages());
+        var count = 0;
+        await _db.batch((b) {
+          for (final book in books) {
+            final resolved = resolver.resolve(book);
+            final withUid = resolved.bookUid == null
+                ? resolved.copyWith(bookUid: _uuid.v4())
+                : resolved;
+            b.insert(_db.books, withUid.toCompanion());
+            count++;
+          }
+        });
+        return right<Failure, int>(count);
       });
-      return right(count);
     } on Object catch (e) {
       return left(StorageFailure('insertAll: $e'));
     }
@@ -327,11 +358,15 @@ class DriftBookRepository implements BookRepository {
       // on a crafted file) can never leave a partially-replaced catalogue.
       return await _db.transaction(() async {
         await _db.delete(_db.books).go();
+        // The table is empty here, so spellings are resolved only against
+        // earlier rows of the SAME file: first spelling in the file wins.
+        final resolver = _LanguageResolver(const []);
         var count = 0;
         for (final book in books) {
-          final withUid = book.bookUid == null
-              ? book.copyWith(bookUid: _uuid.v4())
-              : book;
+          final resolved = resolver.resolve(book);
+          final withUid = resolved.bookUid == null
+              ? resolved.copyWith(bookUid: _uuid.v4())
+              : resolved;
           await _db.into(_db.books).insert(withUid.toCompanion());
           count++;
         }
@@ -444,6 +479,34 @@ class DriftBookRepository implements BookRepository {
 
 /// One ORDER BY term over the `books` table (Drift's `orderBy` callback shape).
 typedef _OrderingOf = OrderingTerm Function($BooksTable t);
+
+/// Snaps each incoming book's language to the one canonical spelling
+/// (Session 33, `LanguageName`). Seeded with the spellings already stored
+/// and GROWS as it accepts new ones, so within a single batch the first
+/// spelling of a new language wins for every later row of that batch.
+///
+/// Why here and not in `Book.validate`: only the repository can see what is
+/// already stored, and every ingress (form, import, merge, restore) ends in
+/// this class, so this is the one place the rule cannot be bypassed.
+final class _LanguageResolver {
+  _LanguageResolver(Iterable<String> stored) : _known = [...stored];
+
+  final List<String> _known;
+
+  /// [book] with its language replaced by the canonical spelling. An absent
+  /// or whitespace-only language is left untouched: `copyWith` cannot null a
+  /// field, and every read already treats NULL and blank as the same "no
+  /// language" (`distinctLanguages` filters `TRIM(language) != ''`, the
+  /// sort buckets both LAST), so a stored blank is inert.
+  Book resolve(Book book) {
+    final raw = book.language;
+    if (raw == null) return book;
+    final canonical = LanguageName.canonicalise(raw, _known);
+    if (canonical == null) return book;
+    if (!_known.contains(canonical)) _known.add(canonical);
+    return canonical == raw ? book : book.copyWith(language: canonical);
+  }
+}
 
 /// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
 /// [DriftBookRepository.runInTransaction]. Never escapes the repository.

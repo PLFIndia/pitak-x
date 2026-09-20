@@ -9,6 +9,7 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/tables.dart';
+import 'package:pitaka/features/library/domain/value_objects/language_merge_plan.dart';
 
 part 'app_database.g.dart';
 
@@ -22,8 +23,12 @@ class AppDatabase extends _$AppDatabase {
   /// Opens the database over the given [executor].
   AppDatabase(super.executor);
 
+  /// Schema history:
+  ///  1 — initial (books + wishlist + FTS5).
+  ///  2 — no shape change; data clean-up: one spelling per language
+  ///      (Session 33, [_collapseLanguageSpellings]).
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -31,7 +36,39 @@ class AppDatabase extends _$AppDatabase {
       await m.createAll();
       await _createIndexesAndFts(m);
     },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) await _collapseLanguageSpellings();
+    },
   );
+
+  /// v1 → v2: collapse `English` / `english` / `en` into ONE stored spelling
+  /// per language, so the catalogue filter shows one chip and the exact-match
+  /// facet (D1-a) finds every book. The decision (which spelling wins) is the
+  /// pure `LanguageMergePlan`; this method only reads the counts and applies
+  /// the renames. One transaction: either every rename lands or none does.
+  /// Idempotent — on clean data the plan is empty and nothing is written.
+  ///
+  /// Why in Dart and not one SQL statement: "same language" must ignore case
+  /// for non-Latin scripts too, and SQLite's `lower()` is ASCII-only.
+  Future<void> _collapseLanguageSpellings() async {
+    await transaction(() async {
+      final rows = await customSelect(
+        'SELECT language, COUNT(*) AS n FROM books '
+        "WHERE language IS NOT NULL AND TRIM(language) != '' "
+        'GROUP BY language',
+      ).get();
+      final usage = <String, int>{
+        for (final r in rows) r.read<String>('language'): r.read<int>('n'),
+      };
+      for (final rename in LanguageMergePlan.plan(usage)) {
+        await customUpdate(
+          'UPDATE books SET language = ? WHERE language = ?',
+          variables: [Variable(rename.to), Variable(rename.from)],
+          updates: {books},
+        );
+      }
+    });
+  }
 
   Future<void> _createIndexesAndFts(Migrator m) async {
     // Unique indexes mirroring Room (ISBN + book_uid unique among non-null).

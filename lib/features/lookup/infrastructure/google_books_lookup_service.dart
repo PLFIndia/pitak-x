@@ -12,6 +12,7 @@ library;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/entities/title_search_result.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
@@ -113,8 +114,19 @@ final class GoogleBooksLookupService implements IsbnLookupService {
           ? null
           : jsonString(images['thumbnail'] ?? images['smallThumbnail']),
       genre: categories.isEmpty ? null : categories.join(', '),
-      language: jsonString(info['language']),
+      language: _languageName(jsonString(info['language'])),
     );
+  }
+
+  /// Google Books reports the language as an ISO 639-1 / BCP-47 code (`en`,
+  /// `hi`, `en-GB`). The catalogue stores NAMES, so convert at this boundary
+  /// (Session 33) — otherwise a lookup-filled book would introduce `en`
+  /// alongside `English`. Unknown codes pass through unchanged; the
+  /// repository applies the same rule again on write, so this is a
+  /// convenience for the form, not the security gate.
+  static String? _languageName(String? code) {
+    if (code == null) return null;
+    return LanguageName.nameForIsoCode(code) ?? code;
   }
 
   TitleSearchResult? _itemToResult(Map<String, dynamic> item) {

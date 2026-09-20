@@ -26,6 +26,7 @@ import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
@@ -69,6 +70,18 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   AgeGroup? _ageGroup;
   late int _addedDate;
   bool _titleError = false;
+
+  /// Session 33: the Language field is a dropdown of the library's own
+  /// languages plus "Other…". True only after the user PICKS "Other…" (or
+  /// types in its box). The box is ALSO shown, without this flag, whenever
+  /// the current value is not in the list — e.g. editing a book from an old
+  /// backup — so a language is never hidden; see [_languageField].
+  bool _languageIsOther = false;
+
+  /// Dropdown value meaning "Other… — type a language below". A const object
+  /// compared by identity, so it can never collide with a real language
+  /// name the way a magic string could.
+  static const Object _otherLanguage = Object();
 
   /// N02: the cover URL a successful lookup returned, kept ONLY when it
   /// passes the publish allow-list (https + fixed host set). Null until a
@@ -190,6 +203,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
       fillIfEmpty(_publisher, m.publisher);
       fillIfEmpty(_year, m.publishedYear?.toString());
       fillIfEmpty(_genre, m.genre);
+      // The lookup boundary already turned `en` into `English`; if that name
+      // is one of the dropdown's items the dropdown selects it, otherwise it
+      // shows as "Other…" + text (build() decides from the loaded list).
       fillIfEmpty(_language, m.language);
       fillIfEmpty(_pages, m.pageCount?.toString());
       final safeCover = CoverUrlAllowList.sanitize(m.coverUrl);
@@ -372,7 +388,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             digitsOnly: true,
           ),
           _field(_genre, 'Genre'),
-          _field(_language, 'Language'),
+          _languageField(),
           _field(
             _pages,
             'Pages',
@@ -465,12 +481,96 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     );
   }
 
+  /// The Language input (Session 33): a dropdown of the languages already in
+  /// this library — seeded with [LanguageName.defaults] while the library is
+  /// empty — plus "Not set" and "Other…". Choosing "Other…" reveals a text
+  /// box; whatever is typed there becomes a dropdown entry for every later
+  /// book once saved (the list is live, no restart needed).
+  ///
+  /// [_language] stays the single source of truth for the VALUE (the save
+  /// path reads it unchanged); the dropdown is a view over it. The repository
+  /// still snaps the value to the library's one spelling per language, so
+  /// this widget is a convenience, not the rule.
+  Widget _languageField() {
+    // `asData` is null while loading OR on error: both fall back to the
+    // defaults so the user can always pick "Other…" and type (fail-open on a
+    // read-only facet is safe; the value is validated on save regardless).
+    final loaded = ref.watch(libraryLanguagesProvider).asData?.value;
+    final current = _language.text.trim();
+    final options = _languageOptions(loaded, current);
+    // "Other…" is shown when the user picked it, or when the current value
+    // (a prefilled edit, or a lookup result) is simply not in the list.
+    final showOther =
+        _languageIsOther || (current.isNotEmpty && !options.contains(current));
+    final selected = showOther
+        ? _otherLanguage
+        : (current.isEmpty ? null : current);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: DropdownButtonFormField<Object?>(
+            key: const ValueKey('language-dropdown'),
+            initialValue: selected,
+            decoration: const InputDecoration(
+              labelText: 'Language',
+              border: OutlineInputBorder(),
+            ),
+            items: [
+              const DropdownMenuItem(child: Text('Not set')),
+              for (final lang in options)
+                DropdownMenuItem(value: lang, child: Text(lang)),
+              const DropdownMenuItem(
+                value: _otherLanguage,
+                child: Text('Other…'),
+              ),
+            ],
+            onChanged: (v) => setState(() {
+              if (identical(v, _otherLanguage)) {
+                _languageIsOther = true;
+                // Coming FROM a list pick, start with an empty box; coming
+                // from an already-"other" value (old backup), keep it.
+                if (options.contains(_language.text.trim())) _language.clear();
+              } else {
+                _languageIsOther = false;
+                _language.text = (v as String?) ?? '';
+              }
+            }),
+          ),
+        ),
+        if (showOther)
+          _field(
+            _language,
+            'Other language',
+            // Typing here confirms "Other…" mode even when it was inferred
+            // from an unlisted value, so clearing the box cannot make it
+            // vanish on the next rebuild.
+            onChanged: (_) => _languageIsOther = true,
+          ),
+      ],
+    );
+  }
+
+  /// The dropdown's language entries. While the list is still loading,
+  /// offer the book's current language (so an edit shows its language at
+  /// once, no flash to "Other…"); once loaded, the library's languages, or
+  /// [LanguageName.defaults] when the library has none yet.
+  static List<String> _languageOptions(List<String>? loaded, String current) {
+    if (loaded == null) {
+      return current.isEmpty ? LanguageName.defaults : [current];
+    }
+    return loaded.isEmpty ? LanguageName.defaults : loaded;
+  }
+
   Widget _field(
     TextEditingController controller,
     String label, {
     TextInputType? keyboardType,
     bool digitsOnly = false,
     int maxLines = 1,
+    ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -478,6 +578,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
         controller: controller,
         keyboardType: keyboardType,
         maxLines: maxLines,
+        onChanged: onChanged,
         inputFormatters: digitsOnly
             ? [FilteringTextInputFormatter.digitsOnly]
             : null,
