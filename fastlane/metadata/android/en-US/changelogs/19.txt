@@ -1,0 +1,4 @@
+* Language is now a dropdown of your library's own languages plus "Other…" — no more "English" and "english" as two filter chips.
+* Existing libraries are tidied once on first launch: spellings of the same language are merged into the one most of your books already use.
+* Online lookup fills in language names ("English") instead of codes ("en").
+* Merging two libraries no longer flags "English" vs "english" as a conflict.
