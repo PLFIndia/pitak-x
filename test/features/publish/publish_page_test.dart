@@ -452,6 +452,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // S35: signed in + repo set = green = tile starts COLLAPSED (D4); open
+    // it to reach the account row. The header itself must also survive 320px.
+    await tester.tap(find.text('GitHub Pages'));
+    await tester.pumpAndSettle();
+
     expect(find.text('Signed in'), findsOneWidget);
     // A RenderFlex overflow would fail the test via the binding; reaching
     // here with the row built is the assertion.
@@ -591,6 +596,9 @@ void main() {
       final creds = _FakeCreds(token: 'TKN', targetRepo: 'user/old');
       final api = _FakeGitHubApi();
       await pumpSignedIn(tester, creds: creds, api: api);
+      // S35: green state (signed in + repo) starts collapsed — expand first.
+      await tester.tap(find.text('GitHub Pages'));
+      await tester.pumpAndSettle();
       expect(find.text('Current: user/old'), findsOneWidget);
 
       await tester.tap(find.text('Sign out'));
@@ -655,6 +663,88 @@ void main() {
         findsOneWidget,
       );
       expect(find.textContaining('boom'), findsNothing);
+    });
+  });
+
+  // S35: providers are collapsible tiles with a three-state status badge
+  // (D3) and auto-expand unless fully configured (D4), so the tab fits one
+  // screen and nothing actionable hides behind a tap.
+  group('S35 — provider tiles', () {
+    Future<void> pumpCreds(WidgetTester tester, _FakeCreds creds) async {
+      tester.view.physicalSize = const Size(800, 2400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      SharedPreferences.setMockInitialValues({});
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            publishCredentialStoreProvider.overrideWithValue(creds),
+            eventsRepositoryProvider.overrideWith(
+              (ref) async => _EmptyEventsRepo(),
+            ),
+          ],
+          child: const MaterialApp(home: PublishPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets(
+      'not signed in: red status on both tiles, GitHub auto-expanded',
+      (tester) async {
+        await pumpCreds(tester, _FakeCreds());
+
+        // Both providers are unconfigured (GitHub red + Cloudflare red).
+        expect(find.text('Not configured'), findsNWidgets(2));
+        // D4: not green → the GitHub body is open WITHOUT a tap.
+        expect(find.text('Sign in to GitHub'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'signed in, no repo: amber Partially configured, auto-expanded',
+      (tester) async {
+        await pumpCreds(tester, _FakeCreds(token: 'TKN'));
+
+        expect(find.text('Partially configured'), findsOneWidget);
+        expect(find.text('Set up a repository'), findsOneWidget);
+      },
+    );
+
+    testWidgets('signed in + repo: green, collapsed, Publish stays visible', (
+      tester,
+    ) async {
+      await pumpCreds(tester, _FakeCreds(token: 'TKN', targetRepo: 'me/lib'));
+
+      expect(find.text('Configured'), findsOneWidget);
+      // D4: green → collapsed; the body is not built…
+      expect(find.text('Signed in'), findsNothing);
+      expect(find.text('Current: me/lib'), findsNothing);
+      // …but the ACTION stays visible without expanding (no-scroll goal).
+      expect(find.text('Publish catalogue now'), findsOneWidget);
+
+      // Expanding reveals the account + target sections.
+      await tester.tap(find.text('GitHub Pages'));
+      await tester.pumpAndSettle();
+      expect(find.text('Signed in'), findsOneWidget);
+      expect(find.text('Current: me/lib'), findsOneWidget);
+    });
+
+    testWidgets('Cloudflare tile: collapsed, no fake fields, note on expand', (
+      tester,
+    ) async {
+      await pumpCreds(tester, _FakeCreds());
+
+      expect(find.text('Cloudflare Pages'), findsOneWidget);
+      expect(find.text('Coming soon'), findsOneWidget);
+      // Collapsed: the body note is not built; the old fake disabled fields
+      // are gone for good.
+      expect(find.textContaining('Direct upload from the app'), findsNothing);
+      expect(find.text('Cloudflare API token'), findsNothing);
+
+      await tester.tap(find.text('Cloudflare Pages'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Direct upload from the app'), findsOneWidget);
     });
   });
 }

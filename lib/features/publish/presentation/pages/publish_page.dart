@@ -1,11 +1,15 @@
 /// Publish hub (presentation, AGENTS.md §3.1, #32 / #events).
 ///
 /// A 3-tab home for everything that lands on the published site:
-///   1. Connection — GitHub account + target repo (Cloudflare is shown as a
-///      disabled "coming soon" target; real upload is a later stage). Both
-///      ways of getting a target — one-tap create and the advanced picker —
-///      run through `SetupGitHubRepo`, so a stored target is always owned by
-///      the signed-in account and serves GitHub Pages from a branch root
+///   1. Connection — the hosting providers as collapsible tiles (S35):
+///      GitHub Pages (account + target repo) and Cloudflare Pages (a
+///      "coming soon" placeholder; real upload is a later stage). With both
+///      tiles collapsed the tab fits one screen; each header carries its
+///      configuration status (green/amber/red, D3) and the GitHub tile
+///      auto-expands unless fully configured (D4). Both ways of getting a
+///      target — one-tap create and the advanced picker — run through
+///      `SetupGitHubRepo`, so a stored target is always owned by the
+///      signed-in account and serves GitHub Pages from a branch root
 ///      (N09). Sign-out forgets the target with the token.
 ///   2. Basic Info — library name + public address / GPS / email / phone (the
 ///      info shown on the published page). These moved here from Settings.
@@ -97,6 +101,12 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   bool _signedIn = false;
   String? _targetRepo;
 
+  /// D4 latch (S35): the GitHub tile's INITIAL expansion, decided ONCE from
+  /// the first loaded state — auto-expand unless fully configured (signed in
+  /// AND repo set). Later status changes never yank the tile open or shut
+  /// while the user works in it; they can always toggle it manually.
+  bool? _githubInitiallyExpanded;
+
   /// Set after a successful publish — drives the "your site" card with
   /// copy + share actions.
   String? _publishedUrl;
@@ -127,6 +137,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
       _signedIn = token != null;
       _targetRepo = repo;
       _loading = false;
+      _githubInitiallyExpanded ??= !(_signedIn && repo != null);
     });
   }
 
@@ -508,6 +519,122 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     await showShareLibrarySheet(context, url: url);
   }
 
+  /// The GitHub tile's status (D3): green only when fully configured
+  /// (signed in AND a target repo set — ready to publish), amber when
+  /// signed in but the repo is missing, red when not signed in.
+  _ProviderConfig get _githubStatus {
+    if (!_signedIn) return _ProviderConfig.notConfigured;
+    return _targetRepo == null
+        ? _ProviderConfig.partial
+        : _ProviderConfig.configured;
+  }
+
+  /// The GitHub account section (moved VERBATIM from the old "GitHub
+  /// account" card into the collapsible tile, S35).
+  Widget _githubAccountSection() {
+    return _signedIn
+        ? Row(
+            children: [
+              // Success state must read as CONFIRMED at a glance, not
+              // as a plain label. Green isn't in the Material scheme,
+              // so pick a brightness-aware shade: 400 on dark surfaces
+              // (700 is too dim there), 700 on light (400 fails
+              // contrast on white). N12: Flexible + ellipsis keep this
+              // row from overflowing at 320px / large text.
+              Expanded(
+                child: Builder(
+                  builder: (ctx) {
+                    final green = Theme.of(ctx).brightness == Brightness.dark
+                        ? Colors.green.shade400
+                        : Colors.green.shade700;
+                    return Row(
+                      children: [
+                        Icon(Icons.check_circle, size: 18, color: green),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            'Signed in',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              TextButton(
+                onPressed: _busy ? null : _signOut,
+                child: const Text('Sign out'),
+              ),
+            ],
+          )
+        : FilledButton.icon(
+            onPressed: _busy ? null : _signIn,
+            icon: const Icon(Icons.login),
+            label: const Text('Sign in to GitHub'),
+          );
+  }
+
+  /// The target-repository section (moved VERBATIM from the old card into
+  /// the tile, S35); rendered only while signed in.
+  Widget _targetRepoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_targetRepo != null) ...[
+          Text('Current: $_targetRepo'),
+          const SizedBox(height: 8),
+        ],
+        // Always available: create (or adopt) a public repo by name,
+        // Pages enabled automatically — no GitHub dashboard needed.
+        FilledButton.icon(
+          onPressed: _busy ? null : _setUpNewRepo,
+          icon: const Icon(Icons.add),
+          label: Text(
+            _targetRepo == null
+                ? 'Set up a repository'
+                : 'Create a new repository',
+          ),
+        ),
+        const SizedBox(height: 8),
+        // Advanced path: pick one of your existing repos instead.
+        OutlinedButton(
+          onPressed: _busy ? null : _loadRepos,
+          child: const Text('Choose an existing repo (advanced)'),
+        ),
+        for (final r in _repos)
+          ListTile(
+            dense: true,
+            enabled: !_busy,
+            leading: Icon(
+              r.fullName == _targetRepo
+                  ? Icons.radio_button_checked
+                  : Icons.radio_button_unchecked,
+            ),
+            title: Text(r.fullName),
+            subtitle: r.isPrivate
+                ? const Text('private (Pages needs a paid plan)')
+                : null,
+            onTap: () => _pickRepo(r.fullName),
+          ),
+        if (_reposTruncated)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Showing your ${_repos.length} most recently updated '
+              'repositories. If yours is not listed, use "Create a '
+              'new repository" instead.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -523,111 +650,34 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 16),
-        _SectionCard(
-          title: 'GitHub account',
-          child: _signedIn
-              ? Row(
-                  children: [
-                    // Success state must read as CONFIRMED at a glance, not
-                    // as a plain label. Green isn't in the Material scheme,
-                    // so pick a brightness-aware shade: 400 on dark surfaces
-                    // (700 is too dim there), 700 on light (400 fails
-                    // contrast on white). N12: Flexible + ellipsis keep this
-                    // row from overflowing at 320px / large text.
-                    Expanded(
-                      child: Builder(
-                        builder: (ctx) {
-                          final green =
-                              Theme.of(ctx).brightness == Brightness.dark
-                              ? Colors.green.shade400
-                              : Colors.green.shade700;
-                          return Row(
-                            children: [
-                              Icon(Icons.check_circle, size: 18, color: green),
-                              const SizedBox(width: 6),
-                              Flexible(
-                                child: Text(
-                                  'Signed in',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: green,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _busy ? null : _signOut,
-                      child: const Text('Sign out'),
-                    ),
-                  ],
-                )
-              : FilledButton.icon(
-                  onPressed: _busy ? null : _signIn,
-                  icon: const Icon(Icons.login),
-                  label: const Text('Sign in to GitHub'),
-                ),
-        ),
-        if (_signedIn)
-          _SectionCard(
-            title: 'Target repository',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (_targetRepo != null) ...[
-                  Text('Current: $_targetRepo'),
-                  const SizedBox(height: 8),
-                ],
-                // Always available: create (or adopt) a public repo by name,
-                // Pages enabled automatically — no GitHub dashboard needed.
-                FilledButton.icon(
-                  onPressed: _busy ? null : _setUpNewRepo,
-                  icon: const Icon(Icons.add),
-                  label: Text(
-                    _targetRepo == null
-                        ? 'Set up a repository'
-                        : 'Create a new repository',
-                  ),
+        // S35: hosting providers are collapsible tiles — with both collapsed
+        // the tab fits one screen (the point of the redesign). The status
+        // badge (D3) reads configured / partial / not at a glance, and the
+        // GitHub tile auto-expands unless fully configured (D4) so sign-in
+        // and repo setup are never hidden behind a tap.
+        _ProviderTile(
+          title: 'GitHub Pages',
+          status: _githubStatus,
+          initiallyExpanded: _githubInitiallyExpanded ?? true,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _githubAccountSection(),
+              if (_signedIn) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Target repository',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
-                // Advanced path: pick one of your existing repos instead.
-                OutlinedButton(
-                  onPressed: _busy ? null : _loadRepos,
-                  child: const Text('Choose an existing repo (advanced)'),
-                ),
-                for (final r in _repos)
-                  ListTile(
-                    dense: true,
-                    enabled: !_busy,
-                    leading: Icon(
-                      r.fullName == _targetRepo
-                          ? Icons.radio_button_checked
-                          : Icons.radio_button_unchecked,
-                    ),
-                    title: Text(r.fullName),
-                    subtitle: r.isPrivate
-                        ? const Text('private (Pages needs a paid plan)')
-                        : null,
-                    onTap: () => _pickRepo(r.fullName),
-                  ),
-                if (_reposTruncated)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Showing your ${_repos.length} most recently updated '
-                      'repositories. If yours is not listed, use "Create a '
-                      'new repository" instead.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ),
+                _targetRepoSection(),
               ],
-            ),
+            ],
           ),
-        const _CloudflareComingSoon(),
+        ),
+        const _CloudflareTile(),
         if (_signedIn)
           _SectionCard(
             title: 'Publish',
@@ -675,63 +725,143 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
   }
 }
 
-/// Disabled Cloudflare target — a placeholder until the real Direct-Upload
-/// integration lands. Greyed out so it never looks publishable yet.
-class _CloudflareComingSoon extends StatelessWidget {
-  const _CloudflareComingSoon();
+/// The Cloudflare Pages tile (S35): always "Not configured" + a "Coming
+/// soon" subtitle until the real Direct-Upload integration lands. Collapsed
+/// by default (D4 applies to GitHub only — auto-expanding an unimplemented
+/// provider would defeat the one-screen goal); the body keeps the honest
+/// explanation and the dashboard workaround, minus the old fake disabled
+/// fields that made the card needlessly tall.
+class _CloudflareTile extends StatelessWidget {
+  const _CloudflareTile();
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Opacity(
-      opacity: 0.55,
-      child: IgnorePointer(
-        child: _SectionCard(
-          title: 'Cloudflare Pages',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+    return const _ProviderTile(
+      title: 'Cloudflare Pages',
+      subtitle: 'Coming soon',
+      status: _ProviderConfig.notConfigured,
+      body: Text(
+        'Direct upload from the app is on the way. For now, you can host '
+        'the same GitHub repo on Cloudflare Pages by connecting it in the '
+        'Cloudflare dashboard.',
+      ),
+    );
+  }
+}
+
+/// A provider's configuration state shown in its tile header (S35, D3).
+/// The text label is the primary carrier (accessibility); colour + icon
+/// reinforce at a glance. Shades follow the existing brightness-aware green
+/// pattern: ~400 on dark surfaces, ~700+ on light for contrast.
+enum _ProviderConfig {
+  /// Signed in AND target repo set — ready to publish.
+  configured('Configured', Icons.check_circle),
+
+  /// Signed in, but no target repo yet.
+  partial('Partially configured', Icons.warning_amber_rounded),
+
+  /// Not signed in / nothing set up (also the only state an unimplemented
+  /// provider can ever be in).
+  notConfigured('Not configured', Icons.cancel);
+
+  const _ProviderConfig(this.label, this.icon);
+
+  /// The user-facing label (primary carrier of the state).
+  final String label;
+
+  /// The status icon.
+  final IconData icon;
+
+  /// The brightness-aware status colour.
+  Color color(Brightness brightness) => switch (this) {
+    _ProviderConfig.configured =>
+      brightness == Brightness.dark
+          ? Colors.green.shade400
+          : Colors.green.shade700,
+    _ProviderConfig.partial =>
+      brightness == Brightness.dark
+          ? Colors.amber.shade300
+          : Colors.amber.shade800,
+    _ProviderConfig.notConfigured =>
+      brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade700,
+  };
+}
+
+/// A collapsible provider card (S35): header = provider name + status
+/// badge, body = that provider's settings. Matches the [_SectionCard] Card
+/// visuals so the tab reads as one family; collapsing is what keeps the
+/// whole page on one screen. The default rotating chevron stays as the
+/// expand affordance.
+class _ProviderTile extends StatelessWidget {
+  const _ProviderTile({
+    required this.title,
+    required this.status,
+    required this.body,
+    this.subtitle,
+    this.initiallyExpanded = false,
+  });
+
+  /// Provider name (tile header).
+  final String title;
+
+  /// Header status badge (D3).
+  final _ProviderConfig status;
+
+  /// Optional second header line (e.g. "Coming soon").
+  final String? subtitle;
+
+  /// The settings shown when expanded.
+  final Widget body;
+
+  /// Whether the tile starts open (D4: the GitHub tile passes its latch).
+  final bool initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = status.color(theme.brightness);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: initiallyExpanded,
+        // N12 (320px / large text): both the title and the status label
+        // ellipsize; icon and chevron keep their shape.
+        title: Row(
+          children: [
+            Flexible(
+              child: Text(
+                title,
+                style: theme.textTheme.titleMedium,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.cloud_outlined, size: 18, color: scheme.primary),
-                  const SizedBox(width: 8),
-                  const Text('Coming soon'),
+                  Icon(status.icon, size: 18, color: color),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      status.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ],
               ),
-              const SizedBox(height: 8),
-              const TextField(
-                enabled: false,
-                decoration: InputDecoration(
-                  labelText: 'Cloudflare API token',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const TextField(
-                enabled: false,
-                decoration: InputDecoration(
-                  labelText: 'Account ID',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              const TextField(
-                enabled: false,
-                decoration: InputDecoration(
-                  labelText: 'Pages project name',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'For now, you can host the same GitHub repo on Cloudflare '
-                'Pages by connecting it in the Cloudflare dashboard. Direct '
-                'upload from the app is on the way.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
+        subtitle: subtitle == null ? null : Text(subtitle!),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [body],
       ),
     );
   }
