@@ -19,6 +19,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/layout/breakpoints.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
+import 'package:pitaka/features/app_update/presentation/widgets/app_update_banner.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
@@ -151,6 +152,10 @@ class LibraryPage extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          // S35: Play flexible-update banner — renders zero-height unless
+          // this is a play-flavor Android install with a download running
+          // or finished (ineligible/idle → SizedBox.shrink).
+          const AppUpdateBanner(),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(

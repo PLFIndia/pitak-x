@@ -54,7 +54,8 @@ produces a file you control.
 
 ## When anything leaves your device
 
-Network activity happens only when you explicitly ask for it:
+Network activity happens only when you explicitly ask for it, with one
+passive exception (item 5, Google Play builds only):
 
 1. **ISBN lookup.** When you scan or type an ISBN and tap Lookup, that ISBN
    (and, if the first attempt finds nothing, its equivalent ISBN-10/ISBN-13
@@ -108,6 +109,15 @@ Network activity happens only when you explicitly ask for it:
    step; the previous folder is deleted immediately after a successful switch
    (and any half-built folder is removed on the next launch), so no second
    copy of your data lingers on the device.
+5. **Update check (Google Play builds only).** When the app starts, the
+   Play-distributed build asks the Google Play Store whether a newer version
+   of Pitak is available; if one is, it downloads in the background through
+   the Play Store and the app offers a restart once it is ready. The query
+   is made by Google's Play Store component — which installed the app and
+   already knows its package name and version — and Pitak itself sends
+   nothing: no catalogue data, no identifiers, no server of its own is
+   involved. In the F-Droid build the check is disabled and never runs
+   (F-Droid's own client handles updates there).
 
 ## What Pitak does NOT do
 

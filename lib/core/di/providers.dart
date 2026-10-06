@@ -20,10 +20,13 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
+import 'package:pitaka/core/platform/app_info.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
+import 'package:pitaka/features/app_update/domain/app_update_service.dart';
+import 'package:pitaka/features/app_update/infrastructure/play_app_update_service.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
@@ -576,6 +579,14 @@ Future<ShareCardStyleStore> shareCardStyleStore(
 @riverpod
 ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
     const MethodChannelScreenSecurity();
+
+/// The Play in-app update seam (S35). The real service gates itself to
+/// Android + the `play` applicationId (the fdroid flavor has no Play listing
+/// and stays inert) and degrades to silence on every platform failure.
+/// Overridden with a fake in tests.
+@riverpod
+AppUpdateService appUpdateService(AppUpdateServiceRef ref) =>
+    const PlayAppUpdateService(appInfo: MethodChannelAppInfo());
 
 /// Count of currently-visible passphrase entry fields (vault create / unlock
 /// / change-passphrase / restore flows). Incremented by

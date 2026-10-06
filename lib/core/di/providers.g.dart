@@ -989,6 +989,28 @@ final screenSecurityProvider = AutoDisposeProvider<ScreenSecurity>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ScreenSecurityRef = AutoDisposeProviderRef<ScreenSecurity>;
+String _$appUpdateServiceHash() => r'509cbf430ce87b34b1651c01164197a9f0c689dc';
+
+/// The Play in-app update seam (S35). The real service gates itself to
+/// Android + the `play` applicationId (the fdroid flavor has no Play listing
+/// and stays inert) and degrades to silence on every platform failure.
+/// Overridden with a fake in tests.
+///
+/// Copied from [appUpdateService].
+@ProviderFor(appUpdateService)
+final appUpdateServiceProvider = AutoDisposeProvider<AppUpdateService>.internal(
+  appUpdateService,
+  name: r'appUpdateServiceProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$appUpdateServiceHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AppUpdateServiceRef = AutoDisposeProviderRef<AppUpdateService>;
 String _$screenCaptureProtectedHash() =>
     r'4270b86c7cebaa1556cb10261ebed6aa92ad0c57';
 

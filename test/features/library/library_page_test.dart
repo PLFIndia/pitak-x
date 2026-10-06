@@ -6,11 +6,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+
+import '../app_update/fake_app_update_service.dart';
 
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
 /// that contain the query (case-insensitive), mimicking the FTS5 contract
@@ -252,6 +255,38 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('library-load-more')), findsNothing);
     });
+  });
+
+  // S35: the flexible-update banner is wired atop the library page. With the
+  // REAL service it renders nothing in tests (non-Android gate); the fake
+  // proves the wiring and the auto-started background download.
+  testWidgets('S35: an active app update renders the banner above the list', (
+    tester,
+  ) async {
+    final updates = FakeAppUpdateService(
+      availability: AppUpdateAvailability.available,
+    );
+    addTearDown(updates.dispose);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith(
+            (ref) async => _FakeBookRepo(books),
+          ),
+          appUpdateServiceProvider.overrideWithValue(updates),
+        ],
+        child: const MaterialApp(home: LibraryPage()),
+      ),
+    );
+    // NOT pumpAndSettle: the banner's progress spinner animates forever.
+    // The fakes complete in microtasks; explicit frames land every change.
+    for (var i = 0; i < 6; i++) {
+      await tester.pump();
+    }
+
+    expect(find.text('Update downloading in the background…'), findsOneWidget);
+    // The library itself still renders underneath.
+    expect(find.text('The Hobbit'), findsOneWidget);
   });
 }
 

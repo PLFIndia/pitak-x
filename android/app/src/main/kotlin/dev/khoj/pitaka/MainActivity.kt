@@ -17,6 +17,11 @@ import io.flutter.plugin.common.MethodChannel
  *  - [BiometricSecretVault.CHANNEL] — M08: seals/opens the biometric vault
  *    secret under an authentication-bound Keystore key via
  *    `BiometricPrompt.CryptoObject`. See that class for the trust boundary.
+ *  - [APP_INFO_CHANNEL] — S35: ONE read-only method (`applicationId`) so
+ *    Dart can gate the Play in-app update flow to the `play` flavor. The
+ *    F-Droid flavor (`dev.khoj.pitaka.fdroid`) has no Play listing and must
+ *    never run the update check; the applicationId is the only per-flavor
+ *    identity visible at runtime.
  *
  * No other native surface is exposed.
  */
@@ -49,9 +54,20 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            APP_INFO_CHANNEL,
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                // Read-only, non-sensitive: the app's OWN package identity.
+                "applicationId" -> result.success(packageName)
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private companion object {
         const val SCREEN_SECURITY_CHANNEL = "dev.khoj.pitaka/screen_security"
+        const val APP_INFO_CHANNEL = "dev.khoj.pitaka/app_info"
     }
 }
