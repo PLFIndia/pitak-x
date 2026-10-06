@@ -1,9 +1,11 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
@@ -12,6 +14,12 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+
+import '../vault/vault_repository_write_stub.dart';
 
 /// N03 widget tests: the detail page must show the CURRENT row, not the
 /// snapshot it was pushed with, and an Edit started from it must save on top
@@ -109,32 +117,47 @@ const _seed = Book(
 /// and so the page is pushed the way `LibraryPage` pushes it. Exposes the
 /// `ProviderContainer` so a test can invalidate providers the way the
 /// application layer does after a background write.
-Widget _host(_MemBookRepo repo, String coversDir, {Book? initialBook}) =>
-    ProviderScope(
-      overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
-        coversDirProvider.overrideWith((ref) async => coversDir),
-      ],
-      child: MaterialApp(
-        home: Builder(
-          builder: (context) => Scaffold(
-            body: Center(
-              child: TextButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => BookDetailPage(
-                      bookId: _seed.id,
-                      initialBook: initialBook,
-                    ),
-                  ),
-                ),
-                child: const Text('open detail'),
+/// Read-only vault fake (S34): unlock returns an EMPTY snapshot — the detail
+/// page only needs the session STATE (locked / uninitialized / unlocked) to
+/// render the Lend section; no borrower data is exercised here.
+class _StubVault with VaultWriteUnsupported implements VaultRepository {
+  @override
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
+  }) async => right(VaultData.empty);
+}
+
+Widget _host(
+  _MemBookRepo repo,
+  String coversDir, {
+  Book? initialBook,
+  List<Override> extraOverrides = const [],
+}) => ProviderScope(
+  overrides: [
+    bookRepositoryProvider.overrideWith((ref) async => repo),
+    coversDirProvider.overrideWith((ref) async => coversDir),
+    ...extraOverrides,
+  ],
+  child: MaterialApp(
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) =>
+                    BookDetailPage(bookId: _seed.id, initialBook: initialBook),
               ),
             ),
+            child: const Text('open detail'),
           ),
         ),
       ),
-    );
+    ),
+  ),
+);
 
 Future<void> _openDetail(WidgetTester tester) async {
   await tester.tap(find.text('open detail'));
@@ -329,5 +352,145 @@ void main() {
     expect(find.text('Herbert'), findsOneWidget);
     expect(find.text('2'), findsOneWidget, reason: 'Quantity row');
     expect(repo.getByIdCalls, greaterThanOrEqualTo(1));
+  });
+
+  // S34: a locked vault used to hide the Lend button silently — users could
+  // not tell lending existed or why it vanished. The section now renders
+  // whenever the vault state is KNOWN: locked/uninitialized show a grayed-out
+  // button plus a hint that routes to the vault screen; unlocked keeps the
+  // policy-driven behaviour (LendDecision) unchanged.
+  group('S34: the Lend section reflects the vault state', () {
+    /// A VaultStore whose files on disk say "a vault exists" (locked) or
+    /// "no vault yet" (uninitialized) — the fixture recipe used by
+    /// replacement_harness and vault_page_test.
+    VaultStore vaultStore({required bool initialized}) {
+      final dir = Directory('${tmp.path}/vault');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final store = VaultStore(baseDir: dir.path);
+      if (initialized) {
+        File(store.dbPath).writeAsBytesSync([1, 2, 3]);
+        store.writeBlob('synthetic.blob.only');
+      }
+      return store;
+    }
+
+    List<Override> vaultOverrides(VaultStore store) => [
+      vaultStoreProvider.overrideWith((ref) async => store),
+      vaultRepositoryProvider.overrideWithValue(_StubVault()),
+    ];
+
+    Future<void> openLendSection(WidgetTester tester) async {
+      await _openDetail(tester);
+      await tester.scrollUntilVisible(
+        find.widgetWithText(FilledButton, 'Lend'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+    }
+
+    FilledButton lendButton(WidgetTester tester) =>
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Lend'));
+
+    testWidgets('locked vault: grayed-out Lend + unlock hint', (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      await openLendSection(tester);
+
+      expect(
+        lendButton(tester).onPressed,
+        isNull,
+        reason: 'disabled while locked',
+      );
+      expect(
+        find.text('Unlock the borrowers vault to lend this book.'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(TextButton, 'Unlock the vault'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('uninitialized vault: grayed-out Lend + set-up hint', (
+      tester,
+    ) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: false)),
+        ),
+      );
+      await openLendSection(tester);
+
+      expect(lendButton(tester).onPressed, isNull);
+      expect(
+        find.text('Set up the borrowers vault to start lending.'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(TextButton, 'Set up the vault'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unlocked vault: Lend is enabled, no vault hint', (
+      tester,
+    ) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('open detail')),
+      );
+      await container.read(vaultSessionControllerProvider.future);
+      final unlocked = await container
+          .read(vaultSessionControllerProvider.notifier)
+          .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+      expect(unlocked.isRight(), isTrue, reason: 'fixture unlock must succeed');
+      await tester.pumpAndSettle();
+      await openLendSection(tester);
+
+      // _seed has 2 copies and no loans → LendAllowed.
+      expect(lendButton(tester).onPressed, isNotNull);
+      expect(find.textContaining('borrowers vault to'), findsNothing);
+    });
+
+    testWidgets('the unlock hint opens the vault screen', (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      await openLendSection(tester);
+      await tester.scrollUntilVisible(
+        find.widgetWithText(TextButton, 'Unlock the vault'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      await tester.tap(find.widgetWithText(TextButton, 'Unlock the vault'));
+      await tester.pumpAndSettle();
+      expect(find.text('Borrowers vault'), findsOneWidget);
+    });
   });
 }

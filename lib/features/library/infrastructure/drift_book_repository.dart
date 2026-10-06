@@ -249,6 +249,13 @@ class DriftBookRepository implements BookRepository {
         return right<Failure, Book>(withUid.copyWith(id: id));
       });
     } on Object catch (e) {
+      // S34 race net: the UNIQUE isbn index may have refused this write (a
+      // concurrent add slipped past the use-case pre-check). Instead of
+      // parsing SQLite exception text, ask the table: if a colliding row
+      // exists NOW, the honest user-facing failure is "already in your
+      // library". Anything else keeps the opaque storage error.
+      final duplicate = await _isbnCollision(book.isbn);
+      if (duplicate != null) return left(duplicate);
       return left(StorageFailure('insert: $e'));
     }
   }
@@ -286,7 +293,45 @@ class DriftBookRepository implements BookRepository {
         return right<Failure, Book>(preserved);
       });
     } on Object catch (e) {
+      // S34 race net, same as [insert]: an edit moved onto ANOTHER row's ISBN
+      // is refused by the UNIQUE index; report it as the duplicate it is.
+      // The book's own id is excluded — keeping your own ISBN is no collision.
+      final duplicate = await _isbnCollision(book.isbn, excludeId: book.id);
+      if (duplicate != null) return left(duplicate);
       return left(StorageFailure('update: $e'));
+    }
+  }
+
+  /// Best-effort check, after a FAILED write, that [isbn] is now held by
+  /// another row: returns the typed [DuplicateIsbnFailure] describing it, or
+  /// null when there is no collision, the ISBN is blank, or the re-read
+  /// itself fails (the caller then falls back to [StorageFailure]).
+  ///
+  /// The lookup uses the ISBN exactly as the mapper would store it (raw;
+  /// blanks are never stored), so it finds precisely the row the UNIQUE
+  /// index collided with. [excludeId] names the row being updated, which
+  /// cannot collide with itself.
+  Future<DuplicateIsbnFailure?> _isbnCollision(
+    String? isbn, {
+    int? excludeId,
+  }) async {
+    final raw = isbn;
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final row =
+          await (_db.select(_db.books)
+                ..where((t) => t.isbn.equals(raw))
+                ..limit(1))
+              .getSingleOrNull();
+      if (row == null) return null;
+      if (excludeId != null && row.id == excludeId) return null;
+      return DuplicateIsbnFailure(
+        existingTitle: row.title,
+        existingBookId: row.id,
+        existingIsRemoved: row.removed,
+      );
+    } on Object {
+      return null; // best-effort only; the caller reports the original error
     }
   }
 

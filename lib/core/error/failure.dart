@@ -27,6 +27,37 @@ final class NotFoundFailure extends Failure {
   const NotFoundFailure();
 }
 
+/// A book with the same ISBN is ALREADY in the library (S34).
+///
+/// Why this exists (beginner note): `books.isbn` has a UNIQUE index, so the
+/// database can never hold two rows with the same ISBN. Before this failure
+/// type, a duplicate add surfaced as a generic [StorageFailure] and the UI
+/// could only say "could not save". This variant lets the form say plainly
+/// that the book is already in the library, naming the existing row.
+///
+/// The fields are nullable/optional because the race-path mapping in the
+/// repository (a concurrent insert that slipped past the use-case pre-check)
+/// constructs this failure best-effort, after the write was already refused.
+final class DuplicateIsbnFailure extends Failure {
+  /// Creates a duplicate-ISBN failure. [existingTitle]/[existingBookId] name
+  /// the row that already holds the ISBN when known; [existingIsRemoved] says
+  /// whether that row is soft-deleted (so the message can mention it).
+  const DuplicateIsbnFailure({
+    this.existingTitle,
+    this.existingBookId,
+    this.existingIsRemoved = false,
+  });
+
+  /// Title of the library book that already has this ISBN, when known.
+  final String? existingTitle;
+
+  /// Id of the library book that already has this ISBN, when known.
+  final int? existingBookId;
+
+  /// True when the existing row is marked removed (soft-deleted).
+  final bool existingIsRemoved;
+}
+
 /// The supplied backup passphrase did not unwrap the vault blob.
 ///
 /// Mirrors Kotlin `BackupRestore.Result.WrongPassphrase` — kept distinct from

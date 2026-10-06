@@ -617,6 +617,19 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
 
   static String _messageFor(Object error) {
     if (error is ValidationFailure) return error.message;
+    // S34: a duplicate ISBN is an expected outcome, not a broken save — say
+    // plainly that the book is already catalogued, naming the existing row
+    // when the title is known.
+    if (error is DuplicateIsbnFailure) {
+      final title = error.existingTitle?.trim() ?? '';
+      final base = title.isEmpty
+          ? 'This book is already in your library.'
+          : "'$title' is already in your library.";
+      return error.existingIsRemoved
+          ? '$base It is marked as removed — open it from the library list '
+                'to restore it.'
+          : base;
+    }
     if (error is NotFoundFailure) {
       return 'This book no longer exists and could not be saved.';
     }

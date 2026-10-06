@@ -8,6 +8,7 @@ import 'package:pitaka/features/library/application/update_book_use_case.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
@@ -316,6 +317,67 @@ void main() {
       );
       expect(err(r), isA<ValidationFailure>());
     });
+
+    // S34: the duplicate-ISBN routing the Kotlin app deferred. The UNIQUE
+    // index always refused the row; the use case now says WHY, naming the
+    // existing book, instead of letting a raw storage error surface.
+    test('S34: a duplicate ISBN is refused as DuplicateIsbnFailure', () async {
+      final useCase = AddBookUseCase(repo);
+      ok(await repo.insert(const Book(title: 'First', isbn: '9780140449136')));
+      final failure = err(
+        await useCase(const Book(title: 'Second', isbn: '9780140449136')),
+      );
+      expect(failure, isA<DuplicateIsbnFailure>());
+      failure as DuplicateIsbnFailure;
+      expect(failure.existingTitle, 'First');
+      expect(failure.existingIsRemoved, isFalse);
+    });
+
+    test(
+      'S34: a duplicate of a REMOVED book carries the removed flag',
+      () async {
+        final useCase = AddBookUseCase(repo);
+        final first = ok(
+          await repo.insert(const Book(title: 'Gone', isbn: '333')),
+        );
+        ok(await repo.markRemoved(first.id, 42));
+        final failure = err(
+          await useCase(const Book(title: 'Again', isbn: '333')),
+        );
+        expect(failure, isA<DuplicateIsbnFailure>());
+        expect((failure as DuplicateIsbnFailure).existingIsRemoved, isTrue);
+      },
+    );
+
+    test(
+      'S34: blank ISBNs never collide — two no-ISBN books both save',
+      () async {
+        final useCase = AddBookUseCase(repo);
+        ok(await useCase(const Book(title: 'No ISBN A')));
+        ok(await useCase(const Book(title: 'No ISBN B')));
+        final all = await firstPage(repo, sort: BookSort.recentlyAdded);
+        expect(
+          all.map((b) => b.title),
+          containsAll(['No ISBN A', 'No ISBN B']),
+        );
+      },
+    );
+
+    test(
+      'S34: a failed duplicate pre-check aborts the add (fail closed)',
+      () async {
+        // If the library cannot even be READ, the use case must propagate the
+        // read failure and never blind-insert: the index would catch a true
+        // duplicate, but the honest error is "the check failed".
+        final fake = _FailingFindByIsbnRepo();
+        final useCase = AddBookUseCase(fake);
+        final failure = err(
+          await useCase(const Book(title: 'X', isbn: '9780140449136')),
+        );
+        expect(failure, isA<StorageFailure>());
+        expect(fake.insertCalls, 0, reason: 'insert must not be attempted');
+      },
+    );
   });
 
   group('UpdateBookUseCase', () {
@@ -358,4 +420,57 @@ void main() {
       },
     );
   });
+}
+
+/// A repository whose `findByIsbn` ALWAYS fails, to pin the fail-closed
+/// pre-check (S34): when the duplicate check cannot be read, the add must
+/// abort with the read failure — never blind-insert. Every other member is
+/// an inert stub; the use case under test only touches these two.
+class _FailingFindByIsbnRepo implements BookRepository {
+  int insertCalls = 0;
+
+  @override
+  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+      left(const StorageFailure('synthetic read failure'));
+
+  @override
+  Future<Either<Failure, Book>> insert(Book book) async {
+    insertCalls++;
+    return right(book);
+  }
+
+  @override
+  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  @override
+  Future<Either<Failure, BookPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async => right(BookPage.empty);
+  @override
+  Future<Either<Failure, List<String>>> distinctLanguages() async =>
+      right(const []);
+  @override
+  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  @override
+  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  @override
+  Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> delete(int id) async => right(unit);
+  @override
+  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
+  @override
+  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+      right(books.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+      right(books.length);
 }

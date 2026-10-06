@@ -74,8 +74,14 @@ class _MemRepo implements BookRepository {
     );
   }
 
+  // S34: derived from the stored books, like the real repository, so the
+  // AddBookUseCase duplicate-ISBN pre-check fires in widget tests too.
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, Book?>> findByIsbn(String isbn) async {
+    if (isbn.trim().isEmpty) return right(null);
+    return right(books.where((b) => b.isbn == isbn).firstOrNull);
+  }
+
   // Session 33: derived from the stored books, like the real repository, so
   // the Language dropdown in these tests is live.
   @override
@@ -330,6 +336,61 @@ void main() {
       find.text('This book no longer exists and could not be saved.'),
       findsOneWidget,
     );
+  });
+
+  // S34 regression: a duplicate ISBN used to surface as the generic
+  // "Could not save the book" — the UNIQUE index rejection was swallowed
+  // into a StorageFailure. The form must now name the existing book.
+  testWidgets(
+    'S34: saving a duplicate ISBN says it is already in the library',
+    (tester) async {
+      final repo = _MemRepo();
+      await repo.insert(const Book(title: 'Dune', isbn: '9780441172719'));
+
+      await tester.pumpWidget(_host(repo));
+      await tester.pumpAndSettle();
+
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Title *'),
+        'Dune (second copy row)',
+      );
+      await tester.enterText(
+        find.widgetWithText(TextField, 'ISBN'),
+        '9780441172719',
+      );
+      await _tapSave(tester);
+
+      expect(
+        find.text("'Dune' is already in your library."),
+        findsOneWidget,
+        reason: 'names the existing book instead of a generic save error',
+      );
+      expect(repo.books, hasLength(1), reason: 'nothing was inserted');
+      expect(find.text('Add book'), findsWidgets, reason: 'form stayed open');
+    },
+  );
+
+  testWidgets('S34: a duplicate of a REMOVED book says it is removed', (
+    tester,
+  ) async {
+    final repo = _MemRepo();
+    await repo.insert(
+      const Book(title: 'Old copy', isbn: '9780441172719', removed: true),
+    );
+
+    await tester.pumpWidget(_host(repo));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.widgetWithText(TextField, 'Title *'), 'Again');
+    await tester.enterText(
+      find.widgetWithText(TextField, 'ISBN'),
+      '9780441172719',
+    );
+    await _tapSave(tester);
+
+    expect(find.textContaining('already in your library'), findsOneWidget);
+    expect(find.textContaining('marked as removed'), findsOneWidget);
+    expect(repo.books, hasLength(1));
   });
 
   // Session 33: the Language field is a dropdown of the library's languages

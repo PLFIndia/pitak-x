@@ -556,4 +556,71 @@ void main() {
       expect(reloaded.map((b) => b.id).toSet(), hasLength(7));
     });
   });
+
+  // S34: the UNIQUE isbn index always refused these writes; the repository
+  // now maps the refusal to the typed duplicate failure (the race net under
+  // the use-case pre-check), so every ingress reports "already in library"
+  // instead of an opaque storage error.
+  group('S34 — duplicate ISBN maps to DuplicateIsbnFailure', () {
+    Failure failureOf<T>(Either<Failure, T> r) =>
+        r.fold((f) => f, (_) => fail('expected a failure'));
+
+    test(
+      'insert colliding on the UNIQUE isbn index reports the duplicate',
+      () async {
+        ok(
+          await repo.insert(const Book(title: 'First', isbn: '9780140449136')),
+        );
+        final failure = failureOf(
+          await repo.insert(const Book(title: 'Second', isbn: '9780140449136')),
+        );
+        expect(failure, isA<DuplicateIsbnFailure>());
+        failure as DuplicateIsbnFailure;
+        expect(failure.existingTitle, 'First');
+        expect(failure.existingBookId, isNotNull);
+        expect(failure.existingIsRemoved, isFalse);
+      },
+    );
+
+    test('the duplicate failure carries the removed flag', () async {
+      final first = ok(
+        await repo.insert(const Book(title: 'Gone', isbn: '333')),
+      );
+      ok(await repo.markRemoved(first.id, 42));
+      final failure = failureOf(
+        await repo.insert(const Book(title: 'Again', isbn: '333')),
+      );
+      expect(failure, isA<DuplicateIsbnFailure>());
+      expect((failure as DuplicateIsbnFailure).existingIsRemoved, isTrue);
+    });
+
+    test("update onto ANOTHER row's ISBN reports the duplicate", () async {
+      final a = ok(await repo.insert(const Book(title: 'A', isbn: '111')));
+      ok(await repo.insert(const Book(title: 'B', isbn: '222')));
+      final failure = failureOf(await repo.update(a.copyWith(isbn: '222')));
+      expect(failure, isA<DuplicateIsbnFailure>());
+      expect((failure as DuplicateIsbnFailure).existingTitle, 'B');
+      // The refused write changed nothing.
+      expect(ok(await repo.getById(a.id))!.isbn, '111');
+    });
+
+    test('update keeping its OWN ISBN succeeds (no self-collision)', () async {
+      final a = ok(await repo.insert(const Book(title: 'A', isbn: '111')));
+      final updated = ok(await repo.update(a.copyWith(title: 'A2')));
+      expect(updated.isbn, '111');
+      expect(updated.title, 'A2');
+    });
+
+    test(
+      'a duplicate book_uid is NOT misreported as an ISBN duplicate',
+      () async {
+        ok(await repo.insert(const Book(title: 'A', bookUid: 'uid-1')));
+        final failure = failureOf(
+          await repo.insert(const Book(title: 'B', bookUid: 'uid-1')),
+        );
+        expect(failure, isA<StorageFailure>());
+        expect(failure, isNot(isA<DuplicateIsbnFailure>()));
+      },
+    );
+  });
 }

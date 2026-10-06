@@ -305,6 +305,27 @@ final addBookUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AddBookUseCaseRef = AutoDisposeFutureProviderRef<AddBookUseCase>;
+String _$findByIsbnUseCaseHash() => r'07df33f26a0552cc6ca88844a7ff312a7537e3d1';
+
+/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
+/// already-catalogued scan opens the existing book, not the add form).
+///
+/// Copied from [findByIsbnUseCase].
+@ProviderFor(findByIsbnUseCase)
+final findByIsbnUseCaseProvider =
+    AutoDisposeFutureProvider<FindByIsbnUseCase>.internal(
+      findByIsbnUseCase,
+      name: r'findByIsbnUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$findByIsbnUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef FindByIsbnUseCaseRef = AutoDisposeFutureProviderRef<FindByIsbnUseCase>;
 String _$updateBookUseCaseHash() => r'e92678950b1d2074408647f0f4d0ee91c165c658';
 
 /// Updates an existing library book (title-required, id-immutable).

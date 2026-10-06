@@ -34,6 +34,7 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
+import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 /// A portrait 2:3 crop preset — the natural shape of a book cover. The plugin's
 /// built-in enum only offers landscape ratios (e.g. 3:2), so we supply this
@@ -268,8 +269,15 @@ class _BookDetailBody extends ConsumerWidget {
             const SizedBox(height: 12),
             _RemovedBadge(scheme: scheme, textTheme: textTheme),
           ],
-          // Lend action (vault unlocked). Disabled — with the reason shown —
-          // when the lending policy would refuse (removed / all copies out).
+          // Lend action (S34): rendered whenever the vault state is KNOWN,
+          // so a locked vault explains itself instead of silently hiding the
+          // feature (users could not tell lending existed / why it vanished).
+          //  - unlocked → the lending policy decides enabled/disabled+reason;
+          //  - locked / uninitialized → disabled button + a hint that routes
+          //    to the vault screen. This page WATCHES the session, so after
+          //    unlocking and popping back it rebuilds with a live button;
+          //  - still loading / errored (session == null) → nothing, a
+          //    transient state, same as before.
           if (vaultUnlocked && lendDecision != null) ...[
             const SizedBox(height: 16),
             FilledButton.icon(
@@ -295,6 +303,43 @@ class _BookDetailBody extends ConsumerWidget {
                 ),
               ),
             ],
+          ] else if (session is VaultLocked ||
+              session is VaultUninitialized) ...[
+            const SizedBox(height: 16),
+            // Disabled (grayed by the theme): lending needs an unlocked
+            // vault and there is no bypass — the lend use case stays the
+            // enforcing gate (fail closed).
+            FilledButton.icon(
+              onPressed: null,
+              icon: const Icon(Icons.outbox),
+              label: const Text('Lend'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              session is VaultLocked
+                  ? 'Unlock the borrowers vault to lend this book.'
+                  : 'Set up the borrowers vault to start lending.',
+              style: textTheme.bodySmall?.copyWith(
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(builder: (_) => const VaultPage()),
+                ),
+                icon: Icon(
+                  session is VaultLocked ? Icons.lock_open : Icons.lock_outline,
+                  size: 18,
+                ),
+                label: Text(
+                  session is VaultLocked
+                      ? 'Unlock the vault'
+                      : 'Set up the vault',
+                ),
+              ),
+            ),
           ],
           const SizedBox(height: 24),
           // Labeled rows in the exact order of the Kotlin detail screen.

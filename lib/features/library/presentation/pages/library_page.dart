@@ -13,7 +13,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/layout/breakpoints.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
@@ -41,17 +43,23 @@ class LibraryPage extends ConsumerWidget {
   /// Creates the library page.
   const LibraryPage({super.key});
 
-  /// Quick-add (Q2=A): scan a barcode, then open the Add-Book form with the
-  /// ISBN pre-filled. The user reviews, taps Lookup, and saves — scanning never
-  /// creates a book on its own.
-  Future<void> _quickAddByScan(BuildContext context) async {
+  /// Quick-add (Q2=A): scan a barcode, then route the ISBN (S34): an
+  /// already-catalogued book offers to open the EXISTING row; a new ISBN
+  /// opens the Add-Book form pre-filled. Scanning never creates a book on
+  /// its own.
+  Future<void> _quickAddByScan(BuildContext context, WidgetRef ref) async {
+    // Resolve the use case BEFORE the camera flow: no `ref` use after an
+    // async gap that could outlive this widget instance.
+    final findByIsbn = await ref.read(findByIsbnUseCaseProvider.future);
+    if (!context.mounted) return;
     final scanned = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
     );
     if (scanned == null || !context.mounted) return;
-    final isbn = IsbnFormat.normalize(scanned);
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => AddBookPage(initialIsbn: isbn)),
+    await routeScannedIsbn(
+      context,
+      IsbnFormat.normalize(scanned),
+      findByIsbn.call,
     );
   }
 
@@ -91,7 +99,7 @@ class LibraryPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan to add',
-            onPressed: () => _quickAddByScan(context),
+            onPressed: () => _quickAddByScan(context, ref),
           ),
           IconButton(
             icon: const Icon(Icons.campaign_outlined),
@@ -309,6 +317,57 @@ class _BookList extends ConsumerWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Post-scan ISBN routing (S34), extracted from the quick-add flow so it is
+/// testable without a camera.
+///
+/// An ISBN already in the catalogue opens an "already in your library" dialog
+/// offering the EXISTING book — filling in a form the UNIQUE index would
+/// refuse to save is wasted work and a confusing error. A new ISBN opens the
+/// Add-Book form pre-filled, as before.
+///
+/// A FAILED [findByIsbn] read also falls through to the add form on purpose:
+/// this is navigation, not a security gate — the save path re-checks and the
+/// UNIQUE index still makes a duplicate row impossible (fail-safe by layers).
+Future<void> routeScannedIsbn(
+  BuildContext context,
+  String isbn,
+  Future<Either<Failure, Book?>> Function(String isbn) findByIsbn,
+) async {
+  final existing = await findByIsbn(isbn);
+  if (!context.mounted) return;
+  final found = existing.getOrElse((_) => null);
+  if (found == null) {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => AddBookPage(initialIsbn: isbn)),
+    );
+    return;
+  }
+  final open = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Already in your library'),
+      content: Text("'${found.title}' is already in your library."),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          child: const Text('View book'),
+        ),
+      ],
+    ),
+  );
+  if ((open ?? false) && context.mounted) {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => BookDetailPage(bookId: found.id, initialBook: found),
       ),
     );
   }

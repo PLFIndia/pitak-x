@@ -50,6 +50,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/find_by_isbn_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
@@ -244,6 +245,14 @@ Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
 Future<AddBookUseCase> addBookUseCase(AddBookUseCaseRef ref) async {
   final repo = await ref.watch(bookRepositoryProvider.future);
   return AddBookUseCase(repo);
+}
+
+/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
+/// already-catalogued scan opens the existing book, not the add form).
+@riverpod
+Future<FindByIsbnUseCase> findByIsbnUseCase(FindByIsbnUseCaseRef ref) async {
+  final repo = await ref.watch(bookRepositoryProvider.future);
+  return FindByIsbnUseCase(repo);
 }
 
 /// Updates an existing library book (title-required, id-immutable).
