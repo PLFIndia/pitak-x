@@ -1,213 +1,257 @@
-# PLAN.md — Session 33 — One spelling per language (dropdown + canonicalise + migrate)
+# PLAN.md — Session 34 — Clear "already in library" message + locked-vault Lend hint
 
-User request: typing `English` and `english` records two languages; the
-catalogue filter then shows two chips. Fix it for new AND existing users.
-Agreed direction (this session): **A + dropdown**. Plain dropdown of the
-library's own languages + "Other…" (free text, becomes a dropdown entry once
-saved). Google Books ISO codes (`en`, `hi`, …) are converted to names in-app.
-A book whose language is not in the list shows as "Other" with the value
-editable. An empty library starts with `English` + `Other…`.
+User request (two UX bugs):
+1. Scanning the ISBN of a book that is ALREADY in the library ends in a
+   generic "Could not save the book. Please try again." It must clearly say
+   the book is already in the library.
+2. On the book detail page, when the vault is locked the Lend button silently
+   disappears. Correct but confusing: show a grayed-out Lend button with a
+   hint telling the user to unlock the vault to use lending.
 
 ## Understanding (verified from source this session)
 
-- Root cause: free-text field, only `trim()` applied
-  (`lib/features/library/presentation/pages/add_book_page.dart:232,375`).
-  Nothing downstream is case-aware:
-  - `drift_book_repository.dart:198-211` `SELECT DISTINCT language` is
-    case-sensitive → two chips.
-  - `drift_book_repository.dart:97-104,424` filter is deliberate EXACT match
-    on the stored string (D1-a, because SQLite `lower()` is ASCII-only and
-    broke `Ελληνικά`). Locked by `test/features/library/add_edit_book_test.dart:113-127`.
-    **Kept as-is** — once data is canonical, exact match is correct.
-  - `book_sorter.dart:51-53` / `drift_book_repository.dart:180-183` sort is
-    binary code-unit → `English < Hindi < english`. Unchanged; data fix suffices.
-  - `library_merge_engine.dart:574` `a.language == b.language` → false
-    conflict between `English` and `english`.
-  - `google_books_lookup_service.dart:116` stores the raw BCP-47/ISO code
-    (`en`) → a third spelling for lookup-filled books.
-- Write chokepoint: ALL ingress ends in `DriftBookRepository.insert/update/
-  insertAll/replaceAll` (`:229,:242,:302,:323`). Callers: add/update use
-  cases, `import_library_use_case.dart:209,242`,
-  `merge_library_use_case.dart:356,458,466,523`, legacy restore (via
-  import). `Book.validate` (`book.dart:227`) is the static field gate but has
-  no access to existing languages, so it cannot resolve spellings alone.
-- `AppDatabase` (`lib/core/database/app_database.dart:26`) is at
-  `schemaVersion 1`, `onCreate` only; `core/database` imports nothing from
-  `features/` today. `Books.language` is `text().nullable()`
-  (`tables.dart:62`). Wishlist has no language column.
-- Form dropdown precedent: `DropdownButtonFormField` with a `Not set` null
-  item (`add_book_page.dart:390-416`). Lookup fills the field via
-  `fillIfEmpty(_language, m.language)` (`:193`).
-- Facet list: `libraryLanguagesProvider` (`lib/core/di/providers.dart:235`)
-  re-runs on every `libraryControllerProvider` mutation → a newly saved
-  "Other" language appears in the dropdown immediately (no restart).
-- Cross-feature domain import precedent: `wishlist_use_cases.dart:218` uses
-  `Book.validate` → lookup may import a library-domain value object.
-- No `LanguageName` value object exists; `domain/value_objects/` has only
-  `library_id.dart`, `library_qr_payload.dart`.
-- Drift version per in-repo comment: 2.28.2 (`drift_book_repository.dart:107`).
-  `MigrationStrategy.onUpgrade(m, from, to)` — from memory; verify in pub
-  cache before Step 4.
+Problem 1 — root-cause chain:
+- `books.isbn` carries a UNIQUE index: `lib/core/database/app_database.dart:76`
+  (`index_books_isbn`; wishlist has a twin at `:93`).
+- Scan flow: `library_page.dart:47 _quickAddByScan` → `ScannerPage` →
+  `AddBookPage(initialIsbn: …)` → user taps "Add book" →
+  `AddBookController.save` → `AddBookUseCase` → `Book.validate` (pure field
+  gate, no duplicate check) → `DriftBookRepository.insert`
+  (`drift_book_repository.dart:237`) → SQLite UNIQUE violation throws →
+  `on Object catch` → `StorageFailure('insert: $e')` (`:252`).
+- `add_book_page.dart:618 _messageFor` maps only `ValidationFailure` /
+  `NotFoundFailure`; everything else falls to the generic
+  "Could not save the book. Please try again." (`:623`). That is the message
+  the user reported.
+- `AddBookUseCase` docstring: duplicate-ISBN routing was deliberately deferred
+  ("NOT ported … a UI concern that calls `findByIsbn` first").
+- `BookRepository.findByIsbn` already exists (`book_repository.dart:76`, impl
+  `drift_book_repository.dart:381`, exact match, blank → null).
+- In-repo precedent for the pre-check pattern: wishlist
+  `MarkWishlistPurchasedUseCase` (`wishlist_use_cases.dart`) calls
+  `findByIsbn` before inserting into the library and returns a typed
+  `MarkPurchasedAlreadyInLibrary` outcome.
+- Editing a book ONTO another row's ISBN (`update`, `:256-289`) hits the same
+  unique index and the same generic message.
+
+Problem 2 — current behaviour:
+- `book_detail_page.dart:184`: `lendDecision` is computed only when
+  `session is VaultUnlocked`; `:273` renders the whole Lend block only
+  `if (vaultUnlocked && lendDecision != null)` → locked / uninitialized vault
+  ⇒ no button, no explanation.
+- Vault session states (`vault_session_state.dart`): `VaultUninitialized`
+  (offer "set up"), `VaultLocked` (offer "unlock"), `VaultUnlocked(data)`.
+- `VaultPage` (`vault/presentation/pages/vault_page.dart`) already renders the
+  setup/unlock UI per state; the drawer pushes it (`app_drawer.dart:76`).
+  The detail page WATCHES `vaultSessionControllerProvider` (keepAlive), so
+  after unlocking and popping back it rebuilds with a live Lend button — no
+  extra plumbing needed.
+- `LendDecision` (`lending_policy.dart`) already models allowed/refused +
+  plain-language reason for the unlocked case; unchanged.
+- Widget-test setup precedent for vault state: `lend_book_page_test.dart`
+  (override `vaultStoreProvider` + `vaultRepositoryProvider`, then
+  `container.read(vaultSessionControllerProvider.notifier).enable(…)`).
+- `book_detail_page_test.dart` currently never overrides vault providers and
+  never asserts on Lend — the new always-visible button may change what those
+  tests see; suite run will confirm.
 
 ## Privacy & threat notes
 
-- No new data collected; no network; language is not PII. Local-only.
-- Migration REWRITES rows (`english` → `English`). Irreversible loss of the
-  case variant only; content preserved. Runs once inside one transaction.
-- Hostile input: "Other…" text still passes `Book.validate` length cap
-  (`CatalogueRules.maxFieldChars`). Canonicalisation only ever returns a
-  string that was already stored or the trimmed input — it cannot mint new
-  content. ISO table is `const`. Dropdown items come from the local DB only.
-- Migration false-positive risk: a genuinely 2-letter user-typed language
-  name that collides with an ISO code (e.g. `Ga`, `Wu`) would be renamed.
-  Accepted — vanishingly rare in this app's audience; noted here.
+- No new data collected, no network calls, no new permissions. All local.
+- `DuplicateIsbnFailure` carries the EXISTING book's title/id — the user's own
+  local data, surfaced only to that user in the UI message. Never logged
+  (failure diagnostics stay internal, per §5/§6.2).
+- Locked-vault hint reveals only that a lending feature exists (already
+  visible in the drawer) — nothing about vault contents, borrowers, or
+  whether the vault holds data. The button stays DISABLED: no path into
+  lending without an unlocked vault; `LendBookUseCase` remains the enforcing
+  gate (fail closed preserved).
+- Scan-time duplicate check reads the local DB only.
 
 ## Proposed approach
 
-Plain English: a book's language gets snapped to the spelling your library
-already uses (ignoring case/whitespace) or converted from a Google Books
-code; the form offers a dropdown of those spellings plus "Other…". A
-one-time, one-transaction migration collapses existing duplicate spellings.
+### Fix 1 — typed duplicate-ISBN failure + clear message
 
-1. **`LanguageName` (domain value object)** —
-   `lib/features/library/domain/value_objects/language_name.dart`. Pure Dart.
-   - `LanguageName.key(String) → String`: trim, collapse whitespace, Dart
-     `toLowerCase()` (Unicode-aware; SQLite's is ASCII-only — this is WHY it
-     lives in Dart). Unit-tested on Latin + Greek + Devanagari.
-   - `LanguageName.canonicalise(String? raw, Iterable<String> existing) →
-     String?`: blank → null; ISO code → name (§3); else the FIRST `existing`
-     whose key matches; else `trimmed`. Deterministic.
-   - `LanguageName.defaults = ['English']` — seed shown when the library is empty.
-   - Contains `_isoNames`: `const` map, ISO 639-1 two-letter code → English
-     name. Full 184-code list adapted from the public ISO 639-1 table
-     (credit: Wikipedia "List of ISO 639-1 codes"; also cross-checked
-     against Dart `intl` locale names). Only the 2-letter primary subtag
-     is matched (`en-GB` → `en`); anything ≥3 chars is treated as a name.
-2. **Repository-level enforcement** — `DriftBookRepository.insert/update/
-   insertAll/replaceAll` canonicalise `language` against the current
-   distinct set inside the same transaction, so EVERY ingress (form,
-   import, merge, restore) obeys one rule. `insertAll`/`replaceAll`
-   canonicalise within the batch too (first spelling wins), so an imported
-   file with mixed case yields one spelling.
-   Why the repo and not `Book.validate`: only the repo can see what is
-   already stored. `Book.validate` stays the static field gate.
-3. **ISO → name at the lookup boundary** —
-   `google_books_lookup_service.dart:116` maps via `LanguageName`, so
-   `BookMetadata.language` is already `English`; the form never sees `en`.
-   Idempotent: `English` → `English`.
-4. **Schema v2 migration** — `AppDatabase.schemaVersion => 2`,
-   `onUpgrade(from < 2)`: read distinct languages, group by
-   `LanguageName.key` in Dart, resolve ISO codes, pick winner per group =
-   most books → tie: not-an-ISO-code → NOCASE first; `UPDATE books SET
-   language = ? WHERE language = ?` for every loser. Single transaction.
-   Idempotent (re-run finds no groups). `core/database` gains one import
-   from `features/library/domain` (pure Dart; no layering violation —
-   `core` is the cross-cutting root and the VO has no Flutter/Riverpod).
-   Existing tests build DBs fresh via `onCreate`; a dedicated migration test
-   opens a v1 fixture, inserts variants, upgrades, asserts one spelling.
-5. **Dropdown UI** — replace `_field(_language, 'Language')` with
-   `DropdownButtonFormField<String?>`: `Not set` (null), each item from
-   `libraryLanguagesProvider` (seeded with `LanguageName.defaults` when
-   empty), then `Other…` sentinel. Choosing `Other…` reveals a `TextField`
-   (the existing `_language` controller) for free text. Edit mode: if the
-   book's language is not in the list (old backup, or the list hasn't
-   refreshed yet), pre-select `Other…` and fill the box with the value —
-   editable, as requested. Lookup `fillIfEmpty` sets the dropdown when the
-   mapped name is in the list, else `Other…` + text.
-   Presentation-only; the repo still canonicalises whatever arrives.
+1. `lib/core/error/failure.dart`: add `DuplicateIsbnFailure extends Failure`
+   with `existingTitle` (String?), `existingBookId` (int?),
+   `existingIsRemoved` (bool, default false). Nullable fields so the
+   race-path mapping (step 3) can construct it even when the title re-query
+   fails.
+2. `AddBookUseCase`: after `Book.validate` passes, when the ISBN is non-blank
+   call `findByIsbn`; a hit returns `left(DuplicateIsbnFailure(…))` with the
+   existing title/id/removed flag. A FAILED pre-check read propagates (fail
+   closed — if we cannot read, we do not blind-insert). Update the docstring
+   (the "NOT ported" deferral note is now resolved).
+3. `DriftBookRepository.insert` + `.update` catch blocks — race safety net
+   (TOCTOU between the use-case pre-check and the write; the unique index
+   stays the final gate): when a write fails and `book.isbn` is non-blank,
+   re-query `findByIsbn`; a colliding row (for `update`: with a DIFFERENT id)
+   → `DuplicateIsbnFailure` (best-effort title); otherwise keep
+   `StorageFailure`. Deliberately NO exception-string parsing and no new
+   dependency: `SqliteException` is not re-exported by `package:drift/drift.dart`
+   and `sqlite3` is only a transitive dep (importing it directly would trip
+   `depend_on_referenced_packages`). The re-query is robust and honest: if a
+   row now holds that ISBN, "already in your library" IS the truth.
+4. `add_book_page.dart _messageFor`: `DuplicateIsbnFailure` →
+   `"'{title}' is already in your library."` (no title → "This book is already
+   in your library."); when `existingIsRemoved`, append "(marked as removed —
+   restore it from the library list)". [D2]
+5. Scan-time routing in `library_page._quickAddByScan` (completes the deferred
+   Kotlin behaviour, catches the duplicate BEFORE the user fills a form):
+   - New thin application entry point `FindByIsbnUseCase`
+     (`lib/features/library/application/find_by_isbn_use_case.dart`) returning
+     `Either<Failure, Book?>` + `@riverpod` provider in `core/di/providers.dart`
+     (same pattern as `addBookUseCase`, `:244`) — presentation must not call
+     the repository directly (§3.1).
+   - After a scan: ISBN found → dialog "This book is already in your library."
+     with [View book] → `BookDetailPage(bookId: …, initialBook: …)` and
+     [Cancel]; not found → `AddBookPage(initialIsbn: …)` as today.
+   - Lookup READ failure → fall through to the add form (navigation choice,
+     not a security gate — the save path + unique index still refuse the
+     duplicate). [D1]
 
-Borrowed patterns: dropdown mirrors `add_book_page.dart:390-416`
-(`DropdownButtonFormField` + null "Not set" item); repo-side normalisation
-mirrors the existing `isbn` normalisation in `library_merge_engine.dart:669`.
+### Fix 2 — Lend button states on the book detail page
+
+6. `book_detail_page.dart`: replace the `if (vaultUnlocked && lendDecision != null)`
+   block with a session-state-driven section:
+   - `VaultUnlocked` → unchanged (LendDecision drives enabled/disabled + reason).
+   - `VaultLocked` → disabled `FilledButton.icon` (grayed by the theme) +
+     hint below in the SAME style as the existing `lendDecision.reason` text:
+     "Unlock the borrowers vault to lend this book." + a `TextButton.icon`
+     "Unlock the vault" that pushes `VaultPage`. On return after a successful
+     unlock the watched provider rebuilds this page with a live button. [D3]
+   - `VaultUninitialized` → disabled button + "Set up the borrowers vault to
+     start lending." + "Set up the vault" → `VaultPage`.
+   - Session still loading / errored (`valueOrNull == null`) → render nothing
+     (transient, same as today).
+   - Icon on the disabled button stays `Icons.outbox` (consistent identity;
+     the hint carries the "why"). [D4]
+
+### Tests (§8/§10)
+
+7. - `drift_book_repository_test.dart`: duplicate-ISBN insert →
+     `DuplicateIsbnFailure`; update onto another row's ISBN →
+     `DuplicateIsbnFailure`; update keeping its OWN ISBN → still succeeds;
+     duplicate `book_uid` → `StorageFailure` (not misreported as ISBN dup).
+   - Use-case test (extend `add_edit_book_test.dart` or new
+     `add_book_use_case_test.dart`, matching existing layout): duplicate →
+     left carrying the existing title; blank ISBN → no pre-check, insert runs;
+     `findByIsbn` failure → propagated, insert NOT attempted.
+   - `add_book_page_test.dart`: saving a duplicate shows the "already in your
+     library" message, not the generic one.
+   - `book_detail_page_test.dart` (setup borrowed from `lend_book_page_test.dart`):
+     locked → disabled Lend + unlock hint; uninitialized → setup hint;
+     unlocked+allowed → enabled Lend; tapping "Unlock the vault" navigates
+     (find the VaultPage app bar "Borrowers vault").
+   - Quick-add scan-time routing: `ScannerPage` needs a camera, so the full
+     tap-through is not widget-testable; extract the post-scan routing into a
+     testable helper (or test `FindByIsbnUseCase` + the dialog separately).
+     If neither is feasible without contortion, record it and verify manually.
+   - Full `flutter test` run — existing detail-page tests may now see the
+     disabled-Lend block; adjust only if an expectation actually breaks.
+
+8. Quality gates: `dart run build_runner build --delete-conflicting-outputs`
+   (new provider), `dart analyze` (zero issues), `dart format`, full suite.
 
 ## Decision points
 
-- **D1** Repo canonicalises inside the transaction vs a use-case wrapper:
-  repo (chosen) — merge/import/restore call the repo directly, a wrapper
-  would be bypassable.
-- **D2** Winner rule in migration: most-used spelling; tie → non-code →
-  NOCASE first. Confirm or override.
-- **D3** ISO codes: 2-letter primary subtag only (`en`, `en-GB`→`en`).
-  3-letter (639-2) codes NOT mapped (Google Books emits 639-1). Confirm.
-- **D4** `Other…` text stays visible after save? No — the form closes on
-  save; next open shows the new language as a dropdown item.
-- **D5** Search FTS path (`drift_book_repository.dart:400-440`) untouched —
-  language is not an FTS column.
+- **D1** — Scan-time duplicate routing (step 5): RESOLVED — user approved
+  end-to-end with recommendations; included.
+- **D2** — Wording: RESOLVED — "'{title}' is already in your library."
+  (+ "It is marked as removed — open it from the library list to restore it."
+  for soft-deleted rows).
+- **D3** — Locked hint interactivity: RESOLVED — hint + tappable
+  "Unlock the vault" / "Set up the vault" link opening VaultPage.
+- **D4** — Disabled-button icon: RESOLVED — kept `Icons.outbox`.
 
 ## Steps
 
-- [x] 1 `LanguageName` VO + ISO table + tests (`test/features/library/language_name_test.dart`).
-- [x] 2 Repo canonicalisation in `insert/update/insertAll/replaceAll` + tests in `add_edit_book_test.dart` (mixed-case insert → one `distinctLanguages` entry; batch with `english`,`English`,`en` → one spelling; non-Latin round-trip).
-- [x] 3 Lookup: map ISO code → name; unit test `en`→`English`, `hi`→`Hindi`, `xx`→`xx`, `English`→`English`.
-- [x] 4 Verify drift `onUpgrade` signature in pub cache; `schemaVersion 2` + migration + test (v1 fixture → upgrade → one spelling, counts preserved, idempotent re-run).
-- [x] 5 Dropdown UI in `add_book_page.dart` + widget tests (`add_book_page_test.dart`: empty library shows `English`+`Other…`; pick existing; `Other…` reveals text; edit with unknown language → `Other…` prefilled; lookup `en` → `English` selected).
-- [x] 6 Merge engine: compare language via `LanguageName.key` (user decision (b), this session) so `English` vs `english` across two devices is not a conflict; test added.
-- [x] 7 `dart run build_runner build --delete-conflicting-outputs`, `dart analyze`, `dart format`, `flutter test`. Update README test count if it lists one.
+- [x] 1. `DuplicateIsbnFailure` in `core/error/failure.dart`
+- [x] 2. `AddBookUseCase` pre-check + docstring
+- [x] 3. `DriftBookRepository.insert/update` catch → duplicate mapping
+- [x] 4. `add_book_page.dart _messageFor` branch
+- [x] 5. `FindByIsbnUseCase` + provider + quick-add scan routing [D1]
+- [x] 6. `book_detail_page.dart` locked/uninitialized Lend section [D3/D4]
+- [x] 7. Tests (repo, use case, both pages, routing helper)
+- [x] 8. build_runner + analyze + format + full `flutter test`
+- [x] 9. Result section below
 
 ## Out-of-scope observations
 
-- `distinctLanguages()` orders `COLLATE NOCASE` while sort-by-language is
-  BINARY — chips and list can disagree in order for mixed-case non-ASCII.
-  Harmless after this change for ASCII; noted, not touched.
-- Wishlist has no language field; Goodreads CSV importer does not set one.
-- `README.md:187` says 1651 tests; suite is 1733 after this session (and
-  was already stale before it). Update in the `docs:` commit, not here.
-- Prior PLAN.md (Session 32, share card) reported "implemented; not
-  committed"; `git log` shows commit `66fe5df` landed it. Superseded.
+- Wishlist has the SAME latent bug: unique `wishlist_books.isbn` index
+  (`app_database.dart:93`) + `drift_wishlist_repository.insert/upsert` catch →
+  `StorageFailure` → generic "Could not save the entry."
+  (`add_wishlist_page.dart:381`). Scanning a duplicate ISBN into the wishlist
+  gives the same confusing message. Same fix pattern applies; not touched here
+  (reported flow is the library).
+- ISBN uniqueness is EXACT-string: a hand-typed hyphenated ISBN does not
+  collide with the stored normalized form (scanner normalizes, the form does
+  not). Normalizing ISBN at form entry would close that gap — separate task.
 
 ## Result
 
-**All 7 steps implemented, verified and committed: `e6bca1a`
-(`feat(library): one spelling per language — dropdown, canonicalise on
-write, schema v2 clean-up`). Not pushed.**
+DONE — full suite green (1752 tests) on BOTH the system Flutter 3.41.1 and
+the fvm-pinned 3.44.2 (after `fvm flutter clean`: 27 failures under 3.44.2
+were stale `build/unit_test_assets` shaders compiled by 3.41.1 —
+"ink_sparkle.frag … runtime stages format" — not code regressions; they
+reproduce on pristine main). `dart analyze lib test` zero issues,
+`dart format` clean, build_runner re-run produced no diff.
 
-Plain English: the Language field is now a dropdown of your library's own
-languages + "Other…"; whatever you type under "Other…" is snapped to an
-existing spelling if there is one, and otherwise becomes a new dropdown
-entry immediately after save. Google Books codes (`en`, `hi`) arrive as
-names. On first launch after the update a one-time clean-up collapses
-`English`/`english`/`en` into the spelling most of your books already use.
+Code commit: 8ee6d07 `fix(library,vault): name the existing book on
+duplicate-ISBN adds; Lend explains a locked vault`.
 
-Verification:
-- `flutter test`: **1733 passed** (43 new: 1 merge-engine test, 14 `language_name_test`, 9
-  `language_merge_plan_test`, 8 repo tests in `add_edit_book_test`, 3
-  migration tests in `app_database_test`, 7 widget tests in
-  `add_book_page_test`, 1 lookup test). The pre-existing D1-a exact-match
-  test still passes unchanged.
-- `dart analyze lib test`: no issues. `dart format`: clean.
-- `build_runner`: no `.g.dart` diffs. It re-resolved `pubspec.lock`
-  (matcher/test_api, transitive); reverted with `git checkout -- pubspec.lock`.
+Changed files:
+- `lib/core/error/failure.dart` — new `DuplicateIsbnFailure`
+  (`existingTitle` / `existingBookId` / `existingIsRemoved`).
+- `lib/features/library/application/add_book_use_case.dart` — `findByIsbn`
+  pre-check before insert; a failed pre-check read aborts the add (fail
+  closed); docstring deferral note resolved.
+- `lib/features/library/application/find_by_isbn_use_case.dart` — NEW thin
+  use case so presentation never touches the repository directly (§3.1).
+- `lib/core/di/providers.dart` (+`.g.dart`) — `findByIsbnUseCaseProvider`.
+- `lib/features/library/infrastructure/drift_book_repository.dart` —
+  `insert`/`update` catch blocks map a UNIQUE-isbn collision to
+  `DuplicateIsbnFailure` via a best-effort re-query (`_isbnCollision`, no
+  exception-text parsing, no new dependency); `book_uid` collisions stay
+  `StorageFailure`.
+- `lib/features/library/presentation/pages/add_book_page.dart` —
+  `_messageFor`: "'{title}' is already in your library." (+ removed note).
+- `lib/features/library/presentation/pages/library_page.dart` — quick-add
+  scan now routes through top-level `routeScannedIsbn`: duplicate → dialog
+  "Already in your library" with [View book] → BookDetailPage; new/unreadable
+  ISBN → AddBookPage pre-filled (fail-through is safe: save path + UNIQUE
+  index still guard).
+- `lib/features/library/presentation/pages/book_detail_page.dart` — Lend
+  section renders for every KNOWN vault state: unlocked = policy-driven as
+  before; locked = disabled button + "Unlock the borrowers vault to lend this
+  book." + "Unlock the vault" link → VaultPage; uninitialized = disabled
+  button + set-up hint + link; loading/error = hidden (transient).
 
-Files:
-- NEW `lib/features/library/domain/value_objects/language_name.dart` (VO +
-  184-entry ISO 639-1 table, credit: Wikipedia list of ISO 639-1 codes).
-- NEW `lib/features/library/domain/value_objects/language_merge_plan.dart`
-  (pure migration planner; `LanguageRename` is a record, per the N14
-  no-`@immutable`-in-domain precedent).
-- `drift_book_repository.dart`: `_LanguageResolver`; `insert`/`update`/
-  `insertAll` now run in a transaction (read spellings + write atomically);
-  `replaceAll` resolves within the file.
-- `app_database.dart`: `schemaVersion 2`, `onUpgrade` →
-  `_collapseLanguageSpellings()`.
-- `google_books_lookup_service.dart`: ISO code → name at the boundary.
-- `add_book_page.dart`: `_languageField()` dropdown; `_field` gained an
-  optional `onChanged`.
+Tests added:
+- `drift_book_repository_test.dart` — group "S34 — duplicate ISBN maps to
+  DuplicateIsbnFailure" (insert collision + title/id, removed flag, update
+  onto another row's ISBN, own-ISBN update still succeeds, book_uid collision
+  NOT misreported).
+- `add_edit_book_test.dart` — AddBookUseCase: duplicate refused with title,
+  removed duplicate flagged, blank ISBNs never collide, failed pre-check
+  propagates with zero insert attempts (`_FailingFindByIsbnRepo`).
+- `add_book_page_test.dart` — `_MemRepo.findByIsbn` now derives from stored
+  books (like the real repo); duplicate save shows the named message, removed
+  duplicate shows the removed note, nothing inserted, form stays open.
+- `book_detail_page_test.dart` — group "S34: the Lend section reflects the
+  vault state": locked → disabled + hint, uninitialized → disabled + set-up
+  hint, unlocked → enabled + no hint, hint tap opens the vault screen
+  (`_StubVault` + VaultStore file fixture, recipe from replacement_harness).
+- `scan_routing_test.dart` — NEW: duplicate → dialog naming the book, View
+  book → detail page, Cancel → no navigation, unknown ISBN → pre-filled add
+  form, failed read → falls through to the add form.
 
-Deviations from plan (recorded):
-- D2 amended: a bare ISO code ALWAYS loses to a real name in the migration,
-  even with more books — the app never stores codes, so a lookup leftover
-  must not out-vote a name the user typed. Tested.
-- Step 6 changed from "leave `==`" to a `LanguageName.key` compare after
-  the assumption below broke; user chose (b).
-
-### Step 6 finding (resolved: option b)
-Assumption "merge conflicts vanish once data is canonical" was only true
-when BOTH libraries already shared a spelling; two internally-consistent
-devices could still differ (`English` vs `english`) and
-`library_merge_engine.dart` compared with `==`. Now `_languagesEqual`
-compares `LanguageName.key`s (blank == null == "none"). Test:
-`library_merge_engine_test.dart` "treats language spellings that differ
-only by case/spacing as the same language". Remaining raw compares
-checked: `library_query.dart:63` compares two filter INTENTS (exact chip
-value) — correct as-is; `publish_export.dart:108` is a null check.
-
+Notes / assumptions:
+- `pubspec.lock` matcher/meta drift seen mid-session came from running tests
+  with the SYSTEM Flutter 3.41.1; the committed lock matches the fvm-pinned
+  3.44.2 (`.fvm/fvm_config.json`), and reverted cleanly. Release built with
+  `fvm flutter`.
+- Architecture boundary tests (`test/architecture/domain_purity_test.dart`)
+  pass with the new use case + page imports.
+- Camera scan itself not widget-tested (flutter_zxing needs a device);
+  routing after the scan is covered by `scan_routing_test.dart`.
