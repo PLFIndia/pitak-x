@@ -13,17 +13,7 @@ AutoName: Pitak
 RepoType: git
 Repo: https://github.com/PLFIndia/pitak-x.git
 
-# FLAVOR NOTE (2026-08-15, Play track): the repo now uses a `channel` flavor
-# dimension (`fdroid` / `play`). Build blocks for tags AFTER the flavor commit
-# must add `--flavor fdroid` to every `flutter build apk` line, and the
-# `output:` paths gain the flavor: build/app/outputs/flutter-apk/
-#   app-fdroid-<abi>-release.apk
-# Blocks for 1.1.8 and earlier below are correct as-is (pre-flavor tags).
-# The fdroiddata MR for the next release must carry this change.
-
 Builds:
-  # Historic legacy-Kotlin build. Kept verbatim to preserve the F-Droid
-  # version history; do not edit.
   - versionName: 1.0.3
     versionCode: 4
     commit: 714af008cb7f009737fd2cea20452ddb460dfe03
@@ -33,10 +23,7 @@ Builds:
 
   - versionName: 1.1.2
     versionCode: 71
-    # fdroiddata pins this to the full commit hash of the 1.1.2 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.2
+    commit: 1c30ca4e77feb1749dfae1a1a50caafec08e298e
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -68,10 +55,7 @@ Builds:
 
   - versionName: 1.1.2
     versionCode: 72
-    # fdroiddata pins this to the full commit hash of the 1.1.2 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.2
+    commit: 1c30ca4e77feb1749dfae1a1a50caafec08e298e
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -103,10 +87,7 @@ Builds:
 
   - versionName: 1.1.2
     versionCode: 73
-    # fdroiddata pins this to the full commit hash of the 1.1.2 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.2
+    commit: 1c30ca4e77feb1749dfae1a1a50caafec08e298e
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -138,10 +119,7 @@ Builds:
 
   - versionName: 1.1.3
     versionCode: 81
-    # fdroiddata pins this to the full commit hash of the 1.1.3 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.3
+    commit: 70dba7c6815bfb0de36628adc22bd8bcf378ae86
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -173,10 +151,7 @@ Builds:
 
   - versionName: 1.1.3
     versionCode: 82
-    # fdroiddata pins this to the full commit hash of the 1.1.3 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.3
+    commit: 70dba7c6815bfb0de36628adc22bd8bcf378ae86
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -208,10 +183,7 @@ Builds:
 
   - versionName: 1.1.3
     versionCode: 83
-    # fdroiddata pins this to the full commit hash of the 1.1.3 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.3
+    commit: 70dba7c6815bfb0de36628adc22bd8bcf378ae86
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -243,10 +215,7 @@ Builds:
 
   - versionName: 1.1.4
     versionCode: 91
-    # fdroiddata pins this to the full commit hash of the 1.1.4 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.4
+    commit: 95becdaaa172858a13abcb7ab40d64f886201d5d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -278,10 +247,7 @@ Builds:
 
   - versionName: 1.1.4
     versionCode: 92
-    # fdroiddata pins this to the full commit hash of the 1.1.4 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.4
+    commit: 95becdaaa172858a13abcb7ab40d64f886201d5d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -313,220 +279,7 @@ Builds:
 
   - versionName: 1.1.4
     versionCode: 93
-    # fdroiddata pins this to the full commit hash of the 1.1.4 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.4
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add aarch64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm64
-    ndk: r28c
-
-  - versionName: 1.1.5
-    versionCode: 101
-    # fdroiddata pins this to the full commit hash of the 1.1.5 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.5
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add x86_64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-x64
-    ndk: r28c
-
-  - versionName: 1.1.5
-    versionCode: 102
-    # fdroiddata pins this to the full commit hash of the 1.1.5 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.5
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add armv7-linux-androideabi
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm
-    ndk: r28c
-
-  - versionName: 1.1.5
-    versionCode: 103
-    # fdroiddata pins this to the full commit hash of the 1.1.5 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.5
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add aarch64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm64
-    ndk: r28c
-
-  - versionName: 1.1.6
-    versionCode: 111
-    # fdroiddata pins this to the full commit hash of the 1.1.6 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.6
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add x86_64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-x64
-    ndk: r28c
-
-  - versionName: 1.1.6
-    versionCode: 112
-    # fdroiddata pins this to the full commit hash of the 1.1.6 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.6
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add armv7-linux-androideabi
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm
-    ndk: r28c
-
-  - versionName: 1.1.6
-    versionCode: 113
-    # fdroiddata pins this to the full commit hash of the 1.1.6 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.6
+    commit: 95becdaaa172858a13abcb7ab40d64f886201d5d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -558,10 +311,7 @@ Builds:
 
   - versionName: 1.1.7
     versionCode: 121
-    # fdroiddata pins this to the full commit hash of the 1.1.7 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.7
+    commit: 118bf31967c3751fd9d17d480ffd71459a530c7c
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -593,10 +343,7 @@ Builds:
 
   - versionName: 1.1.7
     versionCode: 122
-    # fdroiddata pins this to the full commit hash of the 1.1.7 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.7
+    commit: 118bf31967c3751fd9d17d480ffd71459a530c7c
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -628,10 +375,7 @@ Builds:
 
   - versionName: 1.1.7
     versionCode: 123
-    # fdroiddata pins this to the full commit hash of the 1.1.7 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.7
+    commit: 118bf31967c3751fd9d17d480ffd71459a530c7c
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -663,10 +407,7 @@ Builds:
 
   - versionName: 1.1.8
     versionCode: 131
-    # fdroiddata pins this to the full commit hash of the 1.1.8 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.8
+    commit: b8f3be4faff2584ee0168e099e0efe31b12fecf5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -698,10 +439,7 @@ Builds:
 
   - versionName: 1.1.8
     versionCode: 132
-    # fdroiddata pins this to the full commit hash of the 1.1.8 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.8
+    commit: b8f3be4faff2584ee0168e099e0efe31b12fecf5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -733,10 +471,7 @@ Builds:
 
   - versionName: 1.1.8
     versionCode: 133
-    # fdroiddata pins this to the full commit hash of the 1.1.8 tag (F-Droid
-    # policy: no tag/branch refs). This mirror can't contain its own hash, so
-    # the tag name stands in here.
-    commit: 1.1.8
+    commit: b8f3be4faff2584ee0168e099e0efe31b12fecf5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -766,18 +501,13 @@ Builds:
       - flutter build apk --release --split-per-abi --target-platform=android-arm64
     ndk: r28c
 
-  # 1.1.9: build.gradle.kts now defines product flavors (fdroid/play), so
-  # every build MUST pass --flavor fdroid and the split outputs are renamed
-  # app-<abi>-fdroid-release.apk. The checkupdates bot's auto-copied blocks
-  # would keep the old flavourless command and fail — these blocks need a
-  # manual fdroiddata MR this once.
   - versionName: 1.1.9
     versionCode: 141
-    commit: 1.1.9
+    commit: ea92bf730a70b5e8055efbeb3e89e212a622384d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -800,16 +530,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-x64
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.1.9
     versionCode: 142
-    commit: 1.1.9
+    commit: ea92bf730a70b5e8055efbeb3e89e212a622384d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -832,16 +563,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.1.9
     versionCode: 143
-    commit: 1.1.9
+    commit: ea92bf730a70b5e8055efbeb3e89e212a622384d
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -864,19 +596,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
     ndk: r28c
 
-  # 1.1.10 — security + data-integrity release from the 2026-09-03 review
-  # (atomic vault key writes, append-only passphrase field, corrupt-archive
-  # crash fix, Android auto-backup disabled, lending policy, orphan cleanup).
   - versionName: 1.1.10
     versionCode: 151
-    commit: 1.1.10
+    commit: 6bcfc966bdf997c719ca718028a2fa6b6b0f9cd5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -899,16 +629,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-x64
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.1.10
     versionCode: 152
-    commit: 1.1.10
+    commit: 6bcfc966bdf997c719ca718028a2fa6b6b0f9cd5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -931,16 +662,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.1.10
     versionCode: 153
-    commit: 1.1.10
+    commit: 6bcfc966bdf997c719ca718028a2fa6b6b0f9cd5
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -963,20 +695,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
     ndk: r28c
 
-  # 1.2.0 — second remediation wave from the 2026-09-03 review (biometric
-  # secret bound to an auth-required Keystore key, stale vault sessions
-  # rejected, atomic restore, archive limits, consent-gated cover download,
-  # transactional wishlist purchase, app lock over every route).
   - versionName: 1.2.0
     versionCode: 171
-    commit: 1.2.0
+    commit: 1a6708638850488c0263d230131fa67ae8fb8266
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -999,16 +728,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-x64
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.2.0
     versionCode: 172
-    commit: 1.2.0
+    commit: 1a6708638850488c0263d230131fa67ae8fb8266
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1031,16 +761,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.2.0
     versionCode: 173
-    commit: 1.2.0
+    commit: 1a6708638850488c0263d230131fa67ae8fb8266
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1063,21 +794,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
     ndk: r28c
 
-  # 1.3.0 — visiting-card PNG share (4 styles); performance wave N10
-  # (paged library list, isolate-backed backup/merge/PDF/cover downscale,
-  # bounded image decode); per-row merge review; abortable network deadlines
-  # and byte caps; publish to the live Pages branch; catalogue validation at
-  # every import ingress.
   - versionName: 1.3.0
     versionCode: 181
-    commit: 1.3.0
+    commit: eb36f7f45a6832e2bb8753fbd1968ecaeb81bed6
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1100,16 +827,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-x64
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.3.0
     versionCode: 182
-    commit: 1.3.0
+    commit: eb36f7f45a6832e2bb8753fbd1968ecaeb81bed6
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1132,16 +860,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
     ndk: r28c
 
   - versionName: 1.3.0
     versionCode: 183
-    commit: 1.3.0
+    commit: eb36f7f45a6832e2bb8753fbd1968ecaeb81bed6
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1164,16 +893,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
     ndk: r28c
 
-  - versionName: 1.3.3
-    versionCode: 211
-    commit: 1.3.3
+  - versionName: 1.3.1
+    versionCode: 191
+    commit: 27bff016aab8e5a45a70b6ba3c30ccc2241b4181
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-x86_64-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1183,7 +913,7 @@ Builds:
       - linux
     prebuild:
       - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d \" -f2)
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
       - '[[ $version ]]'
       - git -C $$flutter$$ checkout -f $version
       - rustup default 1.96.0
@@ -1196,16 +926,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-x64
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
     ndk: r28c
 
-  - versionName: 1.3.3
-    versionCode: 212
-    commit: 1.3.3
+  - versionName: 1.3.1
+    versionCode: 192
+    commit: 27bff016aab8e5a45a70b6ba3c30ccc2241b4181
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-armeabi-v7a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1215,7 +946,7 @@ Builds:
       - linux
     prebuild:
       - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d \" -f2)
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
       - '[[ $version ]]'
       - git -C $$flutter$$ checkout -f $version
       - rustup default 1.96.0
@@ -1228,16 +959,17 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
     ndk: r28c
 
-  - versionName: 1.3.3
-    versionCode: 213
-    commit: 1.3.3
+  - versionName: 1.3.1
+    versionCode: 193
+    commit: 27bff016aab8e5a45a70b6ba3c30ccc2241b4181
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/flutter-apk/app-arm64-v8a-fdroid-release.apk
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
     srclibs:
       - flutter@stable
     rm:
@@ -1247,7 +979,7 @@ Builds:
       - linux
     prebuild:
       - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d \" -f2)
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
       - '[[ $version ]]'
       - git -C $$flutter$$ checkout -f $version
       - rustup default 1.96.0
@@ -1260,10 +992,117 @@ Builds:
     build:
       - export PATH="$$flutter$$/bin:$PATH"
       - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
     ndk: r28c
 
-AutoUpdateMode: Version
+  # 1.3.3 — FINAL F-Droid release (Publish screen: collapsible provider
+  # tiles with configured/partial/not-configured status). Upstream tags
+  # after this one bundle the non-free Google Play in-app-update library,
+  # so AutoUpdateMode is switched to None below — the checkupdates bot
+  # must not propose them. Development continues on Google Play.
+  - versionName: 1.3.3
+    versionCode: 211
+    commit: 8914e643e639d3653efef91b1be54c93d98394d7
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add x86_64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
+    ndk: r28c
+
+  - versionName: 1.3.3
+    versionCode: 212
+    commit: 8914e643e639d3653efef91b1be54c93d98394d7
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add armv7-linux-androideabi
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
+    ndk: r28c
+
+  - versionName: 1.3.3
+    versionCode: 213
+    commit: 8914e643e639d3653efef91b1be54c93d98394d7
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add aarch64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
+    ndk: r28c
+
+# None: 1.3.3 is the final F-Droid release; later upstream tags bundle a
+# non-free Google Play library (see the 1.3.3 build comment above).
+AutoUpdateMode: None
 UpdateCheckMode: Tags ^[\d.]+$
 VercodeOperation:
   - '%c * 10 + 1'

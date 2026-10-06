@@ -1,5 +1,15 @@
 # F-Droid release notes (pitak-x → dev.khoj.pitaka.fdroid)
 
+> **Status (2026-10-06):** 1.3.3 (211/212/213) is the FINAL F-Droid
+> release — development continues on Google Play only. The metadata MR
+> (fdroid/fdroiddata!51441) therefore also sets `AutoUpdateMode: None`,
+> so the checkupdates bot never auto-proposes later tags: they bundle the
+> non-free Google Play in-app-update library (`in_app_update` →
+> `com.google.android.play:app-update`). The mirror
+> `metadata/dev.khoj.pitaka.fdroid.yml` is a VERBATIM copy of the
+> fdroiddata file (synced from the MR branch: upstream master
+> `01191b18` + commit `2a62eb86`); re-sync if review amends the MR.
+
 This directory holds the F-Droid build recipe for shipping **pitak-x** (the
 Flutter + Rust rewrite) as an **in-place update** to the already-published
 F-Droid app `dev.khoj.pitaka.fdroid` (was the Kotlin app, last at 1.0.3 / 4).
