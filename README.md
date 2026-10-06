@@ -7,8 +7,8 @@ them to borrowers from an **encrypted vault**, keep a wishlist, import/export
 to GitHub Pages with event posters and bookmarks to other libraries.
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.3.2**
-> (`pubspec.yaml`, tag `1.3.2`); F-Droid builds from the tag on its own
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.3.3**
+> (`pubspec.yaml`, tag `1.3.3`); F-Droid builds from the tag on its own
 > schedule, so its index may lag by a release. `PLAN.md` tracks the task in
 > flight; the maintainer's full engineering reference (`appDetails.md`) is
 > kept locally and is not part of this repository.
@@ -184,7 +184,7 @@ dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (1752 tests on main as of 06 Oct 2026; 1441 at the 1.2.0 tag)
+flutter test                                   # full Dart suite (1756 tests on main as of 06 Oct 2026; 1441 at the 1.2.0 tag)
 ( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 

@@ -1,0 +1,1 @@
+* The Publish screen now fits one screen: GitHub Pages and Cloudflare Pages sit in collapsible cards showing their status at a glance — Configured (green), Partially configured (amber) or Not configured (red) — and expand only when you want to view or change their settings.
