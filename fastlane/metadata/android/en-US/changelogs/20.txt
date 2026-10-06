@@ -1,0 +1,3 @@
+* Scanning a book that's already in your library now says so — and offers to open the existing book instead of a form that can't save.
+* Adding or editing a book onto an ISBN already in your catalogue names the existing book instead of a generic "could not save" error.
+* The book page keeps its Lend button visible when the borrowers vault is locked or not yet set up — grayed out, with a hint and a shortcut to unlock — so lending is there when you look for it.
