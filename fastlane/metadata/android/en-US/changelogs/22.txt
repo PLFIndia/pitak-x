@@ -1,0 +1,2 @@
+* New: when an update is available, Pitak downloads it in the background from Google Play and offers a one-tap restart when ready — nothing is interrupted while it downloads.
+* The Publish screen now fits one screen: GitHub Pages and Cloudflare Pages sit in collapsible cards showing their status at a glance — Configured (green), Partially configured (amber) or Not configured (red) — and expand only when you want to view or change their settings.
