@@ -1,0 +1,1 @@
+* Maintenance release: the background update helper was rebuilt as part of the app itself (same behaviour, smaller footprint). No changes to how the app works.

@@ -1,0 +1,1 @@
+* Maintenance release: the Google Play update helper is now compiled only into the Play build, so the F-Droid build contains no proprietary Google code at all. No changes to how the app works.
