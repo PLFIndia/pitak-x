@@ -1,10 +1,11 @@
 /// The in-app update seam (domain, S35).
 ///
 /// Why an interface (beginner note): the real implementation talks to the
-/// Google Play API through the `in_app_update` plugin, which cannot run in
-/// unit tests (no Play Store on the host). Everything the controller does —
-/// when to check, when to start the download, how to react to state changes
-/// — is tested against a fake of THIS interface instead. Same pattern as
+/// Google Play API through a platform channel (play flavor only), which
+/// cannot run in unit tests (no Play Store on the host). Everything the
+/// controller does — when to check, when to start the download, how to
+/// react to state changes — is tested against a fake of THIS interface
+/// instead. Same pattern as
 /// the repositories (§3.3): declared in domain, implemented in
 /// infrastructure, faked in tests.
 library;

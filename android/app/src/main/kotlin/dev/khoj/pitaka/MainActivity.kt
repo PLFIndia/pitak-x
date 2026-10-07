@@ -6,7 +6,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 /**
- * Hosts the Flutter UI and two narrow method channels:
+ * Hosts the Flutter UI and these narrow method channels:
  *
  *  - [SCREEN_SECURITY_CHANNEL] — screen-capture protection (#34/F-12). When
  *    the vault is unlocked, borrower names and loan lists render on screen.
@@ -22,6 +22,10 @@ import io.flutter.plugin.common.MethodChannel
  *    F-Droid flavor (`dev.khoj.pitaka.fdroid`) has no Play listing and must
  *    never run the update check; the applicationId is the only per-flavor
  *    identity visible at runtime.
+ *  - [AppUpdateChannel] — S36: the Play flexible in-app update bridge.
+ *    The class is FLAVOR-SPLIT: `src/play/kotlin` holds the real Play Core
+ *    implementation, `src/fdroid/kotlin` an inert twin that registers
+ *    nothing, so the F-Droid APK contains no proprietary Play code.
  *
  * No other native surface is exposed.
  */
@@ -29,8 +33,15 @@ import io.flutter.plugin.common.MethodChannel
 // local_auth's and BiometricSecretVault's) requires a FragmentActivity host.
 class MainActivity : FlutterFragmentActivity() {
 
+    // Field initializer on purpose: the play flavor calls
+    // `registerForActivityResult`, which Android only allows BEFORE the
+    // activity reaches STARTED. `configureFlutterEngine` runs too late for
+    // that guarantee; construction time is always early enough.
+    private val appUpdateChannel = AppUpdateChannel(this)
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        appUpdateChannel.attach(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             BiometricSecretVault.CHANNEL,
@@ -64,6 +75,11 @@ class MainActivity : FlutterFragmentActivity() {
                 else -> result.notImplemented()
             }
         }
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        appUpdateChannel.detach()
+        super.cleanUpFlutterEngine(flutterEngine)
     }
 
     private companion object {

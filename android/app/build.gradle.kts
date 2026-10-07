@@ -167,4 +167,13 @@ dependencies {
     // dependency choices — declare it explicitly, same version, no new
     // artifacts (F-Droid reproducibility unaffected). User-approved D3.
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // S36: Google Play in-app updates — PLAY FLAVOR ONLY. This is the
+    // proprietary Play Core library; `playImplementation` keeps it out of the
+    // fdroid flavor's classpath entirely (F-Droid requirement; the former
+    // `in_app_update` Flutter plugin pulled it into every flavor). Same
+    // artifact + version the plugin used, so nothing new reaches Play users.
+    // Proof: `./gradlew :app:dependencies --configuration
+    // fdroidReleaseRuntimeClasspath` must show no `com.google.android.play`.
+    "playImplementation"("com.google.android.play:app-update:2.1.0")
 }

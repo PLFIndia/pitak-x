@@ -116,8 +116,9 @@ passive exception (item 5, Google Play builds only):
    is made by Google's Play Store component — which installed the app and
    already knows its package name and version — and Pitak itself sends
    nothing: no catalogue data, no identifiers, no server of its own is
-   involved. In the F-Droid build the check is disabled and never runs
-   (F-Droid's own client handles updates there).
+   involved. The F-Droid build does not contain this code at all — the
+   Play update component is compiled only into the Play build — so there
+   the check cannot run (F-Droid's own client handles updates there).
 
 ## What Pitak does NOT do
 

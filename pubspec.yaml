@@ -21,7 +21,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # F-Droid ships one APK per ABI (--split-per-abi); android/app/build.gradle.kts
 # rewrites each split's versionCode to (this +number)*10 + {1,2,3}, i.e.
 # 611/612/613, matching the recipe's VercodeOperation. All stay > the live 4.
-version: 1.3.4+22
+version: 1.3.5+23
 
 environment:
   sdk: ^3.11.0
@@ -121,7 +121,10 @@ dependencies:
   # the existing downscale; no network, no new data leaves the device.
   image_cropper: ^12.2.1
   font_awesome_flutter: ^11.0.0
-  in_app_update: ^5.0.0
+  # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
+  # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
+  # `in_app_update` plugin: a plugin links Google's proprietary Play Core
+  # into every flavor, including the F-Droid build.
 
 dev_dependencies:
   flutter_test:
