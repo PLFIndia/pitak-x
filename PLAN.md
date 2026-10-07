@@ -159,13 +159,11 @@ libs out of their FOSS flavor.
 
 ## Decision points
 
-- **D1 (open)** — the 1.3.4 entry in fdroiddata: (a) one `disable:`
-  block recording why 1.3.4 is skipped [proposed], or (b) omit 1.3.4
-  entirely (1.3.3 → 1.3.5). (a) is the fdroiddata convention and answers
-  the reviewer's question in the file itself.
-- **D2 (open)** — keep the fork branch name `pitaka-1.3.3-final` (MR
-  stays the same, history amended) [proposed], or open a fresh MR. Same
-  MR keeps the reviewer's context.
+- **D1 (resolved, proposal accepted with "go ahead")** — one `disable:
+  non-free dep (Play Core via in_app_update plugin); fixed in 1.3.5` block
+  for 1.3.4 / 223 at commit `ca0dfa23`.
+- **D2 (resolved, same)** — same MR, same branch `pitaka-1.3.3-final`,
+  single commit amended + force-pushed (explicit lease on the old SHA).
 - **D3 (resolved by precedent, S35)** — flexible flow only; the
   immediate flow is not ported.
 
@@ -182,9 +180,9 @@ libs out of their FOSS flavor.
 - [x] C9 fdroid arm64 release APK dex scan: 0 `google/android/(play|gms)` refs; play debug APK compiles, links `AppUpdateManagerFactory`
 - [x] C10 analyze: 47 issues, IDENTICAL set to HEAD (worktree diff) — none new; format clean; `flutter test` 1795 passed (1784 + 11)
 - [x] D11 `1.3.5+23`; changelogs `23.txt` (Play) + `231/232/233.txt` (F-Droid); README status + test count; PRIVACY.md item 5; `fdroid/README.md` status
-- [ ] D12 commit + tag 1.3.5 + push (approvals)
-- [ ] D13 fdroiddata recipe rework, lint, force-push, MR reply (approvals)
-- [ ] Mirror re-sync + PLAN.md Result
+- [x] D12 commits `cace702` (sec) + `e8cc06b` (release); tag `1.3.5` → `e8cc06b4`; pushed main + tag
+- [x] D13 fdroiddata: comments removed, 1.3.4 disabled, 1.3.5 ×3, `AutoUpdateMode: Version`, `CurrentVersion 1.3.5/233`; `fdroid lint` clean; `checkupdates --auto --allow-dirty` → no diff; amended to `9b65a040`, force-pushed; MR retitled/description rewritten; reply posted (note 3967441458); new pipeline 2920714621 running
+- [x] Mirror re-sync (verbatim, `cmp` identical) + PLAN.md Result
 
 ## Out-of-scope observations
 
@@ -196,4 +194,23 @@ libs out of their FOSS flavor.
 
 ## Result
 
-(pending)
+- `in_app_update` plugin removed; Play Core is now `playImplementation`
+  only. fdroid flavor: 0 `com.google.android.play`/`gms` on the runtime
+  classpath and 0 such class refs in the release dex. Play flavor compiles
+  and links the real channel.
+- Dart: only the infrastructure service + its test changed (own channels,
+  validated reply). Port/controller/banner untouched. Suite 1795 green
+  (+11 boundary tests); analyzer issue set identical to HEAD; format clean.
+- Release 1.3.5+23 tagged and pushed; fdroiddata!51441 reworked to "keep
+  Pitak on F-Droid" per the reviewer; CI re-running on `9b65a040`.
+- Local-tool caveat (recorded): homebrew fdroidserver 2.4.5's
+  `rewritemeta` wraps long lines at 80 cols (and leaves trailing spaces);
+  upstream CI's rewriter does not (its diff on the previous push was the
+  comment removal only, and master itself has 101 lines > 80 cols). The
+  local rewrite output was discarded; only lint + checkupdates were
+  trusted locally. If CI's rewritemeta still complains, apply exactly the
+  diff it prints.
+- Follow-ups for the maintainer: watch pipeline 2920714621; if a reviewer
+  amends the recipe, re-sync `fdroid/metadata/dev.khoj.pitaka.fdroid.yml`.
+  Optional: ship 1.3.5 to Play (changelog `23.txt` is ready) — same
+  behaviour as 1.3.4, nothing user-visible.
