@@ -260,6 +260,7 @@ final class SecretBytes {
 - Prefer first-party / well-maintained packages. Avoid abandoned (>12mo no release) libs for security-critical paths.
 - Run `dart pub outdated` and audit advisories regularly.
 - **Do not add a new package to solve a problem an existing blessed package already solves.**
+- **Android plugins and the F-Droid flavor:** a Flutter plugin's native code links into EVERY flavor. Before adding any plugin, check its `android/build.gradle` for Google dependencies (`com.google.android.gms`, `com.google.android.play`, `firebase`, `mlkit`); if present, do not add it — implement the feature as flavor-split Kotlin with a `playImplementation` dependency. Rules, worked example and the verification commands: `README.md` › "Flavors: what may go where".
 
 ---
 

@@ -177,6 +177,51 @@ command needs a `--flavor`.
 > ABI. Use `flutter build apk` (visible Gradle/Rust progress) rather than a bare
 > `flutter run` if you want to watch the compile.
 
+### Flavors: what may go where
+
+| flavor | applicationId | may use Google libraries? |
+|---|---|---|
+| `fdroid` | `dev.khoj.pitaka.fdroid` | **No.** F-Droid rejects any non-free dependency (Play Services, Play Core, Firebase, MLKit). |
+| `play` | `dev.khoj.pitaka` | Yes, when justified (today: Play Core for in-app updates). |
+
+The Dart code is identical in both; the difference is what the Android
+build links. Two things keep the `fdroid` flavor clean:
+
+1. **Flutter plugins link into EVERY flavor.** There is no way to add a pub
+   plugin to only one flavor. Before adding any plugin, open its
+   `android/build.gradle` (in `~/.pub-cache/hosted/pub.dev/<plugin>/`) and
+   look for `com.google.android.gms`, `com.google.android.play`, `firebase`
+   or `mlkit`. If any is there, do **not** add the plugin — write the feature
+   as flavor-split Kotlin instead (precedents: MLKit scanner → `flutter_zxing`;
+   `in_app_update` → our own `AppUpdateChannel.kt`).
+2. **Flavor-split Kotlin.** Put a class with the same name and public
+   surface in `android/app/src/play/kotlin/dev/khoj/pitaka/` (real
+   implementation) and `android/app/src/fdroid/kotlin/dev/khoj/pitaka/`
+   (inert no-op). `MainActivity` (in `src/main`) calls it without knowing
+   which one it got. The Google dependency goes into
+   `android/app/build.gradle.kts` as `"playImplementation"(…)` — never
+   `implementation(…)`. `AppUpdateChannel.kt` is the worked example; copy
+   its shape.
+
+Verify before tagging a release (neither `grep` may match — both print
+nothing; to prove the check works, run the second one on a `play` APK and
+watch it light up):
+
+```bash
+( cd android && ./gradlew -q :app:dependencies --configuration fdroidReleaseRuntimeClasspath 2>/dev/null ) \
+  | grep -E 'com\.google\.android\.(play|gms)|firebase|mlkit'
+flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
+unzip -p build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk 'classes*.dex' \
+  | strings -n 8 | grep -E 'google/android/(play|gms)|firebase|mlkit'
+```
+
+Release checklist (both stores build from the same tag): bump `version:` in
+`pubspec.yaml` (`x.y.z+N`); add Play changelog
+`fastlane/metadata/android/en-US/changelogs/N.txt` and F-Droid changelogs
+`N1.txt`, `N2.txt`, `N3.txt` (one per ABI split — the Gradle `abiCodes`
+rule makes versionCodes `N*10+1..3`); commit, tag `x.y.z`, push the tag; then
+open the fdroiddata MR — see `fdroid/README.md` for the recipe side.
+
 ## Quality gates
 
 ```bash
