@@ -6,25 +6,22 @@
 /// [vaultRepository]; the vault key never enters Dart.
 library;
 
-import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/services.dart' show rootBundle;
-import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:pitaka/core/database/app_database.dart';
+// S3: providers live in per-feature modules under `src/`; this file imports
+// the modules its remaining declarations reference AND re-exports all of
+// them, so every call site keeps importing `core/di/providers.dart`.
+import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
-import 'package:pitaka/core/network/lookup_http_client.dart';
-import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/app_info.dart';
-import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
-import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/app_update/domain/app_update_service.dart';
 import 'package:pitaka/features/app_update/infrastructure/play_app_update_service.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
@@ -116,21 +113,9 @@ import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repositor
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+export 'package:pitaka/core/di/src/platform_providers.dart';
+
 part 'providers.g.dart';
-
-/// The app's document directory (where the DB + covers live). Resolved once.
-@Riverpod(keepAlive: true)
-Future<Directory> appDocsDir(AppDocsDirRef ref) =>
-    getApplicationDocumentsDirectory();
-
-/// Versioned data-generation store under `<appDocs>/data` (M02). The
-/// catalogue DB, covers and vault live INSIDE the active generation so a
-/// restore can build a complete new set and switch to it atomically.
-@Riverpod(keepAlive: true)
-Future<DataGenerations> dataGenerations(DataGenerationsRef ref) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return DataGenerations(docsDir: dir.path);
-}
 
 /// The non-secret Drift database (books + wishlist), opened inside the active
 /// data generation (M02) — switching generations closes and reopens it.
@@ -338,50 +323,9 @@ Future<MarkWishlistPurchasedUseCase> markWishlistPurchasedUseCase(
 VaultRepository vaultRepository(VaultRepositoryRef ref) =>
     const FfiVaultRepository();
 
-/// Shared HTTP client (#30, closes audit m1; N08). Every request through it
-/// is bounded four ways and ABORTED (socket closed) when a bound trips, so a
-/// dead socket (OEM app freezers, dropped mobile data), a trickling body or
-/// an oversized reply fails closed instead of hanging or filling memory:
-///  - 60 s to connect, 60 s between body chunks (per-phase `timeout`);
-///  - 60 s for the whole request (`totalDeadline`; a body that sends one
-///    byte every 59 s used to live forever);
-///  - 64 MiB of body (`maxResponseBytes`, the default — sized to the largest
-///    legitimate reply, a 100 000-row `books.json` read-back).
-/// Closed when disposed.
-@Riverpod(keepAlive: true)
-http.Client httpClient(HttpClientRef ref) {
-  final client = TimeoutHttpClient(
-    http.Client(),
-    totalDeadline: const Duration(seconds: 60),
-  );
-  ref.onDispose(client.close);
-  return client;
-}
-
 /// Session-scoped ISBN lookup cache (#30). Non-secret public metadata.
 @Riverpod(keepAlive: true)
 IsbnCache isbnCache(IsbnCacheRef ref) => InMemoryIsbnCache();
-
-/// HTTP client for the public book-metadata APIs only. Differs from the
-/// shared [httpClient] in two ways (REVIEW: lookup — "fails quite often"):
-///  - 10 s per phase and 30 s total, not 60: lookups are interactive (user
-///    watching a spinner); a slow provider should fail over to the fallback
-///    quickly, not pin the button for a minute. 30 s total is 3× the phase
-///    limit so a healthy-but-slow JSON reply still completes (N08, D1).
-///  - [LookupHttpClient] on top: descriptive User-Agent (Open Library's API
-///    policy throttles anonymous clients) + one jittered retry on 429/5xx.
-@Riverpod(keepAlive: true)
-http.Client lookupHttpClient(LookupHttpClientRef ref) {
-  final client = LookupHttpClient(
-    TimeoutHttpClient(
-      http.Client(),
-      timeout: const Duration(seconds: 10),
-      totalDeadline: const Duration(seconds: 30),
-    ),
-  );
-  ref.onDispose(client.close);
-  return client;
-}
 
 /// Optional user-supplied Google Books API key (encrypted at rest, §6.3).
 /// keepAlive: tiny, session-stable, and read on every lookup.
@@ -574,12 +518,6 @@ Future<ShareCardStyleStore> shareCardStyleStore(
   return PrefsShareCardStyleStore(prefs);
 }
 
-/// OS-level screen-capture protection toggle (Android FLAG_SECURE) for vault
-/// PII screens (#34/F-12). A narrow platform channel; no-op off Android.
-@riverpod
-ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
-    const MethodChannelScreenSecurity();
-
 /// The Play in-app update seam (S35). The real service gates itself to
 /// Android + the `play` applicationId (the fdroid flavor has no Play listing
 /// and stays inert) and degrades to silence on every platform failure.
@@ -587,27 +525,6 @@ ScreenSecurity screenSecurity(ScreenSecurityRef ref) =>
 @riverpod
 AppUpdateService appUpdateService(AppUpdateServiceRef ref) =>
     const PlayAppUpdateService(appInfo: MethodChannelAppInfo());
-
-/// Count of currently-visible passphrase entry fields (vault create / unlock
-/// / change-passphrase / restore flows). Incremented by
-/// `SecurePassphraseField.initState`, decremented on dispose.
-///
-/// keepAlive is deliberate: the field captures this notifier in initState and
-/// calls it again from dispose(), which is only safe if the notifier can
-/// never be auto-disposed out from under the widget.
-@Riverpod(keepAlive: true)
-class PassphraseEntryVisibility extends _$PassphraseEntryVisibility {
-  @override
-  int build() => 0;
-
-  /// A passphrase field appeared on screen.
-  void markVisible() => state = state + 1;
-
-  /// A passphrase field left the screen. Clamped at zero: an unbalanced call
-  /// is a caller bug, but it must never drive the count negative (that would
-  /// silently turn protection OFF later — fail closed).
-  void markHidden() => state = state > 0 ? state - 1 : 0;
-}
 
 /// Single source of truth for the window FLAG_SECURE policy: ON when the
 /// vault is unlocked (borrower PII visible) OR any passphrase entry field is
@@ -623,12 +540,6 @@ bool screenCaptureProtected(ScreenCaptureProtectedRef ref) {
     passphraseEntryVisible: entering,
   );
 }
-
-/// Hands generated files (exports, backups) to the OS share sheet. Overridden
-/// in widget tests with a fake to assert what would be shared.
-@riverpod
-FileShareService fileShareService(FileShareServiceRef ref) =>
-    const SharePlusFileShareService();
 
 /// Biometric/device-credential gate for optional vault unlock (#34 B2). Only
 /// gates release of the hardware-stored secret S; never sees the vault key.
@@ -727,35 +638,6 @@ Future<WishlistBook?> wishlistBookById(
     (failure) => throw failure,
     (book) => book,
   );
-}
-
-/// The wall clock as epoch milliseconds, behind a provider so tests can
-/// inject a fake (N04). Same idiom as the `int Function()? clock` constructor
-/// parameters in the lookup/publish use cases.
-@riverpod
-int Function() clock(ClockRef ref) =>
-    () => DateTime.now().millisecondsSinceEpoch;
-
-/// Periodic "time has passed" signal (N04), watched by providers and widgets
-/// whose output depends on the wall clock (overdue badges, due-soon reminders,
-/// borrower stats) so a screen left open rolls over — a loan due at 15:00
-/// turns overdue at 15:00, not at the next app start.
-///
-/// The value is the current epoch millis (NOT a constant event): Riverpod
-/// only rebuilds dependents when the watched value changes, so a
-/// `Stream.periodic` of identical events would never propagate. A self-
-/// invalidating timer reschedules itself after every rebuild.
-///
-/// AutoDispose on purpose: the timer only runs while a screen is actually
-/// watching, and `onDispose` cancels it (a pending timer would otherwise
-/// outlive widget tests). Tests drive the same rebuild path by overriding
-/// [clockProvider] and invalidating this provider instead of waiting out the
-/// interval.
-@riverpod
-int nowTick(NowTickRef ref) {
-  final timer = Timer(const Duration(seconds: 60), ref.invalidateSelf);
-  ref.onDispose(timer.cancel);
-  return ref.watch(clockProvider)();
 }
 
 /// Builds the [BorrowerProfile] for [borrowerId] from the unlocked vault, or
