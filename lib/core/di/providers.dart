@@ -16,6 +16,7 @@ import 'package:path/path.dart' as p;
 // them, so every call site keeps importing `core/di/providers.dart`.
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
+import 'package:pitaka/core/di/src/settings_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_info.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
@@ -87,8 +88,6 @@ import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
-import 'package:pitaka/features/settings/domain/settings_repository.dart';
-import 'package:pitaka/features/settings/infrastructure/prefs_settings_repository.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
@@ -110,15 +109,9 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
+export 'package:pitaka/core/di/src/settings_providers.dart';
 
 part 'providers.g.dart';
-
-/// Non-secret settings persistence (theme, library identity, sort).
-@riverpod
-Future<SettingsRepository> settingsRepository(SettingsRepositoryRef ref) async {
-  final prefs = await ref.watch(sharedPreferencesProvider.future);
-  return PrefsSettingsRepository(prefs);
-}
 
 /// Library-bookmarks persistence (other libraries' published sites). Non-secret
 /// flat list in shared_preferences — no Drift table/migration.
