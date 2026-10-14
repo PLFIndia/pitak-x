@@ -6,17 +6,15 @@
 /// [vaultRepository]; the vault key never enters Dart.
 library;
 
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:path/path.dart' as p;
-import 'package:pitaka/core/database/app_database.dart';
 // S3: providers live in per-feature modules under `src/`; this file imports
 // the modules its remaining declarations reference AND re-exports all of
 // them, so every call site keeps importing `core/di/providers.dart`.
+import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_info.dart';
@@ -108,41 +106,12 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
-import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
-import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
+export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 
 part 'providers.g.dart';
-
-/// The non-secret Drift database (books + wishlist), opened inside the active
-/// data generation (M02) — switching generations closes and reopens it.
-///
-/// `keepAlive`: the open DB must survive navigation; reopening per-screen would
-/// thrash the connection. Closed when the provider is finally disposed.
-@Riverpod(keepAlive: true)
-Future<AppDatabase> appDatabase(AppDatabaseRef ref) async {
-  final generation = await ref.watch(activeDataGenerationProvider.future);
-  final file = File(generation.catalogueDbPath);
-  final db = AppDatabase(NativeDatabase.createInBackground(file));
-  ref.onDispose(db.close);
-  return db;
-}
-
-/// Absolute path to the covers directory inside the active data generation
-/// (M02), where local book covers are stored. Used by cover-rendering widgets.
-@riverpod
-Future<String> coversDir(CoversDirRef ref) async {
-  final generation = await ref.watch(activeDataGenerationProvider.future);
-  return generation.coversDir;
-}
-
-/// The app's shared (non-secret) key-value preferences store.
-@Riverpod(keepAlive: true)
-Future<SharedPreferences> sharedPreferences(SharedPreferencesRef ref) =>
-    SharedPreferences.getInstance();
 
 /// Non-secret settings persistence (theme, library identity, sort).
 @riverpod
@@ -272,13 +241,6 @@ Future<LendBookUseCase> lendBookUseCase(LendBookUseCaseRef ref) async {
   final repo = await ref.watch(bookRepositoryProvider.future);
   final vault = ref.read(vaultSessionControllerProvider.notifier);
   return LendBookUseCase(books: repo, vault: vault);
-}
-
-/// Wishlist repository.
-@riverpod
-Future<WishlistRepository> wishlistRepository(WishlistRepositoryRef ref) async {
-  final db = await ref.watch(appDatabaseProvider.future);
-  return DriftWishlistRepository(db);
 }
 
 /// Adds a new wishlist entry (title-required validation + persist).
