@@ -1,10 +1,22 @@
 /// GitHub API port for publishing (domain, AGENTS.md §3.3, #32).
 ///
-/// Declared in domain, implemented in infrastructure over `http`. Covers the
-/// three concerns the publish flow needs: device-flow auth, account/repo
-/// resolution, and the Git Data API (atomic incremental commit). Methods return
-/// typed results / throw a single [GitHubApiException] for transport errors so
-/// callers branch deliberately.
+/// Declared in domain, implemented in infrastructure over `http`. The port is
+/// segregated into three ROLE interfaces (SOLID-PLAN S5, ISP) — each consumer
+/// depends on exactly one:
+///  - [GitHubAuthApi] — device-flow auth (used by `GitHubDeviceFlow`);
+///  - [GitHubRepoAdminApi] — account/repo administration (used by
+///    `SetupGitHubRepo` and the connection tab's repo picker);
+///  - [GitHubGitDataApi] — the Git Data API: read the Pages branch, then one
+///    atomic incremental commit (used by the publish use cases).
+///
+/// [GitHubApi] remains as the AGGREGATE for DI convenience (decision D4):
+/// `HttpGitHubApi` implements it once, and the single `gitHubApiProvider`
+/// satisfies every narrow role — one HTTP client, three compile-time views.
+/// Application code references only the role it needs, so test fakes stub 2–6
+/// methods instead of all 10.
+///
+/// Methods return typed results / throw a single [GitHubApiException] for
+/// transport errors so callers branch deliberately.
 library;
 
 import 'package:pitaka/features/publish/domain/github_models.dart';
@@ -151,8 +163,8 @@ final class GitHubApiException implements Exception {
   String toString() => 'GitHubApiException($message)';
 }
 
-/// The GitHub operations the publish flow depends on.
-abstract interface class GitHubApi {
+/// Device-flow authentication only (used by `GitHubDeviceFlow`).
+abstract interface class GitHubAuthApi {
   /// Requests a device + user code for [clientId] with [scope].
   Future<DeviceCodeGrant> requestDeviceCode({
     required String clientId,
@@ -169,7 +181,11 @@ abstract interface class GitHubApi {
     required String clientId,
     required String deviceCode,
   });
+}
 
+/// Account/repo administration (used by `SetupGitHubRepo` and the connection
+/// tab's repo picker).
+abstract interface class GitHubRepoAdminApi {
   /// Returns the authenticated user's login for [token].
   Future<String> currentUserLogin(String token);
 
@@ -213,6 +229,20 @@ abstract interface class GitHubApi {
     required String branch,
     required String token,
   });
+}
+
+/// The publish-commit read/write surface (used by `PublishLibraryUseCase` and
+/// `PublishEventsUseCase`): find the branch Pages actually serves, reconcile
+/// against the head tree, then land ONE atomic commit.
+abstract interface class GitHubGitDataApi {
+  /// Reads the GitHub Pages configuration of [owner]/[repo] (N09). Null when
+  /// Pages is not enabled (404); transport failures throw
+  /// [GitHubApiException].
+  Future<PagesSite?> pagesSite({
+    required String owner,
+    required String repo,
+    required String token,
+  });
 
   /// Reads the full recursive blob path→sha map of [owner]/[repo]'s current
   /// head tree (manifest rebuild). Empty when the repo has no commits.
@@ -247,3 +277,10 @@ abstract interface class GitHubApi {
     List<String> deletePaths,
   });
 }
+
+/// Aggregate of the three role interfaces, kept for DI convenience (D4):
+/// `HttpGitHubApi` implements this, and the single `gitHubApiProvider` still
+/// satisfies every narrow role. Application code must reference a ROLE
+/// interface, not this aggregate.
+abstract interface class GitHubApi
+    implements GitHubAuthApi, GitHubRepoAdminApi, GitHubGitDataApi {}

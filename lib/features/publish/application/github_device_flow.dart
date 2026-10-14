@@ -70,13 +70,15 @@ final class DeviceFlowFailed extends DeviceFlowState {
   final String reason;
 }
 
-/// Runs GitHub Device Flow against a [GitHubApi].
+/// Runs GitHub Device Flow against the AUTH role of the GitHub port
+/// ([GitHubAuthApi] — S5: the flow needs nothing else, so its tests stub
+/// two methods instead of the whole aggregate).
 final class GitHubDeviceFlow {
   /// Creates the flow. [sleep] is injectable so tests don't wait in real time.
   GitHubDeviceFlow(this._api, {Future<void> Function(Duration)? sleep})
     : _sleep = sleep ?? Future<void>.delayed;
 
-  final GitHubApi _api;
+  final GitHubAuthApi _api;
   final Future<void> Function(Duration) _sleep;
 
   /// `public_repo` suffices for publishing to a user-owned public repo (§1.1).

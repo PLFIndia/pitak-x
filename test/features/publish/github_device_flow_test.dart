@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 
 /// Scriptable GitHubApi for the device-flow state machine.
@@ -9,7 +8,7 @@ import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
 /// Each script entry is either a [PollResult] (returned) or a
 /// [GitHubApiException] (thrown — simulates a transport failure such as the
 /// dropped socket phones produce when the user switches to the browser).
-class _ScriptedApi implements GitHubApi {
+class _ScriptedApi implements GitHubAuthApi {
   _ScriptedApi(this._polls);
   final List<Object> _polls;
   int _i = 0;
@@ -41,53 +40,6 @@ class _ScriptedApi implements GitHubApi {
     if (entry is GitHubApiException) throw entry;
     return entry as PollResult;
   }
-
-  // Unused in these tests.
-  @override
-  Future<PublishCommitResult> commitFiles({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-    required List<DesiredFile> files,
-    required String commitMessage,
-    List<String> deletePaths = const [],
-  }) => throw UnimplementedError();
-  @override
-  Future<PagesSite?> pagesSite({
-    required String owner,
-    required String repo,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<GitHubRepoDetails?> repository({
-    required String owner,
-    required String repo,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<Map<String, String>> headTreeShas({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<String> currentUserLogin(String token) => throw UnimplementedError();
-  @override
-  Future<RepoCreateResult> createUserRepo({
-    required String name,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<void> enablePages({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
 }
 
 void main() {
