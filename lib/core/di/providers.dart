@@ -6,7 +6,6 @@
 /// [vaultRepository]; the vault key never enters Dart.
 library;
 
-import 'package:path/path.dart' as p;
 // S3: providers live in per-feature modules under `src/`; this file imports
 // the modules its remaining declarations reference AND re-exports all of
 // them, so every call site keeps importing `core/di/providers.dart`.
@@ -16,12 +15,8 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/di/src/vault_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_info.dart';
-import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/features/app_update/domain/app_update_service.dart';
 import 'package:pitaka/features/app_update/infrastructure/play_app_update_service.dart';
-import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
-import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
-import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/bookmarks/domain/bookmarks_repository.dart';
 import 'package:pitaka/features/bookmarks/infrastructure/prefs_bookmarks_repository.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
@@ -35,12 +30,12 @@ import 'package:pitaka/features/lookup/infrastructure/google_books_lookup_servic
 import 'package:pitaka/features/lookup/infrastructure/in_memory_isbn_cache.dart';
 import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_service.dart';
 import 'package:pitaka/features/lookup/infrastructure/secure_storage_lookup_key_store.dart';
-import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+export 'package:pitaka/core/di/src/backup_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
@@ -159,52 +154,6 @@ Future<Future<List<int>?> Function(String)> eventsPosterReader(
 ) async {
   final dir = await ref.watch(appDocsDirProvider.future);
   return posterFileReader(dir.path);
-}
-
-/// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
-/// books/wishlist written from Drift, the persistent vault copied verbatim, and
-/// covers bundled. Returns the archive bytes for the UI to save.
-@riverpod
-Future<CreateBackupUseCase> createBackupUseCase(
-  CreateBackupUseCaseRef ref,
-) async {
-  final books = await ref.watch(bookRepositoryProvider.future);
-  final wishlist = await ref.watch(wishlistRepositoryProvider.future);
-  final store = await ref.watch(vaultStoreProvider.future);
-  final coversDir = await ref.watch(coversDirProvider.future);
-  final dir = await ref.watch(appDocsDirProvider.future);
-  // N10-c: the writer opens SQLite itself inside its worker isolate (an
-  // `sqlite3.open` tear-off is not sendable across isolates).
-  final writer = BackupArchiveWriter(vaultStore: store, coversDir: coversDir);
-  return CreateBackupUseCase(
-    books: books,
-    wishlist: wishlist,
-    writer: writer,
-    workDir: p.join(dir.path, 'backup_create_work'),
-  );
-}
-
-/// Backup-archive restorer (authoritative overwrite of local state).
-///
-/// M02: restore builds a NEW data generation and switches to it atomically
-/// through [ActiveDataGeneration.activate], which republishes the paths so the
-/// database, covers and vault-store providers all rebuild onto the new set.
-/// The active generation is resolved lazily (`ref.read` at call time), not
-/// watched: watching would rebuild this restorer mid-switch for no benefit.
-@riverpod
-Future<RestoreBackup> restoreBackup(RestoreBackupRef ref) async {
-  final vault = ref.watch(vaultRepositoryProvider);
-  final generations = await ref.watch(dataGenerationsProvider.future);
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return RestoreBackup(
-    vault: vault,
-    generations: generations,
-    activeGeneration: () => ref.read(activeDataGenerationProvider.future),
-    activate: (generation) =>
-        ref.read(activeDataGenerationProvider.notifier).activate(generation),
-    workDir: p.join(dir.path, 'restore_work'),
-    replacementGuard: ref.read(vaultSessionControllerProvider.notifier),
-  );
 }
 
 /// Events (poster) persistence: `events.json` + `posters/<uuid>.jpg` under the
