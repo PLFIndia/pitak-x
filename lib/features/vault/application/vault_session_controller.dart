@@ -26,6 +26,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
+import 'package:pitaka/features/vault/application/serial_op_queue.dart';
+import 'package:pitaka/features/vault/application/vault_secret_keeper.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -52,17 +54,18 @@ part 'vault_session_controller.g.dart';
 @Riverpod(keepAlive: true)
 class VaultSessionController extends _$VaultSessionController
     implements VaultLoanPurger, VaultLender, CatalogueReplacementGuard {
-  /// The session unlock secret while unlocked; null when locked/uninitialized.
-  /// This is EITHER the user passphrase OR the biometric secret S, depending on
-  /// how the vault was opened (both unwrap the SAME vault key MK, just from
-  /// different blobs). Never exposed; wiped on lock and dispose.
-  SecretBytes? _passphrase;
+  /// Secret lifetime (held passphrase/S, active blob, pending secrets,
+  /// generation/lifetime fences) lives in this plain-Dart collaborator
+  /// (SOLID-PLAN S4) so the wipe invariants are unit-testable without vault
+  /// IO. See vault_secret_keeper.dart for the invariant list. Wired to
+  /// `ref.onDispose` in [build] — the wipe-on-dispose guarantee is unchanged.
+  final VaultSecretKeeper _keeper = VaultSecretKeeper();
 
-  /// The at-rest blob that [_passphrase] opens: the main passphrase blob, or
-  /// the biometric blob when unlocked via biometrics. Writes and re-wrap MUST
-  /// use this blob (paired with the held secret), not assume the passphrase
-  /// blob — otherwise an S-unlocked session would fail to write.
-  String? _activeBlob;
+  /// Serializes vault mutations (two UI actions can never interleave
+  /// writes). Plain-Dart collaborator extracted in S4; the queue's tail
+  /// completer always completes NORMALLY, so a failed op never blocks its
+  /// successors.
+  final SerialOpQueue _queue = SerialOpQueue();
 
   VaultRepository get _vault => ref.read(vaultRepositoryProvider);
 
@@ -97,50 +100,25 @@ class VaultSessionController extends _$VaultSessionController
   Future<VaultArtifactsStore> get _storeFuture =>
       ref.watch(vaultStoreProvider.future);
 
-  /// Whether the current unlocked session was opened via biometrics (held
-  /// secret is S, [_activeBlob] is the bio blob) vs the passphrase.
-  bool _activeIsBiometric = false;
-
-  // A generation is a session's identity: old work cannot act in a new one.
-  int _generation = 0;
-  int _lifetime = 0;
-  bool _disposed = false;
+  /// The cached store from the latest build (lifetime-fenced).
   VaultArtifactsStore? _store;
-  Future<void>? _operationTail;
-  final Set<SecretBytes> _pendingSecrets = {};
 
   static const _cancelled = ValidationFailure(
     'The vault session ended. Unlock it and try again.',
   );
 
-  bool _isCurrent(int generation) => !_disposed && generation == _generation;
-
-  void _forgetSession() {
-    _generation++;
-    _passphrase?.dispose();
-    _passphrase = null;
-    _activeBlob = null;
-    _activeIsBiometric = false;
-    for (final secret in _pendingSecrets) {
-      secret.dispose();
-    }
-    _pendingSecrets.clear();
-  }
-
   @override
   Future<VaultSessionState> build() async {
-    _disposed = false;
-    final lifetime = _lifetime;
+    _keeper.beginLifetime();
+    final lifetime = _keeper.lifetime;
     ref.onDispose(() {
-      _disposed = true;
-      _lifetime++;
-      _forgetSession();
+      _keeper.dispose();
       _store = null;
     });
     final store = await _storeFuture;
     // Riverpod may rebuild this same notifier after invalidation. Never let an
     // old build replace the new lifetime's cached store.
-    if (!_disposed && lifetime == _lifetime) _store = store;
+    if (_keeper.isCurrentLifetime(lifetime)) _store = store;
     return _initialStateFor(store);
   }
 
@@ -183,7 +161,7 @@ class VaultSessionController extends _$VaultSessionController
     // NOTE: we deliberately do NOT set `state = AsyncLoading()` here: that
     // unmounted the passphrase form and swallowed the failure message (review
     // 2026-09-03). The page shows its own busy indicator instead.
-    final lifetime = _lifetime;
+    final lifetime = _keeper.lifetime;
     final created = await _vault.createVault(
       passphrase: passphrase,
       dbPath: store.dbPath,
@@ -191,7 +169,7 @@ class VaultSessionController extends _$VaultSessionController
     // Invalidation can mean restore replaced the files. Never install an old
     // blob into that lifetime. An abandoned EMPTY creation is handled by the
     // existing orphan-recovery path on the next enable.
-    if (_disposed || lifetime != _lifetime) return left(_cancelled);
+    if (!_keeper.isCurrentLifetime(lifetime)) return left(_cancelled);
     return created.match(
       (failure) {
         passphrase.dispose();
@@ -214,7 +192,7 @@ class VaultSessionController extends _$VaultSessionController
           state = AsyncData(_initialStateFor(store));
           return left(const StorageFailure('could not save the vault key'));
         }
-        if (!_isCurrent(generation)) {
+        if (!_keeper.isCurrent(generation)) {
           // Lock cancels the unlock, not the already-created encrypted pair.
           // Finish saving its only wrapped key, but retain no secret or rows.
           state = AsyncData(_initialStateFor(store));
@@ -257,10 +235,10 @@ class VaultSessionController extends _$VaultSessionController
     SecretBytes newPassphrase,
   ) => _run(
     (generation, store) async {
-      final held = _passphrase;
+      final held = _keeper.current;
       // Both the passphrase and biometric S open the same key. Rewrap that
       // key into a new main passphrase blob, using the currently held secret.
-      final blob = _activeBlob;
+      final blob = _keeper.activeBlob;
       if (held == null || blob == null) {
         newPassphrase.dispose();
         return left(const ValidationFailure('Vault is locked.'));
@@ -278,7 +256,7 @@ class VaultSessionController extends _$VaultSessionController
         newPassphrase: newPassphrase,
         blob: blob,
       );
-      if (!_isCurrent(generation)) return left(_cancelled);
+      if (!_keeper.isCurrent(generation)) return left(_cancelled);
       return rewrapped.match(
         (failure) {
           // Nothing persisted. Keep the current secret; drop the new one.
@@ -299,16 +277,14 @@ class VaultSessionController extends _$VaultSessionController
               const StorageFailure('could not save the new passphrase'),
             );
           }
-          if (_activeIsBiometric) {
+          if (_keeper.activeIsBiometric) {
             // Session stays on S (which opens the untouched bio blob); we only
             // re-set the passphrase. The new passphrase isn't held.
             newPassphrase.dispose();
           } else {
-            // Swap both held secret and blob together. The old passphrase
-            // no longer opens the new main blob.
-            _passphrase?.dispose();
-            _passphrase = newPassphrase;
-            _activeBlob = newBlob;
+            // Swap both held secret and blob together (hold wipes the old
+            // secret, which no longer opens the new main blob).
+            _keeper.hold(newPassphrase, newBlob, biometric: false);
           }
           return right(unit);
         },
@@ -326,7 +302,7 @@ class VaultSessionController extends _$VaultSessionController
     final result = await _run<bool>((generation, store) async {
       if (!store.hasBioBlob()) return right(false);
       final hasSecret = await _bioStore.hasSecret();
-      if (!_isCurrent(generation)) return left(_cancelled);
+      if (!_keeper.isCurrent(generation)) return left(_cancelled);
       return right(hasSecret);
     });
     return result.getOrElse((_) => false);
@@ -336,7 +312,7 @@ class VaultSessionController extends _$VaultSessionController
   Future<BiometricAvailability> biometricAvailability() async {
     final result = await _run<BiometricAvailability>((generation, _) async {
       final available = await _bioAuth.availability();
-      if (!_isCurrent(generation)) return left(_cancelled);
+      if (!_keeper.isCurrent(generation)) return left(_cancelled);
       return right(available);
     });
     return result.getOrElse((_) => BiometricAvailability.unavailable);
@@ -353,8 +329,8 @@ class VaultSessionController extends _$VaultSessionController
     generation,
     store,
   ) async {
-    final held = _passphrase;
-    final activeBlob = _activeBlob;
+    final held = _keeper.current;
+    final activeBlob = _keeper.activeBlob;
     final bioStore = _bioStore;
     if (held == null || activeBlob == null) {
       return left(const ValidationFailure('Vault is locked.'));
@@ -362,12 +338,12 @@ class VaultSessionController extends _$VaultSessionController
     // Already enrolled? Treat as success (idempotent).
     if (store.hasBioBlob()) {
       final hasSecret = await bioStore.hasSecret();
-      if (!_isCurrent(generation)) return left(_cancelled);
+      if (!_keeper.isCurrent(generation)) return left(_cancelled);
       if (hasSecret) return right(unit);
     }
 
     final available = await _bioAuth.availability();
-    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!_keeper.isCurrent(generation)) return left(_cancelled);
     if (available != BiometricAvailability.available) {
       return left(
         const ValidationFailure(
@@ -385,15 +361,15 @@ class VaultSessionController extends _$VaultSessionController
       blob: activeBlob,
     );
     return enrolled.match(left, (enrolment) async {
-      if (!_isCurrent(generation)) {
+      if (!_keeper.isCurrent(generation)) {
         enrolment.secret.dispose();
         return left(_cancelled);
       }
-      _pendingSecrets.add(enrolment.secret);
+      _keeper.trackPending(enrolment.secret);
       try {
         // Store owns a scoped copy. Lock can wipe our original immediately.
         final stored = await bioStore.store(enrolment.secret);
-        if (!_isCurrent(generation)) {
+        if (!_keeper.isCurrent(generation)) {
           // The write was already dispatched. Undo it before releasing the
           // queue slot so it cannot erase a newer enrollment's secret.
           final cleared = await bioStore.clear();
@@ -415,8 +391,7 @@ class VaultSessionController extends _$VaultSessionController
           return right(unit);
         });
       } finally {
-        _pendingSecrets.remove(enrolment.secret);
-        enrolment.secret.dispose();
+        _keeper.untrackPending(enrolment.secret);
       }
     });
   }, requiresUnlocked: true);
@@ -439,7 +414,7 @@ class VaultSessionController extends _$VaultSessionController
     }
     final bioStore = _bioStore;
     final hasSecret = await bioStore.hasSecret();
-    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!_keeper.isCurrent(generation)) return left(_cancelled);
     if (!hasSecret) {
       return left(const ValidationFailure('Biometric unlock is not set up.'));
     }
@@ -456,7 +431,7 @@ class VaultSessionController extends _$VaultSessionController
         return cleared.match(left, (_) => left(failure));
       },
       (secret) async {
-        if (!_isCurrent(generation)) {
+        if (!_keeper.isCurrent(generation)) {
           secret?.dispose();
           return left(_cancelled);
         }
@@ -465,7 +440,7 @@ class VaultSessionController extends _$VaultSessionController
             const ValidationFailure('Biometric unlock is not set up.'),
           );
         }
-        _pendingSecrets.add(secret);
+        _keeper.trackPending(secret);
         try {
           return await _holdAndLoad(
             secret,
@@ -475,8 +450,7 @@ class VaultSessionController extends _$VaultSessionController
             generation: generation,
           );
         } finally {
-          _pendingSecrets.remove(secret);
-          if (!identical(secret, _passphrase)) secret.dispose();
+          _keeper.untrackPending(secret);
         }
       },
     );
@@ -489,7 +463,7 @@ class VaultSessionController extends _$VaultSessionController
   Future<Either<Failure, Unit>> disableBiometric() =>
       _run((generation, store) async {
         final cleared = await _bioStore.clear();
-        if (!_isCurrent(generation)) return left(_cancelled);
+        if (!_keeper.isCurrent(generation)) return left(_cancelled);
         return cleared.match(left, (_) {
           store.clearBioBlob();
           return right(unit);
@@ -499,8 +473,8 @@ class VaultSessionController extends _$VaultSessionController
   /// Locks immediately, without waiting for queued IO or biometric prompts.
   /// Already-dispatched native writes may finish, but cannot unlock the UI.
   Future<void> lock() async {
-    _forgetSession();
-    if (_disposed) return;
+    _keeper.forget();
+    if (_keeper.isDisposed) return;
     final store = _store;
     // Before build finishes there are no contents to hide. Leave its loading
     // state intact so an operation cannot overtake initialization.
@@ -567,11 +541,11 @@ class VaultSessionController extends _$VaultSessionController
   @override
   Future<Either<Failure, Unit>> addLoan(Loan loan) =>
       _mutate((p, store, blob) async {
-        final generation = _generation;
+        final generation = _keeper.generation;
         final books = await ref.read(bookRepositoryProvider.future);
-        if (!_isCurrent(generation)) return left(_cancelled);
+        if (!_keeper.isCurrent(generation)) return left(_cancelled);
         final found = await books.getById(loan.bookId);
-        if (!_isCurrent(generation)) return left(_cancelled);
+        if (!_keeper.isCurrent(generation)) return left(_cancelled);
         if (found.isLeft()) return found.map((_) => unit);
         final book = found.toNullable();
         if (book == null) return left(const NotFoundFailure());
@@ -629,7 +603,7 @@ class VaultSessionController extends _$VaultSessionController
   @override
   Future<Either<Failure, Unit>> purgeLoansForBook(int bookId) =>
       _mutate((p, store, blob) async {
-        final generation = _generation;
+        final generation = _keeper.generation;
         final current = state.valueOrNull;
         final ids = current is VaultUnlocked
             ? current.data.loans
@@ -644,7 +618,7 @@ class VaultSessionController extends _$VaultSessionController
             dbPath: store.dbPath,
             id: id,
           );
-          if (!_isCurrent(generation)) return left(_cancelled);
+          if (!_keeper.isCurrent(generation)) return left(_cancelled);
           if (r.isLeft()) return r.map((_) => unit);
         }
         return right(unit);
@@ -662,8 +636,8 @@ class VaultSessionController extends _$VaultSessionController
     Set<int>? loanIds;
     if (!replacingVault) {
       if (store.isInitialized()) {
-        final held = _passphrase;
-        final blob = _activeBlob;
+        final held = _keeper.current;
+        final blob = _keeper.activeBlob;
         if (!isUnlocked || held == null || blob == null) {
           return left(
             const ValidationFailure(
@@ -677,7 +651,7 @@ class VaultSessionController extends _$VaultSessionController
           blob: blob,
           dbPath: store.dbPath,
         );
-        if (!_isCurrent(generation)) return left(_cancelled);
+        if (!_keeper.isCurrent(generation)) return left(_cancelled);
         if (read.isLeft()) {
           await lock();
           return read.match(left, (_) => throw StateError('unreachable'));
@@ -703,7 +677,7 @@ class VaultSessionController extends _$VaultSessionController
     var active = true;
     final scope = CatalogueReplacementScope(
       retainedLoanBookIds: loanIds,
-      isCurrent: () => active && _isCurrent(generation),
+      isCurrent: () => active && _keeper.isCurrent(generation),
     );
     try {
       // Check the lease inside the transaction, not after commit: reporting
@@ -720,9 +694,9 @@ class VaultSessionController extends _$VaultSessionController
 
   // --- internals ----------------------------------------------------------
 
-  /// One FIFO for session operations; lock/disposal deliberately bypass it.
-  /// Adapted from synchronized's BasicLock (completer released in finally) and
-  /// Riverpod's handleFuture cancellation guard. No new dependency is needed.
+  /// One FIFO for session operations (delegated to [SerialOpQueue], S4);
+  /// lock/disposal deliberately bypass it. Cancellation guard adapted from
+  /// Riverpod's handleFuture.
   Future<Either<Failure, T>> _run<T>(
     Future<Either<Failure, T>> Function(
       int generation,
@@ -732,41 +706,41 @@ class VaultSessionController extends _$VaultSessionController
     SecretBytes? incoming,
     bool requiresUnlocked = false,
   }) async {
-    final generation = _generation;
-    if (_disposed || (requiresUnlocked && _passphrase == null)) {
+    final generation = _keeper.generation;
+    if (_keeper.isDisposed || (requiresUnlocked && _keeper.current == null)) {
       incoming?.dispose();
       return left(_cancelled);
     }
-    if (incoming != null) _pendingSecrets.add(incoming);
-    final previous = _operationTail;
-    final done = Completer<void>();
-    _operationTail = done.future;
+    if (incoming != null) _keeper.trackPending(incoming);
     try {
-      // Wait for build as well as preceding work. Do not reset the queue on
-      // lock/invalidation: a dispatched native call still owns its IO slot.
-      if (previous != null) await previous;
-      if (!_isCurrent(generation)) return left(_cancelled);
-      await future;
-      if (!_isCurrent(generation)) return left(_cancelled);
-      final store = _store;
-      if (store == null) return left(_cancelled);
-      return await action(generation, store);
-    } on Object {
-      // A violated repository contract is a bug, not a raw UI exception.
-      // Discard the exception itself: it could include a secret or PII.
-      const failure = UnexpectedFailure('Vault operation failed unexpectedly');
-      if (_isCurrent(generation)) {
-        _forgetSession();
-        state = const AsyncData(VaultLocked());
-      }
-      return left(failure);
+      // Explicit type argument: the closure's `left(_cancelled)` branches
+      // can't infer T on their own.
+      return await _queue.enqueue<Either<Failure, T>>(() async {
+        try {
+          // Wait for build as well as preceding work. Do not reset the queue
+          // on lock/invalidation: a dispatched native call still owns its IO
+          // slot.
+          if (!_keeper.isCurrent(generation)) return left(_cancelled);
+          await future;
+          if (!_keeper.isCurrent(generation)) return left(_cancelled);
+          final store = _store;
+          if (store == null) return left(_cancelled);
+          return await action(generation, store);
+        } on Object {
+          // A violated repository contract is a bug, not a raw UI exception.
+          // Discard the exception itself: it could include a secret or PII.
+          const failure = UnexpectedFailure(
+            'Vault operation failed unexpectedly',
+          );
+          if (_keeper.isCurrent(generation)) {
+            _keeper.forget();
+            state = const AsyncData(VaultLocked());
+          }
+          return left(failure);
+        }
+      });
     } finally {
-      if (incoming != null) {
-        _pendingSecrets.remove(incoming);
-        if (!identical(incoming, _passphrase)) incoming.dispose();
-      }
-      if (identical(_operationTail, done.future)) _operationTail = null;
-      done.complete();
+      if (incoming != null) _keeper.untrackPending(incoming);
     }
   }
 
@@ -782,10 +756,10 @@ class VaultSessionController extends _$VaultSessionController
     String? blob,
     bool isBiometric = false,
   }) async {
-    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!_keeper.isCurrent(generation)) return left(_cancelled);
     final effectiveBlob = blob ?? store.readBlob();
     if (effectiveBlob == null) {
-      _forgetSession();
+      _keeper.forget();
       secret.dispose();
       state = AsyncData(_initialStateFor(store));
       return left(const ValidationFailure('No vault to unlock.'));
@@ -796,20 +770,18 @@ class VaultSessionController extends _$VaultSessionController
       blob: effectiveBlob,
       dbPath: store.dbPath,
     );
-    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!_keeper.isCurrent(generation)) return left(_cancelled);
     return read.match(
       (failure) {
-        _forgetSession();
+        _keeper.forget();
         secret.dispose();
         state = AsyncData(_initialStateFor(store));
         return left(failure);
       },
       (data) {
-        // Replace any prior held secret, then hold this one + its blob.
-        _passphrase?.dispose();
-        _passphrase = secret;
-        _activeBlob = effectiveBlob;
-        _activeIsBiometric = isBiometric;
+        // Replace any prior held secret, then hold this one + its blob
+        // (hold wipes the replaced secret — no orphan bytes).
+        _keeper.hold(secret, effectiveBlob, biometric: isBiometric);
         state = AsyncData(VaultUnlocked(data));
         return right(unit);
       },
@@ -827,15 +799,15 @@ class VaultSessionController extends _$VaultSessionController
     )
     op,
   ) => _run((generation, store) async {
-    final held = _passphrase;
+    final held = _keeper.current;
     // Use the blob the HELD secret opens (passphrase blob, or bio blob when
     // unlocked via biometrics) — same MK, different wrapping key.
-    final blob = _activeBlob;
+    final blob = _keeper.activeBlob;
     if (held == null || blob == null) {
       return left(const ValidationFailure('Vault is locked.'));
     }
     final result = await op(held, store, blob);
-    if (!_isCurrent(generation)) return left(_cancelled);
+    if (!_keeper.isCurrent(generation)) return left(_cancelled);
     return result.match(left, (value) async {
       // Re-read so the UI reflects the mutation. A read failure after a
       // successful write is surfaced but the write already landed.
@@ -844,10 +816,10 @@ class VaultSessionController extends _$VaultSessionController
         blob: blob,
         dbPath: store.dbPath,
       );
-      if (!_isCurrent(generation)) return left(_cancelled);
+      if (!_keeper.isCurrent(generation)) return left(_cancelled);
       return read.match(
         (failure) {
-          _forgetSession();
+          _keeper.forget();
           state = AsyncData(_initialStateFor(store));
           return left(failure);
         },
