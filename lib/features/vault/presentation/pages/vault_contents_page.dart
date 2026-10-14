@@ -1,9 +1,10 @@
 /// Vault contents view (presentation layer, AGENTS.md §3.1).
 ///
 /// Read-only: lists each borrower with their loans. Loans carry a `bookId`
-/// (a library book id); we best-effort resolve the book title via the library
-/// repository and fall back to "Book #id" when it can't be found (e.g. the
-/// matching library book wasn't restored). The vault itself is never mutated.
+/// (a library book id); the title is resolved through the existing loan-row
+/// read model (`bookTitleProvider`, N06) with a "Book #id" fallback when it
+/// can't be found (e.g. the matching library book wasn't restored). The
+/// vault itself is never mutated.
 library;
 
 import 'package:flutter/material.dart';
@@ -97,33 +98,26 @@ class _LoanRow extends ConsumerWidget {
         ? scheme.error
         : scheme.primary;
 
-    return FutureBuilder<String>(
-      future: _resolveTitle(ref, loan.bookId),
-      builder: (context, snapshot) {
-        final title = snapshot.data ?? 'Book #${loan.bookId}';
-        return ListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: Text(title),
-          subtitle: Text('Lent ${_date(loan.lentDate)}'),
-          trailing: Text(
-            status,
-            style: Theme.of(
-              context,
-            ).textTheme.labelMedium?.copyWith(color: statusColor),
-          ),
-        );
-      },
-    );
-  }
+    // Title resolution lives behind a provider (S2 — the row only watches
+    // it; no repository IO in presentation). Null (missing/unreadable book,
+    // or still loading) falls back to the "Book #id" label — fail-soft for
+    // a cosmetic label. The provider watches libraryControllerProvider, so a
+    // rename while this page is open re-reads the row (N06).
+    final title =
+        ref.watch(bookTitleProvider(bookId: loan.bookId)).valueOrNull ??
+        'Book #${loan.bookId}';
 
-  /// Best-effort library title lookup; falls back to a "Book #id" label.
-  Future<String> _resolveTitle(WidgetRef ref, int bookId) async {
-    final repo = await ref.read(bookRepositoryProvider.future);
-    final result = await repo.getById(bookId);
-    return result.fold(
-      (_) => 'Book #$bookId',
-      (book) => book?.title ?? 'Book #$bookId',
+    return ListTile(
+      dense: true,
+      contentPadding: EdgeInsets.zero,
+      title: Text(title),
+      subtitle: Text('Lent ${_date(loan.lentDate)}'),
+      trailing: Text(
+        status,
+        style: Theme.of(
+          context,
+        ).textTheme.labelMedium?.copyWith(color: statusColor),
+      ),
     );
   }
 
