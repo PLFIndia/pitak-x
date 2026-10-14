@@ -22,14 +22,6 @@ import 'package:pitaka/features/bookmarks/infrastructure/prefs_bookmarks_reposit
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/events/infrastructure/file_events_repository.dart';
 import 'package:pitaka/features/events/infrastructure/poster_file_reader.dart';
-import 'package:pitaka/features/lookup/application/chained_isbn_lookup.dart';
-import 'package:pitaka/features/lookup/domain/isbn_cache.dart';
-import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
-import 'package:pitaka/features/lookup/domain/lookup_key_store.dart';
-import 'package:pitaka/features/lookup/infrastructure/google_books_lookup_service.dart';
-import 'package:pitaka/features/lookup/infrastructure/in_memory_isbn_cache.dart';
-import 'package:pitaka/features/lookup/infrastructure/open_library_lookup_service.dart';
-import 'package:pitaka/features/lookup/infrastructure/secure_storage_lookup_key_store.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -39,6 +31,7 @@ export 'package:pitaka/core/di/src/backup_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
+export 'package:pitaka/core/di/src/lookup_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 export 'package:pitaka/core/di/src/publish_providers.dart';
 export 'package:pitaka/core/di/src/settings_providers.dart';
@@ -91,33 +84,6 @@ Future<MarkWishlistPurchasedUseCase> markWishlistPurchasedUseCase(
   final repo = await ref.watch(wishlistRepositoryProvider.future);
   final books = await ref.watch(bookRepositoryProvider.future);
   return MarkWishlistPurchasedUseCase(repo, books: books);
-}
-
-/// Session-scoped ISBN lookup cache (#30). Non-secret public metadata.
-@Riverpod(keepAlive: true)
-IsbnCache isbnCache(IsbnCacheRef ref) => InMemoryIsbnCache();
-
-/// Optional user-supplied Google Books API key (encrypted at rest, §6.3).
-/// keepAlive: tiny, session-stable, and read on every lookup.
-@Riverpod(keepAlive: true)
-LookupKeyStore lookupKeyStore(LookupKeyStoreRef ref) =>
-    SecureStorageLookupKeyStore();
-
-/// ISBN lookup + title search (#29/#30): Open Library primary, Google Books
-/// fallback, chained over the cache. Only hit on explicit user action.
-@riverpod
-IsbnLookupService isbnLookupService(IsbnLookupServiceRef ref) {
-  final client = ref.watch(lookupHttpClientProvider);
-  final keys = ref.watch(lookupKeyStoreProvider);
-  return ChainedIsbnLookup(
-    primary: OpenLibraryLookupService(client: client),
-    fallback: GoogleBooksLookupService(
-      client: client,
-      // Read per-request: a key saved in Settings applies immediately.
-      apiKey: keys.googleBooksApiKey,
-    ),
-    cache: ref.watch(isbnCacheProvider),
-  );
 }
 
 /// The Play in-app update seam (S35). The real service gates itself to
