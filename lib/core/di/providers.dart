@@ -15,8 +15,8 @@ import 'package:path/path.dart' as p;
 // the modules its remaining declarations reference AND re-exports all of
 // them, so every call site keeps importing `core/di/providers.dart`.
 import 'package:pitaka/core/di/src/database_providers.dart';
+import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
-import 'package:pitaka/core/di/src/settings_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_info.dart';
 import 'package:pitaka/core/platform/screen_security.dart';
@@ -46,19 +46,8 @@ import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer
     hide PdfTextRasterizer, RasterizedText;
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/application/add_book_use_case.dart';
-import 'package:pitaka/features/library/application/cover_file_janitor.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
-import 'package:pitaka/features/library/application/find_by_isbn_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
-import 'package:pitaka/features/library/application/update_book_use_case.dart';
-import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
-import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
-import 'package:pitaka/features/library/infrastructure/cover_store.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/lookup/application/chained_isbn_lookup.dart';
 import 'package:pitaka/features/lookup/domain/isbn_cache.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
@@ -108,6 +97,7 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 export 'package:pitaka/core/di/src/database_providers.dart';
+export 'package:pitaka/core/di/src/library_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 export 'package:pitaka/core/di/src/settings_providers.dart';
 
@@ -121,109 +111,6 @@ Future<BookmarksRepository> bookmarksRepository(
 ) async {
   final prefs = await ref.watch(sharedPreferencesProvider.future);
   return PrefsBookmarksRepository(prefs);
-}
-
-/// Library books repository.
-@riverpod
-Future<BookRepository> bookRepository(BookRepositoryRef ref) async {
-  final db = await ref.watch(appDatabaseProvider.future);
-  return DriftBookRepository(db);
-}
-
-/// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers,
-/// exposed as the domain [CoverFiles] port.
-@riverpod
-Future<CoverFiles> coverStore(CoverStoreRef ref) async {
-  final dir = await ref.watch(coversDirProvider.future);
-  return CoverStore(coversDir: dir);
-}
-
-/// Shared for the app lifetime: old/new auto-disposed callers must coordinate
-/// on the same FIFO while an import or a cleanup operation is still running.
-@Riverpod(keepAlive: true)
-CoverFileCoordinator coverFileCoordinator(CoverFileCoordinatorRef ref) =>
-    CoverFileCoordinator();
-
-/// Removes cover files nothing references any more (decision Q12). Used right
-/// after a cover/logo is replaced or a book hard-deleted, and once at startup
-/// to sweep orphans left by older versions.
-@riverpod
-Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
-  final books = await ref.watch(bookRepositoryProvider.future);
-  // M11: wishlist rows reference covers in the same directory; the janitor
-  // must count them as live references or startup sweeps delete their art.
-  final wishlist = await ref.watch(wishlistRepositoryProvider.future);
-  final settings = await ref.watch(settingsRepositoryProvider.future);
-  final store = await ref.watch(coverStoreProvider.future);
-  return CoverFileJanitor(
-    books: books,
-    wishlist: wishlist,
-    settings: settings,
-    store: store,
-    coordinator: ref.watch(coverFileCoordinatorProvider),
-  );
-}
-
-/// One-shot startup sweep of orphan cover files; resolves to the number
-/// removed. Triggered by the Library screen's first build (the composition
-/// point that already owns the database), AFTER the list has loaded so the
-/// sweep never competes with the first paint.
-///
-/// keepAlive: "once per app session" is the whole point — an autoDispose
-/// provider would re-run the directory scan every time the screen rebuilt.
-@Riverpod(keepAlive: true)
-Future<int> orphanCoverSweep(OrphanCoverSweepRef ref) async {
-  final janitor = await ref.watch(coverFileJanitorProvider.future);
-  return janitor.sweep();
-}
-
-/// Distinct non-blank languages present in the library (filter-chip facets).
-///
-/// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) — watching only the repository OBJECT never fires,
-/// so without this an add/edit/import/restore left the chips stale.
-@riverpod
-Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
-  ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  final result = await repo.distinctLanguages();
-  return result.getOrElse((_) => const []);
-}
-
-/// Adds a new book to the library (title-required validation + persist).
-@riverpod
-Future<AddBookUseCase> addBookUseCase(AddBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  return AddBookUseCase(repo);
-}
-
-/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
-/// already-catalogued scan opens the existing book, not the add form).
-@riverpod
-Future<FindByIsbnUseCase> findByIsbnUseCase(FindByIsbnUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  return FindByIsbnUseCase(repo);
-}
-
-/// Updates an existing library book (title-required, id-immutable).
-@riverpod
-Future<UpdateBookUseCase> updateBookUseCase(UpdateBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  return UpdateBookUseCase(repo);
-}
-
-/// Hard-deletes a library book, purging its vault loans when unlocked (#27/D3).
-/// The vault side is the session controller (it satisfies [VaultLoanPurger]).
-@riverpod
-Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  final vault = ref.read(vaultSessionControllerProvider.notifier);
-  final janitor = await ref.watch(coverFileJanitorProvider.future);
-  return DeleteBookUseCase(
-    books: repo,
-    vault: vault,
-    releaseCover: janitor.releaseReference,
-  );
 }
 
 /// Lends a library book, enforcing the lending policy (removed / all copies
@@ -544,37 +431,6 @@ Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
   final repo = await ref.watch(bookRepositoryProvider.future);
   final book = (await repo.getById(bookId)).toNullable();
   return book?.title;
-}
-
-/// One library book, observed by id, for a detail screen (N03).
-///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
-///
-/// Freshness signal: every mutation path in the app already invalidates or
-/// refreshes [libraryControllerProvider] (cover replace, materializer, edit
-/// save, remove/restore, import, restore, wishlist move). Watching it here —
-/// value ignored — makes this provider re-read the row on the same signal,
-/// with no new plumbing. The repository has no row streams (N04); when it
-/// gains one this dependency is the single line to swap.
-///
-/// `null` = the row no longer exists. A repository `Left` is thrown so the
-/// screen sees `AsyncError` (same idiom as `LibraryController._load`).
-@riverpod
-Future<Book?> bookById(BookByIdRef ref, int bookId) async {
-  ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  final result = await repo.getById(bookId);
-  return result.fold(
-    // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
-    (failure) => throw failure,
-    (book) => book,
-  );
 }
 
 /// One wishlist entry, observed by id, for its detail screen (N03).
