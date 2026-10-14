@@ -16,8 +16,10 @@
 ///   3. Events — the poster editor (embedded EventsView); the library campaign
 ///      action deep-links to this tab so there is a single Events surface.
 ///
-/// Pure presentation. Credentials live in the secure store behind the
-/// controller; this widget only collects input and renders state.
+/// Pure presentation (SOLID-PLAN S1): all Connection-tab orchestration — the
+/// device flow, token persistence, repo setup, publishing — lives in
+/// `GitHubConnectionController`. This widget only renders the controller's
+/// state, forwards intents to it, and owns the dialogs (which are UI).
 library;
 
 import 'dart:async' show unawaited;
@@ -25,20 +27,12 @@ import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/core/widgets/labeled_value_field.dart';
 import 'package:pitaka/features/events/presentation/pages/events_page.dart';
-import 'package:pitaka/features/publish/application/github_device_flow.dart';
-import 'package:pitaka/features/publish/application/publish_controller.dart';
-import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
-import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
-import 'package:pitaka/features/publish/domain/github_oauth_app.dart';
+import 'package:pitaka/features/publish/application/github_connection_controller.dart';
+import 'package:pitaka/features/publish/presentation/widgets/basic_info_tab.dart';
+import 'package:pitaka/features/publish/presentation/widgets/github_connection_dialogs.dart';
+import 'package:pitaka/features/publish/presentation/widgets/provider_tile.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// Tabs of the publish hub, in order.
 enum PublishTab {
@@ -78,7 +72,7 @@ class PublishPage extends StatelessWidget {
           ),
         ),
         body: const TabBarView(
-          children: [_ConnectionTab(), _BasicInfoTab(), EventsView()],
+          children: [_ConnectionTab(), BasicInfoTab(), EventsView()],
         ),
       ),
     );
@@ -96,96 +90,108 @@ class _ConnectionTab extends ConsumerStatefulWidget {
   ConsumerState<_ConnectionTab> createState() => _ConnectionTabState();
 }
 
+/// Renders [GitHubConnectionUi] and forwards intents to
+/// [GitHubConnectionController] (AGENTS §7: no business logic in widgets).
+/// The only local state is pure UI bookkeeping: the D4 expansion latch and
+/// whether the authorization dialog is currently on screen (so a terminal
+/// state can dismiss it).
 class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
-  bool _loading = true;
-  bool _signedIn = false;
-  String? _targetRepo;
-
   /// D4 latch (S35): the GitHub tile's INITIAL expansion, decided ONCE from
   /// the first loaded state — auto-expand unless fully configured (signed in
   /// AND repo set). Later status changes never yank the tile open or shut
   /// while the user works in it; they can always toggle it manually.
   bool? _githubInitiallyExpanded;
 
-  /// Set after a successful publish — drives the "your site" card with
-  /// copy + share actions.
-  String? _publishedUrl;
-  List<GitHubRepo> _repos = const [];
-
-  /// True when the repo list hit its page budget (N09, D4-a) — the UI then
-  /// says so instead of implying the list is complete.
-  bool _reposTruncated = false;
-  String? _status;
-  bool _busy = false;
-
   /// True while the "authorize in your browser" dialog is on screen, so a
-  /// terminal device-flow state can dismiss it (see [_signIn]).
+  /// terminal device-flow state can dismiss it (see the ref.listen below).
   bool _codeDialogOpen = false;
 
   @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  Future<void> _refresh() async {
-    final creds = ref.read(publishCredentialStoreProvider);
-    final token = await creds.token();
-    final repo = await creds.targetRepo();
-    if (!mounted) return;
-    setState(() {
-      _signedIn = token != null;
-      _targetRepo = repo;
-      _loading = false;
-      _githubInitiallyExpanded ??= !(_signedIn && repo != null);
-    });
-  }
-
-  Future<void> _signIn() async {
-    // No client-id prompt: Pitak ships its own public Device-Flow client id
-    // (github_oauth_app.dart), so sign-in starts immediately.
-    final flow = ref.read(gitHubDeviceFlowProvider);
-    // The flow is an async GENERATOR: it is suspended at `yield` until this
-    // loop asks for the next state. Awaiting the user-code dialog here would
-    // therefore pause token polling until the dialog closes — sign-in could
-    // never complete while the user follows the on-screen instructions. So
-    // the dialog is fired unawaited and dismissed when a terminal state
-    // arrives (same pattern as gh CLI: poll in the background, UI on top).
-    await for (final s in flow.start()) {
-      if (!mounted) return;
-      switch (s) {
-        case DeviceFlowStarting():
-          setState(() => _status = 'Starting…');
-        case DeviceFlowAwaitingUser(:final userCode, :final verificationUri):
-          unawaited(_showUserCodeDialog(userCode, verificationUri));
-        case DeviceFlowSuccess(:final accessToken):
-          await ref.read(publishCredentialStoreProvider).setToken(accessToken);
-          if (!mounted) return;
-          _dismissCodeDialog();
-          setState(() => _status = 'Signed in.');
-          await _refresh();
-          // One-tap setup (mirrors Localcart Orange): brand-new users get a
-          // publish-ready repo right away. Existing users keep their stored
-          // target untouched — setup only runs when none is set.
-          if (_targetRepo == null) {
-            await _setUpNewRepo();
-          }
-        case DeviceFlowDenied():
-          _dismissCodeDialog();
-          setState(() => _status = 'Authorization denied.');
-        case DeviceFlowExpired():
-          _dismissCodeDialog();
-          setState(() => _status = 'The code expired. Please try again.');
-        case DeviceFlowFailed():
-          _dismissCodeDialog();
-          // Fixed message (§5): the reason can carry transport/API text that
-          // must not reach the UI verbatim.
-          setState(
-            () => _status =
-                'Sign-in failed. Check your connection and try again.',
-          );
+  Widget build(BuildContext context) {
+    // Dialogs are driven by STATE TRANSITIONS, not action handlers: the
+    // controller decides when a prompt should appear; the widget shows it
+    // and forwards the answer back as an intent.
+    ref.listen(gitHubConnectionControllerProvider, (prev, next) {
+      final before = prev?.valueOrNull;
+      final now = next.valueOrNull;
+      if (now == null) return;
+      // The repo-name prompt was requested → ask, then forward the answer.
+      if (before?.repoPromptInitialName == null &&
+          now.repoPromptInitialName != null) {
+        unawaited(_handleRepoPrompt(now.repoPromptInitialName!));
       }
+      // The authorization dialog appears while the controller keeps polling
+      // in the background — showing it must NOT be awaited here (awaiting
+      // the dialog was the old regression that suspended token polling until
+      // the dialog closed).
+      //
+      // Both branches are TRANSITION-guarded (code appeared / code cleared),
+      // not level-guarded: a level check would fire on EVERY later state
+      // without a code and its pop would kill an unrelated dialog that was
+      // pushed in the meantime (the repo-name prompt opens right after a
+      // first sign-in).
+      final hadCode = before?.awaitingUserCode != null;
+      final hasCode = now.awaitingUserCode != null;
+      if (!hadCode && hasCode) {
+        unawaited(
+          _showCodeDialog(
+            userCode: now.awaitingUserCode!,
+            verificationUri: now.awaitingVerificationUri ?? '',
+          ),
+        );
+      } else if (hadCode && !hasCode) {
+        // Terminal state: the controller cleared the code → pop the dialog
+        // if it is still open.
+        _dismissCodeDialog();
+      }
+    });
+
+    final async = ref.watch(gitHubConnectionControllerProvider);
+    return async.when(
+      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
+      error: (_, _) =>
+          const Center(child: Text("Couldn't load your connection status.")),
+      data: (ui) {
+        // D4 latch, decided once from the first loaded state. Assignment to
+        // a plain field (no setState): the value is consumed by the tile
+        // built right below in this same frame.
+        _githubInitiallyExpanded ??= !(ui.signedIn && ui.targetRepo != null);
+        return _buildTab(ui);
+      },
+    );
+  }
+
+  // --- Dialog plumbing (UI-owned) -----------------------------------------
+
+  /// Shows the repo-name prompt and forwards the answer to the controller:
+  /// a name goes to `createRepo`, a back-out to `skipRepoSetup`. The retry
+  /// loop for invalid names is also controller-driven (the controller
+  /// re-arms [GitHubConnectionUi.repoPromptInitialName], which re-triggers
+  /// this via the listener above).
+  Future<void> _handleRepoPrompt(String initial) async {
+    final name = await showGitHubRepoNameDialog(context, initial: initial);
+    if (!mounted) return;
+    final controller = ref.read(gitHubConnectionControllerProvider.notifier);
+    if (name == null) {
+      controller.skipRepoSetup();
+    } else {
+      await controller.createRepo(name);
     }
+  }
+
+  /// Opens the authorization dialog (fire-and-forget from the listener; the
+  /// controller owns the flow's progress).
+  Future<void> _showCodeDialog({
+    required String userCode,
+    required String verificationUri,
+  }) async {
+    _codeDialogOpen = true;
+    await showGitHubUserCodeDialog(
+      context,
+      userCode: userCode,
+      verificationUri: verificationUri,
+    );
+    _codeDialogOpen = false;
   }
 
   /// Closes the user-code dialog if it is still open (the flow reached a
@@ -195,315 +201,29 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     Navigator.of(context, rootNavigator: true).pop();
   }
 
-  Future<void> _showUserCodeDialog(
-    String userCode,
-    String verificationUri,
-  ) async {
-    setState(() => _status = 'Enter code $userCode at $verificationUri');
-    _codeDialogOpen = true;
-    // Validated in the domain (safeGithubVerificationUri) so the check is
-    // unit-tested; null means "could not validate → show text, don't launch".
-    final safeUri = safeGithubVerificationUri(verificationUri);
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Authorize in your browser'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('1. Open this page:'),
-            const SizedBox(height: 4),
-            if (safeUri != null)
-              FilledButton.icon(
-                icon: const Icon(Icons.open_in_browser),
-                label: Text(safeUri.host + safeUri.path),
-                // Opened EXTERNALLY (never an in-app webview), matching the
-                // bookmarks pattern — the user authorizes in their own
-                // browser session, and the app never sees their password.
-                onPressed: () =>
-                    launchUrl(safeUri, mode: LaunchMode.externalApplication),
-              )
-            else
-              // Unexpected URI shape: fall back to copyable text rather
-              // than launching something we could not validate.
-              SelectableText(verificationUri),
-            const SizedBox(height: 12),
-            const Text('2. Enter this code:'),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                SelectableText(
-                  userCode,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 2,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.copy),
-                  tooltip: 'Copy code',
-                  onPressed: () =>
-                      Clipboard.setData(ClipboardData(text: userCode)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Waiting for you to authorize… this dialog can stay open.',
-            ),
-            const SizedBox(height: 8),
-            // Escape hatch for devices whose OS still kills the app while
-            // the user is off in the browser (aggressive OEM app freezers):
-            // entering the code on a SECOND device needs no app switch at
-            // all, so polling here is never interrupted.
-            Builder(
-              builder: (ctx) => Text(
-                'Tip: sign-in not completing? Keep this screen open and '
-                'enter the code in a browser on another device (like a '
-                'computer) instead.',
-                style: Theme.of(ctx).textTheme.bodySmall,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Done'),
-          ),
-        ],
-      ),
-    );
-    _codeDialogOpen = false;
-  }
+  // --- Intent forwarders (AGENTS §7): each hands a user action straight to
+  // --- the controller; no decisions are made here.
 
-  /// Prompts for a repo name, then creates/adopts it and enables Pages in
-  /// one go (SetupGitHubRepo). Loops on validation errors so a typo doesn't
-  /// dead-end the flow.
-  Future<void> _setUpNewRepo() async {
-    final creds = ref.read(publishCredentialStoreProvider);
-    final token = await creds.token();
-    if (token == null || !mounted) return;
+  Future<void> _signIn() =>
+      ref.read(gitHubConnectionControllerProvider.notifier).signIn();
 
-    var suggestion = 'my-library';
-    while (mounted) {
-      final name = await _promptRepoName(initial: suggestion);
-      if (name == null) {
-        // User backed out. With a target already stored nothing changes;
-        // otherwise nudge — the advanced picker below can also set one.
-        setState(
-          () => _status = _targetRepo == null
-              ? 'Signed in. Set up a repository to publish.'
-              : null,
-        );
-        return;
-      }
-      suggestion = name;
-      setState(() {
-        _busy = true;
-        _status = 'Setting up "$name" on GitHub…';
-      });
-      final result = await ref
-          .read(setupGitHubRepoProvider)
-          .call(token: token, repoName: name);
-      if (!mounted) return;
-      setState(() => _busy = false);
-      // .match maps Either→outcome (codebase convention, §5): a validation
-      // failure re-prompts with the rejected name; anything else ends the
-      // attempt with a safe, fixed message.
-      final retry = result.match(
-        (failure) {
-          if (failure is ValidationFailure) {
-            setState(() => _status = failure.message);
-            return true; // loop → re-prompt so the user can fix the name
-          }
-          setState(
-            () => _status =
-                'Could not set up the repository. Check your connection '
-                'and try again.',
-          );
-          return false;
-        },
-        (r) {
-          setState(
-            () => _status = r.created
-                ? 'Repository ${r.fullName} created — ready to publish!'
-                : 'Connected to your existing ${r.fullName} — ready to '
-                      'publish!',
-          );
-          return false;
-        },
-      );
-      if (!retry) {
-        await _refresh();
-        return;
-      }
-    }
-  }
+  Future<void> _signOut() =>
+      ref.read(gitHubConnectionControllerProvider.notifier).signOut();
 
-  Future<String?> _promptRepoName({required String initial}) {
-    final controller = TextEditingController(text: initial);
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Name your library repository'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Pitak will create this public repository on your GitHub '
-              'account and turn on GitHub Pages — no dashboard visit '
-              'needed. The name becomes part of your public web address.',
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Repository name',
-                helperText: 'Letters, numbers, dots, dashes, underscores',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Later'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _loadRepos() =>
+      ref.read(gitHubConnectionControllerProvider.notifier).loadRepos();
 
-  /// Sign-out forgets BOTH the token and the target repo (N09, D3-a). The
-  /// target belongs to the account that chose it; a different account
-  /// signing in next must never inherit a repository it may not own. The
-  /// publish manifest is kept: the last published site still exists, so the
-  /// drawer's share link stays truthful.
-  Future<void> _signOut() async {
-    final creds = ref.read(publishCredentialStoreProvider);
-    await creds.clearToken();
-    await creds.clearTargetRepo();
-    if (!mounted) return;
-    setState(() {
-      _signedIn = false;
-      _targetRepo = null;
-      _repos = const [];
-      _reposTruncated = false;
-      _status = 'Signed out.';
-    });
-  }
+  Future<void> _publish() =>
+      ref.read(gitHubConnectionControllerProvider.notifier).publish();
 
-  Future<void> _loadRepos() async {
-    final creds = ref.read(publishCredentialStoreProvider);
-    final token = await creds.token();
-    if (token == null) return;
-    setState(() => _busy = true);
-    try {
-      final listing = await ref.read(gitHubApiProvider).userRepos(token);
-      if (!mounted) return;
-      setState(() {
-        _repos = listing.repos;
-        _reposTruncated = listing.truncated;
-      });
-    } on GitHubApiException {
-      if (!mounted) return;
-      // Fixed message (§5): exception text can carry transport/API detail.
-      setState(() => _status = 'Could not list your repositories. Try again.');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  Future<void> _selectRepo(String fullName) => ref
+      .read(gitHubConnectionControllerProvider.notifier)
+      .selectRepo(fullName);
 
-  /// Adopts an existing repo through the SAME rules as the one-tap setup
-  /// (N09): ownership, push rights, and a Pages layout the app can publish
-  /// to are verified — and Pages is enabled when off — before the target is
-  /// stored. "Connected" therefore always means "ready to publish".
-  Future<void> _pickRepo(String fullName) async {
-    final token = await ref.read(publishCredentialStoreProvider).token();
-    if (token == null || !mounted) return;
-    setState(() {
-      _busy = true;
-      _status = 'Checking $fullName…';
-    });
-    final result = await ref
-        .read(setupGitHubRepoProvider)
-        .adopt(token: token, fullName: fullName);
-    if (!mounted) return;
-    setState(() => _busy = false);
-    result.match(
-      (failure) {
-        // A ValidationFailure carries our own fixed, actionable copy; every
-        // other failure ends with a safe generic line (§5).
-        setState(
-          () => _status = failure is ValidationFailure
-              ? failure.message
-              : 'Could not connect that repository. Check your connection '
-                    'and try again.',
-        );
-      },
-      (r) {
-        setState(
-          () => _status =
-              'Connected to your existing ${r.fullName} — ready to publish!',
-        );
-      },
-    );
-    await _refresh();
-  }
+  void _requestRepoSetup() =>
+      ref.read(gitHubConnectionControllerProvider.notifier).requestRepoSetup();
 
-  Future<void> _publish() async {
-    setState(() {
-      _busy = true;
-      _status = 'Publishing…';
-    });
-    // try/finally: _busy MUST clear on every path. Without this, any
-    // exception escaping publish() (the controller rethrows) killed this
-    // method mid-flight and the spinner ran forever (fail closed, §7).
-    PublishResult? result;
-    try {
-      result = await ref.read(publishControllerProvider.notifier).publish();
-    } on Exception {
-      // Fixed message (§5): exception text can carry transport/API detail.
-      result = const PublishFailure('Something went wrong. Please try again.');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _busy = false;
-          switch (result) {
-            case PublishSuccess(:final pagesUrl, :final pagesLive):
-              _publishedUrl = pagesUrl;
-              _status = (pagesLive ?? false)
-                  ? 'Published! Your site is live.'
-                  : 'Published! The commit is pushed — the site can take a '
-                        'minute to update.';
-              // The drawer's "Share Library Website" entry reads the
-              // published URL from the manifest — refresh it now.
-              ref.invalidate(publishedSiteUrlProvider);
-            case PublishFailure(:final reason):
-              _publishedUrl = null;
-              _status = 'Publish failed: $reason';
-            case null:
-              // Non-Exception Error escaped: still unfreeze the button.
-              _status = 'Something went wrong. Please try again.';
-          }
-        });
-      }
-    }
-  }
-
-  Future<void> _copyPublishedUrl() async {
-    final url = _publishedUrl;
-    if (url == null) return;
+  Future<void> _copyPublishedUrl(String url) async {
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
     ScaffoldMessenger.of(
@@ -511,28 +231,27 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     ).showSnackBar(const SnackBar(content: Text('Link copied')));
   }
 
-  Future<void> _sharePublishedUrl() async {
-    final url = _publishedUrl;
-    if (url == null) return;
+  Future<void> _sharePublishedUrl(String url) async {
     // The sheet offers the visiting-card PNG or the plain link; both go
     // through the FileShareService seam so widget tests can fake them.
     await showShareLibrarySheet(context, url: url);
   }
 
+  // --- Renderers -----------------------------------------------------------
+
   /// The GitHub tile's status (D3): green only when fully configured
   /// (signed in AND a target repo set — ready to publish), amber when
   /// signed in but the repo is missing, red when not signed in.
-  _ProviderConfig get _githubStatus {
-    if (!_signedIn) return _ProviderConfig.notConfigured;
-    return _targetRepo == null
-        ? _ProviderConfig.partial
-        : _ProviderConfig.configured;
+  ProviderConfig _githubStatus(GitHubConnectionUi ui) {
+    if (!ui.signedIn) return ProviderConfig.notConfigured;
+    return ui.targetRepo == null
+        ? ProviderConfig.partial
+        : ProviderConfig.configured;
   }
 
-  /// The GitHub account section (moved VERBATIM from the old "GitHub
-  /// account" card into the collapsible tile, S35).
-  Widget _githubAccountSection() {
-    return _signedIn
+  /// The GitHub account section of the tile body.
+  Widget _githubAccountSection(GitHubConnectionUi ui, {required bool idle}) {
+    return ui.signedIn
         ? Row(
             children: [
               // Success state must read as CONFIRMED at a glance, not
@@ -567,35 +286,34 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
                 ),
               ),
               TextButton(
-                onPressed: _busy ? null : _signOut,
+                onPressed: idle ? _signOut : null,
                 child: const Text('Sign out'),
               ),
             ],
           )
         : FilledButton.icon(
-            onPressed: _busy ? null : _signIn,
+            onPressed: idle ? _signIn : null,
             icon: const Icon(Icons.login),
             label: const Text('Sign in to GitHub'),
           );
   }
 
-  /// The target-repository section (moved VERBATIM from the old card into
-  /// the tile, S35); rendered only while signed in.
-  Widget _targetRepoSection() {
+  /// The target-repository section; rendered only while signed in.
+  Widget _targetRepoSection(GitHubConnectionUi ui, {required bool idle}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_targetRepo != null) ...[
-          Text('Current: $_targetRepo'),
+        if (ui.targetRepo != null) ...[
+          Text('Current: ${ui.targetRepo}'),
           const SizedBox(height: 8),
         ],
         // Always available: create (or adopt) a public repo by name,
         // Pages enabled automatically — no GitHub dashboard needed.
         FilledButton.icon(
-          onPressed: _busy ? null : _setUpNewRepo,
+          onPressed: idle ? _requestRepoSetup : null,
           icon: const Icon(Icons.add),
           label: Text(
-            _targetRepo == null
+            ui.targetRepo == null
                 ? 'Set up a repository'
                 : 'Create a new repository',
           ),
@@ -603,15 +321,15 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
         const SizedBox(height: 8),
         // Advanced path: pick one of your existing repos instead.
         OutlinedButton(
-          onPressed: _busy ? null : _loadRepos,
+          onPressed: idle ? _loadRepos : null,
           child: const Text('Choose an existing repo (advanced)'),
         ),
-        for (final r in _repos)
+        for (final r in ui.repos)
           ListTile(
             dense: true,
-            enabled: !_busy,
+            enabled: idle,
             leading: Icon(
-              r.fullName == _targetRepo
+              r.fullName == ui.targetRepo
                   ? Icons.radio_button_checked
                   : Icons.radio_button_unchecked,
             ),
@@ -619,13 +337,13 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
             subtitle: r.isPrivate
                 ? const Text('private (Pages needs a paid plan)')
                 : null,
-            onTap: () => _pickRepo(r.fullName),
+            onTap: () => _selectRepo(r.fullName),
           ),
-        if (_reposTruncated)
+        if (ui.reposTruncated)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
-              'Showing your ${_repos.length} most recently updated '
+              'Showing your ${ui.repos.length} most recently updated '
               'repositories. If yours is not listed, use "Create a '
               'new repository" instead.',
               style: Theme.of(context).textTheme.bodySmall,
@@ -635,11 +353,8 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
-    }
+  Widget _buildTab(GitHubConnectionUi ui) {
+    final idle = ui.phase == GitHubConnectionPhase.idle;
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -655,15 +370,15 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
         // badge (D3) reads configured / partial / not at a glance, and the
         // GitHub tile auto-expands unless fully configured (D4) so sign-in
         // and repo setup are never hidden behind a tap.
-        _ProviderTile(
+        ProviderTile(
           title: 'GitHub Pages',
-          status: _githubStatus,
+          status: _githubStatus(ui),
           initiallyExpanded: _githubInitiallyExpanded ?? true,
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _githubAccountSection(),
-              if (_signedIn) ...[
+              _githubAccountSection(ui, idle: idle),
+              if (ui.signedIn) ...[
                 const SizedBox(height: 16),
                 Text(
                   'Target repository',
@@ -672,18 +387,18 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
                   ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
-                _targetRepoSection(),
+                _targetRepoSection(ui, idle: idle),
               ],
             ],
           ),
         ),
-        const _CloudflareTile(),
-        if (_signedIn)
+        const CloudflareTile(),
+        if (ui.signedIn)
           _SectionCard(
             title: 'Publish',
             child: FilledButton.icon(
-              onPressed: (_busy || _targetRepo == null) ? null : _publish,
-              icon: _busy
+              onPressed: (!idle || ui.targetRepo == null) ? null : _publish,
+              icon: ui.phase == GitHubConnectionPhase.busy
                   ? const SizedBox(
                       height: 18,
                       width: 18,
@@ -693,24 +408,24 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
               label: const Text('Publish catalogue now'),
             ),
           ),
-        if (_publishedUrl != null)
+        if (ui.publishedUrl != null)
           _SectionCard(
             title: 'Your site',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SelectableText(_publishedUrl!),
+                SelectableText(ui.publishedUrl!),
                 const SizedBox(height: 8),
                 Row(
                   children: [
                     OutlinedButton.icon(
-                      onPressed: _copyPublishedUrl,
+                      onPressed: () => _copyPublishedUrl(ui.publishedUrl!),
                       icon: const Icon(Icons.copy, size: 18),
                       label: const Text('Copy link'),
                     ),
                     const SizedBox(width: 8),
                     FilledButton.icon(
-                      onPressed: _sharePublishedUrl,
+                      onPressed: () => _sharePublishedUrl(ui.publishedUrl!),
                       icon: const Icon(Icons.share, size: 18),
                       label: const Text('Share'),
                     ),
@@ -719,286 +434,11 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
               ],
             ),
           ),
-        if (_status != null) ...[const SizedBox(height: 8), Text(_status!)],
+        if (ui.statusMessage != null) ...[
+          const SizedBox(height: 8),
+          Text(ui.statusMessage!),
+        ],
       ],
-    );
-  }
-}
-
-/// The Cloudflare Pages tile (S35): always "Not configured" + a "Coming
-/// soon" subtitle until the real Direct-Upload integration lands. Collapsed
-/// by default (D4 applies to GitHub only — auto-expanding an unimplemented
-/// provider would defeat the one-screen goal); the body keeps the honest
-/// explanation and the dashboard workaround, minus the old fake disabled
-/// fields that made the card needlessly tall.
-class _CloudflareTile extends StatelessWidget {
-  const _CloudflareTile();
-
-  @override
-  Widget build(BuildContext context) {
-    return const _ProviderTile(
-      title: 'Cloudflare Pages',
-      subtitle: 'Coming soon',
-      status: _ProviderConfig.notConfigured,
-      body: Text(
-        'Direct upload from the app is on the way. For now, you can host '
-        'the same GitHub repo on Cloudflare Pages by connecting it in the '
-        'Cloudflare dashboard.',
-      ),
-    );
-  }
-}
-
-/// A provider's configuration state shown in its tile header (S35, D3).
-/// The text label is the primary carrier (accessibility); colour + icon
-/// reinforce at a glance. Shades follow the existing brightness-aware green
-/// pattern: ~400 on dark surfaces, ~700+ on light for contrast.
-enum _ProviderConfig {
-  /// Signed in AND target repo set — ready to publish.
-  configured('Configured', Icons.check_circle),
-
-  /// Signed in, but no target repo yet.
-  partial('Partially configured', Icons.warning_amber_rounded),
-
-  /// Not signed in / nothing set up (also the only state an unimplemented
-  /// provider can ever be in).
-  notConfigured('Not configured', Icons.cancel);
-
-  const _ProviderConfig(this.label, this.icon);
-
-  /// The user-facing label (primary carrier of the state).
-  final String label;
-
-  /// The status icon.
-  final IconData icon;
-
-  /// The brightness-aware status colour.
-  Color color(Brightness brightness) => switch (this) {
-    _ProviderConfig.configured =>
-      brightness == Brightness.dark
-          ? Colors.green.shade400
-          : Colors.green.shade700,
-    _ProviderConfig.partial =>
-      brightness == Brightness.dark
-          ? Colors.amber.shade300
-          : Colors.amber.shade800,
-    _ProviderConfig.notConfigured =>
-      brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade700,
-  };
-}
-
-/// A collapsible provider card (S35): header = provider name + status
-/// badge, body = that provider's settings. Matches the [_SectionCard] Card
-/// visuals so the tab reads as one family; collapsing is what keeps the
-/// whole page on one screen. The default rotating chevron stays as the
-/// expand affordance.
-class _ProviderTile extends StatelessWidget {
-  const _ProviderTile({
-    required this.title,
-    required this.status,
-    required this.body,
-    this.subtitle,
-    this.initiallyExpanded = false,
-  });
-
-  /// Provider name (tile header).
-  final String title;
-
-  /// Header status badge (D3).
-  final _ProviderConfig status;
-
-  /// Optional second header line (e.g. "Coming soon").
-  final String? subtitle;
-
-  /// The settings shown when expanded.
-  final Widget body;
-
-  /// Whether the tile starts open (D4: the GitHub tile passes its latch).
-  final bool initiallyExpanded;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final color = status.color(theme.brightness);
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        initiallyExpanded: initiallyExpanded,
-        // N12 (320px / large text): both the title and the status label
-        // ellipsize; icon and chevron keep their shape.
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(status.icon, size: 18, color: color),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      status.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        subtitle: subtitle == null ? null : Text(subtitle!),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [body],
-      ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Tab 2: Basic Info
-// ---------------------------------------------------------------------------
-
-class _BasicInfoTab extends ConsumerStatefulWidget {
-  const _BasicInfoTab();
-
-  @override
-  ConsumerState<_BasicInfoTab> createState() => _BasicInfoTabState();
-}
-
-class _BasicInfoTabState extends ConsumerState<_BasicInfoTab> {
-  final _name = TextEditingController();
-  final _address = TextEditingController();
-  final _gps = TextEditingController();
-  final _email = TextEditingController();
-  final _phone = TextEditingController();
-
-  bool _editing = false;
-  bool _seeded = false;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _address.dispose();
-    _gps.dispose();
-    _email.dispose();
-    _phone.dispose();
-    super.dispose();
-  }
-
-  void _seed(AppSettings s) {
-    _name.text = s.libraryName;
-    _address.text = s.publishContactAddress;
-    _gps.text = s.publishContactGps;
-    _email.text = s.publishContactEmail;
-    _phone.text = s.publishContactPhone;
-    _seeded = true;
-  }
-
-  Future<void> _save() async {
-    final notifier = ref.read(settingsControllerProvider.notifier);
-    await notifier.setLibraryName(_name.text);
-    await notifier.setPublishContact(
-      address: _address.text,
-      gps: _gps.text,
-      email: _email.text,
-      phone: _phone.text,
-    );
-    if (mounted) setState(() => _editing = false);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(settingsControllerProvider);
-    final textTheme = Theme.of(context).textTheme;
-
-    return async.when(
-      loading: () => const Center(child: CircularProgressIndicator.adaptive()),
-      error: (_, _) => const Center(child: Text("Couldn't load your info.")),
-      data: (settings) {
-        // Seed the controllers once from storage; later edits are local until
-        // Save writes them back (so a rebuild mid-edit won't clobber typing).
-        if (!_seeded) _seed(settings);
-
-        return ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            Text(
-              'This information appears publicly on your published library '
-              'page so visitors can find and contact you. Every field is '
-              'optional — leave blank to show nothing.',
-              style: textTheme.bodySmall,
-            ),
-            const SizedBox(height: 16),
-            Text('Library', style: textTheme.titleSmall),
-            const SizedBox(height: 8),
-            // Same `libraryName` setting as Appearance — one source of truth.
-            LabeledValueField(
-              label: 'Library name',
-              hint: 'Shown as the page title (also set in Appearance)',
-              controller: _name,
-              editing: _editing,
-            ),
-            const SizedBox(height: 24),
-            Text('Public contact', style: textTheme.titleSmall),
-            const SizedBox(height: 8),
-            LabeledValueField(
-              label: 'Library address',
-              hint: 'A street address or place name (shown as a map search)',
-              controller: _address,
-              editing: _editing,
-            ),
-            const SizedBox(height: 16),
-            LabeledValueField(
-              label: 'GPS location',
-              hint: 'Coordinates as "lat, lng" — shown as a precise map pin',
-              controller: _gps,
-              editing: _editing,
-            ),
-            const SizedBox(height: 16),
-            LabeledValueField(
-              label: 'Email',
-              hint: 'Shown as a mailto link',
-              controller: _email,
-              editing: _editing,
-              keyboardType: TextInputType.emailAddress,
-            ),
-            const SizedBox(height: 16),
-            LabeledValueField(
-              label: 'Phone',
-              hint: 'Shown as a tel link',
-              controller: _phone,
-              editing: _editing,
-              keyboardType: TextInputType.phone,
-            ),
-            const SizedBox(height: 24),
-            if (_editing)
-              FilledButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.check),
-                label: const Text('Save'),
-              )
-            else
-              OutlinedButton.icon(
-                onPressed: () => setState(() => _editing = true),
-                icon: const Icon(Icons.edit_outlined),
-                label: const Text('Edit'),
-              ),
-          ],
-        );
-      },
     );
   }
 }
