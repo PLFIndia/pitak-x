@@ -104,7 +104,7 @@ typedef PublishedFileFetcher = Future<List<int>?> Function(String url);
 final class PublishLibraryUseCase {
   /// Creates the use case over its ports.
   PublishLibraryUseCase({
-    required GitHubApi api,
+    required GitHubGitDataApi api,
     required PublishCredentialReader credentials,
     required PublishManifestGateway manifest,
     required PublishCoverIds coverIds,
@@ -125,7 +125,7 @@ final class PublishLibraryUseCase {
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
-  final GitHubApi _api;
+  final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final PublishCoverIds _coverIds;

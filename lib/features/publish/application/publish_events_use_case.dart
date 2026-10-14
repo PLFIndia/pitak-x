@@ -68,7 +68,7 @@ final class PublishEventsFailure extends PublishEventsResult {
 final class PublishEventsUseCase {
   /// Creates the use case over its ports.
   PublishEventsUseCase({
-    required GitHubApi api,
+    required GitHubGitDataApi api,
     required PublishCredentialReader credentials,
     required PublishManifestGateway manifest,
     required PosterBytesReader readPoster,
@@ -81,7 +81,7 @@ final class PublishEventsUseCase {
        _buildEventsHtml = buildEventsHtml,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
-  final GitHubApi _api;
+  final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final PosterBytesReader _readPoster;

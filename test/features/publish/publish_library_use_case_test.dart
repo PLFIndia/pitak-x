@@ -37,7 +37,8 @@ class _FixedSalt implements PublishCoverSaltStore {
 }
 
 /// Records the commit it received; returns a scripted result.
-class _CapturingApi implements GitHubApi {
+/// S5: implements only the git-data role the use case consumes.
+class _CapturingApi implements GitHubGitDataApi {
   _CapturingApi({
     this.pages = const PagesSite(
       sourceBranch: 'main',
@@ -95,40 +96,6 @@ class _CapturingApi implements GitHubApi {
     committedBranch = branch;
     return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
-
-  // Unused.
-  @override
-  Future<DeviceCodeGrant> requestDeviceCode({
-    required String clientId,
-    required String scope,
-  }) => throw UnimplementedError();
-  @override
-  Future<PollResult> pollAccessToken({
-    required String clientId,
-    required String deviceCode,
-  }) => throw UnimplementedError();
-  @override
-  Future<String> currentUserLogin(String token) => throw UnimplementedError();
-  @override
-  Future<RepoCreateResult> createUserRepo({
-    required String name,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<void> enablePages({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
-  @override
-  Future<GitHubRepoDetails?> repository({
-    required String owner,
-    required String repo,
-    required String token,
-  }) => throw UnimplementedError();
 }
 
 void main() {
@@ -145,7 +112,7 @@ void main() {
       utf8.encode(const JsonEncoder().convert(e.toJson()));
 
   PublishLibraryUseCase makeUseCase(
-    GitHubApi api,
+    GitHubGitDataApi api,
     PublishManifestGateway manifest, {
     PublishedFileFetcher? fetchPublishedFile,
     PublishCredentialReader? credentials,

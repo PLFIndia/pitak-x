@@ -31,7 +31,8 @@ class _MemManifest implements PublishManifestGateway {
   void save(PublishManifest m) => saved = m;
 }
 
-class _CapturingApi implements GitHubApi {
+/// S5: implements only the git-data role the use case consumes.
+class _CapturingApi implements GitHubGitDataApi {
   _CapturingApi({
     this.pages = const PagesSite(
       sourceBranch: 'main',
@@ -70,44 +71,13 @@ class _CapturingApi implements GitHubApi {
     return result;
   }
 
-  // Unused by the events path.
+  // Unused member of the role (events publishes reuse the catalogue's
+  // manifest, never rebuilding it from the head tree).
   @override
   Future<Map<String, String>> headTreeShas({
     required String owner,
     required String repo,
     required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<DeviceCodeGrant> requestDeviceCode({
-    required String clientId,
-    required String scope,
-  }) => throw UnimplementedError();
-  @override
-  Future<PollResult> pollAccessToken({
-    required String clientId,
-    required String deviceCode,
-  }) => throw UnimplementedError();
-  @override
-  Future<String> currentUserLogin(String token) => throw UnimplementedError();
-  @override
-  Future<RepoCreateResult> createUserRepo({
-    required String name,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<void> enablePages({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<RepoListing> userRepos(String token) => throw UnimplementedError();
-  @override
-  Future<GitHubRepoDetails?> repository({
-    required String owner,
-    required String repo,
     required String token,
   }) => throw UnimplementedError();
 }
@@ -127,7 +97,7 @@ void main() {
   );
 
   PublishEventsUseCase make({
-    required GitHubApi api,
+    required GitHubGitDataApi api,
     required PublishManifestGateway manifest,
     PublishCredentialReader? creds,
     PosterBytesReader? readPoster,
