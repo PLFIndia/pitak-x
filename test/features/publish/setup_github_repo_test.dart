@@ -5,8 +5,10 @@ import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 
-/// Scriptable API covering only the setup path; everything else throws.
-class _SetupApi implements GitHubApi {
+/// Scriptable API covering the repo-admin role (S5): SetupGitHubRepo needs
+/// nothing else, so this fake stubs 6 methods instead of the aggregate's 10.
+/// Unused members of the role throw.
+class _SetupApi implements GitHubRepoAdminApi {
   _SetupApi({
     this.createResult = const RepoCreated('main'),
     this.details = const GitHubRepoDetails(
@@ -88,36 +90,9 @@ class _SetupApi implements GitHubApi {
     pagesBranch = branch;
   }
 
-  // Unused in these tests.
-  @override
-  Future<DeviceCodeGrant> requestDeviceCode({
-    required String clientId,
-    required String scope,
-  }) => throw UnimplementedError();
-  @override
-  Future<PollResult> pollAccessToken({
-    required String clientId,
-    required String deviceCode,
-  }) => throw UnimplementedError();
+  // Unused member of the role.
   @override
   Future<RepoListing> userRepos(String token) => throw UnimplementedError();
-  @override
-  Future<Map<String, String>> headTreeShas({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
-  @override
-  Future<PublishCommitResult> commitFiles({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-    required List<DesiredFile> files,
-    required String commitMessage,
-    List<String> deletePaths = const [],
-  }) => throw UnimplementedError();
 }
 
 class _MemCreds implements PublishCredentialStore {

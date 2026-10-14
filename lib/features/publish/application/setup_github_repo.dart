@@ -63,7 +63,9 @@ final class SetupGitHubRepo {
   /// Creates the use case.
   const SetupGitHubRepo(this._api, this._creds);
 
-  final GitHubApi _api;
+  /// The repo-ADMIN role of the GitHub port (S5): this use case never
+  /// touches device-flow auth or git-data commits.
+  final GitHubRepoAdminApi _api;
   final PublishCredentialStore _creds;
 
   /// Valid GitHub repository name: alphanumeric, `.`, `_`, `-`, 1–100 chars.

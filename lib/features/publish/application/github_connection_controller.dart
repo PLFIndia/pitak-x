@@ -224,6 +224,11 @@ class GitHubConnectionController extends _$GitHubConnectionController {
     }
   }
 
+  /// The repo-ADMIN role view of the shared GitHub client (S5, ISP): the
+  /// repo picker needs `userRepos` and nothing else, so the narrow role type
+  /// is named HERE at the boundary instead of depending on the aggregate.
+  GitHubRepoAdminApi get _repoAdminApi => ref.read(gitHubApiProvider);
+
   /// Starts the GitHub device-flow sign-in.
   ///
   /// The flow is an async GENERATOR: it is suspended at `yield` until this
@@ -382,7 +387,7 @@ class GitHubConnectionController extends _$GitHubConnectionController {
       if (token == null) return;
       _emit((c) => c.copyWith(phase: GitHubConnectionPhase.busy));
       try {
-        final listing = await ref.read(gitHubApiProvider).userRepos(token);
+        final listing = await _repoAdminApi.userRepos(token);
         _emit(
           (c) => c.copyWith(
             repos: listing.repos,
