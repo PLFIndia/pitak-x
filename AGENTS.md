@@ -84,6 +84,9 @@ lib/
 
 ### 3.3 Rules
 - **Domain entities are immutable** and validated at construction (use Value Objects).
+  - Accepted deviation (SOLID-PLAN S7, D3 Option A): `Book` uses a static
+    ingress gate (`Book.validate`) instead of a private constructor; the gate
+    is enforced by `test/architecture/book_validation_gate_test.dart`.
 - **No leaking of DTOs** (`*Model`) into domain or presentation. Map at the infrastructure boundary.
 - **Repositories** are declared in `domain`, implemented in `infrastructure`.
 - **Use cases** are single-responsibility, return a `Result`/`Either`, never throw for expected failures.
