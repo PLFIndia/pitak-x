@@ -1,0 +1,2 @@
+* New: "Share card + link" sends your library's visiting card together with a tappable link to your website in one share — on WhatsApp, Telegram and similar apps the link appears right under the card.
+* New: export only the books you choose. CSV and PDF exports can be narrowed by source (Purchased, Gift, Donated, Inherited, Other) and further to one person or shop, picked from the names already on your books — e.g. everything one donor gave. The PDF and file name say what they contain.
