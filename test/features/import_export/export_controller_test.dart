@@ -39,6 +39,7 @@ class _FakeShare implements FileShareService {
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   }) async {
     this.bytes = bytes;
@@ -76,8 +77,8 @@ class _GatedRenderer implements LibraryPdfRenderer {
     required List<Book> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
-    PdfFontBundle regularFonts = const [],
     String? subtitle,
+    PdfFontBundle regularFonts = const [],
     PdfFontBundle boldFonts = const [],
     Uint8List? logoBytes,
     Uint8List? footerIconBytes,
@@ -142,11 +143,11 @@ class _Books implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
   Future<Either<Failure, List<String>>> distinctSourceDetails(
     BookSourceType type,
   ) async => right(const []);
   @override
+  Future<Either<Failure, Book?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, Book>> insert(Book b) async => right(b);
   @override

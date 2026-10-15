@@ -1,9 +1,12 @@
 /// "Share your library" bottom sheet (presentation, AGENTS.md §3.1).
 ///
 /// Live preview of the visiting card, four style swatches, and two actions:
-///   • **Share card** — rasterises the preview to PNG and hands it to the OS
-///     share sheet through the `FileShareService` seam (same path as PDF /
-///     backup export, so tests can fake it);
+///   • **Share card + link** — rasterises the preview to PNG and hands it to
+///     the OS share sheet through the `FileShareService` seam (same path as
+///     PDF / backup export, so tests can fake it) WITH the site URL attached
+///     as the share text. The link printed on the card is just pixels; the
+///     attached text is what makes it tappable on the receiving end (chat
+///     apps show it as the image caption, mail apps as the body);
 ///   • **Share link only** — the plain-text URL share that existed before.
 ///
 /// Opened from the publish page's "Share" button and the drawer's "Share
@@ -38,8 +41,8 @@ class ShareLibrarySheet extends ConsumerStatefulWidget {
   /// Creates the sheet for [url].
   const ShareLibrarySheet({required this.url, super.key});
 
-  /// Full published URL (encoded into the QR; shared as text by the
-  /// "link only" action).
+  /// Full published URL (encoded into the QR, attached as the card share's
+  /// text, and shared alone by the "link only" action).
   final String url;
 
   @override
@@ -77,6 +80,8 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
         bytes: png,
         fileName: ShareCardText.fileName(libraryName),
         mimeType: 'image/png',
+        // The clickable half of the share (see the library doc above).
+        text: widget.url,
       );
       if (mounted) navigator.pop();
     } finally {
@@ -153,7 +158,7 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.image_outlined),
-            label: const Text('Share card'),
+            label: const Text('Share card + link'),
           ),
           const SizedBox(height: 8),
           TextButton.icon(

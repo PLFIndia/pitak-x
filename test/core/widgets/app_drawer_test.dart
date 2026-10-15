@@ -26,6 +26,7 @@ class _FakeShare implements FileShareService {
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   }) => throw UnimplementedError();
 }

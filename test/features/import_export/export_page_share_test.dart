@@ -40,6 +40,7 @@ class _FakeShare implements FileShareService {
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   }) async {
     this.bytes = bytes;
@@ -61,8 +62,8 @@ class _GatedRenderer implements LibraryPdfRenderer {
     required List<Book> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
-    PdfFontBundle regularFonts = const [],
     String? subtitle,
+    PdfFontBundle regularFonts = const [],
     PdfFontBundle boldFonts = const [],
     Uint8List? logoBytes,
     Uint8List? footerIconBytes,
@@ -138,11 +139,11 @@ class _Books implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
   Future<Either<Failure, List<String>>> distinctSourceDetails(
     BookSourceType type,
   ) async => right(const []);
   @override
+  Future<Either<Failure, Book?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, Book>> insert(Book b) async => right(b);
   @override
@@ -189,13 +190,13 @@ class _Wishlist implements WishlistRepository {
 
 void main() {
   testWidgets('CSV export hands bytes to the share service', (tester) async {
-    final share = _FakeShare();
     // The "Books to include" section pushes the button below the default
     // 800×600 viewport (a ListView never mounts off-screen children).
     tester.view
       ..physicalSize = const Size(1080, 2400)
       ..devicePixelRatio = 2.0;
     addTearDown(tester.view.reset);
+    final share = _FakeShare();
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
       pdfRenderer: const PdfLibraryRenderer(),
@@ -227,7 +228,6 @@ void main() {
     expect(find.textContaining('Shared'), findsOneWidget);
   });
 
-  group('N10-e — PDF progress + cancel on the page', () {
   group('source filter (Books to include)', () {
     const books = [
       Book(
@@ -388,6 +388,7 @@ void main() {
     });
   });
 
+  group('N10-e — PDF progress + cancel on the page', () {
     /// The PDF column picker pushes the button (and the progress section
     /// under it) below the default 800×600 test viewport, where a ListView
     /// never mounts children. Use a phone-tall viewport instead.

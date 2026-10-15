@@ -37,12 +37,20 @@ enum ShareOutcome {
 abstract interface class FileShareService {
   /// Presents the share sheet for [bytes] under [fileName] with [mimeType].
   ///
+  /// [text] (optional) rides along with the file in the SAME share. One
+  /// share is one hand-off to the receiving app, which decides how to show
+  /// the pair: WhatsApp/Telegram/Signal render it as a tappable caption
+  /// under the image, mail apps put it in the body, and targets that only
+  /// take files (Photos, "Save to Files") drop it. The app cannot force
+  /// "two consecutive messages" — that is the receiving app's choice.
+  ///
   /// [sharePositionOrigin] anchors the iPad popover (ignored on phones); pass
   /// the source widget's global rect where available.
   Future<ShareOutcome> shareBytes({
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   });
 
@@ -60,6 +68,7 @@ final class SharePlusFileShareService implements FileShareService {
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   }) async {
     final result = await SharePlus.instance.share(
@@ -68,6 +77,11 @@ final class SharePlusFileShareService implements FileShareService {
         // XFile.fromData ignores `name` on some platforms; this guarantees the
         // saved/shared file keeps its extension (so PDF viewers open it).
         fileNameOverrides: [fileName],
+        // share_plus documents `text` as usable together with `files`
+        // (Android: EXTRA_TEXT next to EXTRA_STREAM; iOS: both activity
+        // items). A blank caption is sent as "no text" rather than an empty
+        // string some targets would show as an empty message.
+        text: (text == null || text.trim().isEmpty) ? null : text,
         sharePositionOrigin: sharePositionOrigin,
       ),
     );

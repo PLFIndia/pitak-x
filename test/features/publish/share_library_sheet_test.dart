@@ -21,6 +21,10 @@ class _FakeShare implements FileShareService {
   String? sharedFileName;
   String? sharedMime;
 
+  /// The text attached to a FILE share (the card's caption), distinct from
+  /// [sharedText] which records a text-only share.
+  String? sharedCaption;
+
   @override
   Future<ShareOutcome> shareText(
     String text, {
@@ -35,11 +39,13 @@ class _FakeShare implements FileShareService {
     required Uint8List bytes,
     required String fileName,
     required String mimeType,
+    String? text,
     Rect? sharePositionOrigin,
   }) async {
     sharedBytes = bytes;
     sharedFileName = fileName;
     sharedMime = mimeType;
+    sharedCaption = text;
     return ShareOutcome.success;
   }
 }
@@ -149,29 +155,33 @@ void main() {
     expect(find.text('Style applied, but could not be saved.'), findsOneWidget);
   });
 
-  testWidgets('"Share card" shares a PNG named after the library and closes', (
-    tester,
-  ) async {
-    final share = _FakeShare();
-    await _open(tester, _app(share));
+  testWidgets(
+    '"Share card + link" shares a PNG named after the library, with the URL '
+    'attached as the share text, and closes',
+    (tester) async {
+      final share = _FakeShare();
+      await _open(tester, _app(share));
 
-    // Rasterisation runs on the engine → runAsync, then let the pop settle.
-    await tester.runAsync(() async {
-      await tester.tap(find.text('Share card'));
-      await tester.pump();
-      // Give the toImage/PNG-encode futures time to resolve.
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-    });
-    await tester.pumpAndSettle();
+      // Rasterisation runs on the engine → runAsync, then let the pop settle.
+      await tester.runAsync(() async {
+        await tester.tap(find.text('Share card + link'));
+        await tester.pump();
+        // Give the toImage/PNG-encode futures time to resolve.
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+      });
+      await tester.pumpAndSettle();
 
-    expect(share.sharedText, isNull);
-    expect(share.sharedMime, 'image/png');
-    expect(share.sharedFileName, 'riverside-community-library-card.png');
-    expect(share.sharedBytes, isNotNull);
-    expect(share.sharedBytes!.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
-    // The sheet closed after a successful share.
-    expect(find.text('Share your library'), findsNothing);
-  });
+      // ONE share carrying both halves — not a separate text-only share.
+      expect(share.sharedText, isNull);
+      expect(share.sharedCaption, _url);
+      expect(share.sharedMime, 'image/png');
+      expect(share.sharedFileName, 'riverside-community-library-card.png');
+      expect(share.sharedBytes, isNotNull);
+      expect(share.sharedBytes!.sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
+      // The sheet closed after a successful share.
+      expect(find.text('Share your library'), findsNothing);
+    },
+  );
 
   testWidgets('"Share link only" shares the plain URL and closes', (
     tester,
@@ -184,6 +194,7 @@ void main() {
 
     expect(share.sharedText, _url);
     expect(share.sharedBytes, isNull);
+    expect(share.sharedCaption, isNull);
     expect(find.text('Share your library'), findsNothing);
   });
 }
