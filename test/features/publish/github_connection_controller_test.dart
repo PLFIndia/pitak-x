@@ -14,13 +14,18 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 /// In-memory credential store that COUNTS writes, so tests can assert the
 /// token landed in the store exactly once (and never in the UI state).
 class _FakeCreds implements PublishCredentialStore {
-  _FakeCreds({String? token, String? targetRepo})
+  _FakeCreds({String? token, String? targetRepo, this.throwOnSetTargetRepo})
     : _token = token,
       _target = targetRepo;
 
   String? _token;
   String? _target;
   final List<String> setTokenCalls = [];
+
+  /// When set, [setTargetRepo] throws it — models a secure-storage write
+  /// failure (e.g. a Keystore PlatformException) that escapes the use case's
+  /// own GitHubApiException→Either mapping.
+  final Exception? throwOnSetTargetRepo;
 
   @override
   Future<String?> token() async => _token;
@@ -39,6 +44,8 @@ class _FakeCreds implements PublishCredentialStore {
 
   @override
   Future<void> setTargetRepo(String target) async {
+    final failure = throwOnSetTargetRepo;
+    if (failure != null) throw failure;
     _target = target;
   }
 
@@ -600,6 +607,34 @@ void main() {
       expect(await h.creds.targetRepo(), isNull);
     });
 
+    test("a secure-storage write failure (past the use case's Either "
+        'mapping) still unfreezes the tab and shows the fixed message — '
+        'fail closed, no raw platform text', () async {
+      final h = _Harness(
+        creds: _FakeCreds(
+          token: 'TKN',
+          throwOnSetTargetRepo: Exception('Keystore: key invalidated'),
+        ),
+      );
+      await h.settle();
+
+      // Must not throw out to the caller (the widget's onPressed).
+      await h.notifier.createRepo('good-name');
+
+      expect(h.last.phase, GitHubConnectionPhase.idle);
+      expect(
+        h.last.statusMessage,
+        'Could not set up the repository. Check your connection and try '
+        'again.',
+      );
+      expect(h.last.statusMessage, isNot(contains('Keystore')));
+      // The target was never stored; state must not claim otherwise.
+      expect(h.last.targetRepo, isNull);
+      // Buttons unfrozen ⇒ a retry is accepted (not refused as "busy").
+      h.notifier.requestRepoSetup();
+      expect(h.last.repoPromptInitialName, 'my-library');
+    });
+
     test('skipRepoSetup: no target yet → nudge message; with target → '
         'message cleared', () async {
       final h = _Harness(creds: _FakeCreds(token: 'TKN'));
@@ -673,6 +708,32 @@ void main() {
       expect(h.last.targetRepo, isNull);
       expect(h.last.statusMessage, contains('owned by the GitHub account'));
       expect(h.api.pagesEnabled, isFalse);
+    });
+
+    test('a secure-storage write failure during adopt still unfreezes the '
+        'tab and shows the fixed message (fail closed)', () async {
+      final h = _Harness(
+        creds: _FakeCreds(
+          token: 'TKN',
+          throwOnSetTargetRepo: Exception('Keystore: key invalidated'),
+        ),
+        api: _FakeGitHubApi(details: owned()),
+      );
+      await h.settle();
+
+      await h.notifier.selectRepo('user/shelf');
+
+      expect(h.last.phase, GitHubConnectionPhase.idle);
+      expect(
+        h.last.statusMessage,
+        'Could not connect that repository. Check your connection and try '
+        'again.',
+      );
+      expect(h.last.statusMessage, isNot(contains('Keystore')));
+      expect(h.last.targetRepo, isNull);
+      // A follow-up intent is accepted: the phase guard is not stuck on busy.
+      await h.notifier.loadRepos();
+      expect(h.last.phase, GitHubConnectionPhase.idle);
     });
   });
 

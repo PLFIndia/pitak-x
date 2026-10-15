@@ -180,6 +180,9 @@ class GitHubConnectionController extends _$GitHubConnectionController {
       'Connected to your existing $fullName — ready to publish!';
   static const String _setupFailed =
       'Could not set up the repository. Check your connection and try again.';
+  static const String _connectFailed =
+      'Could not connect that repository. Check your connection and try '
+      'again.';
   static const String _signInFailed =
       'Sign-in failed. Check your connection and try again.';
 
@@ -458,11 +461,15 @@ class GitHubConnectionController extends _$GitHubConnectionController {
           statusMessage: 'Setting up "$name" on GitHub…',
         ),
       );
-      // .match maps Either→outcome (codebase convention, §5).
-      final result = await ref
-          .read(setupGitHubRepoProvider)
-          .call(token: token, repoName: name);
+      // The use-case call sits INSIDE the try: it maps GitHub transport
+      // errors to Either, but its final step writes the target to secure
+      // storage, which can still throw (e.g. a Keystore failure). The
+      // finally below must run for that path too, or the tab stays frozen.
       try {
+        // .match maps Either→outcome (codebase convention, §5).
+        final result = await ref
+            .read(setupGitHubRepoProvider)
+            .call(token: token, repoName: name);
         await result.match<Future<void>>(
           (failure) async {
             if (failure is ValidationFailure) {
@@ -498,8 +505,19 @@ class GitHubConnectionController extends _$GitHubConnectionController {
             );
           },
         );
+      } on Exception {
+        // Same convention as publish()/signIn(): an exception past the use
+        // case's own Either mapping ends on the fixed message — its text can
+        // carry platform/storage detail that must not reach the UI (§5).
+        _emit(
+          (c) => c.copyWith(
+            phase: GitHubConnectionPhase.idle,
+            statusMessage: _setupFailed,
+          ),
+        );
       } finally {
-        // Fail closed: an unexpected throw must not leave the buttons frozen.
+        // Fail closed: whatever escaped above (even a non-Exception Error),
+        // the buttons unfreeze.
         _emit(
           (c) => c.phase == GitHubConnectionPhase.busy
               ? c.copyWith(phase: GitHubConnectionPhase.idle)
@@ -528,10 +546,12 @@ class GitHubConnectionController extends _$GitHubConnectionController {
           statusMessage: 'Checking $fullName…',
         ),
       );
-      final result = await ref
-          .read(setupGitHubRepoProvider)
-          .adopt(token: token, fullName: fullName);
+      // The adopt call sits INSIDE the try (see createRepo): its final
+      // secure-storage write of the target can throw past the Either mapping.
       try {
+        final result = await ref
+            .read(setupGitHubRepoProvider)
+            .adopt(token: token, fullName: fullName);
         await result.match<Future<void>>(
           (failure) async {
             // A ValidationFailure carries our own fixed, actionable copy;
@@ -541,8 +561,7 @@ class GitHubConnectionController extends _$GitHubConnectionController {
                 phase: GitHubConnectionPhase.idle,
                 statusMessage: failure is ValidationFailure
                     ? failure.message
-                    : 'Could not connect that repository. Check your '
-                          'connection and try again.',
+                    : _connectFailed,
               ),
             );
           },
@@ -559,7 +578,16 @@ class GitHubConnectionController extends _$GitHubConnectionController {
         // (adopt stores it on success; unchanged on failure).
         final repo = await creds.targetRepo();
         _emit((c) => c.copyWith(targetRepo: repo));
+      } on Exception {
+        // Fixed message (§5) — see createRepo for why this branch exists.
+        _emit(
+          (c) => c.copyWith(
+            phase: GitHubConnectionPhase.idle,
+            statusMessage: _connectFailed,
+          ),
+        );
       } finally {
+        // Fail closed: the buttons unfreeze on every path.
         _emit(
           (c) => c.phase == GitHubConnectionPhase.busy
               ? c.copyWith(phase: GitHubConnectionPhase.idle)
