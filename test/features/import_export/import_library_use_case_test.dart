@@ -63,6 +63,10 @@ class _FakeBookRepo implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
   @override
@@ -383,6 +387,10 @@ class _FailingBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
+  @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);

@@ -138,6 +138,203 @@ final libraryLanguagesProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef LibraryLanguagesRef = AutoDisposeFutureProviderRef<List<String>>;
+String _$librarySourceDetailsHash() =>
+    r'e2bca095a816bbbda506ded7090368e05b1b2459';
+
+/// Copied from Dart SDK
+class _SystemHash {
+  _SystemHash._();
+
+  static int combine(int hash, int value) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + value);
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+    return hash ^ (hash >> 6);
+  }
+
+  static int finish(int hash) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    // ignore: parameter_assignments
+    hash = hash ^ (hash >> 11);
+    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+  }
+}
+
+/// Distinct non-blank source details (donor / seller names…) recorded under
+/// one [BookSourceType] — the Export screen's "source detail" picker values.
+///
+/// Same freshness rule as [libraryLanguages]: watches
+/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// a donor is reflected the next time the picker opens. A repository failure
+/// degrades to an empty list — the picker then offers "Any", and the export
+/// itself still runs; nothing here is worth blocking the screen for.
+///
+/// Copied from [librarySourceDetails].
+@ProviderFor(librarySourceDetails)
+const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
+
+/// Distinct non-blank source details (donor / seller names…) recorded under
+/// one [BookSourceType] — the Export screen's "source detail" picker values.
+///
+/// Same freshness rule as [libraryLanguages]: watches
+/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// a donor is reflected the next time the picker opens. A repository failure
+/// degrades to an empty list — the picker then offers "Any", and the export
+/// itself still runs; nothing here is worth blocking the screen for.
+///
+/// Copied from [librarySourceDetails].
+class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
+  /// Distinct non-blank source details (donor / seller names…) recorded under
+  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  ///
+  /// Same freshness rule as [libraryLanguages]: watches
+  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// a donor is reflected the next time the picker opens. A repository failure
+  /// degrades to an empty list — the picker then offers "Any", and the export
+  /// itself still runs; nothing here is worth blocking the screen for.
+  ///
+  /// Copied from [librarySourceDetails].
+  const LibrarySourceDetailsFamily();
+
+  /// Distinct non-blank source details (donor / seller names…) recorded under
+  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  ///
+  /// Same freshness rule as [libraryLanguages]: watches
+  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// a donor is reflected the next time the picker opens. A repository failure
+  /// degrades to an empty list — the picker then offers "Any", and the export
+  /// itself still runs; nothing here is worth blocking the screen for.
+  ///
+  /// Copied from [librarySourceDetails].
+  LibrarySourceDetailsProvider call(BookSourceType type) {
+    return LibrarySourceDetailsProvider(type);
+  }
+
+  @override
+  LibrarySourceDetailsProvider getProviderOverride(
+    covariant LibrarySourceDetailsProvider provider,
+  ) {
+    return call(provider.type);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'librarySourceDetailsProvider';
+}
+
+/// Distinct non-blank source details (donor / seller names…) recorded under
+/// one [BookSourceType] — the Export screen's "source detail" picker values.
+///
+/// Same freshness rule as [libraryLanguages]: watches
+/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// a donor is reflected the next time the picker opens. A repository failure
+/// degrades to an empty list — the picker then offers "Any", and the export
+/// itself still runs; nothing here is worth blocking the screen for.
+///
+/// Copied from [librarySourceDetails].
+class LibrarySourceDetailsProvider
+    extends AutoDisposeFutureProvider<List<String>> {
+  /// Distinct non-blank source details (donor / seller names…) recorded under
+  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  ///
+  /// Same freshness rule as [libraryLanguages]: watches
+  /// [libraryControllerProvider] as the mutation signal so an edit that renames
+  /// a donor is reflected the next time the picker opens. A repository failure
+  /// degrades to an empty list — the picker then offers "Any", and the export
+  /// itself still runs; nothing here is worth blocking the screen for.
+  ///
+  /// Copied from [librarySourceDetails].
+  LibrarySourceDetailsProvider(BookSourceType type)
+    : this._internal(
+        (ref) => librarySourceDetails(ref as LibrarySourceDetailsRef, type),
+        from: librarySourceDetailsProvider,
+        name: r'librarySourceDetailsProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$librarySourceDetailsHash,
+        dependencies: LibrarySourceDetailsFamily._dependencies,
+        allTransitiveDependencies:
+            LibrarySourceDetailsFamily._allTransitiveDependencies,
+        type: type,
+      );
+
+  LibrarySourceDetailsProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.type,
+  }) : super.internal();
+
+  final BookSourceType type;
+
+  @override
+  Override overrideWith(
+    FutureOr<List<String>> Function(LibrarySourceDetailsRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LibrarySourceDetailsProvider._internal(
+        (ref) => create(ref as LibrarySourceDetailsRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        type: type,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeFutureProviderElement<List<String>> createElement() {
+    return _LibrarySourceDetailsProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LibrarySourceDetailsProvider && other.type == type;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, type.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LibrarySourceDetailsRef on AutoDisposeFutureProviderRef<List<String>> {
+  /// The parameter `type` of this provider.
+  BookSourceType get type;
+}
+
+class _LibrarySourceDetailsProviderElement
+    extends AutoDisposeFutureProviderElement<List<String>>
+    with LibrarySourceDetailsRef {
+  _LibrarySourceDetailsProviderElement(super.provider);
+
+  @override
+  BookSourceType get type => (origin as LibrarySourceDetailsProvider).type;
+}
+
 String _$addBookUseCaseHash() => r'5634f963c49d02ac7f830fcbfcc674d4abb5a929';
 
 /// Adds a new book to the library (title-required validation + persist).
@@ -221,27 +418,6 @@ final deleteBookUseCaseProvider =
 // ignore: unused_element
 typedef DeleteBookUseCaseRef = AutoDisposeFutureProviderRef<DeleteBookUseCase>;
 String _$bookByIdHash() => r'f7ac65edbecd807956445160bedf1cfac802390d';
-
-/// Copied from Dart SDK
-class _SystemHash {
-  _SystemHash._();
-
-  static int combine(int hash, int value) {
-    // ignore: parameter_assignments
-    hash = 0x1fffffff & (hash + value);
-    // ignore: parameter_assignments
-    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
-    return hash ^ (hash >> 6);
-  }
-
-  static int finish(int hash) {
-    // ignore: parameter_assignments
-    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
-    // ignore: parameter_assignments
-    hash = hash ^ (hash >> 11);
-    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
-  }
-}
 
 /// One library book, observed by id, for a detail screen (N03).
 ///

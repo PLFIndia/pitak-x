@@ -96,6 +96,25 @@ Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
   return result.getOrElse((_) => const []);
 }
 
+/// Distinct non-blank source details (donor / seller names…) recorded under
+/// one [BookSourceType] — the Export screen's "source detail" picker values.
+///
+/// Same freshness rule as [libraryLanguages]: watches
+/// [libraryControllerProvider] as the mutation signal so an edit that renames
+/// a donor is reflected the next time the picker opens. A repository failure
+/// degrades to an empty list — the picker then offers "Any", and the export
+/// itself still runs; nothing here is worth blocking the screen for.
+@riverpod
+Future<List<String>> librarySourceDetails(
+  LibrarySourceDetailsRef ref,
+  BookSourceType type,
+) async {
+  ref.watch(libraryControllerProvider);
+  final repo = await ref.watch(bookRepositoryProvider.future);
+  final result = await repo.distinctSourceDetails(type);
+  return result.getOrElse((_) => const []);
+}
+
 /// Adds a new book to the library (title-required validation + persist).
 @riverpod
 Future<AddBookUseCase> addBookUseCase(AddBookUseCaseRef ref) async {

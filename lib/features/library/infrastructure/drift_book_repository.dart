@@ -33,6 +33,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -217,6 +218,41 @@ class DriftBookRepository implements BookRepository {
         )
         .get();
     return rows.map((r) => r.read<String>('language')).toList();
+  }
+
+  @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async {
+    try {
+      // SQLite does the heavy lifting (one indexed-column scan, distinct,
+      // sorted); the bound parameter is the enum's storage token, never user
+      // text. `COLLATE NOCASE` orders case-insensitively (ASCII only — fine
+      // for ORDER, the dedupe below is Unicode-aware).
+      final rows = await _db
+          .customSelect(
+            'SELECT DISTINCT TRIM(source_detail) AS detail FROM books '
+            'WHERE source_type = ? '
+            "AND source_detail IS NOT NULL AND TRIM(source_detail) != '' "
+            'ORDER BY detail COLLATE NOCASE ASC',
+            variables: [Variable<String>(type.token)],
+            readsFrom: {_db.books},
+          )
+          .get();
+      // Collapse spellings that differ only by case into the first one seen
+      // (sort order = the lower-cased-first spelling wins), keyed exactly as
+      // the export filter compares, so every entry here matches a book.
+      final seen = <String>{};
+      final details = <String>[];
+      for (final row in rows) {
+        final detail = row.read<String>('detail');
+        final key = CatalogueRules.sourceDetailKey(detail);
+        if (key != null && seen.add(key)) details.add(detail);
+      }
+      return right(details);
+    } on Object catch (e) {
+      return left(StorageFailure('distinctSourceDetails: $e'));
+    }
   }
 
   @override

@@ -29,6 +29,11 @@ typedef PdfFontBundle = List<ByteData>;
 abstract interface class LibraryPdfRenderer {
   /// Renders [books] under [libraryName] with the chosen [columns].
   ///
+  /// [subtitle] (optional) is one line drawn under the library name on
+  /// every page — what a filtered list IS ("Donated by Ram Sharma"), so a
+  /// printed subset can never be mistaken for the whole catalogue. Null or
+  /// blank draws nothing and the layout is unchanged.
+  ///
   /// [regularFonts]/[boldFonts] are ordered TTF byte bundles (base/Latin
   /// first, then script fallbacks); when empty, a Latin-only built-in font is
   /// used. [textRasterizer] (optional) shapes complex scripts via the
@@ -44,6 +49,7 @@ abstract interface class LibraryPdfRenderer {
     required List<Book> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
+    String? subtitle,
     PdfFontBundle regularFonts,
     PdfFontBundle boldFonts,
     Uint8List? logoBytes,

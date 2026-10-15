@@ -1,10 +1,16 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
+import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
+import 'package:pitaka/features/import_export/domain/pdf_column.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
+import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
+import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
@@ -47,6 +53,10 @@ class _Books implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Book?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
@@ -67,6 +77,35 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
       right(b.length);
+}
+
+/// Records what the use case asked the PDF renderer to draw (the filtered
+/// rows and the subtitle) instead of rendering, so the filter tests check
+/// the contract without parsing PDF bytes.
+class _RecordingRenderer implements LibraryPdfRenderer {
+  List<Book> books = const [];
+  String? subtitle;
+
+  @override
+  Future<Uint8List> render({
+    required String libraryName,
+    required List<Book> books,
+    required List<PrintColumn> columns,
+    required String footerAttribution,
+    String? subtitle,
+    PdfFontBundle regularFonts = const [],
+    PdfFontBundle boldFonts = const [],
+    Uint8List? logoBytes,
+    Uint8List? footerIconBytes,
+    PdfTextRasterizer? textRasterizer,
+    PdfRenderProgressListener? onProgress,
+    RenderCancelToken? cancelToken,
+    int maxCachedTiles = PdfLibraryRenderer.defaultMaxCachedTiles,
+  }) async {
+    this.books = books;
+    this.subtitle = subtitle;
+    return Uint8List.fromList('%PDF-fake'.codeUnits);
+  }
 }
 
 class _Wishlist implements WishlistRepository {
@@ -300,6 +339,174 @@ void main() {
     );
     final export = result.getOrElse((f) => fail('pdf+logo export failed: $f'));
     expect(String.fromCharCodes(export.bytes.take(5)), '%PDF-');
+  });
+
+  group('source filter (CSV + PDF only)', () {
+    const sourced = [
+      Book(
+        title: 'Godaan',
+        sourceType: BookSourceType.donated,
+        sourceDetail: 'Ram Sharma',
+        addedDate: 4,
+      ),
+      Book(
+        title: 'Nirmala',
+        sourceType: BookSourceType.donated,
+        sourceDetail: 'ram sharma',
+        addedDate: 3,
+      ),
+      Book(
+        title: 'Gaban',
+        sourceType: BookSourceType.donated,
+        sourceDetail: 'Sita Devi',
+        addedDate: 2,
+      ),
+      Book(
+        title: 'Karmabhoomi',
+        sourceType: BookSourceType.purchased,
+        sourceDetail: 'Ram Sharma',
+        addedDate: 1,
+      ),
+      Book(title: 'Sevasadan'),
+    ];
+    final useCase = ExportLibraryUseCase(
+      jsonEncoder: const PitakaJsonExporter(),
+      pdfRenderer: const PdfLibraryRenderer(),
+      bookRepo: _Books(sourced),
+      wishlistRepo: _Wishlist(const []),
+    );
+
+    test('CSV by type keeps only that type and tags the file name', () async {
+      final result = await useCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+        sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+        now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      expect(export.suggestedFileName, 'pitak-library-donated-20261015.csv');
+      final lines = utf8.decode(export.bytes).trim().split('\n');
+      expect(lines.length, 4); // header + 3 donated
+      expect(lines.skip(1).map((l) => l.split(',').first), [
+        'Godaan',
+        'Nirmala',
+        'Gaban',
+      ]);
+    });
+
+    test('CSV by type + detail matches case-insensitively', () async {
+      final result = await useCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+        sourceFilter: ExportSourceFilter.byType(
+          BookSourceType.donated,
+          detail: 'Ram Sharma',
+        ),
+        now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      expect(
+        export.suggestedFileName,
+        'pitak-library-donated-ram-sharma-20261015.csv',
+      );
+      final lines = utf8.decode(export.bytes).trim().split('\n');
+      // Both spellings of the donor; NOT the purchase from the same person.
+      expect(lines.skip(1).map((l) => l.split(',').first), [
+        'Godaan',
+        'Nirmala',
+      ]);
+    });
+
+    test('PDF by detail renders the subset under a subtitle', () async {
+      final renderer = _RecordingRenderer();
+      final pdfUseCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: renderer,
+        bookRepo: _Books(sourced),
+        wishlistRepo: _Wishlist(const []),
+      );
+      final result = await pdfUseCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.pdf,
+        sourceFilter: ExportSourceFilter.byType(
+          BookSourceType.donated,
+          detail: 'Sita Devi',
+        ),
+        now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      expect(export.suggestedFileName, 'pitak-donated-sita-devi-20261015.pdf');
+      expect(renderer.subtitle, 'Donated by Sita Devi');
+      expect(renderer.books.map((b) => b.title), ['Gaban']);
+    });
+
+    test('an unfiltered PDF has no subtitle and the classic name', () async {
+      final renderer = _RecordingRenderer();
+      final pdfUseCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: renderer,
+        bookRepo: _Books(sourced),
+        wishlistRepo: _Wishlist(const []),
+      );
+      final result = await pdfUseCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.pdf,
+        now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      expect(export.suggestedFileName, 'pitak-20261015.pdf');
+      expect(renderer.subtitle, isNull);
+      expect(renderer.books, hasLength(5));
+    });
+
+    test(
+      'a non-Latin detail names the PDF by type only, subtitle in full',
+      () async {
+        final renderer = _RecordingRenderer();
+        final pdfUseCase = ExportLibraryUseCase(
+          jsonEncoder: const PitakaJsonExporter(),
+          pdfRenderer: renderer,
+          bookRepo: _Books(const [
+            Book(
+              title: 'गोदान',
+              sourceType: BookSourceType.gift,
+              sourceDetail: 'राम शर्मा',
+            ),
+          ]),
+          wishlistRepo: _Wishlist(const []),
+        );
+        final result = await pdfUseCase(
+          scope: ExportScope.libraryOnly,
+          format: ExportFormat.pdf,
+          sourceFilter: ExportSourceFilter.byType(
+            BookSourceType.gift,
+            detail: 'राम शर्मा',
+          ),
+          now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
+        );
+        final export = result.getOrElse((f) => fail('failed: $f'));
+        expect(export.suggestedFileName, 'pitak-gift-20261015.pdf');
+        expect(renderer.subtitle, 'Gift from राम शर्मा');
+        expect(renderer.books, hasLength(1));
+      },
+    );
+
+    test(
+      'JSON ignores the filter: a backup is always the whole library',
+      () async {
+        final result = await useCase(
+          scope: ExportScope.libraryOnly,
+          format: ExportFormat.json,
+          sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+        );
+        final export = result.getOrElse((f) => fail('failed: $f'));
+        expect(export.suggestedFileName, endsWith('.json'));
+        final payload = const PitakaJsonImporter().parse(
+          utf8.decode(export.bytes),
+        );
+        expect(payload.books, hasLength(5));
+      },
+    );
   });
 
   test('exporter omits null fields but keeps required ones', () {

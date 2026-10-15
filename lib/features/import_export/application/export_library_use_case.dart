@@ -6,6 +6,11 @@
 /// PDF is a paginated, printable book-list catalogue (Kotlin parity, always the
 /// LIBRARY list regardless of scope). Bundle (covers zip) is deferred —
 /// PLAN #24.
+///
+/// CSV and PDF can be narrowed by provenance with an [ExportSourceFilter]
+/// ("only donated", "only donated by Ram Sharma"). JSON deliberately ignores
+/// the filter: it is the backup / merge format, and a partial file that LOOKS
+/// like a full library would silently drop books on the next merge.
 library;
 
 import 'dart:convert';
@@ -13,6 +18,8 @@ import 'dart:typed_data';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/file_name_slug.dart';
+import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
@@ -89,6 +96,11 @@ class ExportLibraryUseCase {
 
   /// Builds an export for [scope] in [format] at [now] (epoch millis stamp).
   ///
+  /// [sourceFilter] narrows the CSV/PDF rows by provenance (ignored by JSON —
+  /// see the library doc). An active filter is spelled out in the file name
+  /// (`pitak-donated-ram-sharma-<date>.pdf`) and, for PDF, as a subtitle
+  /// under the library name, so the output says what it is.
+  ///
   /// PDF-only inputs are ignored by the other formats:
   ///  - [pdfColumns]: the user's column selection (defaults to the classic
   ///    set);
@@ -109,6 +121,7 @@ class ExportLibraryUseCase {
     required ExportScope scope,
     required ExportFormat format,
     int? now,
+    ExportSourceFilter sourceFilter = const ExportSourceFilter.all(),
     List<PdfColumn>? pdfColumns,
     String libraryName = 'My Library',
     String libraryId = '',
@@ -158,9 +171,10 @@ class ExportLibraryUseCase {
       case ExportFormat.csv:
         return right(
           ExportResult(
-            suggestedFileName: 'pitak-library-$ymd.csv',
+            suggestedFileName:
+                'pitak-library-${sourceFilterFileTag(sourceFilter)}$ymd.csv',
             mimeType: 'text/csv',
-            bytes: _utf8(_libraryCsv(bookList)),
+            bytes: _utf8(_libraryCsv(sourceFilter.apply(bookList))),
           ),
         );
       case ExportFormat.pdf:
@@ -170,7 +184,10 @@ class ExportLibraryUseCase {
         final columns = resolvePrintColumns(selection, defaultPdfLabels());
         final bytes = await _pdf.render(
           libraryName: libraryName.trim().isEmpty ? 'My Library' : libraryName,
-          books: bookList,
+          subtitle: sourceFilter.isActive
+              ? describeSourceFilter(sourceFilter)
+              : null,
+          books: sourceFilter.apply(bookList),
           columns: columns,
           footerAttribution: kPdfFooterAttribution,
           logoBytes: logoBytes,
@@ -183,7 +200,8 @@ class ExportLibraryUseCase {
         );
         return right(
           ExportResult(
-            suggestedFileName: 'pitak-$ymd.pdf',
+            suggestedFileName:
+                'pitak-${sourceFilterFileTag(sourceFilter)}$ymd.pdf',
             mimeType: 'application/pdf',
             bytes: bytes,
           ),
@@ -306,6 +324,48 @@ String _sourceTypeLabel(BookSourceType t) => switch (t) {
   BookSourceType.inherited => 'Inherited',
   BookSourceType.other => 'Other',
 };
+
+/// The user-facing name of a [BookSourceType] ("Donated"), shared by the
+/// PDF cells, the export filter chips and the subtitle so the three never
+/// drift apart.
+String sourceTypeLabel(BookSourceType type) => _sourceTypeLabel(type);
+
+/// One line that says what a filtered export contains — the PDF subtitle.
+/// "Donated by Ram Sharma", "Purchased from City Books", or just "Donated
+/// books" when no detail was chosen. Inactive filter → empty string.
+String describeSourceFilter(ExportSourceFilter filter) {
+  final type = filter.sourceType;
+  if (type == null) return '';
+  final detail = filter.sourceDetail;
+  if (detail == null) {
+    return switch (type) {
+      BookSourceType.purchased => 'Purchased books',
+      BookSourceType.gift => 'Gifted books',
+      BookSourceType.donated => 'Donated books',
+      BookSourceType.inherited => 'Inherited books',
+      BookSourceType.other => 'Books from other sources',
+    };
+  }
+  return switch (type) {
+    BookSourceType.purchased => 'Purchased from $detail',
+    BookSourceType.gift => 'Gift from $detail',
+    BookSourceType.donated => 'Donated by $detail',
+    BookSourceType.inherited => 'Inherited from $detail',
+    BookSourceType.other => 'Source: $detail',
+  };
+}
+
+/// The file-name fragment for a filter, WITH a trailing dash so it slots
+/// straight into `pitak-<tag><date>.pdf`: `donated-`, `donated-ram-sharma-`,
+/// or `''` when inactive. The detail is slugged to `[a-z0-9-]` (a non-Latin
+/// name contributes nothing rather than an unsafe character — the subtitle
+/// inside the PDF still names it in full).
+String sourceFilterFileTag(ExportSourceFilter filter) {
+  final type = filter.sourceType;
+  if (type == null) return '';
+  final detailSlug = fileNameSlug(filter.sourceDetail ?? '');
+  return detailSlug.isEmpty ? '${type.name}-' : '${type.name}-$detailSlug-';
+}
 
 String _ageGroupLabel(AgeGroup g) => switch (g) {
   AgeGroup.above3 => 'Above 3',

@@ -138,6 +138,97 @@ void main() {
       expect(langs, ['English', 'Hindi']);
     });
 
+    group('distinctSourceDetails', () {
+      test("lists one type's non-blank details, sorted, trimmed", () async {
+        await repo.insert(
+          const Book(
+            title: 'a',
+            sourceType: BookSourceType.donated,
+            sourceDetail: 'Sita Devi',
+          ),
+        );
+        await repo.insert(
+          const Book(
+            title: 'b',
+            sourceType: BookSourceType.donated,
+            sourceDetail: '  Ram Sharma ',
+          ),
+        );
+        // Same name under another type must NOT leak into "donated".
+        await repo.insert(
+          const Book(
+            title: 'c',
+            sourceType: BookSourceType.purchased,
+            sourceDetail: 'Ram Sharma',
+          ),
+        );
+        // Blank / absent details are not facet values.
+        await repo.insert(
+          const Book(
+            title: 'd',
+            sourceType: BookSourceType.donated,
+            sourceDetail: '   ',
+          ),
+        );
+        await repo.insert(
+          const Book(title: 'e', sourceType: BookSourceType.donated),
+        );
+        await repo.insert(const Book(title: 'f'));
+
+        expect(ok(await repo.distinctSourceDetails(BookSourceType.donated)), [
+          'Ram Sharma',
+          'Sita Devi',
+        ]);
+        expect(ok(await repo.distinctSourceDetails(BookSourceType.purchased)), [
+          'Ram Sharma',
+        ]);
+        expect(
+          ok(await repo.distinctSourceDetails(BookSourceType.gift)),
+          isEmpty,
+        );
+      });
+
+      test('collapses case variants into one entry (Unicode-aware)', () async {
+        for (final spelling in const [
+          'ram sharma',
+          'Ram Sharma',
+          'RAM SHARMA',
+        ]) {
+          await repo.insert(
+            Book(
+              title: spelling,
+              sourceType: BookSourceType.donated,
+              sourceDetail: spelling,
+            ),
+          );
+        }
+        await repo.insert(
+          const Book(
+            title: 'g1',
+            sourceType: BookSourceType.donated,
+            sourceDetail: 'Ελένη',
+          ),
+        );
+        await repo.insert(
+          const Book(
+            title: 'g2',
+            sourceType: BookSourceType.donated,
+            sourceDetail: 'ΕΛΈΝΗ',
+          ),
+        );
+        final details = ok(
+          await repo.distinctSourceDetails(BookSourceType.donated),
+        );
+        // One entry per person; the non-Latin pair dedupes too (SQLite's
+        // NOCASE alone would have kept both Greek spellings).
+        expect(details, hasLength(2));
+        expect(details.map((d) => d.toLowerCase()).toSet(), {
+          'ram sharma',
+          'ελένη',
+        });
+      });
+    });
+
     // Session 33: one spelling per language, enforced at the repository so
     // every ingress (form, import, merge, restore) obeys it.
     group('language canonicalisation on write', () {
@@ -450,6 +541,10 @@ class _FailingFindByIsbnRepo implements BookRepository {
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
+  @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
   @override
   Future<Either<Failure, Book?>> getById(int id) async => right(null);
   @override

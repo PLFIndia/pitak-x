@@ -30,6 +30,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -119,8 +120,9 @@ class ExportController extends _$ExportController {
   /// True while a run is in flight.
   bool get isRunning => _inFlight != null;
 
-  /// Builds an export for [scope]/[format] (+[pdfColumns] for PDF) and hands
-  /// it to the share sheet. [sharePositionOrigin] anchors the iPad popover.
+  /// Builds an export for [scope]/[format] (+[pdfColumns] for PDF,
+  /// [sourceFilter] for CSV/PDF) and hands it to the share sheet.
+  /// [sharePositionOrigin] anchors the iPad popover.
   ///
   /// While a run is in flight, another call returns that run's future
   /// (D4-a). All failures collapse to [ExportOutcome.failed] — no raw error
@@ -128,6 +130,7 @@ class ExportController extends _$ExportController {
   Future<ExportRunResult> export({
     required ExportScope scope,
     required ExportFormat format,
+    ExportSourceFilter sourceFilter = const ExportSourceFilter.all(),
     List<PdfColumn>? pdfColumns,
     Rect? sharePositionOrigin,
   }) {
@@ -149,6 +152,7 @@ class ExportController extends _$ExportController {
         _run(
               scope: scope,
               format: format,
+              sourceFilter: sourceFilter,
               pdfColumns: pdfColumns,
               sharePositionOrigin: sharePositionOrigin,
               token: token,
@@ -172,6 +176,7 @@ class ExportController extends _$ExportController {
   Future<ExportRunResult> _run({
     required ExportScope scope,
     required ExportFormat format,
+    required ExportSourceFilter sourceFilter,
     required List<PdfColumn>? pdfColumns,
     required Rect? sharePositionOrigin,
     required RenderCancelToken token,
@@ -219,6 +224,7 @@ class ExportController extends _$ExportController {
       final result = await useCase(
         scope: effectiveScope,
         format: format,
+        sourceFilter: sourceFilter,
         pdfColumns: pdfColumns,
         libraryName: libraryName,
         libraryId: libraryId,

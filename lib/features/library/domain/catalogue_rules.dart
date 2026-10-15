@@ -75,6 +75,19 @@ abstract final class CatalogueRules {
   static bool isValidFieldText(String? value) =>
       value == null || value.length <= maxFieldChars;
 
+  /// The comparison key for a free-text `sourceDetail` (donor / seller
+  /// name): trimmed and lower-cased, or null when blank. `Book.sourceDetail`
+  /// is typed by hand, so "Ram Sharma" and "ram sharma " must count as the
+  /// SAME person wherever details are listed or matched — the repository's
+  /// distinct-detail facet and the export filter both compare by this key,
+  /// so a value picked from the one always matches in the other. Dart's
+  /// `toLowerCase` is Unicode-aware (SQLite's `lower()` is ASCII-only, which
+  /// is why this is done in Dart).
+  static String? sourceDetailKey(String? value) {
+    final key = value?.trim().toLowerCase();
+    return (key == null || key.isEmpty) ? null : key;
+  }
+
   /// Converts epoch millis to a `DateTime`, or null when the value is not a
   /// representable date. Display/export code uses this so a row persisted
   /// BEFORE M15 (or by a hostile file on an older build) renders without a

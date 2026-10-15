@@ -13,6 +13,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/text/file_name_slug.dart';
 
 /// The four visual styles of the library share card (approved mockups rev 2).
 enum ShareCardStyle {
@@ -135,13 +136,6 @@ abstract final class ShareCardText {
   /// Safe PNG file name for the share sheet: the library name reduced to
   /// `[a-z0-9-]` (Latin only; other scripts fall back to "library"), capped
   /// so no OS balks. Never contains a path separator (§6.5).
-  static String fileName(String rawName) {
-    var slug = displayName(rawName)
-        .toLowerCase()
-        .replaceAll(RegExp('[^a-z0-9]+'), '-')
-        .replaceAll(RegExp(r'^-+|-+$'), '');
-    if (slug.isEmpty) slug = 'library';
-    if (slug.length > 40) slug = slug.substring(0, 40);
-    return '$slug-card.png';
-  }
+  static String fileName(String rawName) =>
+      '${fileNameSlug(displayName(rawName), fallback: 'library')}-card.png';
 }

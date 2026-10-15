@@ -55,6 +55,10 @@ class _MemRepo implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Book>> insert(Book book) async => right(book);
   @override
   Future<Either<Failure, Book>> update(Book book) async => right(book);

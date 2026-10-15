@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -61,6 +62,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
     required List<PrintColumn> columns,
     required String footerAttribution,
     PdfFontBundle regularFonts = const [],
+    String? subtitle,
     PdfFontBundle boldFonts = const [],
     Uint8List? logoBytes,
     Uint8List? footerIconBytes,
@@ -137,6 +139,10 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   @override
   Future<Either<Failure, Book>> insert(Book b) async => right(b);
   @override
@@ -184,6 +190,12 @@ class _Wishlist implements WishlistRepository {
 void main() {
   testWidgets('CSV export hands bytes to the share service', (tester) async {
     final share = _FakeShare();
+    // The "Books to include" section pushes the button below the default
+    // 800×600 viewport (a ListView never mounts off-screen children).
+    tester.view
+      ..physicalSize = const Size(1080, 2400)
+      ..devicePixelRatio = 2.0;
+    addTearDown(tester.view.reset);
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
       pdfRenderer: const PdfLibraryRenderer(),
@@ -216,6 +228,166 @@ void main() {
   });
 
   group('N10-e — PDF progress + cancel on the page', () {
+  group('source filter (Books to include)', () {
+    const books = [
+      Book(
+        id: 1,
+        title: 'Godaan',
+        sourceType: BookSourceType.donated,
+        sourceDetail: 'Ram Sharma',
+      ),
+      Book(
+        id: 2,
+        title: 'Gaban',
+        sourceType: BookSourceType.donated,
+        sourceDetail: 'Sita Devi',
+      ),
+      Book(id: 3, title: 'Karmabhoomi', sourceType: BookSourceType.purchased),
+      Book(id: 4, title: 'Sevasadan'),
+    ];
+
+    Future<_FakeShare> pump(WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(1080, 2400)
+        ..devicePixelRatio = 2.0;
+      addTearDown(tester.view.reset);
+      final share = _FakeShare();
+      final useCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: const PdfLibraryRenderer(),
+        bookRepo: _Books(books),
+        wishlistRepo: _Wishlist(),
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            exportLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+            fileShareServiceProvider.overrideWithValue(share),
+            // The facet the picker lists — what the repository would return.
+            for (final type in BookSourceType.values)
+              librarySourceDetailsProvider(type).overrideWith(
+                (ref) async => switch (type) {
+                  BookSourceType.donated => const ['Ram Sharma', 'Sita Devi'],
+                  _ => const <String>[],
+                },
+              ),
+          ],
+          child: const MaterialApp(home: ExportPage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return share;
+    }
+
+    List<String> csvTitles(_FakeShare share) => utf8
+        .decode(share.bytes!)
+        .trim()
+        .split('\n')
+        .skip(1)
+        .map((l) => l.split(',').first)
+        .toList();
+
+    testWidgets('is hidden for JSON (a backup is always everything)', (
+      tester,
+    ) async {
+      await pump(tester);
+      expect(find.text('Books to include'), findsNothing);
+      await tester.tap(find.text('CSV'));
+      await tester.pumpAndSettle();
+      expect(find.text('Books to include'), findsOneWidget);
+      expect(find.byKey(const Key('export-source-all')), findsOneWidget);
+      // No type chosen yet: no detail picker.
+      expect(find.byType(DropdownButtonFormField<String>), findsNothing);
+    });
+
+    testWidgets('a type chip narrows the CSV and tags the file name', (
+      tester,
+    ) async {
+      final share = await pump(tester);
+      await tester.tap(find.text('CSV'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('export-source-donated')));
+      await tester.pumpAndSettle();
+      // Donor picker appears with the facet values + "Any".
+      expect(
+        find.byKey(const ValueKey('export-source-detail-donated')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Export to file'));
+      await tester.pumpAndSettle();
+
+      expect(share.fileName, startsWith('pitak-library-donated-'));
+      expect(csvTitles(share), ['Godaan', 'Gaban']);
+    });
+
+    testWidgets("picking a donor exports only that donor's books", (
+      tester,
+    ) async {
+      final share = await pump(tester);
+      await tester.tap(find.text('CSV'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('export-source-donated')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(
+        find.byKey(const ValueKey('export-source-detail-donated')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Sita Devi').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Export to file'));
+      await tester.pumpAndSettle();
+
+      expect(share.fileName, startsWith('pitak-library-donated-sita-devi-'));
+      expect(csvTitles(share), ['Gaban']);
+    });
+
+    testWidgets('switching type drops the detail; a type with no details '
+        'says so and still filters', (tester) async {
+      final share = await pump(tester);
+      await tester.tap(find.text('CSV'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('export-source-donated')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey('export-source-detail-donated')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Ram Sharma').last);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const Key('export-source-purchased')));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const Key('export-source-detail-empty')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Export to file'));
+      await tester.pumpAndSettle();
+      expect(share.fileName, startsWith('pitak-library-purchased-'));
+      expect(share.fileName, isNot(contains('ram-sharma')));
+      expect(csvTitles(share), ['Karmabhoomi']);
+    });
+
+    testWidgets('"All sources" restores the full export', (tester) async {
+      final share = await pump(tester);
+      await tester.tap(find.text('CSV'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('export-source-donated')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('export-source-all')));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Export to file'));
+      await tester.pumpAndSettle();
+      expect(share.fileName, startsWith('pitak-library-2'));
+      expect(csvTitles(share), hasLength(4));
+    });
+  });
+
     /// The PDF column picker pushes the button (and the progress section
     /// under it) below the default 800×600 test viewport, where a ListView
     /// never mounts children. Use a phone-tall viewport instead.

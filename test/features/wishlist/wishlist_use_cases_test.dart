@@ -397,6 +397,10 @@ class _DelegatingBookRepo implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() =>
       inner.distinctLanguages();
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) => inner.distinctSourceDetails(type);
+  @override
   Future<Either<Failure, Book?>> getById(int id) => inner.getById(id);
   @override
   Future<Either<Failure, Book>> insert(Book book) => inner.insert(book);
@@ -470,6 +474,10 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
+  @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
   @override
   Future<Either<Failure, Book?>> getById(int id) async =>
       right(stored.where((b) => b.id == id).firstOrNull);

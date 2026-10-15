@@ -47,6 +47,18 @@ abstract interface class BookRepository {
   /// Distinct non-blank languages present, A→Z — the filter-chip facet values.
   Future<Either<Failure, List<String>>> distinctLanguages();
 
+  /// Distinct non-blank `sourceDetail` values recorded for books of [type]
+  /// (e.g. every donor name under `donated`), A→Z case-insensitively — the
+  /// export filter's "source detail" picker values.
+  ///
+  /// Spellings that differ only by case/whitespace are ONE entry (the first
+  /// stored spelling in sort order is shown), keyed by
+  /// `CatalogueRules.sourceDetailKey` — the same key the export filter
+  /// matches on, so every listed value matches at least one book.
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  );
+
   /// Finds a book by its per-device [id], or null when none exists.
   Future<Either<Failure, Book?>> getById(int id);
 

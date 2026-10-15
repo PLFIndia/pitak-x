@@ -116,6 +116,10 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async => right([]);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Book?>> getById(int id) async =>
       right(_books.where((b) => b.id == id).firstOrNull);
   @override

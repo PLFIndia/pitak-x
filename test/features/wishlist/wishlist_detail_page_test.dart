@@ -108,6 +108,10 @@ class _ScriptedBookRepo implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Book?>> getById(int id) async =>
       right(stored.where((b) => b.id == id).firstOrNull);
   @override

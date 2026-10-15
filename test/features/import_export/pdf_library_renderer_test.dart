@@ -138,6 +138,67 @@ void main() {
     expectValidPdf(bytes);
   });
 
+  group('subtitle (filtered exports)', () {
+    test('a subtitle renders a valid PDF, with or without a logo', () async {
+      final logo = (await rootBundle.load(
+        'assets/branding/app_icon.png',
+      )).buffer.asUint8List();
+      for (final logoBytes in [null, logo]) {
+        final bytes = await renderer.render(
+          libraryName: 'Riverside Library',
+          subtitle: 'Donated by Ram Sharma',
+          books: const [Book(title: 'Godaan', author: 'Premchand')],
+          columns: cols(),
+          footerAttribution: kPdfFooterAttribution,
+          regularFonts: await regular(),
+          boldFonts: await bold(),
+          logoBytes: logoBytes,
+        );
+        expectValidPdf(bytes);
+      }
+    });
+
+    test(
+      'the subtitle is shaped once as page chrome, before any row',
+      () async {
+        final raster = _CountingRasterizer();
+        await renderer.render(
+          libraryName: 'Riverside Library',
+          subtitle: 'Donated by Ram Sharma',
+          books: const [
+            Book(title: 'Godaan'),
+            Book(title: 'Nirmala'),
+          ],
+          columns: cols(),
+          footerAttribution: kPdfFooterAttribution,
+          textRasterizer: raster,
+        );
+        final subtitleAt = raster.runs.indexOf('Donated by Ram Sharma');
+        expect(subtitleAt, isNot(-1));
+        // Pinned chrome (not the per-row cache): rasterized exactly once and
+        // before the first row's serial "1".
+        expect(
+          raster.runs.where((r) => r == 'Donated by Ram Sharma'),
+          hasLength(1),
+        );
+        expect(subtitleAt, lessThan(raster.runs.indexOf('1')));
+      },
+    );
+
+    test('a blank subtitle draws nothing', () async {
+      final raster = _CountingRasterizer();
+      await renderer.render(
+        libraryName: 'Lib',
+        subtitle: '   ',
+        books: const [Book(title: 'X')],
+        columns: cols(),
+        footerAttribution: kPdfFooterAttribution,
+        textRasterizer: raster,
+      );
+      expect(raster.runs.where((r) => r.trim().isEmpty), isEmpty);
+    });
+  });
+
   test('a bad logo/icon is skipped, not fatal', () async {
     final bytes = await renderer.render(
       libraryName: 'Lib',

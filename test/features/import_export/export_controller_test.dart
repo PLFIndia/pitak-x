@@ -77,6 +77,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
     required List<PrintColumn> columns,
     required String footerAttribution,
     PdfFontBundle regularFonts = const [],
+    String? subtitle,
     PdfFontBundle boldFonts = const [],
     Uint8List? logoBytes,
     Uint8List? footerIconBytes,
@@ -142,6 +143,10 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   @override
   Future<Either<Failure, Book>> insert(Book b) async => right(b);
   @override

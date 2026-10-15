@@ -67,10 +67,13 @@ void main() {
     const allowedPackages = {'fpdart', 'crypto', 'archive'};
 
     /// pitaka imports allowed from domain: other features' domain layers and
-    /// the two pure cross-cutting core files domain code actually needs.
+    /// the few pure cross-cutting core files domain code actually needs
+    /// (`core/text/` holds plain-Dart string helpers such as the file-name
+    /// slug shared by the publish card and the export file names).
     final allowedCorePitaka = RegExp(
       "^import 'package:pitaka/(features/[^']+/domain/|"
       'core/error/|'
+      'core/text/|'
       r'core/crypto/secret_bytes\.dart)',
     );
 

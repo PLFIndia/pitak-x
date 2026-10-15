@@ -119,10 +119,13 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
 
   /// Renders [books] to a PDF.
   ///
-  /// [libraryName] is the page-header title. [logoBytes] is an optional library
-  /// logo (decoded PNG/JPEG bytes) drawn left of the name. [footerIconBytes] is
-  /// the Pitak app icon for the footer. [footerAttribution] is the footer line.
-  /// [columns] are the resolved printable columns.
+  /// [libraryName] is the page-header title. [subtitle] (optional, e.g.
+  /// "Donated by Ram Sharma") is drawn under it in body-size regular text and
+  /// pushes the table down by one [lineHeight]. [logoBytes] is an optional
+  /// library logo (decoded PNG/JPEG bytes) drawn left of the name.
+  /// [footerIconBytes] is the Pitak app icon for the footer.
+  /// [footerAttribution] is the footer line. [columns] are the resolved
+  /// printable columns.
   ///
   /// [regularFonts]/[boldFonts] are ordered TTF byte bundles (base/Latin first,
   /// then script fallbacks) used to render text the built-in Latin-1 fonts
@@ -136,6 +139,7 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
     required List<Book> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
+    String? subtitle,
     PdfFontBundle regularFonts = const [],
     PdfFontBundle boldFonts = const [],
     Uint8List? logoBytes,
@@ -246,6 +250,11 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
       _black,
       bold: true,
     );
+    // A blank subtitle is "no subtitle": nothing drawn, nothing reserved.
+    final subtitleText = subtitle?.trim() ?? '';
+    final subtitleTile = subtitleText.isEmpty
+        ? null
+        : await tiles.pinned(subtitleText, bodyText, _black, bold: false);
     final serialHeaderTile = await tiles.pinned(
       serialHeader,
       headerText,
@@ -322,7 +331,23 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
       }
       drawText(g, libraryName, nameX, top, bold, titleText, _black, titleTile);
       const logoOrText = headerLogo > 22 ? headerLogo : 22.0;
-      return margin + logoOrText + 16;
+      var bottom = margin + logoOrText + 16;
+      if (subtitleText.isNotEmpty) {
+        // One body line under the name, aligned with it (so it sits right of
+        // the logo too); the table starts one line lower to make room.
+        drawText(
+          g,
+          subtitleText,
+          nameX,
+          top + lineHeight,
+          regular,
+          bodyText,
+          _black,
+          subtitleTile,
+        );
+        bottom += lineHeight;
+      }
+      return bottom;
     }
 
     double drawColumnHeaders(PdfGraphics g, double startY) {

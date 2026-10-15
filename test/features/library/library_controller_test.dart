@@ -95,6 +95,10 @@ class _FakeBookRepo implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    BookSourceType type,
+  ) async => right(const []);
+  @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
   Future<Either<Failure, Book>> insert(Book book) async => right(book);
