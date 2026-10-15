@@ -300,9 +300,9 @@ void main() {
     expect(released, isNotNull);
     expect(released!.use((b) => b.toList()), [4, 5, 6, 7]);
     // The regression: this threw `UnsupportedError: Cannot modify an
-    // unmodifiable list` from SecretBytes.wipe, which made every
-    // `_forgetSession()` (lock, dispose, error paths) blow up after a
-    // biometric unlock. Owned memory must be wipeable.
+    // unmodifiable list` from SecretBytes.wipe, which made every session
+    // wipe — `VaultSecretKeeper.forget()` (lock, dispose, error paths) — blow
+    // up after a biometric unlock. Owned memory must be wipeable.
     expect(released.dispose, returnsNormally);
     expect(() => released.use((b) => b), throwsStateError);
   });

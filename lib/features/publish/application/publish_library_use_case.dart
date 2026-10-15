@@ -2,7 +2,8 @@
 ///
 /// Port of Kotlin `PublishLibraryUseCase`. Builds the world-facing bundle
 /// (books.json + index.html viewer + salted covers/) and pushes it as ONE
-/// atomic, incremental commit via [GitHubApi].
+/// atomic, incremental commit via [GitHubGitDataApi] (the git-data role of
+/// the GitHub port, S5 — this use case never touches auth or repo admin).
 ///
 /// Pipeline:
 ///  1. Resolve token + target repo + the branch Pages SERVES from (N09: read

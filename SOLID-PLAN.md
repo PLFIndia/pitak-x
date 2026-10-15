@@ -690,7 +690,9 @@ path forgets the gate.
 
 ```bash
 dart run build_runner build --delete-conflicting-outputs   # after any @riverpod change
-fvm dart analyze                                            # zero issues (AGENTS §11)
+fvm dart analyze lib test                                   # zero issues (AGENTS §11); scoped like CI + README —
+                                                            # the vendored rust_builder/cargokit/build_tool is a
+                                                            # separate package whose deps are never fetched here
 fvm dart format --set-exit-if-changed lib test
 fvm flutter test                                            # full suite green
 fvm flutter test --coverage                                 # touched-code coverage must not drop

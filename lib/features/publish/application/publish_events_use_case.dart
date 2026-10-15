@@ -3,8 +3,9 @@
 /// A SELF-CONTAINED publish path for the events page, independent of the
 /// catalogue publish (Q5=A): the library can update/clear its posters without
 /// re-publishing the book list, and vice versa. It pushes only `events.html` +
-/// the poster images as ONE atomic incremental commit via [GitHubApi], reusing
-/// the same credential + target repo a prior catalogue publish established.
+/// the poster images as ONE atomic incremental commit via [GitHubGitDataApi]
+/// (the git-data role of the GitHub port, S5), reusing the same credential +
+/// target repo a prior catalogue publish established.
 ///
 /// Gate (Q8=A): refuses unless the on-device publish manifest proves the
 /// catalogue was already published to the CURRENT target repo (it contains an
