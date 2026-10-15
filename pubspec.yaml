@@ -25,6 +25,18 @@ version: 1.3.5+23
 
 environment:
   sdk: ^3.11.0
+  # EXACTLY the Flutter pinned in .fvmrc — the two must be bumped together
+  # (tool/release_build.sh refuses to build if they disagree).
+  #
+  # WHY an exact pin (plain English): `flutter pub get` under any other Flutter
+  # — say an older one that happens to be on PATH — used to succeed and quietly
+  # re-resolve pubspec.lock to THAT SDK's bundled packages, so a release could
+  # be built from a toolchain nobody pinned (this happened on 2026-10-15 with
+  # 3.41.1). With the pin, the wrong SDK fails closed at `pub get` with
+  # "requires Flutter SDK version 3.44.2" instead of silently drifting.
+  # CI (flutter-action reads .fvmrc) and the F-Droid recipe (extracts the
+  # version from .fvmrc) both run exactly this version, so they are unaffected.
+  flutter: 3.44.2
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions

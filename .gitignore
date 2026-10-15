@@ -67,3 +67,7 @@ appDetails.md
 
 # Play Store form answers — local working notes, not for the public repo.
 GOOGLE_PLAY_FORM_RESPONSES.md
+
+# FVM: the Flutter version PIN is the tracked `.fvmrc`. `.fvm/` is per-machine
+# (a symlink into the SDK cache + legacy config) and must not be committed.
+.fvm/

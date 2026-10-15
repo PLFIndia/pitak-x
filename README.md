@@ -132,6 +132,15 @@ read them before contributing.
 Prerequisites: Flutter 3.44.2 (pinned in `.fvmrc`) stable, the Android SDK, and a Rust toolchain
 (cargokit compiles the native crate during the Android build).
 
+**Use the pinned Flutter, not whichever `flutter` is on PATH.** Install
+[FVM](https://fvm.app), run `fvm install` once per clone, then either prefix
+commands with `fvm` (`fvm flutter …`, `fvm dart …`) or put `.fvm/flutter_sdk/bin`
+first on your PATH. `pubspec.yaml` pins the same version
+(`environment: flutter: 3.44.2`), so `pub get` under any other Flutter fails
+closed with "requires Flutter SDK version 3.44.2" instead of silently
+re-resolving `pubspec.lock` against a toolchain nobody chose. Bump `.fvmrc`
+and the pubspec pin together.
+
 ```bash
 flutter pub get
 
@@ -164,9 +173,19 @@ Git does not enable tracked hooks automatically, hence the one-time
 flutter run -d <device-id> --flavor fdroid            # debug, with hot reload
 flutter build apk --release --flavor fdroid           # universal APK (large: bundled Noto fonts + 4 Rust ABIs)
 flutter build apk --release --flavor fdroid --split-per-abi   # what the F-Droid recipe builds (one APK per ABI)
-flutter build appbundle --release --flavor play       # Google Play AAB
+tool/release_build.sh                                 # Google Play AAB — the ONLY way to build one for upload (below)
 flutter install -d <device-id> --release --flavor fdroid
 ```
+
+`tool/release_build.sh` is `flutter build appbundle --release --flavor play`
+with the reproducibility checks a hand-typed command skips: it uses only the
+Flutter pinned in `.fvmrc` (refusing PATH's), runs `pub get --enforce-lockfile`
+(the gate CI and the F-Droid recipe run), requires `android/key.properties`,
+builds from a clean output tree, and then verifies the *artifact*: the
+signer certificate inside the `.aab` must match the upload keystore and the
+bundled versionCode/versionName must match `pubspec.yaml`. It prints the
+certificate fingerprint (public) and never echoes a secret.
+`tool/release_build.sh --verify` re-checks an existing bundle.
 
 `flutter devices` lists ids. The app ships per-store flavors: `fdroid`
 (applicationId `dev.khoj.pitaka.fdroid`, matching the live F-Droid listing)
@@ -217,10 +236,13 @@ unzip -p build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk '
 
 Release checklist (both stores build from the same tag): bump `version:` in
 `pubspec.yaml` (`x.y.z+N`); add Play changelog
-`fastlane/metadata/android/en-US/changelogs/N.txt` and F-Droid changelogs
-`N1.txt`, `N2.txt`, `N3.txt` (one per ABI split — the Gradle `abiCodes`
-rule makes versionCodes `N*10+1..3`); commit, tag `x.y.z`, push the tag; then
-open the fdroiddata MR — see `fdroid/README.md` for the recipe side.
+`fastlane/metadata/android/en-US/changelogs/N.txt` (≤ 500 characters — Play's
+limit) and F-Droid changelogs `N1.txt`, `N2.txt`, `N3.txt` (one per ABI split
+— the Gradle `abiCodes` rule makes versionCodes `N*10+1..3`); update the
+version in the status note at the top of this file; run
+`tool/release_build.sh` and upload the verified `.aab` it prints; commit, tag
+`x.y.z`, push the tag; then open the fdroiddata MR — see `fdroid/README.md`
+for the recipe side.
 
 ## Quality gates
 
@@ -229,7 +251,7 @@ dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (1795 tests on main as of 07 Oct 2026; 1441 at the 1.2.0 tag)
+flutter test                                   # full Dart suite (1868 tests on main as of 15 Oct 2026; 1441 at the 1.2.0 tag)
 ( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
