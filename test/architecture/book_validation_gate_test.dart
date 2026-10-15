@@ -6,10 +6,15 @@
 /// INGRESS path (add/edit forms, JSON/CSV import, merge, backup restore,
 /// wishlist move) must pass a row through BEFORE persistence. Dart cannot
 /// force "call validate first" at the type level without churning every
-/// construction site, so the design is pinned here instead: any scanned file
-/// that CONSTRUCTS a `Book(` must reference `Book.validate`, unless it is in
-/// the commented allow-list of trusted constructors below. A future ingress
-/// path that forgets the gate fails this test, not production.
+/// construction site, so the design is pinned here instead: ANY file under
+/// `lib/` that CONSTRUCTS a `Book(` must reference `Book.validate`, unless
+/// it is in the commented allow-list of trusted constructors below. A future
+/// ingress path that forgets the gate fails this test, not production.
+///
+/// Why the whole of `lib/` and not a hand-picked list of directories: a
+/// scope list is itself something a future contributor must remember to
+/// extend — the exact "human memory" failure this test exists to remove.
+/// Scanning everything costs ~500 small file reads and cannot go stale.
 library;
 
 import 'dart:io';
@@ -17,24 +22,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  /// Directories whose sources are ingress-adjacent (SOLID-PLAN S7 scope):
-  /// import/export, backup (restore + legacy reader), the library
-  /// application layer, and the merge engine.
-  const scanDirs = [
-    'lib/features/import_export',
-    'lib/features/backup',
-    'lib/features/library/application',
-    'lib/features/library/domain/merge',
-  ];
-
-  /// Single files scanned on top of [scanDirs].
-  const scanFiles = [
-    // The DB mapper constructs Books from stored rows — trusted, but
-    // SCANNED so its allow-list entry below stays honest.
-    'lib/features/library/infrastructure/book_mapper.dart',
-    // Wishlist move-to-library constructs a library Book (S34/D2).
-    'lib/features/wishlist/application/wishlist_use_cases.dart',
-  ];
+  /// Everything under `lib/` is scanned (see the file header for why no
+  /// narrower scope list is used).
+  const scanRoot = 'lib';
 
   /// Trusted constructors — files allowed to build a `Book(` WITHOUT
   /// referencing the gate, each with its justification. Adding an entry is
@@ -49,6 +39,13 @@ void main() {
     // book.dart's "plain constructor" doc).
     'lib/features/library/infrastructure/book_mapper.dart':
         'DB mapper (rows validated on write)',
+    // The add/edit form ASSEMBLES a Book from its text fields and hands it
+    // to AddBookUseCase / UpdateBookUseCase, which ARE the gate (both call
+    // Book.validate — pinned by the spot-check test below). The widget may
+    // not validate itself (AGENTS §7: no business logic in widgets), so the
+    // construction is trusted here and the gate is one hop downstream.
+    'lib/features/library/presentation/pages/add_book_page.dart':
+        'form assembly; gate is Add/UpdateBookUseCase',
   };
 
   /// Matches a `Book(` construction that is NOT a `WishlistBook(`,
@@ -66,29 +63,25 @@ void main() {
       )
       .toList();
 
-  test('every Book-constructing ingress file passes through Book.validate '
+  test('every Book-constructing file under lib/ passes through Book.validate '
       'or is an explicitly trusted constructor', () {
     final offenders = <String>[];
-    var constructing = 0;
+    final constructing = <String>[];
 
-    final files = <File>[
-      for (final dir in scanDirs) ...dartFiles(dir),
-      for (final path in scanFiles) File(path),
-    ];
-
-    for (final file in files) {
+    for (final file in dartFiles(scanRoot)) {
       final src = file.readAsStringSync();
       if (!constructsBook.hasMatch(src)) continue;
-      constructing++;
+      constructing.add(file.path);
       if (trustedConstructors.containsKey(file.path)) continue;
       if (!src.contains('Book.validate')) offenders.add(file.path);
     }
 
     // Sanity: the census must be non-trivial so a renamed regex or a moved
-    // tree cannot silently make this test vacuously green.
+    // tree cannot silently make this test vacuously green. 9 = the 8 gated
+    // / trusted sites known at review time + the add/edit form.
     expect(
       constructing,
-      greaterThanOrEqualTo(6),
+      hasLength(greaterThanOrEqualTo(9)),
       reason: 'expected the known Book construction sites to be scanned',
     );
     expect(
@@ -99,6 +92,21 @@ void main() {
           'Book.validate — route them through the gate, or add them to '
           'trustedConstructors with a justification comment',
     );
+  });
+
+  test('every allow-list entry is a real, scanned, Book-constructing file '
+      '(no dead entries)', () {
+    // A dead entry would let the "stays exactly as reviewed" test below pin
+    // a path that is never consulted — the allow-list must stay honest.
+    for (final path in trustedConstructors.keys) {
+      final file = File(path);
+      expect(file.existsSync(), isTrue, reason: '$path no longer exists');
+      expect(
+        constructsBook.hasMatch(file.readAsStringSync()),
+        isTrue,
+        reason: '$path no longer constructs a Book — drop it from the list',
+      );
+    }
   });
 
   test('the known ingress gates are present (spot-check census)', () {
@@ -129,6 +137,7 @@ void main() {
       unorderedEquals([
         'lib/features/library/domain/entities/book.dart',
         'lib/features/library/infrastructure/book_mapper.dart',
+        'lib/features/library/presentation/pages/add_book_page.dart',
       ]),
     );
   });
