@@ -153,7 +153,8 @@ fn with_vault_key<T>(
     result
 }
 
-// --- FFI boundary input validation (N14, astra-review.md) ------------------
+// --- FFI boundary input validation (review finding N14: borrower/loan -------
+// --- fields were not comprehensively validated at the Rust boundary) -------
 //
 // The Dart UI applies no hard caps to these free-text fields, so the vault
 // boundary is the authoritative defence against oversized or crafted input.

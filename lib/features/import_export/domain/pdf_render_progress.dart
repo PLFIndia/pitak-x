@@ -1,5 +1,6 @@
 /// Progress + cancellation contract for the paginated PDF renderer (domain,
-/// AGENTS.md §3.3; N10-e in `astra-review.md`).
+/// AGENTS.md §3.3; review finding N10-e, "PDF export runs unbounded work on
+/// the UI isolate").
 ///
 /// WHY THIS EXISTS: rendering a large catalogue to a shaped-text PDF is the
 /// longest single piece of UI-isolate work in the app (every text run is

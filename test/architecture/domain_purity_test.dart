@@ -2,8 +2,9 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Architecture boundary gate (AGENTS.md §3.1), strengthened by N14
-/// (astra-review.md).
+/// Architecture boundary gate (AGENTS.md §3.1), strengthened by review
+/// finding N14 ("architecture and CI gates do not enforce several stated
+/// guarantees").
 ///
 /// The old gate was a DENYLIST of known-bad imports, which is exactly why a
 /// `package:pdf` renderer and JSON codecs could live in `domain/` unnoticed:

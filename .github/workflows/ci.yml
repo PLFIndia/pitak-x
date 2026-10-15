@@ -1,6 +1,6 @@
 name: CI
 
-# Continuous gates for the Kotlin->Flutter port (PLAN.md Step 9). Every push/PR
+# Continuous gates for the Kotlin->Flutter port. Every push/PR
 # must keep these green: the "zero data loss" migration matrix (Dart) + the
 # hermetic vault crypto chain (Rust), plus analyze/format/test per AGENTS.md §11.
 
@@ -28,10 +28,10 @@ jobs:
       - name: cargo test (release)
         working-directory: rust
         run: cargo test --release
-      # N14: advisory gate. Fails on any known vulnerability AND on warnings
-      # (e.g. unsoundness advisories like RUSTSEC-2026-0190) — the explicit
-      # warning policy astra-review.md asked for. Fetches the live advisory
-      # DB (the stale offline scan in astra-review.md is NOT this gate).
+      # Review findings N14/N15: advisory gate. Fails on any known vulnerability
+      # AND on warnings (e.g. unsoundness advisories like RUSTSEC-2026-0190) —
+      # an explicit warning policy. Fetches the live advisory DB; an offline
+      # scan against a stale local DB is NOT a clean bill of health.
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
       - name: cargo audit (deny warnings)

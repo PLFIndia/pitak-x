@@ -1,4 +1,6 @@
-/// Versioned on-device data generations (M02, astra-review.md).
+/// Versioned on-device data generations (review finding M02: restore was not
+/// atomic across catalogue, vault and covers — a crash mid-way could leave
+/// a new catalogue next to an old vault).
 ///
 /// Why this exists (beginner note): a restore replaces THREE things that only
 /// make sense together — the catalogue database, the encrypted borrowers vault

@@ -7,7 +7,7 @@
 /// (`AppLockObserver` feeding lifecycle/back events in, `AppGate` painting the
 /// cover) share one source of truth instead of each keeping their own flag.
 ///
-/// Before B01 (astra-review.md) this logic lived inside `AppGate`'s widget
+/// Before review finding B01 this logic lived inside `AppGate`'s widget
 /// state, and the gate was only the `home` route: any pushed screen or dialog
 /// stayed on top of the lock. Moving the state here lets the cover live above
 /// the whole navigator (see `AppGate`).

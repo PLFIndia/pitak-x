@@ -40,8 +40,9 @@ abstract interface class ScreenSecurity {
 
 /// [ScreenSecurity] backed by a narrow platform [MethodChannel].
 ///
-/// PLATFORM MATRIX (M18, astra-review.md): Android is the only shipping
-/// target. Android maps this to `WindowManager.LayoutParams.FLAG_SECURE`
+/// PLATFORM MATRIX (review finding M18: the Apple targets were never
+/// configured for the advertised protections, so Android is the only shipping
+/// target). Android maps this to `WindowManager.LayoutParams.FLAG_SECURE`
 /// (MainActivity). Other platforms register no handler; that case is a
 /// deliberate no-op, and the README states plainly that capture protection
 /// exists only on Android.

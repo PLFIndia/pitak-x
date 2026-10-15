@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/storage/data_generations.dart';
 
-/// M02 (astra-review.md): restore must switch the catalogue, vault and covers
+/// Review finding M02: restore must switch the catalogue, vault and covers
 /// as ONE unit. These tests pin the generation store that makes that switch
 /// possible: a numbered directory per complete data set and a single pointer
 /// file, swapped by an atomic rename.

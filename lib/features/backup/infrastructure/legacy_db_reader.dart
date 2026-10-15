@@ -16,7 +16,7 @@
 /// This is the opposite of JSON/CSV *import* (which mints fresh ids): a backup
 /// restore is an authoritative overwrite of local state, not an additive merge.
 ///
-/// M15 (astra-review.md): every row is passed through `Book.validate` /
+/// Review finding M15: every row is passed through `Book.validate` /
 /// `WishlistBook.validate` BEFORE it is returned. A backup is untrusted input
 /// — anyone can hand the user a `.pitabak` file — and coercion is not
 /// validation: an out-of-range `added_date` used to persist and then throw

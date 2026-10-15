@@ -867,7 +867,7 @@ void main() {
     });
   });
 
-  // N07 (astra-review.md): "a failed Join can still change future merge
+  // Review finding N07: "a failed Join can still change future merge
   // identity" — the incoming library ID used to be adopted BEFORE the books
   // were inserted, so a failed insert left this device re-identified with
   // none of the data; the next merge of the same file then auto-applied

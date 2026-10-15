@@ -1,6 +1,6 @@
 /// M06a copy guard: the Settings "Create backup" subtitle must not claim the
 /// `.pitabak` archive is fully encrypted — only the borrowers vault inside it
-/// is (astra-review.md M06). This widget test would have caught the old
+/// is (review finding M06). This widget test would have caught the old
 /// "Full encrypted .pitabak archive" label.
 library;
 

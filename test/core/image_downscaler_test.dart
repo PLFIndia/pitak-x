@@ -140,7 +140,7 @@ void main() {
     });
   });
 
-  // N10-a (astra-review.md N10): the source-dimension guard bounded ONE
+  // Review finding N10-a: the source-dimension guard bounded ONE
   // frame's width/height only. `image` 4.8.0 decodes EVERY frame of an
   // animated GIF/APNG/WebP when no frame is requested, resizes every frame
   // (`copy_resize.dart:95-97`) and then JPEG-encodes frame 0 alone — so N−1

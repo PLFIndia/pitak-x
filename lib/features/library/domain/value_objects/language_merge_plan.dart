@@ -7,7 +7,7 @@
 /// Plain English: `English` (12 books), `english` (3) and `en` (1) are the
 /// same language. The most-used spelling wins, so all 16 end up `English`.
 ///
-/// Winner rule (PLAN.md D2), applied in order:
+/// Winner rule (decided with the user in Session 33), applied in order:
 ///  1. a spelling that is NOT a bare ISO code (`english` beats `en` even if
 ///     `en` has more books — the app never stores codes, so a real name the
 ///     user typed must win over one a lookup service left behind);

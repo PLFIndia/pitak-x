@@ -1,4 +1,4 @@
-/// N13 widget tests (astra-review.md): the Restore screen must inspect the
+/// Review finding N13 widget tests: the Restore screen must inspect the
 /// archive's bounded manifest FIRST and only ask for a passphrase when the
 /// backup actually carries an encrypted vault. A vault-free backup used to
 /// demand a password the user never created.

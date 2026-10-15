@@ -1,6 +1,6 @@
 /// One window of the library list (domain, pure Dart, AGENTS.md §3.1).
 ///
-/// N10-d part 2 (astra-review.md N10, "lists load the whole catalogue"): the
+/// Review finding N10-d part 2 ("lists load the whole catalogue"): the
 /// repository no longer hands the controller every row; it hands it a page
 /// and says whether another one exists. `hasMore` is decided by the store
 /// (it asks SQLite for one row more than the page and drops it), so the

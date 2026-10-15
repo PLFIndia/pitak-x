@@ -1,4 +1,4 @@
-/// N04 regression tests (astra-review.md): derived providers must re-read
+/// Review finding N04 regression tests: derived providers must re-read
 /// their REAL inputs — watching the repository object never fires, because the
 /// object itself never changes — and time-based reminders must follow an
 /// injectable clock so overdue/due-soon state rolls over while a screen stays

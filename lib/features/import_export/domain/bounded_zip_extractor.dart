@@ -12,7 +12,9 @@
 /// archive is intentionally flat, so directory entries / nested names are
 /// refused loudly.
 ///
-/// ## Where each limit fires (M05, astra-review.md)
+/// ## Where each limit fires (review finding M05: limits used to run only
+/// after allocation/decompression, so a small high-expansion archive could
+/// exhaust memory before rejection)
 ///
 /// Every cap is enforced BEFORE the allocation it protects, in this order:
 ///

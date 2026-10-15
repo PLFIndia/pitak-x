@@ -1,8 +1,9 @@
 /// Reads a user-picked file into memory WITHOUT trusting its size
 /// (core/platform, AGENTS.md §3.1).
 ///
-/// Single source of truth for "load the file the user just chose" (M05,
-/// astra-review.md). The pickers used to call `XFile.readAsBytes()` directly,
+/// Single source of truth for "load the file the user just chose" (review
+/// finding M05: size limits ran only AFTER the whole pick was buffered). The
+/// pickers used to call `XFile.readAsBytes()` directly,
 /// which buffers a multi-GB pick before any limit can run. This helper:
 ///
 /// 1. asks the OS for the length first and rejects an obviously oversized

@@ -167,7 +167,7 @@ void main() {
   });
 }
 
-/// M05 regressions (astra-review.md): every limit must fire BEFORE the
+/// Review finding M05 regressions: every limit must fire BEFORE the
 /// dangerous allocation, and lying metadata must never be trusted.
 ///
 /// Archives here are built by `hostile_zip_builder.dart` because the package

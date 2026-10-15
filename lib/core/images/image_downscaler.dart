@@ -12,7 +12,8 @@
 /// Pure-Dart via the `image` package (decode/resize/encode) — no platform
 /// dependency, so it is unit-testable and runs the same on every target.
 ///
-/// **Two entry points (N10-a, astra-review.md N10):**
+/// **Two entry points (review finding N10-a: image decode/encode used to run
+/// unbounded on the UI isolate):**
 ///  - [ImageDownscaler.downscaleJpeg] — synchronous, pure. The single
 ///    implementation; what the tests exercise directly.
 ///  - [ImageDownscaler.downscaleJpegAsync] — the SAME function run in a

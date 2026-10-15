@@ -1,5 +1,5 @@
-/// Domain ports for the Pitaka-JSON library interchange codec (N14,
-/// astra-review.md).
+/// Domain ports for the Pitaka-JSON library interchange codec (review finding
+/// N14: JSON serialization used to live inside the domain layer).
 ///
 /// JSON serialization is kept OUT of the domain layer (AGENTS.md §3.1): the
 /// concrete `PitakaJsonImporter` / `PitakaJsonExporter` live in

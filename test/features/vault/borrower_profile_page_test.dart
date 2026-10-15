@@ -1,4 +1,4 @@
-/// N06 widget tests (astra-review.md): the borrower profile must resolve
+/// Review finding N06 widget tests: the borrower profile must resolve
 /// book titles through a read model (not "Book #id"), surface per-return
 /// progress and typed failures, and treat repeat returns as no-ops.
 library;

@@ -318,7 +318,7 @@ void main() {
     },
   );
 
-  // N05 regressions (astra-review.md): a cancelled debounce does NOT cancel
+  // Review finding N05 regressions: a cancelled debounce does NOT cancel
   // an already-running query, and search used to ignore the selected sort.
   test('N05: a slow old search cannot overwrite a newer query', () async {
     final repo = _GatedRepo(const []);
@@ -391,7 +391,7 @@ void main() {
     expect(titles, ['zulu', 'afrikaans']);
   });
 
-  // N10-d part 2 (astra-review.md N10 "lists load the whole catalogue"): the
+  // Review finding N10-d part 2 ("lists load the whole catalogue"): the
   // controller reads WINDOWS, not the catalogue.
   group('N10-d part 2 — windowed list', () {
     test('build asks for exactly one page (libraryPageSize from offset 0), '

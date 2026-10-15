@@ -6,7 +6,9 @@
 /// can fail without side effects (extract, manifest, blob unwrap) happens
 /// BEFORE any device write.
 ///
-/// ATOMIC across stores (M02, astra-review.md): the catalogue database, the
+/// ATOMIC across stores (review finding M02: restore used to commit the
+/// catalogue before the vault, so a failure in between mixed old and new
+/// stores): the catalogue database, the
 /// covers and the vault are never edited in place. Restore BUILDS a complete
 /// new data generation directory (see `core/storage/data_generations.dart`) —
 /// a transactionally consistent snapshot of the live catalogue that is then

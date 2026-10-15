@@ -174,7 +174,7 @@ void main() {
       expect(field.enableInteractiveSelection, isFalse);
     });
 
-    // N01 regression (astra-review.md, reproduced by the reviewer): after
+    // Review finding N01 regression (reproduced by the reviewer): after
     // the parent CONSUMED the secret (takeSecret on submit) the bullets used
     // to stay on screen — a failed unlock then looked like a full field, and
     // the retry typed "behind" an invisible old password.

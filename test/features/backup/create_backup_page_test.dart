@@ -1,4 +1,4 @@
-/// N11 (astra-review.md) widget tests: create-backup must reach a typed
+/// Review finding N11 widget tests: create-backup must reach a typed
 /// terminal state on EVERY path — a throwing share plugin or use-case
 /// provider used to escape as an unhandled async error and leave the busy
 /// spinner stuck forever.

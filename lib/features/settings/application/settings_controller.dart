@@ -4,7 +4,7 @@
 /// app (the root `MaterialApp` watches it for theme; the library watches it for
 /// the maintainer stamp + sort; the app-lock gate reads `appLockBiometric`).
 ///
-/// **M16 (astra-review.md) — how mutations stay consistent.** Every setter
+/// **Review finding M16 — how mutations stay consistent.** Every setter
 /// used to copy the whole settings snapshot *before* awaiting its disk write,
 /// then publish that whole copy *after*. Two setters in flight at once each
 /// copied the same "before"; whichever write finished last silently reverted

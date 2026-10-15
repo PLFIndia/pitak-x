@@ -1,4 +1,4 @@
-/// M05 (astra-review.md): picked files must be read under a byte cap that is
+/// Review finding M05: picked files must be read under a byte cap that is
 /// enforced on the bytes that ACTUALLY arrive, not on the size the picker
 /// reports.
 library;

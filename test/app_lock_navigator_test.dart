@@ -1,4 +1,4 @@
-/// B01 regression (astra-review.md): the app lock must cover the WHOLE
+/// Review finding B01 regression: the app lock must cover the WHOLE
 /// navigator, not just the home route.
 ///
 /// Boots the real [PitakaApp] (so the `main.dart` wiring itself is under test),

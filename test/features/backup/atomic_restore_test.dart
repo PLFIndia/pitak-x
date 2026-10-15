@@ -22,7 +22,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 
-/// M02 (astra-review.md): a restore must switch catalogue, vault and covers as
+/// Review finding M02: a restore must switch catalogue, vault and covers as
 /// ONE unit. Every test here injects a fault at one commit boundary and asserts
 /// the device is left EXACTLY on its pre-restore generation — or, after a
 /// successful switch, entirely on the new one.

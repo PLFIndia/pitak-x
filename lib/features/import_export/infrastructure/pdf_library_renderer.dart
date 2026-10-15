@@ -20,7 +20,8 @@
 /// drawn from its baseline in both APIs, so a top-down baseline `y` maps to
 /// `pageH - y`.
 ///
-/// MEMORY / RESPONSIVENESS (N10-e, `astra-review.md` N10): in shaped-image
+/// MEMORY / RESPONSIVENESS (review finding N10-e: the PDF used to
+/// pre-rasterize and retain every text run of the catalogue): in shaped-image
 /// mode every text run is rasterized by the platform text engine, which only
 /// works on the UI isolate. The renderer therefore
 ///  - rasterizes each ROW right before drawing it (never the whole catalogue

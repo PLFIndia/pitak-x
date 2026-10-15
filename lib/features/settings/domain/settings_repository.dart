@@ -4,7 +4,7 @@
 /// `shared_preferences`. Reads return defaults when unset. No secrets cross
 /// this interface.
 ///
-/// M17 (astra-review.md): every write reports a typed result. The underlying
+/// Review finding M17: every write reports a typed result. The underlying
 /// plugin returns a success boolean that used to be discarded, so the UI
 /// could confirm preferences the device never actually stored. Writes now
 /// return `Either<Failure, Unit>` (or `Either<Failure, String>` where a value

@@ -176,7 +176,7 @@ void main() {
     expect(find.textContaining('boom'), findsNothing);
   });
 
-  // N10-d part 2 (astra-review.md N10): the screen shows one window and
+  // Review finding N10-d part 2: the screen shows one window and
   // fetches the next as the user nears the end — it never asks for the whole
   // catalogue.
   group('N10-d part 2 — windowed list', () {

@@ -2,7 +2,7 @@
 ///
 /// Replaces the pre-M08 store that kept the biometric secret S in
 /// `flutter_secure_storage` in the clear behind a Dart boolean prompt
-/// (astra-review.md M08: "code executing in the app's security context can
+/// (review finding M08: "code executing in the app's security context can
 /// retrieve the wrapping secret without the prompt").
 ///
 /// How it works now (Android only — M18):

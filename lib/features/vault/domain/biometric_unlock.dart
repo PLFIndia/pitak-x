@@ -11,8 +11,9 @@
 ///
 ///  - [BiometricKeyStore] — the sealed store for the random secret `S`. `S` is
 ///    the only thing persisted for biometric unlock; the user passphrase is
-///    never stored, and the vault key never leaves Rust. M08 (astra-review.md):
-///    on Android the store encrypts `S` under a Keystore key that REQUIRES a
+///    never stored, and the vault key never leaves Rust. Review finding M08
+///    (the secret used to sit behind a Dart boolean check only): on Android
+///    the store encrypts `S` under a Keystore key that REQUIRES a
 ///    fresh BIOMETRIC_STRONG authentication for every use, enforced by the OS
 ///    (`BiometricPrompt.CryptoObject`) — so `store()` and `read()` each show
 ///    the system prompt themselves, and no Dart-side check can bypass it.

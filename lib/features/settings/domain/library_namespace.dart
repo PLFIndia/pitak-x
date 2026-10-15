@@ -6,7 +6,7 @@
 /// display name are settings, so the single serialised settings writer
 /// (`SettingsController`, M16) is the only thing allowed to change them.
 ///
-/// N07 (astra-review.md): the merge use case used to write these two keys
+/// Review finding N07: the merge use case used to write these two keys
 /// straight into the settings repository, BEHIND the controller. Disk was
 /// right, but the in-memory settings every screen watches (drawer header,
 /// library title, export envelope, publish site name) kept the OLD name until

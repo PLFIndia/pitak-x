@@ -160,7 +160,9 @@ tasks.matching { task ->
 }
 
 dependencies {
-    // M08 (astra-review.md): BiometricSecretVault.kt binds the Keystore cipher
+    // Review finding M08 (biometric secret must be bound to an OS auth-gated
+    // key, not a Dart boolean check): BiometricSecretVault.kt binds the
+    // Keystore cipher
     // to the system prompt via BiometricPrompt.CryptoObject. The library was
     // already on the classpath transitively (local_auth_android declares it as
     // `api`), but our own Kotlin must not depend on another plugin's internal

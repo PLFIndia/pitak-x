@@ -281,7 +281,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  // N07 (astra-review.md): "do not describe a partial merge as complete
+  // Review finding N07: "do not describe a partial merge as complete
   // without explaining omissions". The result view must say what happened —
   // a replacement is a replacement, skipped rows and adjustments are listed,
   // and an identity that could not be adopted is called out.
@@ -381,7 +381,7 @@ void main() {
     });
   });
 
-  // N07 part 2 (astra-review.md): "conflicts/possible duplicates are counts
+  // Review finding N07 part 2: "conflicts/possible duplicates are counts
   // only, with no way to inspect or apply the implemented resolutions". Each
   // review item is a card showing what differs (or why it looks like a
   // duplicate) with the three resolutions as buttons.

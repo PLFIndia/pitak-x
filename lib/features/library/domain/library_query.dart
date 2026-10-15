@@ -1,7 +1,8 @@
 /// The library list's read intent, as one value (domain, pure Dart,
 /// AGENTS.md §3.1).
 ///
-/// Why this exists (N10-d part 2, astra-review.md N10): the Library screen's
+/// Why this exists (review finding N10-d part 2, paged library reads): the
+/// Library screen's
 /// controller always carried the same three things — the search-box text,
 /// the persisted sort and the language chip — and the repository had two
 /// methods (`query` for a blank box, `search` for a typed one) that took them

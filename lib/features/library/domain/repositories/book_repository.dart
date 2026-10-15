@@ -15,7 +15,8 @@ abstract interface class BookRepository {
   /// All books (including soft-removed), newest first.
   Future<Either<Failure, List<Book>>> getAll();
 
-  /// ONE window of the library list for [query] (N10-d, astra-review.md N10).
+  /// ONE window of the library list for [query] (review finding N10-d: the
+  /// list used to load the whole catalogue).
   ///
   /// This is the only list read the Library screen uses. A blank
   /// `query.text` lists every book; non-blank text is a full-text search over

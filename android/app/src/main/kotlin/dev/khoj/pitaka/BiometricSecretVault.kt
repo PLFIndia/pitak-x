@@ -19,7 +19,7 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Native half of the M08 fix (astra-review.md): the biometric vault secret `S`
+ * Native half of the review-finding-M08 fix: the biometric vault secret `S`
  * is sealed under an Android Keystore AES-GCM key that Keystore itself refuses
  * to use unless a BIOMETRIC_STRONG authentication happened for THIS exact
  * operation. Dart used to check a boolean from `local_auth` and then read `S`

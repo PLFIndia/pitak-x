@@ -1,7 +1,7 @@
 /// Dart-side source of truth for the library's ordering semantics
 /// (domain, pure Dart, AGENTS.md §3.1).
 ///
-/// Why this exists (N05, astra-review.md): the search path used to return
+/// Why this exists (review finding N05): the search path used to return
 /// the repository's hardcoded newest-first rows even when the user had picked
 /// Language or Age-group sort. This class states the ONE ordering contract:
 ///

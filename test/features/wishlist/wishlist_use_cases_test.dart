@@ -183,7 +183,7 @@ void main() {
     );
   });
 
-  // M13 (astra-review): the purchase + move must be ONE transaction. These
+  // Review finding M13: the purchase + move must be ONE transaction. These
   // tests use REAL Drift for BOTH repositories on the same in-memory database
   // so a rollback is observable; the in-memory `_MemBookRepo` above cannot
   // prove that (its `runInTransaction` is a pass-through — M04 lesson).

@@ -197,7 +197,8 @@ class _SecurePassphraseFieldState extends State<SecurePassphraseField> {
     // N01: the controller is the source of truth for the secret bytes. When
     // it changes OUTSIDE a keystroke — `takeSecret()` consumed the buffer on
     // submit, or something called `clear()` — the visible mask must follow,
-    // or stale bullets hide how to retry (astra-review.md N01).
+    // or stale bullets hide how to retry (review finding N01: after a failed
+    // unlock the field kept showing bullets for a secret already consumed).
     widget.controller.addListener(_syncMaskToController);
   }
 

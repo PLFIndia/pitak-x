@@ -283,7 +283,7 @@ void main() {
     });
   });
 
-  // N10-d (astra-review.md N10): a paginated read can only be correct if
+  // Review finding N10-d: a paginated read can only be correct if
   // SQLite produces the FINAL order and filter (part 1, S29) AND the page
   // boundary sits on that same statement (part 2). These tests pin both for
   // both list reads (blank text → plain select, typed text → FTS) against the

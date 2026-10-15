@@ -6,7 +6,8 @@
 ///     must pass before the app is shown, re-evaluated on every resume from
 ///     background (decision Q2=B).
 ///
-/// WHERE IT LIVES (B01, astra-review.md): this widget is installed in
+/// WHERE IT LIVES (review finding B01, "app-lock screen sits underneath other
+/// routes"): this widget is installed in
 /// `MaterialApp.builder`, which wraps the app's `Navigator` itself. Before the
 /// fix it was the `home` route, so anything pushed on top (details, vault,
 /// settings, dialogs) stayed visible and interactive after a rejected prompt.

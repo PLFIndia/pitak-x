@@ -25,7 +25,9 @@
 ///  incoming ID) or `applyOverwrite` (replace local catalogue + adopt the ID —
 ///  destructive, the guarded secondary).
 ///
-/// N07 (astra-review.md) — three rules every apply path follows:
+/// Review finding N07 (a failed Join could still change this device's
+/// library identity, and partial merges were reported as complete) — three
+/// rules every apply path follows:
 ///  1. **Data first, identity second.** The incoming library ID is adopted
 ///     only AFTER the books have landed. A failed insert therefore leaves
 ///     this device's identity untouched — the next merge of the same file

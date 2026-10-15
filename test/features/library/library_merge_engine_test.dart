@@ -429,7 +429,7 @@ void main() {
     });
   });
 
-  // N07 part 2 (astra-review.md): the review UI needs to SHOW what differs
+  // Review finding N07 part 2: the review UI needs to SHOW what differs
   // and WHY a row is a possible duplicate — the engine only said "differs"
   // (a boolean) and "similarity 1.0" (which is also a legitimate fuzzy score
   // for identical title+author tokens, so kind cannot be inferred from it).
@@ -643,7 +643,7 @@ void main() {
     });
   });
 
-  // N10-b (astra-review.md N10): the fuzzy pass re-tokenised EVERY local
+  // Review finding N10-b: the fuzzy pass re-tokenised EVERY local
   // no-ISBN candidate for EVERY incoming no-ISBN row — I·L regex passes per
   // plan, 10^10 at the 100k import cap. The engine now tokenises each local
   // candidate once and scores only candidates sharing at least one token.

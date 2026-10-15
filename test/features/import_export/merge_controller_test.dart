@@ -1,4 +1,4 @@
-/// N11 (astra-review.md): the merge state machine lives in a keep-alive
+/// Review finding N11: the merge state machine lives in a keep-alive
 /// controller ABOVE the page — a merge writes the catalogue, so once started
 /// it must finish even if the user navigates away, a second run must be
 /// refused, unexpected throws must become typed terminal states, and the
@@ -324,7 +324,7 @@ void main() {
     },
   );
 
-  // N07 (astra-review.md): the use case used to write the adopted ID/name
+  // Review finding N07: the use case used to write the adopted ID/name
   // straight into the settings repository, so `SettingsController`'s
   // in-memory state — what the drawer, the library title and the export
   // envelope watch — kept the OLD name until restart.
@@ -522,7 +522,7 @@ void main() {
     },
   );
 
-  // N07 part 2 (astra-review.md): "conflicts/possible duplicates are counts
+  // Review finding N07 part 2: "conflicts/possible duplicates are counts
   // only, with no way to inspect or apply the implemented resolutions". The
   // controller now carries one review item per conflict / possible duplicate
   // inside MergeDone and applies the user's choice through the use case.

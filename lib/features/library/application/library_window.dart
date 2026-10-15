@@ -1,6 +1,7 @@
 /// The Library screen's list state (application layer, AGENTS.md §4/§7).
 ///
-/// N10-d part 2 (astra-review.md N10): the screen no longer holds "the list"
+/// Review finding N10-d part 2 ("lists load the whole catalogue"): the screen
+/// no longer holds "the list"
 /// — it holds the rows loaded SO FAR plus what it knows about the rest.
 /// `LibraryController` owns one of these inside its `AsyncValue`; the page
 /// renders `books`, shows a footer spinner while `isLoadingMore`, and asks

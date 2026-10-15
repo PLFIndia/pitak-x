@@ -4,7 +4,7 @@
 /// app freezers like OnePlus HansManager suspending the process mid-request)
 /// left callers awaiting forever — an infinite "Publishing…" spinner.
 ///
-/// N08 (astra-review) found that the first version only stopped *waiting*:
+/// Review finding N08 found that the first version only stopped *waiting*:
 /// `Future.timeout` completes the caller's future and leaves the request,
 /// the socket and the body stream running. A slow host could hold a
 /// connection and keep streaming into memory long after the UI had given up,

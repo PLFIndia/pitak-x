@@ -7,7 +7,8 @@ import 'package:pitaka/features/vault/infrastructure/keystore_biometric_secret_v
 
 /// M08 regression suite for the hardware-bound biometric secret store.
 ///
-/// The finding (astra-review.md M08) is STATIC: the old store kept S in
+/// Review finding M08 was STATIC (traced in source, not reproduced on a
+/// device): the old store kept S in
 /// `flutter_secure_storage` in the clear and the only guard was a Dart
 /// boolean from `local_auth`. These tests pin the properties the new store
 /// must have so the regression can never silently return:

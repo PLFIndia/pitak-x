@@ -1,6 +1,8 @@
 /// UI-facing merge controller (application layer, AGENTS.md §4).
 ///
-/// Owns one merge attempt's lifecycle ABOVE the page (N11, astra-review.md):
+/// Owns one merge attempt's lifecycle ABOVE the page (review finding N11:
+/// long-running actions used to outlive their widgets with no safe
+/// completion handling):
 /// a merge WRITES the catalogue, so once started it must finish even if the
 /// user navigates away, and the library-list refresh must not depend on the
 /// page still being there. The page only renders the MergeUiState and

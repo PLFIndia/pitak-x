@@ -344,7 +344,7 @@ void main() {
     });
   });
 
-  // N08 (astra-review): "rejected oversized/non-success cover responses are
+  // Review finding N08: "rejected oversized/non-success cover responses are
   // drained without a byte bound" and "Future.timeout stops waiting, not the
   // source request". These observe the SERVER side of each rejection.
   group('N08 — rejected responses are cancelled, not drained', () {

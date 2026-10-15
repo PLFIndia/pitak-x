@@ -1,4 +1,4 @@
-/// N12 widget test (astra-review.md): the lend screen's borrower dropdown
+/// Review finding N12 widget test: the lend screen's borrower dropdown
 /// must constrain long names at narrow widths / large text instead of
 /// overflowing (isExpanded + ellipsis).
 library;

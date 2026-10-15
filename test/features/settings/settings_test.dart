@@ -522,7 +522,7 @@ void main() {
     });
   });
 
-  // M16 (astra-review.md): each setter used to capture a snapshot of ALL
+  // Review finding M16: each setter used to capture a snapshot of ALL
   // settings before awaiting its write and then publish that whole snapshot
   // afterwards. Two overlapping setters captured the same "before"; whichever
   // write finished LAST silently reverted the other's field in memory (disk

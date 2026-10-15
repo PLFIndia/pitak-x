@@ -1,7 +1,8 @@
 /// Field-level validation rules for the catalogue entities (`Book` and
 /// `WishlistBook` — not imported here to keep this leaf dependency-free) —
-/// the single source of truth every ingress must pass through (M15,
-/// astra-review.md).
+/// the single source of truth every ingress must pass through (review finding
+/// M15: imports coerced instead of validating, persisting values that later
+/// crashed normal screens).
 ///
 /// Why this exists (beginner note): before M15, only the add/edit forms
 /// checked anything (and only "title not blank"). The JSON/CSV importers and

@@ -1,6 +1,7 @@
 /// Library-logo file reader for exports (infrastructure, AGENTS.md §3.1).
 ///
-/// N14 (astra-review.md): this file IO used to live in the application
+/// Review finding N14 (layer rules not enforced): this file IO used to live
+/// in the application
 /// export controller (`dart:io` in the application layer). It is
 /// infrastructure now and reaches the controller as an injected function.
 library;

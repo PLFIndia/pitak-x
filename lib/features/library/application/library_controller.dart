@@ -9,7 +9,8 @@
 /// `AsyncError(Failure)` so the UI can render a safe message (raw exception
 /// text is never surfaced).
 ///
-/// ## Windows, not the catalogue (N10-d part 2, astra-review.md N10)
+/// ## Windows, not the catalogue (review finding N10-d part 2, "lists load
+/// the whole catalogue")
 ///
 /// The controller reads ONE page (`libraryPageSize` rows) on build and
 /// appends the next page on `loadMore` as the user nears the end of the

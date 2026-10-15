@@ -1,4 +1,4 @@
-/// M15 part 2 (astra-review.md): the backup-restore reader is the last
+/// Review finding M15 part 2: the backup-restore reader is the last
 /// ingress that built catalogue entities with the plain constructors. Every
 /// row must pass `Book.validate` / `WishlistBook.validate` before it can be
 /// persisted, and the archive must be REFUSED (typed `ValidationFailure`,

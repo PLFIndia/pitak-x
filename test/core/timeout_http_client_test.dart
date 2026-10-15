@@ -68,7 +68,7 @@ void main() {
     expect(() => client.get(url), throwsA(isA<http.ClientException>()));
   });
 
-  // N08 (astra-review): a deadline that only stops WAITING is not a deadline.
+  // Review finding N08: a deadline that only stops WAITING is not a deadline.
   // These tests observe the SOURCE side — did the inner request get aborted,
   // did the body subscription get cancelled, did the socket really close —
   // not just the exception the caller receives.

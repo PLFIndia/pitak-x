@@ -1,6 +1,7 @@
 /// Event-poster file reader for publishing (infrastructure, AGENTS.md §3.1).
 ///
-/// N14 (astra-review.md): this file IO used to live in the application
+/// Review finding N14 (layer rules not enforced): this file IO used to live
+/// in the application
 /// events controller (`dart:io` in the application layer). It is
 /// infrastructure now and reaches the controller as an injected function —
 /// the `PosterBytesReader` port the events use case already declares.

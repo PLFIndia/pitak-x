@@ -1,5 +1,5 @@
-/// Domain port for the paginated PDF library-list renderer (N14,
-/// astra-review.md).
+/// Domain port for the paginated PDF library-list renderer (review finding
+/// N14: PDF rendering used to live inside the domain layer).
 ///
 /// The concrete renderer lives in `infrastructure/` — it depends on the
 /// `pdf` package, which is an output-format engine and therefore not domain
