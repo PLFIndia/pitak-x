@@ -1,5 +1,16 @@
 # F-Droid release notes (pitak-x → dev.khoj.pitaka.fdroid)
 
+> **Status (2026-10-15):** 1.4.0 tagged (`1.4.0` → versionCodes 241/242/243).
+> The recipe is on `AutoUpdateMode: Version` + `UpdateCheckMode: Tags`, so the
+> F-Droid checkupdates bot picks the tag up on its own: it reads
+> `version: 1.4.0+24` from `pubspec.yaml` at the tag and adds the three
+> build entries itself — no fdroiddata MR is needed unless the recipe body
+> must change. The mirror below already carries those entries
+> (`commit: 1.4.0`, the form the bot writes); re-sync it verbatim once the
+> bot's commit lands upstream. The recipe's
+> `flutter pub get --enforce-lockfile` runs under the `.fvmrc` Flutter, which
+> `pubspec.yaml` now pins exactly, so the lock cannot drift.
+>
 > **Status (2026-10-07):** Pitak STAYS on F-Droid. 1.3.4 (22x) is skipped
 > there — it bundled the non-free Google Play in-app-update library via the
 > `in_app_update` Flutter plugin, which links into every flavor. 1.3.5
