@@ -103,11 +103,39 @@ Future<void> showGitHubUserCodeDialog(
 Future<String?> showGitHubRepoNameDialog(
   BuildContext context, {
   required String initial,
-}) {
-  final controller = TextEditingController(text: initial);
-  return showDialog<String>(
-    context: context,
-    builder: (ctx) => AlertDialog(
+}) => showDialog<String>(
+  context: context,
+  builder: (_) => _RepoNameDialog(initial: initial),
+);
+
+/// The repo-name prompt body. A StatefulWidget (same pattern as
+/// `GoogleBooksKeyDialog`) so the text controller is created and disposed
+/// with the dialog — a controller created in the `show…` function and never
+/// disposed leaks a listener list per prompt, and disposing it in a `finally`
+/// would race the dialog's exit animation, which still renders the field.
+class _RepoNameDialog extends StatefulWidget {
+  const _RepoNameDialog({required this.initial});
+
+  final String initial;
+
+  @override
+  State<_RepoNameDialog> createState() => _RepoNameDialogState();
+}
+
+class _RepoNameDialogState extends State<_RepoNameDialog> {
+  late final TextEditingController _name = TextEditingController(
+    text: widget.initial,
+  );
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
       title: const Text('Name your library repository'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -120,7 +148,7 @@ Future<String?> showGitHubRepoNameDialog(
           ),
           const SizedBox(height: 12),
           TextField(
-            controller: controller,
+            controller: _name,
             autofocus: true,
             decoration: const InputDecoration(
               labelText: 'Repository name',
@@ -132,14 +160,14 @@ Future<String?> showGitHubRepoNameDialog(
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.of(ctx).pop(),
+          onPressed: () => Navigator.of(context).pop(),
           child: const Text('Later'),
         ),
         FilledButton(
-          onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+          onPressed: () => Navigator.of(context).pop(_name.text.trim()),
           child: const Text('Create'),
         ),
       ],
-    ),
-  );
+    );
+  }
 }
