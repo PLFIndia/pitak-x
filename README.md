@@ -253,6 +253,9 @@ git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no sta
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
 flutter test                                   # full Dart suite (1868 tests on main as of 15 Oct 2026; 1441 at the 1.2.0 tag)
+( cd rust && cargo fmt --check )               # rustfmt, zero diffs
+( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
+( cd rust && cargo deny check )                # advisories + licenses + bans + sources
 ( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
