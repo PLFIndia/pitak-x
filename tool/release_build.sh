@@ -153,6 +153,20 @@ built_pkg="$(sed -n 's/.*[[:space:]]package="\([^"]*\)".*/\1/p' "${manifest}" | 
 [[ "${built_code}" == "${expected_code}" && "${built_name}" == "${expected_name}" ]] \
   || die "bundle is ${built_name} (${built_code}) but pubspec.yaml says ${expected_name} (${expected_code}). Rebuild."
 
+# 5d. Tag hygiene (architecture.md B9): one tag feeds both stores AND the
+#     F-Droid build server, so it must be an annotated (signable) object —
+#     a lightweight tag can be moved or forged. If HEAD already carries the
+#     release tag (re-running --verify after tagging), it must be annotated;
+#     if the tag does not exist yet, that is fine (the checklist tags next).
+if git rev-parse -q --verify "refs/tags/${expected_name}" >/dev/null 2>&1; then
+  tag_type="$(git cat-file -t "${expected_name}")"
+  [[ "${tag_type}" == "tag" ]] \
+    || die "tag ${expected_name} is lightweight (${tag_type}). Re-create it annotated and signed: git tag -s ${expected_name} -m 'Release ${expected_name}'"
+  say "    tag ${expected_name} is annotated ($(git cat-file -t "${expected_name}"))."
+else
+  say "    tag ${expected_name} not created yet — create it with: git tag -s ${expected_name} -m 'Release ${expected_name}'"
+fi
+
 say "OK  ${aab} ($(du -h "${aab}" | cut -f1))"
 say "    ${built_pkg} versionName=${built_name} versionCode=${built_code}"
 say "    signed by upload key ${key_alias}, cert SHA-256 ${aab_fp}"

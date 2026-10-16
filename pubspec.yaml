@@ -141,6 +141,13 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # On-device smoke test (architecture.md B1): FFI + Keystore + real file IO
+  # never run in the Dart VM. First-party plugin; its Android side uses
+  # AndroidX test only — no Google Play/Firebase deps (flavor rule checked;
+  # README › Flavors). Runs by hand, not in CI (D4):
+  #   flutter test integration_test --flavor fdroid -d <device>
+  integration_test:
+    sdk: flutter
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
