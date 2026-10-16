@@ -29,3 +29,9 @@ features = ["bundled-sqlcipher-vendored-openssl"]
 [dependencies.libsqlite3-sys]
 version = "0.30"
 features = ["bundled-sqlcipher-vendored-openssl"]
+
+[dev-dependencies]
+# Property tests for the parse/unwrap surface (architecture.md B3, D5):
+# stable toolchain, actively maintained, dev-only (never linked into the
+# shipped library).
+proptest = "1"

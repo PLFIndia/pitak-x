@@ -1,0 +1,187 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
+import 'package:pitaka/features/import_export/domain/goodreads_csv_importer.dart';
+import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
+import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
+import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+
+import '../../support/fuzz.dart';
+import 'hostile_zip_builder.dart';
+
+/// Property tests: hostile input must NEVER crash a parser
+/// (architecture.md B3; AGENTS §1 "treat every input as hostile").
+///
+/// Each property runs 200 seeded cases. On failure the message prints the
+/// seed — reproduce a single case with `Fuzz(seed: <printed>)`.
+void main() {
+  const cases = 200;
+
+  group('ImportFormatSniffer.detect', () {
+    test('never throws on random bytes, random UTF-8, or mutated fixtures', () {
+      final fuzz = Fuzz();
+      for (var i = 0; i < cases; i++) {
+        final inputs = <String>[
+          fuzz.randomUtf8(),
+          utf8.decode(fuzz.randomBytes(), allowMalformed: true),
+          // Mutated real-shaped prefixes: valid JSON head, CSV head.
+          '{"schemaVersion":${fuzz.randomUtf8(maxLength: 32)}',
+          'Book Id,Title,Exclusive Shelf${fuzz.randomUtf8(maxLength: 32)}',
+        ];
+        for (final input in inputs) {
+          try {
+            // Either a format or null — never an exception.
+            ImportFormatSniffer.detect(input);
+          } catch (e) {
+            fail('detect threw on case $i (seed ${Fuzz.defaultSeed}): $e');
+          }
+        }
+      }
+    });
+  });
+
+  group('GoodreadsCsvImporter', () {
+    test('never throws on random or mutated CSV text', () {
+      final fuzz = Fuzz();
+      const importer = GoodreadsCsvImporter();
+      const header =
+          'Book Id,Title,Author,ISBN13,Exclusive Shelf,Bookshelves\n';
+      for (var i = 0; i < cases; i++) {
+        final inputs = <String>[
+          fuzz.randomUtf8(maxLength: 512),
+          header + fuzz.randomUtf8(maxLength: 256),
+          // A valid row then corruption.
+          '$header "1","T","A","9780143104223","read",\n${fuzz.randomUtf8()}',
+        ];
+        for (final input in inputs) {
+          try {
+            importer.parse(input);
+          } catch (e) {
+            fail(
+              'GoodreadsCsvImporter threw on case $i '
+              '(seed ${Fuzz.defaultSeed}): $e',
+            );
+          }
+        }
+      }
+    });
+  });
+
+  group('PitakaJsonImporter (LibraryJsonCodec)', () {
+    test('never throws on random or mutated JSON text', () {
+      final fuzz = Fuzz();
+      const importer = PitakaJsonImporter();
+      const validEnvelope =
+          '{"schemaVersion":3,"libraryId":"lib","libraryName":"L",'
+          '"books":[],"wishlist":[],"exportedAt":0}';
+      for (var i = 0; i < cases; i++) {
+        final inputs = <String>[
+          fuzz.randomUtf8(maxLength: 512),
+          validEnvelope,
+          // Mutations of the valid envelope: bit flips, truncation.
+          utf8.decode(
+            fuzz.bitFlip(utf8.encode(validEnvelope)),
+            allowMalformed: true,
+          ),
+          utf8.decode(
+            fuzz.truncate(utf8.encode(validEnvelope)),
+            allowMalformed: true,
+          ),
+        ];
+        for (final input in inputs) {
+          try {
+            importer.parse(input);
+          } catch (e) {
+            fail(
+              'PitakaJsonImporter threw on case $i '
+              '(seed ${Fuzz.defaultSeed}): $e',
+            );
+          }
+        }
+      }
+    });
+  });
+
+  group('LibraryBundleReader.read', () {
+    test('never throws on random bytes or mutated archives', () async {
+      final fuzz = Fuzz();
+      const reader = LibraryBundleReader();
+      // An honest tiny archive to mutate.
+      final honest = buildHostileZip([
+        HostileEntry('library.json', utf8.encode('{"schemaVersion":3}')),
+      ]);
+      for (var i = 0; i < cases; i++) {
+        final inputs = <Uint8List>[
+          Uint8List.fromList(fuzz.randomBytes(maxLength: 512)),
+          Uint8List.fromList(fuzz.bitFlip(honest)),
+          Uint8List.fromList(fuzz.truncate(honest)),
+          honest,
+        ];
+        for (final input in inputs) {
+          try {
+            // Must resolve to Left or Right — the property under test is
+            // "never throws" (fail closed with a typed Failure instead).
+            await reader.read(input);
+          } catch (e) {
+            fail(
+              'LibraryBundleReader threw on case $i '
+              '(seed ${Fuzz.defaultSeed}): $e',
+            );
+          }
+        }
+      }
+    });
+  });
+
+  group('BoundedZipExtractor', () {
+    // The "zip bomb" fixture is generated by HostileZipBuilder — a test-only
+    // writer that can make headers lie — never a real bomb (architecture.md
+    // B3).
+    test('refuses an archive whose entry count exceeds the cap', () {
+      final manyEntries = buildHostileZip([
+        for (var i = 0; i < 40; i++)
+          HostileEntry('f$i.txt', utf8.encode('x' * 64)),
+      ]);
+      final limits = ZipLimits(
+        maxEntryBytes: 512,
+        maxTotalBytes: 64 * 1024,
+        maxEntries: 4,
+      );
+      expect(
+        () => BoundedZipExtractor.extract(
+          Uint8List.fromList(manyEntries),
+          limits: limits,
+        ),
+        throwsA(isA<BoundedExtractionException>()),
+        reason: 'a 40-entry archive under a 4-entry cap must be refused',
+      );
+    });
+
+    test('refuses an archive whose declared size exceeds the byte cap', () {
+      // The central directory declares a huge uncompressed size while the
+      // real payload is tiny — the EOCD/header check must cut it off.
+      final liar = buildHostileZip([
+        HostileEntry(
+          'big.bin',
+          utf8.encode('tiny'),
+          declaredUncompressedSize: 10 * 1024 * 1024,
+        ),
+      ]);
+      final limits = ZipLimits(
+        maxEntryBytes: 1024,
+        maxTotalBytes: 4096,
+        maxEntries: 16,
+      );
+      expect(
+        () => BoundedZipExtractor.extract(
+          Uint8List.fromList(liar),
+          limits: limits,
+        ),
+        throwsA(isA<BoundedExtractionException>()),
+        reason: 'a header lying about a 10 MiB payload must be refused',
+      );
+    });
+  });
+}
