@@ -119,13 +119,28 @@ jobs:
       # tooling to supply-chain). Catches the common credential shapes; the
       # real protection remains AGENTS.md §12 (never commit secrets) +
       # review discipline.
+      #
+      # FAIL CLOSED (AGENTS §2.7). Each pattern needs its own `-e`: without
+      # it, `git grep` reads the second and later patterns as REVISIONS and
+      # dies with "fatal: unable to resolve revision" (exit 128) — which a
+      # bare `!` turned into a pass, so this step had never scanned anything.
+      # Exit codes are now handled explicitly: 1 = scanned and clean,
+      # 0 = a match (fail), anything else = the scan did not run (fail).
       - name: Secret scan (tracked files)
         run: |
-          ! git grep -nIE \
-            'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY' \
-            'gh[pousr]_[A-Za-z0-9]{36,}' 'github_pat_[A-Za-z0-9_]{22,}' \
-            'AKIA[0-9A-Z]{16}' 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+          set +e
+          git grep -nIE \
+            -e 'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY' \
+            -e 'gh[pousr]_[A-Za-z0-9]{36,}' -e 'github_pat_[A-Za-z0-9_]{22,}' \
+            -e 'AKIA[0-9A-Z]{16}' -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
             -- ':!*.lock' ':!.github/workflows/*'
+          status=$?
+          set -e
+          case "${status}" in
+            1) echo "secret scan clean." ;;
+            0) echo "::error::secret-shaped string found in tracked files (see matches above)."; exit 1 ;;
+            *) echo "::error::git grep failed (exit ${status}) — the secret scan did not run."; exit 1 ;;
+          esac
 
   # OSV vulnerability scan of BOTH lockfiles (architecture.md A2): Dart's
   # pubspec.lock is otherwise never scanned (cargo-deny covers only Rust).
