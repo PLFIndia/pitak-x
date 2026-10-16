@@ -156,12 +156,41 @@ jobs:
           flutter-version-file: .fvmrc
       - name: Resolve deps
         run: flutter pub get --enforce-lockfile
+      # FAIL CLOSED (AGENTS §2.7). The naive form
+      #   if ./gradlew … | grep PATTERN; then fail; fi
+      # passes whenever Gradle itself fails (no output → grep matches nothing
+      # → "clean"), so a broken SDK, a renamed configuration or a typo would
+      # silently turn the gate green. Instead: (1) capture the report, letting
+      # `set -e` abort on a Gradle failure; (2) refuse an empty report;
+      # (3) only then grep it.
       - name: fdroidReleaseRuntimeClasspath is free of Google code
         working-directory: android
+        env:
+          PATTERN: 'com\.google\.android\.(play|gms)|firebase|mlkit'
         run: |
-          if ./gradlew :app:dependencies --configuration fdroidReleaseRuntimeClasspath \
-              | grep -E 'com\.google\.android\.(play|gms)|firebase|mlkit'; then
+          report="$(./gradlew --quiet :app:dependencies --configuration fdroidReleaseRuntimeClasspath)"
+          if ! grep -q -- '--- ' <<<"${report}"; then
+            echo "::error::The fdroid dependency report is empty — the gate checked nothing."
+            exit 1
+          fi
+          if grep -E "${PATTERN}" <<<"${report}"; then
             echo "::error::Google dependency leaked into the fdroid flavor."
             exit 1
           fi
           echo "fdroidReleaseRuntimeClasspath is clean."
+      # POSITIVE CONTROL: the play flavor legitimately contains Google code
+      # (README › Flavors). If this step cannot find it, the grep or the
+      # Gradle invocation is broken and the step above proved nothing. This
+      # is the automated, every-run form of the plan's one-off "point it at
+      # the play classpath and watch it fail" proof (architecture.md A2).
+      - name: Positive control — playReleaseRuntimeClasspath DOES contain Google code
+        working-directory: android
+        env:
+          PATTERN: 'com\.google\.android\.(play|gms)|firebase|mlkit'
+        run: |
+          report="$(./gradlew --quiet :app:dependencies --configuration playReleaseRuntimeClasspath)"
+          if ! grep -qE "${PATTERN}" <<<"${report}"; then
+            echo "::error::The play classpath shows no Google code — the purity check itself is broken."
+            exit 1
+          fi
+          echo "positive control OK: the play flavor resolves Google code, so the fdroid check is live."
