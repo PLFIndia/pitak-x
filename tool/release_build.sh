@@ -154,17 +154,32 @@ built_pkg="$(sed -n 's/.*[[:space:]]package="\([^"]*\)".*/\1/p' "${manifest}" | 
   || die "bundle is ${built_name} (${built_code}) but pubspec.yaml says ${expected_name} (${expected_code}). Rebuild."
 
 # 5d. Tag hygiene (architecture.md B9): one tag feeds both stores AND the
-#     F-Droid build server, so it must be an annotated (signable) object —
-#     a lightweight tag can be moved or forged. If HEAD already carries the
-#     release tag (re-running --verify after tagging), it must be annotated;
-#     if the tag does not exist yet, that is fine (the checklist tags next).
+#     F-Droid build server, so it must be an annotated, SIGNED object that
+#     points at the commit being released — a lightweight tag can be moved
+#     or forged, an unsigned one proves nothing, and a tag on the wrong
+#     commit ships code this script never verified. If the tag already
+#     exists (re-running --verify after tagging) all three must hold; if it
+#     does not exist yet, that is fine (the checklist tags next).
+#
+#     "Signed" is checked by the presence of a signature block in the tag
+#     object, not `git verify-tag`: verifying an SSH signature needs an
+#     allowed-signers file that a fresh clone does not have, and the goal
+#     here is to refuse the maintainer's own unsigned tag, not to verify a
+#     stranger's — the stores and F-Droid build the tag's commit regardless.
+tag_hint="git tag -s ${expected_name} -m 'Release ${expected_name}'"
 if git rev-parse -q --verify "refs/tags/${expected_name}" >/dev/null 2>&1; then
   tag_type="$(git cat-file -t "${expected_name}")"
   [[ "${tag_type}" == "tag" ]] \
-    || die "tag ${expected_name} is lightweight (${tag_type}). Re-create it annotated and signed: git tag -s ${expected_name} -m 'Release ${expected_name}'"
-  say "    tag ${expected_name} is annotated ($(git cat-file -t "${expected_name}"))."
+    || die "tag ${expected_name} is lightweight (${tag_type}). Re-create it annotated and signed: ${tag_hint}"
+  git cat-file tag "${expected_name}" | grep -q -- '-----BEGIN .* SIGNATURE-----' \
+    || die "tag ${expected_name} is annotated but NOT signed. Delete it and re-create it signed: git tag -d ${expected_name} && ${tag_hint}"
+  tagged_commit="$(git rev-parse "${expected_name}^{commit}")"
+  head_commit="$(git rev-parse HEAD)"
+  [[ "${tagged_commit}" == "${head_commit}" ]] \
+    || die "tag ${expected_name} points at ${tagged_commit:0:12}, but this verified build is HEAD ${head_commit:0:12}. Tag the commit you built."
+  say "    tag ${expected_name} is annotated, signed, and points at HEAD."
 else
-  say "    tag ${expected_name} not created yet — create it with: git tag -s ${expected_name} -m 'Release ${expected_name}'"
+  say "    tag ${expected_name} not created yet — create it with: ${tag_hint}"
 fi
 
 say "OK  ${aab} ($(du -h "${aab}" | cut -f1))"
