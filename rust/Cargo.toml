@@ -2,6 +2,10 @@
 name = "pitak_crypto"
 version = "0.1.0"
 edition = "2021"
+# GPL-3.0-or-later matches the repo-root LICENSE and the F-Droid recipe
+# (architecture.md A1). cargo-deny (added in A3) checks the whole crate
+# graph against this allow-list automatically.
+license = "GPL-3.0-or-later"
 description = "Trusted crypto + vault core for Pitaka (Argon2id/AES-GCM blob unwrap + SQLCipher borrowers vault). Secrets never cross FFI."
 
 [lib]

@@ -263,5 +263,8 @@ Tip: the full widget suite can be slow under some harnesses — run by directory
 
 ## License / fonts
 
+Pitak is free software under the GNU General Public License v3.0 or later —
+see `LICENSE` (the same SPDX identifier the F-Droid recipe declares).
+
 Bundled Noto Sans Indic fonts (for PDF export) are under the SIL Open Font
 License 1.1 — see `assets/fonts/OFL.txt`.
