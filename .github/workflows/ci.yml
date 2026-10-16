@@ -22,21 +22,30 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+      # Rust gates at parity with Dart (architecture.md A3): format, lints,
+      # supply-chain. Order matters: fmt is sub-second and fails fastest.
+      - name: cargo fmt --check
+        working-directory: rust
+        run: cargo fmt --check
+      - name: cargo clippy (warnings = errors)
+        working-directory: rust
+        run: cargo clippy --all-targets -- -D warnings
       # Builds bundled-sqlcipher (OpenSSL + SQLCipher C) and runs the unit
       # tests + the HERMETIC vault fixture chain (Argon2id -> AES-GCM ->
       # sqlite3_key) against the committed synthetic fixture. No secrets.
       - name: cargo test (release)
         working-directory: rust
         run: cargo test --release
-      # Review findings N14/N15: advisory gate. Fails on any known vulnerability
-      # AND on warnings (e.g. unsoundness advisories like RUSTSEC-2026-0190) —
-      # an explicit warning policy. Fetches the live advisory DB; an offline
-      # scan against a stale local DB is NOT a clean bill of health.
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: cargo audit (deny warnings)
+      # Advisory + license + bans + sources gate (architecture.md D2: one
+      # tool replaces cargo-audit). rust/deny.toml keeps the old
+      # `--deny warnings` policy: unsound and unmaintained advisories are
+      # errors. Fetches the live advisory DB; an offline scan against a
+      # stale local DB is NOT a clean bill of health.
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: cargo deny check
         working-directory: rust
-        run: cargo audit --deny warnings
+        run: cargo deny check
 
   flutter:
     name: Flutter (analyze, format, test)
