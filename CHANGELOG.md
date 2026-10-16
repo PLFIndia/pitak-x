@@ -18,6 +18,27 @@ heading as part of the `chore(release):` commit.
 - `LICENSE` (GPL-3.0-or-later) matching the F-Droid listing; `SECURITY.md`
   disclosure policy; `CONTRIBUTING.md` + PR template; `CHANGELOG.md`;
   `docs/adr/` architecture decision records (architecture.md Phase 0).
+- CI: Dependabot for pub/cargo/github-actions; all actions SHA-pinned; OSV
+  scan of both lockfiles; `fdroid-purity` job (no Google deps in the fdroid
+  classpath); `update-goldens` workflow (A2, B2).
+- Rust gates: `cargo fmt --check`, `clippy -D warnings`, `cargo deny check`
+  (replaces cargo-audit); `#![deny(unsafe_code)]` with three documented
+  `sqlite3_key` exceptions; `rust-version = "1.96"` pin (A3).
+- Tests: drift schema snapshots + verifier-backed migration tests with a
+  per-version data matrix (A4); accessibility guideline checks on all 16
+  page suites + 2× text-scaling smoke tests (A6); seeded property tests for
+  parsers, the merge engine, and the vault blob crypto (B3); six golden
+  tests for key screens (B2); an on-device vault smoke test run before each
+  release (B1).
+- Architecture fitness functions: presentation/application boundary,
+  debug-only logging, bare-catch justification, and a file-size ratchet
+  (B4, B8).
+
+### Changed
+- All diagnostics route through `appLog` (debug builds only; release ships
+  no logs to logcat) (B5).
+- `tool/release_build.sh` refuses a release whose version has no CHANGELOG
+  heading, and `--verify` refuses a lightweight release tag (B7, B9).
 
 ## [1.4.0] - 2026-10 (tag `1.4.0`, versionCode 24)
 

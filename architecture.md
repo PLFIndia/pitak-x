@@ -6,7 +6,13 @@
 > privacy-first, crypto-bearing, two-store Android app should have — and,
 > just as deliberately, what it should *not* have.
 >
-> **Status:** PROPOSED. Nothing in this file has been implemented yet.
+> **Status:** IMPLEMENTED on branch `architectureRefactor` (2026-10-16),
+> except the items that are settings-side or trigger-based by design:
+> A5's "enable GitHub private vulnerability reporting" toggle, B2's first
+> `update-goldens` workflow run, and B9's `main` branch protection live in
+> the GitHub UI (no code to commit); B8's biometric-flow extraction is
+> trigger-based (the next biometric change); B1's smoke test runs by hand on
+> a device before each release (D4), not in CI.
 >
 > **Governance:** `AGENTS.md` wins over this plan. Every item must pass the
 > Agent Decision Checklist (AGENTS §13) before it is "done". Where this plan
