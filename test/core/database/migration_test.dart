@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, Variable;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +18,78 @@ Future<int> _currentSchemaVersion() async {
   } finally {
     await db.close();
   }
+}
+
+/// The schema objects drift's snapshots cannot see — created by raw SQL in
+/// `AppDatabase._createIndexesAndFts`. A migration that rebuilt `books`
+/// would drop the triggers with it, so every upgrade path must end with all
+/// of them present (type → names).
+const _rawSqlObjects = <String, List<String>>{
+  'table': ['books_fts'],
+  'index': [
+    'index_books_isbn',
+    'index_books_book_uid',
+    'index_books_added_date',
+    'index_books_title_sort',
+    'index_books_author_sort',
+    'index_wishlist_books_isbn',
+  ],
+  'trigger': ['books_fts_ai', 'books_fts_ad', 'books_fts_au'],
+};
+
+/// Asserts the raw-SQL objects exist AND search actually works — presence
+/// alone would not catch a trigger left pointing at a rebuilt table.
+///
+/// Two probes: [migratedTitleWord], when given, is a word from a row that
+/// existed BEFORE the upgrade and proves the index covers pre-existing rows
+/// (the typed data-matrix tests supply it); a row inserted AFTER the upgrade
+/// proves the sync triggers are live.
+Future<void> _expectRawSqlObjectsHealthy(
+  AppDatabase db, {
+  String? migratedTitleWord,
+}) async {
+  for (final entry in _rawSqlObjects.entries) {
+    final names = await db
+        .customSelect(
+          'SELECT name FROM sqlite_master WHERE type = ?',
+          variables: [Variable(entry.key)],
+        )
+        .map((r) => r.read<String>('name'))
+        .get();
+    expect(
+      names,
+      containsAll(entry.value),
+      reason: 'missing ${entry.key}(s) after migration',
+    );
+  }
+
+  Future<int> hitsFor(String word) async {
+    final rows = await db
+        .customSelect(
+          'SELECT rowid FROM books_fts WHERE books_fts MATCH ?',
+          variables: [Variable(word)],
+        )
+        .get();
+    return rows.length;
+  }
+
+  if (migratedTitleWord != null) {
+    expect(
+      await hitsFor(migratedTitleWord),
+      greaterThan(0),
+      reason: 'FTS5 does not find a row that existed before the upgrade',
+    );
+  }
+  await db
+      .into(db.books)
+      .insert(
+        BooksCompanion.insert(title: 'Trigger Probe', addedDate: 1700000009000),
+      );
+  expect(
+    await hitsFor('Probe'),
+    1,
+    reason: 'FTS5 insert trigger is not live after the upgrade',
+  );
 }
 
 /// Real schema-migration tests backed by committed drift snapshots
@@ -42,6 +114,9 @@ void main() {
       final db = AppDatabase(connection.executor);
       addTearDown(db.close);
       await verifier.migrateAndValidate(db, current);
+      // The snapshot carries only drift-visible objects; the upgrade must
+      // leave the raw-SQL ones (indexes, FTS5, triggers) present and live.
+      await _expectRawSqlObjectsHealthy(db);
     }
   });
 
@@ -150,6 +225,8 @@ void main() {
       expect(wish.purchased, false);
       expect(wish.purchasedDate, isNull);
       expect(wish.needsMetadata, false);
+
+      await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Migration');
     });
 
     test('v2 rows re-read through the current database unchanged', () async {
@@ -175,6 +252,8 @@ void main() {
       final book = await db.select(db.books).getSingle();
       expect(book.title, 'Current Book');
       expect(book.isbn, '9780143104225');
+
+      await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Current');
     });
   });
 

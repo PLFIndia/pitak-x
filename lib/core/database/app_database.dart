@@ -32,14 +32,32 @@ class AppDatabase extends _$AppDatabase {
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (m) async {
-      await m.createAll();
-      await _createIndexesAndFts(m);
-    },
+    onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
       if (from < 2) await _collapseLanguageSpellings();
     },
+    // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
+    // (unique indexes, FTS5 table, sync triggers) are an invariant, not a
+    // migration step. They are invisible to drift's schema model, so a future
+    // upgrade that rebuilds `books` (SQLite drops the triggers with the
+    // table) would otherwise silently leave search broken. Every statement is
+    // `IF NOT EXISTS` — a few sqlite_master lookups on a healthy database;
+    // on a damaged one it heals, and a re-created FTS table starts empty, so
+    // it is rebuilt from `books` (triggers only index future writes). The
+    // migration tests prove search works after every historical upgrade path.
+    beforeOpen: (details) async {
+      final hadFts = await _hasFtsTable();
+      await _createIndexesAndFts();
+      if (!hadFts) await rebuildFts();
+    },
   );
+
+  Future<bool> _hasFtsTable() async {
+    final rows = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'books_fts'",
+    ).get();
+    return rows.isNotEmpty;
+  }
 
   /// v1 → v2: collapse `English` / `english` / `en` into ONE stored spelling
   /// per language, so the catalogue filter shows one chip and the exact-match
@@ -70,7 +88,7 @@ class AppDatabase extends _$AppDatabase {
     });
   }
 
-  Future<void> _createIndexesAndFts(Migrator m) async {
+  Future<void> _createIndexesAndFts() async {
     // Unique indexes mirroring Room (ISBN + book_uid unique among non-null).
     await customStatement(
       'CREATE UNIQUE INDEX IF NOT EXISTS index_books_isbn ON books (isbn)',
