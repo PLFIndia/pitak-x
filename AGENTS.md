@@ -15,6 +15,7 @@
 - **No magic.** Prefer explicit, readable code over clever one-liners the developer cannot maintain.
 - **Teach as you build.** If a pattern is introduced (Value Object, Notifier, Result type), include a one-line comment explaining its purpose the first time it appears in a feature.
 - **One blessed way.** Do not introduce alternative libraries or patterns for problems already solved in this repo. Consistency over novelty.
+- **Decisions get records.** Non-obvious architectural decisions get an ADR in `docs/adr/` (template: `docs/adr/0000-template.md`).
 
 ---
 

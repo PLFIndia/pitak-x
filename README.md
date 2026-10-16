@@ -125,7 +125,8 @@ fastlane/      store metadata + per-versionCode changelogs
 ```
 
 The two `AGENTS.md` files (repo + harness) are the binding engineering contract —
-read them before contributing.
+read them before contributing. Non-obvious architectural decisions are recorded
+as ADRs in `docs/adr/`.
 
 ## Getting started
 
