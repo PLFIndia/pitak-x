@@ -6,6 +6,9 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - "lib/src/rust/**" # flutter_rust_bridge-generated FFI bindings
+    # drift_dev-generated schema snapshots (architecture.md A4) — same policy
+    # as *.g.dart: generated, committed, never hand-edited.
+    - "test/core/database/generated/**"
   errors:
     # Generated/codegen files and FFI bindings are not hand-maintained.
     invalid_annotation_target: ignore

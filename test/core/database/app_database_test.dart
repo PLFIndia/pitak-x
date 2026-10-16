@@ -109,25 +109,12 @@ void main() {
     },
   );
 
-  // Scaffold for schema migrations (REVIEW_FINDINGS_2 S3 / test-gap #8).
-  // schemaVersion is 1 with onCreate only. When the FIRST bump lands, the
-  // migration MUST ship with a forward-migration test in this group: create
-  // a database file at the OLD version (raw sqlite3 DDL mirroring the old
-  // schema — see restore_backup_test.dart's buildBooksDb for the pattern),
-  // reopen it through AppDatabase so the migration runs, then assert the
-  // data survived and the new schema objects exist. Bump the expectation
-  // below in the same PR as the schemaVersion bump.
+  // Schema migrations are verified against committed drift snapshots in
+  // migration_test.dart (architecture.md A4) — the tripwire that used to
+  // live here is replaced by its snapshot-existence check. Every
+  // schemaVersion bump = dump a new snapshot + regenerate + extend the data
+  // matrix (rule in README › Quality gates).
   group('schema migrations', () {
-    test('schemaVersion tripwire — update with every bump', () {
-      expect(
-        AppDatabase(NativeDatabase.memory()).schemaVersion,
-        2,
-        reason:
-            'schemaVersion changed without a migration test: add a '
-            'forward-migration test to this group in the same PR.',
-      );
-    });
-
     group('v1 → v2: one spelling per language (Session 33)', () {
       late Directory tmp;
       late File dbFile;

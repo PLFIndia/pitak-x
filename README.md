@@ -265,6 +265,15 @@ flutter test                                   # full Dart suite (1868 tests on 
 These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
 `.githooks/pre-commit` runs.
 
+**Schema version bumps** (architecture.md A4): every `schemaVersion` bump in
+`lib/core/database/app_database.dart` must (1) dump a new snapshot
+(`dart run drift_dev schema dump lib/core/database/app_database.dart
+drift_schemas/app_database/`), (2) regenerate the test helpers
+(`dart run drift_dev schema generate --data-classes --companions
+drift_schemas/app_database test/core/database/generated/`), and (3) add a row
+to the data matrix in `test/core/database/migration_test.dart`. A tripwire
+test fails if the snapshot for the current version is missing.
+
 Tip: the full widget suite can be slow under some harnesses — run by directory
 (`flutter test test/features/<area>`) to isolate a slow/hanging file.
 

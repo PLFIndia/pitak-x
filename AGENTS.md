@@ -314,6 +314,10 @@ test('LoginController exposes AuthFailure on bad credentials', () async {
 - [ ] `flutter test --coverage`
 - [ ] Dependency / secret scan
 - [ ] Architecture boundary check (no inward->outward imports; domain free of Riverpod/Flutter)
+- [ ] Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo deny check`, `cargo test --release`
+- [ ] OSV scan of `pubspec.lock` + `rust/Cargo.lock`
+- [ ] F-Droid purity: no Google deps in `fdroidReleaseRuntimeClasspath`
+- [ ] Schema version bump ⇒ new drift snapshot + regenerated helpers + data-matrix row (see `test/core/database/migration_test.dart`)
 
 ---
 
