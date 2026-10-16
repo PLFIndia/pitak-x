@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -105,7 +106,8 @@ void main() {
           nowTickProvider.overrideWith((ref) => 0),
         ],
         child: MaterialApp(
-          theme: ThemeData.dark(),
+          // The shipped dark theme, so contrast is checked on real colours.
+          theme: AppTheme.dark,
           home: const VaultContentsPage(data: data),
         ),
       ),

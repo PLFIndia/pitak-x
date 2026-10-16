@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -308,7 +309,9 @@ void main() {
             (ref) async => _FakeBookRepo(books),
           ),
         ],
-        child: MaterialApp(theme: ThemeData.dark(), home: const LibraryPage()),
+        // The shipped dark theme (lib/core/theme/app_theme.dart), not a
+        // generic ThemeData.dark(): contrast is checked on real colours.
+        child: MaterialApp(theme: AppTheme.dark, home: const LibraryPage()),
       ),
     );
     await tester.pumpAndSettle();

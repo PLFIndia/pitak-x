@@ -15,6 +15,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -39,6 +40,11 @@ import '../features/vault/vault_repository_write_stub.dart';
 /// the reference renderer** (dart_test.yaml explains why macOS local runs
 /// should use `--exclude-tags golden`); regenerate via the `update-goldens`
 /// workflow_dispatch job and commit the uploaded PNGs.
+///
+/// Every golden renders with the PRODUCTION theme (`AppTheme`, the same
+/// object `main.dart` passes to `MaterialApp`) on a phone-sized viewport —
+/// otherwise the PNGs would pin a default-blue 800×600 desktop window that
+/// no user ever sees, and a theme regression would never show up here.
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -47,16 +53,29 @@ void main() {
     Book(id: 2, title: 'Dune', author: 'Herbert'),
   ];
 
-  Widget libraryApp({bool dark = false}) => ProviderScope(
+  /// Phone profile (≈ Pixel-class, 412×915 dp at 2.625×). Android is the
+  /// only shipping target, so this — not the 800×600 test default — is the
+  /// layout a truncation regression would appear on.
+  void usePhoneViewport(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.625;
+    addTearDown(tester.view.reset);
+  }
+
+  /// Wraps [home] exactly as `main.dart` does for theming: light/dark from
+  /// [AppTheme], selected by [dark].
+  Widget themedApp(Widget home, {bool dark = false}) => MaterialApp(
+    theme: AppTheme.light,
+    darkTheme: AppTheme.dark,
+    themeMode: dark ? ThemeMode.dark : ThemeMode.light,
+    home: home,
+  );
+
+  Widget libraryApp(List<Book> list, {bool dark = false}) => ProviderScope(
     overrides: [
-      bookRepositoryProvider.overrideWith(
-        (ref) async => _GoldenBookRepo(books),
-      ),
+      bookRepositoryProvider.overrideWith((ref) async => _GoldenBookRepo(list)),
     ],
-    child: MaterialApp(
-      theme: dark ? ThemeData.dark() : ThemeData.light(),
-      home: const LibraryPage(),
-    ),
+    child: themedApp(const LibraryPage(), dark: dark),
   );
 
   Future<void> expectGolden(
@@ -64,6 +83,7 @@ void main() {
     Widget widget,
     String name,
   ) async {
+    usePhoneViewport(tester);
     await tester.pumpWidget(widget);
     await tester.pumpAndSettle();
     await expectLater(
@@ -73,33 +93,19 @@ void main() {
   }
 
   testWidgets('library page, populated, light', (tester) async {
-    await expectGolden(tester, libraryApp(), 'library_populated_light');
+    await expectGolden(tester, libraryApp(books), 'library_populated_light');
   });
 
   testWidgets('library page, populated, dark', (tester) async {
     await expectGolden(
       tester,
-      libraryApp(dark: true),
+      libraryApp(books, dark: true),
       'library_populated_dark',
     );
   });
 
   testWidgets('library page, empty, light', (tester) async {
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          bookRepositoryProvider.overrideWith(
-            (ref) async => _GoldenBookRepo(const []),
-          ),
-        ],
-        child: const MaterialApp(home: LibraryPage()),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/library_empty_light.png'),
-    );
+    await expectGolden(tester, libraryApp(const []), 'library_empty_light');
   });
 
   group('vault unlock', () {
@@ -124,7 +130,7 @@ void main() {
         tester,
         UncontrolledProviderScope(
           container: container,
-          child: const MaterialApp(home: VaultPage()),
+          child: themedApp(const VaultPage()),
         ),
         'vault_unlock',
       );
@@ -132,18 +138,15 @@ void main() {
   });
 
   testWidgets('publish connection tab', (tester) async {
-    await tester.pumpWidget(
+    await expectGolden(
+      tester,
       ProviderScope(
         overrides: [
           publishCredentialStoreProvider.overrideWithValue(_GoldenCreds()),
         ],
-        child: const MaterialApp(home: PublishPage()),
+        child: themedApp(const PublishPage()),
       ),
-    );
-    await tester.pumpAndSettle();
-    await expectLater(
-      find.byType(MaterialApp),
-      matchesGoldenFile('goldens/publish_connection.png'),
+      'publish_connection',
     );
   });
 
@@ -173,7 +176,7 @@ void main() {
             ),
             vaultStoreProvider.overrideWith((ref) async => gen.store),
           ],
-          child: const MaterialApp(home: RestorePage()),
+          child: themedApp(const RestorePage()),
         ),
         'restore_initial',
       );
