@@ -14,6 +14,11 @@
 > trigger-based (the next biometric change); B1's smoke test runs by hand on
 > a device before each release (D4), not in CI.
 >
+> **Before merging to `main`:** the committed golden PNGs were generated on
+> macOS. Run the `update-goldens` workflow once (Actions tab), commit the
+> uploaded Linux PNGs, and confirm the separate "Golden tests" CI step is
+> green — until then that step is expected to be red (D6).
+>
 > **Governance:** `AGENTS.md` wins over this plan. Every item must pass the
 > Agent Decision Checklist (AGENTS §13) before it is "done". Where this plan
 > and AGENTS.md disagree, stop and surface the conflict.
@@ -460,11 +465,11 @@ connection tab, restore page. Default test font (Ahem) keeps rendering
 deterministic. `dart_test.yaml` tags them `golden`. **Linux CI is the
 reference renderer** (macOS anti-aliasing differs): a `workflow_dispatch`
 job `update-goldens` runs `flutter test --update-goldens --tags golden` and
-uploads `test/goldens/**` as an artefact for the maintainer to commit. If
+uploads `test/golden/goldens/**` as an artefact for the maintainer to commit. If
 local macOS runs mismatch, run `flutter test --exclude-tags golden` locally
 and let CI own the comparison.
 
-**Acceptance.** Six PNGs under `test/goldens/`; CI compares them; the
+**Acceptance.** Six PNGs under `test/golden/goldens/`; CI compares them; the
 update job exists and has been run once.
 
 **NOT doing.** `golden_toolkit` (discontinued), `alchemist`, device-size
@@ -616,7 +621,8 @@ decision, not drift — the same reasoning as the CI coverage ratchet.
 **Target.**
 1. Fitness test (in `layer_boundaries_test.dart`, B4): every non-generated
    file under `lib/` is ≤ 500 lines **unless** listed in an explicit
-   allow-list `{path: recordedLines}` seeded with today's ten offenders
+   allow-list `{path: recordedLines}` seeded with today's offenders (13 over
+   500 lines; §2.2 B8 lists the ten over 550)
    (§2.2 B8). Rule: an allow-listed file may shrink but never exceed its
    recorded size; when it drops under 500 its entry is deleted. Comment the
    allow-list with the same "deliberate, reviewed change" note

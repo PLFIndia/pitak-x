@@ -29,7 +29,7 @@ fvm dart run build_runner build --delete-conflicting-outputs   # no diff allowed
 fvm flutter analyze lib test                                   # zero issues
 fvm dart format --set-exit-if-changed lib test
 fvm flutter test                                               # green; coverage floor not lowered
-( cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test --release )
+( cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo deny check && cargo test --release )
 ```
 
 ## Commits & PRs

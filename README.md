@@ -224,7 +224,9 @@ build links. Two things keep the `fdroid` flavor clean:
    its shape.
 
 Dependabot PRs are not exempt; the `fdroid-purity` CI job is the automated
-form of check 1.
+form of check 1, and it self-tests on every run by requiring the same grep to
+*match* on the `play` classpath (so a broken Gradle invocation cannot pass as
+"clean").
 
 Verify before tagging a release (neither `grep` may match — both print
 nothing; to prove the check works, run the second one on a `play` APK and
@@ -245,9 +247,10 @@ limit) and F-Droid changelogs `N1.txt`, `N2.txt`, `N3.txt` (one per ABI split
 — the Gradle `abiCodes` rule makes versionCodes `N*10+1..3`); update the
 version in the status note at the top of this file; walk the
 Library → Vault → Settings path once with TalkBack on (5 minutes,
-architecture.md A6); run the on-device smoke test
-`flutter test integration_test --flavor fdroid -d <device>`
-(architecture.md B1); run
+architecture.md A6); run the on-device smoke test on a cleared install
+(`adb uninstall dev.khoj.pitaka.fdroid`, then
+`flutter test integration_test --flavor fdroid -d <device>` — it creates the
+vault, so it needs an empty app; architecture.md B1); run
 `tool/release_build.sh` and upload the verified `.aab` it prints; commit, tag
 `x.y.z` with an annotated signed tag (`git tag -s` — the script verifies),
 push the tag; then open the fdroiddata MR — see `fdroid/README.md`
@@ -264,7 +267,7 @@ flutter test                                   # full Dart suite (1868 tests on 
 ( cd rust && cargo fmt --check )               # rustfmt, zero diffs
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
-( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
+( cd rust && cargo test --release )            # native crate tests (35 run incl. 3 proptest properties; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
 These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what

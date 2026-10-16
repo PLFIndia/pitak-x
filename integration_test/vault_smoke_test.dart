@@ -9,9 +9,12 @@
 ///   backup → restore it → the loan is still present.
 ///
 /// Run BY HAND on an emulator or device (biometrics cannot be enrolled on a
-/// stock emulator, so this uses the passphrase path only):
+/// stock emulator, so this uses the passphrase path only). The journey
+/// starts from an EMPTY app — it creates the vault — so app data must be
+/// cleared first; reinstalling alone keeps Android app data:
 ///
 /// ```bash
+/// adb uninstall dev.khoj.pitaka.fdroid   # or: adb shell pm clear dev.khoj.pitaka.fdroid
 /// flutter test integration_test --flavor fdroid -d <device>
 /// ```
 ///

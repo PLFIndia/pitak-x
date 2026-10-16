@@ -38,7 +38,27 @@ heading as part of the `chore(release):` commit.
 - All diagnostics route through `appLog` (debug builds only; release ships
   no logs to logcat) (B5).
 - `tool/release_build.sh` refuses a release whose version has no CHANGELOG
-  heading, and `--verify` refuses a lightweight release tag (B7, B9).
+  heading, and `--verify` refuses a release tag that is lightweight,
+  unsigned, or not on `HEAD` (B7, B9).
+- `lib/core/theme/app_theme.dart` is the single source of both themes;
+  `main.dart`, the goldens and the dark-theme a11y tests all render it.
+  Goldens use a phone viewport (1080×2400 @ 2.625).
+- `AppDatabase` re-asserts the raw-SQL objects (unique indexes, FTS5,
+  triggers) in `beforeOpen` on every open and rebuilds a missing FTS index;
+  the migration tests prove search works after every upgrade path.
+- `flutter_rust_bridge` Dart package pinned to exactly `2.12.0` (matches the
+  crate); Dependabot ignores it on both ecosystems.
+
+### Fixed (review of the architectureRefactor branch)
+- CI `osv-scan` passed the reusable workflow fewer permissions than its job
+  declares, so GitHub rejected the job — the lockfile scan never ran.
+- CI `fdroid-purity` failed open: a Gradle failure produced no output and
+  the gate printed "clean". It now captures the report, refuses an empty
+  one, and self-tests by requiring a match on the `play` classpath.
+- Property-test failure messages print a per-case seed that actually
+  replays the failing case.
+- Architecture gate now also forbids `application → infrastructure` imports
+  and recognises multi-line empty catch blocks.
 
 ## [1.4.0] - 2026-10 (tag `1.4.0`, versionCode 24)
 

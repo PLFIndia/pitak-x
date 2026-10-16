@@ -42,7 +42,11 @@ expression = "Apache-2.0"
 license-files = [{ path = "LICENSE", hash = 0x9d231dc7 }]
 
 [bans]
-# One version of each crate in the graph; duplicates need a reviewed reason
+# One version of each crate in the SHIPPED graph; duplicates need a reviewed
+# reason. cargo-deny's default `multiple-versions-include-dev = false` means
+# duplicates that only dev-dependencies (proptest) pull in — rand_core, syn,
+# getrandom, hashbrown, cpufeatures — are ignored on purpose: they are never
+# linked into the library.
 # (a duplicate transitive dep doubles the audit surface for that code).
 multiple-versions = "deny"
 wildcards = "deny"
