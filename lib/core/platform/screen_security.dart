@@ -13,8 +13,8 @@
 /// (iOS, desktop, tests) the call degrades to a silent no-op.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
 /// Pure policy: the window must be screen-capture-protected when the vault is
@@ -65,9 +65,10 @@ final class MethodChannelScreenSecurity implements ScreenSecurity {
     } on PlatformException catch (e) {
       // M18: a handler EXISTS but failed (Android) — that is a real defect
       // in the capture shield, so it must not be silent. Log it (debug
-      // console only — no analytics, no PII, §3), but never crash a vault
-      // flow: the data itself is still protected by encryption at rest.
-      debugPrint('screen_security: setSecure($secure) failed: ${e.code}');
+      // builds only — release logs reach logcat; no analytics, no PII, §3),
+      // but never crash a vault flow: the data itself is still protected by
+      // encryption at rest.
+      appLog('screen_security: setSecure($secure) failed: ${e.code}');
     }
   }
 }

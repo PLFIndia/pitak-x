@@ -13,11 +13,11 @@
 /// direction only.
 library;
 
-import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
@@ -125,9 +125,7 @@ Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
     download: ref.watch(boundedCoverDownloadProvider),
     releaseReference: janitor.releaseReference,
     onRefused: (bookId, reason) {
-      if (kDebugMode) {
-        debugPrint('remote cover: book $bookId refused (${reason.name})');
-      }
+      appLog('remote cover: book $bookId refused (${reason.name})');
     },
   );
 }

@@ -21,9 +21,10 @@ library;
 
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show immutable, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:pitaka/core/platform/app_info.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/app_update/domain/app_update_service.dart';
 
@@ -152,7 +153,7 @@ final class PlayAppUpdateService implements AppUpdateService {
         await methodChannel.invokeMethod<Object>('checkForUpdate'),
       );
       if (reply == null) {
-        debugPrint('app_update: checkForUpdate returned a malformed reply');
+        appLog('app_update: checkForUpdate returned a malformed reply');
         return AppUpdateAvailability.none;
       }
       return availabilityFrom(reply);
@@ -161,9 +162,9 @@ final class PlayAppUpdateService implements AppUpdateService {
       return AppUpdateAvailability.none;
     } on PlatformException catch (e) {
       // No Play Store, sideloaded install, transient Play error — all
-      // expected in the wild and all mean "stay silent" (debug log only,
-      // no analytics/PII, §3).
-      debugPrint('app_update: checkForUpdate failed: ${e.code}');
+      // expected in the wild and all mean "stay silent" (debug builds only;
+      // release logs reach logcat; no analytics/PII, §3).
+      appLog('app_update: checkForUpdate failed: ${e.code}');
       return AppUpdateAvailability.none;
     }
   }
@@ -178,7 +179,7 @@ final class PlayAppUpdateService implements AppUpdateService {
     } on MissingPluginException {
       return false;
     } on PlatformException catch (e) {
-      debugPrint('app_update: startFlexibleUpdate failed: ${e.code}');
+      appLog('app_update: startFlexibleUpdate failed: ${e.code}');
       return false;
     }
   }

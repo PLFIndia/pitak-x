@@ -137,7 +137,7 @@ final remoteCoverFetcherProvider =
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
 String _$materializeRemoteCoverUseCaseHash() =>
-    r'b734d46f7ab9ab5d4c25d8746023e1bd9bafabf9';
+    r'bb4da8dda1eb1c8461492c67cbc761ded88f4bb7';
 
 /// Materialises a book's allow-listed remote cover as a local file (M09),
 /// through the same bounded download publishing uses and the same cover store
