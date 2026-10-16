@@ -14,12 +14,15 @@ jobs:
     name: Rust core (pitak_crypto)
     runs-on: ubuntu-latest
     steps:
-      # v5 = v4 on Node 24 (clears the runner's Node 20 deprecation notice).
-      - uses: actions/checkout@v5
+      # All actions are SHA-pinned with a version comment (architecture.md
+      # A2); Dependabot's github-actions ecosystem updates both the SHA and
+      # the comment. SHAs looked up at pin time, 2026-10-16.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
-      - uses: dtolnay/rust-toolchain@1.96.0
-      - uses: Swatinem/rust-cache@v2
+      # (The 1.96.0 ref in this action is a branch; this is its head commit.)
+      - uses: dtolnay/rust-toolchain@d86e0fa8f147d6539442c26a61ebba8becc19489 # 1.96.0
+      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
         with:
           workspaces: rust
       # Rust gates at parity with Dart (architecture.md A3): format, lints,
@@ -51,10 +54,10 @@ jobs:
     name: Flutter (analyze, format, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Pinned via .fvmrc — the same file the F-Droid recipe extracts the
       # Flutter version from. One place to bump; CI and F-Droid stay in sync.
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .fvmrc
       # --enforce-lockfile mirrors the F-Droid recipe exactly: if pubspec.lock
@@ -112,3 +115,44 @@ jobs:
             'gh[pousr]_[A-Za-z0-9]{36,}' 'github_pat_[A-Za-z0-9_]{22,}' \
             'AKIA[0-9A-Z]{16}' 'xox[baprs]-[A-Za-z0-9-]{10,}' \
             -- ':!*.lock' ':!.github/workflows/*'
+
+  # OSV vulnerability scan of BOTH lockfiles (architecture.md A2): Dart's
+  # pubspec.lock is otherwise never scanned (cargo-deny covers only Rust).
+  # Uses the project's reusable workflow, SHA-pinned like every other action.
+  osv-scan:
+    name: OSV scan (pubspec.lock + Cargo.lock)
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Scan the two committed lockfiles only (not a recursive repo walk).
+      scan-args: |-
+        --lockfile=pubspec.lock
+        --lockfile=rust/Cargo.lock
+      upload-sarif: false
+      fail-on-vuln: true
+    permissions:
+      contents: read
+
+  # F-Droid purity gate (architecture.md A2/D3): the fdroid flavor must
+  # never resolve a Google dependency. This is the automated form of
+  # README.md › Flavors check 1, and it is NOT exempt for Dependabot PRs.
+  # Dependency resolution does not trigger cargokit, so no Rust cross-compile
+  # is needed; ubuntu-latest ships the Android SDK.
+  fdroid-purity:
+    name: F-Droid flavor purity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .fvmrc
+      - name: Resolve deps
+        run: flutter pub get --enforce-lockfile
+      - name: fdroidReleaseRuntimeClasspath is free of Google code
+        working-directory: android
+        run: |
+          if ./gradlew :app:dependencies --configuration fdroidReleaseRuntimeClasspath \
+              | grep -E 'com\.google\.android\.(play|gms)|firebase|mlkit'; then
+            echo "::error::Google dependency leaked into the fdroid flavor."
+            exit 1
+          fi
+          echo "fdroidReleaseRuntimeClasspath is clean."

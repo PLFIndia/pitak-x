@@ -223,6 +223,9 @@ build links. Two things keep the `fdroid` flavor clean:
    `implementation(…)`. `AppUpdateChannel.kt` is the worked example; copy
    its shape.
 
+Dependabot PRs are not exempt; the `fdroid-purity` CI job is the automated
+form of check 1.
+
 Verify before tagging a release (neither `grep` may match — both print
 nothing; to prove the check works, run the second one on a `play` APK and
 watch it light up):

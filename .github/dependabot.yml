@@ -1,0 +1,46 @@
+# Dependabot configuration (architecture.md A2).
+# Three ecosystems, weekly, each with a minor-and-patch group so one
+# maintainer gets a few grouped PRs instead of a drip feed.
+#
+# NOT exempt from the F-Droid flavor rule: the `fdroid-purity` CI job is the
+# automated form of README.md › Flavors check 1 and runs on every PR,
+# including these.
+version: 2
+updates:
+  # Dart packages. The Flutter SDK itself is ignored: it is bumped by hand
+  # together with .fvmrc and the pubspec.yaml `flutter:` pin (README ›
+  # Getting started) — three places, one deliberate change.
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: flutter
+      - dependency-name: flutter_test
+      - dependency-name: flutter_localizations
+      - dependency-name: sky_engine
+
+  # Rust crate. flutter_rust_bridge is ignored: its version must match the
+  # flutter_rust_bridge Dart package AND the generated bindings — bump it by
+  # hand together with `flutter_rust_bridge_codegen`, never piecemeal.
+  - package-ecosystem: cargo
+    directory: /rust
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      - dependency-name: flutter_rust_bridge
+
+  # CI actions. Updates both the pinned SHA and the trailing version comment.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
