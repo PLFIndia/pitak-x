@@ -55,6 +55,27 @@ void main() {
     );
   });
 
+  test('application imports no infrastructure', () {
+    // AGENTS §3.1: application depends on domain only — never on concrete
+    // repositories/data sources. Wiring happens in the composition root
+    // (core/di), which is the one place allowed to see both.
+    final forbidden = RegExp(
+      "^import 'package:pitaka/features/[^']+/infrastructure/",
+    );
+    final violations = <String>[
+      for (final file in featureFiles('/application/'))
+        for (final line in importLines(file))
+          if (forbidden.hasMatch(line.trim())) '${file.path}: ${line.trim()}',
+    ];
+    expect(
+      violations,
+      isEmpty,
+      reason:
+          'application must not import infrastructure (AGENTS §3.1). '
+          'Violations:\n${violations.join('\n')}',
+    );
+  });
+
   test('application and core/di import no Flutter UI libraries', () {
     // State orchestration and DI wiring never touch widgets; UI-only code
     // lives in presentation (AGENTS §3.1).
@@ -103,19 +124,32 @@ void main() {
     );
   });
 
-  test('a bare catch must be followed within two lines by a // comment', () {
-    // AGENTS §14: no silent swallowing. A bare `catch (_)` or `catch (e) {}`
-    // is acceptable only with an adjacent comment explaining the fail-closed
-    // reasoning (the single existing site: github_connection_controller.dart).
-    final bareCatch = RegExp(r'catch \(_\)\s*\{|catch \(e\)\s*\{\s*\}');
+  test('a bare catch must carry a // comment on its line or the next two', () {
+    // AGENTS §14: no silent swallowing. Two shapes count as "bare":
+    //  (a) the error is discarded — `catch (_)`, `catch (_, __)`, …;
+    //  (b) the body is empty — `catch (e) {}` or `catch (e) {` + `}`.
+    // Either is acceptable only with an adjacent comment explaining the
+    // fail-closed reasoning (the single existing site:
+    // github_connection_controller.dart).
+    final discardsError = RegExp(r'catch \(_(, _+)?\)\s*\{');
+    final emptyOneLiner = RegExp(r'catch \([^)]*\)\s*\{\s*\}');
+    final opensBlock = RegExp(r'catch \([^)]*\)\s*\{\s*$');
+    bool isComment(String l) => l.trimLeft().startsWith('//');
     final violations = <String>[];
     for (final file in libFiles()) {
       final lines = file.readAsLinesSync();
       for (var i = 0; i < lines.length; i++) {
-        if (!bareCatch.hasMatch(lines[i])) continue;
+        final line = lines[i];
+        final next = i + 1 < lines.length ? lines[i + 1] : '';
+        final emptyMultiLine = opensBlock.hasMatch(line) && next.trim() == '}';
+        final bare =
+            discardsError.hasMatch(line) ||
+            emptyOneLiner.hasMatch(line) ||
+            emptyMultiLine;
+        if (!bare) continue;
+        final sameLineComment = line.contains('//');
         final window = lines.skip(i + 1).take(2);
-        final hasComment = window.any((l) => l.trimLeft().startsWith('//'));
-        if (!hasComment) {
+        if (!sameLineComment && !window.any(isComment)) {
           violations.add('${file.path}:${i + 1}: uncommented bare catch');
         }
       }
