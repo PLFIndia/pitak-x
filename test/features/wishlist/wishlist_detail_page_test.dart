@@ -15,6 +15,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_detail_page.dart';
 
+import '../../support/a11y.dart';
+
 /// M13 widget tests: a failed purchase keeps the user on the detail page with a
 /// message (retry stays possible); a successful one pops; both purchase
 /// buttons are disabled while a purchase is in flight.
@@ -363,4 +365,13 @@ void main() {
       expect(books.insertCalls, 0);
     },
   );
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final wishlist = _MemWishlistRepo([_entry]);
+    final books = _ScriptedBookRepo();
+    await tester.pumpWidget(_host(wishlist, books));
+    await tester.tap(find.text('open detail'));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
 }

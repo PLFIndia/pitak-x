@@ -19,6 +19,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../../support/a11y.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 /// N03 widget tests: the detail page must show the CURRENT row, not the
@@ -496,5 +497,37 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Borrowers vault'), findsOneWidget);
     });
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+    await tester.tap(find.text('open detail'));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  // A6 text-scaling smoke test: 2x system font scale must not overflow.
+  testWidgets('renders at 2x text scale without overflowing', (tester) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith((ref) async => repo),
+          coversDirProvider.overrideWith((ref) async => tmp.path),
+        ],
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: BookDetailPage(bookId: _seed.id, initialBook: _seed),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }

@@ -8,6 +8,8 @@ import 'package:pitaka/features/bookmarks/domain/bookmarks_repository.dart';
 import 'package:pitaka/features/bookmarks/domain/library_bookmark.dart';
 import 'package:pitaka/features/bookmarks/presentation/pages/bookmarks_page.dart';
 
+import '../../support/a11y.dart';
+
 class _FakeRepo implements BookmarksRepository {
   _FakeRepo(this._list);
   final List<LibraryBookmark> _list;
@@ -82,5 +84,11 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Add'), findsOneWidget);
     // The inline URL error (mentions the accepted Pages hosts) is shown.
     expect(find.textContaining('Cloudflare Pages'), findsWidgets);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(_app([]));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

@@ -20,6 +20,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
 
+import '../../support/a11y.dart';
 import 'vault_repository_write_stub.dart';
 
 class _ReadOnlyVault with VaultWriteUnsupported implements VaultRepository {
@@ -97,5 +98,37 @@ void main() {
     await tester.tap(find.textContaining('AAAA').last);
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    const data = VaultData(
+      borrowers: [Borrower(id: 1, name: 'Asha')],
+      loans: [],
+    );
+    final store = VaultStore(baseDir: '${tmp.path}/vault');
+    final container = ProviderContainer(
+      overrides: [
+        vaultStoreProvider.overrideWith((ref) async => store),
+        vaultRepositoryProvider.overrideWith((ref) => _ReadOnlyVault(data)),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await container.read(vaultSessionControllerProvider.future);
+    final enabled = await container
+        .read(vaultSessionControllerProvider.notifier)
+        .enable(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+    expect(enabled.isRight(), isTrue);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: LendBookPage(bookId: 7, bookTitle: 'Godaan'),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

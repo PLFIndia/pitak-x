@@ -16,6 +16,8 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_contents_page.dart';
 
+import '../../support/a11y.dart';
+
 /// Minimal book repo serving titles for the read model (same fake shape as
 /// the N06 borrower-profile tests).
 class _TitleBooks implements BookRepository {
@@ -86,5 +88,32 @@ void main() {
 
     expect(find.text('Book #7'), findsOneWidget);
     expect(find.textContaining('private-detail'), findsNothing);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await pumpPage(tester, _TitleBooks(const {7: 'Godaan'}));
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('meets accessibility guidelines (dark theme)', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith(
+            (ref) async => _TitleBooks(const {7: 'Godaan'}),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: const VaultContentsPage(data: data),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // Open the ExpansionTile as pumpPage does.
+    await tester.tap(find.text('Asha'));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

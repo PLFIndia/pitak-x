@@ -243,7 +243,9 @@ Release checklist (both stores build from the same tag): bump `version:` in
 `fastlane/metadata/android/en-US/changelogs/N.txt` (≤ 500 characters — Play's
 limit) and F-Droid changelogs `N1.txt`, `N2.txt`, `N3.txt` (one per ABI split
 — the Gradle `abiCodes` rule makes versionCodes `N*10+1..3`); update the
-version in the status note at the top of this file; run
+version in the status note at the top of this file; walk the
+Library → Vault → Settings path once with TalkBack on (5 minutes,
+architecture.md A6); run
 `tool/release_build.sh` and upload the verified `.aab` it prints; commit, tag
 `x.y.z`, push the tag; then open the fdroiddata MR — see `fdroid/README.md`
 for the recipe side.

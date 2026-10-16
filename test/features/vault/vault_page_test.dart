@@ -13,6 +13,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
+import '../../support/a11y.dart';
 import 'vault_repository_write_stub.dart';
 
 /// Read-only fake: unlock returns a fixed snapshot; writes aren't exercised by
@@ -146,6 +147,12 @@ void main() {
     expect(find.textContaining('do not match'), findsOneWidget);
     expect(find.widgetWithText(FilledButton, 'Create vault'), findsOneWidget);
     expect(VaultStore(baseDir: tmp.path).isInitialized(), isFalse);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(host(container(initialized: false)));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }
 

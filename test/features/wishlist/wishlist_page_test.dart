@@ -8,6 +8,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
 
+import '../../support/a11y.dart';
+
 /// In-memory wishlist repo with autoincrement ids.
 class _MemRepo implements WishlistRepository {
   final List<WishlistBook> books = [];
@@ -87,5 +89,11 @@ void main() {
     await tester.pumpWidget(_host(repo));
     await tester.pumpAndSettle();
     expect(find.text('High'), findsOneWidget);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(_host(_MemRepo()));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

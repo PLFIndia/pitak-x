@@ -14,6 +14,8 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../support/a11y.dart';
+
 /// An in-memory credential store, starting signed out, so the Connection tab
 /// renders its "Sign in" state without any network.
 class _FakeCreds implements PublishCredentialStore {
@@ -746,5 +748,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('Direct upload from the app'), findsOneWidget);
     });
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(await _app());
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

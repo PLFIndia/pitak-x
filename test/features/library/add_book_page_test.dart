@@ -13,6 +13,8 @@ import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
 
+import '../../support/a11y.dart';
+
 /// Lookup stub returning a scripted result (N02 cover/flag tests).
 class _FakeLookup implements IsbnLookupService {
   _FakeLookup(this._result);
@@ -555,5 +557,33 @@ void main() {
       expect(otherBox, findsOneWidget);
       expect(find.text('Greek'), findsOneWidget);
     });
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final repo = _MemRepo();
+    await tester.pumpWidget(_host(repo));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  // A6 text-scaling smoke test: 2x system font scale must not overflow.
+  testWidgets('renders at 2x text scale without overflowing', (tester) async {
+    final repo = _MemRepo();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: const AddBookPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }
