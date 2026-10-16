@@ -1,0 +1,30 @@
+name: Update goldens
+
+# Regenerates the golden PNGs on the REFERENCE renderer (Linux —
+# architecture.md B2/D6: macOS rasterises text differently, so locally
+# generated goldens would flicker red on CI).
+#
+# Run by hand from the Actions tab ("Run workflow"), then download the
+# `goldens` artefact, copy its PNGs over test/golden/goldens/, and commit.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  update-goldens:
+    name: Regenerate golden PNGs (Linux reference)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .fvmrc
+      - name: Resolve deps
+        run: flutter pub get --enforce-lockfile
+      - name: flutter test --update-goldens --tags golden
+        run: flutter test --update-goldens --tags golden
+      - name: Upload goldens artefact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: goldens
+          path: test/golden/goldens/
