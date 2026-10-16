@@ -4,11 +4,24 @@ name: Update goldens
 # architecture.md B2/D6: macOS rasterises text differently, so locally
 # generated goldens would flicker red on CI).
 #
-# Run by hand from the Actions tab ("Run workflow"), then download the
-# `goldens` artefact, copy its PNGs over test/golden/goldens/, and commit.
+# Two ways to get fresh PNGs:
+#  1. Automatically: any pull request that touches the golden tests runs
+#     this and attaches a `goldens` artefact to the run. (The "Run workflow"
+#     button only exists once this file is on `main`, so without this
+#     trigger the very first PR that adds goldens could never produce them.)
+#  2. By hand: Actions tab → "Update goldens" → "Run workflow" on any branch.
+# Either way: download the `goldens` artefact, copy its PNGs over
+# test/golden/goldens/, commit, push. Never commit PNGs made on a Mac.
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - 'test/golden/**'
+
+# Read-only token: this workflow only renders and uploads an artefact.
+permissions:
+  contents: read
 
 jobs:
   update-goldens:
