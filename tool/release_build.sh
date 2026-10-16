@@ -79,6 +79,13 @@ version_line="$(sed -n 's/^version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' pubspe
 expected_name="${version_line%%+*}"
 expected_code="${version_line##*+}"
 
+# CHANGELOG gate (architecture.md B7): the developer changelog must carry a
+# heading for the version being built, so engineering history is never
+# shipped undocumented. Why here: this script already verifies every other
+# version pin, and it runs before every release.
+grep -qE "^## \[${expected_name}\]" CHANGELOG.md \
+  || die "CHANGELOG.md has no '## [${expected_name}]' heading. Move the Unreleased entries under the new version first."
+
 aab="build/app/outputs/bundle/playRelease/app-play-release.aab"
 
 if [[ "${mode}" == "build" ]]; then
