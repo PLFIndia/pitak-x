@@ -8,23 +8,32 @@ import 'dart:math';
 /// property, a FIXED default seed, and the seed printed in every failure
 /// message so any red case reproduces exactly.
 ///
-/// Usage:
+/// Usage — ONE generator per case, so the seed in a failure message
+/// reproduces that single case without replaying the ones before it:
 /// ```dart
-/// final fuzz = Fuzz(); // default seed
-/// for (var i = 0; i < 200; i++) {
+/// for (var i = 0; i < Fuzz.cases; i++) {
+///   final fuzz = Fuzz.forCase(i);
 ///   final input = fuzz.randomUtf8();
-///   // ... assert the property ...
+///   expect(..., reason: 'case $i (seed ${fuzz.seed})');
 /// }
 /// ```
-/// On failure, the test message includes `fuzz.seed` — re-run one case with
-/// `Fuzz(seed: <printed>)`.
+/// To replay a red case: `Fuzz(seed: <printed>)` produces the exact same
+/// sequence of draws as that case did.
 final class Fuzz {
-  /// Creates a generator. [seed] defaults to a fixed value so CI is
-  /// deterministic; pass a printed seed to reproduce a failure.
+  /// Creates a generator from an explicit [seed] (defaults to [defaultSeed]).
+  /// Use [Fuzz.forCase] inside property loops; use this constructor to
+  /// replay a printed seed.
   Fuzz({int seed = defaultSeed}) : seed = seed, _random = Random(seed);
 
-  /// The seed every property uses unless reproducing a failure.
+  /// The generator for case [index] of a property: a distinct, deterministic
+  /// seed per case, derived from [defaultSeed] so CI is reproducible.
+  Fuzz.forCase(int index) : this(seed: defaultSeed + index);
+
+  /// Base seed every property derives its per-case seeds from.
   static const int defaultSeed = 0x917A4;
+
+  /// Cases per property (architecture.md B3).
+  static const int cases = 200;
 
   /// The seed driving this instance (print it in failure messages).
   final int seed;

@@ -14,15 +14,16 @@ import 'hostile_zip_builder.dart';
 /// Property tests: hostile input must NEVER crash a parser
 /// (architecture.md B3; AGENTS §1 "treat every input as hostile").
 ///
-/// Each property runs 200 seeded cases. On failure the message prints the
-/// seed — reproduce a single case with `Fuzz(seed: <printed>)`.
+/// Each property runs [Fuzz.cases] seeded cases, one generator per case, so
+/// the seed printed on failure replays that case alone:
+/// `Fuzz(seed: <printed>)`.
 void main() {
-  const cases = 200;
+  const cases = Fuzz.cases;
 
   group('ImportFormatSniffer.detect', () {
     test('never throws on random bytes, random UTF-8, or mutated fixtures', () {
-      final fuzz = Fuzz();
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final inputs = <String>[
           fuzz.randomUtf8(),
           utf8.decode(fuzz.randomBytes(), allowMalformed: true),
@@ -35,7 +36,7 @@ void main() {
             // Either a format or null — never an exception.
             ImportFormatSniffer.detect(input);
           } catch (e) {
-            fail('detect threw on case $i (seed ${Fuzz.defaultSeed}): $e');
+            fail('detect threw on case $i (seed ${fuzz.seed}): $e');
           }
         }
       }
@@ -44,11 +45,11 @@ void main() {
 
   group('GoodreadsCsvImporter', () {
     test('never throws on random or mutated CSV text', () {
-      final fuzz = Fuzz();
       const importer = GoodreadsCsvImporter();
       const header =
           'Book Id,Title,Author,ISBN13,Exclusive Shelf,Bookshelves\n';
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final inputs = <String>[
           fuzz.randomUtf8(maxLength: 512),
           header + fuzz.randomUtf8(maxLength: 256),
@@ -61,7 +62,7 @@ void main() {
           } catch (e) {
             fail(
               'GoodreadsCsvImporter threw on case $i '
-              '(seed ${Fuzz.defaultSeed}): $e',
+              '(seed ${fuzz.seed}): $e',
             );
           }
         }
@@ -71,12 +72,12 @@ void main() {
 
   group('PitakaJsonImporter (LibraryJsonCodec)', () {
     test('never throws on random or mutated JSON text', () {
-      final fuzz = Fuzz();
       const importer = PitakaJsonImporter();
       const validEnvelope =
           '{"schemaVersion":3,"libraryId":"lib","libraryName":"L",'
           '"books":[],"wishlist":[],"exportedAt":0}';
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final inputs = <String>[
           fuzz.randomUtf8(maxLength: 512),
           validEnvelope,
@@ -96,7 +97,7 @@ void main() {
           } catch (e) {
             fail(
               'PitakaJsonImporter threw on case $i '
-              '(seed ${Fuzz.defaultSeed}): $e',
+              '(seed ${fuzz.seed}): $e',
             );
           }
         }
@@ -106,13 +107,13 @@ void main() {
 
   group('LibraryBundleReader.read', () {
     test('never throws on random bytes or mutated archives', () async {
-      final fuzz = Fuzz();
       const reader = LibraryBundleReader();
       // An honest tiny archive to mutate.
       final honest = buildHostileZip([
         HostileEntry('library.json', utf8.encode('{"schemaVersion":3}')),
       ]);
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final inputs = <Uint8List>[
           Uint8List.fromList(fuzz.randomBytes(maxLength: 512)),
           Uint8List.fromList(fuzz.bitFlip(honest)),
@@ -127,7 +128,7 @@ void main() {
           } catch (e) {
             fail(
               'LibraryBundleReader threw on case $i '
-              '(seed ${Fuzz.defaultSeed}): $e',
+              '(seed ${fuzz.seed}): $e',
             );
           }
         }

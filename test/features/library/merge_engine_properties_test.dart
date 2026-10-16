@@ -8,10 +8,11 @@ import '../../support/fuzz.dart';
 
 /// Property tests for `planMerge` (architecture.md B3). The merge engine
 /// decides what a restore/import writes — a partition bug here is a
-/// data-loss bug, so the invariants are tested on 200 seeded random
-/// libraries, not a couple of hand-written cases.
+/// data-loss bug, so the invariants are tested on [Fuzz.cases] seeded random
+/// libraries (one generator per case, so a printed seed replays one case),
+/// not a couple of hand-written cases.
 void main() {
-  const cases = 200;
+  const cases = Fuzz.cases;
 
   /// A random book. ISBNs/uids are drawn from a SMALL pool so collisions
   /// (the interesting cases) actually happen.
@@ -68,8 +69,8 @@ void main() {
   }
 
   test('partition is complete and disjoint on random inputs', () {
-    final fuzz = Fuzz();
     for (var i = 0; i < cases; i++) {
+      final fuzz = Fuzz.forCase(i);
       final local = [
         for (var j = 0; j < fuzz.nextInt(12); j++) randomBook(fuzz, id: j + 1),
       ];
@@ -80,14 +81,14 @@ void main() {
       try {
         expectPartition(plan, incoming);
       } catch (e) {
-        fail('partition violated on case $i (seed ${Fuzz.defaultSeed}): $e');
+        fail('partition violated on case $i (seed ${fuzz.seed}): $e');
       }
     }
   });
 
   test('planMerge(existing, []) is empty', () {
-    final fuzz = Fuzz();
     for (var i = 0; i < cases; i++) {
+      final fuzz = Fuzz.forCase(i);
       final local = [
         for (var j = 0; j < fuzz.nextInt(12); j++) randomBook(fuzz, id: j + 1),
       ];
@@ -96,7 +97,7 @@ void main() {
         plan.isNoOp && plan.identical == 0,
         isTrue,
         reason:
-            'empty incoming on case $i (seed ${Fuzz.defaultSeed}) '
+            'empty incoming on case $i (seed ${fuzz.seed}) '
             'produced $plan',
       );
     }
@@ -112,8 +113,8 @@ void main() {
       // honest tie-break). The shuffle-invariance property is therefore
       // asserted where it is meaningful: distinct identity keys, so no
       // tie-break ever fires.
-      final fuzz = Fuzz();
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final local = [
           for (var j = 0; j < fuzz.nextInt(10); j++)
             randomBook(fuzz, id: j + 1),
@@ -154,8 +155,7 @@ void main() {
         expect(
           signature(a),
           signature(b),
-          reason:
-              'shuffle changed the plan on case $i (seed ${Fuzz.defaultSeed})',
+          reason: 'shuffle changed the plan on case $i (seed ${fuzz.seed})',
         );
       }
     },
@@ -167,8 +167,8 @@ void main() {
       // Companion property for the order-dependent case above: every row past
       // the first that reuses a key must land in possibleDuplicates (UNIQUE
       // index protection), regardless of order.
-      final fuzz = Fuzz();
       for (var i = 0; i < cases; i++) {
+        final fuzz = Fuzz.forCase(i);
         final incoming = [
           for (var j = 0; j < 2 + fuzz.nextInt(4); j++)
             Book(title: 'Shared $j', isbn: 'same-isbn-$i', addedDate: j),
