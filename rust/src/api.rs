@@ -218,7 +218,9 @@ fn validate_loan_fields(
     notes: Option<&str>,
 ) -> Result<(), VaultWriteError> {
     if book_id <= 0 {
-        return Err(VaultWriteError::Validation("book_id must be positive".into()));
+        return Err(VaultWriteError::Validation(
+            "book_id must be positive".into(),
+        ));
     }
     if borrower_id <= 0 {
         return Err(VaultWriteError::Validation(
@@ -249,7 +251,15 @@ pub fn insert_borrower(
 ) -> Result<i64, VaultWriteError> {
     validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
-        vault::insert_borrower(&db_path, key, &BorrowerInput { name, contact, notes })
+        vault::insert_borrower(
+            &db_path,
+            key,
+            &BorrowerInput {
+                name,
+                contact,
+                notes,
+            },
+        )
     })
 }
 
@@ -265,7 +275,16 @@ pub fn update_borrower(
 ) -> Result<(), VaultWriteError> {
     validate_borrower_fields(&name, contact.as_deref(), notes.as_deref())?;
     with_vault_key(passphrase_utf8, &blob, |key| {
-        vault::update_borrower(&db_path, key, id, &BorrowerInput { name, contact, notes })
+        vault::update_borrower(
+            &db_path,
+            key,
+            id,
+            &BorrowerInput {
+                name,
+                contact,
+                notes,
+            },
+        )
     })
 }
 
@@ -296,12 +315,26 @@ pub fn insert_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<i64, VaultWriteError> {
-    validate_loan_fields(book_id, borrower_id, lent_date, due_date, returned_date, notes.as_deref())?;
+    validate_loan_fields(
+        book_id,
+        borrower_id,
+        lent_date,
+        due_date,
+        returned_date,
+        notes.as_deref(),
+    )?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::insert_loan(
             &db_path,
             key,
-            &LoanInput { book_id, borrower_id, lent_date, due_date, returned_date, notes },
+            &LoanInput {
+                book_id,
+                borrower_id,
+                lent_date,
+                due_date,
+                returned_date,
+                notes,
+            },
         )
     })
 }
@@ -320,13 +353,27 @@ pub fn update_loan(
     returned_date: Option<i64>,
     notes: Option<String>,
 ) -> Result<(), VaultWriteError> {
-    validate_loan_fields(book_id, borrower_id, lent_date, due_date, returned_date, notes.as_deref())?;
+    validate_loan_fields(
+        book_id,
+        borrower_id,
+        lent_date,
+        due_date,
+        returned_date,
+        notes.as_deref(),
+    )?;
     with_vault_key(passphrase_utf8, &blob, |key| {
         vault::update_loan(
             &db_path,
             key,
             id,
-            &LoanInput { book_id, borrower_id, lent_date, due_date, returned_date, notes },
+            &LoanInput {
+                book_id,
+                borrower_id,
+                lent_date,
+                due_date,
+                returned_date,
+                notes,
+            },
         )
     })
 }
@@ -473,7 +520,10 @@ pub fn wrap_for_biometric(
         let mk = unwrap_vault_key(&active_secret_utf8, &parsed).map_err(map_unwrap_err_bio)?;
         let s = generate_vault_key();
         let blob_bio = wrap_vault_key(&s, &mk).map_err(map_wrap_err_bio)?;
-        Ok(BiometricWrap { secret: s.to_vec(), blob: blob_bio })
+        Ok(BiometricWrap {
+            secret: s.to_vec(),
+            blob: blob_bio,
+        })
         // `mk` and `s` (Zeroizing) are dropped + wiped here.
     })();
     active_secret_utf8.zeroize();
@@ -588,7 +638,11 @@ mod tests {
         // New passphrase unwraps the new blob back to the SAME key.
         let parsed = WrappedBlob::parse(&new_blob).expect("parse new blob");
         let recovered = unwrap_vault_key(&new_pass, &parsed).expect("unwrap with new pass");
-        assert_eq!(recovered.as_slice(), key.as_slice(), "key is stable across rewrap");
+        assert_eq!(
+            recovered.as_slice(),
+            key.as_slice(),
+            "key is stable across rewrap"
+        );
 
         // Old passphrase must NOT open the new blob.
         assert!(
@@ -603,7 +657,10 @@ mod tests {
         let old_blob = wrap_vault_key(b"right-old", &key).expect("wrap");
         let err = rewrap_blob(b"wrong-old".to_vec(), b"new".to_vec(), old_blob)
             .expect_err("must fail with the wrong old passphrase");
-        assert!(matches!(err, VaultRewrapError::WrongPassphrase), "got {err:?}");
+        assert!(
+            matches!(err, VaultRewrapError::WrongPassphrase),
+            "got {err:?}"
+        );
     }
 
     #[test]
@@ -628,7 +685,11 @@ mod tests {
         // The bio blob opens with S and yields the SAME MK.
         let parsed = WrappedBlob::parse(&bio.blob).expect("parse bio blob");
         let recovered = unwrap_vault_key(&bio.secret, &parsed).expect("unwrap with S");
-        assert_eq!(recovered.as_slice(), key.as_slice(), "same MK via biometric path");
+        assert_eq!(
+            recovered.as_slice(),
+            key.as_slice(),
+            "same MK via biometric path"
+        );
 
         // The user passphrase must NOT open the bio blob (different envelope).
         assert!(
@@ -641,9 +702,12 @@ mod tests {
     fn wrap_for_biometric_with_wrong_active_secret_fails() {
         let key = generate_vault_key();
         let blob = wrap_vault_key(b"right", &key).expect("wrap");
-        let err = wrap_for_biometric(b"wrong".to_vec(), blob)
-            .expect_err("wrong active secret must fail");
-        assert!(matches!(err, VaultBiometricError::WrongPassphrase), "got {err:?}");
+        let err =
+            wrap_for_biometric(b"wrong".to_vec(), blob).expect_err("wrong active secret must fail");
+        assert!(
+            matches!(err, VaultBiometricError::WrongPassphrase),
+            "got {err:?}"
+        );
     }
 
     // N14: FFI-boundary input validation. These checks run BEFORE any key
@@ -651,18 +715,40 @@ mod tests {
     #[test]
     fn borrower_validation_rejects_empty_and_oversized_input() {
         let dummy = (b"p".to_vec(), "not-a-blob".to_string(), "db".to_string());
-        let err = insert_borrower(dummy.0.clone(), dummy.1.clone(), dummy.2.clone(), "   ".into(), None, None)
-            .expect_err("blank name must fail");
+        let err = insert_borrower(
+            dummy.0.clone(),
+            dummy.1.clone(),
+            dummy.2.clone(),
+            "   ".into(),
+            None,
+            None,
+        )
+        .expect_err("blank name must fail");
         assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
 
         let long = "x".repeat(MAX_NAME_CHARS + 1);
-        let err = insert_borrower(dummy.0.clone(), dummy.1.clone(), dummy.2.clone(), long, None, None)
-            .expect_err("oversized name must fail");
+        let err = insert_borrower(
+            dummy.0.clone(),
+            dummy.1.clone(),
+            dummy.2.clone(),
+            long,
+            None,
+            None,
+        )
+        .expect_err("oversized name must fail");
         assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
 
         let long_text = "y".repeat(MAX_TEXT_CHARS + 1);
-        let err = update_borrower(dummy.0, dummy.1, dummy.2, 1, "Ok".into(), Some(long_text), None)
-            .expect_err("oversized contact must fail");
+        let err = update_borrower(
+            dummy.0,
+            dummy.1,
+            dummy.2,
+            1,
+            "Ok".into(),
+            Some(long_text),
+            None,
+        )
+        .expect_err("oversized contact must fail");
         assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
     }
 
@@ -670,30 +756,50 @@ mod tests {
     fn loan_validation_rejects_bad_ids_dates_and_notes() {
         let dummy = (b"p".to_vec(), "not-a-blob".to_string(), "db".to_string());
         let cases: Vec<(i64, i64, i64)> = vec![
-            (0, 1, 1000),            // non-positive book id
-            (7, -1, 1000),           // non-positive borrower id
-            (7, 1, 0),               // non-positive lent date
+            (0, 1, 1000),                // non-positive book id
+            (7, -1, 1000),               // non-positive borrower id
+            (7, 1, 0),                   // non-positive lent date
             (7, 1, MAX_DATE_MILLIS + 1), // out-of-range date
         ];
         for (book_id, borrower_id, lent) in cases {
             let err = insert_loan(
-                dummy.0.clone(), dummy.1.clone(), dummy.2.clone(),
-                book_id, borrower_id, lent, None, None, None,
-            ).expect_err("invalid loan input must fail");
+                dummy.0.clone(),
+                dummy.1.clone(),
+                dummy.2.clone(),
+                book_id,
+                borrower_id,
+                lent,
+                None,
+                None,
+                None,
+            )
+            .expect_err("invalid loan input must fail");
             assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
         }
         let long_notes = "z".repeat(MAX_TEXT_CHARS + 1);
         let err = update_loan(
-            dummy.0, dummy.1, dummy.2,
-            5, 7, 1, 1000, None, None, Some(long_notes),
-        ).expect_err("oversized loan notes must fail");
+            dummy.0,
+            dummy.1,
+            dummy.2,
+            5,
+            7,
+            1,
+            1000,
+            None,
+            None,
+            Some(long_notes),
+        )
+        .expect_err("oversized loan notes must fail");
         assert!(matches!(err, VaultWriteError::Validation(_)), "got {err:?}");
     }
 
     #[test]
     fn wrap_for_biometric_rejects_a_malformed_blob() {
-        let err = wrap_for_biometric(b"s".to_vec(), "nope".into())
-            .expect_err("malformed blob must fail");
-        assert!(matches!(err, VaultBiometricError::Corrupt(_)), "got {err:?}");
+        let err =
+            wrap_for_biometric(b"s".to_vec(), "nope".into()).expect_err("malformed blob must fail");
+        assert!(
+            matches!(err, VaultBiometricError::Corrupt(_)),
+            "got {err:?}"
+        );
     }
 }

@@ -20,8 +20,7 @@ use pitak_crypto::api::{unlock_and_read_vault, VaultUnlockError};
 use std::fs;
 
 fn env(key: &str) -> String {
-    std::env::var(key)
-        .unwrap_or_else(|_| panic!("set {key} to run this gated acceptance test"))
+    std::env::var(key).unwrap_or_else(|_| panic!("set {key} to run this gated acceptance test"))
 }
 
 #[test]

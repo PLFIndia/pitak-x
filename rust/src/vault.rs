@@ -10,11 +10,7 @@ use std::ffi::{c_int, c_void};
 use zeroize::Zeroizing;
 
 extern "C" {
-    fn sqlite3_key(
-        db: *mut libsqlite3_sys::sqlite3,
-        p_key: *const c_void,
-        n_key: c_int,
-    ) -> c_int;
+    fn sqlite3_key(db: *mut libsqlite3_sys::sqlite3, p_key: *const c_void, n_key: c_int) -> c_int;
 }
 
 #[derive(Debug)]
@@ -80,10 +76,7 @@ pub const SCHEMA_SQL: &str = "CREATE TABLE IF NOT EXISTS borrowers(
 /// file already exists at the path (refuse to clobber an existing vault —
 /// fail-closed; the caller decides whether to overwrite). The key never leaves
 /// this function.
-pub fn create_vault(
-    db_path: &str,
-    vault_key: &Zeroizing<Vec<u8>>,
-) -> Result<(), VaultError> {
+pub fn create_vault(db_path: &str, vault_key: &Zeroizing<Vec<u8>>) -> Result<(), VaultError> {
     if std::path::Path::new(db_path).exists() {
         return Err(VaultError::Open(format!(
             "refusing to overwrite existing file at {db_path}"
@@ -104,12 +97,8 @@ pub fn create_vault(
     result
 }
 
-fn create_vault_inner(
-    db_path: &str,
-    vault_key: &Zeroizing<Vec<u8>>,
-) -> Result<(), VaultError> {
-    let conn = Connection::open(db_path)
-        .map_err(|e| VaultError::Open(e.to_string()))?;
+fn create_vault_inner(db_path: &str, vault_key: &Zeroizing<Vec<u8>>) -> Result<(), VaultError> {
+    let conn = Connection::open(db_path).map_err(|e| VaultError::Open(e.to_string()))?;
     let rc = unsafe {
         sqlite3_key(
             conn.handle(),
@@ -168,8 +157,10 @@ fn open_and_key(
     }
 
     // Force decryption by touching the schema; a wrong key fails here.
-    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get::<_, i64>(0))
-        .map_err(|e| VaultError::Key(format!("decrypt check failed: {e}")))?;
+    conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| {
+        r.get::<_, i64>(0)
+    })
+    .map_err(|e| VaultError::Key(format!("decrypt check failed: {e}")))?;
 
     if enforce_fk {
         conn.execute_batch("PRAGMA foreign_keys = ON;")
@@ -184,9 +175,7 @@ fn open_and_key(
 fn map_sqlite_err(e: rusqlite::Error, context: &str) -> VaultError {
     if let rusqlite::Error::SqliteFailure(err, ref msg) = e {
         if err.code == rusqlite::ErrorCode::ConstraintViolation {
-            return VaultError::Constraint(
-                msg.clone().unwrap_or_else(|| context.to_string()),
-            );
+            return VaultError::Constraint(msg.clone().unwrap_or_else(|| context.to_string()));
         }
     }
     VaultError::Read(format!("{context}: {e}"))
@@ -219,7 +208,8 @@ pub fn open_and_read(
         })
         .map_err(|e| VaultError::Read(e.to_string()))?;
     for row in rows {
-        data.borrowers.push(row.map_err(|e| VaultError::Read(e.to_string()))?);
+        data.borrowers
+            .push(row.map_err(|e| VaultError::Read(e.to_string()))?);
     }
 
     let mut stmt = conn
@@ -241,7 +231,8 @@ pub fn open_and_read(
         })
         .map_err(|e| VaultError::Read(e.to_string()))?;
     for row in rows {
-        data.loans.push(row.map_err(|e| VaultError::Read(e.to_string()))?);
+        data.loans
+            .push(row.map_err(|e| VaultError::Read(e.to_string()))?);
     }
 
     Ok(data)
@@ -371,7 +362,9 @@ pub fn delete_borrower(
         )
         .map_err(|e| map_sqlite_err(e, "delete_borrower: active loans"))?;
     if active > 0 {
-        return Err(VaultError::Constraint(ACTIVE_LOANS_BLOCK_DELETE.to_string()));
+        return Err(VaultError::Constraint(
+            ACTIVE_LOANS_BLOCK_DELETE.to_string(),
+        ));
     }
 
     tx.execute(
@@ -582,7 +575,11 @@ mod tests {
         let bid = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "Old".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "Old".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
 
@@ -614,7 +611,11 @@ mod tests {
             &db,
             &key,
             999,
-            &BorrowerInput { name: "X".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "X".into(),
+                contact: None,
+                notes: None,
+            },
         );
         assert!(matches!(upd, Err(VaultError::NotFound)), "got {upd:?}");
 
@@ -622,7 +623,10 @@ mod tests {
         assert!(matches!(del, Err(VaultError::NotFound)), "got {del:?}");
 
         let del_loan = delete_loan(&db, &key, 999);
-        assert!(matches!(del_loan, Err(VaultError::NotFound)), "got {del_loan:?}");
+        assert!(
+            matches!(del_loan, Err(VaultError::NotFound)),
+            "got {del_loan:?}"
+        );
         cleanup(&db);
     }
 
@@ -633,7 +637,11 @@ mod tests {
         let bid = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "HasLoan".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "HasLoan".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
         insert_loan(
@@ -673,14 +681,22 @@ mod tests {
         let bid = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "History".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "History".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
         // Another borrower whose rows must be untouched by the delete.
         let other = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "Other".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "Other".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
         for (who, book) in [(bid, 1), (bid, 2), (other, 3)] {
@@ -704,7 +720,11 @@ mod tests {
         let data = open_and_read(&db, &key).unwrap();
         assert_eq!(data.borrowers.len(), 1);
         assert_eq!(data.borrowers[0].id, other);
-        assert_eq!(data.loans.len(), 1, "only the OTHER borrower's loan remains");
+        assert_eq!(
+            data.loans.len(),
+            1,
+            "only the OTHER borrower's loan remains"
+        );
         assert_eq!(data.loans[0].borrower_id, other);
         cleanup(&db);
     }
@@ -716,7 +736,11 @@ mod tests {
         let bid = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "Mixed".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "Mixed".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
         for returned in [Some(2), None] {
@@ -785,7 +809,11 @@ mod tests {
         let bid = insert_borrower(
             &db,
             &key,
-            &BorrowerInput { name: "B".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "B".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .unwrap();
         let lid = insert_loan(
@@ -836,7 +864,11 @@ mod tests {
         let bid = insert_borrower(
             &path,
             &recovered_z,
-            &BorrowerInput { name: "First".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "First".into(),
+                contact: None,
+                notes: None,
+            },
         )
         .expect("write via unwrapped key");
         let data = open_and_read(&path, &recovered_z).unwrap();
@@ -892,7 +924,11 @@ mod tests {
         let res = insert_borrower(
             &db,
             &wrong,
-            &BorrowerInput { name: "X".into(), contact: None, notes: None },
+            &BorrowerInput {
+                name: "X".into(),
+                contact: None,
+                notes: None,
+            },
         );
         // A wrong key fails the decrypt-check in open_and_key → Key error.
         assert!(matches!(res, Err(VaultError::Key(_))), "got {res:?}");
