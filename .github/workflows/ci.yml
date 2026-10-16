@@ -129,8 +129,17 @@ jobs:
         --lockfile=rust/Cargo.lock
       upload-sarif: false
       fail-on-vuln: true
+    # A caller can only DOWNGRADE a reusable workflow's permissions, and
+    # GitHub rejects the job outright ("nested job is requesting X but is only
+    # allowed none") if the called job declares more than the caller grants.
+    # The called job declares exactly these three (its SARIF-upload step needs
+    # security-events; we switch that step off above, but the declaration is
+    # static). This is the set the OSV docs prescribe for the reusable
+    # workflow — the GITHUB_TOKEN is still scoped to this one job.
     permissions:
+      actions: read
       contents: read
+      security-events: write
 
   # F-Droid purity gate (architecture.md A2/D3): the fdroid flavor must
   # never resolve a Google dependency. This is the automated form of
