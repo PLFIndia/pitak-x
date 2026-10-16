@@ -6,6 +6,9 @@ edition = "2021"
 # (architecture.md A1). cargo-deny (added in A3) checks the whole crate
 # graph against this allow-list automatically.
 license = "GPL-3.0-or-later"
+# MSRV pin (architecture.md A3): fails closed on an older toolchain, mirroring
+# the Flutter pin in .fvmrc. CI installs exactly this toolchain.
+rust-version = "1.96"
 description = "Trusted crypto + vault core for Pitaka (Argon2id/AES-GCM blob unwrap + SQLCipher borrowers vault). Secrets never cross FFI."
 
 [lib]

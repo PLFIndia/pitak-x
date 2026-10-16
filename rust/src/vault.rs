@@ -99,6 +99,10 @@ pub fn create_vault(db_path: &str, vault_key: &Zeroizing<Vec<u8>>) -> Result<(),
 
 fn create_vault_inner(db_path: &str, vault_key: &Zeroizing<Vec<u8>>) -> Result<(), VaultError> {
     let conn = Connection::open(db_path).map_err(|e| VaultError::Open(e.to_string()))?;
+    // ALLOWED unsafe (crate denies it): SQLCipher keys a database only via its
+    // C API — passing raw key bytes as `PRAGMA key` text would expose them in
+    // SQL strings. `conn.handle()` is a live, valid sqlite3* here.
+    #[allow(unsafe_code)]
     let rc = unsafe {
         sqlite3_key(
             conn.handle(),
@@ -145,6 +149,9 @@ fn open_and_key(
     )
     .map_err(|e| VaultError::Open(e.to_string()))?;
 
+    // ALLOWED unsafe (crate denies it): see create_vault_inner — SQLCipher's
+    // raw-bytes C keying API is the only correct path.
+    #[allow(unsafe_code)]
     let rc = unsafe {
         sqlite3_key(
             conn.handle(),
@@ -495,6 +502,9 @@ mod tests {
     fn fresh_vault(key: &Zeroizing<Vec<u8>>) -> String {
         let path = unique_temp_path("pitak_vault_write_test");
         let conn = Connection::open(&path).expect("open new db");
+        // ALLOWED unsafe (crate denies it): same SQLCipher C keying path as
+        // production; test fixture DBs use the exact same mechanism.
+        #[allow(unsafe_code)]
         let rc = unsafe {
             sqlite3_key(
                 conn.handle(),
