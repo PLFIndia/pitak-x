@@ -22,7 +22,9 @@ jobs:
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
       # (The 1.96.0 ref in this action is a branch; this is its head commit.)
       - uses: dtolnay/rust-toolchain@d86e0fa8f147d6539442c26a61ebba8becc19489 # 1.96.0
-      - uses: Swatinem/rust-cache@63fed3e2fecf6f7b51dc6f043341b79ef82a9ae7 # v2.9.2
+      # Pins are COMMIT SHAs (v2.9.2 is an annotated tag; its tag-object SHA
+      # 63fed3e2… is a different object — resolve with `git rev-parse v2.9.2^{commit}`).
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust
       # Rust gates at parity with Dart (architecture.md A3): format, lints,
