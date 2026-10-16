@@ -116,10 +116,7 @@ void main() {
     // file IO run, so the archive is built through the app's own use-case
     // provider (the same object the page calls) instead of the sheet.
     final element = tester.element(find.byType(Navigator).first);
-    final container = ProviderScope.containerOf(
-      element,
-      listen: false,
-    );
+    final container = ProviderScope.containerOf(element, listen: false);
     final createUseCase = await container.read(
       createBackupUseCaseProvider.future,
     );
@@ -135,9 +132,7 @@ void main() {
     final restorer = await container.read(restoreBackupProvider.future);
     // UTF-8 bytes of the passphrase, in a writable buffer SecretBytes can
     // wipe (utf8.encode returns a fresh Uint8List — writable).
-    final secret = SecretBytes(
-      Uint8List.fromList(utf8.encode(passphrase)),
-    );
+    final secret = SecretBytes(Uint8List.fromList(utf8.encode(passphrase)));
     try {
       final restoreResult = await restorer.restore(
         archiveBytes: backupBytes!,
