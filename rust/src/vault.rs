@@ -457,7 +457,6 @@ pub fn delete_loan(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -475,7 +474,7 @@ mod tests {
             .unwrap()
             .as_nanos();
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
-        let mut path = PathBuf::from(std::env::temp_dir());
+        let mut path = std::env::temp_dir();
         path.push(format!("{prefix}_{nanos}_{n}.db"));
         let path = path.to_string_lossy().into_owned();
         for suffix in ["", "-wal", "-shm"] {
