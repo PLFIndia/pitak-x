@@ -62,7 +62,15 @@ dependencies:
   path_provider: ^2.1.6
   path: ^1.9.1
   archive: ^3.6.1
-  flutter_rust_bridge: ">=2.12.0 <3.0.0"
+  # EXACT pin, mirroring rust/Cargo.toml (`flutter_rust_bridge = "=2.12.0"`).
+  # Why: the generated bindings record the codegen version (2.12.0) and
+  # `RustLib.init()` refuses to start if the Dart runtime package disagrees
+  # (forceSameCodegenVersion) — the app would crash at launch on device,
+  # and no unit test calls `RustLib.init()` to notice. All three (Dart
+  # package, Rust crate, regenerated bindings) are bumped together by hand
+  # with `flutter_rust_bridge_codegen`; Dependabot ignores this package on
+  # both sides (.github/dependabot.yml).
+  flutter_rust_bridge: 2.12.0
   uuid: ^4.5.3
   # Reads the legacy Room books.db / wishlist.db (plain, no secrets) during
   # backup restore — exhaustive row/column migration into Drift (Step 7).

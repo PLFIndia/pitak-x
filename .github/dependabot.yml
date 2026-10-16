@@ -10,6 +10,10 @@ updates:
   # Dart packages. The Flutter SDK itself is ignored: it is bumped by hand
   # together with .fvmrc and the pubspec.yaml `flutter:` pin (README ›
   # Getting started) — three places, one deliberate change.
+  # flutter_rust_bridge is ignored HERE TOO (not only on the cargo side):
+  # the Dart package, the Rust crate and the generated bindings must carry
+  # the same version or `RustLib.init()` refuses to start the app — and no
+  # unit test would catch a one-sided bump (pubspec.yaml explains the pin).
   - package-ecosystem: pub
     directory: /
     schedule:
@@ -22,6 +26,7 @@ updates:
       - dependency-name: flutter_test
       - dependency-name: flutter_localizations
       - dependency-name: sky_engine
+      - dependency-name: flutter_rust_bridge
 
   # Rust crate. flutter_rust_bridge is ignored: its version must match the
   # flutter_rust_bridge Dart package AND the generated bindings — bump it by
