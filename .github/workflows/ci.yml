@@ -186,6 +186,14 @@ jobs:
           flutter-version-file: .fvmrc
       - name: Resolve deps
         run: flutter pub get --enforce-lockfile
+      # `android/gradlew` and `gradle-wrapper.jar` are git-ignored (Flutter's
+      # template); the Flutter tool injects them from the SDK on every build.
+      # `--config-only` runs exactly that injection (plus local.properties)
+      # and stops before compiling anything — the first run of the
+      # fail-closed gate below caught their absence (exit 127, "command not
+      # found"), which the old fail-open form would have reported as "clean".
+      - name: Generate the Gradle wrapper the way a real build does
+        run: flutter build apk --config-only --flavor fdroid
       # FAIL CLOSED (AGENTS §2.7). The naive form
       #   if ./gradlew … | grep PATTERN; then fail; fi
       # passes whenever Gradle itself fails (no output → grep matches nothing
