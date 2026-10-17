@@ -252,6 +252,14 @@ class SettingsController extends _$SettingsController
     ),
   );
 
+  /// Sets the location-sharing mode (libNetwork.md D7): what the published
+  /// GPS pin and the network `library.json` location may reveal. Mirrored
+  /// through [_update] like every other setter (M16: one serialised writer).
+  Future<void> setPublishLocationSharing(LocationSharing sharing) => _update(
+    (repo) => repo.setPublishLocationSharing(sharing),
+    (s) => s.copyWith(publishLocationSharing: sharing),
+  );
+
   /// Sets (or clears, when blank) the user's library-logo reference.
   Future<void> setLibraryLogo(String reference) => _update(
     (repo) => repo.setLibraryLogo(reference),

@@ -65,6 +65,13 @@ abstract interface class SettingsRepository {
     required String phone,
   });
 
+  /// Persists the location-sharing mode (libNetwork.md D7): governs the
+  /// published GPS pin AND the network descriptor's location. Off means no
+  /// coordinates leave the device in any published file.
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  );
+
   /// Persists the user's library-logo reference (`covers/<uuid>.jpg`), or blank
   /// to clear it. Non-secret; the image lives on-device under app docs.
   Future<Either<Failure, Unit>> setLibraryLogo(String reference);

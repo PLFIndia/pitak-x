@@ -161,8 +161,12 @@ PublishedFileFetcher publishedFileFetcher(PublishedFileFetcherRef ref) {
 /// effect, so it lives behind this seam) and substitutes the library values.
 @riverpod
 ViewerHtmlFactory viewerHtmlFactory(ViewerHtmlFactoryRef ref) =>
-    ({required libraryName, required contact}) =>
-        ViewerHtmlBuilder(libraryName: libraryName, contact: contact).build();
+    ({required libraryName, required contact, required sharing}) =>
+        ViewerHtmlBuilder(
+          libraryName: libraryName,
+          contact: contact,
+          sharing: sharing,
+        ).build();
 
 /// Events-HTML factory port: same seam as [viewerHtmlFactory] for the events
 /// page template.

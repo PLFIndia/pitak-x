@@ -52,6 +52,10 @@ class _FailingSettingsRepo implements SettingsRepository {
     required String phone,
   }) => throw _boom;
   @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) => throw _boom;
+  @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) => throw _boom;
 }
 
@@ -137,6 +141,10 @@ class _GatedSettingsRepo implements SettingsRepository {
     required String email,
     required String phone,
   }) => _gate('contact');
+  @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) => _gate('locationSharing');
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
       _gate('theme');
@@ -293,6 +301,95 @@ void main() {
       expect(s.publishContactAddress, '');
     });
 
+    // libNetwork.md §5.4 first-read rule (D7): the location-sharing switch
+    // must preserve what existing users already publish, and default new
+    // users to OFF.
+    group('publishLocationSharing first-read rule', () {
+      test(
+        'absent key + blank GPS ⇒ off (new devices never publish a pin)',
+        () async {
+          SharedPreferences.setMockInitialValues({});
+          final prefs = await SharedPreferences.getInstance();
+          final s = await PrefsSettingsRepository(prefs).load();
+          expect(s.publishLocationSharing, LocationSharing.off);
+        },
+      );
+
+      test('absent key + GPS set ⇒ exact (behaviour-preserving for the pin '
+          'existing users already publish)', () async {
+        SharedPreferences.setMockInitialValues({
+          'publish_contact_gps': '12.97, 77.59',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final s = await PrefsSettingsRepository(prefs).load();
+        expect(s.publishLocationSharing, LocationSharing.exact);
+      });
+
+      test('absent key + a LEGACY coordinate location ⇒ exact too', () async {
+        SharedPreferences.setMockInitialValues({
+          'publish_contact_location': '12.97, 77.59',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final s = await PrefsSettingsRepository(prefs).load();
+        expect(s.publishLocationSharing, LocationSharing.exact);
+      });
+
+      test('absent key + free-text (non-coordinate) GPS ⇒ off', () async {
+        // A gps field holding prose was never a pin; the rule keys on a
+        // non-blank value, but the legacy LOCATION key only counts when it
+        // parses as coordinates. Direct gps key: any non-blank value is the
+        // user's deliberate pin (D7) — verify the documented branch.
+        SharedPreferences.setMockInitialValues({
+          'publish_contact_location': 'MG Road, Bengaluru',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final s = await PrefsSettingsRepository(prefs).load();
+        expect(s.publishLocationSharing, LocationSharing.off);
+      });
+
+      test(
+        'a stored key wins over the rule — including an explicit off',
+        () async {
+          SharedPreferences.setMockInitialValues({
+            'publish_contact_gps': '12.97, 77.59',
+            'publish_location_sharing': 'off',
+          });
+          final prefs = await SharedPreferences.getInstance();
+          final s = await PrefsSettingsRepository(prefs).load();
+          expect(s.publishLocationSharing, LocationSharing.off);
+
+          SharedPreferences.setMockInitialValues({
+            'publish_contact_gps': '12.97, 77.59',
+            'publish_location_sharing': 'approximate',
+          });
+          final prefs2 = await SharedPreferences.getInstance();
+          final s2 = await PrefsSettingsRepository(prefs2).load();
+          expect(s2.publishLocationSharing, LocationSharing.approximate);
+        },
+      );
+
+      test('an unknown stored token fails closed to off', () async {
+        SharedPreferences.setMockInitialValues({
+          'publish_location_sharing': 'bogus',
+          'publish_contact_gps': '12.97, 77.59',
+        });
+        final prefs = await SharedPreferences.getInstance();
+        final s = await PrefsSettingsRepository(prefs).load();
+        expect(s.publishLocationSharing, LocationSharing.off);
+      });
+
+      test('setPublishLocationSharing persists the enum token', () async {
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final repo = PrefsSettingsRepository(prefs);
+        final result = await repo.setPublishLocationSharing(
+          LocationSharing.approximate,
+        );
+        expect(result.isRight(), isTrue);
+        expect(prefs.getString('publish_location_sharing'), 'approximate');
+      });
+    });
+
     test('tolerates an unknown stored token', () async {
       SharedPreferences.setMockInitialValues({
         'theme_mode': 'bogus',
@@ -390,6 +487,27 @@ void main() {
       // Clearing the logo resets to blank (default Pitak icon).
       await notifier.setLibraryLogo('');
       expect(container.read(settingsControllerProvider).value!.libraryLogo, '');
+    });
+
+    test('setPublishLocationSharing persists and updates state', () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await container.read(settingsControllerProvider.future);
+
+      await container
+          .read(settingsControllerProvider.notifier)
+          .setPublishLocationSharing(LocationSharing.approximate);
+
+      expect(
+        container
+            .read(settingsControllerProvider)
+            .value!
+            .publishLocationSharing,
+        LocationSharing.approximate,
+      );
+      final prefs = await container.read(sharedPreferencesProvider.future);
+      expect(prefs.getString('publish_location_sharing'), 'approximate');
     });
 
     test(

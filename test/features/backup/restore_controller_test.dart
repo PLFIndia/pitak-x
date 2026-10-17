@@ -85,6 +85,10 @@ class _LogoSettingsRepo implements SettingsRepository {
     required String phone,
   }) async => right(unit);
   @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) async => right(unit);
+  @override
   Future<Either<Failure, Unit>> setAppLockBiometric({
     required bool enabled,
   }) async => right(unit);

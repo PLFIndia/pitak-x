@@ -11,6 +11,7 @@
 library;
 
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// A user-supplied contact set for the published page.
 final class PublishContact {
@@ -39,19 +40,28 @@ final class PublishContact {
 abstract final class PublishContactLinks {
   /// Builds the inner HTML, or '' when nothing is set. [escape] escapes for the
   /// HTML context (injected so it stays pure/testable).
+  ///
+  /// [sharing] is the user's location-sharing switch (libNetwork.md D7 — one
+  /// switch, one meaning): it gates the GPS pin here on `index.html` exactly
+  /// as it gates the `location` block of `library.json`. `off` hides the pin
+  /// entirely (the address SEARCH link is unaffected — an address is what the
+  /// user typed into a different field); `approximate` publishes coordinates
+  /// rounded to ~1.1 km; `exact` publishes them as typed.
   static String render(
     PublishContact contact, {
     required String Function(String) escape,
+    required LocationSharing sharing,
   }) {
     final items = <String>[];
-    // Address → a Maps search link (free text). GPS → a precise pin.
+    // Address → a Maps search link (free text).
     final addr = locationHref(contact.address);
     if (addr != null) {
       items.add(_anchor(addr, '📍 ${contact.address.trim()}', escape));
     }
-    final pin = locationHref(contact.gps);
+    // GPS → a pin governed by the sharing switch (D7).
+    final pin = gpsItem(contact.gps, sharing);
     if (pin != null) {
-      items.add(_anchor(pin, '🗺 ${contact.gps.trim()}', escape));
+      items.add(_anchor(pin.$1, '🗺 ${pin.$2}', escape));
     }
     final mail = emailHref(contact.email);
     if (mail != null) {
@@ -63,6 +73,30 @@ abstract final class PublishContactLinks {
     }
     if (items.isEmpty) return '';
     return '<div class="contact">${items.join()}</div>';
+  }
+
+  /// The GPS pin as (href, label) under [sharing], or null when nothing may be
+  /// shown. The label carries the EFFECTIVE coordinates — under `approximate`
+  /// the page text must not leak the exact value the href hides. A gps value
+  /// that is not a coordinate pair keeps the historical search-link fallback
+  /// (free text the user chose to publish), but only while sharing is not
+  /// `off` — fail closed.
+  static (String, String)? gpsItem(String raw, LocationSharing sharing) {
+    if (sharing == LocationSharing.off) return null;
+    final v = raw.trim();
+    if (v.isEmpty) return null;
+    final point = GeoPoint.parse(v);
+    if (point == null) {
+      final href = locationHref(v); // search-link fallback for free text
+      return href == null ? null : (href, v);
+    }
+    final effective = sharing == LocationSharing.approximate
+        ? point.coarsen()
+        : point;
+    return (
+      'https://www.google.com/maps?q=${effective.lat},${effective.lng}',
+      '${effective.lat}, ${effective.lng}',
+    );
   }
 
   static String _anchor(

@@ -145,6 +145,10 @@ class _FakeSettingsRepo implements SettingsRepository {
     required String phone,
   }) async => right(unit);
   @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) async => right(unit);
+  @override
   Future<Either<Failure, Unit>> setLibraryLogo(String reference) async =>
       right(unit);
   @override

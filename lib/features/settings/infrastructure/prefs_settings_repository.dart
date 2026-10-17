@@ -33,6 +33,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   static const _legacyPublishLocationKey = 'publish_contact_location';
   static const _publishEmailKey = 'publish_contact_email';
   static const _publishPhoneKey = 'publish_contact_phone';
+  // Location-sharing mode (libNetwork.md D7). Read with a first-read rule —
+  // see [_readLocationSharing].
+  static const _publishLocationSharingKey = 'publish_location_sharing';
   static const _libraryLogoKey = 'library_logo';
   static const _appLockBiometricKey = 'app_lock_biometric';
 
@@ -49,6 +52,7 @@ class PrefsSettingsRepository implements SettingsRepository {
       publishContactGps: _readGpsWithMigration(),
       publishContactEmail: _prefs.getString(_publishEmailKey) ?? '',
       publishContactPhone: _prefs.getString(_publishPhoneKey) ?? '',
+      publishLocationSharing: _readLocationSharing(),
       libraryLogo: _prefs.getString(_libraryLogoKey) ?? '',
       appLockBiometric: _prefs.getBool(_appLockBiometricKey) ?? false,
     );
@@ -187,8 +191,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   }
 
   /// True when [v] is "lat, lng" with both in valid range. Kept in sync with
-  /// `PublishContactLinks._parseLatLng` (the publish-side renderer); duplicated
-  /// here so the settings layer stays free of a publish-feature import.
+  /// `GeoPoint.parse` (the network-domain value object the publish renderer
+  /// uses); duplicated here so the settings layer stays free of a
+  /// publish/network-feature import.
   static bool _looksLikeLatLng(String v) {
     final parts = v.split(',').map((s) => s.trim()).toList();
     if (parts.length != 2) return false;
@@ -197,6 +202,31 @@ class PrefsSettingsRepository implements SettingsRepository {
     if (lat == null || lng == null) return false;
     return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
   }
+
+  /// Location-sharing mode with the FIRST-READ RULE (libNetwork.md §5.4, D7):
+  /// when the key is ABSENT — the user never touched the switch, e.g. an
+  /// install from before the setting existed — a device that already has a
+  /// GPS value keeps publishing its pin, so the effective mode is `exact`
+  /// (behaviour-preserving: the pin existed before the switch did). Absent
+  /// key + blank GPS ⇒ `off` (new devices never publish coordinates by
+  /// default). Once the user moves the segmented control the key EXISTS and
+  /// this rule never fires again — including for a user who deliberately
+  /// picks `off` with a GPS value sitting in the field.
+  LocationSharing _readLocationSharing() {
+    final stored = _prefs.getString(_publishLocationSharingKey);
+    if (stored != null) return LocationSharingX.fromToken(stored);
+    return _readGpsWithMigration().trim().isEmpty
+        ? LocationSharing.off
+        : LocationSharing.exact;
+  }
+
+  @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) => _write(
+    () => _prefs.setString(_publishLocationSharingKey, sharing.token),
+    'location sharing',
+  );
 
   @override
   Future<Either<Failure, Unit>> setLibraryLogo(String reference) => _write(

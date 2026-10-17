@@ -147,14 +147,24 @@ final class PublishLibraryUseCase {
   /// Pause between read-back polls.
   static const Duration readBackInterval = Duration(seconds: 5);
 
+  /// Repo-relative path of the network descriptor (libNetwork.md §3.1). One
+  /// constant so the write, the sha-diff skip and the delete path agree.
+  static const String libraryJsonPath = 'library.json';
+
   /// Runs the publish. [books] are all library books (removed ones are filtered
   /// here). `activeLoanCounts` is the active-loan count per book id, or null
   /// when the vault is locked (availability then omitted). `encodeBooksJson`
   /// serialises the payload (injected so the JSON encoder stays in one place).
+  ///
+  /// [libraryJson] is the pre-encoded `library.json` network descriptor
+  /// (libNetwork.md §5.5), or null when none may be written — null REMOVES a
+  /// previously published descriptor in the same commit (M14 `deletePaths`),
+  /// so a stale location never outlives the user's opt-out.
   Future<PublishResult> call({
     required List<Book> books,
     required Map<int, int>? activeLoanCounts,
     required List<int> Function(PublishExport) encodeBooksJson,
+    required List<int>? libraryJson,
     void Function(PublishPhase)? onPhase,
   }) async {
     void phase(PublishPhase p) => onPhase?.call(p);
@@ -236,6 +246,12 @@ final class PublishLibraryUseCase {
     // Assemble the desired file set with per-file change detection.
     final desired = <DesiredFile>[
       _desiredFile('books.json', booksJson, manifest),
+      // The network descriptor rides in the SAME atomic commit (libNetwork.md
+      // §5.5): books.json, library.json and index.html always agree on the
+      // live site. Incremental publish skips it when the bytes are unchanged
+      // (the codec's stable key order makes equal input ⇒ equal blob sha).
+      if (libraryJson != null)
+        _desiredFile(libraryJsonPath, libraryJson, manifest),
       _desiredFile('index.html', viewerHtml, manifest),
     ];
     for (final d in coverDecisions.values) {
@@ -281,6 +297,14 @@ final class PublishLibraryUseCase {
         token: token,
         files: deduped,
         commitMessage: 'Pitaka publish $now',
+        // Opt-out path (libNetwork.md §5.5): with no descriptor to write, a
+        // library.json published by an EARLIER run is deleted in this same
+        // commit — GitHub's create-tree drops entries whose sha is null
+        // (M14). Only app-owned paths, only when they exist in the repo.
+        deletePaths:
+            libraryJson == null && manifest.shaFor(libraryJsonPath) != null
+            ? const [libraryJsonPath]
+            : const [],
       );
     } on GitHubApiException {
       // Fixed message (§5): exception text can embed URLs/response detail.

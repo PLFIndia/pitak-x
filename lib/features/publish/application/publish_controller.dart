@@ -11,7 +11,10 @@ import 'dart:convert';
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/network/application/build_own_descriptor.dart';
+import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -80,6 +83,40 @@ class PublishController extends _$PublishController {
     final readLocalCover = await ref.read(
       publishLocalCoverReaderProvider.future,
     );
+
+    // library.json (libNetwork.md §5.5): the network descriptor rides in the
+    // SAME commit as books.json. Identity is read through its single owner
+    // (N07 — `SettingsController` implements `LibraryNamespace`); a failed
+    // mint/read REFUSES the whole publish, because a descriptor without an
+    // honest fingerprint would be unmatchable by every hub (fail closed).
+    final identity = await ref
+        .read(settingsControllerProvider.notifier)
+        .current();
+    final own = identity.toNullable();
+    if (own == null) {
+      return const PublishFailure('Library identity unavailable');
+    }
+    // The descriptor's siteUrl is the site we are about to publish to. With
+    // no target repo chosen there is nothing to build — libraryJson stays
+    // null and the use case's own repo check answers with its clearer
+    // message before any file decision matters.
+    final siteUrl = githubPagesUrlFor(await credentials.targetRepo());
+    List<int>? libraryJson;
+    if (siteUrl != null) {
+      final built = BuildOwnDescriptor.build(
+        libraryId: own.id,
+        libraryName: settings.libraryName,
+        siteUrl: siteUrl,
+        sharing: settings.publishLocationSharing,
+        gps: settings.publishContactGps,
+        updatedAt: ref.read(clockProvider)(),
+        // members/memberOf stay empty until the network table exists (S3/S4).
+      );
+      // An unbuildable descriptor degrades to "write none" (and remove any
+      // stale published one) — the catalogue publish itself is still valid.
+      libraryJson = built.match((_) => null, LibraryDescriptorCodec.encode);
+    }
+
     final useCase = PublishLibraryUseCase(
       api: api,
       credentials: credentials,
@@ -96,6 +133,9 @@ class PublishController extends _$PublishController {
           email: settings.publishContactEmail,
           phone: settings.publishContactPhone,
         ),
+        // D7: one switch gates the index.html pin and the library.json
+        // location alike.
+        sharing: settings.publishLocationSharing,
       ),
     );
 
@@ -104,6 +144,7 @@ class PublishController extends _$PublishController {
       activeLoanCounts: counts,
       encodeBooksJson: (e) =>
           utf8.encode(const JsonEncoder.withIndent('  ').convert(e.toJson())),
+      libraryJson: libraryJson,
       // No onPhase wiring: the page shows the AsyncValue only, and nothing
       // reads per-phase progress (REVIEW_FINDINGS_2 — the old `_phase` field
       // was write-only dead weight).

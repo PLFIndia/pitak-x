@@ -12,6 +12,7 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -257,6 +258,39 @@ void main() {
     expect(h.api.commits, hasLength(1));
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a failed identity read refuses the whole publish', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.settings.identityFails = true;
+    final result = await h.publish(tester);
+
+    expect((result as PublishFailure).reason, 'Library identity unavailable');
+    expect(result.reason, isNot(contains('private-mint-detail')));
+    expect(h.api.commits, isEmpty);
+    expect(h.manifest.saves, 0);
+  });
+
+  testWidgets(
+    'library.json rides along — fingerprint yes, raw library ID never',
+    (tester) async {
+      final h = _Harness();
+      expect(await h.publish(tester), isA<PublishSuccess>());
+
+      final descriptor = h.api.commits.single.firstWhere(
+        (file) => file.path == 'library.json',
+      );
+      final json = utf8.decode(descriptor.bytes);
+      // The published identity is the FINGERPRINT of the ID (D3) …
+      expect(json, contains(LibraryFingerprint.of('a' * 32)));
+      // … and the raw ID itself never appears in the published file.
+      expect(json, isNot(contains('a' * 32)));
+      // Sharing is off by default ⇒ no location block at all (D7).
+      expect(json, isNot(contains('"location"')));
+      // The descriptor points at the site being published.
+      expect(json, contains('https://me.github.io/lib/'));
+    },
+  );
 }
 
 /// Every side-effecting port is in memory; unexpected calls fail the test.
@@ -269,7 +303,7 @@ class _Harness {
         publishCredentialStoreProvider.overrideWithValue(credentials),
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
-        settingsRepositoryProvider.overrideWith((ref) async => _Settings()),
+        settingsRepositoryProvider.overrideWith((ref) async => settings),
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),
@@ -281,6 +315,7 @@ class _Harness {
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,
           required contact,
+          required sharing,
         }) async {
           viewerBuilds++;
           return utf8.encode('<html></html>');
@@ -311,6 +346,7 @@ class _Harness {
   final api = _Api();
   final credentials = _Credentials();
   final manifest = _Manifest();
+  final settings = _Settings();
   late final ProviderContainer container;
   final states = <AsyncValue<PublishResult?>>[];
   int viewerBuilds = 0;
@@ -350,8 +386,19 @@ class _Books implements BookRepository {
 }
 
 class _Settings implements SettingsRepository {
+  /// Flipped by the identity-failure test: the publish must refuse rather
+  /// than ship a descriptor without an honest fingerprint (fail closed).
+  bool identityFails = false;
+
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
+
+  // The library.json descriptor needs the identity (libNetwork.md §5.5), so
+  // a publish now legitimately READS it through the controller's current().
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async => identityFails
+      ? left(const StorageFailure('private-mint-detail'))
+      : right('a' * 32);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

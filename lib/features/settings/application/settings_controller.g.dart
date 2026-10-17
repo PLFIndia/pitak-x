@@ -7,7 +7,7 @@ part of 'settings_controller.dart';
 // **************************************************************************
 
 String _$settingsControllerHash() =>
-    r'e7602aa61dfcec1bf4969d46ad301b9f5dc6c2ff';
+    r'e8ae2881b394107146fe09ac7f7fbd93ad6a93ea';
 
 /// Loads and mutates the app-wide [AppSettings].
 ///
