@@ -94,7 +94,7 @@ dependencies:
   # proprietary dependencies (the reason the F-Droid edition exists). Mirrors
   # the Kotlin app's ZXing choice. Requested just-in-time; used only on the
   # scan screens.
-  flutter_zxing: ^2.3.0
+  flutter_zxing: ^3.1.0
   # QR rendering for in-person library pairing (D40). Pure-Dart QR matrix
   # encoder; we paint it with a CustomPainter (core/widgets/qr_view.dart). No
   # native code, no network. Already in the tree transitively via `pdf`/`barcode`
