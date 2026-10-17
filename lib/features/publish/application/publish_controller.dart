@@ -13,6 +13,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
@@ -107,8 +108,10 @@ class PublishController extends _$PublishController {
       // members = the rows I added by card scan (§5.5): a hub publishes its
       // member list inside its own descriptor. A member row without a
       // fingerprint cannot be listed (there is nothing to match on) — it
-      // stays out until a scan/fetch supplies one. memberOf stays empty
-      // until membership confirmation lands (S4). The codec sorts by siteUrl.
+      // stays out until a scan/fetch supplies one. memberOf = the hubs whose
+      // membership the user CONFIRMED (§5.5/§5.6-4) — pending or declined
+      // rows are never published (a membership is public only by explicit
+      // choice). The codec sorts both lists by siteUrl.
       final network = await ref.read(networkRepositoryProvider.future);
       final memberRows = await network.loadAll();
       final built = BuildOwnDescriptor.build(
@@ -126,6 +129,10 @@ class PublishController extends _$PublishController {
                 siteUrl: row.siteUrl,
                 name: row.name.isEmpty ? null : row.name,
               ),
+        ],
+        memberOf: [
+          for (final row in memberRows)
+            if (row.membership == MembershipState.confirmed) row.siteUrl,
         ],
       );
       // An unbuildable descriptor degrades to "write none" (and remove any

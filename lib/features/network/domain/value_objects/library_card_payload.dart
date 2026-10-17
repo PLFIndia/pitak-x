@@ -20,8 +20,8 @@ library;
 
 import 'dart:convert';
 
-import 'package:pitaka/features/bookmarks/domain/library_bookmark.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
+import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 

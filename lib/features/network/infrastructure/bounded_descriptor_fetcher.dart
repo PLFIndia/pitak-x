@@ -14,9 +14,9 @@ library;
 import 'package:http/http.dart' as http;
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
-import 'package:pitaka/features/bookmarks/domain/library_bookmark.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
+import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 
 /// Fetches and parses one descriptor under strict origin/time/size limits.
 final class BoundedDescriptorFetcher {

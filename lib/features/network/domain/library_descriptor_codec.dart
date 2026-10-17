@@ -31,9 +31,9 @@ library;
 import 'dart:convert';
 
 import 'package:fpdart/fpdart.dart';
-import 'package:pitaka/features/bookmarks/domain/library_bookmark.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
+import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';

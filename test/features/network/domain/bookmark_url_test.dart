@@ -1,6 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/bookmarks/domain/library_bookmark.dart';
+import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 
+/// The allow-list cases carried over verbatim from the deleted bookmarks
+/// feature (`test/features/bookmarks/library_bookmark_test.dart`, ADR 0012):
+/// `BookmarkUrl` moved to the network domain unchanged, and these are the
+/// security boundary for every saved/scanned/fetched site URL (§6).
 void main() {
   group('BookmarkUrl.normalize — accepted', () {
     const ok = [
@@ -56,63 +60,13 @@ void main() {
       expect(BookmarkUrl.isValid('https://a.b.github.io/'), isTrue);
       expect(BookmarkUrl.isValid('https://github.io.co/'), isFalse);
     });
-  });
 
-  group('LibraryBookmark.create', () {
-    test('builds with a trimmed label + normalized url', () {
-      final b = LibraryBookmark.create(
-        label: '  My Library  ',
-        url: 'https://x.github.io/',
-      );
-      expect(b, isNotNull);
-      expect(b!.label, 'My Library');
-      expect(b.url, 'https://x.github.io/');
-    });
-
-    test('rejects a blank label', () {
-      expect(
-        LibraryBookmark.create(label: '   ', url: 'https://x.github.io/'),
-        isNull,
-      );
-    });
-
-    test('rejects an over-long label', () {
-      final long = 'x' * (LibraryBookmark.maxLabelLength + 1);
-      expect(
-        LibraryBookmark.create(label: long, url: 'https://x.github.io/'),
-        isNull,
-      );
-    });
-
-    test('rejects a non-Pages url', () {
-      expect(
-        LibraryBookmark.create(label: 'X', url: 'https://example.com/'),
-        isNull,
-      );
-    });
-  });
-
-  group('LibraryBookmark JSON', () {
-    test('round-trips', () {
-      final b = LibraryBookmark.create(
-        label: 'Lib',
-        url: 'https://x.pages.dev/',
-      )!;
-      expect(LibraryBookmark.fromJson(b.toJson())!.label, 'Lib');
-      expect(LibraryBookmark.fromJson(b.toJson())!.url, 'https://x.pages.dev/');
-    });
-
-    test('fromJson re-validates and rejects a bad stored url', () {
-      expect(
-        LibraryBookmark.fromJson({'label': 'X', 'url': 'https://evil.com/'}),
-        isNull,
-      );
-    });
-
-    test('fromJson rejects malformed shapes', () {
-      expect(LibraryBookmark.fromJson(null), isNull);
-      expect(LibraryBookmark.fromJson('x'), isNull);
-      expect(LibraryBookmark.fromJson({'label': 'only'}), isNull);
+    test('SECURITY: a URL longer than the §6 bound is rejected', () {
+      // §6: ≤ 2048 chars. The bound itself is enforced by Uri parsing + the
+      // callers' caps; a pathological over-long URL must never normalize.
+      final long = 'https://x.github.io/${'a' * 4096}';
+      expect(long.length, greaterThan(2048));
+      expect(BookmarkUrl.normalize(long), isNull);
     });
   });
 }

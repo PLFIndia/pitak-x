@@ -119,6 +119,45 @@ void main() {
     });
   });
 
+  group('ownLocation — the extracted D7 mapping the list sort also uses', () {
+    test('off ⇒ null even with a valid GPS value', () {
+      expect(
+        BuildOwnDescriptor.ownLocation(
+          sharing: LocationSharing.off,
+          gps: '12.9876, 77.5946',
+        ),
+        isNull,
+      );
+    });
+
+    test('approximate ⇒ coarsened; exact ⇒ as typed', () {
+      final approx = BuildOwnDescriptor.ownLocation(
+        sharing: LocationSharing.approximate,
+        gps: '12.9876, 77.5946',
+      )!;
+      expect(approx.sameAs(GeoPoint.tryCreate(12.99, 77.59)!), isTrue);
+      final exact = BuildOwnDescriptor.ownLocation(
+        sharing: LocationSharing.exact,
+        gps: '12.9876, 77.5946',
+      )!;
+      expect(exact.sameAs(GeoPoint.tryCreate(12.9876, 77.5946)!), isTrue);
+    });
+
+    test('blank/unparseable GPS ⇒ null in a shared mode', () {
+      expect(
+        BuildOwnDescriptor.ownLocation(sharing: LocationSharing.exact, gps: ''),
+        isNull,
+      );
+      expect(
+        BuildOwnDescriptor.ownLocation(
+          sharing: LocationSharing.exact,
+          gps: 'near the park',
+        ),
+        isNull,
+      );
+    });
+  });
+
   test('members and memberOf pass through (sorted by the codec at encode)', () {
     const member = MemberEntry(
       fingerprint:

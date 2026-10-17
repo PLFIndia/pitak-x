@@ -321,6 +321,25 @@ void main() {
         source: NetworkSource.card,
         isMember: true,
       ),
+      // memberOf (§5.5/§5.6-4): ONLY a CONFIRMED hub membership is published.
+      const NetworkLibrary(
+        id: 4,
+        siteUrl: 'https://hub.github.io/h/',
+        name: 'My Hub',
+        membership: MembershipState.confirmed,
+      ),
+      // Pending and declined memberships never appear in the descriptor —
+      // a membership is public only by the user's explicit choice.
+      const NetworkLibrary(
+        id: 5,
+        siteUrl: 'https://maybe.github.io/h/',
+        membership: MembershipState.pending,
+      ),
+      const NetworkLibrary(
+        id: 6,
+        siteUrl: 'https://nope.github.io/h/',
+        membership: MembershipState.declined,
+      ),
     ];
     expect(await h.publish(tester), isA<PublishSuccess>());
 
@@ -336,8 +355,7 @@ void main() {
         'name': 'M Library',
       },
     ]);
-    // memberOf stays empty until S4's membership confirmation lands.
-    expect(json['memberOf'], isEmpty);
+    expect(json['memberOf'], ['https://hub.github.io/h/']);
   });
 }
 
