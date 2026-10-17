@@ -89,6 +89,10 @@ class _LogoSettingsRepo implements SettingsRepository {
     LocationSharing sharing,
   ) async => right(unit);
   @override
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) async => right(unit);
+  @override
   Future<Either<Failure, Unit>> setAppLockBiometric({
     required bool enabled,
   }) async => right(unit);

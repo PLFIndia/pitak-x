@@ -72,6 +72,13 @@ abstract interface class SettingsRepository {
     LocationSharing sharing,
   );
 
+  /// Persists the OpenStreetMap tiles consent (libNetwork.md §5.9). When
+  /// false, the network map never builds and no tile request ever leaves the
+  /// device. Non-secret; default false.
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  });
+
   /// Persists the user's library-logo reference (`covers/<uuid>.jpg`), or blank
   /// to clear it. Non-secret; the image lives on-device under app docs.
   Future<Either<Failure, Unit>> setLibraryLogo(String reference);

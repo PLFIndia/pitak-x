@@ -143,5 +143,27 @@ final confirmMembershipUseCaseProvider =
 // ignore: unused_element
 typedef ConfirmMembershipUseCaseRef =
     AutoDisposeFutureProviderRef<ConfirmMembershipUseCase>;
+String _$osmTileLayerHash() => r'f65d0306b4fb96614cbcc7d4da32df475c1f99c0';
+
+/// The configured OSM [TileLayer] for the network map (§5.9): endpoint, UA
+/// header and HTTP-freshness cache all set in ONE place (infrastructure).
+/// Presentation watches this so it never imports infrastructure; tests
+/// override it with a layer backed by an in-memory blank tile provider.
+///
+/// Copied from [osmTileLayer].
+@ProviderFor(osmTileLayer)
+final osmTileLayerProvider = AutoDisposeProvider<TileLayer>.internal(
+  osmTileLayer,
+  name: r'osmTileLayerProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$osmTileLayerHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef OsmTileLayerRef = AutoDisposeProviderRef<TileLayer>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

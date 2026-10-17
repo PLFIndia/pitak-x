@@ -56,6 +56,10 @@ class _FailingSettingsRepo implements SettingsRepository {
     LocationSharing sharing,
   ) => throw _boom;
   @override
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) => throw _boom;
+  @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) => throw _boom;
 }
 
@@ -145,6 +149,10 @@ class _GatedSettingsRepo implements SettingsRepository {
   Future<Either<Failure, Unit>> setPublishLocationSharing(
     LocationSharing sharing,
   ) => _gate('locationSharing');
+  @override
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) => _gate('tilesConsent');
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
       _gate('theme');

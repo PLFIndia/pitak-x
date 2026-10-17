@@ -1,17 +1,18 @@
 /// Library network screen (presentation, AGENTS.md §3.1; libNetwork.md §5.1).
 ///
-/// Two tabs:
+/// Three tabs:
 ///  - **Libraries** — every library you care about (migrated bookmarks, card
 ///    scans, discoveries), distance-sorted when this library publishes a pin
 ///    of its own, each row tappable to open its published site externally.
 ///    Refresh (button or pull) is the ONLY thing that reads other libraries'
 ///    descriptors — nothing happens in the background (D11). "Add member"
 ///    scans another library's card; the app-bar action adds a library by URL.
+///  - **Map** — the saved libraries as pins (§5.9). Gated behind the OSM
+///    tiles consent: no tile request ever leaves the device until the user
+///    accepts. The map body lives in `network_map_page.dart`.
 ///  - **My card** — this library's own card QR for another library to scan
 ///    (§5.8). Exists only once the catalogue is published, because the card
 ///    IS the site URL plus a fingerprint fragment (D9).
-///
-/// The Map tab arrives with S5 — no "coming soon" placeholders in shipped UI.
 library;
 
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/add_member_page.dart';
+import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/add_library_dialog.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_refresh_bar.dart';
@@ -64,7 +66,7 @@ class NetworkPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Library network'),
@@ -78,11 +80,14 @@ class NetworkPage extends ConsumerWidget {
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Libraries'),
+              Tab(text: 'Map'),
               Tab(text: 'My card'),
             ],
           ),
         ),
-        body: const TabBarView(children: [_LibrariesTab(), _MyCardTab()]),
+        body: const TabBarView(
+          children: [_LibrariesTab(), NetworkMapGate(), _MyCardTab()],
+        ),
       ),
     );
   }

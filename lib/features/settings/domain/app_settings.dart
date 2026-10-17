@@ -111,6 +111,7 @@ class AppSettings {
     this.publishContactEmail = '',
     this.publishContactPhone = '',
     this.publishLocationSharing = LocationSharing.off,
+    this.networkMapTilesConsent = false,
     this.libraryLogo = '',
     this.appLockBiometric = false,
   });
@@ -161,6 +162,13 @@ class AppSettings {
   /// `PrefsSettingsRepository`.
   final LocationSharing publishLocationSharing;
 
+  /// Opt-in consent to fetch OpenStreetMap raster tiles for the network map
+  /// (libNetwork.md §5.9). While the map is open, tile requests go to
+  /// `tile.openstreetmap.org`, which sees the device IP and the viewed area.
+  /// Default false: the map never builds (and no tile request ever leaves
+  /// the device) until the user accepts the consent dialog.
+  final bool networkMapTilesConsent;
+
   /// Optional public contact email shown on the published page (#32).
   final String publishContactEmail;
 
@@ -194,6 +202,7 @@ class AppSettings {
     String? publishContactEmail,
     String? publishContactPhone,
     LocationSharing? publishLocationSharing,
+    bool? networkMapTilesConsent,
     String? libraryLogo,
     bool? appLockBiometric,
   }) {
@@ -211,6 +220,8 @@ class AppSettings {
       publishContactPhone: publishContactPhone ?? this.publishContactPhone,
       publishLocationSharing:
           publishLocationSharing ?? this.publishLocationSharing,
+      networkMapTilesConsent:
+          networkMapTilesConsent ?? this.networkMapTilesConsent,
       libraryLogo: libraryLogo ?? this.libraryLogo,
       appLockBiometric: appLockBiometric ?? this.appLockBiometric,
     );

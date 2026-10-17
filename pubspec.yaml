@@ -141,6 +141,18 @@ dependencies:
   # the existing downscale; no network, no new data leaves the device.
   image_cropper: ^12.2.1
   font_awesome_flutter: ^11.0.0
+  # Network map (libNetwork.md S5): the canonical FOSS Flutter map widget
+  # (BSD-3, pure Dart — no native code, no Google Play Services, so the
+  # F-Droid build stays clean). Renders OpenStreetMap raster tiles; tiles are
+  # fetched ONLY while the map tab is open and ONLY after the user accepts
+  # the tiles-consent dialog (`networkMapTilesConsent`). The OSM tile
+  # endpoint sees the device IP and viewed area — that is the whole point of
+  # the consent gate (PRIVACY.md).
+  flutter_map: ^8.3.2
+  # Latitude/longitude value type used by flutter_map's API. Already
+  # transitive via flutter_map; pinned direct so the map code can name
+  # `LatLng` without depending on a transitive version drifting.
+  latlong2: ^0.9.1
   # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
   # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
   # `in_app_update` plugin: a plugin links Google's proprietary Play Core

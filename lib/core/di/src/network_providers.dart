@@ -10,6 +10,7 @@
 /// direction.
 library;
 
+import 'package:flutter_map/flutter_map.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
@@ -22,6 +23,7 @@ import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
+import 'package:pitaka/features/network/infrastructure/osm_tile_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_providers.g.dart';
@@ -110,3 +112,10 @@ Future<ConfirmMembershipUseCase> confirmMembershipUseCase(
   final repo = await ref.watch(networkRepositoryProvider.future);
   return ConfirmMembershipUseCase(repository: repo);
 }
+
+/// The configured OSM [TileLayer] for the network map (§5.9): endpoint, UA
+/// header and HTTP-freshness cache all set in ONE place (infrastructure).
+/// Presentation watches this so it never imports infrastructure; tests
+/// override it with a layer backed by an in-memory blank tile provider.
+@riverpod
+TileLayer osmTileLayer(OsmTileLayerRef ref) => buildOsmTileLayer();

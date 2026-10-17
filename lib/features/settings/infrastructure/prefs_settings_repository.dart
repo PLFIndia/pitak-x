@@ -36,6 +36,9 @@ class PrefsSettingsRepository implements SettingsRepository {
   // Location-sharing mode (libNetwork.md D7). Read with a first-read rule —
   // see [_readLocationSharing].
   static const _publishLocationSharingKey = 'publish_location_sharing';
+  // OSM tiles consent for the network map (libNetwork.md §5.9). Plain bool;
+  // absent ⇒ false (no consent given yet — fail closed).
+  static const _networkMapTilesConsentKey = 'network_map_tiles_consent';
   static const _libraryLogoKey = 'library_logo';
   static const _appLockBiometricKey = 'app_lock_biometric';
 
@@ -53,6 +56,8 @@ class PrefsSettingsRepository implements SettingsRepository {
       publishContactEmail: _prefs.getString(_publishEmailKey) ?? '',
       publishContactPhone: _prefs.getString(_publishPhoneKey) ?? '',
       publishLocationSharing: _readLocationSharing(),
+      networkMapTilesConsent:
+          _prefs.getBool(_networkMapTilesConsentKey) ?? false,
       libraryLogo: _prefs.getString(_libraryLogoKey) ?? '',
       appLockBiometric: _prefs.getBool(_appLockBiometricKey) ?? false,
     );
@@ -226,6 +231,14 @@ class PrefsSettingsRepository implements SettingsRepository {
   ) => _write(
     () => _prefs.setString(_publishLocationSharingKey, sharing.token),
     'location sharing',
+  );
+
+  @override
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) => _write(
+    () => _prefs.setBool(_networkMapTilesConsentKey, enabled),
+    'map tiles consent',
   );
 
   @override
