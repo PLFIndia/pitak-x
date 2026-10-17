@@ -17,7 +17,7 @@ jobs:
       # All actions are SHA-pinned with a version comment (architecture.md
       # A2); Dependabot's github-actions ecosystem updates both the SHA and
       # the comment. SHAs looked up at pin time, 2026-10-16.
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
       # (The 1.96.0 ref in this action is a branch; this is its head commit.)
@@ -60,7 +60,7 @@ jobs:
     name: Flutter (analyze, format, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Pinned via .fvmrc — the same file the F-Droid recipe extracts the
       # Flutter version from. One place to bump; CI and F-Droid stay in sync.
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
@@ -182,7 +182,7 @@ jobs:
     name: F-Droid flavor purity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .fvmrc
