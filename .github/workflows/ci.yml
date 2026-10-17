@@ -94,13 +94,6 @@ jobs:
       # a logic failure (and never hides one).
       - name: Test (with coverage)
         run: flutter test --coverage --exclude-tags golden
-      # Golden comparison (architecture.md B2/D6): THIS runner is the
-      # reference renderer. The committed PNGs must come from the
-      # `update-goldens` workflow (ubuntu-latest), never from a Mac — macOS
-      # rasterises differently, and a red step here with green logic tests
-      # means exactly that: regenerate on Linux, commit, re-run.
-      - name: Golden tests (Linux is the reference renderer)
-        run: flutter test --tags golden
       # N14: coverage RATCHET — total line coverage must not regress below
       # the floor. The repo target is >=90% for domain/application
       # (AGENTS.md §10); this whole-suite floor is the enforceable minimum
@@ -145,6 +138,15 @@ jobs:
             0) echo "::error::secret-shaped string found in tracked files (see matches above)."; exit 1 ;;
             *) echo "::error::git grep failed (exit ${status}) — the secret scan did not run."; exit 1 ;;
           esac
+      # Golden comparison (architecture.md B2/D6): THIS runner is the
+      # reference renderer. The committed PNGs must come from the
+      # `update-goldens` workflow (ubuntu-latest), never from a Mac — macOS
+      # rasterises differently, and a red step here with green logic tests
+      # means exactly that: regenerate on Linux, commit, re-run.
+      # LAST on purpose: a failing step skips everything after it, and a
+      # renderer mismatch must never hide the coverage floor or secret scan.
+      - name: Golden tests (Linux is the reference renderer)
+        run: flutter test --tags golden
 
   # OSV vulnerability scan of BOTH lockfiles (architecture.md A2): Dart's
   # pubspec.lock is otherwise never scanned (cargo-deny covers only Rust).
