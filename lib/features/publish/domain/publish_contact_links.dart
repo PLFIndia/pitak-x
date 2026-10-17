@@ -10,6 +10,8 @@
 /// from validated/encoded parts.
 library;
 
+import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+
 /// A user-supplied contact set for the published page.
 final class PublishContact {
   /// Creates a contact. All fields optional (blank = omitted).
@@ -76,22 +78,13 @@ abstract final class PublishContactLinks {
   static String? locationHref(String raw) {
     final v = raw.trim();
     if (v.isEmpty) return null;
-    final latLng = _parseLatLng(v);
-    if (latLng != null) {
-      return 'https://www.google.com/maps?q=${latLng.$1},${latLng.$2}';
+    // GeoPoint.parse is the single "lat, lng" rule in the app (libNetwork.md
+    // §5.2): the network descriptor and the map pins validate identically.
+    final point = GeoPoint.parse(v);
+    if (point != null) {
+      return 'https://www.google.com/maps?q=${point.lat},${point.lng}';
     }
     return 'https://www.google.com/maps/search/?api=1&query=${_urlEncode(v)}';
-  }
-
-  static (double, double)? _parseLatLng(String v) {
-    final parts = v.split(',').map((s) => s.trim()).toList();
-    if (parts.length != 2) return null;
-    final lat = double.tryParse(parts[0]);
-    final lng = double.tryParse(parts[1]);
-    if (lat == null || lng == null) return null;
-    if (lat < -90.0 || lat > 90.0) return null;
-    if (lng < -180.0 || lng > 180.0) return null;
-    return (lat, lng);
   }
 
   /// Email → `mailto:`, or null when blank / obviously not an email.
