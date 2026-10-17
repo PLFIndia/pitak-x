@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/lookup_http_client.dart';
 
 void main() {
@@ -20,7 +21,11 @@ void main() {
     });
     await c.get(url);
     expect(seenUa, LookupHttpClient.userAgent);
-    expect(seenUa, contains('Pitaka'));
+    // The app-wide constant (libNetwork.md §5.12): ONE honest User-Agent for
+    // lookup, descriptor fetches and OSM tiles — app name + contact URL, no
+    // version number that could drift from pubspec.
+    expect(seenUa, AppUserAgent.value);
+    expect(seenUa, contains('Pitak'));
   });
 
   test('does not clobber a caller-set User-Agent', () async {
