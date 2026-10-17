@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #
-# pre-commit: refuse to commit stale generated Dart code.
+# pre-commit: refuse to commit stale generated Dart code; check cargo fmt
+# when Rust source is staged (keep the checks in sync with ci.yml).
 #
 # WHY THIS EXISTS (plain English)
 # -------------------------------
@@ -39,6 +40,29 @@ set -euo pipefail
 
 say()  { printf '[pre-commit] %s\n' "$*"; }
 warn() { printf '[pre-commit] WARNING: %s\n' "$*" >&2; }
+
+# ---------------------------------------------------------------------------
+# 0. Rust format check (architecture.md A3) — sub-second, runs when any
+#    rust/**/*.rs is staged. Mirrors the CI `cargo fmt --check` step.
+#    Missing cargo never blocks a commit (docs-only contributor behaviour,
+#    same as the Dart fallback below); the hook never edits the commit.
+# ---------------------------------------------------------------------------
+staged_rust="$(git diff --cached --name-only --diff-filter=ACMR -- 'rust/*.rs' || true)"
+
+if [[ -n "${staged_rust}" ]]; then
+  repo_root="$(git rev-parse --show-toplevel)"
+  if command -v cargo >/dev/null 2>&1; then
+    say "Rust source is staged; checking cargo fmt..."
+    if ! (cd "${repo_root}/rust" && cargo fmt --check); then
+      warn "REFUSED: rustfmt would change the staged Rust files."
+      warn "Run '(cd rust && cargo fmt)', review, stage, and commit again."
+      exit 1
+    fi
+    say "cargo fmt is clean."
+  else
+    warn "no cargo found; skipping the Rust format check. CI will run it."
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Only bother when Dart source is part of this commit.

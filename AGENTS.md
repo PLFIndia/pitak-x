@@ -15,6 +15,7 @@
 - **No magic.** Prefer explicit, readable code over clever one-liners the developer cannot maintain.
 - **Teach as you build.** If a pattern is introduced (Value Object, Notifier, Result type), include a one-line comment explaining its purpose the first time it appears in a feature.
 - **One blessed way.** Do not introduce alternative libraries or patterns for problems already solved in this repo. Consistency over novelty.
+- **Decisions get records.** Non-obvious architectural decisions get an ADR in `docs/adr/` (template: `docs/adr/0000-template.md`).
 
 ---
 
@@ -313,6 +314,10 @@ test('LoginController exposes AuthFailure on bad credentials', () async {
 - [ ] `flutter test --coverage`
 - [ ] Dependency / secret scan
 - [ ] Architecture boundary check (no inward->outward imports; domain free of Riverpod/Flutter)
+- [ ] Rust: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo deny check`, `cargo test --release`
+- [ ] OSV scan of `pubspec.lock` + `rust/Cargo.lock`
+- [ ] F-Droid purity: no Google deps in `fdroidReleaseRuntimeClasspath`
+- [ ] Schema version bump ⇒ new drift snapshot + regenerated helpers + data-matrix row (see `test/core/database/migration_test.dart`)
 
 ---
 

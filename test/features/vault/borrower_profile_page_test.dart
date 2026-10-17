@@ -22,6 +22,7 @@ import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart'
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/borrower_profile_page.dart';
 
+import '../../support/a11y.dart';
 import 'vault_repository_write_stub.dart';
 
 /// Vault fake with a scripted read result and a recordable, scriptable
@@ -202,5 +203,13 @@ void main() {
     expect(find.textContaining('db locked'), findsNothing);
     // Still an active loan: the button stays available for a retry.
     expect(find.text('Return'), findsOneWidget);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final vault = _ScriptedVault(
+      const VaultData(borrowers: [borrower], loans: [loan]),
+    );
+    await pumpUnlocked(tester, vault);
+    await expectMeetsA11yGuidelines(tester);
   });
 }

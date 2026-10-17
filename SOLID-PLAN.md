@@ -7,6 +7,10 @@
 > **Status:** IMPLEMENTED (2026-10-14) — S1–S5 + S7 merged on `main`
 > (commits `e648be9`…`ef13b47`); S6 DEFERRED per decision D2 (recorded in §7).
 >
+> **Follow-on work:** the engineering-practice review (CI hardening, supply
+> chain, migration/a11y/property/golden tests, repo process) lives in
+> `architecture.md` — see its status line for what has landed.
+>
 > This plan is governed by `AGENTS.md`. Every work item below must satisfy the
 > Agent Decision Checklist (AGENTS.md §13) before it is considered done. Where this
 > plan and AGENTS.md disagree, AGENTS.md wins — stop and surface the conflict.

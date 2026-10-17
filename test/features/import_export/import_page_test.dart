@@ -23,6 +23,8 @@ import 'package:pitaka/features/library/domain/repositories/book_repository.dart
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../../support/a11y.dart';
+
 class _MemBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
@@ -320,5 +322,12 @@ void main() {
       'Imported',
       reason: 'the import itself must still complete (keep-alive)',
     );
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final books = _MemBookRepo();
+    await tester.pumpWidget(page(useCaseWith(books)));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

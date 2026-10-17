@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -13,6 +14,7 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 
+import '../../support/a11y.dart';
 import '../app_update/fake_app_update_service.dart';
 
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
@@ -291,6 +293,53 @@ void main() {
     expect(find.text('Update downloading in the background…'), findsOneWidget);
     // The library itself still renders underneath.
     expect(find.text('The Hobbit'), findsOneWidget);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('meets accessibility guidelines (dark theme)', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith(
+            (ref) async => _FakeBookRepo(books),
+          ),
+        ],
+        // The shipped dark theme (lib/core/theme/app_theme.dart), not a
+        // generic ThemeData.dark(): contrast is checked on real colours.
+        child: MaterialApp(theme: AppTheme.dark, home: const LibraryPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  // A6 text-scaling smoke test: 2x system font scale must not overflow.
+  testWidgets('renders at 2x text scale without overflowing', (tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith(
+            (ref) async => _FakeBookRepo(books),
+          ),
+        ],
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: const LibraryPage(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }
 

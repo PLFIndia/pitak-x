@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/app_lock/app_lock_observer.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
@@ -32,8 +33,6 @@ class PitakaApp extends ConsumerWidget {
           data: (s) => s.themeMode.toThemeMode(),
           orElse: () => ThemeMode.system,
         );
-    final scheme = ColorScheme.fromSeed(seedColor: Colors.indigo);
-
     // Screen-capture protection (Android FLAG_SECURE) follows the combined
     // policy app-wide: on while the vault is unlocked (PII visible) OR any
     // passphrase entry field is visible (#34/F-12, REVIEW_FINDINGS_2 S2).
@@ -58,14 +57,10 @@ class PitakaApp extends ConsumerWidget {
           child: EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
         ),
         themeMode: themeMode,
-        theme: ThemeData(colorScheme: scheme, useMaterial3: true),
-        darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.indigo,
-            brightness: Brightness.dark,
-          ),
-          useMaterial3: true,
-        ),
+        // Both themes live in lib/core/theme/app_theme.dart so the golden and
+        // accessibility tests render exactly what ships.
+        theme: AppTheme.light,
+        darkTheme: AppTheme.dark,
         // UnfocusOnPause: releases keyboard focus when the app is
         // backgrounded, so the first tap after resume reliably reopens the
         // keyboard (fixes the stale-IME "tap does nothing" bug) and clears

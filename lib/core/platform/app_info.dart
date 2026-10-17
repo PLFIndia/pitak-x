@@ -13,8 +13,8 @@
 /// callers treat as "not eligible", never as an error.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 
 /// Reads the running app's package identity from the platform.
 // ignore: one_member_abstracts
@@ -44,10 +44,10 @@ final class MethodChannelAppInfo implements AppInfo {
       // No native handler (non-Android/tests) — expected, means "unknown".
       return null;
     } on PlatformException catch (e) {
-      // A handler exists but failed: log to the debug console only (no
-      // analytics, §3) and degrade to "unknown" — identity is only ever
-      // used to DISABLE a feature, never to grant one.
-      debugPrint('app_info: applicationId failed: ${e.code}');
+      // A handler exists but failed: log in debug builds only (release logs
+      // reach logcat; no analytics, §3) and degrade to "unknown" — identity
+      // is only ever used to DISABLE a feature, never to grant one.
+      appLog('app_info: applicationId failed: ${e.code}');
       return null;
     }
   }

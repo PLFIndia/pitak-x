@@ -48,9 +48,10 @@ impl WrappedBlob {
             ));
         }
         let b64 = base64::engine::general_purpose::STANDARD;
-        let dec = |p: &str| b64.decode(p).map_err(|_| {
-            UnwrapError::InvalidFormat("segment is not valid base64".into())
-        });
+        let dec = |p: &str| {
+            b64.decode(p)
+                .map_err(|_| UnwrapError::InvalidFormat("segment is not valid base64".into()))
+        };
         let salt = dec(parts[0])?;
         let iv = dec(parts[1])?;
         let ciphertext = dec(parts[2])?;
@@ -63,7 +64,11 @@ impl WrappedBlob {
         if ciphertext.is_empty() {
             return Err(UnwrapError::InvalidFormat("empty ciphertext".into()));
         }
-        Ok(WrappedBlob { salt, iv, ciphertext })
+        Ok(WrappedBlob {
+            salt,
+            iv,
+            ciphertext,
+        })
     }
 }
 
@@ -75,8 +80,13 @@ fn derive_kek(
     passphrase_utf8: &[u8],
     salt: &[u8],
 ) -> Result<Zeroizing<[u8; KEY_BYTES]>, UnwrapError> {
-    let params = Params::new(ARGON2_M_COST_KIB, ARGON2_T_COST, ARGON2_PARALLELISM, Some(KEY_BYTES))
-        .map_err(|_| UnwrapError::Kdf)?;
+    let params = Params::new(
+        ARGON2_M_COST_KIB,
+        ARGON2_T_COST,
+        ARGON2_PARALLELISM,
+        Some(KEY_BYTES),
+    )
+    .map_err(|_| UnwrapError::Kdf)?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
     let mut kek = Zeroizing::new([0u8; KEY_BYTES]);
     argon
@@ -98,7 +108,13 @@ pub fn unwrap_vault_key(
     let cipher = Aes256Gcm::new_from_slice(kek.as_ref()).map_err(|_| UnwrapError::Kdf)?;
     let nonce = Nonce::from_slice(&blob.iv);
     let key = cipher
-        .decrypt(nonce, Payload { msg: &blob.ciphertext, aad: b"" })
+        .decrypt(
+            nonce,
+            Payload {
+                msg: &blob.ciphertext,
+                aad: b"",
+            },
+        )
         .map_err(|_| UnwrapError::WrongPassphrase)?;
     if key.len() != KEY_BYTES {
         return Err(UnwrapError::WrongPassphrase);
@@ -124,10 +140,7 @@ pub enum WrapError {
 /// key is wrapped (used by vault creation #26 and passphrase change #28). A
 /// fresh CSPRNG salt + IV are generated per call (never reused), matching
 /// Kotlin's `SecureRandom`.
-pub fn wrap_vault_key(
-    passphrase_utf8: &[u8],
-    vault_key: &[u8],
-) -> Result<String, WrapError> {
+pub fn wrap_vault_key(passphrase_utf8: &[u8], vault_key: &[u8]) -> Result<String, WrapError> {
     if vault_key.len() != KEY_BYTES {
         return Err(WrapError::Encrypt);
     }
@@ -140,7 +153,13 @@ pub fn wrap_vault_key(
     let cipher = Aes256Gcm::new_from_slice(kek.as_ref()).map_err(|_| WrapError::Kdf)?;
     let nonce = Nonce::from_slice(&iv);
     let ciphertext = cipher
-        .encrypt(nonce, Payload { msg: vault_key, aad: b"" })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: vault_key,
+                aad: b"",
+            },
+        )
         .map_err(|_| WrapError::Encrypt)?;
 
     let b64 = base64::engine::general_purpose::STANDARD;

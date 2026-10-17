@@ -125,7 +125,8 @@ fastlane/      store metadata + per-versionCode changelogs
 ```
 
 The two `AGENTS.md` files (repo + harness) are the binding engineering contract —
-read them before contributing.
+read them before contributing. Non-obvious architectural decisions are recorded
+as ADRs in `docs/adr/`.
 
 ## Getting started
 
@@ -222,6 +223,11 @@ build links. Two things keep the `fdroid` flavor clean:
    `implementation(…)`. `AppUpdateChannel.kt` is the worked example; copy
    its shape.
 
+Dependabot PRs are not exempt; the `fdroid-purity` CI job is the automated
+form of check 1, and it self-tests on every run by requiring the same grep to
+*match* on the `play` classpath (so a broken Gradle invocation cannot pass as
+"clean").
+
 Verify before tagging a release (neither `grep` may match — both print
 nothing; to prove the check works, run the second one on a `play` APK and
 watch it light up):
@@ -239,9 +245,15 @@ Release checklist (both stores build from the same tag): bump `version:` in
 `fastlane/metadata/android/en-US/changelogs/N.txt` (≤ 500 characters — Play's
 limit) and F-Droid changelogs `N1.txt`, `N2.txt`, `N3.txt` (one per ABI split
 — the Gradle `abiCodes` rule makes versionCodes `N*10+1..3`); update the
-version in the status note at the top of this file; run
+version in the status note at the top of this file; walk the
+Library → Vault → Settings path once with TalkBack on (5 minutes,
+architecture.md A6); run the on-device smoke test on a cleared install
+(`adb uninstall dev.khoj.pitaka.fdroid`, then
+`flutter test integration_test --flavor fdroid -d <device>` — it creates the
+vault, so it needs an empty app; architecture.md B1); run
 `tool/release_build.sh` and upload the verified `.aab` it prints; commit, tag
-`x.y.z`, push the tag; then open the fdroiddata MR — see `fdroid/README.md`
+`x.y.z` with an annotated signed tag (`git tag -s` — the script verifies),
+push the tag; then open the fdroiddata MR — see `fdroid/README.md`
 for the recipe side.
 
 ## Quality gates
@@ -252,16 +264,31 @@ git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no sta
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
 flutter test                                   # full Dart suite (1868 tests on main as of 15 Oct 2026; 1441 at the 1.2.0 tag)
-( cd rust && cargo test --release )            # native crate tests (32 run; 2 #[ignore]d — need a real vault via PITAK_* env)
+( cd rust && cargo fmt --check )               # rustfmt, zero diffs
+( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
+( cd rust && cargo deny check )                # advisories + licenses + bans + sources
+( cd rust && cargo test --release )            # native crate tests (35 run incl. 3 proptest properties; 2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
 These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
 `.githooks/pre-commit` runs.
 
+**Schema version bumps** (architecture.md A4): every `schemaVersion` bump in
+`lib/core/database/app_database.dart` must (1) dump a new snapshot
+(`dart run drift_dev schema dump lib/core/database/app_database.dart
+drift_schemas/app_database/`), (2) regenerate the test helpers
+(`dart run drift_dev schema generate --data-classes --companions
+drift_schemas/app_database test/core/database/generated/`), and (3) add a row
+to the data matrix in `test/core/database/migration_test.dart`. A tripwire
+test fails if the snapshot for the current version is missing.
+
 Tip: the full widget suite can be slow under some harnesses — run by directory
 (`flutter test test/features/<area>`) to isolate a slow/hanging file.
 
 ## License / fonts
+
+Pitak is free software under the GNU General Public License v3.0 or later —
+see `LICENSE` (the same SPDX identifier the F-Droid recipe declares).
 
 Bundled Noto Sans Indic fonts (for PDF export) are under the SIL Open Font
 License 1.1 — see `assets/fonts/OFL.txt`.

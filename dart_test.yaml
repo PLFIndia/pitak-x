@@ -1,0 +1,13 @@
+# Test configuration (architecture.md B2). Golden tests are tagged so they
+# can be run/excluded as a group:
+#   flutter test --tags golden           # compare against committed PNGs
+#   flutter test --exclude-tags golden   # local macOS runs (renderer differs)
+#   flutter test --update-goldens --tags golden   # regenerate (Linux CI only)
+#
+# Why Linux CI is the reference renderer: macOS and Linux rasterise text
+# differently, so goldens generated on a Mac would flicker red on CI. The
+# `update-goldens` workflow_dispatch job in ci.yml regenerates them on
+# ubuntu-latest and uploads the PNGs as an artefact for the maintainer to
+# commit.
+tags:
+  golden:

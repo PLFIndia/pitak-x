@@ -20,6 +20,7 @@ import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
+import '../../support/a11y.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 
@@ -589,6 +590,14 @@ void main() {
       await pumpReview(tester, resultWith());
       expect(find.text('Needs your review'), findsNothing);
     });
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: MergePage())),
+    );
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }
 

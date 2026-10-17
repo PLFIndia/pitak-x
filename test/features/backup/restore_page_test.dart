@@ -28,6 +28,7 @@ import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 
+import '../../support/a11y.dart';
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
@@ -407,5 +408,11 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(lastSeen.error, isA<WrongPassphraseFailure>());
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(wrap(_archive(withVault: false)));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

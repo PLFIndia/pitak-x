@@ -1,0 +1,59 @@
+# cargo-deny configuration for pitak_crypto (architecture.md A3, D2).
+# One tool replaces cargo-audit: advisories + licenses + bans + sources.
+# Policy intent: everything must be GPL-3.0-or-later compatible; unsound and
+# unmaintained crates are ERRORS (the same policy `cargo audit --deny
+# warnings` enforced before).
+
+[advisories]
+# Fetch the live RustSec advisory DB; an offline scan against a stale DB is
+# not a clean bill of health. Vulnerabilities error by default.
+db-urls = ["https://github.com/rustsec/advisory-db"]
+# Unsound and unmaintained advisories fail the build — not warnings
+# ("all" = deny for direct AND transitive crates).
+unsound = "all"
+unmaintained = "all"
+yanked = "deny"
+
+[licenses]
+# Allow-list: every license here is GPL-3.0-or-later compatible.
+# OpenSSL 3 (bundled via rusqlite's vendored feature) is Apache-2.0;
+# SQLCipher is BSD-style. Fonts (OFL) are assets, not crates.
+# Exactly the licenses present in today's graph (cargo-deny warns on unused
+# allowances, keeping this list honest). The vendored OpenSSL/SQLCipher C
+# code built by rusqlite carries no crate license tag; its licenses
+# (Apache-2.0 / BSD-style) are GPL-compatible per architecture.md A1.
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "Unicode-3.0",
+  "Zlib",
+  "GPL-3.0-or-later",
+]
+# Confidence threshold for license-expression detection (default 0.8).
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+# allo-isolate (flutter_rust_bridge dep) declares no SPDX expression, only a
+# license *file*; the file is verbatim Apache-2.0 (checked 2026-10-16).
+name = "allo-isolate"
+expression = "Apache-2.0"
+license-files = [{ path = "LICENSE", hash = 0x9d231dc7 }]
+
+[bans]
+# One version of each crate in the SHIPPED graph; duplicates need a reviewed
+# reason. cargo-deny's default `multiple-versions-include-dev = false` means
+# duplicates that only dev-dependencies (proptest) pull in — rand_core, syn,
+# getrandom, hashbrown, cpufeatures — are ignored on purpose: they are never
+# linked into the library.
+# (a duplicate transitive dep doubles the audit surface for that code).
+multiple-versions = "deny"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+# crates.io only — no git or registry replacements sneak in unreviewed.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

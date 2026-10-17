@@ -14,38 +14,56 @@ jobs:
     name: Rust core (pitak_crypto)
     runs-on: ubuntu-latest
     steps:
-      # v5 = v4 on Node 24 (clears the runner's Node 20 deprecation notice).
-      - uses: actions/checkout@v5
+      # All actions are SHA-pinned with a version comment (architecture.md
+      # A2); Dependabot's github-actions ecosystem updates both the SHA and
+      # the comment. SHAs looked up at pin time, 2026-10-16.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
-      - uses: dtolnay/rust-toolchain@1.96.0
-      - uses: Swatinem/rust-cache@v2
+      # (The 1.96.0 ref in this action is a branch; this is its head commit.)
+      # The action installs the MINIMAL profile, which has neither rustfmt
+      # nor clippy — the A3 gates below need both listed explicitly.
+      - uses: dtolnay/rust-toolchain@d86e0fa8f147d6539442c26a61ebba8becc19489 # 1.96.0
+        with:
+          components: rustfmt, clippy
+      # Pins are COMMIT SHAs (v2.9.2 is an annotated tag; its tag-object SHA
+      # 63fed3e2… is a different object — resolve with `git rev-parse v2.9.2^{commit}`).
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust
+      # Rust gates at parity with Dart (architecture.md A3): format, lints,
+      # supply-chain. Order matters: fmt is sub-second and fails fastest.
+      - name: cargo fmt --check
+        working-directory: rust
+        run: cargo fmt --check
+      - name: cargo clippy (warnings = errors)
+        working-directory: rust
+        run: cargo clippy --all-targets -- -D warnings
       # Builds bundled-sqlcipher (OpenSSL + SQLCipher C) and runs the unit
       # tests + the HERMETIC vault fixture chain (Argon2id -> AES-GCM ->
       # sqlite3_key) against the committed synthetic fixture. No secrets.
       - name: cargo test (release)
         working-directory: rust
         run: cargo test --release
-      # Review findings N14/N15: advisory gate. Fails on any known vulnerability
-      # AND on warnings (e.g. unsoundness advisories like RUSTSEC-2026-0190) —
-      # an explicit warning policy. Fetches the live advisory DB; an offline
-      # scan against a stale local DB is NOT a clean bill of health.
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: cargo audit (deny warnings)
+      # Advisory + license + bans + sources gate (architecture.md D2: one
+      # tool replaces cargo-audit). rust/deny.toml keeps the old
+      # `--deny warnings` policy: unsound and unmaintained advisories are
+      # errors. Fetches the live advisory DB; an offline scan against a
+      # stale local DB is NOT a clean bill of health.
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: cargo deny check
         working-directory: rust
-        run: cargo audit --deny warnings
+        run: cargo deny check
 
   flutter:
     name: Flutter (analyze, format, test)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # Pinned via .fvmrc — the same file the F-Droid recipe extracts the
       # Flutter version from. One place to bump; CI and F-Droid stay in sync.
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version-file: .fvmrc
       # --enforce-lockfile mirrors the F-Droid recipe exactly: if pubspec.lock
@@ -71,9 +89,11 @@ jobs:
       - name: Format check
         run: dart format --set-exit-if-changed lib test
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
-      # restore) and the fail-closed restore/vault-mapping tests.
+      # restore) and the fail-closed restore/vault-mapping tests. Goldens run
+      # in their own step below so a renderer mismatch is never mistaken for
+      # a logic failure (and never hides one).
       - name: Test (with coverage)
-        run: flutter test --coverage
+        run: flutter test --coverage --exclude-tags golden
       # N14: coverage RATCHET — total line coverage must not regress below
       # the floor. The repo target is >=90% for domain/application
       # (AGENTS.md §10); this whole-suite floor is the enforceable minimum
@@ -96,10 +116,121 @@ jobs:
       # tooling to supply-chain). Catches the common credential shapes; the
       # real protection remains AGENTS.md §12 (never commit secrets) +
       # review discipline.
+      #
+      # FAIL CLOSED (AGENTS §2.7). Each pattern needs its own `-e`: without
+      # it, `git grep` reads the second and later patterns as REVISIONS and
+      # dies with "fatal: unable to resolve revision" (exit 128) — which a
+      # bare `!` turned into a pass, so this step had never scanned anything.
+      # Exit codes are now handled explicitly: 1 = scanned and clean,
+      # 0 = a match (fail), anything else = the scan did not run (fail).
       - name: Secret scan (tracked files)
         run: |
-          ! git grep -nIE \
-            'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY' \
-            'gh[pousr]_[A-Za-z0-9]{36,}' 'github_pat_[A-Za-z0-9_]{22,}' \
-            'AKIA[0-9A-Z]{16}' 'xox[baprs]-[A-Za-z0-9-]{10,}' \
+          set +e
+          git grep -nIE \
+            -e 'BEGIN (RSA|EC|OPENSSH|DSA|PGP) PRIVATE KEY' \
+            -e 'gh[pousr]_[A-Za-z0-9]{36,}' -e 'github_pat_[A-Za-z0-9_]{22,}' \
+            -e 'AKIA[0-9A-Z]{16}' -e 'xox[baprs]-[A-Za-z0-9-]{10,}' \
             -- ':!*.lock' ':!.github/workflows/*'
+          status=$?
+          set -e
+          case "${status}" in
+            1) echo "secret scan clean." ;;
+            0) echo "::error::secret-shaped string found in tracked files (see matches above)."; exit 1 ;;
+            *) echo "::error::git grep failed (exit ${status}) — the secret scan did not run."; exit 1 ;;
+          esac
+      # Golden comparison (architecture.md B2/D6): THIS runner is the
+      # reference renderer. The committed PNGs must come from the
+      # `update-goldens` workflow (ubuntu-latest), never from a Mac — macOS
+      # rasterises differently, and a red step here with green logic tests
+      # means exactly that: regenerate on Linux, commit, re-run.
+      # LAST on purpose: a failing step skips everything after it, and a
+      # renderer mismatch must never hide the coverage floor or secret scan.
+      - name: Golden tests (Linux is the reference renderer)
+        run: flutter test --tags golden
+
+  # OSV vulnerability scan of BOTH lockfiles (architecture.md A2): Dart's
+  # pubspec.lock is otherwise never scanned (cargo-deny covers only Rust).
+  # Uses the project's reusable workflow, SHA-pinned like every other action.
+  osv-scan:
+    name: OSV scan (pubspec.lock + Cargo.lock)
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+    with:
+      # Scan the two committed lockfiles only (not a recursive repo walk).
+      scan-args: |-
+        --lockfile=pubspec.lock
+        --lockfile=rust/Cargo.lock
+      upload-sarif: false
+      fail-on-vuln: true
+    # A caller can only DOWNGRADE a reusable workflow's permissions, and
+    # GitHub rejects the job outright ("nested job is requesting X but is only
+    # allowed none") if the called job declares more than the caller grants.
+    # The called job declares exactly these three (its SARIF-upload step needs
+    # security-events; we switch that step off above, but the declaration is
+    # static). This is the set the OSV docs prescribe for the reusable
+    # workflow — the GITHUB_TOKEN is still scoped to this one job.
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+  # F-Droid purity gate (architecture.md A2/D3): the fdroid flavor must
+  # never resolve a Google dependency. This is the automated form of
+  # README.md › Flavors check 1, and it is NOT exempt for Dependabot PRs.
+  # Dependency resolution does not trigger cargokit, so no Rust cross-compile
+  # is needed; ubuntu-latest ships the Android SDK.
+  fdroid-purity:
+    name: F-Droid flavor purity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version-file: .fvmrc
+      - name: Resolve deps
+        run: flutter pub get --enforce-lockfile
+      # `android/gradlew` and `gradle-wrapper.jar` are git-ignored (Flutter's
+      # template); the Flutter tool injects them from the SDK on every build.
+      # `--config-only` runs exactly that injection (plus local.properties)
+      # and stops before compiling anything — the first run of the
+      # fail-closed gate below caught their absence (exit 127, "command not
+      # found"), which the old fail-open form would have reported as "clean".
+      - name: Generate the Gradle wrapper the way a real build does
+        run: flutter build apk --config-only --flavor fdroid
+      # FAIL CLOSED (AGENTS §2.7). The naive form
+      #   if ./gradlew … | grep PATTERN; then fail; fi
+      # passes whenever Gradle itself fails (no output → grep matches nothing
+      # → "clean"), so a broken SDK, a renamed configuration or a typo would
+      # silently turn the gate green. Instead: (1) capture the report, letting
+      # `set -e` abort on a Gradle failure; (2) refuse an empty report;
+      # (3) only then grep it.
+      - name: fdroidReleaseRuntimeClasspath is free of Google code
+        working-directory: android
+        env:
+          PATTERN: 'com\.google\.android\.(play|gms)|firebase|mlkit'
+        run: |
+          report="$(./gradlew --quiet :app:dependencies --configuration fdroidReleaseRuntimeClasspath)"
+          if ! grep -q -- '--- ' <<<"${report}"; then
+            echo "::error::The fdroid dependency report is empty — the gate checked nothing."
+            exit 1
+          fi
+          if grep -E "${PATTERN}" <<<"${report}"; then
+            echo "::error::Google dependency leaked into the fdroid flavor."
+            exit 1
+          fi
+          echo "fdroidReleaseRuntimeClasspath is clean."
+      # POSITIVE CONTROL: the play flavor legitimately contains Google code
+      # (README › Flavors). If this step cannot find it, the grep or the
+      # Gradle invocation is broken and the step above proved nothing. This
+      # is the automated, every-run form of the plan's one-off "point it at
+      # the play classpath and watch it fail" proof (architecture.md A2).
+      - name: Positive control — playReleaseRuntimeClasspath DOES contain Google code
+        working-directory: android
+        env:
+          PATTERN: 'com\.google\.android\.(play|gms)|firebase|mlkit'
+        run: |
+          report="$(./gradlew --quiet :app:dependencies --configuration playReleaseRuntimeClasspath)"
+          if ! grep -qE "${PATTERN}" <<<"${report}"; then
+            echo "::error::The play classpath shows no Google code — the purity check itself is broken."
+            exit 1
+          fi
+          echo "positive control OK: the play flavor resolves Google code, so the fdroid check is live."

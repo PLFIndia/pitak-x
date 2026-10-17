@@ -16,6 +16,8 @@ import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 
+import '../../support/a11y.dart';
+
 /// Use-case fake: returns a fixed result. The collaborator fields are never
 /// touched — `noSuchMethod` throws if that ever changes.
 class _FakeCreateBackup implements CreateBackupUseCase {
@@ -135,5 +137,13 @@ void main() {
       isTrue,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(
+      page(useCase: _FakeCreateBackup(right(Uint8List.fromList([1, 2, 3])))),
+    );
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }

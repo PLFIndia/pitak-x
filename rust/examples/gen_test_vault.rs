@@ -44,11 +44,7 @@ const VAULT_KEY: [u8; 32] = [
 ];
 
 extern "C" {
-    fn sqlite3_key(
-        db: *mut libsqlite3_sys::sqlite3,
-        p_key: *const c_void,
-        n_key: c_int,
-    ) -> c_int;
+    fn sqlite3_key(db: *mut libsqlite3_sys::sqlite3, p_key: *const c_void, n_key: c_int) -> c_int;
 }
 
 fn main() {
@@ -77,7 +73,13 @@ fn main() {
     let cipher = Aes256Gcm::new_from_slice(&kek).expect("aes key");
     let nonce = Nonce::from_slice(&IV);
     let ciphertext = cipher
-        .encrypt(nonce, Payload { msg: &VAULT_KEY, aad: b"" })
+        .encrypt(
+            nonce,
+            Payload {
+                msg: &VAULT_KEY,
+                aad: b"",
+            },
+        )
         .expect("gcm encrypt");
 
     let b64 = base64::engine::general_purpose::STANDARD;

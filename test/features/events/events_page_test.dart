@@ -10,6 +10,8 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 
+import '../../support/a11y.dart';
+
 class _FakeEventsRepo implements EventsRepository {
   _FakeEventsRepo(this._content);
 
@@ -80,5 +82,11 @@ void main() {
     expect(find.text('Maximum of two posters'), findsOneWidget);
     final button = tester.widget<FilledButton>(find.byType(FilledButton));
     expect(button.onPressed, isNull);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await tester.pumpWidget(_app(_FakeEventsRepo(EventsContent.empty)));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }
