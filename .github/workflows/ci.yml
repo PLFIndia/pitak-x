@@ -21,7 +21,11 @@ jobs:
       # Pinned to the same Rust the F-Droid recipe uses (cargokit patch in
       # fdroiddata pins 1.96.0), so a green CI is predictive of the F-Droid build.
       # (The 1.96.0 ref in this action is a branch; this is its head commit.)
+      # The action installs the MINIMAL profile, which has neither rustfmt
+      # nor clippy — the A3 gates below need both listed explicitly.
       - uses: dtolnay/rust-toolchain@d86e0fa8f147d6539442c26a61ebba8becc19489 # 1.96.0
+        with:
+          components: rustfmt, clippy
       # Pins are COMMIT SHAs (v2.9.2 is an annotated tag; its tag-object SHA
       # 63fed3e2… is a different object — resolve with `git rev-parse v2.9.2^{commit}`).
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
