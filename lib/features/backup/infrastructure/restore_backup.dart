@@ -38,11 +38,13 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
+import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
-import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
@@ -62,7 +64,6 @@ const String _booksDbEntry = 'books.db';
 const String _wishlistDbEntry = 'wishlist.db';
 const String _borrowersDbEntry = 'borrowers.db';
 const String _backupBlobEntry = 'backup_blob';
-const String _coverEntryPrefix = 'cover_';
 
 /// Opens a plain SQLite database file read-only. Injectable for tests.
 typedef LegacyDbOpener = CommonDatabase Function(String path);
@@ -131,10 +132,11 @@ final class RestoreBackup {
   final LegacyDbOpener _open;
 
   /// Inspects [archiveBytes] WITHOUT restoring anything (N13): bounded
-  /// extract + manifest parse only. The UI uses this to show what the archive
-  /// contains and whether a passphrase is even required (`hasBackupBlob`).
-  /// Reads no database rows, unlocks nothing, and touches no device state.
-  Future<Either<Failure, BackupManifest>> inspectArchive(
+  /// extract + manifest parse only, plus a peek at `identity.json` when the
+  /// manifest announces one (§5.10) so the UI can name the identity it would
+  /// adopt. Reads no database rows, unlocks nothing, and touches no device
+  /// state.
+  Future<Either<Failure, ArchiveInspection>> inspectArchive(
     Uint8List archiveBytes,
   ) async {
     final Map<String, Uint8List> files;
@@ -143,7 +145,12 @@ final class RestoreBackup {
     } on BoundedExtractionException catch (e) {
       return left(BackupCorruptFailure(e.message));
     }
-    return _parseManifest(files);
+    return _parseManifest(files).map(
+      (manifest) => ArchiveInspection(
+        manifest: manifest,
+        identity: readBackupExtras(files, manifest).identity,
+      ),
+    );
   }
 
   /// Applies [archiveBytes], unlocking the vault with [passphrase] when the
@@ -204,6 +211,13 @@ final class RestoreBackup {
     SecretBytes? passphrase,
     CatalogueReplacementScope scope,
   ) async {
+    // --- §3.4 extras: parse (never apply) identity + network list up front.
+    // Pure reads of already-extracted bytes; an invalid entry is reported on
+    // the summary and never aborts the catalogue restore (additive only).
+    final extras = readBackupExtras(files, manifest);
+    final identity = extras.identity;
+    final networkRows = extras.network;
+
     // --- Phase 3: stage archive files to disk (sqlite3 + FFI need paths) ---
     final Directory work;
     try {
@@ -289,7 +303,12 @@ final class RestoreBackup {
 
       // 6b. covers: the archive's set when it has one; otherwise carry the
       // device's covers over (restored rows may still reference them).
-      _buildCovers(files, manifest, active: active, builder: builder);
+      buildRestoredCovers(
+        files,
+        manifest,
+        activeCoversDir: active.coversDir,
+        builderCoversDir: builder.coversDir,
+      );
 
       // 6c. vault: the archive's validated pair, or the retained device vault
       // copied byte-for-byte (the guard holds the FIFO, so nothing writes it).
@@ -332,6 +351,15 @@ final class RestoreBackup {
           existingVaultKept: scope.retainedLoanBookIds != null,
           // M15: cover refs dropped by validation (unsupported hosts).
           coversDropped: legacy.coversDropped,
+          // §3.4: parsed + validated, NOT yet applied — the controller adopts
+          // the identity and replaces the network rows after this summary's
+          // catalogue switch has succeeded.
+          restoredIdentity: identity == null
+              ? null
+              : (id: identity.id, name: identity.name),
+          restoredNetwork: networkRows,
+          identityInvalid: manifest.hasIdentity && identity == null,
+          networkInvalid: manifest.hasNetwork && networkRows == null,
         ),
       );
     } on _ReplacementRefused catch (e) {
@@ -428,34 +456,6 @@ final class RestoreBackup {
       await db.close();
     }
     return right(unit);
-  }
-
-  /// Writes the builder's covers directory: the archive's covers when present,
-  /// otherwise a copy of the active generation's. Fails closed (throws) — the
-  /// builder is not live, so there is no reason to accept a partial set.
-  void _buildCovers(
-    Map<String, Uint8List> files,
-    BackupManifest manifest, {
-    required DataGeneration active,
-    required DataGeneration builder,
-  }) {
-    final target = Directory(builder.coversDir)..createSync(recursive: true);
-    if (manifest.hasCovers) {
-      for (final entry in files.entries) {
-        if (!entry.key.startsWith(_coverEntryPrefix)) continue;
-        final leaf = entry.key.substring(_coverEntryPrefix.length);
-        // Defence in depth: re-validate via CoverPaths (zip-slip / traversal).
-        if (CoverPaths.leafOf('${CoverPaths.prefix}$leaf') != leaf) continue;
-        File(p.join(target.path, leaf)).writeAsBytesSync(entry.value);
-      }
-      return;
-    }
-    final current = Directory(active.coversDir);
-    if (!current.existsSync()) return;
-    for (final entity in current.listSync()) {
-      if (entity is! File) continue;
-      entity.copySync(p.join(target.path, p.basename(entity.path)));
-    }
   }
 
   Either<Failure, _LegacyRows> _readLegacy(

@@ -19,6 +19,12 @@ abstract interface class BackupArchiveBuilder {
   /// future completes with an error on IO failure so the caller can fail
   /// closed.
   ///
+  /// [identityJson] / [networkJson] (libNetwork.md §3.4) are the
+  /// already-encoded `identity.json` / `network.json` entry contents — plain
+  /// Strings, so they cross the worker-isolate boundary trivially. Null means
+  /// "not included" (the manifest flag stays false); a caller that could not
+  /// gather them must pass null rather than block the whole backup.
+  ///
   /// Asynchronous on purpose (N10-c): building a backup means writing two
   /// SQLite files, reading every cover and deflating the lot — seconds of
   /// work for a large library. Implementations are expected to do that off
@@ -28,5 +34,7 @@ abstract interface class BackupArchiveBuilder {
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
   });
 }

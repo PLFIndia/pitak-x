@@ -34,6 +34,33 @@ void main() {
       expect(m.backupHint, isNull);
     });
 
+    test('hasIdentity/hasNetwork default false on older archives', () {
+      // §3.4: Kotlin-era and pre-network archives lack both flags, and a
+      // missing flag must read as "not there", never "corrupt".
+      final m = BackupManifest.tryParse(jsonEncode({'exportedAt': 1}));
+      expect(m!.hasIdentity, isFalse);
+      expect(m.hasNetwork, isFalse);
+    });
+
+    test('hasIdentity/hasNetwork round-trip and tolerate string tokens', () {
+      final parsed = BackupManifest.tryParse(
+        const BackupManifest(
+          exportedAt: 1,
+          hasIdentity: true,
+          hasNetwork: true,
+        ).toJson(),
+      );
+      expect(parsed!.hasIdentity, isTrue);
+      expect(parsed.hasNetwork, isTrue);
+
+      // Tolerant parse: the same _asBool leniency the other flags get.
+      final lax = BackupManifest.tryParse(
+        jsonEncode({'exportedAt': 1, 'hasIdentity': 'true', 'hasNetwork': 1}),
+      );
+      expect(lax!.hasIdentity, isTrue);
+      expect(lax.hasNetwork, isTrue);
+    });
+
     test('an out-of-range schemaVersion (1e400) does not throw', () {
       // Regression: `double.toInt()` on Infinity throws UnsupportedError; the
       // doc promises tryParse "never throws". A hostile manifest must not

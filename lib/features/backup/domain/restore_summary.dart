@@ -1,6 +1,7 @@
 /// Outcome of a successful backup restore (AGENTS.md §3.1, pure Dart).
 library;
 
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 
 /// Counts + integrity findings from an applied restore.
@@ -14,6 +15,12 @@ class RestoreSummary {
     this.danglingLoans = const [],
     this.existingVaultKept = false,
     this.coversDropped = 0,
+    this.restoredIdentity,
+    this.restoredNetwork,
+    this.identityInvalid = false,
+    this.networkInvalid = false,
+    this.identityAdopted = false,
+    this.networkRestored = 0,
   });
 
   /// Number of library books written.
@@ -41,6 +48,63 @@ class RestoreSummary {
   /// row pointed at a site the app no longer loads covers from, so the link
   /// was removed rather than persisted. The book itself is kept.
   final int coversDropped;
+
+  /// The validated library identity parsed from the archive's
+  /// `identity.json` (libNetwork.md §3.4) — null when the archive carried no
+  /// usable identity (absent, or invalid: see [identityInvalid]). Parsed and
+  /// validated by the restorer; APPLIED by the restore controller after the
+  /// catalogue switch (see [identityAdopted]).
+  final ({String id, String name})? restoredIdentity;
+
+  /// The validated saved-libraries rows parsed from the archive's
+  /// `network.json` — null when the archive carried no usable list (absent,
+  /// or unreadable: see [networkInvalid]). An empty LIST is meaningful: the
+  /// backup legitimately had no saved libraries. Applied by the restore
+  /// controller via `NetworkRepository.replaceAll` (see [networkRestored]).
+  final List<NetworkLibrary>? restoredNetwork;
+
+  /// True when the archive declared an identity (`hasIdentity`) but the
+  /// entry failed validation — the user should hear "could not be read",
+  /// not nothing.
+  final bool identityInvalid;
+
+  /// True when the archive declared a network list (`hasNetwork`) but the
+  /// entry could not be parsed.
+  final bool networkInvalid;
+
+  /// True when [restoredIdentity] was actually adopted through the namespace
+  /// port. Set AFTER the catalogue switch by the restore controller (a Left
+  /// leaves it false — the catalogue restore is never rolled back for this;
+  /// §5.10).
+  final bool identityAdopted;
+
+  /// How many [restoredNetwork] rows were actually written (0 when the
+  /// replaceAll failed). Set together with [identityAdopted].
+  final int networkRestored;
+
+  /// Returns a copy with the post-restore adoption outcomes filled in (the
+  /// restorer parses but never applies identity/network — that is the
+  /// controller's job, after the catalogue switch).
+  RestoreSummary withAdoptionResults({
+    required bool identityAdopted,
+    required int networkRestored,
+  }) {
+    return RestoreSummary(
+      booksRestored: booksRestored,
+      wishlistRestored: wishlistRestored,
+      borrowersRestored: borrowersRestored,
+      loansRestored: loansRestored,
+      danglingLoans: danglingLoans,
+      existingVaultKept: existingVaultKept,
+      coversDropped: coversDropped,
+      restoredIdentity: restoredIdentity,
+      restoredNetwork: restoredNetwork,
+      identityInvalid: identityInvalid,
+      networkInvalid: networkInvalid,
+      identityAdopted: identityAdopted,
+      networkRestored: networkRestored,
+    );
+  }
 
   /// True when restore changed anything the user should know about beyond
   /// the row counts (today: dropped cover links).

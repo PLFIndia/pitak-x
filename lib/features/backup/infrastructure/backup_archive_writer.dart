@@ -67,6 +67,10 @@ const String _wishlistDbEntry = 'wishlist.db';
 const String _borrowersDbEntry = 'borrowers.db';
 const String _backupBlobEntry = 'backup_blob';
 const String _coverEntryPrefix = 'cover_';
+// libNetwork.md §3.4: the library identity + the saved-libraries list,
+// plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
+const String _identityEntry = 'identity.json';
+const String _networkEntry = 'network.json';
 
 /// Room identity contract (from app/schemas) so the Kotlin app accepts our DBs.
 const int _booksDbVersion = 9;
@@ -94,6 +98,8 @@ typedef _BackupJob = ({
   String? vaultDbPath,
   String? blob,
   String coversDir,
+  String? identityJson,
+  String? networkJson,
 });
 
 /// Builds a `.pitabak` archive as bytes.
@@ -129,6 +135,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
   }) {
     final hasVault = vaultStore.isInitialized();
     // Typed by `_buildInWorker`'s parameter (`_BackupJob`): plain data only.
@@ -141,6 +149,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       vaultDbPath: hasVault ? vaultStore.dbPath : null,
       blob: hasVault ? vaultStore.readBlob() : null,
       coversDir: coversDir,
+      identityJson: identityJson,
+      networkJson: networkJson,
     );
     return Isolate.run(
       () => _buildInWorker(job),
@@ -167,6 +177,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         hasBorrowers: job.hasVault,
         hasBackupBlob: job.hasVault && job.blob != null,
         hasCovers: coverFiles.isNotEmpty,
+        hasIdentity: job.identityJson != null,
+        hasNetwork: job.networkJson != null,
       );
 
       // Incremental encoding: each addFile deflates ONE entry, appends it to
@@ -194,6 +206,14 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         encoder.addFile(
           _entry(_coverEntryPrefix + p.basename(f.path), f.readAsBytesSync()),
         );
+      }
+      // §3.4 additions, plain JSON in the clear (the documented honest
+      // limit of the format — README › Backup).
+      if (job.identityJson case final identityJson?) {
+        encoder.addFile(_entry(_identityEntry, _utf8(identityJson)));
+      }
+      if (job.networkJson case final networkJson?) {
+        encoder.addFile(_entry(_networkEntry, _utf8(networkJson)));
       }
       encoder.endEncode();
 

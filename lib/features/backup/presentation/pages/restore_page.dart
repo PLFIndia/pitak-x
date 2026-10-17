@@ -18,7 +18,7 @@ import 'package:pitaka/core/crypto/secure_passphrase_field.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
-import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits;
@@ -41,7 +41,8 @@ class _RestorePageState extends ConsumerState<RestorePage> {
   /// What the picked archive contains (N13): read from its manifest BEFORE
   /// any restore so the screen can show what will happen and ask for a
   /// passphrase only when the archive actually carries an encrypted vault.
-  BackupManifest? _manifest;
+  /// The inspection also carries the identity the archive would adopt (§5.10).
+  ArchiveInspection? _inspection;
 
   /// Why the picked file could not be read as a backup (bad zip/manifest).
   Failure? _inspectError;
@@ -84,7 +85,7 @@ class _RestorePageState extends ConsumerState<RestorePage> {
         setState(() {
           _archiveBytes = null;
           _archiveName = null;
-          _manifest = null;
+          _inspection = null;
           _inspectError = const ValidationFailure(
             'This file is too large to be a Pitak backup.',
           );
@@ -95,7 +96,7 @@ class _RestorePageState extends ConsumerState<RestorePage> {
       setState(() {
         _archiveBytes = bytes;
         _archiveName = file.name;
-        _manifest = null;
+        _inspection = null;
         _inspectError = null;
         _inspecting = true;
       });
@@ -108,19 +109,19 @@ class _RestorePageState extends ConsumerState<RestorePage> {
         _inspecting = false;
         inspected.match((failure) {
           _inspectError = failure;
-          _manifest = null;
+          _inspection = null;
           // An unreadable archive can never be restored; drop it so the
           // button state cannot lie.
           _archiveBytes = null;
           _archiveName = null;
-        }, (manifest) => _manifest = manifest);
+        }, (inspection) => _inspection = inspection);
       });
     } on Object {
       if (!mounted) return;
       setState(() {
         _archiveBytes = null;
         _archiveName = null;
-        _manifest = null;
+        _inspection = null;
         _inspecting = false;
         _inspectError = const ValidationFailure(
           'Could not read that file. Please try again.',
@@ -131,23 +132,24 @@ class _RestorePageState extends ConsumerState<RestorePage> {
 
   /// Whether the picked archive needs a passphrase at all (N13): only
   /// archives carrying an encrypted borrowers vault do.
-  bool get _needsPassphrase => _manifest?.hasBackupBlob ?? false;
+  bool get _needsPassphrase => _inspection?.manifest.hasBackupBlob ?? false;
 
   bool get _canRestore =>
       _archiveBytes != null &&
-      _manifest != null &&
+      _inspection != null &&
       !_inspecting &&
       (!_needsPassphrase || !_passphrase.isEmpty) &&
       !ref.read(restoreControllerProvider).isLoading;
 
   Future<void> _runRestore() async {
     final bytes = _archiveBytes;
-    final manifest = _manifest;
-    if (bytes == null || manifest == null) return;
+    final inspection = _inspection;
+    if (bytes == null || inspection == null) return;
     // Vault-free archives restore with no passphrase (N13); the restorer
     // fails closed if a vault is present but no secret was supplied.
-    final secret = manifest.hasBackupBlob ? _passphrase.takeSecret() : null;
-    if (manifest.hasBackupBlob && secret == null) return;
+    final hasVault = inspection.manifest.hasBackupBlob;
+    final secret = hasVault ? _passphrase.takeSecret() : null;
+    if (hasVault && secret == null) return;
     // The controller takes ownership of `secret` and disposes it.
     //
     // N11: the controller owns the whole run — keep-alive, typed terminal
@@ -180,8 +182,9 @@ class _RestorePageState extends ConsumerState<RestorePage> {
             ),
             // N13 + doc-item: "replaces everything" was too broad. The truth:
             // books/wishlist/covers (and the vault when the backup has one)
-            // are replaced; events, bookmarks, settings and publishing setup
-            // are not in backups at all.
+            // are replaced; events, settings and publishing setup are not in
+            // backups at all. §5.10: the archive's library identity IS adopted
+            // and its saved-libraries list replaces this device's.
             child: Text(
               'Restoring replaces your books, wishlist and cover images '
               '(including the library logo) with the contents of the backup. '
@@ -190,10 +193,12 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               'if it does not, your existing vault must be unlocked first. '
               'Its loan history is kept only when every book link can be '
               'matched safely; otherwise the restore is refused without '
-              'replacing data. Everything switches over together: if the '
-              'restore fails or is interrupted, your current data stays '
-              'exactly as it is. Events, bookmarks, settings and publishing '
-              'setup are not restored. This cannot be undone.',
+              'replacing data. If the backup carries a library identity, '
+              'this device adopts it, and its saved-libraries list replaces '
+              'yours. Everything switches over together: if the restore '
+              'fails or is interrupted, your current data stays exactly as '
+              'it is. Events, app settings and publishing setup are not '
+              'restored. This cannot be undone.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onErrorContainer,
               ),
@@ -216,9 +221,9 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               style: textTheme.bodyMedium?.copyWith(color: scheme.error),
             ),
           ],
-          if (_manifest != null) ...[
+          if (_inspection != null) ...[
             const SizedBox(height: 12),
-            _ManifestSummary(manifest: _manifest!),
+            _ManifestSummary(inspection: _inspection!),
           ],
           const SizedBox(height: 16),
           if (_needsPassphrase)
@@ -226,7 +231,7 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               controller: _passphrase,
               onSubmitted: _canRestore ? _runRestore : null,
             )
-          else if (_manifest != null)
+          else if (_inspection != null)
             Text(
               'This backup has no borrowers vault, so no passphrase is '
               'needed.',
@@ -251,14 +256,16 @@ class _RestorePageState extends ConsumerState<RestorePage> {
   }
 }
 
-/// Shows what the picked archive contains, straight from its manifest (N13).
+/// Shows what the picked archive contains, straight from the inspection (N13
+/// + §5.10: including the identity it would adopt, named when readable).
 class _ManifestSummary extends StatelessWidget {
-  const _ManifestSummary({required this.manifest});
+  const _ManifestSummary({required this.inspection});
 
-  final BackupManifest manifest;
+  final ArchiveInspection inspection;
 
   @override
   Widget build(BuildContext context) {
+    final manifest = inspection.manifest;
     final textTheme = Theme.of(context).textTheme;
     // M15: the manifest is untrusted. `dateFromMillisOrNull` returns null for
     // 0 (unset) AND for a value outside DateTime's range, where
@@ -269,6 +276,19 @@ class _ManifestSummary extends StatelessWidget {
         : '${exported.year}-'
               '${exported.month.toString().padLeft(2, '0')}-'
               '${exported.day.toString().padLeft(2, '0')}';
+    // §5.10 copy: name the identity when the entry parsed; when the manifest
+    // announces one that did NOT parse, say so instead of promising it.
+    final identity = inspection.identity;
+    final String? identityLine;
+    if (identity != null) {
+      identityLine = identity.name.isEmpty
+          ? '• Library identity (restoring adopts it)'
+          : '• Library identity for "${identity.name}" (restoring adopts it)';
+    } else if (manifest.hasIdentity) {
+      identityLine = '• Library identity (unreadable — it will not be adopted)';
+    } else {
+      identityLine = null;
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -282,6 +302,8 @@ class _ManifestSummary extends StatelessWidget {
               : '• No borrowers vault',
         ),
         if (manifest.hasCovers) const Text('• Cover images'),
+        if (identityLine != null) Text(identityLine),
+        if (manifest.hasNetwork) const Text('• Saved-libraries list'),
         if (date != null) ...[
           const SizedBox(height: 4),
           Text('Made on: $date', style: textTheme.bodySmall),
@@ -339,6 +361,37 @@ class _RestoreOutcome extends StatelessWidget {
             ],
             const SizedBox(height: 8),
             Text(integrity, style: textTheme.bodySmall),
+            // §5.10: one plain sentence each for the additive extras —
+            // adoption/apply failures surface HERE, never as a rolled-back
+            // catalogue.
+            if (summary.identityInvalid)
+              Text(
+                'The library identity in this backup could not be read; '
+                'your current identity is unchanged.',
+                style: textTheme.bodySmall,
+              )
+            else if (summary.restoredIdentity != null)
+              Text(
+                summary.identityAdopted
+                    ? 'This device now uses the backup’s library identity.'
+                    : 'The library identity in this backup could not be '
+                          'adopted; your current identity is unchanged.',
+                style: textTheme.bodySmall,
+              ),
+            if (summary.networkInvalid)
+              Text(
+                'The saved-libraries list in this backup could not be read; '
+                'your current list is unchanged.',
+                style: textTheme.bodySmall,
+              )
+            else if (summary.restoredNetwork != null)
+              Text(
+                summary.networkRestored > 0 || summary.restoredNetwork!.isEmpty
+                    ? 'Saved libraries restored: ${summary.networkRestored}'
+                    : 'The saved-libraries list could not be written; your '
+                          'current list is unchanged.',
+                style: textTheme.bodySmall,
+              ),
             if (summary.hasAdjustments) ...[
               const SizedBox(height: 4),
               Text(

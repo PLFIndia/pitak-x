@@ -16,10 +16,11 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
@@ -54,11 +55,11 @@ class RestoreController extends _$RestoreController {
     return null; // idle until restore() is run
   }
 
-  /// Inspects the archive's manifest WITHOUT restoring (N13): the Restore
-  /// screen runs this right after a file is picked so it can show what the
-  /// backup contains and ask for a passphrase only when the archive actually
-  /// carries an encrypted vault.
-  Future<Either<Failure, BackupManifest>> inspectArchive(
+  /// Inspects the archive WITHOUT restoring (N13): the Restore screen runs
+  /// this right after a file is picked so it can show what the backup
+  /// contains — including the identity it would adopt (§5.10) — and ask for
+  /// a passphrase only when the archive actually carries an encrypted vault.
+  Future<Either<Failure, ArchiveInspection>> inspectArchive(
     Uint8List archiveBytes,
   ) async {
     final restorer = await ref.read(restoreBackupProvider.future);
@@ -94,7 +95,16 @@ class RestoreController extends _$RestoreController {
         passphrase: passphrase,
       );
       if (!_disposed) {
-        state = result.match(
+        final Either<Failure, RestoreSummary> effective;
+        if (result case Right(value: final summary)) {
+          // §5.10: the catalogue switch succeeded — NOW adopt the archive's
+          // identity and network list (additive; failures are reported on the
+          // summary, never rolled back into the restore).
+          effective = right(await _applyIdentityAndNetwork(summary));
+        } else {
+          effective = result;
+        }
+        state = effective.match(
           (failure) => AsyncError(failure, StackTrace.current),
           (summary) {
             ref
@@ -112,7 +122,15 @@ class RestoreController extends _$RestoreController {
               // lists underneath stale (this used to be the page's job, lost
               // with its `ref`).
               ..invalidate(libraryControllerProvider)
-              ..invalidate(wishlistControllerProvider);
+              ..invalidate(wishlistControllerProvider)
+              // §5.10: the saved-libraries list was replaced above. The
+              // network window ALSO rebuilds on its own (its build() watches
+              // networkRepositoryProvider, which the generation switch
+              // republished) — but that rebuild can run BEFORE the
+              // replaceAll above, showing the carried-over pre-restore rows.
+              // This invalidation, after the write, guarantees the next
+              // build reads the restored list. A no-op when nothing watches.
+              ..invalidate(networkControllerProvider);
             return AsyncData(summary);
           },
         );
@@ -131,6 +149,53 @@ class RestoreController extends _$RestoreController {
       _running = false;
       link.close();
     }
+  }
+
+  /// Applies the archive's library identity and saved-libraries list AFTER
+  /// the catalogue switch (libNetwork.md §5.10), and returns the summary with
+  /// the adoption outcomes filled in.
+  ///
+  /// Both steps are ADDITIVE over a restore that already succeeded: a Left
+  /// from either is folded into the summary (`identityAdopted: false` /
+  /// `networkRestored: 0`, each with its plain sentence on the page) — the
+  /// catalogue restore is NEVER rolled back for them. Unexpected throws get
+  /// the same treatment (fail closed, keep the restore).
+  Future<RestoreSummary> _applyIdentityAndNetwork(
+    RestoreSummary summary,
+  ) async {
+    var identityAdopted = false;
+    final identity = summary.restoredIdentity;
+    if (identity != null) {
+      try {
+        // Through the LibraryNamespace port (SettingsController) — never the
+        // raw repository (N07: the in-memory settings must move with disk).
+        final adopted = await ref
+            .read(settingsControllerProvider.notifier)
+            .adopt(id: identity.id, name: identity.name);
+        identityAdopted = adopted.isRight();
+      } on Object {
+        identityAdopted = false;
+      }
+    }
+
+    var networkRestored = 0;
+    final rows = summary.restoredNetwork;
+    if (rows != null) {
+      try {
+        // The generation switch republished `appDatabaseProvider`, so this
+        // read hands out the NEW generation's repository.
+        final repo = await ref.read(networkRepositoryProvider.future);
+        final replaced = await repo.replaceAll(rows);
+        if (replaced.isRight()) networkRestored = rows.length;
+      } on Object {
+        networkRestored = 0;
+      }
+    }
+
+    return summary.withAdoptionResults(
+      identityAdopted: identityAdopted,
+      networkRestored: networkRestored,
+    );
   }
 
   /// N04 (S9 dangling-state note): settings are NOT part of a backup, so a
