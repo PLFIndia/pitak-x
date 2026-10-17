@@ -19,6 +19,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/editable_text_field.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
+import 'package:pitaka/core/widgets/qr_scan_page.dart';
 import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
@@ -29,7 +30,6 @@ import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
-import 'package:pitaka/features/settings/presentation/pages/scan_library_qr_page.dart';
 import 'package:pitaka/features/settings/presentation/widgets/google_books_key_dialog.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
@@ -330,8 +330,16 @@ class _CommunityLibrarySection extends ConsumerWidget {
     String shortId(String id) => id.length <= 8 ? id : '${id.substring(0, 8)}…';
 
     Future<void> scanQr() async {
+      // The generic scanner with the pairing rule injected (libNetwork.md
+      // §5.12): only `pitaka-lib:<valid id>` payloads are accepted; anything
+      // else the camera sees is silently ignored.
       final id = await Navigator.of(context).push<String>(
-        MaterialPageRoute(builder: (_) => const ScanLibraryQrPage()),
+        MaterialPageRoute(
+          builder: (_) => const QrScanPage<String>(
+            title: 'Scan a library QR',
+            accept: LibraryQrPayload.parse,
+          ),
+        ),
       );
       if (id == null || !context.mounted) return;
       // Confirm before adopting (REVIEW_FINDINGS_2 S8): a valid-SHAPED QR is

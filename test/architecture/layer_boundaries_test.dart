@@ -173,7 +173,9 @@ void main() {
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      'lib/features/settings/presentation/pages/settings_page.dart': 682,
+      // 682 → 690 on 2026-10-17 (libNetwork.md S1): the hard-wired library-QR
+      // scanner page became the generic QrScanPage call with its comments.
+      'lib/features/settings/presentation/pages/settings_page.dart': 690,
       'lib/features/library/presentation/pages/book_detail_page.dart': 676,
       'lib/features/publish/application/github_connection_controller.dart': 670,
       'lib/features/library/presentation/pages/add_book_page.dart': 638,
