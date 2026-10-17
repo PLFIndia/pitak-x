@@ -17,8 +17,8 @@ part 'app_database.g.dart';
 const _ftsColumns =
     'title, title_transliteration, author, isbn, location, genre';
 
-/// The non-secret application database (books + wishlist + FTS5).
-@DriftDatabase(tables: [Books, WishlistBooks])
+/// The non-secret application database (books + wishlist + network).
+@DriftDatabase(tables: [Books, WishlistBooks, NetworkLibraries])
 class AppDatabase extends _$AppDatabase {
   /// Opens the database over the given [executor].
   AppDatabase(super.executor);
@@ -27,14 +27,20 @@ class AppDatabase extends _$AppDatabase {
   ///  1 — initial (books + wishlist + FTS5).
   ///  2 — no shape change; data clean-up: one spelling per language
   ///      (Session 33, [_collapseLanguageSpellings]).
+  ///  3 — `network_libraries` table added (libNetwork.md S3): saved libraries
+  ///      on the network replace the old prefs bookmarks (ADR 0012).
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
       if (from < 2) await _collapseLanguageSpellings();
+      // v3: a brand-new empty table — drift creates it from the snapshot-
+      // validated definition; the legacy bookmarks data migration into it
+      // happens separately (prefs → rows, libNetwork.md S4), not here.
+      if (from < 3) await m.createTable(networkLibraries);
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a

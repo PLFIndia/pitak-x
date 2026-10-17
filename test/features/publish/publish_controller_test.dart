@@ -12,6 +12,8 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
@@ -291,6 +293,52 @@ void main() {
       expect(json, contains('https://me.github.io/lib/'));
     },
   );
+
+  testWidgets('isMember rows become library.json members (§5.5)', (
+    tester,
+  ) async {
+    const memberFp =
+        'adb28b53d57009ce04d4e0b28563ebcd395375c0d719fd53986908233687f664';
+    final h = _Harness();
+    h.network.rows = [
+      // A member with a fingerprint: listed.
+      const NetworkLibrary(
+        id: 1,
+        siteUrl: 'https://m.github.io/x/',
+        name: 'M Library',
+        fingerprint: memberFp,
+        source: NetworkSource.card,
+        isMember: true,
+        memberVerified: true,
+      ),
+      // A plain bookmark row (the default source): NOT listed.
+      const NetworkLibrary(id: 2, siteUrl: 'https://b.github.io/y/', name: 'B'),
+      // A member row without a fingerprint yet: cannot be listed (there is
+      // nothing to match on) — stays out.
+      const NetworkLibrary(
+        id: 3,
+        siteUrl: 'https://n.github.io/z/',
+        source: NetworkSource.card,
+        isMember: true,
+      ),
+    ];
+    expect(await h.publish(tester), isA<PublishSuccess>());
+
+    final descriptor = h.api.commits.single.firstWhere(
+      (file) => file.path == 'library.json',
+    );
+    final json =
+        jsonDecode(utf8.decode(descriptor.bytes)) as Map<String, dynamic>;
+    expect(json['members'], [
+      {
+        'fingerprint': memberFp,
+        'siteUrl': 'https://m.github.io/x/',
+        'name': 'M Library',
+      },
+    ]);
+    // memberOf stays empty until S4's membership confirmation lands.
+    expect(json['memberOf'], isEmpty);
+  });
 }
 
 /// Every side-effecting port is in memory; unexpected calls fail the test.
@@ -304,6 +352,7 @@ class _Harness {
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
+        networkRepositoryProvider.overrideWith((ref) async => network),
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),
@@ -347,6 +396,7 @@ class _Harness {
   final credentials = _Credentials();
   final manifest = _Manifest();
   final settings = _Settings();
+  final network = _Network();
   late final ProviderContainer container;
   final states = <AsyncValue<PublishResult?>>[];
   int viewerBuilds = 0;
@@ -502,4 +552,18 @@ class _Api implements GitHubApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected GitHub operation');
+}
+
+/// In-memory network rows: the publish controller reads the `isMember` ones
+/// for library.json's members list (§5.5). No disk, no Drift.
+class _Network implements NetworkRepository {
+  List<NetworkLibrary> rows = const [];
+
+  @override
+  Future<List<NetworkLibrary>> loadAll() async => rows;
+  @override
+  Future<int> count() async => rows.length;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected network operation');
 }

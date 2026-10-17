@@ -255,6 +255,53 @@ void main() {
 
       await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Current');
     });
+
+    // Data-matrix row for the v3 bump (libNetwork.md §5.3, README › Schema
+    // version bumps): the new table must exist and start EMPTY on upgrade —
+    // the legacy bookmarks data migration is a separate prefs→rows step
+    // (S4), never part of the SQL migration.
+    test(
+      'v2: books + wishlist survive; network_libraries exists and is empty',
+      () async {
+        final schema = await verifier.schemaAt(2);
+        final oldDb = v2.DatabaseAtV2(schema.newConnection());
+        await oldDb
+            .into(oldDb.books)
+            .insert(
+              v2.BooksCompanion.insert(
+                title: 'Upgrade Survivor',
+                addedDate: 1700000003000,
+              ),
+            );
+        await oldDb
+            .into(oldDb.wishlistBooks)
+            .insert(
+              v2.WishlistBooksCompanion.insert(
+                title: 'Wish Survivor',
+                addedDate: 1700000004000,
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        expect(
+          (await db.select(db.books).get()).single.title,
+          'Upgrade Survivor',
+        );
+        expect(
+          (await db.select(db.wishlistBooks).get()).single.title,
+          'Wish Survivor',
+        );
+        expect(await db.select(db.networkLibraries).get(), isEmpty);
+        expect(await db.select(db.networkLibraries).get(), isA<List<Object>>());
+
+        await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Upgrade');
+      },
+    );
   });
 
   test('a committed snapshot exists for the current schemaVersion', () async {

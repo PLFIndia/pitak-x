@@ -176,7 +176,9 @@ void main() {
         final version = await v2
             .customSelect('PRAGMA user_version')
             .getSingle();
-        expect(version.read<int>('user_version'), 2);
+        // The migration ran to the CURRENT schema (whatever version this
+        // build is at — pinning a literal here broke on the v3 bump).
+        expect(version.read<int>('user_version'), v2.schemaVersion);
         // Every row survived; the language-less one is untouched.
         final total = await v2
             .customSelect('SELECT COUNT(*) AS n FROM books')

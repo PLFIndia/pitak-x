@@ -2353,16 +2353,971 @@ class WishlistBooksCompanion extends UpdateCompanion<WishlistRow> {
   }
 }
 
+class $NetworkLibrariesTable extends NetworkLibraries
+    with TableInfo<$NetworkLibrariesTable, NetworkLibraryRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $NetworkLibrariesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _siteUrlMeta = const VerificationMeta(
+    'siteUrl',
+  );
+  @override
+  late final GeneratedColumn<String> siteUrl = GeneratedColumn<String>(
+    'site_url',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+    defaultConstraints: GeneratedColumn.constraintIsAlways('UNIQUE'),
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _fingerprintMeta = const VerificationMeta(
+    'fingerprint',
+  );
+  @override
+  late final GeneratedColumn<String> fingerprint = GeneratedColumn<String>(
+    'fingerprint',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _latMeta = const VerificationMeta('lat');
+  @override
+  late final GeneratedColumn<double> lat = GeneratedColumn<double>(
+    'lat',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _lngMeta = const VerificationMeta('lng');
+  @override
+  late final GeneratedColumn<double> lng = GeneratedColumn<double>(
+    'lng',
+    aliasedName,
+    true,
+    type: DriftSqlType.double,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _precisionMeta = const VerificationMeta(
+    'precision',
+  );
+  @override
+  late final GeneratedColumn<String> precision = GeneratedColumn<String>(
+    'precision',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMeta = const VerificationMeta('source');
+  @override
+  late final GeneratedColumn<String> source = GeneratedColumn<String>(
+    'source',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _isMemberMeta = const VerificationMeta(
+    'isMember',
+  );
+  @override
+  late final GeneratedColumn<bool> isMember = GeneratedColumn<bool>(
+    'is_member',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_member" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _memberVerifiedMeta = const VerificationMeta(
+    'memberVerified',
+  );
+  @override
+  late final GeneratedColumn<bool> memberVerified = GeneratedColumn<bool>(
+    'member_verified',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("member_verified" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _listedByHubUrlMeta = const VerificationMeta(
+    'listedByHubUrl',
+  );
+  @override
+  late final GeneratedColumn<String> listedByHubUrl = GeneratedColumn<String>(
+    'listed_by_hub_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _membershipMeta = const VerificationMeta(
+    'membership',
+  );
+  @override
+  late final GeneratedColumn<String> membership = GeneratedColumn<String>(
+    'membership',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('none'),
+  );
+  static const VerificationMeta _fetchStatusMeta = const VerificationMeta(
+    'fetchStatus',
+  );
+  @override
+  late final GeneratedColumn<String> fetchStatus = GeneratedColumn<String>(
+    'fetch_status',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('never'),
+  );
+  static const VerificationMeta _fetchedAtMeta = const VerificationMeta(
+    'fetchedAt',
+  );
+  @override
+  late final GeneratedColumn<int> fetchedAt = GeneratedColumn<int>(
+    'fetched_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sortOrderMeta = const VerificationMeta(
+    'sortOrder',
+  );
+  @override
+  late final GeneratedColumn<int> sortOrder = GeneratedColumn<int>(
+    'sort_order',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    siteUrl,
+    name,
+    fingerprint,
+    lat,
+    lng,
+    precision,
+    source,
+    isMember,
+    memberVerified,
+    listedByHubUrl,
+    membership,
+    fetchStatus,
+    fetchedAt,
+    createdAt,
+    sortOrder,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'network_libraries';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<NetworkLibraryRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('site_url')) {
+      context.handle(
+        _siteUrlMeta,
+        siteUrl.isAcceptableOrUnknown(data['site_url']!, _siteUrlMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_siteUrlMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    }
+    if (data.containsKey('fingerprint')) {
+      context.handle(
+        _fingerprintMeta,
+        fingerprint.isAcceptableOrUnknown(
+          data['fingerprint']!,
+          _fingerprintMeta,
+        ),
+      );
+    }
+    if (data.containsKey('lat')) {
+      context.handle(
+        _latMeta,
+        lat.isAcceptableOrUnknown(data['lat']!, _latMeta),
+      );
+    }
+    if (data.containsKey('lng')) {
+      context.handle(
+        _lngMeta,
+        lng.isAcceptableOrUnknown(data['lng']!, _lngMeta),
+      );
+    }
+    if (data.containsKey('precision')) {
+      context.handle(
+        _precisionMeta,
+        precision.isAcceptableOrUnknown(data['precision']!, _precisionMeta),
+      );
+    }
+    if (data.containsKey('source')) {
+      context.handle(
+        _sourceMeta,
+        source.isAcceptableOrUnknown(data['source']!, _sourceMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceMeta);
+    }
+    if (data.containsKey('is_member')) {
+      context.handle(
+        _isMemberMeta,
+        isMember.isAcceptableOrUnknown(data['is_member']!, _isMemberMeta),
+      );
+    }
+    if (data.containsKey('member_verified')) {
+      context.handle(
+        _memberVerifiedMeta,
+        memberVerified.isAcceptableOrUnknown(
+          data['member_verified']!,
+          _memberVerifiedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('listed_by_hub_url')) {
+      context.handle(
+        _listedByHubUrlMeta,
+        listedByHubUrl.isAcceptableOrUnknown(
+          data['listed_by_hub_url']!,
+          _listedByHubUrlMeta,
+        ),
+      );
+    }
+    if (data.containsKey('membership')) {
+      context.handle(
+        _membershipMeta,
+        membership.isAcceptableOrUnknown(data['membership']!, _membershipMeta),
+      );
+    }
+    if (data.containsKey('fetch_status')) {
+      context.handle(
+        _fetchStatusMeta,
+        fetchStatus.isAcceptableOrUnknown(
+          data['fetch_status']!,
+          _fetchStatusMeta,
+        ),
+      );
+    }
+    if (data.containsKey('fetched_at')) {
+      context.handle(
+        _fetchedAtMeta,
+        fetchedAt.isAcceptableOrUnknown(data['fetched_at']!, _fetchedAtMeta),
+      );
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('sort_order')) {
+      context.handle(
+        _sortOrderMeta,
+        sortOrder.isAcceptableOrUnknown(data['sort_order']!, _sortOrderMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sortOrderMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  List<Set<GeneratedColumn>> get uniqueKeys => [
+    {fingerprint},
+  ];
+  @override
+  NetworkLibraryRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return NetworkLibraryRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      siteUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}site_url'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      fingerprint: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fingerprint'],
+      ),
+      lat: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}lat'],
+      ),
+      lng: attachedDatabase.typeMapping.read(
+        DriftSqlType.double,
+        data['${effectivePrefix}lng'],
+      ),
+      precision: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}precision'],
+      ),
+      source: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source'],
+      )!,
+      isMember: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_member'],
+      )!,
+      memberVerified: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}member_verified'],
+      )!,
+      listedByHubUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}listed_by_hub_url'],
+      ),
+      membership: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}membership'],
+      )!,
+      fetchStatus: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}fetch_status'],
+      )!,
+      fetchedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}fetched_at'],
+      ),
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      sortOrder: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}sort_order'],
+      )!,
+    );
+  }
+
+  @override
+  $NetworkLibrariesTable createAlias(String alias) {
+    return $NetworkLibrariesTable(attachedDatabase, alias);
+  }
+}
+
+class NetworkLibraryRow extends DataClass
+    implements Insertable<NetworkLibraryRow> {
+  /// Per-device autoincrement id.
+  final int id;
+
+  /// Published site root URL (`BookmarkUrl`-normalized) — the natural key.
+  final String siteUrl;
+
+  /// Display name ('' until known — a URL-added row before its first fetch).
+  final String name;
+
+  /// Published identity fingerprint (64 lowercase hex), or NULL until a
+  /// fetch/scan supplies it. UNIQUE among non-null values: SQLite treats
+  /// NULLs as distinct in a UNIQUE constraint, so any number of
+  /// not-yet-identified rows may coexist while two rows can never claim the
+  /// same fingerprint.
+  final String? fingerprint;
+
+  /// Opted-in latitude, or NULL when the library publishes none.
+  final double? lat;
+
+  /// Opted-in longitude, or NULL when the library publishes none.
+  final double? lng;
+
+  /// `LocationPrecision` token for lat/lng ('approximate'|'exact'), NULL
+  /// exactly when the coordinates are NULL.
+  final String? precision;
+
+  /// How the row got here: `NetworkSource` token
+  /// ('bookmark'|'card'|'discovered').
+  final String source;
+
+  /// True when I (as a hub) added this library by scanning its card.
+  final bool isMember;
+
+  /// True when a fetch confirmed the published fingerprint equals the one
+  /// scanned from the card (in-person add + network agreement).
+  final bool memberVerified;
+
+  /// For discovered rows: the hub site URL whose descriptor listed this
+  /// library (NULL for seeds).
+  final String? listedByHubUrl;
+
+  /// Am I a member of THIS row (when it is a hub)? `MembershipState` token
+  /// ('none'|'pending'|'confirmed'|'declined').
+  final String membership;
+
+  /// Last descriptor-fetch outcome: `FetchStatus` token
+  /// ('never'|'ok'|'unreachable'|'invalid'|'schemaTooNew'|'identityConflict').
+  final String fetchStatus;
+
+  /// Epoch millis of the last successful descriptor fetch (NULL = never).
+  final int? fetchedAt;
+
+  /// Epoch millis when the row was created on this device.
+  final int createdAt;
+
+  /// Display order among the user's own rows (preserves the old bookmark
+  /// order through the one-time migration; new rows append).
+  final int sortOrder;
+  const NetworkLibraryRow({
+    required this.id,
+    required this.siteUrl,
+    required this.name,
+    this.fingerprint,
+    this.lat,
+    this.lng,
+    this.precision,
+    required this.source,
+    required this.isMember,
+    required this.memberVerified,
+    this.listedByHubUrl,
+    required this.membership,
+    required this.fetchStatus,
+    this.fetchedAt,
+    required this.createdAt,
+    required this.sortOrder,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['site_url'] = Variable<String>(siteUrl);
+    map['name'] = Variable<String>(name);
+    if (!nullToAbsent || fingerprint != null) {
+      map['fingerprint'] = Variable<String>(fingerprint);
+    }
+    if (!nullToAbsent || lat != null) {
+      map['lat'] = Variable<double>(lat);
+    }
+    if (!nullToAbsent || lng != null) {
+      map['lng'] = Variable<double>(lng);
+    }
+    if (!nullToAbsent || precision != null) {
+      map['precision'] = Variable<String>(precision);
+    }
+    map['source'] = Variable<String>(source);
+    map['is_member'] = Variable<bool>(isMember);
+    map['member_verified'] = Variable<bool>(memberVerified);
+    if (!nullToAbsent || listedByHubUrl != null) {
+      map['listed_by_hub_url'] = Variable<String>(listedByHubUrl);
+    }
+    map['membership'] = Variable<String>(membership);
+    map['fetch_status'] = Variable<String>(fetchStatus);
+    if (!nullToAbsent || fetchedAt != null) {
+      map['fetched_at'] = Variable<int>(fetchedAt);
+    }
+    map['created_at'] = Variable<int>(createdAt);
+    map['sort_order'] = Variable<int>(sortOrder);
+    return map;
+  }
+
+  NetworkLibrariesCompanion toCompanion(bool nullToAbsent) {
+    return NetworkLibrariesCompanion(
+      id: Value(id),
+      siteUrl: Value(siteUrl),
+      name: Value(name),
+      fingerprint: fingerprint == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fingerprint),
+      lat: lat == null && nullToAbsent ? const Value.absent() : Value(lat),
+      lng: lng == null && nullToAbsent ? const Value.absent() : Value(lng),
+      precision: precision == null && nullToAbsent
+          ? const Value.absent()
+          : Value(precision),
+      source: Value(source),
+      isMember: Value(isMember),
+      memberVerified: Value(memberVerified),
+      listedByHubUrl: listedByHubUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(listedByHubUrl),
+      membership: Value(membership),
+      fetchStatus: Value(fetchStatus),
+      fetchedAt: fetchedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(fetchedAt),
+      createdAt: Value(createdAt),
+      sortOrder: Value(sortOrder),
+    );
+  }
+
+  factory NetworkLibraryRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return NetworkLibraryRow(
+      id: serializer.fromJson<int>(json['id']),
+      siteUrl: serializer.fromJson<String>(json['siteUrl']),
+      name: serializer.fromJson<String>(json['name']),
+      fingerprint: serializer.fromJson<String?>(json['fingerprint']),
+      lat: serializer.fromJson<double?>(json['lat']),
+      lng: serializer.fromJson<double?>(json['lng']),
+      precision: serializer.fromJson<String?>(json['precision']),
+      source: serializer.fromJson<String>(json['source']),
+      isMember: serializer.fromJson<bool>(json['isMember']),
+      memberVerified: serializer.fromJson<bool>(json['memberVerified']),
+      listedByHubUrl: serializer.fromJson<String?>(json['listedByHubUrl']),
+      membership: serializer.fromJson<String>(json['membership']),
+      fetchStatus: serializer.fromJson<String>(json['fetchStatus']),
+      fetchedAt: serializer.fromJson<int?>(json['fetchedAt']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      sortOrder: serializer.fromJson<int>(json['sortOrder']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'siteUrl': serializer.toJson<String>(siteUrl),
+      'name': serializer.toJson<String>(name),
+      'fingerprint': serializer.toJson<String?>(fingerprint),
+      'lat': serializer.toJson<double?>(lat),
+      'lng': serializer.toJson<double?>(lng),
+      'precision': serializer.toJson<String?>(precision),
+      'source': serializer.toJson<String>(source),
+      'isMember': serializer.toJson<bool>(isMember),
+      'memberVerified': serializer.toJson<bool>(memberVerified),
+      'listedByHubUrl': serializer.toJson<String?>(listedByHubUrl),
+      'membership': serializer.toJson<String>(membership),
+      'fetchStatus': serializer.toJson<String>(fetchStatus),
+      'fetchedAt': serializer.toJson<int?>(fetchedAt),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'sortOrder': serializer.toJson<int>(sortOrder),
+    };
+  }
+
+  NetworkLibraryRow copyWith({
+    int? id,
+    String? siteUrl,
+    String? name,
+    Value<String?> fingerprint = const Value.absent(),
+    Value<double?> lat = const Value.absent(),
+    Value<double?> lng = const Value.absent(),
+    Value<String?> precision = const Value.absent(),
+    String? source,
+    bool? isMember,
+    bool? memberVerified,
+    Value<String?> listedByHubUrl = const Value.absent(),
+    String? membership,
+    String? fetchStatus,
+    Value<int?> fetchedAt = const Value.absent(),
+    int? createdAt,
+    int? sortOrder,
+  }) => NetworkLibraryRow(
+    id: id ?? this.id,
+    siteUrl: siteUrl ?? this.siteUrl,
+    name: name ?? this.name,
+    fingerprint: fingerprint.present ? fingerprint.value : this.fingerprint,
+    lat: lat.present ? lat.value : this.lat,
+    lng: lng.present ? lng.value : this.lng,
+    precision: precision.present ? precision.value : this.precision,
+    source: source ?? this.source,
+    isMember: isMember ?? this.isMember,
+    memberVerified: memberVerified ?? this.memberVerified,
+    listedByHubUrl: listedByHubUrl.present
+        ? listedByHubUrl.value
+        : this.listedByHubUrl,
+    membership: membership ?? this.membership,
+    fetchStatus: fetchStatus ?? this.fetchStatus,
+    fetchedAt: fetchedAt.present ? fetchedAt.value : this.fetchedAt,
+    createdAt: createdAt ?? this.createdAt,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
+  NetworkLibraryRow copyWithCompanion(NetworkLibrariesCompanion data) {
+    return NetworkLibraryRow(
+      id: data.id.present ? data.id.value : this.id,
+      siteUrl: data.siteUrl.present ? data.siteUrl.value : this.siteUrl,
+      name: data.name.present ? data.name.value : this.name,
+      fingerprint: data.fingerprint.present
+          ? data.fingerprint.value
+          : this.fingerprint,
+      lat: data.lat.present ? data.lat.value : this.lat,
+      lng: data.lng.present ? data.lng.value : this.lng,
+      precision: data.precision.present ? data.precision.value : this.precision,
+      source: data.source.present ? data.source.value : this.source,
+      isMember: data.isMember.present ? data.isMember.value : this.isMember,
+      memberVerified: data.memberVerified.present
+          ? data.memberVerified.value
+          : this.memberVerified,
+      listedByHubUrl: data.listedByHubUrl.present
+          ? data.listedByHubUrl.value
+          : this.listedByHubUrl,
+      membership: data.membership.present
+          ? data.membership.value
+          : this.membership,
+      fetchStatus: data.fetchStatus.present
+          ? data.fetchStatus.value
+          : this.fetchStatus,
+      fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NetworkLibraryRow(')
+          ..write('id: $id, ')
+          ..write('siteUrl: $siteUrl, ')
+          ..write('name: $name, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('lat: $lat, ')
+          ..write('lng: $lng, ')
+          ..write('precision: $precision, ')
+          ..write('source: $source, ')
+          ..write('isMember: $isMember, ')
+          ..write('memberVerified: $memberVerified, ')
+          ..write('listedByHubUrl: $listedByHubUrl, ')
+          ..write('membership: $membership, ')
+          ..write('fetchStatus: $fetchStatus, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    siteUrl,
+    name,
+    fingerprint,
+    lat,
+    lng,
+    precision,
+    source,
+    isMember,
+    memberVerified,
+    listedByHubUrl,
+    membership,
+    fetchStatus,
+    fetchedAt,
+    createdAt,
+    sortOrder,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is NetworkLibraryRow &&
+          other.id == this.id &&
+          other.siteUrl == this.siteUrl &&
+          other.name == this.name &&
+          other.fingerprint == this.fingerprint &&
+          other.lat == this.lat &&
+          other.lng == this.lng &&
+          other.precision == this.precision &&
+          other.source == this.source &&
+          other.isMember == this.isMember &&
+          other.memberVerified == this.memberVerified &&
+          other.listedByHubUrl == this.listedByHubUrl &&
+          other.membership == this.membership &&
+          other.fetchStatus == this.fetchStatus &&
+          other.fetchedAt == this.fetchedAt &&
+          other.createdAt == this.createdAt &&
+          other.sortOrder == this.sortOrder);
+}
+
+class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
+  final Value<int> id;
+  final Value<String> siteUrl;
+  final Value<String> name;
+  final Value<String?> fingerprint;
+  final Value<double?> lat;
+  final Value<double?> lng;
+  final Value<String?> precision;
+  final Value<String> source;
+  final Value<bool> isMember;
+  final Value<bool> memberVerified;
+  final Value<String?> listedByHubUrl;
+  final Value<String> membership;
+  final Value<String> fetchStatus;
+  final Value<int?> fetchedAt;
+  final Value<int> createdAt;
+  final Value<int> sortOrder;
+  const NetworkLibrariesCompanion({
+    this.id = const Value.absent(),
+    this.siteUrl = const Value.absent(),
+    this.name = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lng = const Value.absent(),
+    this.precision = const Value.absent(),
+    this.source = const Value.absent(),
+    this.isMember = const Value.absent(),
+    this.memberVerified = const Value.absent(),
+    this.listedByHubUrl = const Value.absent(),
+    this.membership = const Value.absent(),
+    this.fetchStatus = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.sortOrder = const Value.absent(),
+  });
+  NetworkLibrariesCompanion.insert({
+    this.id = const Value.absent(),
+    required String siteUrl,
+    this.name = const Value.absent(),
+    this.fingerprint = const Value.absent(),
+    this.lat = const Value.absent(),
+    this.lng = const Value.absent(),
+    this.precision = const Value.absent(),
+    required String source,
+    this.isMember = const Value.absent(),
+    this.memberVerified = const Value.absent(),
+    this.listedByHubUrl = const Value.absent(),
+    this.membership = const Value.absent(),
+    this.fetchStatus = const Value.absent(),
+    this.fetchedAt = const Value.absent(),
+    required int createdAt,
+    required int sortOrder,
+  }) : siteUrl = Value(siteUrl),
+       source = Value(source),
+       createdAt = Value(createdAt),
+       sortOrder = Value(sortOrder);
+  static Insertable<NetworkLibraryRow> custom({
+    Expression<int>? id,
+    Expression<String>? siteUrl,
+    Expression<String>? name,
+    Expression<String>? fingerprint,
+    Expression<double>? lat,
+    Expression<double>? lng,
+    Expression<String>? precision,
+    Expression<String>? source,
+    Expression<bool>? isMember,
+    Expression<bool>? memberVerified,
+    Expression<String>? listedByHubUrl,
+    Expression<String>? membership,
+    Expression<String>? fetchStatus,
+    Expression<int>? fetchedAt,
+    Expression<int>? createdAt,
+    Expression<int>? sortOrder,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (siteUrl != null) 'site_url': siteUrl,
+      if (name != null) 'name': name,
+      if (fingerprint != null) 'fingerprint': fingerprint,
+      if (lat != null) 'lat': lat,
+      if (lng != null) 'lng': lng,
+      if (precision != null) 'precision': precision,
+      if (source != null) 'source': source,
+      if (isMember != null) 'is_member': isMember,
+      if (memberVerified != null) 'member_verified': memberVerified,
+      if (listedByHubUrl != null) 'listed_by_hub_url': listedByHubUrl,
+      if (membership != null) 'membership': membership,
+      if (fetchStatus != null) 'fetch_status': fetchStatus,
+      if (fetchedAt != null) 'fetched_at': fetchedAt,
+      if (createdAt != null) 'created_at': createdAt,
+      if (sortOrder != null) 'sort_order': sortOrder,
+    });
+  }
+
+  NetworkLibrariesCompanion copyWith({
+    Value<int>? id,
+    Value<String>? siteUrl,
+    Value<String>? name,
+    Value<String?>? fingerprint,
+    Value<double?>? lat,
+    Value<double?>? lng,
+    Value<String?>? precision,
+    Value<String>? source,
+    Value<bool>? isMember,
+    Value<bool>? memberVerified,
+    Value<String?>? listedByHubUrl,
+    Value<String>? membership,
+    Value<String>? fetchStatus,
+    Value<int?>? fetchedAt,
+    Value<int>? createdAt,
+    Value<int>? sortOrder,
+  }) {
+    return NetworkLibrariesCompanion(
+      id: id ?? this.id,
+      siteUrl: siteUrl ?? this.siteUrl,
+      name: name ?? this.name,
+      fingerprint: fingerprint ?? this.fingerprint,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      precision: precision ?? this.precision,
+      source: source ?? this.source,
+      isMember: isMember ?? this.isMember,
+      memberVerified: memberVerified ?? this.memberVerified,
+      listedByHubUrl: listedByHubUrl ?? this.listedByHubUrl,
+      membership: membership ?? this.membership,
+      fetchStatus: fetchStatus ?? this.fetchStatus,
+      fetchedAt: fetchedAt ?? this.fetchedAt,
+      createdAt: createdAt ?? this.createdAt,
+      sortOrder: sortOrder ?? this.sortOrder,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (siteUrl.present) {
+      map['site_url'] = Variable<String>(siteUrl.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (fingerprint.present) {
+      map['fingerprint'] = Variable<String>(fingerprint.value);
+    }
+    if (lat.present) {
+      map['lat'] = Variable<double>(lat.value);
+    }
+    if (lng.present) {
+      map['lng'] = Variable<double>(lng.value);
+    }
+    if (precision.present) {
+      map['precision'] = Variable<String>(precision.value);
+    }
+    if (source.present) {
+      map['source'] = Variable<String>(source.value);
+    }
+    if (isMember.present) {
+      map['is_member'] = Variable<bool>(isMember.value);
+    }
+    if (memberVerified.present) {
+      map['member_verified'] = Variable<bool>(memberVerified.value);
+    }
+    if (listedByHubUrl.present) {
+      map['listed_by_hub_url'] = Variable<String>(listedByHubUrl.value);
+    }
+    if (membership.present) {
+      map['membership'] = Variable<String>(membership.value);
+    }
+    if (fetchStatus.present) {
+      map['fetch_status'] = Variable<String>(fetchStatus.value);
+    }
+    if (fetchedAt.present) {
+      map['fetched_at'] = Variable<int>(fetchedAt.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (sortOrder.present) {
+      map['sort_order'] = Variable<int>(sortOrder.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('NetworkLibrariesCompanion(')
+          ..write('id: $id, ')
+          ..write('siteUrl: $siteUrl, ')
+          ..write('name: $name, ')
+          ..write('fingerprint: $fingerprint, ')
+          ..write('lat: $lat, ')
+          ..write('lng: $lng, ')
+          ..write('precision: $precision, ')
+          ..write('source: $source, ')
+          ..write('isMember: $isMember, ')
+          ..write('memberVerified: $memberVerified, ')
+          ..write('listedByHubUrl: $listedByHubUrl, ')
+          ..write('membership: $membership, ')
+          ..write('fetchStatus: $fetchStatus, ')
+          ..write('fetchedAt: $fetchedAt, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('sortOrder: $sortOrder')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
   late final $BooksTable books = $BooksTable(this);
   late final $WishlistBooksTable wishlistBooks = $WishlistBooksTable(this);
+  late final $NetworkLibrariesTable networkLibraries = $NetworkLibrariesTable(
+    this,
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
-  List<DatabaseSchemaEntity> get allSchemaEntities => [books, wishlistBooks];
+  List<DatabaseSchemaEntity> get allSchemaEntities => [
+    books,
+    wishlistBooks,
+    networkLibraries,
+  ];
 }
 
 typedef $$BooksTableCreateCompanionBuilder =
@@ -3357,6 +4312,429 @@ typedef $$WishlistBooksTableProcessedTableManager =
       WishlistRow,
       PrefetchHooks Function()
     >;
+typedef $$NetworkLibrariesTableCreateCompanionBuilder =
+    NetworkLibrariesCompanion Function({
+      Value<int> id,
+      required String siteUrl,
+      Value<String> name,
+      Value<String?> fingerprint,
+      Value<double?> lat,
+      Value<double?> lng,
+      Value<String?> precision,
+      required String source,
+      Value<bool> isMember,
+      Value<bool> memberVerified,
+      Value<String?> listedByHubUrl,
+      Value<String> membership,
+      Value<String> fetchStatus,
+      Value<int?> fetchedAt,
+      required int createdAt,
+      required int sortOrder,
+    });
+typedef $$NetworkLibrariesTableUpdateCompanionBuilder =
+    NetworkLibrariesCompanion Function({
+      Value<int> id,
+      Value<String> siteUrl,
+      Value<String> name,
+      Value<String?> fingerprint,
+      Value<double?> lat,
+      Value<double?> lng,
+      Value<String?> precision,
+      Value<String> source,
+      Value<bool> isMember,
+      Value<bool> memberVerified,
+      Value<String?> listedByHubUrl,
+      Value<String> membership,
+      Value<String> fetchStatus,
+      Value<int?> fetchedAt,
+      Value<int> createdAt,
+      Value<int> sortOrder,
+    });
+
+class $$NetworkLibrariesTableFilterComposer
+    extends Composer<_$AppDatabase, $NetworkLibrariesTable> {
+  $$NetworkLibrariesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get siteUrl => $composableBuilder(
+    column: $table.siteUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lat => $composableBuilder(
+    column: $table.lat,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<double> get lng => $composableBuilder(
+    column: $table.lng,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get precision => $composableBuilder(
+    column: $table.precision,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isMember => $composableBuilder(
+    column: $table.isMember,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get memberVerified => $composableBuilder(
+    column: $table.memberVerified,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get listedByHubUrl => $composableBuilder(
+    column: $table.listedByHubUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get membership => $composableBuilder(
+    column: $table.membership,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get fetchStatus => $composableBuilder(
+    column: $table.fetchStatus,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$NetworkLibrariesTableOrderingComposer
+    extends Composer<_$AppDatabase, $NetworkLibrariesTable> {
+  $$NetworkLibrariesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get siteUrl => $composableBuilder(
+    column: $table.siteUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lat => $composableBuilder(
+    column: $table.lat,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<double> get lng => $composableBuilder(
+    column: $table.lng,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get precision => $composableBuilder(
+    column: $table.precision,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get source => $composableBuilder(
+    column: $table.source,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isMember => $composableBuilder(
+    column: $table.isMember,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get memberVerified => $composableBuilder(
+    column: $table.memberVerified,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get listedByHubUrl => $composableBuilder(
+    column: $table.listedByHubUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get membership => $composableBuilder(
+    column: $table.membership,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get fetchStatus => $composableBuilder(
+    column: $table.fetchStatus,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get fetchedAt => $composableBuilder(
+    column: $table.fetchedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get sortOrder => $composableBuilder(
+    column: $table.sortOrder,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$NetworkLibrariesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $NetworkLibrariesTable> {
+  $$NetworkLibrariesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get siteUrl =>
+      $composableBuilder(column: $table.siteUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<String> get fingerprint => $composableBuilder(
+    column: $table.fingerprint,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<double> get lat =>
+      $composableBuilder(column: $table.lat, builder: (column) => column);
+
+  GeneratedColumn<double> get lng =>
+      $composableBuilder(column: $table.lng, builder: (column) => column);
+
+  GeneratedColumn<String> get precision =>
+      $composableBuilder(column: $table.precision, builder: (column) => column);
+
+  GeneratedColumn<String> get source =>
+      $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumn<bool> get isMember =>
+      $composableBuilder(column: $table.isMember, builder: (column) => column);
+
+  GeneratedColumn<bool> get memberVerified => $composableBuilder(
+    column: $table.memberVerified,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get listedByHubUrl => $composableBuilder(
+    column: $table.listedByHubUrl,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get membership => $composableBuilder(
+    column: $table.membership,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get fetchStatus => $composableBuilder(
+    column: $table.fetchStatus,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get fetchedAt =>
+      $composableBuilder(column: $table.fetchedAt, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get sortOrder =>
+      $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+}
+
+class $$NetworkLibrariesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $NetworkLibrariesTable,
+          NetworkLibraryRow,
+          $$NetworkLibrariesTableFilterComposer,
+          $$NetworkLibrariesTableOrderingComposer,
+          $$NetworkLibrariesTableAnnotationComposer,
+          $$NetworkLibrariesTableCreateCompanionBuilder,
+          $$NetworkLibrariesTableUpdateCompanionBuilder,
+          (
+            NetworkLibraryRow,
+            BaseReferences<
+              _$AppDatabase,
+              $NetworkLibrariesTable,
+              NetworkLibraryRow
+            >,
+          ),
+          NetworkLibraryRow,
+          PrefetchHooks Function()
+        > {
+  $$NetworkLibrariesTableTableManager(
+    _$AppDatabase db,
+    $NetworkLibrariesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$NetworkLibrariesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$NetworkLibrariesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$NetworkLibrariesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> siteUrl = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<String?> fingerprint = const Value.absent(),
+                Value<double?> lat = const Value.absent(),
+                Value<double?> lng = const Value.absent(),
+                Value<String?> precision = const Value.absent(),
+                Value<String> source = const Value.absent(),
+                Value<bool> isMember = const Value.absent(),
+                Value<bool> memberVerified = const Value.absent(),
+                Value<String?> listedByHubUrl = const Value.absent(),
+                Value<String> membership = const Value.absent(),
+                Value<String> fetchStatus = const Value.absent(),
+                Value<int?> fetchedAt = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> sortOrder = const Value.absent(),
+              }) => NetworkLibrariesCompanion(
+                id: id,
+                siteUrl: siteUrl,
+                name: name,
+                fingerprint: fingerprint,
+                lat: lat,
+                lng: lng,
+                precision: precision,
+                source: source,
+                isMember: isMember,
+                memberVerified: memberVerified,
+                listedByHubUrl: listedByHubUrl,
+                membership: membership,
+                fetchStatus: fetchStatus,
+                fetchedAt: fetchedAt,
+                createdAt: createdAt,
+                sortOrder: sortOrder,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String siteUrl,
+                Value<String> name = const Value.absent(),
+                Value<String?> fingerprint = const Value.absent(),
+                Value<double?> lat = const Value.absent(),
+                Value<double?> lng = const Value.absent(),
+                Value<String?> precision = const Value.absent(),
+                required String source,
+                Value<bool> isMember = const Value.absent(),
+                Value<bool> memberVerified = const Value.absent(),
+                Value<String?> listedByHubUrl = const Value.absent(),
+                Value<String> membership = const Value.absent(),
+                Value<String> fetchStatus = const Value.absent(),
+                Value<int?> fetchedAt = const Value.absent(),
+                required int createdAt,
+                required int sortOrder,
+              }) => NetworkLibrariesCompanion.insert(
+                id: id,
+                siteUrl: siteUrl,
+                name: name,
+                fingerprint: fingerprint,
+                lat: lat,
+                lng: lng,
+                precision: precision,
+                source: source,
+                isMember: isMember,
+                memberVerified: memberVerified,
+                listedByHubUrl: listedByHubUrl,
+                membership: membership,
+                fetchStatus: fetchStatus,
+                fetchedAt: fetchedAt,
+                createdAt: createdAt,
+                sortOrder: sortOrder,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$NetworkLibrariesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $NetworkLibrariesTable,
+      NetworkLibraryRow,
+      $$NetworkLibrariesTableFilterComposer,
+      $$NetworkLibrariesTableOrderingComposer,
+      $$NetworkLibrariesTableAnnotationComposer,
+      $$NetworkLibrariesTableCreateCompanionBuilder,
+      $$NetworkLibrariesTableUpdateCompanionBuilder,
+      (
+        NetworkLibraryRow,
+        BaseReferences<
+          _$AppDatabase,
+          $NetworkLibrariesTable,
+          NetworkLibraryRow
+        >,
+      ),
+      NetworkLibraryRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -3365,4 +4743,6 @@ class $AppDatabaseManager {
       $$BooksTableTableManager(_db, _db.books);
   $$WishlistBooksTableTableManager get wishlistBooks =>
       $$WishlistBooksTableTableManager(_db, _db.wishlistBooks);
+  $$NetworkLibrariesTableTableManager get networkLibraries =>
+      $$NetworkLibrariesTableTableManager(_db, _db.networkLibraries);
 }

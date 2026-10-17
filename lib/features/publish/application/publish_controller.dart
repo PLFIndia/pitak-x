@@ -12,6 +12,7 @@ import 'dart:convert';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
+import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
@@ -103,6 +104,13 @@ class PublishController extends _$PublishController {
     final siteUrl = githubPagesUrlFor(await credentials.targetRepo());
     List<int>? libraryJson;
     if (siteUrl != null) {
+      // members = the rows I added by card scan (§5.5): a hub publishes its
+      // member list inside its own descriptor. A member row without a
+      // fingerprint cannot be listed (there is nothing to match on) — it
+      // stays out until a scan/fetch supplies one. memberOf stays empty
+      // until membership confirmation lands (S4). The codec sorts by siteUrl.
+      final network = await ref.read(networkRepositoryProvider.future);
+      final memberRows = await network.loadAll();
       final built = BuildOwnDescriptor.build(
         libraryId: own.id,
         libraryName: settings.libraryName,
@@ -110,7 +118,15 @@ class PublishController extends _$PublishController {
         sharing: settings.publishLocationSharing,
         gps: settings.publishContactGps,
         updatedAt: ref.read(clockProvider)(),
-        // members/memberOf stay empty until the network table exists (S3/S4).
+        members: [
+          for (final row in memberRows)
+            if (row.isMember && row.fingerprint != null)
+              MemberEntry(
+                fingerprint: row.fingerprint!,
+                siteUrl: row.siteUrl,
+                name: row.name.isEmpty ? null : row.name,
+              ),
+        ],
       );
       // An unbuildable descriptor degrades to "write none" (and remove any
       // stale published one) — the catalogue publish itself is still valid.

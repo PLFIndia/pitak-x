@@ -69,14 +69,18 @@ void main() {
     expect(find.text('Pitak'), findsOneWidget);
   });
 
-  testWidgets('lists the Bookmarks destination below Wishlist', (tester) async {
+  testWidgets('lists the Library network destination below Wishlist', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(await _app());
     tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
     await tester.pumpAndSettle();
 
     expect(find.text('Wishlist'), findsOneWidget);
-    expect(find.text('Bookmarks'), findsOneWidget);
+    // ADR 0012: the bookmarks destination became the library network.
+    expect(find.text('Library network'), findsOneWidget);
+    expect(find.text('Bookmarks'), findsNothing);
   });
 
   testWidgets('"Share Library Website" is hidden before the first publish', (
@@ -133,7 +137,7 @@ void main() {
 
     // Settings sits lower on screen than every primary destination.
     final settingsY = tester.getTopLeft(find.text('Settings')).dy;
-    for (final label in ['Borrowers vault', 'Wishlist', 'Bookmarks']) {
+    for (final label in ['Borrowers vault', 'Wishlist', 'Library network']) {
       expect(
         tester.getTopLeft(find.text(label)).dy,
         lessThan(settingsY),
