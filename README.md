@@ -3,8 +3,9 @@
 A privacy-first, offline personal **library catalogue** for Android. Pitak is a
 Kotlin→Flutter port of the original Android app: catalogue your books, lend
 them to borrowers from an **encrypted vault**, keep a wishlist, import/export
-(JSON · CSV · PDF), make portable backups, and publish a read-only library site
-to GitHub Pages with event posters and bookmarks to other libraries.
+(JSON · CSV · PDF), make portable backups, publish a read-only library site
+to GitHub Pages with event posters, and link up with other Pitak libraries in
+a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
 > **Google Play** (`dev.khoj.pitaka`). Current source release is **1.4.0**
@@ -33,17 +34,30 @@ to GitHub Pages with event posters and bookmarks to other libraries.
   the Kotlin app is retired and is not a restore target). **Honest limit:**
   the archive is *not* fully encrypted — books, wishlist and covers are stored
   plainly inside it; only the borrowers vault (when present) stays encrypted.
-  Treat backup files accordingly. Restore is all-or-nothing: the catalogue,
-  covers and vault are written into a new data folder and the app switches to
-  it in one step, so a failed or interrupted restore leaves your current data
-  untouched (the previous folder is deleted right after a successful switch).
+  The archive also carries your **library identity (name + ID) and your
+  saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
+  the ID your hubs know. Treat backup files accordingly. Restore is
+  all-or-nothing: the catalogue, covers and vault are written into a new data
+  folder and the app switches to it in one step, so a failed or interrupted
+  restore leaves your current data untouched (the previous folder is deleted
+  right after a successful switch).
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
+  The optional GPS pin is governed by its own opt-in switch (off /
+  approximate ~1 km / exact) and feeds both the page pin and the network
+  descriptor.
 - **Events** — attach a small set of event posters (image + optional short
   description) to the published site; images stay on-device as ordinary files.
-- **Bookmarks** — save labelled links to *other* libraries' published sites.
-  URLs are validated strictly (https only; GitHub Pages / Cloudflare Pages
-  hosts) and stored as a plain, non-secret list.
+- **Library network** — save *other* Pitak libraries (by URL, or by scanning a
+  library's card QR in person), see them on an opt-in map, and refresh their
+  public details on demand. Sites are validated strictly (https only; GitHub
+  Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
+  published `library.json` descriptors — nothing happens in the background —
+  and identities are checked by fingerprint, never by trusting a name. The map
+  downloads OpenStreetMap images only after you say yes (first tap asks;
+  changeable in Settings) and only while the map is open. Replaces the old
+  bookmarks feature, whose entries migrate into the network list automatically
+  on first open (on-device only).
 - **App-lock** — optional, opt-in biometric/device-credential gate before the
   library screen. It is a **screen cover, not a vault lock**: it deters casual
   access on an unlocked phone but does not encrypt data at rest and does not
@@ -58,8 +72,10 @@ bytes and never as Dart `String`s; the GitHub token and the ISBN-lookup key are
 the honest exceptions (their HTTP/plugin APIs are `String`-typed, so they
 transit as immutable strings).
 Network calls happen only on explicit user action (ISBN lookup,
-publish, remote covers — the last is opt-in, default off, host-allow-listed,
-and each cover is downloaded once and then kept as an ordinary local cover).
+publish, network refresh, remote covers, map tiles — the last three are
+opt-in: covers are default off, host-allow-listed, and downloaded once;
+the network map fetches OpenStreetMap tiles only after consent, and Refresh
+only reads the `library.json` of libraries you saved).
 
 **Platform matrix (M18):** Android is the only shipping target today.
 Screenshot/recents capture is blocked on Android (`FLAG_SECURE`) while
@@ -102,6 +118,9 @@ cover, not a vault lock (see the security notes below).
 - **State / DI:** Riverpod with code generation (`@riverpod`).
 - **Errors:** `fpdart` `Either<Failure, T>` (no exceptions for expected failures).
 - **Persistence:** Drift (SQLite); SQLCipher for the vault.
+- **Map:** `flutter_map` + OpenStreetMap raster tiles (BSD-3, pure Dart — no
+  native code, so the F-Droid build stays clean), consent-gated and only
+  while the network map is open.
 - **Native core:** a Rust crate (`rust/`, `pitak_crypto`) for Argon2id +
   AES-GCM + the SQLCipher vault, bridged via `flutter_rust_bridge` (cargokit
   builds it during the Android build).
@@ -112,7 +131,7 @@ cover, not a vault lock (see the security notes below).
 lib/
   core/        cross-cutting: app_lock, crypto, database, DI (core/di/providers.dart), error,
                images, layout, network, platform, storage, shared widgets
-  features/    library · vault · wishlist · lookup · publish · events · bookmarks ·
+  features/    library · vault · wishlist · lookup · publish · events · network ·
                backup · import_export · settings
   src/rust/    flutter_rust_bridge generated bindings (analyzer-excluded)
 rust/          pitak_crypto crate (crypto + vault boundary) + tests

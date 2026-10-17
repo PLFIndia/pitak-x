@@ -15,6 +15,24 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **Library network** (libNetwork.md, ADR 0012): save other Pitak libraries
+  by URL or by scanning their library card QR in person; distance-sorted
+  list with membership/verification badges; user-initiated Refresh with
+  bounded discovery (two expansions, 500-row cap) and cancel; pending
+  membership confirmation with Reconsider; opt-in OpenStreetMap map tab
+  (`flutter_map`, consent-gated `networkMapTilesConsent`, app User-Agent,
+  HTTP-freshness tile cache, permanent attribution); own card QR with
+  fingerprint fragment for hub add-member flows.
+- Publish: `library.json` descriptor (fingerprint, name, site, optional
+  location, members/memberOf) rides along in the publish commit; opt-in
+  location sharing control (off / approximate ~1 km / exact) governs both
+  the descriptor and the `index.html` GPS pin.
+- Backup: `.pitabak` now carries `identity.json` (library ID + name) and
+  `network.json` (saved-libraries list), announced by new
+  `hasIdentity`/`hasNetwork` manifest flags (schema stays 1; both plain
+  JSON — documented honest limit). Restore adopts the identity through the
+  namespace port and replaces the network rows after the catalogue switch;
+  adoption failures are reported, never rolled back.
 - `LICENSE` (GPL-3.0-or-later) matching the F-Droid listing; `SECURITY.md`
   disclosure policy; `CONTRIBUTING.md` + PR template; `CHANGELOG.md`;
   `docs/adr/` architecture decision records (architecture.md Phase 0).
@@ -35,6 +53,11 @@ heading as part of the `chore(release):` commit.
   (B4, B8).
 
 ### Changed
+- **Bookmarks replaced by the library network** (D8): the bookmarks feature
+  is deleted; its saved links migrate one-time into the `network_libraries`
+  table (schema **v3**, data-matrix row included) on first open — on-device
+  only — and the prefs key is cleared. The drawer entry is now "Library
+  network".
 - All diagnostics route through `appLog` (debug builds only; release ships
   no logs to logcat) (B5).
 - `tool/release_build.sh` refuses a release whose version has no CHANGELOG
@@ -59,6 +82,17 @@ heading as part of the `chore(release):` commit.
   replays the failing case.
 - Architecture gate now also forbids `application → infrastructure` imports
   and recognises multi-line empty catch blocks.
+
+### Security
+- Library identities cross devices as SHA-256 **fingerprints**; the raw
+  library ID never appears in published files, cards, or logs (D3).
+- All descriptor/card/archive input is validated at the boundary: §6 char
+  rules for names (control/bidi rejection), the Pages-only URL allow-list
+  with a new 2048-char cap, bounded fetches (15 s, 64 KiB, redirect
+  re-validation per hop), discovery caps (D10).
+- Identity conflicts (a fetched fingerprint that belongs to another saved
+  row) are marked `identityConflict` and shown, never auto-merged (D12);
+  refused fetches never erase cached data or demote a known conflict.
 
 ## [1.4.0] - 2026-10 (tag `1.4.0`, versionCode 24)
 
