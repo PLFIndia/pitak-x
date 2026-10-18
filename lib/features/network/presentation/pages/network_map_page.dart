@@ -19,6 +19,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/network/osm_tiles.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -233,7 +234,11 @@ class NetworkMapPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final tileLayer = ref.watch(osmTileLayerProvider);
+    // The tile HTTP client is owned by DI (opened on first watch, closed via
+    // ref.onDispose); the TileLayer built AROUND it is per-mount, so a
+    // layer dispose never closes the shared client out from under a future
+    // mount (review M4).
+    final tileClient = ref.watch(osmTileHttpClientProvider);
     final rows =
         ref.watch(networkControllerProvider).valueOrNull?.rows ?? const [];
     final settings = ref.watch(settingsControllerProvider).valueOrNull;
@@ -256,7 +261,13 @@ class NetworkMapPage extends ConsumerWidget {
         if (own != null) LatLng(own.lat, own.lng),
       ]),
       children: [
-        tileLayer,
+        TileLayer(
+          urlTemplate: OsmTiles.urlTemplate,
+          tileProvider: NetworkTileProvider(
+            httpClient: tileClient,
+            headers: OsmTiles.headers(),
+          ),
+        ),
         MarkerLayer(
           markers: [
             for (final row in pinned)

@@ -10,8 +10,9 @@
 /// direction.
 library;
 
-import 'package:flutter_map/flutter_map.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:http/http.dart';
+import 'package:http/retry.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/platform/app_log.dart';
@@ -24,7 +25,6 @@ import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
-import 'package:pitaka/features/network/infrastructure/osm_tile_provider.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_providers.g.dart';
@@ -147,9 +147,24 @@ Future<ConfirmMembershipUseCase> confirmMembershipUseCase(
   return ConfirmMembershipUseCase(repository: repo);
 }
 
-/// The configured OSM [TileLayer] for the network map (§5.9): endpoint, UA
-/// header and HTTP-freshness cache all set in ONE place (infrastructure).
-/// Presentation watches this so it never imports infrastructure; tests
-/// override it with a layer backed by an in-memory blank tile provider.
+/// The HTTP client that backs the network map's tile provider (§5.9).
+///
+/// Why a client and not a ready-made `TileLayer` (review M4): a TileLayer's
+/// State disposes its tile provider on unmount, and flutter_map's
+/// `NetworkTileProvider` closes its HTTP client in dispose ONLY when it
+/// created the client itself. Handing the widget a provider-held layer meant
+/// the provider's value could outlive the unmount (autoDispose timing) and
+/// the next mount would fetch tiles through a closed client — "Client is
+/// already closed". Instead DI owns the CLIENT (opened on first watch,
+/// closed exactly once via `ref.onDispose`), and presentation builds a fresh
+/// `TileLayer` per mount around it — the layer never owns the client.
+///
+/// `RetryClient` mirrors flutter_map's own default (failed tile requests are
+/// retried); closing it closes the inner client. Tests override this with a
+/// `MockClient` — no real HTTP ever happens in a test.
 @riverpod
-TileLayer osmTileLayer(OsmTileLayerRef ref) => buildOsmTileLayer();
+Client osmTileHttpClient(OsmTileHttpClientRef ref) {
+  final client = RetryClient(Client());
+  ref.onDispose(client.close);
+  return client;
+}

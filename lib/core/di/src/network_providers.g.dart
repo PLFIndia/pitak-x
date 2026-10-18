@@ -153,27 +153,38 @@ final confirmMembershipUseCaseProvider =
 // ignore: unused_element
 typedef ConfirmMembershipUseCaseRef =
     AutoDisposeFutureProviderRef<ConfirmMembershipUseCase>;
-String _$osmTileLayerHash() => r'f65d0306b4fb96614cbcc7d4da32df475c1f99c0';
+String _$osmTileHttpClientHash() => r'f1a0433953d14102f932aaebc4ae352d26f56385';
 
-/// The configured OSM [TileLayer] for the network map (§5.9): endpoint, UA
-/// header and HTTP-freshness cache all set in ONE place (infrastructure).
-/// Presentation watches this so it never imports infrastructure; tests
-/// override it with a layer backed by an in-memory blank tile provider.
+/// The HTTP client that backs the network map's tile provider (§5.9).
 ///
-/// Copied from [osmTileLayer].
-@ProviderFor(osmTileLayer)
-final osmTileLayerProvider = AutoDisposeProvider<TileLayer>.internal(
-  osmTileLayer,
-  name: r'osmTileLayerProvider',
+/// Why a client and not a ready-made `TileLayer` (review M4): a TileLayer's
+/// State disposes its tile provider on unmount, and flutter_map's
+/// `NetworkTileProvider` closes its HTTP client in dispose ONLY when it
+/// created the client itself. Handing the widget a provider-held layer meant
+/// the provider's value could outlive the unmount (autoDispose timing) and
+/// the next mount would fetch tiles through a closed client — "Client is
+/// already closed". Instead DI owns the CLIENT (opened on first watch,
+/// closed exactly once via `ref.onDispose`), and presentation builds a fresh
+/// `TileLayer` per mount around it — the layer never owns the client.
+///
+/// `RetryClient` mirrors flutter_map's own default (failed tile requests are
+/// retried); closing it closes the inner client. Tests override this with a
+/// `MockClient` — no real HTTP ever happens in a test.
+///
+/// Copied from [osmTileHttpClient].
+@ProviderFor(osmTileHttpClient)
+final osmTileHttpClientProvider = AutoDisposeProvider<Client>.internal(
+  osmTileHttpClient,
+  name: r'osmTileHttpClientProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
       ? null
-      : _$osmTileLayerHash,
+      : _$osmTileHttpClientHash,
   dependencies: null,
   allTransitiveDependencies: null,
 );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef OsmTileLayerRef = AutoDisposeProviderRef<TileLayer>;
+typedef OsmTileHttpClientRef = AutoDisposeProviderRef<Client>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

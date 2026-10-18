@@ -5,15 +5,17 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:http/http.dart';
+import 'package:http/testing.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/network/app_user_agent.dart';
+import 'package:pitaka/core/network/osm_tiles.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
-import 'package:pitaka/features/network/infrastructure/osm_tile_provider.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
@@ -23,19 +25,21 @@ import '../../../support/a11y.dart';
 
 /// Tests for the network map (libNetwork.md §7 S5): the consent gate (the
 /// map never builds without consent), the tile-layer configuration (UA
-/// header — a unit test over the config, never HTTP), the attribution, the
-/// pin sheet, the viewport math, and the a11y trio.
+/// header — over the config constants and the built widget, never HTTP),
+/// the attribution, the pin sheet, the viewport math, and the a11y trio.
 ///
-/// No test ever touches the network: the map's tile layer is overridden with
-/// an in-memory blank provider ( [_BlankTileProvider] ).
+/// No test ever touches the network: the map's DI-owned tile HTTP client is
+/// overridden with a MockClient answering a 1×1 transparent PNG (M4 seam).
 void main() {
   const rawId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
   late _FakeRepo repo;
 
-  /// Pumps the whole [NetworkPage] (the map lives in its Map tab) with the
-  /// real provider chain; only the edges are faked (repository, descriptor
-  /// fetcher, tile layer).
+  /// In-memory tiles: the map's DI-owned HTTP client is replaced by a
+  /// [MockClient] that answers every tile request with the same 1×1
+  /// transparent PNG, so the REAL NetworkTileProvider path runs with no
+  /// HTTP (review M4 — the seam moved from "override the layer" to
+  /// "override the client" because the page now builds the layer per mount).
   Future<void> pumpPage(
     WidgetTester tester, {
     Map<String, Object> prefs = const {},
@@ -53,10 +57,13 @@ void main() {
             (url) async =>
                 const DescriptorRefused(DescriptorRefusal.httpStatus),
           ),
-          osmTileLayerProvider.overrideWithValue(
-            TileLayer(
-              urlTemplate: 'https://tiles.test/{z}/{x}/{y}.png',
-              tileProvider: _BlankTileProvider(),
+          osmTileHttpClientProvider.overrideWithValue(
+            MockClient(
+              (_) async => Response.bytes(
+                _transparentPng,
+                200,
+                headers: const {'content-type': 'image/png'},
+              ),
             ),
           ),
         ],
@@ -74,20 +81,34 @@ void main() {
   setUp(() => repo = _FakeRepo([]));
 
   group('tile layer configuration (§5.9)', () {
-    test('the production layer targets OSM with the app User-Agent', () {
-      final layer = buildOsmTileLayer();
-      expect(layer.urlTemplate, OsmTiles.urlTemplate);
+    test('the endpoint constant targets OSM and the headers carry the app '
+        'User-Agent', () {
       expect(
         OsmTiles.urlTemplate,
         'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       );
-      final provider = layer.tileProvider;
-      expect(provider, isA<NetworkTileProvider>());
       // The OSM tile policy REQUIRES a UA naming the app; this is the one
       // place it is set, so pin it with a test.
-      expect(provider.headers['User-Agent'], AppUserAgent.value);
+      expect(OsmTiles.headers()['User-Agent'], AppUserAgent.value);
       // No cache-busting: the built-in cache honours server freshness
       // headers (7-day fallback) — never send no-cache (§5.9).
+      expect(OsmTiles.headers(), isNot(contains('Cache-Control')));
+      // A FRESH mutable map per call: TileLayer's constructor does
+      // headers.putIfAbsent, which throws on an unmodifiable map.
+      final a = OsmTiles.headers()..putIfAbsent('X-Test', () => 'ok');
+      expect(identical(a, OsmTiles.headers()), isFalse);
+    });
+
+    testWidgets('the map builds its TileLayer per mount from the DI-owned '
+        'client (M4)', (tester) async {
+      await pumpPage(tester, prefs: const {'network_map_tiles_consent': true});
+      await openMapTab(tester);
+
+      final layer = tester.widget<TileLayer>(find.byType(TileLayer));
+      expect(layer.urlTemplate, OsmTiles.urlTemplate);
+      final provider = layer.tileProvider;
+      expect(provider, isA<NetworkTileProvider>());
+      expect(provider.headers['User-Agent'], AppUserAgent.value);
       expect(provider.headers, isNot(contains('Cache-Control')));
     });
   });
@@ -285,15 +306,8 @@ void main() {
   });
 }
 
-/// In-memory blank tiles: every request resolves to the same 1×1 transparent
-/// PNG, so the map renders its full widget tree without any HTTP.
-class _BlankTileProvider extends TileProvider {
-  @override
-  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) =>
-      MemoryImage(_transparentPng);
-}
-
-/// A minimal valid 1×1 transparent PNG (68 bytes, CRCs computed).
+/// A minimal valid 1×1 transparent PNG (68 bytes, CRCs computed) — the
+/// MockClient's answer to every tile request.
 final Uint8List _transparentPng = Uint8List.fromList(const [
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, //
   0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,

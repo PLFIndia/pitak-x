@@ -78,9 +78,13 @@ void main() {
 
   test('application and core/di import no Flutter UI libraries', () {
     // State orchestration and DI wiring never touch widgets; UI-only code
-    // lives in presentation (AGENTS §3.1).
+    // lives in presentation (AGENTS §3.1). flutter_map is on the list too
+    // (review M4): its TileLayer/NetworkTileProvider own an HTTP-client
+    // lifecycle, so they may only be constructed in presentation, per mount —
+    // never cached in a DI or application provider.
     final uiImport = RegExp(
-      r"^import 'package:flutter/(material|widgets|cupertino)\.dart'",
+      r"^import 'package:(flutter/(material|widgets|cupertino)\.dart|"
+      "flutter_map/)'",
     );
     final targets = <File>[
       ...featureFiles('/application/'),
@@ -95,8 +99,9 @@ void main() {
       violations,
       isEmpty,
       reason:
-          'application/core-di must not import Flutter UI libraries '
-          '(AGENTS §3.1). Violations:\n${violations.join('\n')}',
+          'application/core-di must not import Flutter UI libraries or '
+          'flutter_map (AGENTS §3.1, review M4). Violations:\n'
+          '${violations.join('\n')}',
     );
   });
 
