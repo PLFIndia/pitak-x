@@ -274,6 +274,26 @@ void main() {
   });
 
   testWidgets(
+    'SECURITY (M1): an unbuildable descriptor refuses the publish instead '
+    'of silently deleting the published library.json',
+    (tester) async {
+      final h = _Harness();
+      h.settings.identityMalformed = true; // stored ID is not a LibraryId
+      // A library.json from an earlier run is live on the site.
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect((result as PublishFailure).reason, 'Library identity unavailable');
+      expect(h.api.commits, isEmpty, reason: 'no commit — nothing deleted');
+      expect(h.manifest.saves, 0);
+    },
+  );
+
+  testWidgets(
     'library.json rides along — fingerprint yes, raw library ID never',
     (tester) async {
       final h = _Harness();
@@ -458,15 +478,21 @@ class _Settings implements SettingsRepository {
   /// than ship a descriptor without an honest fingerprint (fail closed).
   bool identityFails = false;
 
+  /// Flipped by the M1 test: the repository hands back whatever is stored,
+  /// and a malformed value must refuse the publish — not delete the
+  /// published descriptor behind a "Published!".
+  bool identityMalformed = false;
+
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
 
   // The library.json descriptor needs the identity (libNetwork.md §5.5), so
   // a publish now legitimately READS it through the controller's current().
   @override
-  Future<Either<Failure, String>> getOrCreateLibraryId() async => identityFails
-      ? left(const StorageFailure('private-mint-detail'))
-      : right('a' * 32);
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
+    if (identityFails) return left(const StorageFailure('private-mint-detail'));
+    return right(identityMalformed ? 'NOT-A-HEX-ID' : 'a' * 32);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

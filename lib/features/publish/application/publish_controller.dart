@@ -135,9 +135,18 @@ class PublishController extends _$PublishController {
             if (row.membership == MembershipState.confirmed) row.siteUrl,
         ],
       );
-      // An unbuildable descriptor degrades to "write none" (and remove any
-      // stale published one) — the catalogue publish itself is still valid.
-      libraryJson = built.match((_) => null, LibraryDescriptorCodec.encode);
+      // An unbuildable descriptor REFUSES the publish (§5.5, fail closed).
+      // The only ways build() fails are an identity that is not a valid
+      // library ID (e.g. a malformed stored value — getOrCreateLibraryId
+      // returns whatever is on disk) or an unusable site URL. Folding that
+      // to "write none" would silently DELETE the published library.json
+      // (the use case treats null as opt-out) while the UI says
+      // "Published!" — detaching this library from every hub (review M1).
+      final descriptor = built.toNullable();
+      if (descriptor == null) {
+        return const PublishFailure('Library identity unavailable');
+      }
+      libraryJson = LibraryDescriptorCodec.encode(descriptor);
     }
 
     final useCase = PublishLibraryUseCase(
