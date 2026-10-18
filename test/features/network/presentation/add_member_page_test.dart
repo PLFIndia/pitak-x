@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -118,10 +119,75 @@ void main() {
     // The success panel shows the outcome …
     expect(find.text('Added Member Library'), findsOneWidget);
     expect(find.text('Verified'), findsOneWidget);
-    // … and Done pops true so the network list re-reads.
+    // … and Done simply returns to the caller.
     await tester.tap(find.text('Done'));
     await tester.pumpAndSettle();
     expect(find.text('open-add-member'), findsOneWidget);
+  });
+
+  testWidgets('M10: the network window is re-read the moment a member is '
+      'saved — before Done, so the system back button cannot leave the '
+      'list stale', (tester) async {
+    final repo = _FakeRepo();
+    final windowReads = <int>[];
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          networkRepositoryProvider.overrideWith((ref) async => repo),
+          addMemberUseCaseProvider.overrideWith(
+            (ref) async => AddMemberUseCase(
+              repository: repo,
+              fetchDescriptor: (_) async =>
+                  const DescriptorRefused(DescriptorRefusal.transport),
+              clock: () => 1000,
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (context, ref, _) {
+              // Stand-in for the Libraries tab: watch the window and record
+              // every row count it delivers.
+              final window = ref.watch(networkControllerProvider);
+              final rows = window.valueOrNull?.rows.length;
+              if (rows != null) windowReads.add(rows);
+              return Scaffold(
+                body: ElevatedButton(
+                  onPressed: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          AddMemberPage(scanner: fakeScanner([cardPayload])),
+                    ),
+                  ),
+                  child: Text('rows=$rows'),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('rows=0'), findsOneWidget);
+
+    await tester.tap(find.text('rows=0'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Scan a library card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('emit-0'));
+    await tester.pumpAndSettle();
+    expect(find.text('Added Member Library'), findsOneWidget);
+
+    // Leave via the system back button — NOT Done.
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+
+    // The list already knows about the new member.
+    expect(find.text('rows=1'), findsOneWidget);
+    expect(windowReads.last, 1);
   });
 
   testWidgets('offline: the member is added, visibly unverified', (

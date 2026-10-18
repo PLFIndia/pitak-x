@@ -126,14 +126,12 @@ List<NetworkLibrary> sortRowsForDisplay(
 class _LibrariesTab extends ConsumerWidget {
   const _LibrariesTab();
 
-  Future<void> _addMember(BuildContext context, WidgetRef ref) async {
-    final navigator = Navigator.of(context);
-    final added = await navigator.push<bool>(
-      MaterialPageRoute(builder: (_) => const AddMemberPage()),
-    );
-    // Re-read the rows when a member was added (one truth: the repository).
-    if (added ?? false) ref.invalidate(networkControllerProvider);
-  }
+  /// Opens the scan flow. Nothing to do on return: `AddMemberController`
+  /// re-reads the window the moment a member is saved, so the list is fresh
+  /// whether the user tapped Done or pressed back (review M10).
+  Future<void> _addMember(BuildContext context) => Navigator.of(
+    context,
+  ).push<void>(MaterialPageRoute(builder: (_) => const AddMemberPage()));
 
   Future<void> _remove(
     BuildContext context,
@@ -231,7 +229,7 @@ class _LibrariesTab extends ConsumerWidget {
         },
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addMember(context, ref),
+        onPressed: () => _addMember(context),
         icon: const Icon(Icons.qr_code_scanner),
         label: const Text('Add member'),
       ),
