@@ -36,6 +36,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 
 /// Fetches one URL under strict origin / time / size limits.
@@ -47,9 +48,17 @@ final class BoundedHttpFetcher {
     this.timeout = const Duration(seconds: 15),
     this.maxBytes = defaultMaxBytes,
     this.maxRedirects = defaultMaxRedirects,
+    this.headers = defaultHeaders,
   }) : _client = client;
 
   final http.Client _client;
+
+  /// Request headers sent on the initial request AND on every redirect hop.
+  /// Defaults to the app's single honest User-Agent: a bare `package:http`
+  /// request goes out as `Dart/3.x (dart:io)`, which the services we read
+  /// from (Pages hosts, cover CDNs) cannot attribute to this app — and which
+  /// contradicts `AppUserAgent`'s "one UA everywhere" promise (review M2).
+  final Map<String, String> headers;
 
   /// The caller's URL allow-list: returns the URL string to actually fetch, or
   /// null to refuse. Applied to the initial URL AND to every redirect hop.
@@ -78,6 +87,11 @@ final class BoundedHttpFetcher {
 
   /// Default redirect budget.
   static const int defaultMaxRedirects = 3;
+
+  /// Default headers: the app's User-Agent only.
+  static const Map<String, String> defaultHeaders = {
+    'User-Agent': AppUserAgent.value,
+  };
 
   /// Fetches [rawUrl]. Never throws for expected failures: every refusal,
   /// timeout or transport fault is a [FetchRefused].
@@ -150,11 +164,10 @@ final class BoundedHttpFetcher {
     http.StreamedResponse response;
     var hops = 0;
     while (true) {
-      final request = http.AbortableRequest(
-        'GET',
-        current,
-        abortTrigger: abort.future,
-      )..followRedirects = false;
+      final request =
+          http.AbortableRequest('GET', current, abortTrigger: abort.future)
+            ..followRedirects = false
+            ..headers.addAll(headers);
       response = await _client.send(request);
       if (!_isRedirect(response.statusCode)) break;
       _discard(response);

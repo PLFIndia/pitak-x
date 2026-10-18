@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
+import 'package:pitaka/core/network/timeout_http_client.dart';
 
 /// Generic-fetcher ports of the cover-fetcher security cases (libNetwork.md
 /// D14/S1): allow-list, redirect re-validation, byte cap, timeout ABORT and
@@ -28,6 +30,9 @@ String? _sanitize(String? raw) {
   if (!_allowedHosts.contains(uri.host.toLowerCase())) return null;
   return trimmed;
 }
+
+/// Ten 3-byte chunks — a body long enough for a deadline to cut it short.
+List<List<int>> tenChunks() => List.generate(10, (_) => [1, 2, 3]);
 
 BoundedHttpFetcher _fetcher(
   http.Client client, {
@@ -311,6 +316,43 @@ void main() {
       expect(_bytesOf(await fetcher.fetch(start)), equals([9, 9]));
     });
 
+    test('IDENTIFICATION (M2): the app User-Agent rides on the initial '
+        'request AND on every redirect hop', () async {
+      const start = 'https://books.google.com/books/content?vid=1';
+      const end = 'https://books.googleusercontent.com/cover/1.jpg';
+      final userAgents = <String?>[];
+      final fetcher = _fetcher(
+        MockClient.streaming((request, _) async {
+          userAgents.add(request.headers['User-Agent']);
+          return request.url.toString() == start
+              ? redirect(request, end)
+              : ok(request, [1]);
+        }),
+      );
+
+      expect(_bytesOf(await fetcher.fetch(start)), equals([1]));
+      expect(userAgents, hasLength(2));
+      expect(
+        userAgents,
+        everyElement(AppUserAgent.value),
+        reason: 'a bare package:http request would say "Dart/3.x (dart:io)"',
+      );
+    });
+
+    test('custom headers replace the default set', () async {
+      String? seen;
+      final fetcher = BoundedHttpFetcher(
+        client: MockClient.streaming((request, _) async {
+          seen = request.headers['X-Probe'];
+          return ok(request, [1]);
+        }),
+        sanitize: _sanitize,
+        headers: const {'X-Probe': 'yes'},
+      );
+      await fetcher.fetch(allowed);
+      expect(seen, 'yes');
+    });
+
     test('a relative Location resolves against the current URL', () async {
       final fetcher = _fetcher(
         router({
@@ -369,8 +411,6 @@ void main() {
   });
 
   group('rejected responses are cancelled, not drained (N08)', () {
-    List<List<int>> tenChunks() => List.generate(10, (_) => [1, 2, 3]);
-
     test('a non-2xx body is not read past the status line', () async {
       final probe = _BodyProbe();
       final fetcher = _fetcher(
@@ -470,6 +510,99 @@ void main() {
         ),
       );
       expect(_reasonOf(await fetcher.fetch(allowed)), FetchRefusal.transport);
+    });
+  });
+
+  group('COMPOSITION (H2): through the production TimeoutHttpClient', () {
+    // In production the fetcher runs over `httpClientProvider`, which is a
+    // TimeoutHttpClient (60 s bounds). The decorator re-wraps every request
+    // with its own abort trigger; before H2 that silently DROPPED the
+    // fetcher's trigger, so its 15 s deadline stopped nothing and the real
+    // bound was 60 s per hop. These tests drive the fetcher through the
+    // decorator exactly as DI does.
+    test(
+      "the fetcher's deadline still ABORTS the socket under the decorator",
+      () async {
+        final probe = _BodyProbe();
+        final decorated = TimeoutHttpClient(
+          _streaming(
+            tenChunks(),
+            chunkDelay: const Duration(milliseconds: 30),
+            probe: probe,
+          ),
+          // Production default (60 s): deliberately far looser than the
+          // fetcher's own deadline, so only the fetcher's timer can fire.
+        );
+        final fetcher = _fetcher(
+          decorated,
+          timeout: const Duration(milliseconds: 50),
+        );
+
+        final stopwatch = Stopwatch()..start();
+        expect(_reasonOf(await fetcher.fetch(allowed)), FetchRefusal.timedOut);
+        stopwatch.stop();
+        expect(
+          stopwatch.elapsed,
+          lessThan(const Duration(seconds: 5)),
+          reason: "the FETCHER's 50 ms deadline must govern, not the 60 s",
+        );
+        final pulledAtTimeout = probe.chunksPulled;
+        expect(probe.aborted, isTrue, reason: 'the abort reached the server');
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+        expect(probe.chunksPulled, pulledAtTimeout, reason: 'body stopped');
+        expect(probe.bodyClosed, isTrue);
+      },
+    );
+
+    test("a connection that never answers is aborted by the fetcher's "
+        "deadline, not the decorator's", () async {
+      var abortReachedServer = false;
+      // A host that never answers — on an honest `Abortable` transport: like
+      // the real IOClient, the pending send fails with
+      // RequestAbortedException the moment the trigger fires.
+      final hanging = MockClient.streaming((request, _) {
+        final pending = Completer<http.StreamedResponse>();
+        if (request case http.Abortable(:final abortTrigger?)) {
+          unawaited(
+            abortTrigger.whenComplete(() {
+              abortReachedServer = true;
+              if (!pending.isCompleted) {
+                pending.completeError(
+                  http.RequestAbortedException(request.url),
+                );
+              }
+            }),
+          );
+        }
+        return pending.future;
+      });
+      final fetcher = _fetcher(
+        TimeoutHttpClient(hanging), // production default: 60 s
+        timeout: const Duration(milliseconds: 30),
+      );
+
+      expect(_reasonOf(await fetcher.fetch(allowed)), FetchRefusal.timedOut);
+      expect(abortReachedServer, isTrue);
+    });
+
+    test("the decorator's own tighter limit still wins when it is the "
+        'shorter one', () async {
+      final fetcher = _fetcher(
+        TimeoutHttpClient(
+          _streaming([
+            [1, 2, 3],
+          ], chunkDelay: const Duration(milliseconds: 200)),
+          timeout: const Duration(milliseconds: 20),
+        ),
+      );
+      // Either bound tripping is a refusal — never a hang or a throw. The
+      // decorator reports its trip as a ClientException, which the fetcher
+      // maps to `transport` (its OWN timer did not expire).
+      final outcome = await fetcher.fetch(allowed);
+      expect(
+        _reasonOf(outcome),
+        anyOf(FetchRefusal.transport, FetchRefusal.timedOut),
+      );
     });
   });
 }
