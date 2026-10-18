@@ -83,4 +83,59 @@ final class LibraryDescriptor {
 
   /// Hub site URLs this library says it is a member of; ≤ 20 (codec cap).
   final List<String> memberOf;
+
+  /// Field-by-field equality of everything EXCEPT [updatedAt] — the "did the
+  /// published content actually change?" question the publish sha-skip asks
+  /// (review Lows: a fresh timestamp every publish defeated it). Both sides
+  /// are codec-canonical (members/memberOf sorted at encode time), so list
+  /// order comparison is exact, not accidental.
+  bool samePublishedContentAs(LibraryDescriptor other) =>
+      other.fingerprint == fingerprint &&
+      other.name == name &&
+      other.siteUrl == siteUrl &&
+      other.precision == precision &&
+      _sameLocation(location, other.location) &&
+      _sameMembers(members, other.members) &&
+      _sameStrings(memberOf, other.memberOf);
+
+  /// A copy with a different [updatedAt] — the publish pipeline reuses the
+  /// live file's timestamp when [samePublishedContentAs] says nothing
+  /// changed, so the encoded bytes (and blob sha) stay stable.
+  LibraryDescriptor withUpdatedAt(int updatedAt) => LibraryDescriptor(
+    fingerprint: fingerprint,
+    name: name,
+    siteUrl: siteUrl,
+    updatedAt: updatedAt,
+    location: location,
+    precision: precision,
+    members: members,
+    memberOf: memberOf,
+  );
+
+  static bool _sameLocation(GeoPoint? a, GeoPoint? b) {
+    if (a == null || b == null) return a == null && b == null;
+    return a.sameAs(b);
+  }
+
+  static bool _sameMembers(List<MemberEntry> a, List<MemberEntry> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      final x = a[i];
+      final y = b[i];
+      if (x.fingerprint != y.fingerprint ||
+          x.siteUrl != y.siteUrl ||
+          x.name != y.name) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool _sameStrings(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 }

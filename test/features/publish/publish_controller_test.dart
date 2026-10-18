@@ -320,6 +320,47 @@ void main() {
   );
 
   testWidgets(
+    'an unchanged second publish reuses the live updatedAt and SKIPS the '
+    'library.json upload (review Lows)',
+    (tester) async {
+      final h = _Harness();
+      expect(await h.publish(tester), isA<PublishSuccess>());
+      expect(await h.publish(tester), isA<PublishSuccess>());
+
+      expect(h.api.commits, hasLength(2));
+      bool libraryJsonUploaded(List<DesiredFile> commit) => commit.any(
+        (f) => f.path == PublishLibraryUseCase.libraryJsonPath && f.upload,
+      );
+      expect(
+        libraryJsonUploaded(h.api.commits[0]),
+        isTrue,
+        reason: 'the first publish writes the descriptor',
+      );
+      expect(
+        libraryJsonUploaded(h.api.commits[1]),
+        isFalse,
+        reason: 'content unchanged ⇒ live timestamp reused ⇒ same blob sha',
+      );
+
+      // The two descriptor bytes are byte-identical even though the fake
+      // clock moved a minute between publishes.
+      List<int> descriptorBytes(List<DesiredFile> commit) =>
+          committedBytes(commit, PublishLibraryUseCase.libraryJsonPath);
+      final first = descriptorBytes(h.api.commits[0]);
+      final second = descriptorBytes(h.api.commits[1]);
+      expect(utf8.decode(second), utf8.decode(first));
+      // The reused timestamp is the FIRST publish's — the candidate's fresh
+      // one was replaced (the fake clock moved between publishes).
+      final firstUpdatedAt =
+          (jsonDecode(utf8.decode(first)) as Map<String, dynamic>)['updatedAt'];
+      final secondUpdatedAt =
+          (jsonDecode(utf8.decode(second))
+              as Map<String, dynamic>)['updatedAt'];
+      expect(secondUpdatedAt, firstUpdatedAt);
+    },
+  );
+
+  testWidgets(
     'library.json rides along — fingerprint yes, raw library ID never',
     (tester) async {
       final h = _Harness();
@@ -405,6 +446,15 @@ void main() {
   });
 }
 
+/// The bytes one committed file carried (the harness records every commit's
+/// full desired-file list, uploaded or not).
+List<int> committedBytes(List<DesiredFile> commit, String path) {
+  for (final f in commit) {
+    if (f.path == path) return f.bytes;
+  }
+  throw StateError('no $path in commit');
+}
+
 /// Every side-effecting port is in memory; unexpected calls fail the test.
 class _Harness {
   /// [networkUnavailable] makes the network repository provider fail the way
@@ -446,12 +496,26 @@ class _Harness {
           remoteReads++;
           return null;
         }),
-        publishedFileFetcherProvider.overrideWithValue((_) async {
+        publishedFileFetcherProvider.overrideWithValue((url) async {
           liveReads++;
-          return api.commits.last
+          // Routes by URL like the live site: library.json serves the last
+          // committed descriptor (null before the first publish), anything
+          // else is the read-back poll for books.json.
+          if (api.commits.isEmpty) return null;
+          final committed = api.commits.last;
+          if (url.contains('library.json')) {
+            for (final file in committed) {
+              if (file.path == 'library.json') return file.bytes;
+            }
+            return null;
+          }
+          return committed
               .firstWhere((file) => file.path == 'books.json')
               .bytes;
         }),
+        // A clock that ticks a minute per read: two publishes never share a
+        // timestamp, so an updatedAt-reuse test is deterministic.
+        clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
       ],
     );
     if (observe) {
@@ -464,6 +528,7 @@ class _Harness {
     addTearDown(container.dispose);
   }
 
+  int _clockTicks = 0;
   final books = _Books();
   final api = _Api();
   final credentials = _Credentials();

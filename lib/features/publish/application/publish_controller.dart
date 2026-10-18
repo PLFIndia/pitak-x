@@ -160,7 +160,23 @@ class PublishController extends _$PublishController {
       if (descriptor == null) {
         return const PublishFailure('Library identity unavailable');
       }
-      libraryJson = LibraryDescriptorCodec.encode(descriptor);
+      // Stable bytes for a stable descriptor: a fresh updatedAt on every
+      // publish made library.json differ every time, so the unchanged-sha
+      // skip never applied to it (review Lows). When the LIVE descriptor has
+      // identical content, reuse its timestamp — the encoded bytes then match
+      // the manifest sha and the upload is skipped. A stale/absent/undecodable
+      // live copy degrades to "upload anyway" — the safe direction (the
+      // manifest's shas come from GitHub's tree, not this CDN read).
+      final liveBytes = await fetchPublishedFile(
+        '${descriptor.siteUrl}${PublishLibraryUseCase.libraryJsonPath}',
+      );
+      final live = liveBytes == null
+          ? null
+          : LibraryDescriptorCodec.decode(liveBytes).toNullable();
+      final effective = live != null && live.samePublishedContentAs(descriptor)
+          ? descriptor.withUpdatedAt(live.updatedAt)
+          : descriptor;
+      libraryJson = LibraryDescriptorCodec.encode(effective);
     }
 
     final useCase = PublishLibraryUseCase(
