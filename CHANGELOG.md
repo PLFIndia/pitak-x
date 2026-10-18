@@ -14,6 +14,8 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10 (tag `1.5.0`, versionCode 25)
+
 ### Added
 - **Library network** (libNetwork.md, ADR 0012): save other Pitak libraries
   by URL or by scanning their library card QR in person; distance-sorted
