@@ -2,8 +2,10 @@
 /// libNetwork.md §5.1/§6).
 ///
 /// A thin adapter over the shared [BoundedHttpFetcher] (D14 — the same three
-/// defences the cover fetch uses): the allow-list is [BookmarkUrl.normalize]
-/// (https, no userinfo, `github.io`/`pages.dev` hosts), applied to the
+/// defences the cover fetch uses): the allow-list is [BookmarkUrl.sanitize]
+/// (https, no userinfo, `github.io`/`pages.dev` hosts — the allow-list ONLY,
+/// not the site-root canonical form: a redirect to `…/library.json` must be
+/// fetched exactly as given, never rewritten), applied to the
 /// initial URL AND re-applied at every redirect hop; the deadline is 15 s and
 /// ABORTS the socket; the body cap is the descriptor cap (64 KiB). Fetched
 /// bytes go straight through [LibraryDescriptorCodec.decode], so the wire
@@ -27,7 +29,7 @@ final class BoundedDescriptorFetcher {
     this.maxBytes = defaultMaxBytes,
   }) : _fetcher = BoundedHttpFetcher(
          client: client,
-         sanitize: BookmarkUrl.normalize,
+         sanitize: BookmarkUrl.sanitize,
          timeout: timeout,
          maxBytes: maxBytes,
        );
