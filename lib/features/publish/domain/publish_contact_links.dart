@@ -46,7 +46,8 @@ abstract final class PublishContactLinks {
   /// as it gates the `location` block of `library.json`. `off` hides the pin
   /// entirely (the address SEARCH link is unaffected — an address is what the
   /// user typed into a different field); `approximate` publishes coordinates
-  /// rounded to ~1.1 km; `exact` publishes them as typed.
+  /// rounded to ~1.1 km (and nothing at all for non-coordinate text, which
+  /// cannot be rounded); `exact` publishes them as typed.
   static String render(
     PublishContact contact, {
     required String Function(String) escape,
@@ -77,17 +78,21 @@ abstract final class PublishContactLinks {
 
   /// The GPS pin as (href, label) under [sharing], or null when nothing may be
   /// shown. The label carries the EFFECTIVE coordinates — under `approximate`
-  /// the page text must not leak the exact value the href hides. A gps value
-  /// that is not a coordinate pair keeps the historical search-link fallback
-  /// (free text the user chose to publish), but only while sharing is not
-  /// `off` — fail closed.
+  /// the page text must not leak the exact value the href hides.
+  ///
+  /// A gps value that is not a coordinate pair ("behind the temple") cannot
+  /// be coarsened, so it is published ONLY under `exact` (the historical
+  /// search-link fallback: free text the user chose to publish precisely).
+  /// Under `approximate` it is dropped: D7 promises "about 1 km", and a
+  /// street description can be far more precise than that. Fail closed.
   static (String, String)? gpsItem(String raw, LocationSharing sharing) {
     if (sharing == LocationSharing.off) return null;
     final v = raw.trim();
     if (v.isEmpty) return null;
     final point = GeoPoint.parse(v);
     if (point == null) {
-      final href = locationHref(v); // search-link fallback for free text
+      if (sharing == LocationSharing.approximate) return null;
+      final href = locationHref(v); // search-link fallback, exact only
       return href == null ? null : (href, v);
     }
     final effective = sharing == LocationSharing.approximate

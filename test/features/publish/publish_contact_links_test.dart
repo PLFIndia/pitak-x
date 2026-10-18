@@ -126,14 +126,31 @@ void main() {
       expect(html, contains('maps?q=12.9876,77.5946'));
     });
 
-    test('non-coordinate GPS text keeps the search fallback when shared', () {
+    test('non-coordinate GPS text keeps the search fallback under exact', () {
       final html = PublishContactLinks.render(
         const PublishContact(gps: 'behind the temple'),
         escape: esc,
-        sharing: LocationSharing.approximate,
+        sharing: LocationSharing.exact,
       );
       expect(html, contains('/maps/search/'));
       expect(html, contains('behind the temple'));
+    });
+
+    test('non-coordinate GPS text is DROPPED under approximate (D7: free '
+        'text cannot be rounded to ~1 km)', () {
+      final html = PublishContactLinks.render(
+        const PublishContact(gps: 'behind the temple, 3rd door left'),
+        escape: esc,
+        sharing: LocationSharing.approximate,
+      );
+      expect(html, '');
+      expect(
+        PublishContactLinks.gpsItem(
+          'behind the temple',
+          LocationSharing.approximate,
+        ),
+        isNull,
+      );
     });
 
     test('blank GPS renders nothing in every mode', () {
