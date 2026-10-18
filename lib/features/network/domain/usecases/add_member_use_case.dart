@@ -9,7 +9,10 @@
 ///  2. no row ⇒ insert one (`source: card`, `isMember`, unverified);
 ///     existing row ⇒ flip `isMember`; a fingerprint CONTRADICTION between
 ///     card and saved row is a typed failure — never overwrite an identity
-///     (fail closed);
+///     (fail closed). The card's fingerprint already saved under a
+///     DIFFERENT address is refused up front too, with a plain sentence:
+///     the table's UNIQUE(fingerprint) would otherwise refuse the write as a
+///     generic "storage failed" that retrying can never fix (review M5);
 ///  3. one immediate bounded descriptor fetch to cross-check the published
 ///     fingerprint against the scanned one. Success sets `memberVerified`;
 ///     any refusal leaves it false with a visible "unverified" badge — a
@@ -45,14 +48,27 @@ final class AddMemberUseCase {
   static const String identityMismatchMessage =
       "This card's identity does not match the saved library at this address.";
 
+  /// The message shown when the card's fingerprint is already saved under
+  /// another address (the same library at an old or alternative URL).
+  static const String identityAlreadySavedMessage =
+      "This card's identity is already saved under a different address. "
+      'If that library moved, remove the old entry first.';
+
   /// Runs the add. Right carries the saved row (verified or not); Left is
-  /// only ever the identity contradiction or a storage failure.
+  /// only ever an identity contradiction or a storage failure.
   Future<Either<Failure, NetworkLibrary>> call(LibraryCard card) async {
     final rows = await _repository.loadAll();
     NetworkLibrary? existing;
     var maxSort = 0;
     for (final row in rows) {
-      if (row.siteUrl == card.siteUrl) existing = row;
+      if (row.siteUrl == card.siteUrl) {
+        existing = row;
+      } else if (row.fingerprint == card.fingerprint) {
+        // One identity, one row (UNIQUE(fingerprint)): say so in words
+        // BEFORE any write or fetch instead of surfacing the constraint as
+        // an opaque storage error.
+        return const Left(ValidationFailure(identityAlreadySavedMessage));
+      }
       if (row.sortOrder > maxSort) maxSort = row.sortOrder;
     }
 

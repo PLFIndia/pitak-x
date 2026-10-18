@@ -170,6 +170,37 @@ void main() {
     },
   );
 
+  test('SECURITY (M5): the card fingerprint saved under ANOTHER address is '
+      'refused in words, before any write or fetch', () async {
+    final repo = repoWith([
+      const NetworkLibrary(
+        siteUrl: 'https://old-address.github.io/lib/',
+        name: 'Same library, old URL',
+        fingerprint: fpCard, // the very identity the card carries
+      ),
+    ]);
+    var fetches = 0;
+    final useCase = AddMemberUseCase(
+      repository: repo,
+      fetchDescriptor: (_) async {
+        fetches++;
+        return const DescriptorRefused(DescriptorRefusal.httpStatus);
+      },
+      clock: () => 1,
+    );
+
+    final result = await useCase(card());
+    final failure = result.swap().toNullable();
+    expect(failure, isA<ValidationFailure>());
+    expect(
+      (failure! as ValidationFailure).message,
+      AddMemberUseCase.identityAlreadySavedMessage,
+    );
+    expect(repo.rows.containsKey(site), isFalse, reason: 'nothing written');
+    expect(repo.rows, hasLength(1));
+    expect(fetches, 0);
+  });
+
   test(
     'a matching existing fingerprint is kept and membership applied',
     () async {
