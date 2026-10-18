@@ -207,6 +207,63 @@ void main() {
       },
     );
 
+    test(
+      'DETERMINISM (M6): a URL met as a leaf AND named as a hub in one round '
+      'is a hub — whichever descriptor landed first',
+      () {
+        for (final hubFirst in [true, false]) {
+          final plan = NetworkDiscoveryPlan(
+            seeds: [row(seedUrl), row(hub2Url, id: 2, sortOrder: 1)],
+          );
+          // seed lists X as a member (leaf); hub2 says "I am a member of X"
+          // (so X is a hub). Both are round-1 descriptors.
+          final seedDescriptor = descriptor(
+            seedUrl,
+            members: [member(m1Url, name: 'Listed', fingerprint: 'a' * 64)],
+          );
+          final hub2Descriptor = descriptor(hub2Url, memberOf: [m1Url]);
+          if (hubFirst) {
+            plan
+              ..recordFetched(plan.rowFor(hub2Url)!, hub2Descriptor)
+              ..recordFetched(plan.rowFor(seedUrl)!, seedDescriptor);
+          } else {
+            plan
+              ..recordFetched(plan.rowFor(seedUrl)!, seedDescriptor)
+              ..recordFetched(plan.rowFor(hub2Url)!, hub2Descriptor);
+          }
+
+          final x = plan.rowFor(m1Url)!;
+          expect(x.role, DiscoveryRole.hub, reason: 'hubFirst=$hubFirst');
+          expect(x.depth, 1);
+          // The leaf facts are merged in EITHER order: the row is still
+          // "listed by" the seed and its hints are still checked on fetch.
+          expect(x.listedByHubUrl, seedUrl, reason: 'hubFirst=$hubFirst');
+          expect(x.hintName, 'Listed', reason: 'hubFirst=$hubFirst');
+          expect(x.hintFingerprint, 'a' * 64, reason: 'hubFirst=$hubFirst');
+          // And X, now a hub, expands its members when fetched.
+          plan.recordFetched(x, descriptor(m1Url, members: [member(m2Url)]));
+          expect(plan.rowFor(m2Url), isNotNull, reason: 'hubFirst=$hubFirst');
+          expect(plan.discovered, hasLength(2));
+        }
+      },
+    );
+
+    test('a SETTLED leaf is never re-planned as a hub', () {
+      final plan = NetworkDiscoveryPlan(
+        seeds: [row(seedUrl), row(hub2Url, id: 2, sortOrder: 1)],
+      );
+      final seed = plan.rowFor(seedUrl)!;
+      final hub2 = plan.rowFor(hub2Url)!;
+      plan.recordFetched(seed, descriptor(seedUrl, members: [member(m1Url)]));
+      // The leaf is fetched (settled) before hub2's descriptor arrives.
+      final leaf = plan.rowFor(m1Url)!;
+      plan
+        ..recordRefused(leaf)
+        ..recordFetched(hub2, descriptor(hub2Url, memberOf: [m1Url]));
+      expect(plan.rowFor(m1Url)!.role, DiscoveryRole.leaf);
+      expect(plan.pending(), isEmpty);
+    });
+
     test('descriptorUrl resolves library.json under the site root', () {
       final plan = NetworkDiscoveryPlan(
         seeds: [row('https://x.github.io/pitak/')],

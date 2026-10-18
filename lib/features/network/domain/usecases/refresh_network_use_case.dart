@@ -17,6 +17,18 @@
 ///    contradicts the row's stored one, or that already belongs to a
 ///    DIFFERENT row, flags `identityConflict` and updates NOTHING else — no
 ///    silent merges, ever.
+///  - **A fingerprint is a FACT only from a row's own fetch or card scan.**
+///    A hub's `members` entry is a CLAIM about someone else: discovered rows
+///    therefore start with `fingerprint == null`, and the hub's hint is only
+///    COMPARED against what the member's own site publishes (a mismatch is a
+///    conflict). Storing the claim as if it were the member's identity let
+///    one hostile — or merely stale — hub file collide with the table's
+///    UNIQUE(fingerprint) and make every refresh fail (review finding H1).
+///  - **Deterministic under concurrency**: when two sites that had NO stored
+///    fingerprint both publish the same one in one run, BOTH are flagged and
+///    neither adopts it — the outcome never depends on which response landed
+///    first. A final uniqueness pass guarantees the single transaction can
+///    never trip the UNIQUE constraint, whatever the descriptors claimed.
 ///  - **Refusals never erase cached data**: an unreachable/invalid/schemaTooNew
 ///    fetch only sets `fetchStatus`, so the offline list keeps its pins and
 ///    names (S4 acceptance).
@@ -31,69 +43,13 @@ import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/network_discovery_plan.dart';
+import 'package:pitaka/features/network/domain/refresh_report.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 
-/// What one refresh run did (§5.6 step 5). Plain counts + flags — enough for
-/// an honest one-line summary; refusal DETAILS stay coarse enums (§6) and
-/// never carry response text. [noLongerListed] holds the siteUrls of hubs the
-/// user confirmed but whose fetched descriptor no longer lists the user's own
-/// fingerprint (the user decides what to do — §5.6 step 4).
-final class RefreshReport {
-  /// Creates a report.
-  const RefreshReport({
-    this.fetched = 0,
-    this.unreachable = 0,
-    this.invalid = 0,
-    this.schemaTooNew = 0,
-    this.discovered = 0,
-    this.truncated = false,
-    this.pendingMemberships = 0,
-    this.conflicts = 0,
-    this.cancelled = false,
-    this.noLongerListed = const [],
-  });
-
-  /// Descriptors that arrived valid (including ones that then conflicted).
-  final int fetched;
-
-  /// Fetches refused for transport-ish reasons (mapped to `unreachable`).
-  final int unreachable;
-
-  /// Bodies that did not decode to a valid schema-1 descriptor.
-  final int invalid;
-
-  /// Descriptors declaring a newer schema than this build reads.
-  final int schemaTooNew;
-
-  /// New rows inserted by discovery this run.
-  final int discovered;
-
-  /// True when discovery hit the 500-row cap and stopped early (D10).
-  final bool truncated;
-
-  /// Rows newly moved to `MembershipState.pending` (a hub lists me; the UI
-  /// prompts).
-  final int pendingMemberships;
-
-  /// Rows flagged `identityConflict` this run (D12).
-  final int conflicts;
-
-  /// True when the user cancelled mid-run; partial results were still applied.
-  final bool cancelled;
-
-  /// SiteUrls of CONFIRMED hubs whose descriptor no longer lists me.
-  final List<String> noLongerListed;
-
-  @override
-  String toString() =>
-      'RefreshReport(ok: $fetched, unreachable: $unreachable, '
-      'invalid: $invalid, schemaTooNew: $schemaTooNew, '
-      'discovered: $discovered, conflicts: $conflicts, '
-      'pending: $pendingMemberships, truncated: $truncated, '
-      'cancelled: $cancelled)';
-}
+// Re-exported: callers that run the use case also read its report.
+export 'package:pitaka/features/network/domain/refresh_report.dart';
 
 /// Runs one refresh over the saved rows (§5.6).
 final class RefreshNetworkUseCase {
@@ -174,20 +130,33 @@ final class _Run {
   /// discovered rows are inserted — one `applyRefresh` transaction (§5.6/5).
   final Map<String, NetworkLibrary> _states = {};
 
-  /// fingerprint → siteUrl of the row that "owns" it. Preloaded from the
-  /// stored rows and extended by member-entry hints and fetched descriptors;
-  /// the cross-row collision check of D12 reads it.
+  /// siteUrl → the row's state BEFORE this run touched it (the saved row for
+  /// seeds, the hint-built fresh row for discoveries). A conflict resets a
+  /// row to this baseline (D12: "updates nothing else"), and the report's
+  /// `conflicts`/`pendingMemberships` counts are derived by comparing the
+  /// final states against it — so a later revocation can never leave a
+  /// counter off by one.
+  final Map<String, NetworkLibrary> _baselines = {};
+
+  /// fingerprint → siteUrl of the row that OWNS it. Pre-loaded from the
+  /// STORED rows (facts from earlier fetches and card scans) and extended
+  /// only by a row's OWN successful fetch. Hub hints are never entered here:
+  /// a claim about someone else is not ownership.
   final Map<String, String> _fpOwners = {};
 
-  /// Discovered rows whose member-entry hint fingerprint is registered.
-  final Set<String> _hintsRegistered = {};
+  /// Fingerprints adopted for the first time in THIS run (the owning row had
+  /// none stored). If a second row publishes one of these, the claim is
+  /// ambiguous — nobody had it before — so both rows are flagged.
+  final Set<String> _adoptedThisRun = {};
+
+  /// Fingerprints two no-prior-claim rows fought over this run: nobody may
+  /// adopt them until the user resolves the badges (deterministic, D12).
+  final Set<String> _contested = {};
 
   int _fetched = 0;
   int _unreachable = 0;
   int _invalid = 0;
   int _schemaTooNew = 0;
-  int _pendingMemberships = 0;
-  int _conflicts = 0;
   final List<String> _noLongerListed = [];
 
   Future<Either<Failure, RefreshReport>> execute() async {
@@ -210,22 +179,32 @@ final class _Run {
       if (_isCancelled()) break;
     }
 
-    final updated = <NetworkLibrary>[
-      for (final saved in rows)
-        if (_states[saved.siteUrl] case final state? when !state.sameAs(saved))
-          state,
-    ];
     // Discovered rows append after the user's own order (sortOrder keeps the
     // migrated bookmark order first — repository loadAll sorts by it).
     var nextSort = 0;
     for (final row in rows) {
       if (row.sortOrder > nextSort) nextSort = row.sortOrder;
     }
-    final inserted = <NetworkLibrary>[];
     for (final planned in _plan.discovered) {
       nextSort++;
-      inserted.add(_stateFor(planned).copyWith(sortOrder: nextSort));
+      _states[planned.siteUrl] = _stateFor(
+        planned,
+      ).copyWith(sortOrder: nextSort);
     }
+
+    // Belt and braces: whatever the descriptors claimed, the set we hand to
+    // the ONE transaction must not contain two rows with one fingerprint, or
+    // the UNIQUE constraint would roll the whole run back (H1).
+    _ensureUniqueFingerprints(rows);
+
+    final updated = <NetworkLibrary>[
+      for (final saved in rows)
+        if (_states[saved.siteUrl] case final state? when !state.sameAs(saved))
+          state,
+    ];
+    final inserted = <NetworkLibrary>[
+      for (final planned in _plan.discovered) _states[planned.siteUrl]!,
+    ];
 
     final applied = await _repository.applyRefresh(updated, inserted);
     return applied.map(
@@ -236,8 +215,8 @@ final class _Run {
         schemaTooNew: _schemaTooNew,
         discovered: inserted.length,
         truncated: _plan.truncated,
-        pendingMemberships: _pendingMemberships,
-        conflicts: _conflicts,
+        pendingMemberships: _countNewlyPending(),
+        conflicts: _countNewConflicts(),
         cancelled: _isCancelled(),
         noLongerListed: List.unmodifiable(_noLongerListed),
       ),
@@ -270,9 +249,8 @@ final class _Run {
         // The plan learns first so a discovery made by THIS descriptor is
         // queued even if applying the row below flags a conflict.
         _plan.recordFetched(planned, descriptor);
-        _registerDiscoveredHints();
         _fetched++;
-        _applyDescriptor(row, descriptor);
+        _applyDescriptor(planned, row, descriptor);
       case DescriptorRefused(:final reason):
         _plan.recordRefused(planned);
         _applyRefusal(row, reason);
@@ -280,22 +258,49 @@ final class _Run {
   }
 
   /// §5.6 step 2 — what a valid descriptor changes on its row.
-  void _applyDescriptor(NetworkLibrary row, LibraryDescriptor descriptor) {
+  void _applyDescriptor(
+    PlannedRow planned,
+    NetworkLibrary row,
+    LibraryDescriptor descriptor,
+  ) {
     final storedFp = row.fingerprint;
+    final fetchedFp = descriptor.fingerprint;
+
     // (a) The row already knows a fingerprint and the site now publishes a
     // DIFFERENT one: flag, update nothing else (D12 — never auto-merge).
-    if (storedFp != null && storedFp != descriptor.fingerprint) {
-      _flagConflict(row);
+    if (storedFp != null && storedFp != fetchedFp) {
+      _flagConflict(row.siteUrl);
       return;
     }
-    // (b) The fetched fingerprint already belongs to ANOTHER row: same
-    // fail-closed treatment on this row (D12 cross-row collision).
-    final owner = _fpOwners[descriptor.fingerprint];
+    // (b) A discovered row: the hub that listed it claimed a fingerprint.
+    // The claim is checked against the member's OWN site; a contradiction is
+    // a conflict (someone is wrong — the user decides), and the claim is
+    // never stored as the member's identity either way.
+    final hint = planned.hintFingerprint;
+    if (hint != null && hint != fetchedFp) {
+      _flagConflict(row.siteUrl);
+      return;
+    }
+    // (c) The fetched fingerprint is contested or already owned by ANOTHER
+    // row: fail closed on this row (D12 cross-row collision). If the owner
+    // only adopted it in THIS run, nobody held it before — flag the owner
+    // too, so the result is the same whichever response arrived first.
+    if (_contested.contains(fetchedFp)) {
+      _flagConflict(row.siteUrl);
+      return;
+    }
+    final owner = _fpOwners[fetchedFp];
     if (owner != null && owner != row.siteUrl) {
-      _flagConflict(row);
+      if (_adoptedThisRun.contains(fetchedFp)) {
+        _contested.add(fetchedFp);
+        _fpOwners.remove(fetchedFp);
+        _flagConflict(owner);
+      }
+      _flagConflict(row.siteUrl);
       return;
     }
-    _fpOwners[descriptor.fingerprint] = row.siteUrl;
+    _fpOwners[fetchedFp] = row.siteUrl;
+    if (storedFp == null) _adoptedThisRun.add(fetchedFp);
 
     // §5.6 step 4 — own membership, both directions.
     var membership = row.membership;
@@ -307,7 +312,6 @@ final class _Run {
       // user's own "Reconsider" resets it); confirmed stays confirmed.
       if (membership == MembershipState.none) {
         membership = MembershipState.pending;
-        _pendingMemberships++;
       }
     } else if (_ownFingerprint != null &&
         membership == MembershipState.confirmed) {
@@ -316,7 +320,7 @@ final class _Run {
 
     _states[row.siteUrl] = row.copyWith(
       name: descriptor.name,
-      fingerprint: descriptor.fingerprint,
+      fingerprint: fetchedFp,
       location: descriptor.location,
       precision: descriptor.precision,
       // A library that turned sharing OFF publishes no location block: the
@@ -328,10 +332,7 @@ final class _Run {
       fetchedAt: _clock(),
       // "memberVerified = isMember && match" (§5.6 step 2): the card-scan
       // fingerprint (the row's stored one) agrees with the published one.
-      memberVerified:
-          row.isMember &&
-          storedFp != null &&
-          storedFp == descriptor.fingerprint,
+      memberVerified: row.isMember && storedFp != null && storedFp == fetchedFp,
     );
   }
 
@@ -364,38 +365,104 @@ final class _Run {
     _states[row.siteUrl] = row.copyWith(fetchStatus: status);
   }
 
-  void _flagConflict(NetworkLibrary row) {
-    _states[row.siteUrl] = row.copyWith(
+  /// Flags [siteUrl] as an identity conflict: the row goes back to its
+  /// baseline (whatever this run may already have applied to it is undone —
+  /// D12 "updates nothing else") with the conflict badge on and
+  /// `memberVerified` off (a disputed identity is, by definition, not a
+  /// verified one).
+  void _flagConflict(String siteUrl) {
+    final baseline = _baselines[siteUrl];
+    if (baseline == null) return; // not a row of this run — nothing to flag
+    _states[siteUrl] = baseline.copyWith(
       fetchStatus: FetchStatus.identityConflict,
+      memberVerified: false,
     );
-    _conflicts++;
   }
 
-  /// Member entries carry a fingerprint hint; registering it immediately
-  /// means a LATER fetch of some other URL publishing the same fingerprint
-  /// is flagged as the collision (D12 works across discoveries too).
-  void _registerDiscoveredHints() {
-    for (final planned in _plan.discovered) {
-      if (!_hintsRegistered.add(planned.siteUrl)) continue;
-      final hint = planned.hintFingerprint;
-      if (hint != null) _fpOwners.putIfAbsent(hint, () => planned.siteUrl);
+  /// Last line of defence before the ONE transaction: no two rows handed to
+  /// `applyRefresh` (or left untouched in the table) may share a fingerprint.
+  /// The per-descriptor rules above already guarantee this; should a future
+  /// change break that invariant, this pass trades the duplicates' identity
+  /// for a visible conflict badge instead of losing the whole run.
+  void _ensureUniqueFingerprints(List<NetworkLibrary> stored) {
+    final seen = <String, String>{}; // fingerprint → siteUrl
+    // Stored fingerprints are facts and win ties; visit saved rows first.
+    final ordered = [
+      for (final saved in stored) _states[saved.siteUrl] ?? saved,
+      for (final planned in _plan.discovered) _states[planned.siteUrl]!,
+    ];
+    for (final row in ordered) {
+      final fp = row.fingerprint;
+      if (fp == null) continue;
+      final first = seen[fp];
+      if (first == null) {
+        seen[fp] = row.siteUrl;
+        continue;
+      }
+      if (first == row.siteUrl) continue;
+      final baseline = _baselines[row.siteUrl];
+      if (baseline == null) {
+        // An untouched saved row that duplicates an earlier one: the table
+        // already holds both, so this run cannot have caused it — leave it.
+        continue;
+      }
+      _states[row.siteUrl] = baseline.copyWith(
+        fetchStatus: FetchStatus.identityConflict,
+        memberVerified: false,
+        // Only a fingerprint this run tried to ADOPT is dropped; a stored
+        // one stays (it is the table's fact, and the table accepted it).
+        clearFingerprint: baseline.fingerprint == null,
+      );
     }
   }
 
+  /// Rows that moved to `pending` in this run (baseline was `none`).
+  int _countNewlyPending() {
+    var count = 0;
+    for (final entry in _states.entries) {
+      final baseline = _baselines[entry.key];
+      if (baseline != null &&
+          baseline.membership == MembershipState.none &&
+          entry.value.membership == MembershipState.pending) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /// Rows that carry the conflict badge now but did not at baseline.
+  int _countNewConflicts() {
+    var count = 0;
+    for (final entry in _states.entries) {
+      final baseline = _baselines[entry.key];
+      if (baseline != null &&
+          baseline.fetchStatus != FetchStatus.identityConflict &&
+          entry.value.fetchStatus == FetchStatus.identityConflict) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   NetworkLibrary _stateFor(PlannedRow planned) =>
-      _states.putIfAbsent(planned.siteUrl, () => _initialState(planned));
+      _states.putIfAbsent(planned.siteUrl, () {
+        final initial = _initialState(planned);
+        _baselines[planned.siteUrl] = initial;
+        return initial;
+      });
 
   /// The starting state of a planned row: the stored row for seeds; for a
   /// discovery, a fresh `discovered` row built from the hub's member-entry
-  /// hints (name re-validated — the codec checked it, but a hostile in-process
-  /// caller of the plan must not be able to smuggle a name past §6).
+  /// NAME hint (re-validated — the codec checked it, but a hostile in-process
+  /// caller of the plan must not be able to smuggle a name past §6). The
+  /// hub's FINGERPRINT hint is deliberately NOT copied in: it stays in the
+  /// plan and is only compared against the member's own fetch (H1).
   NetworkLibrary _initialState(PlannedRow planned) {
     final saved = planned.saved;
     if (saved != null) return saved;
     return NetworkLibrary(
       siteUrl: planned.siteUrl,
       name: NetworkName.normalizeOrNull(planned.hintName) ?? '',
-      fingerprint: planned.hintFingerprint,
       source: NetworkSource.discovered,
       listedByHubUrl: planned.listedByHubUrl,
       createdAt: _clock(),

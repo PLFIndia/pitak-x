@@ -231,6 +231,38 @@ void main() {
     },
   );
 
+  test('applyRefresh SKIPS a discovered row whose siteUrl the user saved '
+      'mid-run — the rest of the run still lands', () async {
+    // The user added d.github.io (by URL) while the refresh was fetching.
+    final mine = (await repo.upsertBySiteUrl(
+      const NetworkLibrary(siteUrl: 'https://d.github.io/', name: 'Mine'),
+    )).toNullable()!;
+    final seeded = (await repo.upsertBySiteUrl(
+      const NetworkLibrary(siteUrl: 'https://a.github.io/', sortOrder: 1),
+    )).toNullable()!;
+
+    final result = await repo.applyRefresh(
+      [seeded.copyWith(name: 'A fetched')],
+      [
+        const NetworkLibrary(
+          siteUrl: 'https://d.github.io/', // collides with the user's row
+          name: 'Discovered',
+          source: NetworkSource.discovered,
+        ),
+      ],
+    );
+
+    expect(result.isRight(), isTrue, reason: 'UNIQUE(site_url) not tripped');
+    final rows = await repo.loadAll();
+    expect(rows, hasLength(2));
+    final d = rows.firstWhere((r) => r.siteUrl == 'https://d.github.io/');
+    expect(d.id, mine.id);
+    expect(d.name, 'Mine', reason: "the user's row wins");
+    expect(d.source, NetworkSource.bookmark);
+    final a = rows.firstWhere((r) => r.siteUrl == 'https://a.github.io/');
+    expect(a.name, 'A fetched', reason: 'the update part still applied');
+  });
+
   group('constraints', () {
     test('fingerprint is unique among non-null values', () async {
       final first = await repo.upsertBySiteUrl(

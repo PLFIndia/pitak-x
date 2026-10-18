@@ -39,6 +39,12 @@ abstract interface class NetworkRepository {
   /// carrying its real id) overwrite their stored counterparts WHOLESALE —
   /// the refresh use case computed them from the previous state and may set
   /// any field, including back to null — and [discovered] rows are inserted.
+  ///
+  /// A [discovered] row whose `siteUrl` already exists by the time the
+  /// transaction runs (the user added that address while the refresh was in
+  /// flight) is SKIPPED, not an error: the user's own row wins and the rest
+  /// of the run still lands. The caller guarantees no two rows it hands over
+  /// share a fingerprint (the refresh use case's uniqueness pass).
   Future<Either<Failure, Unit>> applyRefresh(
     List<NetworkLibrary> updated,
     List<NetworkLibrary> discovered,

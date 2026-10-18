@@ -20,8 +20,10 @@
 ///  - Hard cap: [NetworkDiscoveryPlan.maxRowsPerRun] rows per run (seeds +
 ///    discovered); when the cap refuses a new row,
 ///    [NetworkDiscoveryPlan.truncated] is reported (§6).
-///  - Duplicate URLs collapse: a URL already planned (as any role) is never
-///    planned twice — the first role wins.
+///  - Duplicate URLs collapse: a URL already planned is never planned twice.
+///    The one role change allowed is leaf → hub while the row is still
+///    unfetched (a site someone lists as a member AND someone else names as
+///    their hub is a hub), so the outcome never depends on response order.
 ///
 /// Pure Dart: no Flutter/IO/Riverpod (AGENTS.md §3.1).
 library;
@@ -188,7 +190,32 @@ final class NetworkDiscoveryPlan {
     String? hintName,
     String? hintFingerprint,
   }) {
-    if (_known.containsKey(siteUrl)) return; // duplicates collapse
+    final existing = _known[siteUrl];
+    if (existing != null) {
+      // Duplicates collapse — but the two facts a discovery can carry are
+      // MERGED so the plan never depends on which response landed first
+      // (review M6): a URL met as a leaf (someone's `members` entry) that
+      // another descriptor of the same round names as a hub (`memberOf`) IS
+      // a hub and must expand; a hub that some member entry also lists keeps
+      // that "listed by" link and its hints. Seeds and settled rows are
+      // never re-planned.
+      if (existing.role == DiscoveryRole.seed || _settled.contains(siteUrl)) {
+        return;
+      }
+      final becomesHub =
+          existing.role == DiscoveryRole.hub || role == DiscoveryRole.hub;
+      _known[siteUrl] = PlannedRow._(
+        siteUrl: siteUrl,
+        role: becomesHub ? DiscoveryRole.hub : DiscoveryRole.leaf,
+        depth: depth < existing.depth ? depth : existing.depth,
+        // First leaf facts win (a second `members` entry for the same URL
+        // adds nothing new); a hub-first row simply gains them.
+        listedByHubUrl: existing.listedByHubUrl ?? listedByHubUrl,
+        hintName: existing.hintName ?? hintName,
+        hintFingerprint: existing.hintFingerprint ?? hintFingerprint,
+      );
+      return;
+    }
     if (_known.length >= maxRows) {
       _truncated = true; // cap hit: stop discovering, report (§6)
       return;

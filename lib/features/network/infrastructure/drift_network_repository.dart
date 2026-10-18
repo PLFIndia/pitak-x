@@ -113,6 +113,12 @@ class DriftNetworkRepository implements NetworkRepository {
           )..where((t) => t.id.equals(row.id))).write(_updateCompanion(row));
         }
         for (final row in discovered) {
+          // The user may have saved this very address while the refresh was
+          // fetching (add-by-URL / card scan are not gated by a running
+          // refresh). Their row wins; skipping — instead of letting
+          // UNIQUE(site_url) abort the transaction — keeps the rest of the
+          // run (port doc).
+          if (await _findBySiteUrl(row.siteUrl) != null) continue;
           await _db.into(_db.networkLibraries).insert(_insertCompanion(row));
         }
       });

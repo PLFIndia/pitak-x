@@ -471,12 +471,13 @@ void main() {
         expect(hub.listedByHubUrl, isNull); // hubs are not "listed by"
         expect(hub.sortOrder, 4);
 
-        // The member keeps its hub-entry hints even though its own fetch
-        // failed: the hub vouched for it in person.
+        // The member keeps the hub's NAME hint even though its own fetch
+        // failed — but NOT the hub's fingerprint claim (H1): a fingerprint
+        // becomes a fact only through the member's own fetch or a card scan.
         final member = inserted.firstWhere((r) => r.siteUrl == m1Url);
         expect(member.source, NetworkSource.discovered);
         expect(member.name, 'Member One');
-        expect(member.fingerprint, fpB);
+        expect(member.fingerprint, isNull);
         expect(member.listedByHubUrl, seedUrl);
         expect(member.fetchStatus, FetchStatus.unreachable);
         expect(member.sortOrder, 5);
@@ -484,8 +485,30 @@ void main() {
       },
     );
 
+    test('a member whose own fetch AGREES with the hub entry adopts the '
+        'fingerprint from its own descriptor', () async {
+      repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(
+          seedUrl,
+          members: [const MemberEntry(fingerprint: fpB, siteUrl: m1Url)],
+        ),
+      );
+      fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+        descriptor(m1Url, fingerprint: fpB, name: 'Member One'),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      final member = rowAfter(m1Url);
+      expect(member.fingerprint, fpB);
+      expect(member.name, 'Member One');
+      expect(member.fetchStatus, FetchStatus.ok);
+      expect(report.conflicts, 0);
+    });
+
     test('SECURITY: a member whose published fp contradicts the hub entry is '
-        'flagged, not merged', () async {
+        'flagged, not merged — and the hub claim is NOT stored', () async {
       repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
       fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
         descriptor(
@@ -503,11 +526,194 @@ void main() {
 
       final report = (await useCase()()).toNullable()!;
 
-      final member = repo.rows.firstWhere((r) => r.siteUrl == m1Url);
+      final member = rowAfter(m1Url);
       expect(member.fetchStatus, FetchStatus.identityConflict);
-      expect(member.fingerprint, fpB); // the hub's word stands, visibly
+      expect(member.fingerprint, isNull); // neither claim is adopted
       expect(member.name, '');
       expect(report.conflicts, 1);
+    });
+
+    group('SECURITY (H1): hub claims can never break the ONE transaction', () {
+      const m2Url = 'https://m2.github.io/pitak/';
+
+      test('a hub listing ONE fingerprint at TWO addresses does not insert '
+          'duplicate fingerprints', () async {
+        repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+        fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+          descriptor(
+            seedUrl,
+            members: [
+              const MemberEntry(fingerprint: fpB, siteUrl: m1Url),
+              const MemberEntry(fingerprint: fpB, siteUrl: m2Url), // stale/evil
+            ],
+          ),
+        );
+        // Neither member answers — before H1 both rows were inserted with
+        // fpB and UNIQUE(fingerprint) rolled the whole run back.
+
+        final result = await useCase()();
+
+        expect(result.isRight(), isTrue, reason: 'the run must land');
+        expect(repo.rows.where((r) => r.siteUrl == m1Url), hasLength(1));
+        expect(repo.rows.where((r) => r.siteUrl == m2Url), hasLength(1));
+        expect(rowAfter(m1Url).fingerprint, isNull);
+        expect(rowAfter(m2Url).fingerprint, isNull);
+        expect(rowAfter(seedUrl).fetchStatus, FetchStatus.ok);
+      });
+
+      test('a hub claiming a fingerprint that a SAVED row already owns does '
+          'not collide with it', () async {
+        repo.rows = [
+          const NetworkLibrary(id: 1, siteUrl: seedUrl),
+          // The user already saved m1 under its canonical URL; its identity
+          // is a stored fact.
+          const NetworkLibrary(
+            id: 2,
+            siteUrl: m1Url,
+            fingerprint: fpB,
+            sortOrder: 1,
+          ),
+        ];
+        fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+          descriptor(
+            seedUrl,
+            // The hub lists the SAME library at another address.
+            members: [const MemberEntry(fingerprint: fpB, siteUrl: m2Url)],
+          ),
+        );
+        fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+          descriptor(m1Url, fingerprint: fpB),
+        );
+        fetcher.results[descriptorUrlOf(m2Url)] = DescriptorFetched(
+          descriptor(m2Url, fingerprint: fpB), // a mirror of m1's file
+        );
+
+        final result = await useCase()();
+
+        expect(result.isRight(), isTrue, reason: 'the run must land');
+        expect(rowAfter(m1Url).fingerprint, fpB); // the stored fact stands
+        expect(rowAfter(m1Url).fetchStatus, FetchStatus.ok);
+        final mirror = rowAfter(m2Url);
+        expect(mirror.fingerprint, isNull);
+        expect(mirror.fetchStatus, FetchStatus.identityConflict);
+      });
+
+      test("a hostile hub cannot pre-own a victim's fingerprint through a "
+          'member hint (no order-dependent hijack)', () async {
+        // The victim is a fresh bookmark (no stored fp yet); the hostile hub
+        // lists an attacker address with the victim's fingerprint, and the
+        // attacker's site publishes a copy of the victim's descriptor.
+        const victimUrl = 'https://victim.github.io/pitak/';
+        const attackerUrl = 'https://evil.github.io/pitak/';
+        repo.rows = [
+          const NetworkLibrary(id: 1, siteUrl: hubUrl), // hostile hub first
+          const NetworkLibrary(id: 2, siteUrl: victimUrl, sortOrder: 1),
+        ];
+        fetcher.results[descriptorUrlOf(hubUrl)] = DescriptorFetched(
+          descriptor(
+            hubUrl,
+            fingerprint: fpOwn,
+            members: [
+              const MemberEntry(fingerprint: fpA, siteUrl: attackerUrl),
+            ],
+          ),
+        );
+        fetcher.results[descriptorUrlOf(victimUrl)] = DescriptorFetched(
+          descriptor(victimUrl, name: 'Victim'),
+        );
+        fetcher.results[descriptorUrlOf(attackerUrl)] = DescriptorFetched(
+          descriptor(attackerUrl, name: 'Victim'),
+        );
+
+        final result = await useCase()();
+
+        expect(result.isRight(), isTrue);
+        // The hint gave the attacker nothing: the victim (a seed, fetched in
+        // round 1) adopted its own fingerprint first; the attacker's leaf
+        // (round 2) collides with a this-run adoption of a row that had no
+        // stored fp → BOTH are flagged, neither keeps fpA (deterministic).
+        // What matters for security: the attacker never silently OWNS fpA.
+        final attacker = rowAfter(attackerUrl);
+        expect(attacker.fetchStatus, FetchStatus.identityConflict);
+        expect(attacker.fingerprint, isNull);
+        expect(rowAfter(victimUrl).fingerprint, isNot(fpA));
+        expect(rowAfter(victimUrl).fetchStatus, FetchStatus.identityConflict);
+      });
+    });
+  });
+
+  group('determinism under concurrency (M6)', () {
+    test('two rows with NO stored fp publishing the same fp are BOTH flagged '
+        'and neither adopts it — whichever lands first', () async {
+      for (final order in [
+        [seedUrl, seed2Url],
+        [seed2Url, seedUrl],
+      ]) {
+        repo = _FakeRepo();
+        fetcher = _FakeFetcher();
+        repo.rows = [
+          NetworkLibrary(id: 1, siteUrl: order[0]),
+          NetworkLibrary(id: 2, siteUrl: order[1], sortOrder: 1),
+        ];
+        fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+          descriptor(seedUrl, name: 'First'),
+        );
+        fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+          descriptor(seed2Url, name: 'Second'), // publishes fpA too
+        );
+
+        final report = (await useCase()()).toNullable()!;
+
+        for (final url in [seedUrl, seed2Url]) {
+          final row = rowAfter(url);
+          expect(row.fetchStatus, FetchStatus.identityConflict, reason: url);
+          expect(row.fingerprint, isNull, reason: url);
+          expect(row.name, '', reason: '$url: nothing else applied');
+        }
+        expect(report.conflicts, 2, reason: 'order $order');
+      }
+    });
+
+    test('a THIRD row publishing a contested fp is flagged as well', () async {
+      const thirdUrl = 'https://third.github.io/pitak/';
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: seedUrl),
+        const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
+        const NetworkLibrary(id: 3, siteUrl: thirdUrl, sortOrder: 2),
+      ];
+      for (final url in [seedUrl, seed2Url, thirdUrl]) {
+        fetcher.results[descriptorUrlOf(url)] = DescriptorFetched(
+          descriptor(url),
+        );
+      }
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.conflicts, 3);
+      expect(repo.rows.every((r) => r.fingerprint == null), isTrue);
+    });
+
+    test('a conflict badge turns memberVerified OFF (M11)', () async {
+      repo.rows = [
+        const NetworkLibrary(
+          id: 1,
+          siteUrl: seedUrl,
+          fingerprint: fpA,
+          isMember: true,
+          memberVerified: true,
+        ),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(seedUrl, fingerprint: fpB), // the site changed identity
+      );
+
+      await useCase()();
+
+      final row = rowAfter(seedUrl);
+      expect(row.fetchStatus, FetchStatus.identityConflict);
+      expect(row.memberVerified, isFalse);
+      expect(row.isMember, isTrue); // the in-person add itself stands
+      expect(row.fingerprint, fpA); // the stored fact is kept
     });
   });
 
@@ -601,8 +807,12 @@ void main() {
 }
 
 /// In-memory repository fake: [applyRefresh] records every call AND applies
-/// it the way the Drift implementation would (wholesale updates by id,
-/// inserts with fresh ids), so assertions can read `rows` after a run.
+/// it the way the Drift implementation would — wholesale updates by id,
+/// inserts with fresh ids, a discovered row whose siteUrl already exists is
+/// skipped, and the table's two UNIQUE constraints (`site_url`,
+/// `fingerprint` among non-null) are ENFORCED: a violation rolls the whole
+/// call back and returns a `StorageFailure`, exactly like SQLite would. The
+/// H1 regression was invisible while this fake accepted anything.
 class _FakeRepo implements NetworkRepository {
   List<NetworkLibrary> rows = [];
   final List<(List<NetworkLibrary>, List<NetworkLibrary>)> applyCalls = [];
@@ -618,15 +828,29 @@ class _FakeRepo implements NetworkRepository {
   ) async {
     applyCalls.add((List.of(updated), List.of(discovered)));
     if (applyResult.isLeft()) return applyResult;
+    // Work on a copy: a constraint violation must leave `rows` untouched
+    // (one transaction, rolled back).
+    final next = List.of(rows);
     for (final update in updated) {
-      final index = rows.indexWhere((r) => r.id == update.id);
-      if (index >= 0) rows[index] = update;
+      final index = next.indexWhere((r) => r.id == update.id);
+      if (index >= 0) next[index] = update;
     }
-    var nextId = rows.fold(0, (max, r) => r.id > max ? r.id : max);
+    var nextId = next.fold(0, (max, r) => r.id > max ? r.id : max);
     for (final insert in discovered) {
+      if (next.any((r) => r.siteUrl == insert.siteUrl)) continue;
       nextId++;
-      rows.add(insert.copyWith(id: nextId));
+      next.add(insert.copyWith(id: nextId));
     }
+    final fingerprints = <String>{};
+    for (final row in next) {
+      final fp = row.fingerprint;
+      if (fp != null && !fingerprints.add(fp)) {
+        return left(
+          const StorageFailure('UNIQUE constraint failed: fingerprint'),
+        );
+      }
+    }
+    rows = next;
     return right(unit);
   }
 
