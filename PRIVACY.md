@@ -1,6 +1,6 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-10-17 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-10-18 · Publisher: Parallel Line Foundation_
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -109,11 +109,17 @@ passive exception (item 5, Google Play builds only):
    tap Refresh; Refresh then downloads the `library.json` descriptor from
    each saved site — only from GitHub Pages or Cloudflare Pages addresses
    that the app validated when you saved them — to update names, optional map
-   pins and hub/member links. Those site hosts see your device's IP address
-   for those requests, as any web server does. Refresh runs only when you ask
-   for it; there is no background polling. If you used the old bookmarks
-   feature, its entries move into this list automatically the first time you
-   open the screen — that move happens entirely on your device.
+   pins and hub/member links. A downloaded descriptor can itself list other
+   libraries (a hub's members, or the hubs a library belongs to); Refresh
+   also fetches the descriptors of those libraries, even though you never
+   saved them yourself, so that they can appear in your list and on the map.
+   This follows links at most two steps away from a library you saved, only
+   to the same validated kinds of address, and stops at 500 libraries per
+   run. Every site contacted — saved or discovered — sees your device's IP
+   address for that one request, as any web server does. Refresh runs only
+   when you ask for it; there is no background polling. If you used the old
+   bookmarks feature, its entries move into this list automatically the first
+   time you open the screen — that move happens entirely on your device.
 5. **Network map** (optional, off until you allow it). The first time you
    open the Library network › Map tab, the app asks before showing the map.
    If you accept, map images are downloaded from OpenStreetMap
