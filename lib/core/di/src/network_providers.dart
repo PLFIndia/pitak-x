@@ -2,12 +2,15 @@
 ///
 /// What lives here: the one-time legacy-bookmarks migration, the Drift-backed
 /// row repository, the bounded descriptor fetcher (the ONLY thing that reads
-/// other libraries' `library.json`), and the use cases built on those ports.
+/// other libraries' `library.json`), the map's tile HTTP client + disk-cache
+/// switch (§5.9 — owned here so the client lifecycle is DI's, never the
+/// widget's; review M4), and the use cases built on those ports.
 ///
 /// Cross-feature note: this module imports the platform + database base
-/// modules only. The publish controller reads `networkRepositoryProvider`
-/// for its `members`/`memberOf` lists — publish imports THIS module, one
-/// direction.
+/// modules only (the tile client is built from `package:http` directly — a
+/// library, not a DI module). The publish controller reads
+/// `networkRepositoryProvider` for its `members`/`memberOf` lists — publish
+/// imports THIS module, one direction.
 library;
 
 import 'package:fpdart/fpdart.dart';

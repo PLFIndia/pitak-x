@@ -1,4 +1,4 @@
-/// Drift database for the non-secret stores (books + wishlist).
+/// Drift database for the non-secret stores (books + wishlist + network).
 ///
 /// The encrypted borrowers vault is NOT here — it is owned by the Rust core
 /// (decision: secrets never live in Dart-side storage). FTS5 mirrors the

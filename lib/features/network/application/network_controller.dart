@@ -46,6 +46,14 @@ enum NetworkAddOutcome {
 }
 
 /// One immutable snapshot of the network screen's data.
+///
+/// Hand-written rather than `freezed` ON PURPOSE (review Lows): nothing in
+/// `lib/features` uses freezed — `AppSettings`, `RefreshReport` and
+/// `RestoreSummary` are all plain immutable classes, and AGENTS.md's
+/// one-blessed-way rule beats the §7 shorthand here. No caller needs value
+/// equality (Riverpod rebuilds on identity, and no `select` diffs this), so
+/// the generated `==`/`copyWith` would be code we cannot feel. Revisit only
+/// if the app adopts freezed wholesale.
 final class NetworkWindow {
   /// Creates a window.
   const NetworkWindow({
@@ -107,7 +115,10 @@ Future<({NetworkWindow window, List<NetworkLibrary> rows})> networkListView(
 class NetworkController extends _$NetworkController {
   @override
   FutureOr<NetworkWindow> build() async {
-    final repo = await ref.watch(networkRepositoryProvider.future);
+    // The listener registers BEFORE any await (review Lows): a refresh that
+    // settles while the repository future is still in flight would otherwise
+    // fire its settle transition with no listener attached and the window
+    // would miss the invalidation.
     // Re-read when a refresh run settles (a cancelled run too — it applies
     // partial results). listen, not watch: a run in flight must not rebuild
     // this window, and the settle transition is the only interesting one.
@@ -115,6 +126,7 @@ class NetworkController extends _$NetworkController {
       final wasRunning = previous?.isLoading ?? false;
       if (wasRunning && !next.isLoading) ref.invalidateSelf();
     });
+    final repo = await ref.watch(networkRepositoryProvider.future);
     final rows = await repo.loadAll();
     // Report + stamp live in the keepAlive refresh controller; a plain read
     // (not watch) so a refresh in flight doesn't rebuild this window twice.
