@@ -153,6 +153,31 @@ final confirmMembershipUseCaseProvider =
 // ignore: unused_element
 typedef ConfirmMembershipUseCaseRef =
     AutoDisposeFutureProviderRef<ConfirmMembershipUseCase>;
+String _$osmTileDiskCacheHash() => r'8bb9bd7149b24ee67789e4e90c5032fbe700085b';
+
+/// Whether the network map's tile layer may use the on-disk tile cache
+/// (§5.9). True in production — the built-in cache honours OSM's freshness
+/// headers, which the tile-usage policy expects. Tests override to false:
+/// the built-in cache resolves a path_provider directory and spawns a
+/// worker isolate, plugin machinery that does not exist in a widget test
+/// (the page maps false to flutter_map's `DisabledMapCachingProvider`, so
+/// DI itself never imports flutter_map — review M4's boundary rule).
+///
+/// Copied from [osmTileDiskCache].
+@ProviderFor(osmTileDiskCache)
+final osmTileDiskCacheProvider = AutoDisposeProvider<bool>.internal(
+  osmTileDiskCache,
+  name: r'osmTileDiskCacheProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$osmTileDiskCacheHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef OsmTileDiskCacheRef = AutoDisposeProviderRef<bool>;
 String _$osmTileHttpClientHash() => r'f1a0433953d14102f932aaebc4ae352d26f56385';
 
 /// The HTTP client that backs the network map's tile provider (§5.9).

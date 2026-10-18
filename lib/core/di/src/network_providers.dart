@@ -147,6 +147,16 @@ Future<ConfirmMembershipUseCase> confirmMembershipUseCase(
   return ConfirmMembershipUseCase(repository: repo);
 }
 
+/// Whether the network map's tile layer may use the on-disk tile cache
+/// (§5.9). True in production — the built-in cache honours OSM's freshness
+/// headers, which the tile-usage policy expects. Tests override to false:
+/// the built-in cache resolves a path_provider directory and spawns a
+/// worker isolate, plugin machinery that does not exist in a widget test
+/// (the page maps false to flutter_map's `DisabledMapCachingProvider`, so
+/// DI itself never imports flutter_map — review M4's boundary rule).
+@riverpod
+bool osmTileDiskCache(OsmTileDiskCacheRef ref) => true;
+
 /// The HTTP client that backs the network map's tile provider (§5.9).
 ///
 /// Why a client and not a ready-made `TileLayer` (review M4): a TileLayer's

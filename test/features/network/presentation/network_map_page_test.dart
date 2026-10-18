@@ -66,6 +66,9 @@ void main() {
               ),
             ),
           ),
+          // No on-disk tile cache in tests: the built-in cache resolves a
+          // path_provider directory and spawns a worker isolate.
+          osmTileDiskCacheProvider.overrideWithValue(false),
         ],
         child: const MaterialApp(home: NetworkPage()),
       ),
@@ -146,9 +149,8 @@ void main() {
       expect(prefs.getBool('network_map_tiles_consent'), isTrue);
       expect(find.byType(FlutterMap), findsOneWidget);
       expect(find.byType(OsmAttribution), findsOneWidget);
-      // The full credit lives in the popup behind the permanent toggle.
-      await tester.tap(find.byIcon(Icons.info_outlined));
-      await tester.pumpAndSettle();
+      // M3 / OSM tile policy: the full credit is on screen from the FIRST
+      // frame — nothing to tap open, nothing hidden behind a toggle.
       expect(find.text('© OpenStreetMap contributors'), findsOneWidget);
     });
 

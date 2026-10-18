@@ -239,6 +239,9 @@ class NetworkMapPage extends ConsumerWidget {
     // layer dispose never closes the shared client out from under a future
     // mount (review M4).
     final tileClient = ref.watch(osmTileHttpClientProvider);
+    // Whether the tile layer may use the on-disk cache (tests disable it:
+    // the built-in cache needs path_provider and spawns a worker isolate).
+    final tileDiskCache = ref.watch(osmTileDiskCacheProvider);
     final rows =
         ref.watch(networkControllerProvider).valueOrNull?.rows ?? const [];
     final settings = ref.watch(settingsControllerProvider).valueOrNull;
@@ -255,67 +258,84 @@ class NetworkMapPage extends ConsumerWidget {
         if (row.location != null) row,
     ];
     final scheme = Theme.of(context).colorScheme;
-    return FlutterMap(
-      options: initialOptions([
-        for (final row in pinned) LatLng(row.location!.lat, row.location!.lng),
-        if (own != null) LatLng(own.lat, own.lng),
-      ]),
-      children: [
-        TileLayer(
-          urlTemplate: OsmTiles.urlTemplate,
-          tileProvider: NetworkTileProvider(
-            httpClient: tileClient,
-            headers: OsmTiles.headers(),
+    // The Semantics label is load-bearing, not decorative: flutter_map's
+    // gesture layer registers tap/longPress recognizers (and an autofocus
+    // Focus) whose semantics ACTIONS merge into the nearest ancestor
+    // semantics node. Without a label here that is the tab panel — an
+    // unlabelled tappable node that fails the a11y gate depending on test
+    // ordering (found while fixing M3). A bare label-only Semantics merges
+    // upward, so the panel node itself gains the label.
+    return Semantics(
+      label: 'Map of saved libraries',
+      child: FlutterMap(
+        options: initialOptions([
+          for (final row in pinned)
+            LatLng(row.location!.lat, row.location!.lng),
+          if (own != null) LatLng(own.lat, own.lng),
+        ]),
+        children: [
+          TileLayer(
+            urlTemplate: OsmTiles.urlTemplate,
+            tileProvider: NetworkTileProvider(
+              httpClient: tileClient,
+              headers: OsmTiles.headers(),
+              cachingProvider: tileDiskCache
+                  // null = production default: the built-in
+                  // HTTP-freshness cache.
+                  ? null
+                  : const DisabledMapCachingProvider(),
+            ),
           ),
-        ),
-        MarkerLayer(
-          markers: [
-            for (final row in pinned)
-              Marker(
-                point: LatLng(row.location!.lat, row.location!.lng),
-                // 48×48: the a11y minimum tap target (the icon itself stays
-                // 40 — the padding around it is still tappable).
-                width: 48,
-                height: 48,
-                // Bottom-centre anchor: the icon's tip sits ON the coordinate.
-                alignment: Alignment.bottomCenter,
-                child: Semantics(
-                  button: true,
-                  label:
-                      'Show details for '
-                      '${row.name.isEmpty ? row.siteUrl : row.name}',
-                  child: GestureDetector(
-                    onTap: () => _showPinSheet(context, row, own),
-                    child: Icon(
-                      Icons.location_on,
-                      size: 40,
-                      color: row.fetchStatus == FetchStatus.identityConflict
-                          ? scheme.error
-                          : scheme.primary,
+          MarkerLayer(
+            markers: [
+              for (final row in pinned)
+                Marker(
+                  point: LatLng(row.location!.lat, row.location!.lng),
+                  // 48×48: the a11y minimum tap target (the icon itself stays
+                  // 40 — the padding around it is still tappable).
+                  width: 48,
+                  height: 48,
+                  // Bottom-centre anchor: the icon's tip sits ON the
+                  // coordinate.
+                  alignment: Alignment.bottomCenter,
+                  child: Semantics(
+                    button: true,
+                    label:
+                        'Show details for '
+                        '${row.name.isEmpty ? row.siteUrl : row.name}',
+                    child: GestureDetector(
+                      onTap: () => _showPinSheet(context, row, own),
+                      child: Icon(
+                        Icons.location_on,
+                        size: 40,
+                        color: row.fetchStatus == FetchStatus.identityConflict
+                            ? scheme.error
+                            : scheme.primary,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            if (own != null)
-              Marker(
-                point: LatLng(own.lat, own.lng),
-                width: 48,
-                height: 48,
-                alignment: Alignment.bottomCenter,
-                child: Tooltip(
-                  message: 'Your library',
-                  child: Icon(
-                    Icons.location_on,
-                    size: 40,
-                    color: scheme.tertiary,
+              if (own != null)
+                Marker(
+                  point: LatLng(own.lat, own.lng),
+                  width: 48,
+                  height: 48,
+                  alignment: Alignment.bottomCenter,
+                  child: Tooltip(
+                    message: 'Your library',
+                    child: Icon(
+                      Icons.location_on,
+                      size: 40,
+                      color: scheme.tertiary,
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-        // Permanent, bottom-right — the OSM tile policy requires the credit.
-        const OsmAttribution(),
-      ],
+            ],
+          ),
+          // Permanent, bottom-right — the OSM tile policy requires the credit.
+          const OsmAttribution(),
+        ],
+      ),
     );
   }
 }
