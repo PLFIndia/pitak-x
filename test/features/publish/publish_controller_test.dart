@@ -294,6 +294,32 @@ void main() {
   );
 
   testWidgets(
+    'SECURITY (M14): an unreadable network table refuses the publish with '
+    'the real reason instead of publishing an empty member list',
+    (tester) async {
+      final h = _Harness(networkUnavailable: true);
+      // A library.json with members is live on the site.
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect(
+        (result as PublishFailure).reason,
+        'Could not read your saved libraries. Nothing was published. '
+        'Please try again.',
+      );
+      expect(h.api.commits, isEmpty, reason: 'no commit — members intact');
+      expect(h.manifest.saves, 0);
+      // The controller settled to a data state (not a dangling loading).
+      expect(h.states.last.hasValue, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'library.json rides along — fingerprint yes, raw library ID never',
     (tester) async {
       final h = _Harness();
@@ -381,7 +407,10 @@ void main() {
 
 /// Every side-effecting port is in memory; unexpected calls fail the test.
 class _Harness {
-  _Harness({bool observe = true}) {
+  /// [networkUnavailable] makes the network repository provider fail the way
+  /// the composition root does when the legacy-bookmarks migration cannot
+  /// complete (review M14).
+  _Harness({bool observe = true, bool networkUnavailable = false}) {
     container = ProviderContainer(
       overrides: [
         bookRepositoryProvider.overrideWith((ref) async => books),
@@ -390,7 +419,13 @@ class _Harness {
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
-        networkRepositoryProvider.overrideWith((ref) async => network),
+        if (networkUnavailable)
+          networkRepositoryProvider.overrideWith(
+            (ref) async =>
+                throw const LegacyBookmarksMigrationException('StorageFailure'),
+          )
+        else
+          networkRepositoryProvider.overrideWith((ref) async => network),
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),

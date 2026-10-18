@@ -1,12 +1,19 @@
 import 'dart:convert';
 
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// Transitive dependency of shared_preferences, imported only for the
+// no-remove store seam below (M14) — the same seam settings_test.dart uses
+// for its false-write store. Deliberately NOT added to pubspec so the app's
+// dependency surface stays unchanged.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 /// DI-wiring tests for the network module (libNetwork.md §5.11): the
 /// repository provider AWAITS the one-time legacy-bookmarks migration, and
@@ -110,4 +117,72 @@ void main() {
     final repo = await container.read(networkRepositoryProvider.future);
     expect(await repo.loadAll(), isEmpty);
   });
+
+  group('M14 — a failed migration fails closed, typed and logged', () {
+    late List<String> printed;
+    late DebugPrintCallback previous;
+
+    setUp(() {
+      printed = [];
+      previous = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) printed.add(message);
+      };
+    });
+    tearDown(() {
+      debugPrint = previous;
+      // The custom store below is process-global; put the default back.
+      SharedPreferences.setMockInitialValues({});
+    });
+
+    test('the repository provider throws LegacyBookmarksMigrationException '
+        '(an Exception, naming the failure type, carrying no URL)', () async {
+      // A plugin store whose remove() reports false: the rows commit but
+      // the legacy key survives, which the use case reports as a
+      // StorageFailure so the next start retries (§5.11).
+      SharedPreferences.setMockInitialValues({key: legacyValue});
+      SharedPreferencesStorePlatform.instance = _NoRemoveStore({
+        'flutter.$key': legacyValue,
+      });
+      final container = ProviderContainer(
+        overrides: [appDatabaseProvider.overrideWith((ref) async => db)],
+      );
+      addTearDown(container.dispose);
+
+      Object? thrown;
+      try {
+        await container.read(networkRepositoryProvider.future);
+      } on Exception catch (e) {
+        thrown = e;
+      }
+
+      expect(thrown, isA<LegacyBookmarksMigrationException>());
+      final exception = thrown! as LegacyBookmarksMigrationException;
+      expect(exception.failureType, 'StorageFailure');
+      // §6.2: neither the exception nor the log line carries user data.
+      expect(exception.toString(), isNot(contains('github.io')));
+      expect(exception.toString(), isNot(contains('pages.dev')));
+
+      // Debug-only diagnostic: the failure TYPE, never the message.
+      expect(
+        printed,
+        contains('network: legacy bookmarks migration failed (StorageFailure)'),
+      );
+      expect(printed.join('\n'), isNot(contains('github.io')));
+      expect(printed.join('\n'), isNot(contains('not cleared')));
+    });
+  });
+}
+
+/// A plugin store whose `remove` never succeeds — the only deterministic way
+/// to make the migration's "key not cleared" branch fire over a real
+/// in-memory database.
+class _NoRemoveStore extends InMemorySharedPreferencesStore {
+  // Super params can't target the named `.withData` constructor, so the
+  // explicit initializer stays (lint suppressed with reason).
+  // ignore: use_super_parameters
+  _NoRemoveStore([Map<String, Object> data = const {}]) : super.withData(data);
+
+  @override
+  Future<bool> remove(String key) async => false;
 }

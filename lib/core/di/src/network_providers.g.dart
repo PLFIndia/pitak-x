@@ -7,17 +7,27 @@ part of 'network_providers.dart';
 // **************************************************************************
 
 String _$migrateLegacyBookmarksHash() =>
-    r'425baf940a7cc65c1ac02b56c501bdd92d83df36';
+    r'f446c1bb98e309f4715a54834673f11e8c09035f';
 
 /// The one-time legacy bookmarks migration (D8/ADR 0012): moves the old
 /// `library_bookmarks` prefs list into the network table, then deletes the
 /// key. Idempotent — after the first success it reads nothing and does
 /// nothing, so awaiting it on every repository hand-out is cheap.
 ///
-/// Fail closed: a migration that cannot complete (storage failure) throws,
-/// which errors this provider and everything downstream — the network screen
-/// shows its safe error state instead of silently presenting a table that is
-/// missing the user's old bookmarks.
+/// Fail closed: a migration that cannot complete (storage failure) throws
+/// [LegacyBookmarksMigrationException], which errors this provider and
+/// everything that awaits [networkRepositoryProvider]. Blast radius, on
+/// purpose:
+///  - the Library network screen shows its safe error state instead of
+///    silently presenting a table that is missing the user's old bookmarks;
+///  - Refresh and Add member cannot run (both need the repository);
+///  - **Publish is refused** with a plain reason — a `library.json` built
+///    over an unreadable network table would publish an EMPTY member list
+///    and detach every member (the M1 class of bug), so stopping is the
+///    only honest outcome.
+/// The migration is retried on the next provider build (app restart or
+/// `ref.invalidate`), and a debug-only log line names the failure type so
+/// the cause is diagnosable without leaking data.
 ///
 /// Copied from [migrateLegacyBookmarks].
 @ProviderFor(migrateLegacyBookmarks)

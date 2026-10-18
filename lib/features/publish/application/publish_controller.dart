@@ -112,8 +112,22 @@ class PublishController extends _$PublishController {
       // membership the user CONFIRMED (§5.5/§5.6-4) — pending or declined
       // rows are never published (a membership is public only by explicit
       // choice). The codec sorts both lists by siteUrl.
-      final network = await ref.read(networkRepositoryProvider.future);
-      final memberRows = await network.loadAll();
+      //
+      // The repository hand-out awaits the one-time legacy-bookmarks
+      // migration; if THAT failed, the network table cannot be trusted and
+      // a descriptor built over it would publish an empty member list —
+      // detaching every member while the UI says "Published!". Refuse with
+      // the real reason instead of the generic exception message (M14).
+      final List<NetworkLibrary> memberRows;
+      try {
+        final network = await ref.read(networkRepositoryProvider.future);
+        memberRows = await network.loadAll();
+      } on LegacyBookmarksMigrationException {
+        return const PublishFailure(
+          'Could not read your saved libraries. Nothing was published. '
+          'Please try again.',
+        );
+      }
       final built = BuildOwnDescriptor.build(
         libraryId: own.id,
         libraryName: settings.libraryName,
