@@ -7,6 +7,9 @@ import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
+import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 /// Tests for [NetworkController] (libNetwork.md §5.1): the window snapshot
 /// and its three mutations, all driven through `ProviderContainer` overrides
@@ -165,6 +168,85 @@ void main() {
       expect(ok, isFalse);
     });
   });
+
+  group('networkListView (review M12: the display sort lives here, not in '
+      'the widget build)', () {
+    ProviderContainer viewContainer(AppSettings settings) {
+      final c = ProviderContainer(
+        overrides: [
+          networkRepositoryProvider.overrideWith((ref) async => repo),
+          clockProvider.overrideWithValue(() => 4242),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => _FakeSettingsRepo(settings),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      c
+        ..listen(networkControllerProvider, (_, _) {})
+        ..listen(networkListViewProvider, (_, _) {});
+      return c;
+    }
+
+    test('with an own pin the rows arrive nearest-first, in the SAME '
+        'snapshot as the window', () async {
+      repo.rows = [
+        NetworkLibrary(
+          id: 1,
+          siteUrl: urlA,
+          name: 'Far Away',
+          location: GeoPoint.tryCreate(13.9, 78.9),
+          precision: LocationPrecision.exact,
+        ),
+        const NetworkLibrary(id: 2, siteUrl: urlB, name: 'No Pin'),
+        NetworkLibrary(
+          id: 3,
+          siteUrl: 'https://near.github.io/x/',
+          name: 'Very Near',
+          location: GeoPoint.tryCreate(12.95, 77.65),
+          precision: LocationPrecision.exact,
+        ),
+      ];
+      final c = viewContainer(
+        const AppSettings(
+          publishContactGps: '12.9, 77.6',
+          publishLocationSharing: LocationSharing.exact,
+        ),
+      );
+
+      final view = await c.read(networkListViewProvider.future);
+
+      expect(view.rows.map((r) => r.name), ['Very Near', 'Far Away', 'No Pin']);
+      // The window travels WITH the sorted rows: the tab renders one
+      // consistent snapshot, never a flash of unsorted data.
+      expect(view.window.rows, repo.rows);
+    });
+
+    test('without an own pin the rows sort by name', () async {
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: urlA, name: 'Zebra'),
+        const NetworkLibrary(id: 2, siteUrl: urlB, name: 'Apple'),
+      ];
+      final c = viewContainer(AppSettings.defaults); // sharing off
+
+      final view = await c.read(networkListViewProvider.future);
+      expect(view.rows.map((r) => r.name), ['Apple', 'Zebra']);
+    });
+  });
+}
+
+/// Settings fake returning a fixed snapshot (the list view needs only the
+/// publish-location fields).
+class _FakeSettingsRepo implements SettingsRepository {
+  _FakeSettingsRepo(this.settings);
+  final AppSettings settings;
+
+  @override
+  Future<AppSettings> load() async => settings;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected settings operation');
 }
 
 /// In-memory repository fake with the operations the controller touches.

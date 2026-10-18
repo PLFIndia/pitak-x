@@ -25,6 +25,7 @@ import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/geo_uri.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+import 'package:pitaka/features/network/presentation/widgets/map_viewport.dart';
 import 'package:pitaka/features/network/presentation/widgets/membership_badge.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
 import 'package:pitaka/features/network/presentation/widgets/tiles_consent_dialog.dart';
@@ -106,39 +107,6 @@ class _NetworkMapGateState extends ConsumerState<NetworkMapGate> {
 class NetworkMapPage extends ConsumerWidget {
   /// Creates the map view.
   const NetworkMapPage({super.key});
-
-  /// The initial viewport (§5.9): the bounds of every pin when there are at
-  /// least two; centred on the single pin when there is one; a world view
-  /// when nothing has a coordinate yet. [points] = library pins + own pin.
-  /// Pure and static so tests can pin it down without rendering a map.
-  static MapOptions initialOptions(List<LatLng> points) {
-    if (points.isEmpty) {
-      // World view.
-      return const MapOptions(initialCenter: LatLng(20, 0), initialZoom: 2);
-    }
-    if (points.length == 1) {
-      return MapOptions(initialCenter: points.single, initialZoom: 12);
-    }
-    var south = points.first.latitude;
-    var north = south;
-    var west = points.first.longitude;
-    var east = west;
-    for (final p in points.skip(1)) {
-      if (p.latitude < south) south = p.latitude;
-      if (p.latitude > north) north = p.latitude;
-      if (p.longitude < west) west = p.longitude;
-      if (p.longitude > east) east = p.longitude;
-    }
-    return MapOptions(
-      initialCenter: points.first,
-      initialCameraFit: CameraFit.bounds(
-        bounds: LatLngBounds(LatLng(south, west), LatLng(north, east)),
-        padding: const EdgeInsets.all(48),
-        // Pins are city-scale; never zoom closer than a street map on open.
-        maxZoom: 15,
-      ),
-    );
-  }
 
   /// Plain-words distance for the pin sheet ("12 km" / "3.4 km").
   static String formatDistance(double km) =>
@@ -268,7 +236,7 @@ class NetworkMapPage extends ConsumerWidget {
     return Semantics(
       label: 'Map of saved libraries',
       child: FlutterMap(
-        options: initialOptions([
+        options: MapViewport.forPoints([
           for (final row in pinned)
             LatLng(row.location!.lat, row.location!.lng),
           if (own != null) LatLng(own.lat, own.lng),

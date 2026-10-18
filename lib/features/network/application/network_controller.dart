@@ -15,11 +15,15 @@
 library;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/network_library_sort.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_controller.g.dart';
@@ -58,6 +62,44 @@ final class NetworkWindow {
 
   /// Epoch millis of the last refresh run; null when none ran yet.
   final int? lastRefreshedAt;
+}
+
+/// The Libraries-tab view in ONE snapshot: the window plus its rows in
+/// display order ([NetworkLibrarySort.byDistanceThenName]).
+///
+/// Why a derived provider and not a sort in the widget's `build` (review
+/// M12): a provider recomputes only when its INPUTS change (the window, or
+/// the own-pin settings), while a `build`-time sort re-ran on every frame.
+/// Returning the window alongside the sorted rows also means the tab renders
+/// one consistent snapshot — no frame where the rows are loaded but briefly
+/// unsorted.
+@riverpod
+Future<({NetworkWindow window, List<NetworkLibrary> rows})> networkListView(
+  NetworkListViewRef ref,
+) async {
+  final window = await ref.watch(networkControllerProvider.future);
+  // The own pin for distance sorting = the location THIS library publishes
+  // (D7 mapping in one place; off/unparseable ⇒ no own pin ⇒ name order).
+  // AWAITED (not valueOrNull): the first frame the tab renders is already
+  // sorted — no flash of name order while settings load. A settings failure
+  // degrades to name order rather than breaking the tab. (Non-final: Dart's
+  // definite-assignment rule forbids assigning a final in try AND catch.)
+  AppSettings? settings;
+  try {
+    settings = await ref.watch(settingsControllerProvider.future);
+  } on Object {
+    settings = null;
+  }
+  final own = settings == null
+      ? null
+      : BuildOwnDescriptor.ownLocation(
+          sharing: settings.publishLocationSharing,
+          gps: settings.publishContactGps,
+        );
+  return (
+    window: window,
+    rows: NetworkLibrarySort.byDistanceThenName(window.rows, own),
+  );
 }
 
 /// Loads the network window and runs its mutations.

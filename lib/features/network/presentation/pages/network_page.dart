@@ -18,12 +18,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/qr_view.dart';
-import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/my_library_card_controller.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
-import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/add_member_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
@@ -31,7 +29,6 @@ import 'package:pitaka/features/network/presentation/widgets/add_library_dialog.
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_refresh_bar.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// The library-network screen.
 class NetworkPage extends ConsumerWidget {
@@ -93,35 +90,6 @@ class NetworkPage extends ConsumerWidget {
   }
 }
 
-/// Display order for the Libraries tab (§7 S4): when this library publishes
-/// a pin of its own (settings GPS × sharing — the D7 mapping, never a device
-/// location), rows with coordinates sort nearest-first and pin-less rows
-/// follow by name; without an own pin, everything sorts by name. The title
-/// falls back to the URL so the order is always total and deterministic.
-List<NetworkLibrary> sortRowsForDisplay(
-  List<NetworkLibrary> rows,
-  GeoPoint? own,
-) {
-  String titleOf(NetworkLibrary row) =>
-      (row.name.isEmpty ? row.siteUrl : row.name).toLowerCase();
-  int byTitle(NetworkLibrary a, NetworkLibrary b) =>
-      titleOf(a).compareTo(titleOf(b));
-  if (own == null) return [...rows]..sort(byTitle);
-  final pinned = [...rows.where((row) => row.location != null)]
-    ..sort((a, b) {
-      final byDistance = own
-          .distanceKm(a.location!)
-          .compareTo(own.distanceKm(b.location!));
-      if (byDistance != 0) return byDistance;
-      // Tie-break on the title: List.sort is not stable, and the list must
-      // not shuffle between builds when two pins are equally far away.
-      return byTitle(a, b);
-    });
-  final unpinned = [...rows.where((row) => row.location == null)]
-    ..sort(byTitle);
-  return [...pinned, ...unpinned];
-}
-
 /// The saved-libraries list.
 class _LibrariesTab extends ConsumerWidget {
   const _LibrariesTab();
@@ -166,24 +134,18 @@ class _LibrariesTab extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final window = ref.watch(networkControllerProvider);
-    // The own pin for distance sorting = the location THIS library publishes
-    // (D7 mapping in one place; off/unparseable ⇒ no own pin ⇒ name order).
-    final settings = ref.watch(settingsControllerProvider).valueOrNull;
-    final own = settings == null
-        ? null
-        : BuildOwnDescriptor.ownLocation(
-            sharing: settings.publishLocationSharing,
-            gps: settings.publishContactGps,
-          );
+    // One snapshot: the window (for the refresh bar) plus the rows already
+    // in display order — the sort lives in the derived provider, recomputed
+    // when its inputs change, not on every build (review M12).
+    final view = ref.watch(networkListViewProvider);
     return Scaffold(
-      body: window.when(
+      body: view.when(
         loading: () =>
             const Center(child: CircularProgressIndicator.adaptive()),
         error: (_, _) =>
             const Center(child: Text("Couldn't load your saved libraries.")),
         data: (data) {
-          final rows = sortRowsForDisplay(data.rows, own);
+          final rows = data.rows;
           return RefreshIndicator(
             // Pull-to-refresh runs the same single user-initiated refresh
             // (D11); the indicator settles when the run finishes or cancels.
@@ -194,7 +156,7 @@ class _LibrariesTab extends ConsumerWidget {
               children: [
                 const _InfoNote(),
                 const SizedBox(height: 12),
-                NetworkRefreshBar(window: data),
+                NetworkRefreshBar(window: data.window),
                 const SizedBox(height: 12),
                 if (rows.isEmpty)
                   Padding(

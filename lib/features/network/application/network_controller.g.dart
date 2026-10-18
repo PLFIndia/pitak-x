@@ -6,6 +6,39 @@ part of 'network_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
+String _$networkListViewHash() => r'6003868b13ef43990084bd59f436b634fe5bca8d';
+
+/// The Libraries-tab view in ONE snapshot: the window plus its rows in
+/// display order ([NetworkLibrarySort.byDistanceThenName]).
+///
+/// Why a derived provider and not a sort in the widget's `build` (review
+/// M12): a provider recomputes only when its INPUTS change (the window, or
+/// the own-pin settings), while a `build`-time sort re-ran on every frame.
+/// Returning the window alongside the sorted rows also means the tab renders
+/// one consistent snapshot — no frame where the rows are loaded but briefly
+/// unsorted.
+///
+/// Copied from [networkListView].
+@ProviderFor(networkListView)
+final networkListViewProvider =
+    AutoDisposeFutureProvider<
+      ({NetworkWindow window, List<NetworkLibrary> rows})
+    >.internal(
+      networkListView,
+      name: r'networkListViewProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$networkListViewHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef NetworkListViewRef =
+    AutoDisposeFutureProviderRef<
+      ({NetworkWindow window, List<NetworkLibrary> rows})
+    >;
 String _$networkControllerHash() => r'7c8a74c6b009c5857d61efa0044e4270fa6fe780';
 
 /// Loads the network window and runs its mutations.

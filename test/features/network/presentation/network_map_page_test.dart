@@ -18,6 +18,7 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/map_viewport.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -250,13 +251,13 @@ void main() {
 
   group('initial viewport (§5.9)', () {
     test('no pins → world view', () {
-      final options = NetworkMapPage.initialOptions(const []);
+      final options = MapViewport.forPoints(const []);
       expect(options.initialZoom, 2);
       expect(options.initialCameraFit, isNull);
     });
 
     test('one pin → centred on it at city zoom', () {
-      final options = NetworkMapPage.initialOptions(const [LatLng(12.9, 77.6)]);
+      final options = MapViewport.forPoints(const [LatLng(12.9, 77.6)]);
       expect(options.initialCenter.latitude, 12.9);
       expect(options.initialCenter.longitude, 77.6);
       expect(options.initialZoom, 12);
@@ -264,7 +265,7 @@ void main() {
     });
 
     test('several pins → bounds fit covering all of them', () {
-      final options = NetworkMapPage.initialOptions(const [
+      final options = MapViewport.forPoints(const [
         LatLng(12.9, 77.6),
         LatLng(13.1, 77.4),
         LatLng(12.8, 77.9),
