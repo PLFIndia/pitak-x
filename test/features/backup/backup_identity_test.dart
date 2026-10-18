@@ -47,6 +47,20 @@ void main() {
       expect(padded!.name, 'Shelves');
     });
 
+    test('a name with control/bidi characters degrades to blank (§6)', () {
+      // Trojan-Source class: bidi overrides could visually reorder the
+      // adopted library name in settings (review Lows).
+      final bidi = BackupIdentity.fromJson(
+        '{"libraryId": "$validId", "libraryName": "My \u202ELibrary"}',
+      );
+      expect(bidi, isNotNull);
+      expect(bidi!.name, '');
+      final control = BackupIdentity.fromJson(
+        '{"libraryId": "$validId", "libraryName": "My\\tLibrary"}',
+      );
+      expect(control!.name, '');
+    });
+
     test('an over-long hostile name degrades to blank, keeping the ID', () {
       final huge = 'x' * 201;
       final parsed = BackupIdentity.fromJson(

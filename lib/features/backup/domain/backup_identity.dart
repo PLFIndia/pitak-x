@@ -8,12 +8,14 @@
 /// The entry is plain, unencrypted JSON — that is the documented honest
 /// limit of the format (README › Backup). On restore it is treated as
 /// HOSTILE input: the ID is re-validated through `LibraryId.normalizeOrNull`
-/// and the name is length-bounded; anything else is dropped, never trusted.
+/// and the name through `NetworkName.normalizeOrNull` (the §6 character
+/// rules); anything else is dropped, never trusted.
 library;
 
 import 'dart:convert';
 
 import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
+import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 
 /// A validated library identity parsed from `identity.json`.
 final class BackupIdentity {
@@ -36,8 +38,8 @@ final class BackupIdentity {
   /// Tolerant by contract: never throws. Returns null on malformed JSON, a
   /// non-object, or an ID failing `LibraryId.normalizeOrNull` — the restore
   /// then simply does not adopt an identity (the catalogue restore is
-  /// unaffected). An over-long or non-string name degrades to blank (the ID
-  /// is the valuable half; a hostile name must not smear into settings).
+  /// unaffected). An unusable name degrades to blank (the ID is the valuable
+  /// half; a hostile name must not smear into settings).
   static BackupIdentity? fromJson(String jsonText) {
     final Object? decoded;
     try {
@@ -51,8 +53,13 @@ final class BackupIdentity {
     final id = LibraryId.normalizeOrNull(rawId);
     if (id == null) return null;
     final rawName = decoded['libraryName'];
-    final name = rawName is String && rawName.length <= 200
-        ? rawName.trim()
+    // The §6 name rules, same as every other hostile name surface: trimmed,
+    // 1–80, no control/bidi characters (an unfiltered name could visually
+    // reorder itself in settings — the Trojan Source trick; review Lows).
+    // An unusable name degrades to blank: the ID is the valuable half and
+    // `LibraryNamespace.adopt` keeps the device's current name for blanks.
+    final name = rawName is String
+        ? NetworkName.normalizeOrNull(rawName) ?? ''
         : '';
     return BackupIdentity(id: id, name: name);
   }

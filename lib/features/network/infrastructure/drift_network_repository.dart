@@ -58,8 +58,11 @@ class DriftNetworkRepository implements NetworkRepository {
             .write(_updateCompanion(merged));
         return right(merged);
       });
-    } on Object catch (e) {
-      return left(StorageFailure('network upsert: $e'));
+    } on Object {
+      // No `$e` in the Failure: a SqliteException message can carry the
+      // statement's bound parameters (site URLs) — typed failure, fixed
+      // label (AGENTS §6.2; review Lows).
+      return left(const StorageFailure('network upsert failed'));
     }
   }
 
@@ -70,8 +73,11 @@ class DriftNetworkRepository implements NetworkRepository {
         _db.networkLibraries,
       )..where((t) => t.id.equals(id))).go();
       return right(unit);
-    } on Object catch (e) {
-      return left(StorageFailure('network remove: $e'));
+    } on Object {
+      // No `$e` in the Failure: a SqliteException message can carry the
+      // statement's bound parameters (site URLs) — typed failure, fixed
+      // label (AGENTS §6.2; review Lows).
+      return left(const StorageFailure('network remove failed'));
     }
   }
 
@@ -93,8 +99,11 @@ class DriftNetworkRepository implements NetworkRepository {
         }
       });
       return right(unit);
-    } on Object catch (e) {
-      return left(StorageFailure('network replaceAll: $e'));
+    } on Object {
+      // No `$e` in the Failure: a SqliteException message can carry the
+      // statement's bound parameters (site URLs) — typed failure, fixed
+      // label (AGENTS §6.2; review Lows).
+      return left(const StorageFailure('network replaceAll failed'));
     }
   }
 
@@ -123,15 +132,22 @@ class DriftNetworkRepository implements NetworkRepository {
         }
       });
       return right(unit);
-    } on Object catch (e) {
-      return left(StorageFailure('network applyRefresh: $e'));
+    } on Object {
+      // No `$e` in the Failure: a SqliteException message can carry the
+      // statement's bound parameters (site URLs) — typed failure, fixed
+      // label (AGENTS §6.2; review Lows).
+      return left(const StorageFailure('network applyRefresh failed'));
     }
   }
 
   @override
   Future<int> count() async {
-    final rows = await _db.select(_db.networkLibraries).get();
-    return rows.length;
+    // COUNT(*), not a full row load: callers only need the number (review
+    // Lows — `select().get()` materialised every row to throw it away).
+    final rowCount = _db.networkLibraries.id.count();
+    final query = _db.selectOnly(_db.networkLibraries)..addColumns([rowCount]);
+    final row = await query.getSingle();
+    return row.read(rowCount) ?? 0;
   }
 
   Future<NetworkLibrary?> _findBySiteUrl(String siteUrl) async {

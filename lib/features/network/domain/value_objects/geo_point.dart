@@ -88,7 +88,11 @@ final class GeoPoint {
             math.cos(phi2) *
             math.sin(dLambda / 2) *
             math.sin(dLambda / 2);
-    return 2 * earthRadiusKm * math.asin(math.sqrt(h));
+    // Clamp before asin: at (near-)antipodal points floating-point error can
+    // push h a hair past 1.0 (1.0000000000000002), and asin of that is NaN
+    // (review Lows) — a distance that came back "not a number" would poison
+    // every sort and pin-sheet line using it.
+    return 2 * earthRadiusKm * math.asin(math.sqrt(h.clamp(0.0, 1.0)));
   }
 
   /// Value equality WITHOUT overriding `==`/`hashCode`: the repo's lint bar

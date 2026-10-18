@@ -116,6 +116,21 @@ void main() {
     });
   });
 
+  group('distanceKm at the antipodes (review Lows)', () {
+    test('never NaN: floating-point h can land a hair past 1.0', () {
+      final a = GeoPoint.tryCreate(0, 0)!;
+      final b = GeoPoint.tryCreate(0, 180)!;
+      final d = a.distanceKm(b);
+      expect(d.isNaN, isFalse);
+      // Half the Earth's circumference: pi * R.
+      expect(d, closeTo(3.14159265 * GeoPoint.earthRadiusKm, 1));
+      expect(
+        GeoPoint.tryCreate(90, 0)!.distanceKm(GeoPoint.tryCreate(-90, 0)!),
+        closeTo(3.14159265 * GeoPoint.earthRadiusKm, 1),
+      );
+    });
+  });
+
   group('sameAs', () {
     test('compares values without overriding ==', () {
       final a = GeoPoint.parse('12.5, 77.5')!;

@@ -331,6 +331,37 @@ void main() {
         );
       },
     );
+
+    test('brackets INSIDE a string never count toward the depth (M-low)', () {
+      // The old naive scan counted these and would refuse a real descriptor
+      // whose name happens to carry brackets.
+      final bracketed = bytesOf(
+        validJson()..['name'] = 'Books {{{{{{{{{{{{{{{{{{{{{{{{{{{{{{{[[',
+      );
+      final decoded = LibraryDescriptorCodec.decode(bracketed);
+      expect(decoded.isRight(), isTrue);
+      expect(decoded.toNullable()!.name, contains('{{{'));
+    });
+
+    test('escaped quotes inside strings do not confuse the depth scan', () {
+      // A backslash-escaped quote must not flip the in-string state.
+      final tricky = bytesOf(validJson()..['name'] = r'A "[{\" B');
+      expect(LibraryDescriptorCodec.decode(tricky).isRight(), isTrue);
+      // Depth still guards real structure even with strings present.
+      final nested = bytesOf(
+        validJson()
+          ..['future'] = {
+            'a': [
+              {
+                'b': [
+                  {'c': 'd'},
+                ],
+              },
+            ],
+          },
+      );
+      expect(LibraryDescriptorCodec.decode(nested).isRight(), isTrue);
+    });
   });
 
   group('encode (stable wire shape)', () {
