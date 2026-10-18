@@ -22,6 +22,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/geo_uri.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/presentation/widgets/membership_badge.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
@@ -158,12 +159,11 @@ class NetworkMapPage extends ConsumerWidget {
     final location = row.location;
     if (location == null) return;
     // geo: URI with a labelled query pin — the OS map app picks it up
-    // (§5.9). The name is query text, so it must be component-encoded.
-    final lat = location.lat;
-    final lng = location.lng;
-    final name = row.name.isEmpty ? row.siteUrl : row.name;
-    final uri = Uri.parse(
-      'geo:$lat,$lng?q=$lat,$lng(${Uri.encodeComponent(name)})',
+    // (§5.9). GeoUri owns the formatting rules (fixed decimals, encoded
+    // parentheses); see its doc for why plain interpolation was wrong.
+    final uri = GeoUri.directions(
+      location,
+      label: row.name.isEmpty ? row.siteUrl : row.name,
     );
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && context.mounted) {
