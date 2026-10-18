@@ -7,7 +7,7 @@
 ///
 /// The member→hub prompt (§5.6 step 4) lives HERE, inline under its row:
 /// a `pending` row asks "show that you're a member?" with plain Confirm /
-/// Not-now buttons, and a `declined` row keeps a quiet "Reconsider" action —
+/// No buttons, and a `declined` row keeps a quiet "Reconsider" action —
 /// the user is never re-prompted automatically, but the door stays open.
 library;
 
@@ -39,7 +39,11 @@ class NetworkLibraryTile extends StatelessWidget {
   /// Called when the user answers the pending-membership prompt "yes".
   final VoidCallback? onConfirmMembership;
 
-  /// Called when the user answers the pending-membership prompt "not now".
+  /// Called when the user answers the pending-membership prompt "no".
+  /// Declining is permanent (never re-prompted) but reversible: the row
+  /// keeps a quiet "Reconsider" action. There is deliberately no "not
+  /// now" snooze — leaving the prompt unanswered IS the snooze (review
+  /// Lows: a soft label must not hide a permanent decision).
   final VoidCallback? onDeclineMembership;
 
   /// Called when the user taps "Reconsider" on a declined membership.
@@ -161,7 +165,7 @@ class _MembershipPrompt extends StatelessWidget {
             spacing: 8,
             runSpacing: 4,
             children: [
-              TextButton(onPressed: onDecline, child: const Text('Not now')),
+              TextButton(onPressed: onDecline, child: const Text('No')),
               FilledButton(
                 onPressed: onConfirm,
                 child: const Text('Show membership'),

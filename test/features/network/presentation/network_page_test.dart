@@ -229,7 +229,8 @@ void main() {
       expect(find.text('My hub'), findsOneWidget); // confirmed badge
     });
 
-    testWidgets('"Not now" declines without re-prompting', (tester) async {
+    testWidgets('"No" declines without re-prompting (but Reconsider '
+        'stays)', (tester) async {
       repo.rows = [
         const NetworkLibrary(
           id: 1,
@@ -239,7 +240,7 @@ void main() {
         ),
       ];
       await pumpPage(tester);
-      await tester.tap(find.widgetWithText(TextButton, 'Not now'));
+      await tester.tap(find.widgetWithText(TextButton, 'No'));
       await tester.pumpAndSettle();
 
       expect(repo.upserts.single.membership, MembershipState.declined);

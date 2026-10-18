@@ -74,6 +74,49 @@ void main() {
     final result = await useCase(rowId: 7, decision: MembershipState.confirmed);
     expect(result.isLeft(), isTrue);
   });
+
+  group('transition guard (review Lows)', () {
+    test('a `none` row cannot be declared a member — the hub never listed '
+        'me, so confirming would publish a one-sided memberOf', () async {
+      repo.rows = [
+        // membership defaults to `none` — no signal from any hub.
+        const NetworkLibrary(id: 8, siteUrl: 'https://other.github.io/x/'),
+      ];
+      final result = await useCase(
+        rowId: 8,
+        decision: MembershipState.confirmed,
+      );
+      expect(result.swap().toNullable(), isA<ValidationFailure>());
+      expect(repo.upserts, isEmpty);
+    });
+
+    test('a confirmed row cannot jump straight to declined (re-open the '
+        'question first)', () async {
+      await useCase(rowId: 7, decision: MembershipState.confirmed);
+      final result = await useCase(
+        rowId: 7,
+        decision: MembershipState.declined,
+      );
+      expect(result.isLeft(), isTrue);
+      expect(hub().membership, MembershipState.confirmed); // unchanged
+    });
+
+    test('a declined row cannot jump straight to confirmed', () async {
+      await useCase(rowId: 7, decision: MembershipState.declined);
+      final result = await useCase(
+        rowId: 7,
+        decision: MembershipState.confirmed,
+      );
+      expect(result.isLeft(), isTrue);
+      expect(hub().membership, MembershipState.declined);
+    });
+
+    test('same-state is an idempotent no-op, not an error', () async {
+      final result = await useCase(rowId: 7, decision: MembershipState.pending);
+      expect(result.isRight(), isTrue);
+      expect(hub().membership, MembershipState.pending);
+    });
+  });
 }
 
 /// Minimal repository fake: only what the use case touches is real.

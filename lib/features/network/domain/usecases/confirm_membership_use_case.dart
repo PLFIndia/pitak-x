@@ -42,9 +42,32 @@ final class ConfirmMembershipUseCase {
       if (candidate.id == rowId) row = candidate;
     }
     if (row == null) return left(const NotFoundFailure());
+    if (!_transitionAllowed(row.membership, decision)) {
+      // Review Lows: the use case, not the UI, is the authority on which
+      // moves exist. The model (§5.6 step 4): answer a PENDING question
+      // (confirmed/declined), or Reconsider a DECLINED one back to pending.
+      // `none` means the hub does not list me — declaring membership from
+      // there would publish a `memberOf` the hub never claimed, so it is
+      // refused like every other unlisted transition. Same-state is a
+      // legal no-op (a double-tap is not an error).
+      return const Left(
+        ValidationFailure('That membership change is not available.'),
+      );
+    }
     final saved = await _repository.upsertBySiteUrl(
       row.copyWith(membership: decision),
     );
     return saved.map((_) => unit);
+  }
+
+  /// The legal membership moves (see the call site for the rationale).
+  static bool _transitionAllowed(MembershipState from, MembershipState to) {
+    if (from == to) return true; // idempotent no-op
+    return switch ((from, to)) {
+      (MembershipState.pending, MembershipState.confirmed) => true,
+      (MembershipState.pending, MembershipState.declined) => true,
+      (MembershipState.declined, MembershipState.pending) => true, // Reconsider
+      _ => false,
+    };
   }
 }
