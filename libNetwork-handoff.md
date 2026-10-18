@@ -1,98 +1,116 @@
-# libNetwork implementation — handoff (S1–S6 + docs DONE; merge prep remains)
+# libNetwork implementation — handoff (review fixes in progress)
 
 > **For the next session's agent.** All six slices of `libNetwork.md` are
-> implemented, gated and committed on branch `libNetwork`, and the §9 docs
-> sweep (owed since S2) landed with them. This file now records only what a
-> merge/release session still needs. `AGENTS.md` still wins over everything.
+> implemented and committed on branch `libNetwork`. A full code review
+> (2026-10-17/18) found a set of composition bugs the unit tests could not
+> see; the first batch is FIXED and committed (below). This file records
+> exactly where that stopped and what remains. `AGENTS.md` still wins over
+> everything.
 >
-> Rewritten 2026-10-17 after the docs commit (supersedes the S4 handoff,
-> which supersedes the S1–S3 one).
+> Rewritten 2026-10-18 after the review-fix session (supersedes the
+> post-docs handoff).
 
 ---
 
 ## 1. Branch state
 
-Branch `libNetwork` (from `main` @ 80b8e89). Commits, oldest first:
+Branch `libNetwork` (from `main` @ 80b8e89). The feature commits
+(88796f5 … eb75215) are unchanged; on top of them, oldest first:
 
-| Commit | Content |
-|--------|---------|
-| 88796f5 | the spec (`libNetwork.md`) |
-| 70e5382…ce786b3 (6) | **S1** foundation (VOs, BoundedHttpFetcher, AppUserAgent, QrScanPage, ADR 0012) |
-| 968344e | **S2** publish side (LocationSharing, descriptor codec, library.json) |
-| e447f49 | **S3** network table (schema v3), card QR, add-member, NetworkPage |
-| 46845bc | **S4** refresh/discovery/membership, bookmarks migrated + deleted |
-| 55ec411, f4888e4 | earlier handoffs |
-| 72bba91 | **S5** map tab (flutter_map + OSM, consent-gated) |
-| a68735f | **S6** identity.json + network.json in .pitabak |
-| (docs) | §9 sweep: PRIVACY.md, README.md, appDetails.md, CHANGELOG.md |
+| Commit | Review item | Content |
+|--------|-------------|---------|
+| 5a3f738 | **H3** | `BookmarkUrl.normalize` returns a canonical SITE ROOT (lower-case host, no query/fragment, trailing `index.html` dropped, trailing `/` guaranteed). Allow-list-only role split out as `BookmarkUrl.sanitize` (used by the fetcher for initial URL + redirect hops — never rewrites). |
+| 23b6cf0 | **H1, M6, M11** | Discovered rows start with `fingerprint: null`; a hub's `members` hint is only COMPARED against the member's own fetch. Deterministic conflicts (two no-stored-fp rows publishing one fp ⇒ both flagged). Final uniqueness pass before `applyRefresh`; `applyRefresh` skips a discovered row whose siteUrl the user saved mid-run. Conflict badge clears `memberVerified`. Plan merges leaf/hub facts per URL. `RefreshReport` moved to `domain/refresh_report.dart` (ratchet), re-exported. |
+| 07f27b6 | **M5** | `AddMemberUseCase` refuses a card whose fingerprint is saved under another address with a plain `ValidationFailure` (`identityAlreadySavedMessage`) before any write/fetch. |
+| eff56da | **H2, M2** | `TimeoutHttpClient.send` chains a caller's `abortTrigger` into its own deadline (the fetcher's 15 s now really aborts under the 60 s decorator). `BoundedHttpFetcher` takes `headers` (default `{'User-Agent': AppUserAgent.value}`), applied on every hop. |
+| f599864 | **H4** | `integration_test/vault_smoke_test.dart` compiles again (`CreateBackupResult.bytes`); CI analyze/format now include `integration_test`. |
+| de5b86b | **H5** | `LibraryCard.tryCreate` shortens the NAME by whole characters so `encode()` always fits 512 bytes (long Kannada names used to produce cards other phones refused). |
+| b47df82 | **M1** | `PublishController` REFUSES the publish (`'Library identity unavailable'`) when `BuildOwnDescriptor.build` is Left, instead of folding to null — which deleted the live `library.json` behind "Published!". |
 
-**Gate status (docs commit):** analyze 0 issues · format clean ·
-build_runner no diff · `fvm flutter test --exclude-tags golden` →
-**2233 tests, all green**.
+**Gate status at b47df82:** `flutter analyze lib test integration_test` 0
+issues · `dart format` clean · build_runner no diff ·
+`fvm flutter test --exclude-tags golden` all green (see §5 for the number
+the final run printed).
 
-## 2. Open items for the merge/release session (NOT code)
+**Working tree:** clean. An attempt at **M3** (attribution visible on
+first frame) was started and DISCARDED — see §3 for what was learned.
 
-1. **Golden PNG for `network_library_tiles`** (test/golden/key_screens_test.dart,
-   tag `golden`): cannot be generated on macOS — run the `update-goldens`
-   workflow_dispatch job on Linux and commit the uploaded PNG
-   (dart_test.yaml + architecture.md B2). Until then the golden job is red
-   by design; everything else is green.
-2. **fastlane changelog** (`fastlane/metadata/android/en-US/changelogs/<code>.txt`)
-   — written at release time (spec §9), user-facing ≤ 500 chars.
-3. **Release sentinel** for the next version: `LibraryFingerprint` (recorded
-   in appDetails.md §9's network entry; ASCII-only class name, survives in
-   libapp.so — see appDetails.md §5 step 3 for the check).
-4. Merge mechanics: `main` may have moved since 80b8e89; the branch touches
-   `pubspec.*`, settings, backup and network — re-run all gates after
-   rebase/merge.
+## 2. Remaining review items (NOT yet fixed), in suggested order
 
-## 3. Gotchas that cost time in S5/S6 (don't rediscover)
+Full findings with line numbers are in the review message of the
+2026-10-17 session; the short list:
 
-- **flutter_map 8.3.2 verified API:** `TileLayer(urlTemplate, tileProvider:
-  NetworkTileProvider(headers:))`; `headers` must be a MUTABLE map (TileLayer
-  does `headers.putIfAbsent` for a fallback UA — a const map throws). The
-  built-in tile cache is the default when `cachingProvider` is null and
-  honours server freshness headers with a 7-day fallback (exactly §5.9 — no
-  override needed). `SimpleAttributionWidget` overflows narrow screens with
-  its fixed "flutter_map | © " prefix — use `RichAttributionWidget`
-  (permanent bottom-right toggle + popup); its credit text renders as
-  `'© ' + source`. `latlong2` is NOT re-exported — import it directly.
-- **TileLayer's UA assert:** `TileLayer` injects `'flutter_map
-  (userAgentPackageName)'` when headers lack a UA — always pass ours.
-- **A11y on map pins:** markers need 48×48 (icon 40 inside) + a Semantics
-  label; the bare Icon fails both tap-target and labelled-target guidelines.
-- **riverpod `_debugAssertCanDependOn` BUILDS the target of a
-  `ref.invalidate` in debug/test runs** (element.dart:287 →
-  readProviderElement). Invalidating a provider nobody watches is a no-op in
-  production but constructs the whole chain in tests — the S6 restore tests
-  pin the chain with `container.listen(...)` (see
-  restore_controller_test.dart's `pinRestoreController`) or teardown
-  double-completes a provider's future ("Future already completed",
-  flaky-looking but deterministic per wiring).
-- **Restore page taps:** the warning copy grew; tests must
-  `ensureVisible` + `pumpAndSettle` before tapping 'Restore' or the hit test
-  misses silently (the M03/N11 page tests show the pattern).
-- **`restore_backup.dart` ratchet:** still recorded at 553 lines — the §3.4
-  readers and the covers builder were extracted to
-  `backup_extras_reader.dart` / `restore_covers_builder.dart` to stay there.
-- **Settings fakes:** `networkMapTilesConsent` broke the same 6 explicit
-  `SettingsRepository` fakes as S2 (all fixed); every other fake has
-  `noSuchMethod` and needs nothing.
+| # | Sev | Where | What to do |
+|---|-----|-------|------------|
+| M3 | Medium | `lib/features/network/presentation/widgets/osm_attribution.dart` | `RichAttributionWidget` default `popupInitialDisplayDuration: Duration.zero` ⇒ only the "i" icon shows until tapped. OSM policy: "do not hide attribution … behind toggles". Make the credit visible on first frame. **Read §3 first.** |
+| M4 | Medium | `lib/core/di/src/network_providers.dart:116-121`, `osm_tile_provider.dart` | `osmTileLayerProvider` hands out a `TileLayer` whose State `dispose()` closes the provider's internally-created `RetryClient`; a re-mount after autoDispose timing can hit "Client is already closed". Hand out config (template + headers) or an externally owned `http.Client` (`NetworkTileProvider(httpClient:)` is NOT closed by dispose) + `ref.onDispose(close)`; build `TileLayer` per mount in presentation. Extend `layer_boundaries_test.dart:79-101` regex to forbid `flutter_map` under `core/di` and `/application/`. |
+| M7 | Medium | `lib/features/publish/domain/publish_contact_links.dart:84-99` | Under `approximate`, non-coordinate GPS text is published verbatim as a search link (D7 says one switch, one meaning). Return null for unparseable text when `approximate`; keep fallback only for `exact`. Test at `publish_contact_links_test.dart:129-137` currently blesses the old behaviour. |
+| M8 | Medium | `lib/features/network/presentation/pages/network_map_page.dart:157-174` | `geo:` URI: `Uri.encodeComponent` keeps `()` (breaks `q=lat,lng(label)`), `double.toString()` may emit `1e-5`. Extract a pure `GeoUri` helper (`toStringAsFixed(6)`, encode `(`/`)`), unit-test it. |
+| M9 | Medium | `lib/features/network/domain/network_archive_codec.dart:34-50`, `restore_summary.dart`, `restore_page.dart:389-390` | No byte/row cap, no dedupe (duplicates make `replaceAll` fail wholesale), dropped rows not counted (§6 says "dropped and counted"; `restore_backup_test.dart:680` "count reported" asserts no count). Return `(rows, dropped)`, dedupe first-wins by siteUrl/fingerprint/id, add `networkRowsDropped` + an `applied` flag to the summary and one sentence on the page. |
+| M10 | Medium | `add_member_page.dart:96`, `network_page.dart:135` | Only "Done" pops `true`; system back leaves `NetworkController` stale after a successful add. Invalidate in the success branch (or `PopScope`). |
+| M12 | Medium | `network_page.dart:101-123`, `network_map_page.dart:112-139`, `add_member_page.dart:55-83` | Business logic in widgets: distance sort per build; viewport math + URL building; page drives the use case with local busy/error state. Move to controllers / pure helpers (`AddMemberController`, `MapViewport.forPoints`). |
+| M13 | Medium | `PRIVACY.md` §4 | Says Refresh downloads "from each saved site"; discovery also fetches sites the user never saved (hubs/members, ≤ 500 rows). Add one clause. |
+| M14 | Low/Med | `network_providers.dart:54-60` | Migration `Left` → reason-less `StateError`, nothing logged; also blocks publish (reads `networkRepositoryProvider`). `appLog` before throwing; document the blast radius. |
+| Lows | — | see review | `StorageFailure('…: $e')` carries `SqliteException` text with bound params (URLs); `count()` loads all rows; "Not now" ⇒ `declined` permanently; `ConfirmMembershipUseCase` has no transition guard; `BackupIdentity` name not control/bidi-filtered; codec `_maxDepth` counts brackets inside strings; haversine `asin(sqrt(h))` NaN at antipodes; `updatedAt` defeats the unchanged-sha skip for `library.json`; `ref.listen` after `await` in `NetworkController.build`; `NetworkWindow` not `freezed`; stale doc headers (`app_database.dart:1`, `network_providers.dart:7-10`, ratchet comment "690 → 631" vs 682). |
 
-## 4. Quick pointers into the S5/S6 additions
+Still open from before the review (merge/release items, not code):
+golden PNG for `network_library_tiles` (Linux `update-goldens` job),
+fastlane changelog, release sentinel, rebase onto current `main` and re-run
+all gates.
+
+## 3. Gotchas from the fix session (don't rediscover)
+
+- **M3 attempt that failed:** setting
+  `RichAttributionWidget(popupInitialDisplayDuration: Duration(seconds: 8))`
+  makes the credit visible on first frame, BUT flutter_map implements it
+  with a bare `Future.delayed` in `initState` (widget.dart:143-149), so
+  (a) every map-page test that does not pump past the duration fails with a
+  pending timer / `findsNothing` expectation, and (b) the open popup's close
+  button fails the 48×48 tap-target guideline in the `meetsGuideline` test
+  ("map with pins"). Options: wrap the popup in our own widget with a
+  cancellable `Timer` and a ≥48 dp close target; or use
+  `SimpleAttributionWidget` inside a `FittedBox`/`ConstrainedBox` (always
+  visible, no timer — check narrow-screen overflow that the handoff §3
+  mentioned); either way update `network_map_page_test.dart:117-132` (it
+  currently TAPS `Icons.info_outlined` to reveal the text) and re-run the
+  a11y trio.
+- **Pre-commit hook regenerates `.g.dart`:** a change to any `@riverpod`
+  file body changes its hash; the hook refuses the commit and leaves the
+  regenerated file in the tree — `git add` it and commit again.
+- **Fake repos must enforce UNIQUE:** the refresh use-case `_FakeRepo` now
+  rejects duplicate fingerprints and skips duplicate siteUrls like Drift;
+  keep that when adding tests, or H1-class bugs become invisible again.
+- **`BookmarkUrl` has two methods now:** `sanitize` (allow-list, verbatim —
+  fetcher, redirect hops) vs `normalize` (canonical site root — everything
+  stored/compared). Do not pass `normalize` to a fetcher.
+- **Testing abort passthrough:** a `MockClient` that "never answers" must
+  honour `Abortable` (complete with `RequestAbortedException` when the
+  trigger fires) or the test hangs for 30 s — see the COMPOSITION group in
+  `test/core/network/bounded_http_fetcher_test.dart`.
+- All earlier gotchas (flutter_map API, riverpod `_debugAssertCanDependOn`,
+  restore-page `ensureVisible`, ratchet) still apply — see git history of
+  this file (`git show f4888e4:libNetwork-handoff.md` §3).
+
+## 4. Quick pointers
 
 | What | Where |
 |------|-------|
-| Tile config (one const + UA + cache) | `lib/features/network/infrastructure/osm_tile_provider.dart` (`OsmTiles.urlTemplate`, `buildOsmTileLayer`) |
-| DI hand-out (presentation never imports infrastructure) | `osmTileLayerProvider` in `lib/core/di/src/network_providers.dart` |
-| Map tab | `…/presentation/pages/network_map_page.dart` (`NetworkMapGate` = consent gate, `NetworkMapPage`, `initialOptions` viewport math, pin sheet) |
-| Consent dialog / attribution | `…/widgets/tiles_consent_dialog.dart`, `…/widgets/osm_attribution.dart` |
-| Consent setting | `AppSettings.networkMapTilesConsent` (key `network_map_tiles_consent`) + Settings › Appearance switch |
-| identity.json codec | `lib/features/backup/domain/backup_identity.dart` (`BackupIdentity`, LibraryId-validated) |
-| network.json envelope | `lib/features/network/domain/network_archive_codec.dart` (schemaVersion 1; rows re-validated, bad rows dropped) |
-| §3.4 restore readers | `lib/features/backup/infrastructure/backup_extras_reader.dart` |
-| Manifest flags | `hasIdentity` / `hasNetwork` on `BackupManifest` (default false) |
-| Post-switch adoption | `RestoreController._applyIdentityAndNetwork` (adopt via namespace port, then replaceAll; Lefts fold into the summary) |
-| Inspection for page copy | `ArchiveInspection` (manifest + parsed identity) |
-| Backup tests | `test/features/backup/{backup_identity,create_backup_use_case}_test.dart` + groups in `restore_backup_test.dart` / `restore_controller_test.dart` / `restore_page_test.dart` |
-| Map tests | `test/features/network/presentation/network_map_page_test.dart` (blank in-memory tile provider — no HTTP) |
+| URL allow-list + canonical form | `lib/features/network/domain/value_objects/bookmark_url.dart` (`sanitize`, `normalize`) |
+| Refresh algorithm + conflict rules | `lib/features/network/domain/usecases/refresh_network_use_case.dart` (`_applyDescriptor`, `_flagConflict`, `_ensureUniqueFingerprints`) |
+| Refresh report | `lib/features/network/domain/refresh_report.dart` |
+| Discovery plan (role merge) | `lib/features/network/domain/network_discovery_plan.dart` (`_discover`) |
+| Abort passthrough | `lib/core/network/timeout_http_client.dart` (`send`, first lines) |
+| Fetch headers / UA | `lib/core/network/bounded_http_fetcher.dart` (`headers`, `defaultHeaders`) |
+| Card byte cap | `lib/features/network/domain/value_objects/library_card_payload.dart` (`_fitName`) |
+| Publish refusal on descriptor Left | `lib/features/publish/application/publish_controller.dart` (after `BuildOwnDescriptor.build`) |
+| Tests added this session | `test/features/network/domain/{bookmark_url,refresh_network_use_case,network_discovery_plan,add_member_use_case,library_card_payload}_test.dart`, `test/features/network/infrastructure/drift_network_repository_test.dart`, `test/core/network/bounded_http_fetcher_test.dart`, `test/features/publish/publish_controller_test.dart` |
+
+## 5. Final gate run of this session
+
+At b47df82, working tree clean (2026-10-18):
+
+- `dart run build_runner build --delete-conflicting-outputs` → no diff
+- `flutter analyze lib test integration_test` → No issues found
+- `dart format --set-exit-if-changed lib test integration_test` → 0 changed
+- `fvm flutter test --exclude-tags golden` → **2269 tests, all passed**
+  (2233 at the review tip + 36 added by the fixes)
