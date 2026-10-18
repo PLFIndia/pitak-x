@@ -619,6 +619,7 @@ void main() {
       final summary = container.read(restoreControllerProvider).value;
       expect(summary, isNotNull);
       expect(summary!.identityAdopted, isTrue);
+      expect(summary.networkApplied, isTrue);
       expect(summary.networkRestored, 1);
 
       // The identity went through the namespace port (N07): the settings
@@ -652,6 +653,7 @@ void main() {
       final summary = container.read(restoreControllerProvider).value!;
       expect(summary.identityAdopted, isFalse);
       expect(summary.identityInvalid, isFalse); // valid entry, failed write
+      expect(summary.networkApplied, isTrue);
       expect(summary.networkRestored, 1); // the other extra still applied
       expect(summary.booksRestored, 0); // catalogue restore succeeded
       await settleCascade(container);
@@ -681,6 +683,7 @@ void main() {
           settingsControllerProvider.future,
         );
         expect(settings.libraryId, ''); // _LogoSettingsRepo's initial default
+        expect(summary.networkApplied, isTrue);
         expect(summary.networkRestored, 1);
         await settleCascade(container);
       },
@@ -700,6 +703,7 @@ void main() {
             .restore(archiveBytes: identityNetworkArchive());
 
         final summary = container.read(restoreControllerProvider).value!;
+        expect(summary.networkApplied, isFalse);
         expect(summary.networkRestored, 0);
         expect(summary.restoredNetwork, hasLength(1)); // parsed fine…
         expect(summary.networkInvalid, isFalse); // …just not writable

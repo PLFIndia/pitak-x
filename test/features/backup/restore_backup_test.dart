@@ -677,7 +677,7 @@ void main() {
     });
 
     test(
-      'one corrupt network row ⇒ the others restore, count reported',
+      'one corrupt network row ⇒ the others restore, drop counted (§6)',
       () async {
         final zip = archive({
           'manifest.json': utf8.encode(manifest(hasNetwork: true)),
@@ -694,9 +694,55 @@ void main() {
         )).getOrElse((f) => fail('unexpected: $f'));
         expect(summary.restoredNetwork, hasLength(1));
         expect(summary.restoredNetwork!.single.name, 'Good');
+        expect(summary.networkRowsDropped, 1);
         expect(summary.networkInvalid, isFalse);
       },
     );
+
+    test('duplicate network rows collapse first-wins (M9) — a duplicated '
+        'siteUrl used to make the whole replaceAll fail on UNIQUE', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'network.json': networkJson([
+          '{"siteUrl": "https://dup.github.io/x/", "name": "First", "id": 1}',
+          '{"siteUrl": "https://dup.github.io/x/", "name": "Second", "id": 2}',
+          '{"siteUrl": "https://fine.github.io/y/", "name": "Fine", "id": 3}',
+        ]),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredNetwork!.map((row) => row.name), [
+        'First',
+        'Fine',
+      ]);
+      expect(summary.networkRowsDropped, 1);
+      expect(summary.networkInvalid, isFalse);
+    });
+
+    test('an oversized network.json reads as unusable (M9 byte cap)', () async {
+      // A valid row padded past the 4 MiB entry budget with a huge name.
+      // The zip extractor's per-entry cap (200 MiB, sized for covers) would
+      // happily inflate this; the codec budget refuses it BEFORE the JSON
+      // parser sees it — fail closed like a corrupt envelope.
+      final padded =
+          '{"siteUrl": "https://big.github.io/x/", "name": "${'x' * (4 * 1024 * 1024)}"}';
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'network.json': networkJson([padded]),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredNetwork, isNull);
+      expect(summary.networkInvalid, isTrue);
+    });
 
     test('a flagged-but-unreadable network.json ⇒ networkInvalid', () async {
       final zip = archive({

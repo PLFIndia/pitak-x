@@ -34,9 +34,10 @@ final class BackupExtras {
   /// The validated `identity.json` content, when present and valid.
   final BackupIdentity? identity;
 
-  /// The validated `network.json` rows (invalid rows dropped), when the
-  /// envelope parsed.
-  final List<NetworkLibrary>? network;
+  /// The validated `network.json` rows plus how many entries were dropped
+  /// (invalid, duplicate, or over the codec's row cap), when the envelope
+  /// parsed. Null = absent or unreadable.
+  final ({List<NetworkLibrary> rows, int dropped})? network;
 }
 
 /// Parses both §3.4 entries out of the extracted [files], gated on the
@@ -63,15 +64,18 @@ BackupIdentity? _readIdentity(
   return BackupIdentity.fromJson(_utf8(bytes));
 }
 
-/// The validated rows, or null when the envelope is absent, corrupt, or
-/// declares a too-new schema (fail closed: nothing is restored from it).
-List<NetworkLibrary>? _readNetwork(
+/// The validated rows (+ dropped count), or null when the envelope is
+/// absent, oversized, corrupt, or declares a too-new schema (fail closed:
+/// nothing is restored from it). The byte cap runs BEFORE UTF-8 decoding so
+/// a padded entry cannot even reach the JSON parser (review M9).
+({List<NetworkLibrary> rows, int dropped})? _readNetwork(
   Map<String, Uint8List> files,
   BackupManifest manifest,
 ) {
   if (!manifest.hasNetwork) return null;
   final bytes = files[networkEntryName];
   if (bytes == null) return null;
+  if (bytes.length > NetworkArchiveCodec.maxBytes) return null;
   return NetworkArchiveCodec.decode(_utf8(bytes));
 }
 

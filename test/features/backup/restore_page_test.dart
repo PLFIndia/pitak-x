@@ -55,7 +55,23 @@ class _AdoptedRestoreController extends RestoreController {
     restoredIdentity: (id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'M'),
     restoredNetwork: [],
     identityAdopted: true,
+    networkApplied: true,
     networkRestored: 2,
+  );
+}
+
+/// M9 fixture: the restore applied, but the archive dropped unreadable rows.
+class _DroppedRowsRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    restoredNetwork: [],
+    networkApplied: true,
+    networkRestored: 1,
+    networkRowsDropped: 2,
   );
 }
 
@@ -533,6 +549,31 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Saved libraries restored: 2'), findsOneWidget);
+    });
+
+    testWidgets('dropped network rows are named in one sentence (M9)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _DroppedRowsRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Saved libraries restored: 1'), findsOneWidget);
+      expect(
+        find.text(
+          '2 saved-libraries row(s) could not be read from the backup and '
+          'were skipped.',
+        ),
+        findsOneWidget,
+      );
     });
 
     testWidgets('failure sentences: identity not adopted, list unreadable', (

@@ -20,7 +20,9 @@ class RestoreSummary {
     this.identityInvalid = false,
     this.networkInvalid = false,
     this.identityAdopted = false,
+    this.networkApplied = false,
     this.networkRestored = 0,
+    this.networkRowsDropped = 0,
   });
 
   /// Number of library books written.
@@ -60,7 +62,9 @@ class RestoreSummary {
   /// `network.json` — null when the archive carried no usable list (absent,
   /// or unreadable: see [networkInvalid]). An empty LIST is meaningful: the
   /// backup legitimately had no saved libraries. Applied by the restore
-  /// controller via `NetworkRepository.replaceAll` (see [networkRestored]).
+  /// controller via `NetworkRepository.replaceAll` (see [networkApplied] and
+  /// [networkRestored]). Invalid, duplicate, and over-cap entries never reach
+  /// this list — they are counted in [networkRowsDropped] (§6).
   final List<NetworkLibrary>? restoredNetwork;
 
   /// True when the archive declared an identity (`hasIdentity`) but the
@@ -78,15 +82,29 @@ class RestoreSummary {
   /// §5.10).
   final bool identityAdopted;
 
+  /// True when the `replaceAll` of [restoredNetwork] actually succeeded.
+  /// Set together with [identityAdopted] by the restore controller. This is
+  /// what the UI branches on — inferring it from [networkRestored] alone
+  /// cannot tell "applied an honestly empty list" from "the write failed"
+  /// (review M9).
+  final bool networkApplied;
+
   /// How many [restoredNetwork] rows were actually written (0 when the
-  /// replaceAll failed). Set together with [identityAdopted].
+  /// replaceAll failed).
   final int networkRestored;
+
+  /// How many entries the archive's `network.json` DROPPED at decode time —
+  /// invalid rows, first-wins duplicates (siteUrl / fingerprint / id), and
+  /// rows beyond the codec's cap (§6: "dropped and counted"; review M9). The
+  /// page says so in one sentence; these rows never reach [restoredNetwork].
+  final int networkRowsDropped;
 
   /// Returns a copy with the post-restore adoption outcomes filled in (the
   /// restorer parses but never applies identity/network — that is the
   /// controller's job, after the catalogue switch).
   RestoreSummary withAdoptionResults({
     required bool identityAdopted,
+    required bool networkApplied,
     required int networkRestored,
   }) {
     return RestoreSummary(
@@ -102,7 +120,9 @@ class RestoreSummary {
       identityInvalid: identityInvalid,
       networkInvalid: networkInvalid,
       identityAdopted: identityAdopted,
+      networkApplied: networkApplied,
       networkRestored: networkRestored,
+      networkRowsDropped: networkRowsDropped,
     );
   }
 

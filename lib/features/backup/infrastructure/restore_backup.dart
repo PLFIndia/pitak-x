@@ -212,11 +212,10 @@ final class RestoreBackup {
     CatalogueReplacementScope scope,
   ) async {
     // --- §3.4 extras: parse (never apply) identity + network list up front.
-    // Pure reads of already-extracted bytes; an invalid entry is reported on
-    // the summary and never aborts the catalogue restore (additive only).
+    // An invalid entry is reported on the summary, never aborts (additive).
     final extras = readBackupExtras(files, manifest);
     final identity = extras.identity;
-    final networkRows = extras.network;
+    final network = extras.network;
 
     // --- Phase 3: stage archive files to disk (sqlite3 + FFI need paths) ---
     final Directory work;
@@ -357,9 +356,10 @@ final class RestoreBackup {
           restoredIdentity: identity == null
               ? null
               : (id: identity.id, name: identity.name),
-          restoredNetwork: networkRows,
+          restoredNetwork: network?.rows,
+          networkRowsDropped: network?.dropped ?? 0,
           identityInvalid: manifest.hasIdentity && identity == null,
-          networkInvalid: manifest.hasNetwork && networkRows == null,
+          networkInvalid: manifest.hasNetwork && network == null,
         ),
       );
     } on _ReplacementRefused catch (e) {

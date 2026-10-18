@@ -386,10 +386,18 @@ class _RestoreOutcome extends StatelessWidget {
               )
             else if (summary.restoredNetwork != null)
               Text(
-                summary.networkRestored > 0 || summary.restoredNetwork!.isEmpty
+                summary.networkApplied
                     ? 'Saved libraries restored: ${summary.networkRestored}'
                     : 'The saved-libraries list could not be written; your '
                           'current list is unchanged.',
+                style: textTheme.bodySmall,
+              ),
+            // §6: dropped rows are counted AND named — a backup that quietly
+            // loses libraries reads exactly like one that kept them.
+            if (summary.networkRowsDropped > 0)
+              Text(
+                '${summary.networkRowsDropped} saved-libraries row(s) could '
+                'not be read from the backup and were skipped.',
                 style: textTheme.bodySmall,
               ),
             if (summary.hasAdjustments) ...[

@@ -178,6 +178,7 @@ class RestoreController extends _$RestoreController {
       }
     }
 
+    var networkApplied = false;
     var networkRestored = 0;
     final rows = summary.restoredNetwork;
     if (rows != null) {
@@ -186,14 +187,18 @@ class RestoreController extends _$RestoreController {
         // read hands out the NEW generation's repository.
         final repo = await ref.read(networkRepositoryProvider.future);
         final replaced = await repo.replaceAll(rows);
-        if (replaced.isRight()) networkRestored = rows.length;
+        if (replaced.isRight()) {
+          networkApplied = true;
+          networkRestored = rows.length;
+        }
       } on Object {
-        networkRestored = 0;
+        networkApplied = false;
       }
     }
 
     return summary.withAdoptionResults(
       identityAdopted: identityAdopted,
+      networkApplied: networkApplied,
       networkRestored: networkRestored,
     );
   }
