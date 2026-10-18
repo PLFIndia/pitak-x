@@ -85,9 +85,11 @@ jobs:
             exit 1
           fi
       - name: Analyze (zero issues)
-        run: flutter analyze lib test
+        # integration_test is included so an API change in lib cannot leave
+        # the on-device smoke test uncompilable unnoticed (libNetwork review H4).
+        run: flutter analyze lib test integration_test
       - name: Format check
-        run: dart format --set-exit-if-changed lib test
+        run: dart format --set-exit-if-changed lib test integration_test
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
       # restore) and the fail-closed restore/vault-mapping tests. Goldens run
       # in their own step below so a renderer mismatch is never mistaken for

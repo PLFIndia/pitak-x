@@ -14,7 +14,8 @@
 /// cleared first; reinstalling alone keeps Android app data:
 ///
 /// ```bash
-/// adb uninstall dev.khoj.pitaka.fdroid   # or: adb shell pm clear dev.khoj.pitaka.fdroid
+/// adb uninstall dev.khoj.pitaka.fdroid
+///   # or: adb shell pm clear dev.khoj.pitaka.fdroid
 /// flutter test integration_test --flavor fdroid -d <device>
 /// ```
 ///
@@ -124,12 +125,15 @@ void main() {
       createBackupUseCaseProvider.future,
     );
     final backupResult = await createUseCase();
-    final backupBytes = backupResult.toNullable();
+    // S6: the use case returns the archive bytes PLUS honest content flags
+    // (identity / network list included or not); only the bytes matter here.
+    final backup = backupResult.toNullable();
     expect(
-      backupBytes,
+      backup,
       isNotNull,
       reason: 'backup creation failed on device: $backupResult',
     );
+    final backupBytes = backup!.bytes;
 
     // --- 6. Restore it (vault-carrying archive needs the passphrase) -------
     final restorer = await container.read(restoreBackupProvider.future);
@@ -138,7 +142,7 @@ void main() {
     final secret = SecretBytes(Uint8List.fromList(utf8.encode(passphrase)));
     try {
       final restoreResult = await restorer.restore(
-        archiveBytes: backupBytes!,
+        archiveBytes: backupBytes,
         passphrase: secret,
       );
       expect(
