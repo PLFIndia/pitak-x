@@ -31,6 +31,69 @@ void main() {
       // Round-trips through parse below.
       expect(LibraryCardPayload.parse(encoded)!.name, 'वाचनालय A&B');
     });
+
+    group('the 512-byte cap holds on the ENCODE side too (H5)', () {
+      // 80 Kannada letters: a VALID NetworkName (80 UTF-16 units) that
+      // percent-encodes to 80 × 9 = 720 bytes — far over the cap before the
+      // URL is even counted. Every other Pitak would refuse the raw card.
+      final longKannada = 'ಗ' * 80;
+
+      test('a long non-Latin name is shortened by whole characters so the '
+          'card still scans', () {
+        final shortened = card(name: longKannada);
+        final encoded = LibraryCardPayload.encode(shortened);
+        expect(
+          utf8.encode(encoded).length,
+          lessThanOrEqualTo(LibraryCardPayload.maxPayloadBytes),
+        );
+        expect(shortened.name, isNotEmpty);
+        expect(longKannada.startsWith(shortened.name), isTrue);
+        // The card the OTHER phone parses is exactly this one.
+        final parsed = LibraryCardPayload.parse(encoded);
+        expect(parsed, isNotNull);
+        expect(parsed!.name, shortened.name);
+        expect(parsed.fingerprint, fp);
+      });
+
+      test('the shortened name is the LONGEST prefix that fits', () {
+        final shortened = card(name: longKannada);
+        final oneMore = longKannada.substring(0, shortened.name.length + 1);
+        final tooLong =
+            '$site#pitak-card=1&fp=$fp&n=${Uri.encodeComponent(oneMore)}';
+        expect(
+          utf8.encode(tooLong).length,
+          greaterThan(LibraryCardPayload.maxPayloadBytes),
+        );
+      });
+
+      test('a surrogate pair is never split', () {
+        // U+1F4DA 📚 is a surrogate pair in UTF-16: 40 of them are a valid
+        // 80-unit NetworkName that encodes to 40 × 12 = 480 bytes.
+        final books = '📚' * 40;
+        final shortened = card(name: books);
+        expect(shortened.name.length.isEven, isTrue);
+        expect(shortened.name.runes.every((r) => r == 0x1F4DA), isTrue);
+        expect(
+          LibraryCardPayload.parse(LibraryCardPayload.encode(shortened)),
+          isNotNull,
+        );
+      });
+
+      test('a name that already fits is left exactly as given', () {
+        final latin = 'A' * 80; // 80 bytes encoded — fits comfortably
+        expect(card(name: latin).name, latin);
+      });
+
+      test('null when not even one character can fit', () {
+        // A site URL so long the fixed part alone exceeds the cap (the URL
+        // allow-list permits up to 2048 chars).
+        final hugeSite = 'https://x.github.io/${'a' * 600}/';
+        expect(
+          LibraryCard.tryCreate(siteUrl: hugeSite, fingerprint: fp, name: 'X'),
+          isNull,
+        );
+      });
+    });
   });
 
   group('parse — round trip', () {
@@ -157,8 +220,9 @@ void main() {
     test('total payload is capped at 512 bytes', () {
       // ASCII-only payloads: byte length == character length. Build one of
       // exactly 513 bytes (refused) and one of 512 (accepted) by padding the
-      // URL path.
-      const core = '#pitak-card=1&fp=$fp&n=A';
+      // URL path. The site URL is written in its canonical form (trailing
+      // '/'), as every real card is — so the re-encoded card is byte-equal.
+      const core = '/#pitak-card=1&fp=$fp&n=A';
       const prefix = 'https://x.github.io/';
       const padding513 = 513 - prefix.length - core.length;
       final raw513 = '$prefix${'p' * padding513}$core';
@@ -167,7 +231,9 @@ void main() {
 
       final raw512 = '$prefix${'p' * (padding513 - 1)}$core';
       expect(utf8.encode(raw512).length, 512);
-      expect(LibraryCardPayload.parse(raw512), isNotNull);
+      final parsed = LibraryCardPayload.parse(raw512);
+      expect(parsed, isNotNull);
+      expect(LibraryCardPayload.encode(parsed!), raw512);
     });
 
     test('a pairing payload parses as NOT a card', () {

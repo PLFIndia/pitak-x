@@ -44,6 +44,17 @@ final class LibraryCard {
   final String name;
 
   /// Builds a card, validating every part; null when any is invalid.
+  ///
+  /// The card must ENCODE within [LibraryCardPayload.maxPayloadBytes] — the
+  /// same cap `parse` enforces on the other phone, or the card would be
+  /// refused as "not a card" everywhere it is scanned (review H5). A valid
+  /// [NetworkName] can be 80 UTF-16 units; in Kannada or Devanagari that is
+  /// 3 bytes per character, 9 bytes once percent-encoded — up to 720 bytes
+  /// before the URL. So the NAME is shortened by whole characters until the
+  /// payload fits: a card is a label (the full name travels in
+  /// `library.json`, which every Refresh reads), and a shorter label beats
+  /// no card. Null only when even one character cannot fit (an absurdly
+  /// long site URL).
   static LibraryCard? tryCreate({
     required String siteUrl,
     required String fingerprint,
@@ -54,11 +65,13 @@ final class LibraryCard {
     if (!LibraryFingerprint.isValid(fingerprint)) return null;
     final normalized = NetworkName.normalizeOrNull(name);
     if (normalized == null) return null;
-    return LibraryCard._(
+    final fitted = LibraryCardPayload._fitName(
       siteUrl: url,
       fingerprint: fingerprint,
       name: normalized,
     );
+    if (fitted == null) return null;
+    return LibraryCard._(siteUrl: url, fingerprint: fingerprint, name: fitted);
   }
 
   @override
@@ -78,12 +91,47 @@ abstract final class LibraryCardPayload {
   /// a hard bound on what parse() examines.
   static const int maxPayloadBytes = 512;
 
-  /// Encodes [card] (already validated) into the QR string.
-  static String encode(LibraryCard card) {
-    final name = Uri.encodeComponent(card.name);
-    return '${card.siteUrl}#$marker=$version'
-        '&fp=${card.fingerprint}&n=$name';
+  /// Encodes [card] (already validated) into the QR string. Always within
+  /// [maxPayloadBytes]: [LibraryCard.tryCreate] guaranteed it.
+  static String encode(LibraryCard card) =>
+      _encodeParts(card.siteUrl, card.fingerprint, card.name);
+
+  static String _encodeParts(String siteUrl, String fingerprint, String name) {
+    final encodedName = Uri.encodeComponent(name);
+    return '$siteUrl#$marker=$version&fp=$fingerprint&n=$encodedName';
   }
+
+  /// The longest prefix of [name] (whole characters — a surrogate pair is
+  /// never split) whose encoded card fits [maxPayloadBytes], re-validated as
+  /// a [NetworkName]; null when not even one character fits.
+  static String? _fitName({
+    required String siteUrl,
+    required String fingerprint,
+    required String name,
+  }) {
+    if (_byteLength(_encodeParts(siteUrl, fingerprint, name)) <=
+        maxPayloadBytes) {
+      return name; // the common case: nothing to shorten
+    }
+    final budget =
+        maxPayloadBytes - _byteLength(_encodeParts(siteUrl, fingerprint, ''));
+    if (budget <= 0) return null;
+    final kept = StringBuffer();
+    var used = 0;
+    for (final rune in name.runes) {
+      final char = String.fromCharCode(rune);
+      final cost = _byteLength(Uri.encodeComponent(char));
+      if (used + cost > budget) break;
+      used += cost;
+      kept.write(char);
+    }
+    // A cut can leave trailing whitespace; `normalizeOrNull` trims and
+    // re-checks the 1-char minimum (a prefix of a valid name has no
+    // forbidden characters, so only emptiness can fail here).
+    return NetworkName.normalizeOrNull(kept.toString());
+  }
+
+  static int _byteLength(String s) => utf8.encode(s).length;
 
   /// Parses a scanned payload into a [LibraryCard], or null when it is not a
   /// valid card (wrong shape, bad URL, bad fingerprint, bad name, over the
