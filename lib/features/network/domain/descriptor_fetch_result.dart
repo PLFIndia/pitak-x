@@ -39,6 +39,11 @@ enum DescriptorRefusal {
 
   /// The descriptor declares a newer schema than this build can read.
   schemaTooNew,
+
+  /// WRITE-side refusal (never produced by a fetch): the descriptor to
+  /// encode would exceed the 64 KiB body cap, so every peer would refuse it
+  /// in full. The publish fails instead of uploading an unreadable file.
+  contentTooLarge,
 }
 
 /// Outcome of one descriptor fetch.

@@ -20,6 +20,15 @@
 /// sorted, so equal input always produces equal BYTES — the git blob sha is
 /// stable and the incremental publish skips an unchanged file.
 ///
+/// When writing ([LibraryDescriptorCodec.encodeChecked]): a descriptor that
+/// every reader would refuse — over the 64 KiB body cap, or over the
+/// `members` (200) / `memberOf` (20) list caps that decode truncates at — is
+/// REFUSED instead of written. A hub that published such a file would
+/// silently detach the excess members (decode truncates) or disappear from
+/// the network entirely (decode rejects an oversized body in full); failing
+/// the publish makes the user trim the list deliberately (review L1, fail
+/// closed at publish time).
+///
 /// Defence in depth: [LibraryDescriptorCodec.maxBodyBytes] (64 KiB) is
 /// enforced by the bounded
 /// fetcher at transport time AND re-checked here, because decode is also
@@ -225,12 +234,21 @@ abstract final class LibraryDescriptorCodec {
     return out;
   }
 
-  /// Serialises [descriptor] to UTF-8 JSON with the stable §3.1 key order.
+  /// Serialises [descriptor] to UTF-8 JSON with the stable §3.1 key order —
+  /// or refuses when every reader would refuse the result (see the library
+  /// doc): lists over the decode caps ⇒ [DescriptorRefusal.invalid]; a body
+  /// over [maxBodyBytes] ⇒ [DescriptorRefusal.contentTooLarge]. Never throws.
   ///
   /// Privacy fail-closed: the `location` block is written only when BOTH the
   /// coordinates and their declared precision are present — coordinates
   /// without a precision label would let readers assume `exact`.
-  static List<int> encode(LibraryDescriptor descriptor) {
+  static Either<DescriptorRefusal, List<int>> encodeChecked(
+    LibraryDescriptor descriptor,
+  ) {
+    if (descriptor.members.length > maxMembers ||
+        descriptor.memberOf.length > maxMemberOf) {
+      return const Left(DescriptorRefusal.invalid);
+    }
     final members = [...descriptor.members]
       ..sort((a, b) => a.siteUrl.compareTo(b.siteUrl));
     final memberOf = [...descriptor.memberOf]..sort();
@@ -256,6 +274,10 @@ abstract final class LibraryDescriptorCodec {
       ],
       'memberOf': memberOf,
     };
-    return utf8.encode(jsonEncode(map));
+    final bytes = utf8.encode(jsonEncode(map));
+    if (bytes.length > maxBodyBytes) {
+      return const Left(DescriptorRefusal.contentTooLarge);
+    }
+    return Right(bytes);
   }
 }

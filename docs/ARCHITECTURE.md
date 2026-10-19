@@ -240,7 +240,8 @@ Parser: `LibraryDescriptorCodec` (network domain). Every rule has a test.
 - Unknown keys ignored. Body cap 64 KiB. Fetch deadline 15 s.
 - When **writing**: keys in the order shown, `members` sorted by `siteUrl`,
   `memberOf` sorted — so the git blob sha is stable and an unchanged file is
-  skipped on publish.
+  skipped on publish. Encoding **refuses** a descriptor over 64 KiB or over
+  the list caps (the publish fails; nothing is uploaded or deleted).
 
 ### 5.2 Fingerprint (the published identity)
 

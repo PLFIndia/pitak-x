@@ -176,7 +176,20 @@ class PublishController extends _$PublishController {
       final effective = live != null && live.samePublishedContentAs(descriptor)
           ? descriptor.withUpdatedAt(live.updatedAt)
           : descriptor;
-      libraryJson = LibraryDescriptorCodec.encode(effective);
+      // Fail closed (review L1): a descriptor over the wire caps would be
+      // REFUSED IN FULL by every peer that reads it — the whole library
+      // would silently disappear from the network behind a "Published!".
+      // Refuse the publish instead; nothing is uploaded, nothing deleted.
+      final encoded = LibraryDescriptorCodec.encodeChecked(
+        effective,
+      ).toNullable();
+      if (encoded == null) {
+        return const PublishFailure(
+          'Your published member list is too large. Remove some members in '
+          'the Library network list, then publish again.',
+        );
+      }
+      libraryJson = encoded;
     }
 
     final useCase = PublishLibraryUseCase(

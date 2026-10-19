@@ -6,7 +6,7 @@
 /// D3), name, site URL, an opted-in location, and its hub/member relations.
 /// Two roles read it:
 ///  - OUR site WRITES it at publish time (`BuildOwnDescriptor` +
-///    `LibraryDescriptorCodec.encode`);
+///    `LibraryDescriptorCodec.encodeChecked`);
 ///  - every device READS the descriptors of the libraries it saved
 ///    (`RefreshNetworkUseCase`, via the bounded descriptor fetcher).
 ///

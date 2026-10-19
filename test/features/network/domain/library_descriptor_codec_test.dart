@@ -381,9 +381,17 @@ void main() {
       memberOf: memberOf,
     );
 
+    /// The checked encoder unwrapped: every existing test below encodes a
+    /// VALID descriptor, so a refusal is a test bug (loud, not null).
+    List<int> encode(LibraryDescriptor d) =>
+        LibraryDescriptorCodec.encodeChecked(d).toNullable()!;
+
+    MemberEntry memberAt(int i) =>
+        MemberEntry(fingerprint: fp2, siteUrl: 'https://m$i.github.io/');
+
     test('keys come out in the exact §3.1 order', () {
       final json = utf8.decode(
-        LibraryDescriptorCodec.encode(
+        encode(
           descriptor(
             location: GeoPoint.tryCreate(12.99, 77.76),
             precision: LocationPrecision.approximate,
@@ -416,7 +424,7 @@ void main() {
     });
 
     test('members are sorted by siteUrl and memberOf sorted', () {
-      final bytes = LibraryDescriptorCodec.encode(
+      final bytes = encode(
         descriptor(
           members: const [
             MemberEntry(fingerprint: fp2, siteUrl: 'https://z.github.io/'),
@@ -440,7 +448,7 @@ void main() {
     });
 
     test('equal input produces equal BYTES regardless of input order', () {
-      final a = LibraryDescriptorCodec.encode(
+      final a = encode(
         descriptor(
           members: const [
             MemberEntry(fingerprint: fp2, siteUrl: 'https://a.github.io/'),
@@ -448,7 +456,7 @@ void main() {
           ],
         ),
       );
-      final b = LibraryDescriptorCodec.encode(
+      final b = encode(
         descriptor(
           members: const [
             MemberEntry(fingerprint: fp2, siteUrl: 'https://b.github.io/'),
@@ -465,9 +473,7 @@ void main() {
         // Privacy fail-closed: coordinates with no precision label could be
         // read as exact, so the whole block is dropped instead.
         final json = utf8.decode(
-          LibraryDescriptorCodec.encode(
-            descriptor(location: GeoPoint.tryCreate(12.9876, 77.5946)),
-          ),
+          encode(descriptor(location: GeoPoint.tryCreate(12.9876, 77.5946))),
         );
         expect(json, isNot(contains('location')));
         expect(json, isNot(contains('12.9876')));
@@ -476,7 +482,7 @@ void main() {
 
     test('a member without a name omits the key entirely', () {
       final json = utf8.decode(
-        LibraryDescriptorCodec.encode(
+        encode(
           descriptor(
             members: const [
               MemberEntry(fingerprint: fp2, siteUrl: 'https://a.github.io/'),
@@ -507,8 +513,7 @@ void main() {
         memberOf: const ['https://hub.github.io/pitak/'],
       );
       final decoded = decodeOk(
-        jsonDecode(utf8.decode(LibraryDescriptorCodec.encode(original)))
-            as Map<String, dynamic>,
+        jsonDecode(utf8.decode(encode(original))) as Map<String, dynamic>,
       );
       expect(decoded.fingerprint, original.fingerprint);
       expect(decoded.name, original.name);
@@ -519,6 +524,74 @@ void main() {
       expect(decoded.members.single.siteUrl, 'https://b.github.io/x/');
       expect(decoded.members.single.name, 'B Library');
       expect(decoded.memberOf, original.memberOf);
+    });
+
+    group('encodeChecked refuses what every reader would refuse (L1)', () {
+      DescriptorRefusal refusalOf(LibraryDescriptor d) {
+        final result = LibraryDescriptorCodec.encodeChecked(d);
+        expect(result.isLeft(), isTrue, reason: 'expected a refusal');
+        return result.swap().toNullable()!;
+      }
+
+      test('201 members ⇒ invalid (decode truncates at 200 — publishing '
+          'would silently detach the excess)', () {
+        expect(
+          refusalOf(
+            descriptor(members: [for (var i = 0; i < 201; i++) memberAt(i)]),
+          ),
+          DescriptorRefusal.invalid,
+        );
+      });
+
+      test('200 members exactly still encode (the cap itself is legal)', () {
+        final bytes = encode(
+          descriptor(members: [for (var i = 0; i < 200; i++) memberAt(i)]),
+        );
+        expect(
+          LibraryDescriptorCodec.decode(bytes).toNullable()!.members,
+          hasLength(200),
+        );
+      });
+
+      test('21 memberOf ⇒ invalid (decode truncates at 20)', () {
+        expect(
+          refusalOf(
+            descriptor(
+              memberOf: [for (var i = 0; i < 21; i++) 'https://h$i.github.io/'],
+            ),
+          ),
+          DescriptorRefusal.invalid,
+        );
+      });
+
+      test('within the list caps but over 64 KiB ⇒ contentTooLarge', () {
+        // 200 members with long (but name-rule-legal) names: counts pass,
+        // the byte cap trips — the distinction the publish message needs.
+        final bigName = 'Library ${'क' * 70}'; // Indic chars, ≤ 80 runes
+        expect(
+          refusalOf(
+            descriptor(
+              members: [
+                for (var i = 0; i < 200; i++)
+                  MemberEntry(
+                    fingerprint: fp2,
+                    siteUrl: 'https://m$i.github.io/',
+                    name: '$bigName $i',
+                  ),
+              ],
+            ),
+          ),
+          DescriptorRefusal.contentTooLarge,
+        );
+      });
+
+      test('a normal descriptor still round-trips byte-identically through '
+          'encodeChecked', () {
+        final d = descriptor(members: [memberAt(1)]);
+        expect(encode(d), encode(d)); // stable bytes
+        final decoded = LibraryDescriptorCodec.decode(encode(d)).toNullable()!;
+        expect(decoded.members.single.siteUrl, 'https://m1.github.io/');
+      });
     });
   });
 }

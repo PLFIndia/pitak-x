@@ -444,6 +444,43 @@ void main() {
     ]);
     expect(json['memberOf'], ['https://hub.github.io/h/']);
   });
+
+  testWidgets(
+    'SECURITY (L1): a member list over the wire cap REFUSES the publish — '
+    'nothing uploaded, nothing deleted',
+    (tester) async {
+      // 201 members would encode a library.json every peer refuses in full
+      // (decode truncates at 200 / rejects over 64 KiB) — the library would
+      // silently vanish from the network behind a "Published!".
+      final h = _Harness();
+      h.network.rows = [
+        for (var i = 0; i < 201; i++)
+          NetworkLibrary(
+            id: i + 1,
+            siteUrl: 'https://m$i.github.io/',
+            // Valid but DISTINCT 64-hex fingerprints (a real hub's members
+            // never share one — and the fake table would not either).
+            fingerprint: '${i.toRadixString(16).padLeft(8, '0')}${'f' * 56}',
+            source: NetworkSource.card,
+            isMember: true,
+          ),
+      ];
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect(
+        (result as PublishFailure).reason,
+        'Your published member list is too large. Remove some members in '
+        'the Library network list, then publish again.',
+      );
+      expect(h.api.commits, isEmpty, reason: 'no commit — nothing uploaded');
+      expect(h.manifest.saves, 0);
+    },
+  );
 }
 
 /// The bytes one committed file carried (the harness records every commit's
