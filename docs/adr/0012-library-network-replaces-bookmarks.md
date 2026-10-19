@@ -8,7 +8,7 @@
 The Bookmarks feature (`lib/features/bookmarks/`) is a flat list of
 `(label, url)` pairs in `shared_preferences`: a user saves another library's
 published Pages site and can open it. The Library network feature
-(`libNetwork.md`) needs to store almost the same rows — a saved library's site
+(`docs/ARCHITECTURE.md §5`) needs to store almost the same rows — a saved library's site
 URL and name — plus network state: a published identity fingerprint, an
 opted-in map location, membership relations (hub ⇄ member, confirmed via an
 in-person card scan), and per-row fetch status.

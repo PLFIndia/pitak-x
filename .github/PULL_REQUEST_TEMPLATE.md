@@ -9,7 +9,7 @@ a security-relevant change needs the `sec:` prefix and real reasoning here.
 
 ## Why
 
-<!-- The problem or promise this protects (see architecture.md §1.2). -->
+<!-- The problem or promise this protects (see docs/ARCHITECTURE.md §1.1). -->
 
 ## Security impact
 

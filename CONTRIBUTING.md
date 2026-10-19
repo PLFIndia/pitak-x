@@ -19,8 +19,8 @@ A Flutter plugin's native Android code links into **every** flavor. Before
 adding any plugin, check its `android/build.gradle` for Google dependencies
 (`com.google.android.gms`, `com.google.android.play`, `firebase`, `mlkit`).
 If present, do not add it — implement the feature as flavor-split Kotlin
-with a `playImplementation` dependency. Details: `README.md` › "Flavors:
-what may go where". The `fdroid-purity` CI job enforces this automatically.
+with a `playImplementation` dependency. Details: `docs/RELEASING.md` §2. The `fdroid-purity` CI job enforces this
+automatically.
 
 ## Quality gates (run before pushing)
 
