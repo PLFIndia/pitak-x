@@ -38,7 +38,11 @@ abstract final class MapViewport {
       initialCenter: points.first,
       initialCameraFit: CameraFit.bounds(
         bounds: LatLngBounds(LatLng(south, west), LatLng(north, east)),
-        padding: const EdgeInsets.all(48),
+        // Top 120: a pin floats up to 96 dp of LABEL above its coordinate
+        // (pin_label marker) plus the pin's own 48 — the fit must leave room
+        // or edge pins open with their label clipped off-screen. Sides 80 ≥
+        // half the 150-wide label; bottom needs only the pin tip margin.
+        padding: const EdgeInsets.fromLTRB(80, 120, 80, 48),
         // Pins are city-scale; never zoom closer than a street map on open.
         maxZoom: 15,
       ),

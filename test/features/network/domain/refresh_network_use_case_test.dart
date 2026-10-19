@@ -507,6 +507,92 @@ void main() {
       expect(report.conflicts, 0);
     });
 
+    // "Confirmed by member" (design 2026-10-18): the hub's members entry is
+    // the hub's CLAIM; the member's own memberOf link-back is the CONSENT.
+    test(
+      'a hub-listed member whose own memberOf links back is confirmed',
+      () async {
+        repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+        fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+          descriptor(
+            seedUrl,
+            members: [const MemberEntry(fingerprint: fpB, siteUrl: m1Url)],
+          ),
+        );
+        fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+          descriptor(m1Url, fingerprint: fpB, memberOf: [seedUrl]),
+        );
+
+        await useCase()();
+
+        final member = rowAfter(m1Url);
+        expect(member.listedByHubUrl, seedUrl);
+        expect(member.confirmedByMember, isTrue);
+      },
+    );
+
+    test(
+      'a hub-listed member WITHOUT the link-back stays unconfirmed',
+      () async {
+        repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+        fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+          descriptor(
+            seedUrl,
+            members: [const MemberEntry(fingerprint: fpB, siteUrl: m1Url)],
+          ),
+        );
+        fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+          descriptor(m1Url, fingerprint: fpB), // memberOf: empty
+        );
+
+        await useCase()();
+
+        final member = rowAfter(m1Url);
+        expect(member.listedByHubUrl, seedUrl);
+        expect(member.confirmedByMember, isFalse);
+      },
+    );
+
+    test('a seed row never earns the flag from its own memberOf — no '
+        'listing hub is known for it', () async {
+      repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(seedUrl, memberOf: [hubUrl]),
+      );
+      fetcher.results[descriptorUrlOf(hubUrl)] = DescriptorFetched(
+        descriptor(hubUrl, fingerprint: fpOwn),
+      );
+
+      await useCase()();
+
+      expect(rowAfter(seedUrl).confirmedByMember, isFalse);
+    });
+
+    test(
+      'a member that REMOVED the link-back flips back to unconfirmed',
+      () async {
+        repo.rows = [
+          const NetworkLibrary(
+            id: 1,
+            siteUrl: m1Url,
+            fingerprint: fpB,
+            listedByHubUrl: seedUrl,
+            confirmedByMember: true,
+            fetchStatus: FetchStatus.ok,
+          ),
+        ];
+        fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+          descriptor(m1Url, fingerprint: fpB), // memberOf now empty
+        );
+
+        await useCase()();
+
+        final member = rowAfter(m1Url);
+        expect(member.confirmedByMember, isFalse);
+        expect(member.listedByHubUrl, seedUrl); // the listing history stays
+      },
+    );
+
     test('SECURITY: a member whose published fp contradicts the hub entry is '
         'flagged, not merged — and the hub claim is NOT stored', () async {
       repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];

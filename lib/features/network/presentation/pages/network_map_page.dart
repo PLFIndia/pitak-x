@@ -12,6 +12,12 @@
 ///    library that publishes coordinates, this library's own pin when it
 ///    publishes one (the same D7 mapping the list tab uses — NEVER a device
 ///    location), the permanent OSM attribution, and a bottom sheet per pin.
+///
+/// Pin labels (design 2026-10-18, see `map_pin_label.dart`): your own pin
+/// and every HUB pin carry a permanent name label; any other pin shows its
+/// label only while selected — tapping the pin toggles the label, tapping
+/// the label opens the bottom sheet. Hub pins skip the toggle: their label
+/// is already there, so their pin tap opens the sheet directly.
 library;
 
 import 'package:flutter/material.dart';
@@ -25,6 +31,7 @@ import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/geo_uri.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+import 'package:pitaka/features/network/presentation/widgets/map_pin_label.dart';
 import 'package:pitaka/features/network/presentation/widgets/map_viewport.dart';
 import 'package:pitaka/features/network/presentation/widgets/membership_badge.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
@@ -104,13 +111,23 @@ class _NetworkMapGateState extends ConsumerState<NetworkMapGate> {
 }
 
 /// The map of saved libraries. Built only behind [NetworkMapGate].
-class NetworkMapPage extends ConsumerWidget {
+class NetworkMapPage extends ConsumerStatefulWidget {
   /// Creates the map view.
   const NetworkMapPage({super.key});
 
   /// Plain-words distance for the pin sheet ("12 km" / "3.4 km").
   static String formatDistance(double km) =>
       km >= 10 ? '${km.toStringAsFixed(0)} km' : '${km.toStringAsFixed(1)} km';
+
+  @override
+  ConsumerState<NetworkMapPage> createState() => _NetworkMapPageState();
+}
+
+class _NetworkMapPageState extends ConsumerState<NetworkMapPage> {
+  /// The non-hub pin whose label is currently toggled on (siteUrl is the
+  /// row's natural key, D13). At most one: tapping another pin moves the
+  /// label there; tapping the same pin again hides it.
+  String? _selectedSiteUrl;
 
   Future<void> _openSite(BuildContext context, NetworkLibrary row) async {
     final ok = await launchUrl(
@@ -170,8 +187,9 @@ class NetworkMapPage extends ConsumerWidget {
                 if (own != null && location != null) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'About ${formatDistance(own.distanceKm(location))} '
-                    'from your own pin.',
+                    'About '
+                    '${NetworkMapPage.formatDistance(own.distanceKm(location))}'
+                    ' from your own pin.',
                     style: theme.textTheme.bodySmall,
                   ),
                 ],
@@ -200,8 +218,20 @@ class NetworkMapPage extends ConsumerWidget {
     );
   }
 
+  /// Pin tap behaviour (see the library doc): hubs open their sheet
+  /// directly (their label is permanent); other pins toggle their label.
+  void _onPinTap(NetworkLibrary row, {required bool isHub, GeoPoint? own}) {
+    if (isHub) {
+      _showPinSheet(context, row, own);
+      return;
+    }
+    setState(() {
+      _selectedSiteUrl = _selectedSiteUrl == row.siteUrl ? null : row.siteUrl;
+    });
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     // The tile HTTP client is owned by DI (opened on first watch, closed via
     // ref.onDispose); the TileLayer built AROUND it is per-mount, so a
     // layer dispose never closes the shared client out from under a future
@@ -225,6 +255,13 @@ class NetworkMapPage extends ConsumerWidget {
       for (final row in rows)
         if (row.location != null) row,
     ];
+    // Hub-ness is derived from the rows (no "hub" role in code, spec §1);
+    // computed once per build instead of per pin.
+    final hubUrls = hubSiteUrls(rows);
+    // Your own pin's permanent label: your library name, falling back to a
+    // fixed caption when the name is blank (design 2026-10-18).
+    final ownName = settings?.libraryName.trim() ?? '';
+    final ownLabel = ownName.isEmpty ? 'My library' : ownName;
     final scheme = Theme.of(context).colorScheme;
     // The Semantics label is load-bearing, not decorative: flutter_map's
     // gesture layer registers tap/longPress recognizers (and an autofocus
@@ -263,24 +300,37 @@ class NetworkMapPage extends ConsumerWidget {
                   // 40 — the padding around it is still tappable).
                   width: 48,
                   height: 48,
-                  // Bottom-centre anchor: the icon's tip sits ON the
-                  // coordinate.
-                  alignment: Alignment.bottomCenter,
-                  child: Semantics(
-                    button: true,
-                    label:
-                        'Show details for '
-                        '${row.name.isEmpty ? row.siteUrl : row.name}',
-                    child: GestureDetector(
-                      onTap: () => _showPinSheet(context, row, own),
-                      child: Icon(
-                        Icons.location_on,
-                        size: 40,
-                        color: row.fetchStatus == FetchStatus.identityConflict
-                            ? scheme.error
-                            : scheme.primary,
-                      ),
-                    ),
+                  // TOP-centre: flutter_map's alignment is the marker's
+                  // position RELATIVE TO the point (marker.dart) — the box
+                  // sits above the coordinate and the icon's tip lands ON it
+                  // (bottomCenter hangs the box BELOW the point — the pins
+                  // floated ~44 px under their true position before).
+                  alignment: Alignment.topCenter,
+                  child: Builder(
+                    builder: (context) {
+                      final title = row.name.isEmpty ? row.siteUrl : row.name;
+                      final isHub = isHubRow(row, hubUrls);
+                      final isSelected = row.siteUrl == _selectedSiteUrl;
+                      return Semantics(
+                        button: true,
+                        // The label describes what the tap WILL do, which
+                        // differs per pin kind (see _onPinTap).
+                        label: isHub || isSelected
+                            ? 'Show details for $title'
+                            : 'Show label for $title',
+                        child: GestureDetector(
+                          onTap: () => _onPinTap(row, isHub: isHub, own: own),
+                          child: Icon(
+                            Icons.location_on,
+                            size: 40,
+                            color:
+                                row.fetchStatus == FetchStatus.identityConflict
+                                ? scheme.error
+                                : scheme.primary,
+                          ),
+                        ),
+                      );
+                    },
                   ),
                 ),
               if (own != null)
@@ -288,7 +338,7 @@ class NetworkMapPage extends ConsumerWidget {
                   point: LatLng(own.lat, own.lng),
                   width: 48,
                   height: 48,
-                  alignment: Alignment.bottomCenter,
+                  alignment: Alignment.topCenter, // see the row pins above
                   child: Tooltip(
                     message: 'Your library',
                     child: Icon(
@@ -297,6 +347,28 @@ class NetworkMapPage extends ConsumerWidget {
                       color: scheme.tertiary,
                     ),
                   ),
+                ),
+            ],
+          ),
+          // The label layer sits AFTER the pin layer so labels paint above
+          // pins. Hub and own labels are permanent; a non-hub label exists
+          // only while its pin is the selected one. Tapping a tappable
+          // label opens the same sheet a hub pin tap does.
+          MarkerLayer(
+            markers: [
+              for (final row in pinned)
+                if (isHubRow(row, hubUrls) || row.siteUrl == _selectedSiteUrl)
+                  pinLabelMarker(
+                    point: LatLng(row.location!.lat, row.location!.lng),
+                    label: MapPinLabel(
+                      name: row.name.isEmpty ? row.siteUrl : row.name,
+                      onTap: () => _showPinSheet(context, row, own),
+                    ),
+                  ),
+              if (own != null)
+                pinLabelMarker(
+                  point: LatLng(own.lat, own.lng),
+                  label: MapPinLabel(name: ownLabel),
                 ),
             ],
           ),

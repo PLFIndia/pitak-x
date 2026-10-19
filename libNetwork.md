@@ -305,6 +305,8 @@ final class NetworkLibrary {
   final bool memberVerified;           // fetched fingerprint == scanned fingerprint
   final String? listedByHubUrl;        // for discovered rows: which hub listed it
   final MembershipState membership;    // I am a member of THIS hub
+  final bool confirmedByMember;        // hub-listed AND its own memberOf links back
+                                       // (reciprocal consent, design 2026-10-18)
   final FetchStatus fetchStatus;
   final int? fetchedAt;                // epoch ms
   final int createdAt;
@@ -352,10 +354,13 @@ SQL — nothing here needs Room compatibility, and the snapshot must see it):
 | `is_member` INTEGER NOT NULL default 0, `member_verified` INTEGER NOT NULL default 0 | | |
 | `listed_by_hub_url` | TEXT NULL | |
 | `membership` | TEXT NOT NULL default 'none' | |
+| `confirmed_by_member` | INTEGER NOT NULL default 0 | schema v4: member's own `memberOf` links back to the listing hub |
 | `fetch_status` | TEXT NOT NULL default 'never' | |
 | `fetched_at` INTEGER NULL, `created_at` INTEGER NOT NULL, `sort_order` INTEGER NOT NULL | | |
 
 `AppDatabase.schemaVersion` → **3**; `onUpgrade`: `if (from < 3) await m.createTable(networkLibraries);`
+(Later: **4** adds `confirmed_by_member` via `m.addColumn` — design
+2026-10-18, "Confirmed by member" badge.)
 Schema history comment updated. Follow README › "Schema version bumps" (dump
 snapshot `drift_schema_v3.json`, regenerate helpers, add data-matrix row
 "v2: books + wishlist survive; `network_libraries` exists and is empty").
@@ -413,7 +418,11 @@ Inputs: all rows, own fingerprint, `DescriptorFetcher`, clock, cancel token.
 2. **Apply per row**: `ok` ⇒ name, location/precision, fingerprint
    (if row.fingerprint null ⇒ set; if set and differs ⇒ `identityConflict`,
    nothing else updated), `fetchedAt`; `memberVerified = isMember && match`.
-   Refusals map to `FetchStatus` (unreachable | invalid | schemaTooNew).
+   For rows with `listedByHubUrl`: `confirmedByMember` = the row's own
+   `memberOf` contains the listing hub's URL — reciprocal consent (the hub's
+   `members` entry is the hub's CLAIM; the link-back is the member's
+   published agreement; design 2026-10-18). Refusals map to `FetchStatus`
+   (unreachable | invalid | schemaTooNew).
    If the fetched fingerprint equals a *different* row's fingerprint ⇒
    `identityConflict` on this row (D12).
 3. **Expansion** (D10): for each `ok` descriptor D of row R:
@@ -483,8 +492,14 @@ transitive).
   via `url_launcher` (external application mode).
 - Initial viewport = bounds of all pins (or the user's own pin if they have
   one, or a world view). No device location is ever read.
-- Pin tap ⇒ bottom sheet: name, badges (member / verified / confirmed /
-  listed-by-hub / conflict), distance from own pin (if any), "Open site"
+- Pin labels (design 2026-10-18): the own pin and every hub pin carry a
+  permanent name label; any other pin shows its label only while selected —
+  pin tap toggles the label, label tap opens the bottom sheet (hub pins open
+  it directly). "Hub" is derived, not stored: a row that lists me
+  (`membership != none`) or that another row's `listedByHubUrl` names.
+- Pin sheet: name, badges (member / verified / confirmed-by-member /
+  listed-by-hub / my-hub / conflict), distance from own pin (if any),
+  "Open site"
   (url_launcher), "Directions" (`geo:<lat>,<lng>?q=<lat>,<lng>(<name>)`).
 - The list tab is the default landing; it needs no tiles and works offline.
 

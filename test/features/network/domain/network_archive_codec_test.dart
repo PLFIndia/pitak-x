@@ -31,6 +31,8 @@ void main() {
     const NetworkLibrary(
       id: 4,
       siteUrl: 'https://plain.github.io/x/',
+      listedByHubUrl: 'https://hub.github.io/net/',
+      confirmedByMember: true,
       createdAt: 101,
       sortOrder: 1,
     ),
@@ -55,7 +57,21 @@ void main() {
     expect(hub.membership, MembershipState.confirmed);
     expect(hub.fetchStatus, FetchStatus.ok);
     expect(hub.fetchedAt, 123);
-    expect(decoded.rows[1].location, isNull);
+    final plain = decoded.rows[1];
+    expect(plain.location, isNull);
+    expect(plain.listedByHubUrl, 'https://hub.github.io/net/');
+    expect(plain.confirmedByMember, isTrue);
+  });
+
+  test('a pre-v4 row without confirmedByMember decodes as false', () {
+    final decoded = NetworkArchiveCodec.decode(
+      '{"schemaVersion": 1, "libraries": [ '
+      '{"siteUrl": "https://m.github.io/x/", "id": 1, '
+      '"listedByHubUrl": "https://hub.github.io/h/"}'
+      ' ]}',
+    );
+    expect(decoded, isNotNull);
+    expect(decoded!.rows.single.confirmedByMember, isFalse);
   });
 
   test('an empty list encodes and decodes as an empty list', () {

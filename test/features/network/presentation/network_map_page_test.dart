@@ -18,6 +18,7 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/map_pin_label.dart';
 import 'package:pitaka/features/network/presentation/widgets/map_viewport.dart';
 import 'package:pitaka/features/network/presentation/widgets/osm_attribution.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,7 +28,9 @@ import '../../../support/a11y.dart';
 /// Tests for the network map (libNetwork.md §7 S5): the consent gate (the
 /// map never builds without consent), the tile-layer configuration (UA
 /// header — over the config constants and the built widget, never HTTP),
-/// the attribution, the pin sheet, the viewport math, and the a11y trio.
+/// the attribution, the pin sheet, pin labels (permanent for own + hubs,
+/// tap-toggled for the rest), hub detection, the viewport math, and the
+/// a11y trio.
 ///
 /// No test ever touches the network: the map's DI-owned tile HTTP client is
 /// overridden with a MockClient answering a 1×1 transparent PNG (M4 seam).
@@ -181,9 +184,11 @@ void main() {
     });
   });
 
-  group('pins and the pin sheet', () {
-    testWidgets('a pinned row shows a marker; tapping it opens the sheet with '
-        'badges, distance and actions', (tester) async {
+  group('pins, labels and the pin sheet', () {
+    testWidgets('a pinned row shows a marker; tapping toggles its label and '
+        'tapping the label opens the sheet with badges, distance and actions', (
+      tester,
+    ) async {
       repo.rows = [
         NetworkLibrary(
           id: 1,
@@ -214,16 +219,86 @@ void main() {
 
       // Two pins: the row's and the own pin. The pin-less row has none.
       expect(find.byIcon(Icons.location_on), findsNWidgets(2));
+      // A non-hub label is hidden until its pin is tapped.
+      expect(find.text('Member Library'), findsNothing);
 
       await tester.tap(find.byIcon(Icons.location_on).first);
       await tester.pumpAndSettle();
-
       expect(find.text('Member Library'), findsOneWidget);
+
+      // A second tap on the SAME pin hides the label again.
+      await tester.tap(find.byIcon(Icons.location_on).first);
+      await tester.pumpAndSettle();
+      expect(find.text('Member Library'), findsNothing);
+
+      // Tap to select, then tap the label to open the sheet.
+      await tester.tap(find.byIcon(Icons.location_on).first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Member Library'));
+      await tester.pumpAndSettle();
+
+      // The label is still on the map under the sheet (2 instances).
+      expect(find.text('Member Library'), findsNWidgets(2));
       expect(find.text('Member'), findsOneWidget);
       expect(find.text('Verified'), findsOneWidget);
       expect(find.textContaining('km from your own pin'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Open site'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Directions'), findsOneWidget);
+    });
+
+    testWidgets('a hub pin carries a permanent label and its pin tap opens '
+        'the sheet directly (no toggle)', (tester) async {
+      repo.rows = [
+        NetworkLibrary(
+          id: 1,
+          siteUrl: 'https://hub.github.io/h/',
+          name: 'Hub Library',
+          location: GeoPoint.tryCreate(12.97, 77.59),
+          precision: LocationPrecision.exact,
+          membership: MembershipState.confirmed,
+        ),
+      ];
+      await pumpPage(tester, prefs: const {'network_map_tiles_consent': true});
+      await openMapTab(tester);
+
+      // No tap needed: the hub's name is on the map from the first frame.
+      expect(find.text('Hub Library'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.location_on).first);
+      await tester.pumpAndSettle();
+
+      // Sheet opened directly: the title plus the still-visible label.
+      expect(find.text('Hub Library'), findsNWidgets(2));
+      expect(find.text('My hub'), findsOneWidget);
+    });
+
+    testWidgets('your own pin carries your library name', (tester) async {
+      await pumpPage(
+        tester,
+        prefs: const {
+          'network_map_tiles_consent': true,
+          'publish_contact_gps': '12.9, 77.6',
+          'library_name': 'My Home Library',
+        },
+      );
+      await openMapTab(tester);
+      expect(find.text('My Home Library'), findsOneWidget);
+    });
+
+    testWidgets('a blank library name falls back to the "My library" caption', (
+      tester,
+    ) async {
+      // (A fresh test, not a re-pump: SharedPreferences.getInstance() caches
+      // per process, so new mock values mid-test would not be re-read.)
+      await pumpPage(
+        tester,
+        prefs: const {
+          'network_map_tiles_consent': true,
+          'publish_contact_gps': '12.9, 77.6',
+        },
+      );
+      await openMapTab(tester);
+      expect(find.text('My library'), findsOneWidget);
     });
 
     testWidgets('without an own pin the sheet shows no distance line', (
@@ -243,9 +318,38 @@ void main() {
 
       await tester.tap(find.byIcon(Icons.location_on).first);
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Pinned'));
+      await tester.pumpAndSettle();
 
-      expect(find.text('Pinned'), findsOneWidget);
+      expect(find.text('Pinned'), findsNWidgets(2));
       expect(find.textContaining('km from your own pin'), findsNothing);
+    });
+  });
+
+  group('hub detection (map_pin_label.dart)', () {
+    test('hubSiteUrls collects every listedByHubUrl target', () {
+      const rows = [
+        NetworkLibrary(
+          siteUrl: 'https://a.github.io/x/',
+          listedByHubUrl: 'https://hub.github.io/h/',
+        ),
+        NetworkLibrary(siteUrl: 'https://b.github.io/y/'),
+      ];
+      expect(hubSiteUrls(rows), {'https://hub.github.io/h/'});
+    });
+
+    test('isHubRow: a row that lists me, or that listed someone else', () {
+      const me = NetworkLibrary(
+        siteUrl: 'https://hub.github.io/h/',
+        membership: MembershipState.pending,
+      );
+      const listed = NetworkLibrary(siteUrl: 'https://hub.github.io/h/');
+      const plain = NetworkLibrary(siteUrl: 'https://a.github.io/x/');
+      const hubs = {'https://hub.github.io/h/'};
+
+      expect(isHubRow(me, const {}), isTrue); // lists me (any state)
+      expect(isHubRow(listed, hubs), isTrue); // listed someone else
+      expect(isHubRow(plain, hubs), isFalse);
     });
   });
 
@@ -296,6 +400,13 @@ void main() {
     ];
     await pumpPage(tester, prefs: const {'network_map_tiles_consent': true});
     await openMapTab(tester);
+    await expectMeetsA11yGuidelines(tester);
+
+    // A selected pin's tappable label must pass the same trio (48 dp target
+    // via the transparent padding, semantic label on the pill).
+    await tester.tap(find.byIcon(Icons.location_on).first);
+    await tester.pumpAndSettle();
+    expect(find.text('Member Library'), findsOneWidget);
     await expectMeetsA11yGuidelines(tester);
   });
 

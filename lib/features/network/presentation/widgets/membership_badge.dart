@@ -34,6 +34,15 @@ class MembershipBadge extends StatelessWidget {
           color: scheme.onSurfaceVariant,
           filled: false,
         ),
+      // Reciprocal consent (design 2026-10-18): a hub lists this library AND
+      // the library's own site links back via memberOf — so viewers can tell
+      // a claimed membership from a confirmed one.
+      if (row.listedByHubUrl != null && row.confirmedByMember)
+        _Chip(
+          label: 'Confirmed by member',
+          color: scheme.secondary,
+          filled: false,
+        ),
       // Member→hub direction: this hub lists me and I confirmed it.
       if (row.membership == MembershipState.confirmed)
         _Chip(label: 'My hub', color: scheme.tertiary, filled: false),

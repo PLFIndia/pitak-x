@@ -11,6 +11,10 @@
 ///    them by in-person card scan; a fetch confirmed the fingerprint);
 ///  - `membership` describes the member→hub direction (THIS row is a hub that
 ///    lists ME: pending user confirmation, confirmed, or declined);
+///  - `confirmedByMember` is the reciprocal-consent signal for rows a hub
+///    LISTED (design 2026-10-18): the member's own descriptor links back to
+///    that hub in its `memberOf`. A hub's `members` entry is the hub's
+///    claim; this flag is the member's published agreement with it;
 ///  - `fetchStatus` is the last refresh outcome, coarse, never carrying URLs.
 ///
 /// Immutable; `id == 0` means "not saved yet". Pure Dart: no Flutter/IO/
@@ -91,6 +95,7 @@ final class NetworkLibrary {
     this.memberVerified = false,
     this.listedByHubUrl,
     this.membership = MembershipState.none,
+    this.confirmedByMember = false,
     this.fetchStatus = FetchStatus.never,
     this.fetchedAt,
     this.createdAt = 0,
@@ -130,6 +135,12 @@ final class NetworkLibrary {
   /// I am a member of THIS hub (pending/confirmed/declined/none).
   final MembershipState membership;
 
+  /// Meaningful only when [listedByHubUrl] is set: this library's OWN
+  /// descriptor links back to the listing hub (`memberOf`). That reciprocal
+  /// link is the member-side consent anyone can verify — it backs the
+  /// "Confirmed by member" badge (design 2026-10-18).
+  final bool confirmedByMember;
+
   /// Last descriptor-fetch outcome.
   final FetchStatus fetchStatus;
 
@@ -166,6 +177,7 @@ final class NetworkLibrary {
     bool? memberVerified,
     String? listedByHubUrl,
     MembershipState? membership,
+    bool? confirmedByMember,
     FetchStatus? fetchStatus,
     int? fetchedAt,
     int? createdAt,
@@ -191,6 +203,7 @@ final class NetworkLibrary {
         ? null
         : (listedByHubUrl ?? this.listedByHubUrl),
     membership: membership ?? this.membership,
+    confirmedByMember: confirmedByMember ?? this.confirmedByMember,
     fetchStatus: fetchStatus ?? this.fetchStatus,
     fetchedAt: clearFetchedAt ? null : (fetchedAt ?? this.fetchedAt),
     createdAt: createdAt ?? this.createdAt,
@@ -212,6 +225,7 @@ final class NetworkLibrary {
     'memberVerified': memberVerified,
     if (listedByHubUrl != null) 'listedByHubUrl': listedByHubUrl,
     'membership': membership.name,
+    'confirmedByMember': confirmedByMember,
     'fetchStatus': fetchStatus.name,
     if (fetchedAt != null) 'fetchedAt': fetchedAt,
     'createdAt': createdAt,
@@ -277,6 +291,8 @@ final class NetworkLibrary {
       membership:
           _parseEnum(MembershipState.values, _asString(json['membership'])) ??
           MembershipState.none,
+      // Absent in pre-v4 archives ⇒ false (additive, §3.4).
+      confirmedByMember: json['confirmedByMember'] == true,
       fetchStatus:
           _parseEnum(FetchStatus.values, _asString(json['fetchStatus'])) ??
           FetchStatus.never,
@@ -317,6 +333,7 @@ final class NetworkLibrary {
       other.memberVerified == memberVerified &&
       other.listedByHubUrl == listedByHubUrl &&
       other.membership == membership &&
+      other.confirmedByMember == confirmedByMember &&
       other.fetchStatus == fetchStatus &&
       other.fetchedAt == fetchedAt &&
       other.createdAt == createdAt &&

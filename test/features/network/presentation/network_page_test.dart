@@ -63,15 +63,20 @@ void main() {
     await pumpPage(tester);
     expect(find.textContaining('No libraries saved yet.'), findsOneWidget);
     expect(
-      find.textContaining('Add a library by its web address'),
+      find.textContaining('Tap "Add bookmark" to save a library'),
       findsOneWidget,
     );
-    expect(find.textContaining('add a member by scanning'), findsOneWidget);
+    expect(find.textContaining('"Add member" to scan'), findsOneWidget);
     expect(
       find.widgetWithText(FloatingActionButton, 'Add member'),
       findsOneWidget,
     );
-    expect(find.byTooltip('Add by URL'), findsOneWidget);
+    expect(
+      find.widgetWithText(FloatingActionButton, 'Add bookmark'),
+      findsOneWidget,
+    );
+    // The old app-bar icon is gone — the button replaced it.
+    expect(find.byTooltip('Add by URL'), findsNothing);
     expect(find.text('Never refreshed yet.'), findsOneWidget);
   });
 
@@ -100,13 +105,55 @@ void main() {
         fingerprint: fp,
         fetchStatus: FetchStatus.identityConflict,
       ),
+      // Hub-listed AND its own site links back: the reciprocal-consent chip.
+      const NetworkLibrary(
+        id: 4,
+        siteUrl: 'https://d.github.io/w/',
+        name: 'Confirmed Member',
+        listedByHubUrl: 'https://m.github.io/x/',
+        confirmedByMember: true,
+      ),
+      // Hub-listed but NOT linked back: no chip — the claim alone is not
+      // consent.
+      const NetworkLibrary(
+        id: 5,
+        siteUrl: 'https://e.github.io/v/',
+        name: 'Claimed Only',
+        listedByHubUrl: 'https://m.github.io/x/',
+      ),
     ];
     await pumpPage(tester);
     expect(find.text('Member Library'), findsOneWidget);
     expect(find.text('Verified'), findsOneWidget);
-    expect(find.text('Unverified'), findsOneWidget);
     expect(find.text('Identity conflict'), findsOneWidget);
     expect(find.text('https://m.github.io/x/'), findsOneWidget);
+
+    // Off-screen rows need scrollUntilVisible, not ensureVisible: the lazy
+    // ListView has not BUILT them yet, so their finder matches nothing
+    // (600 dp test surface). The scrollable must be the LIST's own —
+    // find.byType(Scrollable).first would grab the tab view's horizontal
+    // PageView and drag us onto another tab.
+    final listScrollable = find.descendant(
+      of: find.byType(ListView),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.text('Unverified One'),
+      150,
+      scrollable: listScrollable,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Unverified'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Confirmed Member'),
+      -150, // scroll back up
+      scrollable: listScrollable,
+    );
+    await tester.pumpAndSettle();
+    // Exactly one row earns the reciprocal-consent chip ("Claimed Only"
+    // lacks the memberOf link-back, so it shows none).
+    expect(find.text('Confirmed by member'), findsOneWidget);
   });
 
   testWidgets('removing a row asks the repository and refreshes the list', (
@@ -126,12 +173,14 @@ void main() {
     expect(find.text('Doomed'), findsNothing);
   });
 
-  group('add by URL', () {
+  group('add by URL (the "Add bookmark" button)', () {
     testWidgets('a valid link saves a bookmark row and joins the list', (
       tester,
     ) async {
       await pumpPage(tester);
-      await tester.tap(find.byTooltip('Add by URL'));
+      await tester.tap(
+        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
+      );
       await tester.pumpAndSettle();
       expect(find.text('Add a library by URL'), findsOneWidget);
 
@@ -161,7 +210,9 @@ void main() {
       tester,
     ) async {
       await pumpPage(tester);
-      await tester.tap(find.byTooltip('Add by URL'));
+      await tester.tap(
+        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
+      );
       await tester.pumpAndSettle();
 
       await tester.enterText(
@@ -187,7 +238,9 @@ void main() {
         const NetworkLibrary(id: 1, siteUrl: 'https://dup.github.io/x/'),
       ];
       await pumpPage(tester);
-      await tester.tap(find.byTooltip('Add by URL'));
+      await tester.tap(
+        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
+      );
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'Link'),
@@ -218,6 +271,11 @@ void main() {
         findsOneWidget,
       );
 
+      // Scroll the button clear of the stacked FABs (600 dp test surface).
+      await tester.ensureVisible(
+        find.widgetWithText(FilledButton, 'Show membership'),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Show membership'));
       await tester.pumpAndSettle();
 
@@ -240,6 +298,8 @@ void main() {
         ),
       ];
       await pumpPage(tester);
+      await tester.ensureVisible(find.widgetWithText(TextButton, 'No'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'No'));
       await tester.pumpAndSettle();
 
@@ -258,6 +318,8 @@ void main() {
         ),
       ];
       await pumpPage(tester);
+      await tester.ensureVisible(find.widgetWithText(TextButton, 'Reconsider'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Reconsider'));
       await tester.pumpAndSettle();
 

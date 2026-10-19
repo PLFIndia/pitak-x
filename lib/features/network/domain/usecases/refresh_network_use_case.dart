@@ -32,6 +32,10 @@
 ///  - **Refusals never erase cached data**: an unreachable/invalid/schemaTooNew
 ///    fetch only sets `fetchStatus`, so the offline list keeps its pins and
 ///    names (S4 acceptance).
+///  - **Reciprocal consent is recorded** (design 2026-10-18): for a row a hub
+///    LISTED (`listedByHubUrl`), the member's own `memberOf` linking back to
+///    that hub sets `confirmedByMember` — the hub's claim plus the member's
+///    agreement, kept as two separate facts so viewers can tell them apart.
 ///
 /// Pure Dart: no Flutter/IO/Riverpod (AGENTS.md §3.1).
 library;
@@ -318,11 +322,21 @@ final class _Run {
       _noLongerListed.add(row.siteUrl); // user decides; state unchanged
     }
 
+    // "Confirmed by member" (design 2026-10-18): this row was surfaced by a
+    // hub's `members` list (the hub's CLAIM); the member's OWN descriptor
+    // naming that hub in `memberOf` is the member's CONSENT. Both URLs are
+    // BookmarkUrl-normalized (codec §3.1, rows D13), so a plain string
+    // compare is exact. A member that removed the link flips back to false.
+    final listedBy = row.listedByHubUrl;
+    final confirmedByMember =
+        listedBy != null && descriptor.memberOf.contains(listedBy);
+
     _states[row.siteUrl] = row.copyWith(
       name: descriptor.name,
       fingerprint: fetchedFp,
       location: descriptor.location,
       precision: descriptor.precision,
+      confirmedByMember: confirmedByMember,
       // A library that turned sharing OFF publishes no location block: the
       // stored pin must be CLEARED, and only the wholesale applyRefresh path
       // can persist a null (copyWith's clear flag — handoff §3).

@@ -2541,6 +2541,21 @@ class $NetworkLibrariesTable extends NetworkLibraries
     type: DriftSqlType.int,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _confirmedByMemberMeta = const VerificationMeta(
+    'confirmedByMember',
+  );
+  @override
+  late final GeneratedColumn<bool> confirmedByMember = GeneratedColumn<bool>(
+    'confirmed_by_member',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("confirmed_by_member" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -2559,6 +2574,7 @@ class $NetworkLibrariesTable extends NetworkLibraries
     fetchedAt,
     createdAt,
     sortOrder,
+    confirmedByMember,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -2685,6 +2701,15 @@ class $NetworkLibrariesTable extends NetworkLibraries
     } else if (isInserting) {
       context.missing(_sortOrderMeta);
     }
+    if (data.containsKey('confirmed_by_member')) {
+      context.handle(
+        _confirmedByMemberMeta,
+        confirmedByMember.isAcceptableOrUnknown(
+          data['confirmed_by_member']!,
+          _confirmedByMemberMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -2762,6 +2787,10 @@ class $NetworkLibrariesTable extends NetworkLibraries
         DriftSqlType.int,
         data['${effectivePrefix}sort_order'],
       )!,
+      confirmedByMember: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}confirmed_by_member'],
+      )!,
     );
   }
 
@@ -2831,6 +2860,11 @@ class NetworkLibraryRow extends DataClass
   /// Display order among the user's own rows (preserves the old bookmark
   /// order through the one-time migration; new rows append).
   final int sortOrder;
+
+  /// For rows a hub listed (`listed_by_hub_url`): the member's OWN
+  /// descriptor links back to that hub via `memberOf` — the reciprocal
+  /// consent behind the "Confirmed by member" badge (schema v4).
+  final bool confirmedByMember;
   const NetworkLibraryRow({
     required this.id,
     required this.siteUrl,
@@ -2848,6 +2882,7 @@ class NetworkLibraryRow extends DataClass
     this.fetchedAt,
     required this.createdAt,
     required this.sortOrder,
+    required this.confirmedByMember,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2880,6 +2915,7 @@ class NetworkLibraryRow extends DataClass
     }
     map['created_at'] = Variable<int>(createdAt);
     map['sort_order'] = Variable<int>(sortOrder);
+    map['confirmed_by_member'] = Variable<bool>(confirmedByMember);
     return map;
   }
 
@@ -2909,6 +2945,7 @@ class NetworkLibraryRow extends DataClass
           : Value(fetchedAt),
       createdAt: Value(createdAt),
       sortOrder: Value(sortOrder),
+      confirmedByMember: Value(confirmedByMember),
     );
   }
 
@@ -2934,6 +2971,7 @@ class NetworkLibraryRow extends DataClass
       fetchedAt: serializer.fromJson<int?>(json['fetchedAt']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
+      confirmedByMember: serializer.fromJson<bool>(json['confirmedByMember']),
     );
   }
   @override
@@ -2956,6 +2994,7 @@ class NetworkLibraryRow extends DataClass
       'fetchedAt': serializer.toJson<int?>(fetchedAt),
       'createdAt': serializer.toJson<int>(createdAt),
       'sortOrder': serializer.toJson<int>(sortOrder),
+      'confirmedByMember': serializer.toJson<bool>(confirmedByMember),
     };
   }
 
@@ -2976,6 +3015,7 @@ class NetworkLibraryRow extends DataClass
     Value<int?> fetchedAt = const Value.absent(),
     int? createdAt,
     int? sortOrder,
+    bool? confirmedByMember,
   }) => NetworkLibraryRow(
     id: id ?? this.id,
     siteUrl: siteUrl ?? this.siteUrl,
@@ -2995,6 +3035,7 @@ class NetworkLibraryRow extends DataClass
     fetchedAt: fetchedAt.present ? fetchedAt.value : this.fetchedAt,
     createdAt: createdAt ?? this.createdAt,
     sortOrder: sortOrder ?? this.sortOrder,
+    confirmedByMember: confirmedByMember ?? this.confirmedByMember,
   );
   NetworkLibraryRow copyWithCompanion(NetworkLibrariesCompanion data) {
     return NetworkLibraryRow(
@@ -3024,6 +3065,9 @@ class NetworkLibraryRow extends DataClass
       fetchedAt: data.fetchedAt.present ? data.fetchedAt.value : this.fetchedAt,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
+      confirmedByMember: data.confirmedByMember.present
+          ? data.confirmedByMember.value
+          : this.confirmedByMember,
     );
   }
 
@@ -3045,7 +3089,8 @@ class NetworkLibraryRow extends DataClass
           ..write('fetchStatus: $fetchStatus, ')
           ..write('fetchedAt: $fetchedAt, ')
           ..write('createdAt: $createdAt, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('confirmedByMember: $confirmedByMember')
           ..write(')'))
         .toString();
   }
@@ -3068,6 +3113,7 @@ class NetworkLibraryRow extends DataClass
     fetchedAt,
     createdAt,
     sortOrder,
+    confirmedByMember,
   );
   @override
   bool operator ==(Object other) =>
@@ -3088,7 +3134,8 @@ class NetworkLibraryRow extends DataClass
           other.fetchStatus == this.fetchStatus &&
           other.fetchedAt == this.fetchedAt &&
           other.createdAt == this.createdAt &&
-          other.sortOrder == this.sortOrder);
+          other.sortOrder == this.sortOrder &&
+          other.confirmedByMember == this.confirmedByMember);
 }
 
 class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
@@ -3108,6 +3155,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
   final Value<int?> fetchedAt;
   final Value<int> createdAt;
   final Value<int> sortOrder;
+  final Value<bool> confirmedByMember;
   const NetworkLibrariesCompanion({
     this.id = const Value.absent(),
     this.siteUrl = const Value.absent(),
@@ -3125,6 +3173,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
     this.fetchedAt = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.sortOrder = const Value.absent(),
+    this.confirmedByMember = const Value.absent(),
   });
   NetworkLibrariesCompanion.insert({
     this.id = const Value.absent(),
@@ -3143,6 +3192,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
     this.fetchedAt = const Value.absent(),
     required int createdAt,
     required int sortOrder,
+    this.confirmedByMember = const Value.absent(),
   }) : siteUrl = Value(siteUrl),
        source = Value(source),
        createdAt = Value(createdAt),
@@ -3164,6 +3214,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
     Expression<int>? fetchedAt,
     Expression<int>? createdAt,
     Expression<int>? sortOrder,
+    Expression<bool>? confirmedByMember,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
@@ -3182,6 +3233,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
       if (fetchedAt != null) 'fetched_at': fetchedAt,
       if (createdAt != null) 'created_at': createdAt,
       if (sortOrder != null) 'sort_order': sortOrder,
+      if (confirmedByMember != null) 'confirmed_by_member': confirmedByMember,
     });
   }
 
@@ -3202,6 +3254,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
     Value<int?>? fetchedAt,
     Value<int>? createdAt,
     Value<int>? sortOrder,
+    Value<bool>? confirmedByMember,
   }) {
     return NetworkLibrariesCompanion(
       id: id ?? this.id,
@@ -3220,6 +3273,7 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
       fetchedAt: fetchedAt ?? this.fetchedAt,
       createdAt: createdAt ?? this.createdAt,
       sortOrder: sortOrder ?? this.sortOrder,
+      confirmedByMember: confirmedByMember ?? this.confirmedByMember,
     );
   }
 
@@ -3274,6 +3328,9 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
     }
+    if (confirmedByMember.present) {
+      map['confirmed_by_member'] = Variable<bool>(confirmedByMember.value);
+    }
     return map;
   }
 
@@ -3295,7 +3352,8 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
           ..write('fetchStatus: $fetchStatus, ')
           ..write('fetchedAt: $fetchedAt, ')
           ..write('createdAt: $createdAt, ')
-          ..write('sortOrder: $sortOrder')
+          ..write('sortOrder: $sortOrder, ')
+          ..write('confirmedByMember: $confirmedByMember')
           ..write(')'))
         .toString();
   }
@@ -4330,6 +4388,7 @@ typedef $$NetworkLibrariesTableCreateCompanionBuilder =
       Value<int?> fetchedAt,
       required int createdAt,
       required int sortOrder,
+      Value<bool> confirmedByMember,
     });
 typedef $$NetworkLibrariesTableUpdateCompanionBuilder =
     NetworkLibrariesCompanion Function({
@@ -4349,6 +4408,7 @@ typedef $$NetworkLibrariesTableUpdateCompanionBuilder =
       Value<int?> fetchedAt,
       Value<int> createdAt,
       Value<int> sortOrder,
+      Value<bool> confirmedByMember,
     });
 
 class $$NetworkLibrariesTableFilterComposer
@@ -4437,6 +4497,11 @@ class $$NetworkLibrariesTableFilterComposer
 
   ColumnFilters<int> get sortOrder => $composableBuilder(
     column: $table.sortOrder,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get confirmedByMember => $composableBuilder(
+    column: $table.confirmedByMember,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4529,6 +4594,11 @@ class $$NetworkLibrariesTableOrderingComposer
     column: $table.sortOrder,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<bool> get confirmedByMember => $composableBuilder(
+    column: $table.confirmedByMember,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$NetworkLibrariesTableAnnotationComposer
@@ -4597,6 +4667,11 @@ class $$NetworkLibrariesTableAnnotationComposer
 
   GeneratedColumn<int> get sortOrder =>
       $composableBuilder(column: $table.sortOrder, builder: (column) => column);
+
+  GeneratedColumn<bool> get confirmedByMember => $composableBuilder(
+    column: $table.confirmedByMember,
+    builder: (column) => column,
+  );
 }
 
 class $$NetworkLibrariesTableTableManager
@@ -4652,6 +4727,7 @@ class $$NetworkLibrariesTableTableManager
                 Value<int?> fetchedAt = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
+                Value<bool> confirmedByMember = const Value.absent(),
               }) => NetworkLibrariesCompanion(
                 id: id,
                 siteUrl: siteUrl,
@@ -4669,6 +4745,7 @@ class $$NetworkLibrariesTableTableManager
                 fetchedAt: fetchedAt,
                 createdAt: createdAt,
                 sortOrder: sortOrder,
+                confirmedByMember: confirmedByMember,
               ),
           createCompanionCallback:
               ({
@@ -4688,6 +4765,7 @@ class $$NetworkLibrariesTableTableManager
                 Value<int?> fetchedAt = const Value.absent(),
                 required int createdAt,
                 required int sortOrder,
+                Value<bool> confirmedByMember = const Value.absent(),
               }) => NetworkLibrariesCompanion.insert(
                 id: id,
                 siteUrl: siteUrl,
@@ -4705,6 +4783,7 @@ class $$NetworkLibrariesTableTableManager
                 fetchedAt: fetchedAt,
                 createdAt: createdAt,
                 sortOrder: sortOrder,
+                confirmedByMember: confirmedByMember,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

@@ -9,6 +9,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'generated/schema.dart';
 import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
+import 'generated/schema_v3.dart' as v3;
 
 /// Reads the current `schemaVersion` without leaving a database open.
 Future<int> _currentSchemaVersion() async {
@@ -300,6 +301,43 @@ void main() {
         expect(await db.select(db.networkLibraries).get(), isA<List<Object>>());
 
         await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Upgrade');
+      },
+    );
+
+    // Data-matrix row for the v4 bump (design 2026-10-18): a populated v3
+    // network row must survive, and the new `confirmed_by_member` column
+    // reads as false until the next refresh re-evaluates the link-back.
+    test(
+      'v3: a network row survives; confirmed_by_member defaults to false',
+      () async {
+        final schema = await verifier.schemaAt(3);
+        final oldDb = v3.DatabaseAtV3(schema.newConnection());
+        await oldDb
+            .into(oldDb.networkLibraries)
+            .insert(
+              v3.NetworkLibrariesCompanion.insert(
+                siteUrl: 'https://m.github.io/x/',
+                name: const Value('Listed Member'),
+                fingerprint: Value('ab' * 32),
+                source: 'discovered',
+                listedByHubUrl: const Value('https://hub.github.io/h/'),
+                createdAt: 1700000005000,
+                sortOrder: 0,
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        final row = (await db.select(db.networkLibraries).get()).single;
+        expect(row.name, 'Listed Member');
+        expect(row.listedByHubUrl, 'https://hub.github.io/h/');
+        expect(row.confirmedByMember, isFalse);
+
+        await _expectRawSqlObjectsHealthy(db);
       },
     );
   });

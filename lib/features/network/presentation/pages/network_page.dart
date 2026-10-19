@@ -5,8 +5,9 @@
 ///    scans, discoveries), distance-sorted when this library publishes a pin
 ///    of its own, each row tappable to open its published site externally.
 ///    Refresh (button or pull) is the ONLY thing that reads other libraries'
-///    descriptors — nothing happens in the background (D11). "Add member"
-///    scans another library's card; the app-bar action adds a library by URL.
+///    descriptors — nothing happens in the background (D11). Two buttons sit
+///    bottom-right: "Add bookmark" saves a library by its web address, and
+///    "Add member" scans another library's card in person.
 ///  - **Map** — the saved libraries as pins (§5.9). Gated behind the OSM
 ///    tiles consent: no tile request ever leaves the device until the user
 ///    accepts. The map body lives in `network_map_page.dart`.
@@ -32,48 +33,21 @@ import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet
 
 /// The library-network screen.
 class NetworkPage extends ConsumerWidget {
-  /// Creates the page.
-  const NetworkPage({super.key});
+  /// Creates the page. [initialTab] selects the opening tab — the home
+  /// screen's map button lands straight on the Map tab (1).
+  const NetworkPage({super.key, this.initialTab = 0});
 
-  Future<void> _addByUrl(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final result = await showDialog<({String name, String url})>(
-      context: context,
-      builder: (_) => const AddLibraryDialog(),
-    );
-    if (result == null) return;
-    final outcome = await ref
-        .read(networkControllerProvider.notifier)
-        .addByUrl(url: result.url, name: result.name);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(switch (outcome) {
-          NetworkAddOutcome.added =>
-            'Library added. Tap Refresh to fetch its details.',
-          NetworkAddOutcome.alreadySaved => 'That library is already saved.',
-          NetworkAddOutcome.invalidUrl =>
-            'That link was not accepted. Use a GitHub Pages or Cloudflare '
-                'Pages address.',
-          NetworkAddOutcome.storageFailed => "Couldn't add that library.",
-        }),
-      ),
-    );
-  }
+  /// The tab to open on (0 = Libraries, 1 = Map, 2 = My card).
+  final int initialTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefaultTabController(
       length: 3,
+      initialIndex: initialTab,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Library network'),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.add_link),
-              tooltip: 'Add by URL',
-              onPressed: () => _addByUrl(context, ref),
-            ),
-          ],
           bottom: const TabBar(
             tabs: [
               Tab(text: 'Libraries'),
@@ -100,6 +74,32 @@ class _LibrariesTab extends ConsumerWidget {
   Future<void> _addMember(BuildContext context) => Navigator.of(
     context,
   ).push<void>(MaterialPageRoute(builder: (_) => const AddMemberPage()));
+
+  /// Saves a library by its web address (the "Add bookmark" button).
+  Future<void> _addByUrl(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final result = await showDialog<({String name, String url})>(
+      context: context,
+      builder: (_) => const AddLibraryDialog(),
+    );
+    if (result == null) return;
+    final outcome = await ref
+        .read(networkControllerProvider.notifier)
+        .addByUrl(url: result.url, name: result.name);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(switch (outcome) {
+          NetworkAddOutcome.added =>
+            'Library added. Tap Refresh to fetch its details.',
+          NetworkAddOutcome.alreadySaved => 'That library is already saved.',
+          NetworkAddOutcome.invalidUrl =>
+            'That link was not accepted. Use a GitHub Pages or Cloudflare '
+                'Pages address.',
+          NetworkAddOutcome.storageFailed => "Couldn't add that library.",
+        }),
+      ),
+    );
+  }
 
   Future<void> _remove(
     BuildContext context,
@@ -152,7 +152,9 @@ class _LibrariesTab extends ConsumerWidget {
             onRefresh: () =>
                 ref.read(networkRefreshControllerProvider.notifier).refresh(),
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+              // Bottom padding clears the two stacked buttons (was 88 for
+              // one FAB).
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
               children: [
                 const _InfoNote(),
                 const SizedBox(height: 12),
@@ -163,9 +165,9 @@ class _LibrariesTab extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(vertical: 32),
                     child: Center(
                       child: Text(
-                        'No libraries saved yet.\n\nAdd a library by its web '
-                        'address (top right), or add a member by scanning '
-                        'their library card, in person.',
+                        'No libraries saved yet.\n\nTap "Add bookmark" to '
+                        'save a library by its web address, or "Add member" '
+                        'to scan their library card, in person.',
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -190,10 +192,26 @@ class _LibrariesTab extends ConsumerWidget {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _addMember(context),
-        icon: const Icon(Icons.qr_code_scanner),
-        label: const Text('Add member'),
+      // Two stacked actions: bookmark by URL, or scan a member's card. Each
+      // needs its own heroTag — two extended FABs share the default one.
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'networkAddBookmark',
+            onPressed: () => _addByUrl(context, ref),
+            icon: const Icon(Icons.bookmark_add_outlined),
+            label: const Text('Add bookmark'),
+          ),
+          const SizedBox(height: 12),
+          FloatingActionButton.extended(
+            heroTag: 'networkAddMember',
+            onPressed: () => _addMember(context),
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('Add member'),
+          ),
+        ],
       ),
     );
   }

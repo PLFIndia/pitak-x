@@ -40,6 +40,7 @@ void main() {
         memberVerified: true,
         listedByHubUrl: 'https://hub.github.io/x/',
         membership: MembershipState.confirmed,
+        confirmedByMember: true,
         fetchStatus: FetchStatus.ok,
         fetchedAt: 123,
         createdAt: 456,
@@ -60,6 +61,7 @@ void main() {
     expect(loaded.memberVerified, isTrue);
     expect(loaded.listedByHubUrl, 'https://hub.github.io/x/');
     expect(loaded.membership, MembershipState.confirmed);
+    expect(loaded.confirmedByMember, isTrue);
     expect(loaded.fetchStatus, FetchStatus.ok);
     expect(loaded.fetchedAt, 123);
     expect(loaded.createdAt, 456);
@@ -146,6 +148,27 @@ void main() {
       expect(merged.listedByHubUrl, 'https://hub.github.io/x/');
       expect(merged.fetchedAt, 999);
     });
+
+    test(
+      'a manual upsert never touches the stored confirmedByMember flag',
+      () async {
+        // The flag is refresh-computed proof of the reciprocal link; a manual
+        // merge (add-by-URL / card scan of the same address) must keep it.
+        await repo.upsertBySiteUrl(
+          const NetworkLibrary(
+            siteUrl: 'https://a.github.io/lib/',
+            listedByHubUrl: 'https://hub.github.io/x/',
+            confirmedByMember: true,
+            source: NetworkSource.discovered,
+          ),
+        );
+        final merged = (await repo.upsertBySiteUrl(
+          const NetworkLibrary(siteUrl: 'https://a.github.io/lib/'),
+        )).toNullable()!;
+        expect(merged.confirmedByMember, isTrue);
+        expect((await repo.loadAll()).single.confirmedByMember, isTrue);
+      },
+    );
 
     test('incoming values DO overwrite stored ones', () async {
       await repo.upsertBySiteUrl(

@@ -174,6 +174,9 @@ class DriftNetworkRepository implements NetworkRepository {
         memberVerified: inc.memberVerified,
         listedByHubUrl: inc.listedByHubUrl ?? existing.listedByHubUrl,
         membership: inc.membership,
+        // confirmedByMember is deliberately NOT merged: only a refresh fetch
+        // can prove the reciprocal link, so a manual upsert must neither set
+        // nor clear it — the stored value stands until the next refresh.
         fetchStatus: inc.fetchStatus,
         fetchedAt: inc.fetchedAt ?? existing.fetchedAt,
       );
@@ -192,6 +195,7 @@ class DriftNetworkRepository implements NetworkRepository {
         memberVerified: Value(row.memberVerified),
         listedByHubUrl: Value(row.listedByHubUrl),
         membership: Value(row.membership.name),
+        confirmedByMember: Value(row.confirmedByMember),
         fetchStatus: Value(row.fetchStatus.name),
         fetchedAt: Value(row.fetchedAt),
         createdAt: row.createdAt,
@@ -212,6 +216,7 @@ class DriftNetworkRepository implements NetworkRepository {
         memberVerified: Value(row.memberVerified),
         listedByHubUrl: Value(row.listedByHubUrl),
         membership: Value(row.membership.name),
+        confirmedByMember: Value(row.confirmedByMember),
         fetchStatus: Value(row.fetchStatus.name),
         fetchedAt: Value(row.fetchedAt),
         createdAt: Value(row.createdAt),
@@ -250,6 +255,7 @@ class DriftNetworkRepository implements NetworkRepository {
       membership:
           _parseEnum(MembershipState.values, row.membership) ??
           MembershipState.none,
+      confirmedByMember: row.confirmedByMember,
       fetchStatus:
           _parseEnum(FetchStatus.values, row.fetchStatus) ?? FetchStatus.never,
       fetchedAt: row.fetchedAt,

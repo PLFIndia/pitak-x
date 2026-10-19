@@ -234,6 +234,13 @@ class NetworkLibraries extends Table {
   /// order through the one-time migration; new rows append).
   IntColumn get sortOrder => integer().named('sort_order')();
 
+  /// For rows a hub listed (`listed_by_hub_url`): the member's OWN
+  /// descriptor links back to that hub via `memberOf` — the reciprocal
+  /// consent behind the "Confirmed by member" badge (schema v4).
+  BoolColumn get confirmedByMember => boolean()
+      .named('confirmed_by_member')
+      .withDefault(const Constant(false))();
+
   /// Fingerprint is unique among non-null values (see the column doc). The
   /// drift-visible UNIQUE ends up in the schema snapshot, which the
   /// migration tests validate against — a raw-SQL index would be invisible

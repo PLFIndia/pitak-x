@@ -29,8 +29,11 @@ class AppDatabase extends _$AppDatabase {
   ///      (Session 33, [_collapseLanguageSpellings]).
   ///  3 — `network_libraries` table added (libNetwork.md S3): saved libraries
   ///      on the network replace the old prefs bookmarks (ADR 0012).
+  ///  4 — `network_libraries.confirmed_by_member` added (design 2026-10-18):
+  ///      reciprocal member→hub consent (`memberOf` link-back) for the
+  ///      "Confirmed by member" badge.
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -40,7 +43,18 @@ class AppDatabase extends _$AppDatabase {
       // v3: a brand-new empty table — drift creates it from the snapshot-
       // validated definition; the legacy bookmarks data migration into it
       // happens separately (prefs → rows, libNetwork.md S4), not here.
-      if (from < 3) await m.createTable(networkLibraries);
+      //
+      // ELSE-IF, not two ifs: `createTable` builds the table at its CURRENT
+      // definition, which already includes the v4 column — a v1/v2 database
+      // taking the create branch must not also run `addColumn` (duplicate
+      // column error, proven by the v1→current migration test).
+      if (from < 3) {
+        await m.createTable(networkLibraries);
+      } else if (from < 4) {
+        // v4: an additive boolean with a default — existing rows read as
+        // "not confirmed" until the next refresh re-evaluates the link-back.
+        await m.addColumn(networkLibraries, networkLibraries.confirmedByMember);
+      }
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a
