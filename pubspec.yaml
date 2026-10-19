@@ -174,7 +174,7 @@ dev_dependencies:
   # activated in the `analysis_options.yaml` file located at the root of your
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
-  very_good_analysis: ^6.0.0
+  very_good_analysis: ^10.3.0
   build_runner: ^2.4.13
   riverpod_generator: ^2.6.1
   freezed: ^2.5.7
