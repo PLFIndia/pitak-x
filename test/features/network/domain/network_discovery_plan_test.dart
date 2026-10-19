@@ -264,6 +264,132 @@ void main() {
       expect(plan.pending(), isEmpty);
     });
 
+    test(
+      'L3: a row promoted to hub WHILE its fetch was in flight expands its '
+      'members (expansion follows the CURRENT plan, not the captured row)',
+      () {
+        final plan = NetworkDiscoveryPlan(seeds: [row(seedUrl)]);
+        // The seed's descriptor surfaces L as a member (leaf) and H as a hub.
+        plan.recordFetched(
+          plan.rowFor(seedUrl)!,
+          descriptor(seedUrl, members: [member(m1Url)], memberOf: [hubUrl]),
+        );
+        // The worker captured L's row at round start — a LEAF.
+        final capturedLeaf = plan.rowFor(m1Url)!;
+        expect(capturedLeaf.role, DiscoveryRole.leaf);
+
+        // While L's fetch was in flight, H's descriptor named L as a hub:
+        // the plan merges the role upward (L is not settled yet).
+        plan.recordFetched(
+          plan.rowFor(hubUrl)!,
+          descriptor(hubUrl, memberOf: [m1Url]),
+        );
+        expect(plan.rowFor(m1Url)!.role, DiscoveryRole.hub);
+
+        // L's own fetch now lands, but the worker still holds the CAPTURED
+        // leaf. Expansion must follow the current hub row: L's members are
+        // discovered (before the L3 fix this silently expanded nothing).
+        plan.recordFetched(
+          capturedLeaf,
+          descriptor(m1Url, members: [member(m2Url)]),
+        );
+        expect(plan.rowFor(m2Url), isNotNull);
+        expect(plan.rowFor(m2Url)!.role, DiscoveryRole.leaf);
+        expect(plan.rowFor(m2Url)!.depth, 2);
+        expect(plan.pending().map((p) => p.siteUrl), [m2Url]);
+      },
+    );
+
+    test('L3 counter-test: a row whose CURRENT role is still leaf expands '
+        'nothing — the fix never over-expands (§5.6)', () {
+      final plan = NetworkDiscoveryPlan(seeds: [row(seedUrl)]);
+      plan.recordFetched(
+        plan.rowFor(seedUrl)!,
+        descriptor(seedUrl, members: [member(m1Url)]),
+      );
+      final capturedLeaf = plan.rowFor(m1Url)!;
+      // No promotion happens before L's own fetch lands: the current plan
+      // still says leaf, so its members/memberOf are never expanded.
+      plan.recordFetched(
+        capturedLeaf,
+        descriptor(m1Url, members: [member(m2Url)], memberOf: [hubUrl]),
+      );
+      expect(plan.rowFor(m2Url), isNull);
+      expect(plan.rowFor(hubUrl), isNull);
+      expect(plan.pending(), isEmpty);
+    });
+
+    test('L3 determinism: with the promotion processed before the row lands, '
+        'the captured (stale) row and the current row expand identically', () {
+      List<String> urlsOf(NetworkDiscoveryPlan plan) => [
+        for (final p in plan.all) '${p.siteUrl}|${p.role.name}',
+      ];
+
+      // Run A: the worker hands recordFetched the row it captured at round
+      // start (stale — still a leaf instance).
+      final a = NetworkDiscoveryPlan(seeds: [row(seedUrl)]);
+      a.recordFetched(
+        a.rowFor(seedUrl)!,
+        descriptor(seedUrl, members: [member(m1Url)], memberOf: [hubUrl]),
+      );
+      final captured = a.rowFor(m1Url)!;
+      a
+        ..recordFetched(
+          a.rowFor(hubUrl)!,
+          descriptor(hubUrl, memberOf: [m1Url]),
+        )
+        ..recordFetched(captured, descriptor(m1Url, members: [member(m2Url)]));
+
+      // Run B: same descriptors, same order — but the row handed in is
+      // re-read from the plan (what a non-stale worker would hold).
+      final b = NetworkDiscoveryPlan(seeds: [row(seedUrl)]);
+      b
+        ..recordFetched(
+          b.rowFor(seedUrl)!,
+          descriptor(seedUrl, members: [member(m1Url)], memberOf: [hubUrl]),
+        )
+        ..recordFetched(
+          b.rowFor(hubUrl)!,
+          descriptor(hubUrl, memberOf: [m1Url]),
+        )
+        ..recordFetched(
+          b.rowFor(m1Url)!,
+          descriptor(m1Url, members: [member(m2Url)]),
+        );
+
+      expect(urlsOf(a), urlsOf(b));
+      expect(urlsOf(a), [
+        '$seedUrl|seed',
+        '$hubUrl|hub',
+        '$m1Url|hub',
+        '$m2Url|leaf',
+      ]);
+    });
+
+    test('L3 boundary: a leaf processed BEFORE any promotion still expands '
+        'nothing (fail closed — nothing knew it was a hub yet)', () {
+      final plan = NetworkDiscoveryPlan(seeds: [row(seedUrl)]);
+      plan
+        ..recordFetched(
+          plan.rowFor(seedUrl)!,
+          descriptor(seedUrl, members: [member(m1Url)], memberOf: [hubUrl]),
+        )
+        // L's descriptor lands FIRST: at processing time the plan honestly
+        // has L as a leaf, so it settles without expanding. H's later
+        // memberOf claim then meets a settled row and is not re-planned (the
+        // settled-row rule above) — this order yields fewer rows by design.
+        ..recordFetched(
+          plan.rowFor(m1Url)!,
+          descriptor(m1Url, members: [member(m2Url)]),
+        )
+        ..recordFetched(
+          plan.rowFor(hubUrl)!,
+          descriptor(hubUrl, memberOf: [m1Url]),
+        );
+      expect(plan.rowFor(m2Url), isNull);
+      expect(plan.rowFor(m1Url)!.role, DiscoveryRole.leaf);
+    });
+
     test('descriptorUrl resolves library.json under the site root', () {
       final plan = NetworkDiscoveryPlan(
         seeds: [row('https://x.github.io/pitak/')],

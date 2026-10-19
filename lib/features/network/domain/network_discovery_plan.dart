@@ -155,19 +155,24 @@ final class NetworkDiscoveryPlan {
   /// Records a successful fetch and queues the discoveries its descriptor
   /// earns (role + depth rules in the library doc above).
   void recordFetched(PlannedRow row, LibraryDescriptor descriptor) {
-    _settled.add(row.siteUrl);
-    if (!_canExpand(row)) return;
+    // The plan may have been upgraded while this fetch was in flight (a leaf
+    // that another descriptor names as a hub). Expansion follows the CURRENT
+    // plan, never the copy the worker captured (review L3) — otherwise the
+    // result would depend on which response landed first.
+    final current = _known[row.siteUrl] ?? row;
+    _settled.add(current.siteUrl);
+    if (!_canExpand(current)) return;
     // memberOf ⇒ hubs (expanded further, within the depth cap).
     for (final hubUrl in descriptor.memberOf) {
-      _discover(hubUrl, role: DiscoveryRole.hub, depth: row.depth + 1);
+      _discover(hubUrl, role: DiscoveryRole.hub, depth: current.depth + 1);
     }
     // members ⇒ leaves, carrying the hub's own URL + the entry's hints.
     for (final member in descriptor.members) {
       _discover(
         member.siteUrl,
         role: DiscoveryRole.leaf,
-        depth: row.depth + 1,
-        listedByHubUrl: row.siteUrl,
+        depth: current.depth + 1,
+        listedByHubUrl: current.siteUrl,
         hintName: member.name,
         hintFingerprint: member.fingerprint,
       );
