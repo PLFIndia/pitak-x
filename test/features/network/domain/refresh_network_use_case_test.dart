@@ -728,6 +728,43 @@ void main() {
     });
   });
 
+  group('run bounds (§5.6: ≤ 500 rows per run, seeds included — L4)', () {
+    test(
+      '501 saved rows fetch exactly 500; the unplanned row is untouched',
+      () async {
+        repo.rows = [
+          for (var i = 0; i < 501; i++)
+            NetworkLibrary(
+              id: i + 1,
+              siteUrl: 'https://lib$i.github.io/',
+              sortOrder: i,
+            ),
+        ];
+        // Every fetch 404s (the default script): each planned row earns
+        // `unreachable` and is therefore in the `updated` list.
+
+        final report = (await useCase()()).toNullable()!;
+
+        expect(fetcher.fetchedUrls, hasLength(500));
+        expect(report.truncated, isTrue);
+        expect(report.unreachable, 500);
+        expect(repo.applyCalls, hasLength(1));
+        final updated = repo.applyCalls.single.$1;
+        expect(updated, hasLength(500));
+        expect(
+          updated.map((r) => r.siteUrl),
+          isNot(contains('https://lib500.github.io/')),
+        );
+        // The 501st row was never planned: no state was computed for it and
+        // the table copy keeps exactly what it had.
+        final unplanned = repo.rows.firstWhere(
+          (r) => r.siteUrl == 'https://lib500.github.io/',
+        );
+        expect(unplanned.fetchStatus, FetchStatus.never);
+      },
+    );
+  });
+
   group('determinism under concurrency (M6)', () {
     test('two rows with NO stored fp publishing the same fp are BOTH flagged '
         'and neither adopts it — whichever lands first', () async {

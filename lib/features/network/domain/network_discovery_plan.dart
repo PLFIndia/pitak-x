@@ -8,7 +8,12 @@
 /// `RefreshNetworkUseCase` focused on applying results.
 ///
 /// The policy (D10 — "bounded, two expansions max"):
-///  - **Seeds** are every saved row; all of them get fetched.
+///  - **Seeds** are every saved row — but the run's row cap applies to them
+///    too: when more than [NetworkDiscoveryPlan.maxRowsPerRun] rows are saved
+///    (a restored `network.json` may carry thousands), only the first
+///    [NetworkDiscoveryPlan.maxRows] in repository order are refreshed and
+///    [NetworkDiscoveryPlan.truncated] is set. "First" is the user's own
+///    order: `loadAll` sorts by `sortOrder` then name.
 ///  - `memberOf` links are followed from seeds and from hubs discovered via
 ///    `memberOf` — a discovered hub is fetched AND its lists are expanded.
 ///  - `members` lists are expanded only for seeds and those hubs: each member
@@ -18,7 +23,7 @@
 ///    (2 hops from a seed), so a hostile hub-of-hubs chain can never crawl
 ///    the world.
 ///  - Hard cap: [NetworkDiscoveryPlan.maxRowsPerRun] rows per run (seeds +
-///    discovered); when the cap refuses a new row,
+///    discovered); when the cap refuses a new row — seed or discovery —
 ///    [NetworkDiscoveryPlan.truncated] is reported (§6).
 ///  - Duplicate URLs collapse: a URL already planned is never planned twice.
 ///    The one role change allowed is leaf → hub while the row is still
@@ -91,13 +96,23 @@ final class PlannedRow {
 /// Plans one refresh run's fetches. Feed every fetch outcome back through
 /// [recordFetched]/[recordRefused]; [pending] then yields the next URLs.
 final class NetworkDiscoveryPlan {
-  /// Plans a run over [seeds] (all saved rows). [maxRows] exists for tests;
-  /// production always uses [maxRowsPerRun].
+  /// Plans a run over [seeds] (all saved rows, in repository order).
+  /// [maxRows] exists for tests; production always uses [maxRowsPerRun].
+  ///
+  /// The cap covers seeds too (review L4 — §5.6's "Rows per Refresh run ≤
+  /// 500" counts every fetch the run issues): when there are more than
+  /// [maxRows] saved rows, the first ones in repository order are refreshed
+  /// and [truncated] is set. Repository order is the user's own (`sortOrder`,
+  /// then name), so the rows that fit are the ones the user sees first.
   NetworkDiscoveryPlan({
     required List<NetworkLibrary> seeds,
     this.maxRows = maxRowsPerRun,
   }) {
     for (final seed in seeds) {
+      if (_known.length >= maxRows) {
+        _truncated = true; // cap hit: stop seeding, report (§6)
+        break;
+      }
       // putIfAbsent: the table's unique key makes duplicate siteUrls
       // impossible, but the plan must stay sane even if one ever slipped in.
       _known.putIfAbsent(

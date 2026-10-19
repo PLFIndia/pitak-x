@@ -183,6 +183,31 @@ void main() {
       expect(NetworkDiscoveryPlan.maxExpansionDepth, 2);
     });
 
+    test('L4: the row cap binds SEEDS too — 501 saved rows plan 500 and '
+        'report truncation', () {
+      final seeds = [
+        for (var i = 0; i < 501; i++)
+          row('https://lib$i.github.io/', id: i + 1, sortOrder: i),
+      ];
+      final plan = NetworkDiscoveryPlan(seeds: seeds);
+      expect(plan.all, hasLength(500));
+      expect(plan.pending(), hasLength(500));
+      expect(plan.truncated, isTrue);
+      // The rows that fit are the FIRST ones in the given (repository) order.
+      expect(plan.all.last.siteUrl, 'https://lib499.github.io/');
+      expect(plan.rowFor('https://lib500.github.io/'), isNull);
+    });
+
+    test('L4: exactly 500 seeds fit without truncation', () {
+      final seeds = [
+        for (var i = 0; i < 500; i++)
+          row('https://lib$i.github.io/', id: i + 1, sortOrder: i),
+      ];
+      final plan = NetworkDiscoveryPlan(seeds: seeds);
+      expect(plan.all, hasLength(500));
+      expect(plan.truncated, isFalse);
+    });
+
     test(
       'duplicate URLs collapse — an already-known row is never replanned',
       () {
