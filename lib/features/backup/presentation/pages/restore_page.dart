@@ -185,9 +185,13 @@ class _RestorePageState extends ConsumerState<RestorePage> {
             // are replaced; events, settings and publishing setup are not in
             // backups at all. §5.10: the archive's library identity IS adopted
             // and its saved-libraries list replaces this device's.
+            // The library logo: its image file rides along with the covers,
+            // but the SETTING that marks it as the logo is not in the backup
+            // (N04, RestoreController._clearDanglingLogoRef), so the logo is
+            // not restored — same statement as the Create-backup page.
             child: Text(
               'Restoring replaces your books, wishlist and cover images '
-              '(including the library logo) with the contents of the backup. '
+              'with the contents of the backup. '
               'If the backup contains a borrowers vault, it replaces this '
               'device’s vault and you will need to lock and unlock it again; '
               'if it does not, your existing vault must be unlocked first. '
@@ -197,8 +201,8 @@ class _RestorePageState extends ConsumerState<RestorePage> {
               'this device adopts it, and its saved-libraries list replaces '
               'yours. Everything switches over together: if the restore '
               'fails or is interrupted, your current data stays exactly as '
-              'it is. Events, app settings and publishing setup are not '
-              'restored. This cannot be undone.',
+              'it is. Events, the library logo, app settings and publishing '
+              'setup are not restored. This cannot be undone.',
               style: textTheme.bodySmall?.copyWith(
                 color: scheme.onErrorContainer,
               ),
