@@ -14,10 +14,38 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
-## [1.5.1] - 2026-10 (tag `1.5.1`, versionCode 26)
+### Added
+- `tool/release_build.sh --sentinel '<ASCII text>'` is now **required**: the
+  script extracts the bundle's arm64 `libapp.so` and refuses to pass if the
+  sentinel is absent — the check that would have caught both stale-snapshot
+  incidents (2026-09-03, 2026-10-18). Non-ASCII sentinels are rejected up
+  front (Dart stores such literals as UTF-16, which a byte scan misses).
+- `docs/ARCHITECTURE.md` — the app's shape in one place: product promises,
+  layer rules and the tests that enforce them, module map, crypto chain, and
+  every cross-device data contract (`library.json`, fingerprint, card QR,
+  Drift schema rules, `.pitabak` entries, validation bounds).
+- `docs/RELEASING.md` — the single release procedure: flavors and purity
+  check, per-ABI versionCodes, signing, the stale-artefact trap, the script,
+  the Play and F-Droid steps, toolchain pins, Play Console answers.
+
+### Changed
+- `README.md` keeps the front-door content (features, privacy posture,
+  getting started, quality gates) and points at the two docs for the rest.
+- Code comments that cited plan documents by item id (`architecture.md B3`,
+  `libNetwork.md §5.9`, `SOLID-PLAN S4`) now carry either the reason inline
+  or a pointer into `docs/ARCHITECTURE.md`.
+- Fixed: the 1.5.1 heading said versionCode 26; the release is `+27`.
+
+### Removed
+- Finished plan documents whose durable content moved into the two docs
+  above or already lived in ADRs: `architecture.md`, `SOLID-PLAN.md`,
+  `PLAN.md`, `libNetwork.md`, `libNetwork-handoff.md`, `fdroid/README.md`,
+  and the empty `rust_builder/README.md`.
+
+## [1.5.1] - 2026-10 (tag `1.5.1`, versionCode 27)
 
 ### Added
-- **Map pin labels** (libNetwork.md §5.9, design 2026-10-18): the own pin
+- **Map pin labels** (design 2026-10-18): the own pin
   and every hub pin carry a permanent name label; any other pin shows its
   label only while selected (pin tap toggles the label, label tap opens the
   pin sheet; hub pins open it directly). "Hub" is derived from the rows —
@@ -52,7 +80,7 @@ heading as part of the `chore(release):` commit.
 ## [1.5.0] - 2026-10 (tag `1.5.0`, versionCode 25)
 
 ### Added
-- **Library network** (libNetwork.md, ADR 0012): save other Pitak libraries
+- **Library network** (ADR 0012; contracts in `docs/ARCHITECTURE.md` §5): save other Pitak libraries
   by URL or by scanning their library card QR in person; distance-sorted
   list with membership/verification badges; user-initiated Refresh with
   bounded discovery (two expansions, 500-row cap) and cancel; pending
@@ -72,7 +100,7 @@ heading as part of the `chore(release):` commit.
   adoption failures are reported, never rolled back.
 - `LICENSE` (GPL-3.0-or-later) matching the F-Droid listing; `SECURITY.md`
   disclosure policy; `CONTRIBUTING.md` + PR template; `CHANGELOG.md`;
-  `docs/adr/` architecture decision records (architecture.md Phase 0).
+  `docs/adr/` architecture decision records.
 - CI: Dependabot for pub/cargo/github-actions; all actions SHA-pinned; OSV
   scan of both lockfiles; `fdroid-purity` job (no Google deps in the fdroid
   classpath); `update-goldens` workflow (A2, B2).
