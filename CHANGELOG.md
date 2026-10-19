@@ -14,6 +14,41 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-10 (tag `1.5.1`, versionCode 26)
+
+### Added
+- **Map pin labels** (libNetwork.md §5.9, design 2026-10-18): the own pin
+  and every hub pin carry a permanent name label; any other pin shows its
+  label only while selected (pin tap toggles the label, label tap opens the
+  pin sheet; hub pins open it directly). "Hub" is derived from the rows —
+  `membership != none` or another row's `listedByHubUrl` — not stored. New
+  `map_pin_label.dart` widget + `hubSiteUrls`/`isHubRow` helpers.
+- **"Confirmed by member" badge**: refresh records whether a hub-listed
+  member's own `memberOf` links back to the listing hub (reciprocal consent
+  — the hub's `members` entry is the claim, the link-back is the member's
+  published agreement). Shown as a chip on list tiles and the map pin sheet
+  via `MembershipBadge`.
+- Home screen: a map button left of the scan icon opens the Library network
+  screen straight on its Map tab (`NetworkPage(initialTab: 1)`).
+- Network screen: an "Add bookmark" button beside "Add member" replaces the
+  app-bar add-by-URL icon (same dialog and flow).
+
+### Changed
+- flutter_map marker anchoring corrected: pins use `Alignment.topCenter`
+  (flutter_map's alignment is the marker's position RELATIVE TO the point),
+  so pin tips now sit ON their coordinate — `bottomCenter` had floated them
+  ~44 px below it.
+- Map viewport fit padding is asymmetric (top 120, sides 80, bottom 48) so
+  edge pins open with their 96 dp labels on-screen.
+
+### Database
+- Schema v4: `network_libraries.confirmed_by_member` (additive
+  `INTEGER NOT NULL DEFAULT 0` via `m.addColumn`). The v3 `createTable`
+  branch builds the table at its current shape, so the v3/v4 branches are
+  `else if` — proven by the v1→current migration test. New snapshot
+  `drift_schema_v4.json`, regenerated helpers, data-matrix row
+  "v3: a network row survives; confirmed_by_member defaults to false".
+
 ## [1.5.0] - 2026-10 (tag `1.5.0`, versionCode 25)
 
 ### Added

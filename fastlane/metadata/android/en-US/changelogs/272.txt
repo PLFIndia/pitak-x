@@ -1,0 +1,4 @@
+* New: map pins show names — your own library and hubs always, any other pin on tap (tap the name for details and directions).
+* New: "Confirmed by member" badge — a hub's membership claim is now told apart from a member's confirmed yes.
+* New: map button on the home screen jumps straight to the network map.
+* "Add bookmark" button on the Library network screen replaces the top-right link icon.

@@ -8,8 +8,8 @@ to GitHub Pages with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.4.0**
-> (`pubspec.yaml`, tag `1.4.0`); F-Droid builds from the tag on its own
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.5.1**
+> (`pubspec.yaml`, tag `1.5.1`); F-Droid builds from the tag on its own
 > schedule, so its index may lag by a release. `PLAN.md` tracks the task in
 > flight; the maintainer's full engineering reference (`appDetails.md`) is
 > kept locally and is not part of this repository.
