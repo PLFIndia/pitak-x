@@ -33,17 +33,37 @@ import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/change_passphrase_page.dart';
 
-/// The app settings screen with four tabs.
+/// Tabs of the settings screen, in order.
+///
+/// Mirrors `PublishTab`: a caller that wants to land on a specific tab (the
+/// "How Pitak works" guides deep-link to Data) names it instead of passing a
+/// bare index that silently breaks when a tab is added or reordered.
+enum SettingsTab {
+  /// Theme, library name/icon, network toggles.
+  appearance,
+
+  /// Import / export / merge / backup / restore + community library.
+  data,
+
+  /// App lock + vault passphrase/biometrics.
+  security,
+}
+
+/// The app settings screen with three tabs.
 class SettingsPage extends ConsumerWidget {
-  /// Creates the settings page.
-  const SettingsPage({super.key});
+  /// Creates the settings page, optionally opening on [initialTab].
+  const SettingsPage({this.initialTab = SettingsTab.appearance, super.key});
+
+  /// Which tab to show first.
+  final SettingsTab initialTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(settingsControllerProvider);
 
     return DefaultTabController(
-      length: 3,
+      length: SettingsTab.values.length,
+      initialIndex: initialTab.index,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
