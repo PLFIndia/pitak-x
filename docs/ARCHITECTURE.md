@@ -142,7 +142,9 @@ lib/
                           Refresh/discovery, membership, consent-gated OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
     import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
-    settings/             Appearance · Data · Security
+    settings/             Appearance · Data · Security (SettingsPage.initialTab)
+    guides/               in-app "How Pitak works" guides (pure content model +
+                          pages; deep-links only — no state, no IO)
   features/<f>/{domain,application,infrastructure,presentation}   (every feature)
 assets/
   publish/                index.html, events.html (site viewers)
@@ -160,7 +162,17 @@ tool/                     release_build.sh (the only way to build a Play .aab)
 
 **Navigation:** `main.dart` → `AppGate` (splash → app-lock if enabled →
 Library). Drawer: Borrowers vault · Publish · Wishlist · Library network ·
-Share · Settings.
+Share · How Pitak works · Settings.
+
+**Guides (`features/guides/`).** The copy lives in `domain/guide_catalog.dart`
+as a typed, immutable model (`Guide` → sealed `GuideSection`), so the
+domain-purity gate keeps it free of Flutter and `guide_catalog_test.dart` can
+pin its invariants (order, 2–7 steps, ≤ 3 "Good to know", lossless
+`**bold**`/`` `code` `` markup, one "spokes", 1:1 destinations, exact item
+counts) without pumping a widget. Icons and target pages are mapped in
+presentation from `GuideId` / `GuideDestination`; `GuidePage` takes its
+opener as a parameter so tests record the destination instead of pushing
+provider-backed pages. Copy record: `docs/mockups/how-pitak-works.md`.
 
 **Naming contract:** the Dart package stays `pitaka`; only user-visible text
 says "Pitak". Class names, schema constants and the publish commit message are

@@ -15,6 +15,12 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **How Pitak works** — five short in-app guides (publish, map,
+  backup/restore/export/import, vault & lending, hubs & members) from the
+  drawer; each ends with a button to the screen it describes. The copy is a
+  typed, pure-Dart model (`features/guides/domain/`) with its invariants
+  under test. Settings can now be opened on a given tab
+  (`SettingsPage.initialTab`, `SettingsTab`), mirroring `PublishTab`.
 - `tool/release_build.sh --sentinel '<ASCII text>'` is now **required**: the
   script extracts the bundle's arm64 `libapp.so` and refuses to pass if the
   sentinel is absent — the check that would have caught both stale-snapshot
@@ -35,6 +41,14 @@ heading as part of the `chore(release):` commit.
   `libNetwork.md §5.9`, `SOLID-PLAN S4`) now carry either the reason inline
   or a pointer into `docs/ARCHITECTURE.md`.
 - Fixed: the 1.5.1 heading said versionCode 26; the release is `+27`.
+- Restore copy: the library logo is **not** restored (the setting that marks
+  a cover file as the logo is not in a `.pitabak`; `RestoreController`
+  clears a dangling reference). Restore said covers "including the library
+  logo" are replaced; it now lists the logo with the other things a restore
+  does not bring back, matching the Create-backup page and the backup guide.
+- `settings_page.dart` left the file-size-ratchet allow-list: the community
+  library section (Show / Scan library QR, Start a new library) moved to
+  `widgets/community_library_section.dart` unchanged.
 
 ### Removed
 - Finished plan documents whose durable content moved into the two docs
