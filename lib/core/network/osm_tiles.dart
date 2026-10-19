@@ -1,5 +1,5 @@
 /// OpenStreetMap tile configuration for the network map (pure Dart,
-/// libNetwork.md §5.9).
+/// docs/ARCHITECTURE.md §1 network egress).
 ///
 /// ONE place owns everything the map needs to talk to the OSM tile CDN:
 /// the URL template and the User-Agent header. It lives in `core/network`

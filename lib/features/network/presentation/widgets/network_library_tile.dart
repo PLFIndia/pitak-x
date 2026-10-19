@@ -1,4 +1,4 @@
-/// One saved library in the network list (presentation, libNetwork.md §5.1).
+/// One saved library in the network list (presentation, docs/ARCHITECTURE.md §3 network).
 ///
 /// Deliberately thin: name (or the URL when a row has no name yet), the site
 /// address, the shared [MembershipBadge] row, and tap-to-open in the external

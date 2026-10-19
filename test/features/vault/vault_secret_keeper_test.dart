@@ -1,4 +1,4 @@
-/// Unit tests for [VaultSecretKeeper] (SOLID-PLAN S4): the wipe/fencing
+/// Unit tests for [VaultSecretKeeper] (vault session split by responsibility): the wipe/fencing
 /// invariants that guard the vault session's secret lifetime, tested without
 /// any vault IO or Riverpod.
 library;

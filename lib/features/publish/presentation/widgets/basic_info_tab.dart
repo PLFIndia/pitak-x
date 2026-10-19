@@ -2,8 +2,8 @@
 ///
 /// Library name + public address / GPS / email / phone — the info shown on
 /// the published page. Moved verbatim out of `publish_page.dart`
-/// (SOLID-PLAN S1) so the page file stays a thin renderer. Local state is
-/// UI-only: the text controllers and the edit/view toggle; persistence goes
+/// (render-only presentation, AGENTS §7) so the page file stays a thin
+/// renderer. Local state is UI-only: the text controllers and the edit/view toggle; persistence goes
 /// through `settingsControllerProvider`.
 library;
 
@@ -134,7 +134,7 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
               style: textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
-            // 3-way opt-in (libNetwork.md §5.4): default is NOT SHARED — no
+            // 3-way opt-in (docs/ARCHITECTURE.md §6 location sharing): default is NOT SHARED — no
             // coordinates leave the device until the user picks a precision.
             // View mode shows the current choice as a plain value row (the
             // LabeledValueField pattern this tab already uses) instead of a

@@ -4,7 +4,7 @@
 /// public constructor, only the checking factories [GeoPoint.tryCreate] and
 /// [GeoPoint.parse], so a `GeoPoint` in the codebase is always in range and
 /// finite. This replaces the private `_parseLatLng` the publish contact
-/// renderer used to carry (libNetwork.md §5.2), so "lat, lng" is parsed by
+/// renderer used to carry (docs/ARCHITECTURE.md §5), so "lat, lng" is parsed by
 /// exactly ONE rule everywhere: the published `index.html` pin, the network
 /// `library.json` descriptor, and the map pins.
 ///
@@ -13,7 +13,7 @@ library;
 
 import 'dart:math' as math;
 
-/// How precisely this library shares its location (libNetwork.md D7).
+/// How precisely this library shares its location (docs/ARCHITECTURE.md §6 location sharing).
 ///
 /// One switch, one meaning: it governs BOTH the `library.json` descriptor and
 /// the GPS pin on the published `index.html`. Default everywhere is "not
@@ -67,7 +67,7 @@ final class GeoPoint {
   }
 
   /// Rounds both coordinates to 2 decimals (~1.1 km at the equator) — the
-  /// "approximate" precision of libNetwork.md D7. Rounding via
+  /// "approximate" precision of docs/ARCHITECTURE.md §6 location sharing. Rounding via
   /// `roundToDouble` (half away from zero) keeps negatives symmetric:
   /// 12.345 → 12.35 and −12.345 → −12.35 (see the unit tests).
   GeoPoint coarsen() => GeoPoint._(_round2(lat), _round2(lng));

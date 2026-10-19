@@ -1,4 +1,4 @@
-/// Wishlist-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Wishlist-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the wishlist use cases and the by-id read model. The
 /// wishlist REPOSITORY binding lives in the database module (see its header

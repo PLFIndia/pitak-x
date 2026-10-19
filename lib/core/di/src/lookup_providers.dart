@@ -1,4 +1,4 @@
-/// ISBN-lookup DI bindings (AGENTS.md §4; SOLID-PLAN S3) — #29/#30.
+/// ISBN-lookup DI bindings (AGENTS.md §4; one DI module per feature) — #29/#30.
 ///
 /// What lives here: the session-scoped lookup cache, the encrypted API-key
 /// store, and the chained lookup service (Open Library primary, Google Books

@@ -1,5 +1,5 @@
 /// Validation for library names that cross a trust boundary (network domain,
-/// pure Dart; libNetwork.md §6 "Name" row).
+/// pure Dart; docs/ARCHITECTURE.md §5.6 "Name").
 ///
 /// A network name arrives from hostile sources: a fetched `library.json`, a
 /// scanned card QR, a backup archive entry. It is rendered in lists, map pin

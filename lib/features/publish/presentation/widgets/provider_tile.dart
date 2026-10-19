@@ -1,8 +1,9 @@
 /// Collapsible hosting-provider tiles of the publish Connection tab (S35).
 ///
-/// Moved verbatim out of `publish_page.dart` (SOLID-PLAN S1) so the page
-/// stays a thin renderer: these widgets are pure presentation with no state
-/// of their own beyond the tile's expand/collapse.
+/// Moved verbatim out of `publish_page.dart` (render-only presentation,
+/// AGENTS §7) so the page stays a thin renderer: these widgets are pure
+/// presentation with no state of their own beyond the tile's
+/// expand/collapse.
 library;
 
 import 'package:flutter/material.dart';

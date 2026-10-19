@@ -1,5 +1,5 @@
 /// Builds THIS library's own `library.json` descriptor at publish time
-/// (network application layer; libNetwork.md §5.5).
+/// (network application layer; docs/ARCHITECTURE.md §5.1).
 ///
 /// A pure function of settings + identity + site URL — no IO, no Riverpod —
 /// so every branch (sharing off/approximate/exact, blank name, invalid ID) is

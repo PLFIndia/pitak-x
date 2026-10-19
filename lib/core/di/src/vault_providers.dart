@@ -1,4 +1,4 @@
-/// Vault-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Vault-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the FFI vault repository, biometric gate + keystore, the
 /// at-rest vault store, the lend use case, the session-derived read models

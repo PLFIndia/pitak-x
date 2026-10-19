@@ -1,4 +1,4 @@
-/// Generic QR-scan page (core widget; libNetwork.md §5.12).
+/// Generic QR-scan page (core widget; docs/ARCHITECTURE.md §3).
 ///
 /// Replaces the settings-specific `ScanLibraryQrPage`: every scan flow in the
 /// app (pairing with a maintainer, a hub adding a member by library card)

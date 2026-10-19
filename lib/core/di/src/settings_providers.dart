@@ -1,4 +1,4 @@
-/// Settings DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Settings DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the non-secret settings repository (theme, library
 /// identity, sort, publish contact info). The `SettingsController` state

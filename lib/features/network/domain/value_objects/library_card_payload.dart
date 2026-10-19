@@ -1,5 +1,5 @@
-/// The library-card QR payload (network domain, pure Dart; libNetwork.md
-/// §3.2, D9 — a CROSS-DEVICE WIRE CONTRACT).
+/// The library-card QR payload (network domain, pure Dart; docs/ARCHITECTURE.md
+/// §5.3 — a CROSS-DEVICE WIRE CONTRACT).
 ///
 /// The card QR is the library's own site URL plus a fragment:
 ///

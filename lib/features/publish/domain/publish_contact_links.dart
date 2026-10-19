@@ -41,7 +41,7 @@ abstract final class PublishContactLinks {
   /// Builds the inner HTML, or '' when nothing is set. [escape] escapes for the
   /// HTML context (injected so it stays pure/testable).
   ///
-  /// [sharing] is the user's location-sharing switch (libNetwork.md D7 — one
+  /// [sharing] is the user's location-sharing switch (docs/ARCHITECTURE.md §6 location sharing — one
   /// switch, one meaning): it gates the GPS pin here on `index.html` exactly
   /// as it gates the `location` block of `library.json`. `off` hides the pin
   /// entirely (the address SEARCH link is unaffected — an address is what the
@@ -117,8 +117,8 @@ abstract final class PublishContactLinks {
   static String? locationHref(String raw) {
     final v = raw.trim();
     if (v.isEmpty) return null;
-    // GeoPoint.parse is the single "lat, lng" rule in the app (libNetwork.md
-    // §5.2): the network descriptor and the map pins validate identically.
+    // GeoPoint.parse is the single "lat, lng" rule in the app (docs/ARCHITECTURE.md
+    // §5.6): the network descriptor and the map pins validate identically.
     final point = GeoPoint.parse(v);
     if (point != null) {
       return 'https://www.google.com/maps?q=${point.lat},${point.lng}';

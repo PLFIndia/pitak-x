@@ -5,7 +5,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks_use_case.dart';
 
-/// Tests for [MigrateLegacyBookmarksUseCase] (libNetwork.md §7 S4, D8):
+/// Tests for [MigrateLegacyBookmarksUseCase] (ADR 0012):
 /// idempotent, order-preserving, ONE transaction, and the prefs key is
 /// cleared ONLY after the commit succeeded. The prefs side arrives as
 /// function ports — this file is pure domain, the reader has its own test.

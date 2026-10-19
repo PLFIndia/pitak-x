@@ -141,7 +141,7 @@ dependencies:
   # the existing downscale; no network, no new data leaves the device.
   image_cropper: ^12.2.1
   font_awesome_flutter: ^11.0.0
-  # Network map (libNetwork.md S5): the canonical FOSS Flutter map widget
+  # Network map (docs/ARCHITECTURE.md §3 network): the canonical FOSS Flutter map widget
   # (BSD-3, pure Dart — no native code, no Google Play Services, so the
   # F-Droid build stays clean). Renders OpenStreetMap raster tiles; tiles are
   # fetched ONLY while the map tab is open and ONLY after the user accepts
@@ -161,7 +161,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  # On-device smoke test (architecture.md B1): FFI + Keystore + real file IO
+  # On-device smoke test (run by hand before a release): FFI + Keystore + real file IO
   # never run in the Dart VM. First-party plugin; its Android side uses
   # AndroidX test only — no Google Play/Firebase deps (flavor rule checked;
   # README › Flavors). Runs by hand, not in CI (D4):

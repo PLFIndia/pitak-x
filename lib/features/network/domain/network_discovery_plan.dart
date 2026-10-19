@@ -1,5 +1,5 @@
-/// The bounded discovery planner (network domain, pure Dart; libNetwork.md
-/// §5.6 step 1+3, D10).
+/// The bounded discovery planner (network domain, pure Dart; docs/ARCHITECTURE.md
+/// §5.6 discovery bounds).
 ///
 /// Refresh needs to answer ONE policy question without touching the network:
 /// "given the rows I have and the descriptors that arrived, which URLs do I

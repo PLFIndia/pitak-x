@@ -1,4 +1,4 @@
-/// Typed outcome of one bounded HTTP fetch (core; libNetwork.md D14/§5.12).
+/// Typed outcome of one bounded HTTP fetch (core; docs/ARCHITECTURE.md §5.6).
 ///
 /// The generic `BoundedHttpFetcher` lives in `core/network` because TWO
 /// features need the exact same security-critical behaviour (streaming byte

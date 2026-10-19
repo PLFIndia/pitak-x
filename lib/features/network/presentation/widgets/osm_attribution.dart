@@ -1,4 +1,4 @@
-/// The OpenStreetMap attribution (presentation, libNetwork.md §5.9).
+/// The OpenStreetMap attribution (presentation, docs/ARCHITECTURE.md §1 network egress).
 ///
 /// The OSM tile-usage policy REQUIRES visible credit wherever the tiles are
 /// shown — and says the credit must not be hidden behind toggles or links.

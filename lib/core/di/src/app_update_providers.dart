@@ -1,4 +1,4 @@
-/// App-update DI bindings (AGENTS.md §4; SOLID-PLAN S3) — S35.
+/// App-update DI bindings (AGENTS.md §4; one DI module per feature) — S35.
 ///
 /// What lives here: the Play in-app update seam. The real service gates
 /// itself to Android + the `play` applicationId (the fdroid flavor has no

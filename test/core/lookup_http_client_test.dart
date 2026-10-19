@@ -21,7 +21,7 @@ void main() {
     });
     await c.get(url);
     expect(seenUa, LookupHttpClient.userAgent);
-    // The app-wide constant (libNetwork.md §5.12): ONE honest User-Agent for
+    // The app-wide constant (docs/ARCHITECTURE.md §3): ONE honest User-Agent for
     // lookup, descriptor fetches and OSM tiles — app name + contact URL, no
     // version number that could drift from pubspec.
     expect(seenUa, AppUserAgent.value);

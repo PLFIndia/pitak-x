@@ -1,5 +1,5 @@
 /// What a picked archive carries, without restoring it (backup domain,
-/// libNetwork.md §5.10).
+/// docs/ARCHITECTURE.md §5.5).
 ///
 /// `inspectArchive` used to return the bare [BackupManifest]; the restore
 /// page's copy needs one more fact — the NAME inside `identity.json` ("This

@@ -14,7 +14,7 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Tests for [NetworkRefreshController] (libNetwork.md §5.11): one run at a
+/// Tests for [NetworkRefreshController] (docs/ARCHITECTURE.md §2): one run at a
 /// time, cancel, report/stamp bookkeeping, and the wiring that feeds the
 /// [NetworkWindow] — all through `ProviderContainer` overrides with the REAL
 /// use case over fake edges (repository + fetcher + prefs).

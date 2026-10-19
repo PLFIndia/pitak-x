@@ -1,8 +1,8 @@
 /// Dependency-injection barrel (AGENTS.md §4: Riverpod codegen is the DI
 /// container — no GetIt, no service locators).
 ///
-/// Every provider lives in a per-feature module under `src/` (SOLID-PLAN
-/// S3); this file only re-exports them, so all call sites keep importing
+/// Every provider lives in a per-feature module under `src/`; this file
+/// only re-exports them, so all call sites keep importing
 /// `core/di/providers.dart` and a feature edit touches one small module
 /// instead of a 985-line monolith.
 ///

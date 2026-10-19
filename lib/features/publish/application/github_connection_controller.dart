@@ -1,5 +1,5 @@
 /// GitHub connection screen state + orchestration (application layer,
-/// AGENTS.md §4/§7, SOLID-PLAN S1).
+/// AGENTS.md §4/§7, presentation stays render-only, AGENTS §7).
 ///
 /// Why a controller: the sign-in flow, token persistence, one-tap repo setup,
 /// repo listing/adoption and publishing are business decisions. Widgets may

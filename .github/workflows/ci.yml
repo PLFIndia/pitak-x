@@ -14,7 +14,7 @@ jobs:
     name: Rust core (pitak_crypto)
     runs-on: ubuntu-latest
     steps:
-      # All actions are SHA-pinned with a version comment (architecture.md
+      # All actions are SHA-pinned with a version comment (docs/ARCHITECTURE.md
       # A2); Dependabot's github-actions ecosystem updates both the SHA and
       # the comment. SHAs looked up at pin time, 2026-10-16.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -31,7 +31,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: rust
-      # Rust gates at parity with Dart (architecture.md A3): format, lints,
+      # Rust gates at parity with the Dart ones: format, lints,
       # supply-chain. Order matters: fmt is sub-second and fails fastest.
       - name: cargo fmt --check
         working-directory: rust
@@ -45,7 +45,7 @@ jobs:
       - name: cargo test (release)
         working-directory: rust
         run: cargo test --release
-      # Advisory + license + bans + sources gate (architecture.md D2: one
+      # Advisory + license + bans + sources gate (Dependabot must not bypass the purity check: one
       # tool replaces cargo-audit). rust/deny.toml keeps the old
       # `--deny warnings` policy: unsound and unmaintained advisories are
       # errors. Fetches the live advisory DB; an offline scan against a
@@ -86,7 +86,7 @@ jobs:
           fi
       - name: Analyze (zero issues)
         # integration_test is included so an API change in lib cannot leave
-        # the on-device smoke test uncompilable unnoticed (libNetwork review H4).
+        # the on-device smoke test uncompilable unnoticed (found in the 2026-10 network review).
         run: flutter analyze lib test integration_test
       - name: Format check
         run: dart format --set-exit-if-changed lib test integration_test
@@ -140,7 +140,7 @@ jobs:
             0) echo "::error::secret-shaped string found in tracked files (see matches above)."; exit 1 ;;
             *) echo "::error::git grep failed (exit ${status}) — the secret scan did not run."; exit 1 ;;
           esac
-      # Golden comparison (architecture.md B2/D6): THIS runner is the
+      # Golden comparison (golden tests are rendered on Linux CI): THIS runner is the
       # reference renderer. The committed PNGs must come from the
       # `update-goldens` workflow (ubuntu-latest), never from a Mac — macOS
       # rasterises differently, and a red step here with green logic tests
@@ -150,7 +150,7 @@ jobs:
       - name: Golden tests (Linux is the reference renderer)
         run: flutter test --tags golden
 
-  # OSV vulnerability scan of BOTH lockfiles (architecture.md A2): Dart's
+  # OSV vulnerability scan of BOTH lockfiles (supply chain: pinned actions + Dependabot): Dart's
   # pubspec.lock is otherwise never scanned (cargo-deny covers only Rust).
   # Uses the project's reusable workflow, SHA-pinned like every other action.
   osv-scan:
@@ -175,9 +175,9 @@ jobs:
       contents: read
       security-events: write
 
-  # F-Droid purity gate (architecture.md A2/D3): the fdroid flavor must
+  # F-Droid purity gate (supply chain: Dependabot must not break F-Droid purity): the fdroid flavor must
   # never resolve a Google dependency. This is the automated form of
-  # README.md › Flavors check 1, and it is NOT exempt for Dependabot PRs.
+  # docs/RELEASING.md §2 check 1, and it is NOT exempt for Dependabot PRs.
   # Dependency resolution does not trigger cargokit, so no Rust cross-compile
   # is needed; ubuntu-latest ships the Android SDK.
   fdroid-purity:
@@ -224,7 +224,7 @@ jobs:
       # (README › Flavors). If this step cannot find it, the grep or the
       # Gradle invocation is broken and the step above proved nothing. This
       # is the automated, every-run form of the plan's one-off "point it at
-      # the play classpath and watch it fail" proof (architecture.md A2).
+      # the play classpath and watch it fail" proof (supply chain: pinned actions + Dependabot).
       - name: Positive control — playReleaseRuntimeClasspath DOES contain Google code
         working-directory: android
         env:

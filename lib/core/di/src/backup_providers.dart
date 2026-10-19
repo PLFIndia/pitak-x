@@ -1,4 +1,4 @@
-/// Backup/restore DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Backup/restore DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the `.pitabak` archive writer/restorer. Backup is the
 /// most cross-cutting feature (it bundles books, wishlist, the vault store
@@ -25,7 +25,7 @@ part 'backup_providers.g.dart';
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
 /// covers bundled — plus the library identity and the saved-libraries list
-/// (libNetwork.md §7 S6, both gathered best-effort). Returns the archive
+/// (docs/ARCHITECTURE.md §3 network, both gathered best-effort). Returns the archive
 /// bytes for the UI to save.
 @riverpod
 Future<CreateBackupUseCase> createBackupUseCase(

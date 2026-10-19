@@ -1,4 +1,4 @@
-//! Property tests for the hostile-input surface (architecture.md B3).
+//! Property tests for the hostile-input surface.
 //!
 //! `.pitabak` archives and wrapped vault blobs are user-supplied bytes;
 //! "treat every input as hostile" (AGENTS §1) is a stated mindset, and these

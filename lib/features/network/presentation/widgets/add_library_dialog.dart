@@ -1,4 +1,4 @@
-/// Add-a-library-by-URL dialog (presentation, libNetwork.md §7 S4 step 5).
+/// Add-a-library-by-URL dialog (presentation, docs/ARCHITECTURE.md §3 network).
 ///
 /// Replaces the old bookmark add dialog (ADR 0012): a required site URL on
 /// the [BookmarkUrl] allow-list and an optional display name — the next

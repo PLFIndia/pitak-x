@@ -1,4 +1,4 @@
-/// Library network screen (presentation, AGENTS.md §3.1; libNetwork.md §5.1).
+/// Library network screen (presentation, AGENTS.md §3.1; docs/ARCHITECTURE.md §3 network).
 ///
 /// Three tabs:
 ///  - **Libraries** — every library you care about (migrated bookmarks, card

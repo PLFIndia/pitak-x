@@ -1,5 +1,5 @@
 /// Builds the `geo:` URI the map's "Directions" action hands to the OS map
-/// app (network domain, pure Dart; libNetwork.md §5.9).
+/// app (network domain, pure Dart; docs/ARCHITECTURE.md §1 network egress).
 ///
 /// Why a separate helper instead of string interpolation in the page:
 /// building this URI has two traps that only show up on real data, and both

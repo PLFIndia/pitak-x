@@ -1,5 +1,5 @@
 /// The one-time OpenStreetMap tiles consent dialog (presentation,
-/// libNetwork.md §5.9).
+/// docs/ARCHITECTURE.md §1 network egress).
 ///
 /// The map needs raster tiles from `tile.openstreetmap.org`, and fetching
 /// them tells the OSM servers the device IP and the area being viewed. That

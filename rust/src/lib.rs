@@ -9,7 +9,7 @@
 //! `BackupPassphraseWrapper` + zetetic SQLCipher 4.5.4 (the first thing the
 //! port proved, against real archives, before any UI was written).
 
-// Unsafe code is denied crate-wide (architecture.md A3, D1). The only allowed
+// Unsafe code is denied crate-wide. The only allowed
 // exceptions are the generated FFI glue below and the three `sqlite3_key`
 // calls in vault.rs — raw key bytes must not pass through SQL text as
 // `PRAGMA key`, so SQLCipher's C API is the correct, reviewed mechanism.

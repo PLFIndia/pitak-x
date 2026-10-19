@@ -1,5 +1,5 @@
 /// Reader for the §3.4 additive archive entries (infrastructure,
-/// libNetwork.md): `identity.json` and `network.json`.
+/// docs/ARCHITECTURE.md §5): `identity.json` and `network.json`.
 ///
 /// Extracted from `restore_backup.dart` to keep that file under the
 /// architecture test's size ratchet — the two readers are pure functions of

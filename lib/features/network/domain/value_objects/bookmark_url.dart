@@ -1,5 +1,5 @@
 /// The published-site URL allow-list AND canonical form (network domain, pure
-/// Dart; libNetwork.md §6 "URL" row, D13 "the URL is the identity").
+/// Dart; docs/ARCHITECTURE.md §5.6 "URL"; the URL is the identity).
 ///
 /// ONE rule decides which addresses the network feature trusts, and it is
 /// used at every boundary: adding a library by URL, parsing a scanned card
@@ -44,7 +44,7 @@ abstract final class BookmarkUrl {
   /// `foo.github.io` is allowed, `github.io.evil.com` is not).
   static const Set<String> allowedHostSuffixes = {'github.io', 'pages.dev'};
 
-  /// Length cap (libNetwork.md §6 "URL" row): a legitimate Pages address is
+  /// Length cap (docs/ARCHITECTURE.md §5.6 "URL"): a legitimate Pages address is
   /// far shorter; the cap bounds the work every parser does on a hostile
   /// string (a multi-megabyte "URL" from a QR code or descriptor is refused
   /// before `Uri.tryParse` ever sees it).

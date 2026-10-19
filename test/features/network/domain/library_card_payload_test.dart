@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 
-/// Wire-contract tests for the library-card QR payload (libNetwork.md §3.2).
+/// Wire-contract tests for the library-card QR payload (docs/ARCHITECTURE.md §5.3).
 void main() {
   const fp = 'adb28b53d57009ce04d4e0b28563ebcd395375c0d719fd53986908233687f664';
   const site = 'https://kadugodi-library.github.io/pitak/';

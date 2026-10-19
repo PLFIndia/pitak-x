@@ -65,14 +65,14 @@ abstract interface class SettingsRepository {
     required String phone,
   });
 
-  /// Persists the location-sharing mode (libNetwork.md D7): governs the
+  /// Persists the location-sharing mode (docs/ARCHITECTURE.md §6 location sharing): governs the
   /// published GPS pin AND the network descriptor's location. Off means no
   /// coordinates leave the device in any published file.
   Future<Either<Failure, Unit>> setPublishLocationSharing(
     LocationSharing sharing,
   );
 
-  /// Persists the OpenStreetMap tiles consent (libNetwork.md §5.9). When
+  /// Persists the OpenStreetMap tiles consent (docs/ARCHITECTURE.md §1 network egress). When
   /// false, the network map never builds and no tile request ever leaves the
   /// device. Non-secret; default false.
   Future<Either<Failure, Unit>> setNetworkMapTilesConsent({

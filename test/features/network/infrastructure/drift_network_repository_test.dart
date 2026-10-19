@@ -7,7 +7,7 @@ import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 
 /// CRUD + merge + constraint tests for [DriftNetworkRepository] over an
-/// in-memory database (libNetwork.md S3/§8: infrastructure tests never hit
+/// in-memory database (docs/ARCHITECTURE.md §2: infrastructure tests never hit
 /// real storage on disk).
 void main() {
   const fpA =

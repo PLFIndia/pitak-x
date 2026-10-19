@@ -5,7 +5,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
 
-/// Tests for [ConfirmMembershipUseCase] (libNetwork.md §5.6 step 4): the
+/// Tests for [ConfirmMembershipUseCase] (docs/ARCHITECTURE.md §6 membership): the
 /// user's answer moves the row's membership state through the repository.
 void main() {
   const hubUrl = 'https://hub.github.io/pitak/';

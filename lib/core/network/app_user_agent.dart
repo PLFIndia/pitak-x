@@ -1,4 +1,4 @@
-/// The app's single outbound HTTP User-Agent (core; libNetwork.md §5.12).
+/// The app's single outbound HTTP User-Agent (core; docs/ARCHITECTURE.md §3).
 ///
 /// ONE constant for every request the app makes to a third party: ISBN
 /// lookups, `library.json` descriptor fetches, and OpenStreetMap tiles. Two

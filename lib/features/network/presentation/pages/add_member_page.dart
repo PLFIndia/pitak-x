@@ -1,4 +1,4 @@
-/// Hub "Add member" scan flow (presentation, libNetwork.md §5.7, D2).
+/// Hub "Add member" scan flow (presentation, docs/ARCHITECTURE.md §5.3).
 ///
 /// One job: scan another library's CARD QR and hand it to
 /// `AddMemberController`, then render whatever state the controller holds.
@@ -30,7 +30,7 @@ class AddMemberPage extends ConsumerWidget {
   /// Test seam: builds the scanning surface instead of the camera.
   final Widget Function(void Function(String raw) onText)? scanner;
 
-  /// The D2 rejection copy — exact words from libNetwork.md §5.7.
+  /// The D2 rejection copy — exact words from docs/ARCHITECTURE.md §5.3.
   static const String pairingHint =
       "That's a pairing code. Ask the library to show its library card "
       'instead.';

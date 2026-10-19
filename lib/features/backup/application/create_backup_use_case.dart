@@ -7,7 +7,7 @@
 /// Read-only with respect to app state: it reads books/wishlist and copies the
 /// existing vault artifacts; it mutates nothing. The vault key never appears.
 ///
-/// libNetwork.md §7 S6: the archive also gathers the library identity
+/// docs/ARCHITECTURE.md §3 network: the archive also gathers the library identity
 /// (`identity.json`, via the [LibraryNamespace] port) and the saved-libraries
 /// list (`network.json`, via [NetworkRepository]). Both are BEST-EFFORT: a
 /// Left/throw from either source yields a null entry and the backup proceeds

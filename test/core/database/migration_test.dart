@@ -94,7 +94,7 @@ Future<void> _expectRawSqlObjectsHealthy(
 }
 
 /// Real schema-migration tests backed by committed drift snapshots
-/// (architecture.md A4). Why: "zero data loss" is the product promise and
+/// (docs/ARCHITECTURE.md §5.4). Why: "zero data loss" is the product promise and
 /// F-Droid users update irregularly, so v1→vN jumps must be proven against
 /// the *actual historical schemas* — not a fabricated in-test database.
 ///
@@ -257,7 +257,7 @@ void main() {
       await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'Current');
     });
 
-    // Data-matrix row for the v3 bump (libNetwork.md §5.3, README › Schema
+    // Data-matrix row for the v3 bump (docs/ARCHITECTURE.md §5.4, README › Schema
     // version bumps): the new table must exist and start EMPTY on upgrade —
     // the legacy bookmarks data migration is a separate prefs→rows step
     // (S4), never part of the SQL migration.
@@ -344,7 +344,7 @@ void main() {
 
   test('a committed snapshot exists for the current schemaVersion', () async {
     // Mechanical tripwire replacing the old hand-maintained one
-    // (architecture.md A4): bumping schemaVersion without dumping a new
+    // (docs/ARCHITECTURE.md §5.4): bumping schemaVersion without dumping a new
     // snapshot fails here. Reads the JSON file itself (not just the generated
     // helper) so deleting the snapshot breaks the test immediately.
     final current = await _currentSchemaVersion();

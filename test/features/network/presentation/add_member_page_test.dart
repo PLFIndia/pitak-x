@@ -15,7 +15,7 @@ import 'package:pitaka/features/network/presentation/pages/add_member_page.dart'
 
 import '../../../support/a11y.dart';
 
-/// Flow tests for the add-member screen (libNetwork.md S3): the scan seam
+/// Flow tests for the add-member screen (docs/ARCHITECTURE.md §3 network): the scan seam
 /// feeds payloads the real `QrScanPage` decision would accept/reject, and
 /// the REAL `AddMemberUseCase` runs over an in-memory repository — so these
 /// cover page + use case wiring together.

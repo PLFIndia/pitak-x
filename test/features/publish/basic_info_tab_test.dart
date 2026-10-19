@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 
-/// Widget tests for the location-sharing control (libNetwork.md S2/§5.4):
+/// Widget tests for the location-sharing control (docs/ARCHITECTURE.md §3 network/§5.4):
 /// the 3-way opt-in under the GPS field, its first-read seeding, that Save
 /// persists the enum token, and that view mode shows a read-only row (no
 /// disabled control — a11y contrast).

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 
-/// Boundary tests for [NetworkName] (libNetwork.md §6 "Name" row): length
+/// Boundary tests for [NetworkName] (docs/ARCHITECTURE.md §5.6 "Name"): length
 /// bounds after trim, C0/DEL control rejection, and the bidi-override
 /// rejections that stop Trojan-Source-style visual reordering.
 void main() {

@@ -1,5 +1,5 @@
 /// The refresh control row of the Libraries tab (presentation,
-/// libNetwork.md §7 S4 step 5, D11).
+/// docs/ARCHITECTURE.md §1: user-initiated only).
 ///
 /// Shows the "last refreshed" stamp, an honest one-line summary of the last
 /// run's [RefreshReport] (coarse counts only — never URLs or response text,

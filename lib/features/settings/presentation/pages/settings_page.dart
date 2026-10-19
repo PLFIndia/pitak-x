@@ -271,8 +271,8 @@ class _CommunityLibrarySection extends ConsumerWidget {
     String shortId(String id) => id.length <= 8 ? id : '${id.substring(0, 8)}…';
 
     Future<void> scanQr() async {
-      // The generic scanner with the pairing rule injected (libNetwork.md
-      // §5.12): only `pitaka-lib:<valid id>` payloads are accepted; anything
+      // The generic scanner with the pairing rule injected (docs/ARCHITECTURE.md
+      // §5.3): only `pitaka-lib:<valid id>` payloads are accepted; anything
       // else the camera sees is silently ignored.
       final id = await Navigator.of(context).push<String>(
         MaterialPageRoute(

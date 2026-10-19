@@ -1,4 +1,4 @@
-/// Network-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Network-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the one-time legacy-bookmarks migration, the Drift-backed
 /// row repository, the bounded descriptor fetcher (the ONLY thing that reads

@@ -1,4 +1,4 @@
-/// What a built backup actually carries (backup domain, libNetwork.md §7 S6).
+/// What a built backup actually carries (backup domain, docs/ARCHITECTURE.md §3 network).
 ///
 /// The archive bytes plus the truth about the two OPTIONAL entries: the
 /// library identity and the saved-libraries list are gathered best-effort —

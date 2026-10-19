@@ -5,7 +5,7 @@ import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
-/// Branch tests for the pure descriptor builder (libNetwork.md §5.5): the D7
+/// Branch tests for the pure descriptor builder (docs/ARCHITECTURE.md §5.1): the D7
 /// sharing mapping, the name fallback, and the two refuse-the-publish Lefts.
 void main() {
   const id = '0123456789abcdef0123456789abcdef';

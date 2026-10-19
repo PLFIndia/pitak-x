@@ -1,5 +1,5 @@
 /// The PUBLISHED identity of a library: a fingerprint of its private ID
-/// (network domain, pure Dart; libNetwork.md D3/§3.3).
+/// (network domain, pure Dart; docs/ARCHITECTURE.md §5.2).
 ///
 /// The raw library ID (16–64 hex, minted from a CSPRNG) must NEVER leave the
 /// device except in person or inside a JSON export the user hands over — it is

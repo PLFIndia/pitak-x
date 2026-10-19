@@ -67,7 +67,7 @@ const String _wishlistDbEntry = 'wishlist.db';
 const String _borrowersDbEntry = 'borrowers.db';
 const String _backupBlobEntry = 'backup_blob';
 const String _coverEntryPrefix = 'cover_';
-// libNetwork.md §3.4: the library identity + the saved-libraries list,
+// docs/ARCHITECTURE.md §5.5: the library identity + the saved-libraries list,
 // plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
 const String _identityEntry = 'identity.json';
 const String _networkEntry = 'network.json';

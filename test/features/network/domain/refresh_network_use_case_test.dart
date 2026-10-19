@@ -10,7 +10,7 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 
-/// Algorithm tests for [RefreshNetworkUseCase] (libNetwork.md §5.6, §7 S4):
+/// Algorithm tests for [RefreshNetworkUseCase] (docs/ARCHITECTURE.md §5.6):
 /// apply rules, refusal mapping, D12 conflict handling, membership signals,
 /// discovery inserts, cancellation and the ONE-transaction write. Everything
 /// runs on fakes — no HTTP, no Drift.

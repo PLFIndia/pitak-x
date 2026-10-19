@@ -81,7 +81,7 @@ void main() {
     });
   });
 
-  group('render × location sharing (libNetwork.md D7)', () {
+  group('render × location sharing (docs/ARCHITECTURE.md §6)', () {
     test('off hides the GPS pin but keeps the address search link', () {
       final html = PublishContactLinks.render(
         const PublishContact(address: 'MG Road', gps: '12.9876, 77.5946'),

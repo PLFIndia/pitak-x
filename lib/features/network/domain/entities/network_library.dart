@@ -1,5 +1,5 @@
 /// One saved library on the network (network domain, pure Dart;
-/// libNetwork.md §5.2). The row the old bookmark was replaced by (ADR 0012).
+/// docs/ARCHITECTURE.md §5). The row the old bookmark was replaced by (ADR 0012).
 ///
 /// A row is identified on the wire by its `fingerprint` (never the raw
 /// library ID, D3) and on-device by `siteUrl` (the natural key — "the URL is
@@ -38,7 +38,7 @@ enum NetworkSource {
   discovered,
 }
 
-/// Am I a member of THIS row (which is a hub)? (libNetwork.md §5.6 step 4)
+/// Am I a member of THIS row (which is a hub)? (docs/ARCHITECTURE.md §6 membership)
 enum MembershipState {
   /// No signal either way.
   none,

@@ -1,4 +1,4 @@
-/// Bounded, allow-listed HTTP GET fetcher (core; libNetwork.md D14).
+/// Bounded, allow-listed HTTP GET fetcher (core; docs/ARCHITECTURE.md §5.6).
 ///
 /// The generic form of the publish cover fetcher (security audit M1, N08,
 /// REVIEW_FINDINGS_2 S6) — extracted so the network `library.json` descriptor

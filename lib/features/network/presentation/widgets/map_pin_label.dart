@@ -5,7 +5,7 @@
 ///  - every other pin shows its label only while selected (tap the pin to
 ///    toggle it; tap the label to open the pin's bottom sheet).
 ///
-/// There is no "hub" role in the data model (libNetwork.md §1) — a hub is
+/// There is no "hub" role in the data model (docs/ARCHITECTURE.md §6) — a hub is
 /// DERIVED from the rows: a row is a hub when it lists YOU
 /// (`membership != none`) or when another row was discovered through its
 /// member list (`listedByHubUrl` points at it, §5.6 step 3). That is what

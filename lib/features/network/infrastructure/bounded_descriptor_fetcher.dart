@@ -1,5 +1,5 @@
 /// Bounded fetcher for `library.json` descriptors (network infrastructure;
-/// libNetwork.md §5.1/§6).
+/// docs/ARCHITECTURE.md §5.6).
 ///
 /// A thin adapter over the shared [BoundedHttpFetcher] (D14 — the same three
 /// defences the cover fetch uses): the allow-list is [BookmarkUrl.sanitize]

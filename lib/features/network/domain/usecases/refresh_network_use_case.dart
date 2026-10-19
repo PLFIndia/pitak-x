@@ -1,4 +1,4 @@
-/// The Refresh algorithm (network domain use case; libNetwork.md §5.6, D10,
+/// The Refresh algorithm (network domain use case; docs/ARCHITECTURE.md §5.6 discovery bounds,
 /// D11, D12).
 ///
 /// One user tap reads every saved library's published `library.json`, applies

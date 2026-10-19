@@ -3,7 +3,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 
-/// Tests for the `network.json` backup envelope codec (libNetwork.md §3.4):
+/// Tests for the `network.json` backup envelope codec (docs/ARCHITECTURE.md §5.5):
 /// round-trip, tolerant failure modes (corrupt / too-new schema → null),
 /// per-row resilience with a DROPPED COUNT (§6: dropped rows are counted),
 /// first-wins dedupe on the table's UNIQUE keys, and the row cap (review

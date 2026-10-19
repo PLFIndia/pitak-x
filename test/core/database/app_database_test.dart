@@ -110,7 +110,7 @@ void main() {
   );
 
   // Schema migrations are verified against committed drift snapshots in
-  // migration_test.dart (architecture.md A4) — the tripwire that used to
+  // migration_test.dart (docs/ARCHITECTURE.md §5.4) — the tripwire that used to
   // live here is replaced by its snapshot-existence check. Every
   // schemaVersion bump = dump a new snapshot + regenerate + extend the data
   // matrix (rule in README › Quality gates).

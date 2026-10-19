@@ -1,5 +1,5 @@
-/// The `network.json` backup-entry envelope (network domain, libNetwork.md
-/// §3.4): `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }`.
+/// The `network.json` backup-entry envelope (network domain, docs/ARCHITECTURE.md
+/// §5.5): `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }`.
 ///
 /// The codec lives HERE (not in the backup feature) because the row schema is
 /// this feature's contract — [NetworkLibrary.toJson]/[NetworkLibrary.fromJson]

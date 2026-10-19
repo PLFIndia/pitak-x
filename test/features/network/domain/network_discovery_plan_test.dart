@@ -3,7 +3,7 @@ import 'package:pitaka/features/network/domain/entities/library_descriptor.dart'
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/network_discovery_plan.dart';
 
-/// Policy tests for [NetworkDiscoveryPlan] (libNetwork.md §7 S4, D10). The
+/// Policy tests for [NetworkDiscoveryPlan] (docs/ARCHITECTURE.md §3 network, D10). The
 /// planner is pure — no IO anywhere in this file.
 void main() {
   const hubUrl = 'https://hub.github.io/pitak/';

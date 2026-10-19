@@ -3,7 +3,7 @@
 /// WHEN a dialog appears is a controller decision (driven by
 /// `GitHubConnectionUi` state); these functions only render the dialog and
 /// return the user's answer. Kept out of the page file so `publish_page.dart`
-/// stays a thin renderer (SOLID-PLAN S1).
+/// stays a thin renderer (presentation stays render-only, AGENTS §7).
 library;
 
 import 'package:flutter/material.dart';

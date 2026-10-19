@@ -52,7 +52,7 @@ class RestoreSummary {
   final int coversDropped;
 
   /// The validated library identity parsed from the archive's
-  /// `identity.json` (libNetwork.md §3.4) — null when the archive carried no
+  /// `identity.json` (docs/ARCHITECTURE.md §5.5) — null when the archive carried no
   /// usable identity (absent, or invalid: see [identityInvalid]). Parsed and
   /// validated by the restorer; APPLIED by the restore controller after the
   /// catalogue switch (see [identityAdopted]).

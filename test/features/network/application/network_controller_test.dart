@@ -11,7 +11,7 @@ import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
-/// Tests for [NetworkController] (libNetwork.md §5.1): the window snapshot
+/// Tests for [NetworkController] (docs/ARCHITECTURE.md §3 network): the window snapshot
 /// and its three mutations, all driven through `ProviderContainer` overrides
 /// (AGENTS §4/§10 — never the real database).
 void main() {

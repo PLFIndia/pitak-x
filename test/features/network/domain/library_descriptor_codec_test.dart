@@ -6,7 +6,7 @@ import 'package:pitaka/features/network/domain/entities/library_descriptor.dart'
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 
-/// Every §3.1 wire rule, one test each (libNetwork.md S2): required-field
+/// Every §3.1 wire rule, one test each (docs/ARCHITECTURE.md §3 network): required-field
 /// rejection, schemaTooNew, location drop-on-invalid, member truncation,
 /// unknown-key tolerance, and stable byte output.
 void main() {

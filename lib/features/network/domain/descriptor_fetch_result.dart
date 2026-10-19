@@ -1,5 +1,5 @@
 /// Typed outcome of fetching + parsing one `library.json` (network domain,
-/// pure Dart; libNetwork.md §5.2).
+/// pure Dart; docs/ARCHITECTURE.md §5).
 ///
 /// Same shape as the publish-side `CoverFetchResult`: a sealed result the
 /// refresh use case folds into per-row `FetchStatus`es, with a COARSE refusal

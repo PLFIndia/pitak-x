@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 
-/// Tests for the published-identity fingerprint (libNetwork.md §3.3).
+/// Tests for the published-identity fingerprint (docs/ARCHITECTURE.md §5.2).
 /// The known vectors were computed independently (shasum) so a change to the
 /// domain prefix or the hash input encoding breaks these loudly — the prefix
 /// is a cross-device wire contract.

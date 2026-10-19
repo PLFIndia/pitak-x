@@ -55,7 +55,7 @@ class _CapturingApi implements GitHubGitDataApi {
   final PublishCommitResult? commitResult = null;
   List<DesiredFile>? committed;
 
-  /// deletePaths the commit was asked to remove (M14 / libNetwork.md §5.5).
+  /// deletePaths the commit was asked to remove (M14 / docs/ARCHITECTURE.md §5.1).
   List<String> deleted = const [];
 
   /// Branch the commit was made to (N09: must be the Pages source branch).
@@ -467,7 +467,7 @@ void main() {
     });
   });
 
-  group('library.json (libNetwork.md §5.5)', () {
+  group('library.json (docs/ARCHITECTURE.md §5.1)', () {
     final descriptor = utf8.encode('{"schemaVersion":1}');
 
     test('a provided descriptor rides in the same atomic commit', () async {

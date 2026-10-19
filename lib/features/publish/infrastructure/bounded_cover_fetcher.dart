@@ -7,7 +7,7 @@
 /// now" timing — and, with an unbounded buffered read, let that host hang the
 /// publish or stream gigabytes into memory (DoS).
 ///
-/// Since libNetwork.md D14 the three defences (origin allow-list, ABORTABLE
+/// The three defences (origin allow-list, ABORTABLE
 /// whole-request deadline, streaming byte cap with per-hop redirect
 /// re-validation and never draining rejected bodies) live in the shared
 /// `BoundedHttpFetcher` (`lib/core/network/bounded_http_fetcher.dart`), which

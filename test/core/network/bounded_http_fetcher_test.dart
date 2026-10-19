@@ -8,8 +8,8 @@ import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 
-/// Generic-fetcher ports of the cover-fetcher security cases (libNetwork.md
-/// D14/S1): allow-list, redirect re-validation, byte cap, timeout ABORT and
+/// Generic-fetcher ports of the cover-fetcher security cases (docs/ARCHITECTURE.md
+/// §5.6): allow-list, redirect re-validation, byte cap, timeout ABORT and
 /// never draining rejected bodies. The allow-list here is a test-local
 /// https+host rule — the same SHAPE `CoverUrlAllowList.sanitize` and
 /// `BookmarkUrl.normalize` have.

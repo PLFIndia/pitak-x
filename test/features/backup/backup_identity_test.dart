@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 
-/// Tests for the `identity.json` archive entry codec (libNetwork.md §3.4):
+/// Tests for the `identity.json` archive entry codec (docs/ARCHITECTURE.md §5.5):
 /// tolerant parse of a hostile entry — the ID is re-validated through
 /// `LibraryId`, and anything unusable yields null rather than a throw.
 void main() {

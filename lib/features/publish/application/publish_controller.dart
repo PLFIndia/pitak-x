@@ -86,7 +86,7 @@ class PublishController extends _$PublishController {
       publishLocalCoverReaderProvider.future,
     );
 
-    // library.json (libNetwork.md §5.5): the network descriptor rides in the
+    // library.json (docs/ARCHITECTURE.md §5.1): the network descriptor rides in the
     // SAME commit as books.json. Identity is read through its single owner
     // (N07 — `SettingsController` implements `LibraryNamespace`); a failed
     // mint/read REFUSES the whole publish, because a descriptor without an

@@ -1,6 +1,6 @@
 /// The ONE place the app's visual theme is defined.
 ///
-/// Why a dedicated file (architecture.md A6 "adjust colours via the theme —
+/// Why a dedicated file (accessibility gate "adjust colours via the theme —
 /// one place"; B2 "pin the five screens users see most"): `main.dart`, the
 /// golden tests and the accessibility-contrast tests must all render the
 /// *same* colours, or the tests pin a UI nobody ships. Keeping both

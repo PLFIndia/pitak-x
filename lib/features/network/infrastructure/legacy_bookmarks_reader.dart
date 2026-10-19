@@ -1,5 +1,5 @@
 /// Reader for the LEGACY bookmarks prefs key (network infrastructure;
-/// libNetwork.md §6 "Legacy prefs value", ADR 0012).
+/// docs/ARCHITECTURE.md §5.6, ADR 0012).
 ///
 /// The bookmarks feature is deleted, but its stored data must stay readable
 /// until the one-time migration has run: this class owns the prefs key

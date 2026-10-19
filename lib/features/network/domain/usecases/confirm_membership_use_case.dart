@@ -1,4 +1,4 @@
-/// Membership confirmation (network domain use case; libNetwork.md §5.6
+/// Membership confirmation (network domain use case; docs/ARCHITECTURE.md §5.6
 /// step 4, §5.1).
 ///
 /// The user's answer to "'X' lists you as a member — show that you're a

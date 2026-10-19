@@ -1,4 +1,4 @@
-/// The descriptor-fetch port (network domain, pure Dart; libNetwork.md §5.2).
+/// The descriptor-fetch port (network domain, pure Dart; docs/ARCHITECTURE.md §5).
 ///
 /// A function type, not an interface: the refresh use case needs exactly one
 /// operation — "fetch `<siteUrl>library.json` and hand back the typed

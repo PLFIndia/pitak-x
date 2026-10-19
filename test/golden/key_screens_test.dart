@@ -35,7 +35,7 @@ import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
 import '../features/vault/vault_repository_write_stub.dart';
 
-/// Golden tests for the five screens users see most (architecture.md B2).
+/// Golden tests for the five screens users see most.
 ///
 /// Plain `matchesGoldenFile`, no package (golden_toolkit is discontinued).
 /// The default test font (Ahem) keeps rendering deterministic. **Linux CI is
@@ -152,7 +152,7 @@ void main() {
     );
   });
 
-  /// The network list tile in every badge state (libNetwork.md §7 S5): member
+  /// The network list tile in every badge state (docs/ARCHITECTURE.md §3 network): member
   /// + verified, unverified, the pending-membership prompt, declined with
   /// Reconsider, and an identity conflict. One column, one PNG — the badges
   /// and their exact words are what a regression would break.

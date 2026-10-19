@@ -1,4 +1,4 @@
-/// The network map (presentation, libNetwork.md §5.9).
+/// The network map (presentation, docs/ARCHITECTURE.md §1 network egress).
 ///
 /// Two pieces:
 ///  - [NetworkMapGate] — the consent gate. The map never builds (and no

@@ -16,7 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/a11y.dart';
 
-/// Page tests for the Library network screen (libNetwork.md S3+S4): the
+/// Page tests for the Library network screen (docs/ARCHITECTURE.md §3 network+S4): the
 /// Libraries list over the real provider chain (fake repository + fake
 /// descriptor fetcher at the edges), removal, add-by-URL, the membership
 /// prompt, the refresh flow, distance sorting, the My-card tab, and the

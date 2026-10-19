@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Architecture fitness functions beyond domain purity (architecture.md B4)
+/// Architecture fitness functions beyond domain purity (docs/ARCHITECTURE.md §2.1)
 /// plus the file-size ratchet (B8). Same style as
 /// `domain_purity_test.dart`: dependency-free source scanning, so the rules
 /// are enforced by `flutter test` with no extra tooling to supply-chain.
@@ -124,7 +124,7 @@ void main() {
       isEmpty,
       reason:
           'Use appLog() (lib/core/platform/app_log.dart), never '
-          'print/debugPrint directly (architecture.md B5). Violations:\n'
+          'print/debugPrint directly (logging policy: nothing in release builds). Violations:\n'
           '${violations.join('\n')}',
     );
   });
@@ -178,7 +178,7 @@ void main() {
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      // 690 → 631 on 2026-10-17 (libNetwork.md S5): the OSM-tiles consent
+      // 690 → 631 on 2026-10-17 (docs/ARCHITECTURE.md §3 network): the OSM-tiles consent
       // switch was added and the Google-Books-key tile moved out to
       // widgets/google_books_key_tile.dart to pay for it.
       'lib/features/settings/presentation/pages/settings_page.dart': 631,
@@ -216,7 +216,7 @@ void main() {
           isEmpty,
           reason:
               'A file over 500 lines is a deliberate, reviewed size '
-              '(architecture.md B8). Split it, or add an allow-list entry in '
+              '(file-size ratchet, docs/ARCHITECTURE.md §2.1). Split it, or add an allow-list entry in '
               'layer_boundaries_test.dart with the reasoning. Violations:\n'
               '${violations.join('\n')}',
         );
@@ -250,7 +250,7 @@ void main() {
         isEmpty,
         reason:
             'File-size ratchet: allowed files may only shrink '
-            '(architecture.md B8/D9). Violations:\n${violations.join('\n')}',
+            '(file-size ratchet, docs/ARCHITECTURE.md §2.1). Violations:\n${violations.join('\n')}',
       );
     });
   });

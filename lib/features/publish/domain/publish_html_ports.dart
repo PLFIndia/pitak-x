@@ -12,8 +12,8 @@ import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Produces the published viewer `index.html` bytes for the given library
-/// name + public contact info. [sharing] gates the GPS pin (libNetwork.md
-/// D7: the same switch that gates the `library.json` location).
+/// name + public contact info. [sharing] gates the GPS pin (docs/ARCHITECTURE.md
+/// §6: the same switch that gates the `library.json` location).
 typedef ViewerHtmlFactory =
     Future<List<int>> Function({
       required String libraryName,

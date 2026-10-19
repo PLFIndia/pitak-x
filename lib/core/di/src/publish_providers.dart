@@ -1,5 +1,5 @@
-/// Publish-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3) — the "Publish
-/// to GitHub Pages" section (#32).
+/// Publish-feature DI bindings (AGENTS.md §4; one DI module per feature) —
+/// the "Publish to GitHub Pages" section (#32).
 ///
 /// What lives here: the GitHub API client + device flow + repo setup, the
 /// encrypted credential/cover-salt stores, the bounded cover download and its

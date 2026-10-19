@@ -27,7 +27,7 @@ class AppDatabase extends _$AppDatabase {
   ///  1 — initial (books + wishlist + FTS5).
   ///  2 — no shape change; data clean-up: one spelling per language
   ///      (Session 33, [_collapseLanguageSpellings]).
-  ///  3 — `network_libraries` table added (libNetwork.md S3): saved libraries
+  ///  3 — `network_libraries` table added (docs/ARCHITECTURE.md §3 network): saved libraries
   ///      on the network replace the old prefs bookmarks (ADR 0012).
   ///  4 — `network_libraries.confirmed_by_member` added (design 2026-10-18):
   ///      reciprocal member→hub consent (`memberOf` link-back) for the
@@ -42,7 +42,7 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) await _collapseLanguageSpellings();
       // v3: a brand-new empty table — drift creates it from the snapshot-
       // validated definition; the legacy bookmarks data migration into it
-      // happens separately (prefs → rows, libNetwork.md S4), not here.
+      // happens separately (prefs → rows, docs/ARCHITECTURE.md §3 network), not here.
       //
       // ELSE-IF, not two ifs: `createTable` builds the table at its CURRENT
       // definition, which already includes the v4 column — a v1/v2 database

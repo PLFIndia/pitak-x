@@ -19,7 +19,7 @@ abstract interface class BackupArchiveBuilder {
   /// future completes with an error on IO failure so the caller can fail
   /// closed.
   ///
-  /// [identityJson] / [networkJson] (libNetwork.md §3.4) are the
+  /// [identityJson] / [networkJson] (docs/ARCHITECTURE.md §5.5) are the
   /// already-encoded `identity.json` / `network.json` entry contents — plain
   /// Strings, so they cross the worker-isolate boundary trivially. Null means
   /// "not included" (the manifest flag stays false); a caller that could not

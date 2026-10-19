@@ -1,5 +1,5 @@
 /// The parsed `library.json` — a library's PUBLISHED network descriptor
-/// (network domain, pure Dart; libNetwork.md §3.1, schema 1).
+/// (network domain, pure Dart; docs/ARCHITECTURE.md §5.1, schema 1).
 ///
 /// This is what every Pitak site publishes next to `books.json`: a public
 /// self-description carrying the library's fingerprint (never the raw ID,

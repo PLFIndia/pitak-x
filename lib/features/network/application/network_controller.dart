@@ -1,5 +1,5 @@
 /// The network window controller (network application layer, AGENTS.md §4;
-/// libNetwork.md §5.1).
+/// docs/ARCHITECTURE.md §3 network).
 ///
 /// [NetworkWindow] is everything the Libraries tab renders in one immutable
 /// snapshot: the rows (single truth: the repository), the last refresh report

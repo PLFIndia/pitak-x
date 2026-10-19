@@ -309,7 +309,7 @@ void main() {
       expect(s.publishContactAddress, '');
     });
 
-    // libNetwork.md §5.4 first-read rule (D7): the location-sharing switch
+    // docs/ARCHITECTURE.md §6 location sharing first-read rule (D7): the location-sharing switch
     // must preserve what existing users already publish, and default new
     // users to OFF.
     group('publishLocationSharing first-read rule', () {

@@ -33,10 +33,10 @@ class PrefsSettingsRepository implements SettingsRepository {
   static const _legacyPublishLocationKey = 'publish_contact_location';
   static const _publishEmailKey = 'publish_contact_email';
   static const _publishPhoneKey = 'publish_contact_phone';
-  // Location-sharing mode (libNetwork.md D7). Read with a first-read rule —
+  // Location-sharing mode (docs/ARCHITECTURE.md §6 location sharing). Read with a first-read rule —
   // see [_readLocationSharing].
   static const _publishLocationSharingKey = 'publish_location_sharing';
-  // OSM tiles consent for the network map (libNetwork.md §5.9). Plain bool;
+  // OSM tiles consent for the network map (docs/ARCHITECTURE.md §1 network egress). Plain bool;
   // absent ⇒ false (no consent given yet — fail closed).
   static const _networkMapTilesConsentKey = 'network_map_tiles_consent';
   static const _libraryLogoKey = 'library_logo';
@@ -208,7 +208,7 @@ class PrefsSettingsRepository implements SettingsRepository {
     return lat >= -90.0 && lat <= 90.0 && lng >= -180.0 && lng <= 180.0;
   }
 
-  /// Location-sharing mode with the FIRST-READ RULE (libNetwork.md §5.4, D7):
+  /// Location-sharing mode with the FIRST-READ RULE (docs/ARCHITECTURE.md §6 location sharing):
   /// when the key is ABSENT — the user never touched the switch, e.g. an
   /// install from before the setting existed — a device that already has a
   /// GPS value keeps publishing its pin, so the effective mode is `exact`

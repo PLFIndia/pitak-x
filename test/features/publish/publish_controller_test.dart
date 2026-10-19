@@ -586,7 +586,7 @@ class _Settings implements SettingsRepository {
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
 
-  // The library.json descriptor needs the identity (libNetwork.md §5.5), so
+  // The library.json descriptor needs the identity (docs/ARCHITECTURE.md §5.1), so
   // a publish now legitimately READS it through the controller's current().
   @override
   Future<Either<Failure, String>> getOrCreateLibraryId() async {

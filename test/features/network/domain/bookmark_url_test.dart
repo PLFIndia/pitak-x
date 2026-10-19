@@ -3,7 +3,7 @@ import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 
 /// The allow-list cases carried over from the deleted bookmarks feature
 /// (`test/features/bookmarks/library_bookmark_test.dart`, ADR 0012) plus the
-/// canonical site-root rules added by the libNetwork review (H3): the stored
+/// canonical site-root rules added in the 2026-10 network review: the stored
 /// `siteUrl` is the natural key of the network table AND the base every
 /// `library.json` path is resolved against, so one site must have exactly
 /// one spelling and it must end with `/`.

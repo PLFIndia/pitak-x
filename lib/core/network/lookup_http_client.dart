@@ -43,7 +43,7 @@ final class LookupHttpClient extends http.BaseClient {
   final Random _random;
 
   /// Descriptive UA per Open Library's API policy — the app-wide constant
-  /// (libNetwork.md §5.12: ONE User-Agent for lookup, descriptor fetches and
+  /// (docs/ARCHITECTURE.md §3: ONE User-Agent for lookup, descriptor fetches and
   /// OSM tiles, so services see a single honest identity).
   static const String userAgent = AppUserAgent.value;
 

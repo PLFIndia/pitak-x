@@ -1,4 +1,4 @@
-/// On-device integration smoke test (architecture.md B1, D4).
+/// On-device integration smoke test, run by hand before a release.
 ///
 /// FFI (`RustLib.init()`), SQLCipher, the Android Keystore, and real file IO
 /// never run in the Dart VM — 1 800+ unit tests cannot see a broken native
@@ -20,9 +20,9 @@
 /// ```
 ///
 /// Deliberately NOT in CI: hosted emulators plus the cargokit cross-compile
-/// cost 25+ minutes and flake for a solo maintainer (architecture.md D4).
+/// cost 25+ minutes and flake for a solo maintainer.
 /// Revisit when there is a second regular contributor or a self-hosted
-/// runner. It is the README release-checklist step before
+/// runner. It is the docs/RELEASING.md §6.1 checklist step before
 /// `tool/release_build.sh`.
 library;
 

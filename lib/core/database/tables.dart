@@ -154,7 +154,7 @@ class WishlistBooks extends Table {
       boolean().named('needs_metadata').withDefault(const Constant(false))();
 }
 
-/// Saved libraries on the network (libNetwork.md §5.3, schema v3).
+/// Saved libraries on the network (docs/ARCHITECTURE.md §5.4, schema v3).
 ///
 /// One row per OTHER library the user cares about — a bookmark, a hub's
 /// member added by card scan, or a library discovered through a fetched

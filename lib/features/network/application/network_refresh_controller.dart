@@ -1,5 +1,5 @@
 /// The refresh-run controller (network application layer, AGENTS.md §4;
-/// libNetwork.md §5.11).
+/// docs/ARCHITECTURE.md §2).
 ///
 /// Owns the ONE-run-at-a-time rule and the cancel switch for
 /// `RefreshNetworkUseCase`, and remembers the last [RefreshReport] + finish

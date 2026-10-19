@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 /// Runs Flutter's three built-in accessibility guideline checks against the
-/// currently-pumped widget tree (architecture.md A6):
+/// currently-pumped widget tree (the accessibility gate every page test runs):
 ///
 ///  * [androidTapTargetGuideline] — tappable nodes are at least 48×48 dp;
 ///  * [labeledTapTargetGuideline] — tappable nodes have a semantic label;

@@ -25,7 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/a11y.dart';
 
-/// Tests for the network map (libNetwork.md §7 S5): the consent gate (the
+/// Tests for the network map (docs/ARCHITECTURE.md §3 network): the consent gate (the
 /// map never builds without consent), the tile-layer configuration (UA
 /// header — over the config constants and the built widget, never HTTP),
 /// the attribution, the pin sheet, pin labels (permanent for own + hubs,

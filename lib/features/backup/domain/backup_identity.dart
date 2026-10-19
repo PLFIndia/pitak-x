@@ -1,4 +1,4 @@
-/// The `identity.json` backup entry (backup domain, libNetwork.md §3.4).
+/// The `identity.json` backup entry (backup domain, docs/ARCHITECTURE.md §5.5).
 ///
 /// Carries the library identity — ID + display name — inside the `.pitabak`
 /// archive so a restored phone keeps the SAME library ID (a hub recognises

@@ -1,4 +1,4 @@
-/// Small state badges for a network row (presentation, libNetwork.md §5.1).
+/// Small state badges for a network row (presentation, docs/ARCHITECTURE.md §3 network).
 ///
 /// One widget, many optional chips: the tile composes it so every list, sheet
 /// and (later) map pin shows the SAME badges with the SAME words. Plain-words

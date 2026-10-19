@@ -1,4 +1,4 @@
-/// Book ingress-gate fitness function (SOLID-PLAN S7, AGENTS §3.3).
+/// Book ingress-gate fitness function (ADR 0004, AGENTS §3.3).
 ///
 /// Why a source-scanning test exists (beginner note): `Book` deliberately
 /// keeps a PLAIN constructor for trusted data (the DB mapper, `copyWith` on

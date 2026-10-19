@@ -1,5 +1,5 @@
 /// Encode/decode for the published `library.json` descriptor (network domain,
-/// pure Dart; libNetwork.md §3.1, schema 1 — a CROSS-DEVICE WIRE CONTRACT).
+/// pure Dart; docs/ARCHITECTURE.md §5.1, schema 1 — a CROSS-DEVICE WIRE CONTRACT).
 ///
 /// Decode treats every byte as hostile (the file comes from anyone's public
 /// site). The rules, each with a test:

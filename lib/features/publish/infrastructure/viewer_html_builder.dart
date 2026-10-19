@@ -32,7 +32,7 @@ final class ViewerHtmlBuilder {
   /// Optional public contact triple.
   final PublishContact contact;
 
-  /// Location-sharing switch (libNetwork.md D7) — gates the GPS pin exactly
+  /// Location-sharing switch (docs/ARCHITECTURE.md §6 location sharing) — gates the GPS pin exactly
   /// as it gates the `library.json` location block.
   final LocationSharing sharing;
 

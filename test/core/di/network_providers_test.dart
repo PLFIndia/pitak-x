@@ -15,7 +15,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
-/// DI-wiring tests for the network module (libNetwork.md §5.11): the
+/// DI-wiring tests for the network module (docs/ARCHITECTURE.md §2): the
 /// repository provider AWAITS the one-time legacy-bookmarks migration, and
 /// the migration is idempotent across provider re-reads. In-memory Drift +
 /// mock prefs — no disk, no network.

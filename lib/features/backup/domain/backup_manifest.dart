@@ -51,12 +51,12 @@ class BackupManifest {
   /// Whether the archive bundles `cover_*` entries.
   final bool hasCovers;
 
-  /// Whether the archive contains `identity.json` (libNetwork.md §3.4).
+  /// Whether the archive contains `identity.json` (docs/ARCHITECTURE.md §5.5).
   /// Default false: Kotlin-era and pre-network archives lack the entry, and
   /// the flag being absent must read as "not there", never "corrupt".
   final bool hasIdentity;
 
-  /// Whether the archive contains `network.json` (libNetwork.md §3.4) — the
+  /// Whether the archive contains `network.json` (docs/ARCHITECTURE.md §5.5) — the
   /// saved-libraries list. Same default-false forward-compat rule as
   /// [hasIdentity].
   final bool hasNetwork;

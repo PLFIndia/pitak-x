@@ -1,5 +1,5 @@
 /// One-time legacy bookmarks → network rows migration (network domain use
-/// case; libNetwork.md D8, §6 "Legacy prefs value", ADR 0012).
+/// case; ADR 0012; bounds in docs/ARCHITECTURE.md §5.6).
 ///
 /// The old bookmarks feature stored a JSON array under the shared-preferences
 /// key `library_bookmarks`. This use case moves that list into the network

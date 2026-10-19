@@ -1,5 +1,5 @@
 /// Display ordering for the Libraries tab (network domain, pure Dart;
-/// libNetwork.md §7 S4).
+/// docs/ARCHITECTURE.md §3 network).
 ///
 /// Moved out of the page (review M12): ordering is a domain policy — "which
 /// library is most relevant" — not a widget concern, and as a pure function

@@ -152,7 +152,7 @@ class RestoreController extends _$RestoreController {
   }
 
   /// Applies the archive's library identity and saved-libraries list AFTER
-  /// the catalogue switch (libNetwork.md §5.10), and returns the summary with
+  /// the catalogue switch (docs/ARCHITECTURE.md §5.5), and returns the summary with
   /// the adoption outcomes filled in.
   ///
   /// Both steps are ADDITIVE over a restore that already succeeded: a Left

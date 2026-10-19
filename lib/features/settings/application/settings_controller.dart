@@ -252,7 +252,7 @@ class SettingsController extends _$SettingsController
     ),
   );
 
-  /// Sets the location-sharing mode (libNetwork.md D7): what the published
+  /// Sets the location-sharing mode (docs/ARCHITECTURE.md §6 location sharing): what the published
   /// GPS pin and the network `library.json` location may reveal. Mirrored
   /// through [_update] like every other setter (M16: one serialised writer).
   Future<void> setPublishLocationSharing(LocationSharing sharing) => _update(
@@ -260,8 +260,9 @@ class SettingsController extends _$SettingsController
     (s) => s.copyWith(publishLocationSharing: sharing),
   );
 
-  /// Sets the OpenStreetMap tiles consent for the network map (libNetwork.md
-  /// §5.9). Mirrored through [_update] like every other setter (M16).
+  /// Sets the OpenStreetMap tiles consent for the network map
+  /// (docs/ARCHITECTURE.md §1 network egress). Mirrored through [_update]
+  /// like every other setter (M16).
   Future<void> setNetworkMapTilesConsent({required bool enabled}) => _update(
     (repo) => repo.setNetworkMapTilesConsent(enabled: enabled),
     (s) => s.copyWith(networkMapTilesConsent: enabled),

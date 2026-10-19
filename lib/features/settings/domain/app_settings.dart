@@ -62,7 +62,7 @@ extension BookSortX on BookSort {
 }
 
 /// How (and whether) this library shares its location publicly
-/// (libNetwork.md D7 — one switch, one meaning).
+/// (docs/ARCHITECTURE.md §6 location sharing — one switch, one meaning).
 ///
 /// It governs BOTH places a coordinate leaves the device: the GPS pin on the
 /// published `index.html` and the `location` block of `library.json` (the
@@ -154,7 +154,7 @@ class AppSettings {
   final String publishContactGps;
 
   /// Whether/where the [publishContactGps] coordinates are published
-  /// (libNetwork.md D7): governs the `index.html` pin AND the network
+  /// (docs/ARCHITECTURE.md §6 location sharing): governs the `index.html` pin AND the network
   /// `library.json` location. Default [LocationSharing.off]. NOTE: the
   /// constructor default is `off`, but the prefs repository applies a
   /// first-read rule (key absent + GPS non-blank ⇒ `exact`) so existing
@@ -163,7 +163,7 @@ class AppSettings {
   final LocationSharing publishLocationSharing;
 
   /// Opt-in consent to fetch OpenStreetMap raster tiles for the network map
-  /// (libNetwork.md §5.9). While the map is open, tile requests go to
+  /// (docs/ARCHITECTURE.md §1 network egress). While the map is open, tile requests go to
   /// `tile.openstreetmap.org`, which sees the device IP and the viewed area.
   /// Default false: the map never builds (and no tile request ever leaves
   /// the device) until the user accepts the consent dialog.

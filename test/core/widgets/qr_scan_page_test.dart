@@ -3,7 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/widgets/qr_scan_page.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
 
-/// Tests for the generic QR-scan page (libNetwork.md §5.12). The camera is
+/// Tests for the generic QR-scan page (docs/ARCHITECTURE.md §3). The camera is
 /// never exercised (repo rule: scanners are tested through the decision made
 /// AFTER a payload arrives) — the pure [QrScanPage.decide] policy is tested
 /// directly, and the widget behaviour through the injected fake scanner seam.

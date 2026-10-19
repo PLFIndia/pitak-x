@@ -1,5 +1,5 @@
 /// Holds the vault session's unlock secret and enforces its lifetime
-/// (application layer, AGENTS.md §6.1; SOLID-PLAN S4).
+/// (application layer, AGENTS.md §6.1; vault session split by responsibility).
 ///
 /// Why a separate class: the wipe/fencing invariants are security-critical
 /// and must be unit-testable without any vault IO or Riverpod. This is a

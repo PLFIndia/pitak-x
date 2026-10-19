@@ -42,7 +42,7 @@ say()  { printf '[pre-commit] %s\n' "$*"; }
 warn() { printf '[pre-commit] WARNING: %s\n' "$*" >&2; }
 
 # ---------------------------------------------------------------------------
-# 0. Rust format check (architecture.md A3) — sub-second, runs when any
+# 0. Rust format check (Rust gates at parity with Dart) — sub-second, runs when any
 #    rust/**/*.rs is staged. Mirrors the CI `cargo fmt --check` step.
 #    Missing cargo never blocks a commit (docs-only contributor behaviour,
 #    same as the Dart fallback below); the hook never edits the commit.

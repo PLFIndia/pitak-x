@@ -1,5 +1,5 @@
 /// Drives the hub "Add member" flow (network application layer, AGENTS.md
-/// §4; libNetwork.md §5.7).
+/// §4; docs/ARCHITECTURE.md §5.3).
 ///
 /// Why this exists (review M10 + M12): the add-member page used to call the
 /// use case itself and keep `_busy` / `_error` / `_added` in widget state —
@@ -73,7 +73,7 @@ class AddMemberController extends _$AddMemberController {
     state = result.fold(
       (failure) => AsyncError<NetworkLibrary?>(failure, StackTrace.current),
       (row) {
-        // One truth (libNetwork.md §5.1): the Libraries tab re-reads the
+        // One truth (docs/ARCHITECTURE.md §3 network): the Libraries tab re-reads the
         // repository now — not when, or if, the user taps Done.
         ref.invalidate(networkControllerProvider);
         return AsyncData<NetworkLibrary?>(row);

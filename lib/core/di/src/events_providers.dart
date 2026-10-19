@@ -1,4 +1,4 @@
-/// Events-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Events-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the poster repository (`events.json` + `posters/` files
 /// under the app docs dir) and the poster file-reader port the events

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 
-/// Boundary tests for the [GeoPoint] value object (libNetwork.md S1):
+/// Boundary tests for the [GeoPoint] value object (docs/ARCHITECTURE.md §3 network):
 /// range checks, NaN/∞ rejection, "lat, lng" parse variants, coarsen
 /// rounding (including negatives) and haversine against two known pairs.
 void main() {

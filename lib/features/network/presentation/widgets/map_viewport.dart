@@ -1,4 +1,4 @@
-/// The network map's initial viewport (presentation, libNetwork.md §5.9).
+/// The network map's initial viewport (presentation, docs/ARCHITECTURE.md §1 network egress).
 ///
 /// A pure, static helper — extracted from the page (review M12) so the
 /// bounds maths is unit-testable without rendering a map and the widget's

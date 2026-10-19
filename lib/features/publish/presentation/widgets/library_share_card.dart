@@ -160,7 +160,7 @@ class LibraryShareCard extends StatelessWidget {
   /// fallback payload.
   final String url;
 
-  /// What the QR actually encodes (libNetwork.md §5.8): the library-card
+  /// What the QR actually encodes (docs/ARCHITECTURE.md §5.3): the library-card
   /// payload `<siteUrl>#pitak-card=1&fp=…&n=…` when this library has one, so
   /// a Pitak scanner can adopt the library as a member while a phone camera
   /// still just opens the site (D9). Null falls back to [url] — the printed

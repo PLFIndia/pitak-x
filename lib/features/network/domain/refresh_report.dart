@@ -1,10 +1,10 @@
 /// The outcome summary of one refresh run (network domain, pure Dart;
-/// libNetwork.md §5.6 step 5).
+/// docs/ARCHITECTURE.md §5.6).
 ///
 /// Lives in its own file because three layers read it (the use case writes
 /// it, the controllers carry it, the refresh bar renders it) while only the
 /// use case needs the algorithm — and the 500-line file ratchet
-/// (architecture.md B8) is a budget, not a target.
+/// (file-size ratchet, docs/ARCHITECTURE.md §2.1) is a budget, not a target.
 library;
 
 /// What one refresh run did (§5.6 step 5). Plain counts + flags — enough for

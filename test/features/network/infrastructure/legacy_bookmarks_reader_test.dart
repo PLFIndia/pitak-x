@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Tests for [LegacyBookmarksReader] (libNetwork.md §6 "Legacy prefs value"):
+/// Tests for [LegacyBookmarksReader] (docs/ARCHITECTURE.md §5.6):
 /// the stored value is HOSTILE input — every item is re-validated with the
 /// old `LibraryBookmark.fromJson` rules and corrupt items are skipped, never
 /// thrown.

@@ -1,5 +1,5 @@
 /// Hub "Add member" by in-person card scan (network domain use case;
-/// libNetwork.md §5.7, D2/D13).
+/// docs/ARCHITECTURE.md §5.3).
 ///
 /// The ONLY way a hub adopts a member: scanning that library's card QR in
 /// person. The scan is the trust anchor — the URL alone never makes a row a

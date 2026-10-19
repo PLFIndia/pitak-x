@@ -1,7 +1,7 @@
 /// GitHub API port for publishing (domain, AGENTS.md §3.3, #32).
 ///
 /// Declared in domain, implemented in infrastructure over `http`. The port is
-/// segregated into three ROLE interfaces (SOLID-PLAN S5, ISP) — each consumer
+/// segregated into three ROLE interfaces (ISP) — each consumer
 /// depends on exactly one:
 ///  - [GitHubAuthApi] — device-flow auth (used by `GitHubDeviceFlow`);
 ///  - [GitHubRepoAdminApi] — account/repo administration (used by
