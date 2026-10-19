@@ -53,7 +53,13 @@ BackupExtras readBackupExtras(
   );
 }
 
-/// The validated identity, or null when the entry is absent or invalid.
+/// The validated identity, or null when the entry is absent, oversized, or
+/// invalid (oversized ⇒ unreadable ⇒ not adopted, counted as
+/// `identityInvalid` by the restore summary). The byte cap runs BEFORE UTF-8
+/// decoding, so a padded entry cannot even reach the JSON parser — the same
+/// "bound before parse" rule [_readNetwork] follows (review L2: the zip
+/// extractor's per-entry cap is 200 MiB, sized for covers — far too much to
+/// push through a JSON parse).
 BackupIdentity? _readIdentity(
   Map<String, Uint8List> files,
   BackupManifest manifest,
@@ -61,6 +67,7 @@ BackupIdentity? _readIdentity(
   if (!manifest.hasIdentity) return null;
   final bytes = files[identityEntryName];
   if (bytes == null) return null;
+  if (bytes.length > BackupIdentity.maxBytes) return null;
   return BackupIdentity.fromJson(_utf8(bytes));
 }
 

@@ -22,6 +22,11 @@ final class BackupIdentity {
   /// Creates an identity snapshot (already validated — see [fromJson]).
   const BackupIdentity({required this.id, required this.name});
 
+  /// Largest `identity.json` we will decode. The document is two short
+  /// strings (an id ≤64 chars and a name ≤80) — 4 KiB is enormous headroom
+  /// and matches the "bound before parse" rule the network entry follows.
+  static const int maxBytes = 4 * 1024;
+
   /// The library ID (16–64 lowercase hex, validated by `LibraryId`).
   final String id;
 

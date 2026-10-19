@@ -676,6 +676,37 @@ void main() {
       expect(summary.identityInvalid, isTrue);
     });
 
+    test('an oversized identity.json never reaches the JSON parser (L2 byte '
+        'cap) — not adopted, but reported', () async {
+      // A valid identity padded past the 4 KiB budget with a huge name. The
+      // zip extractor's per-entry cap (200 MiB, sized for covers) would
+      // happily inflate this; the reader's budget refuses it BEFORE decoding
+      // — fail closed like an invalid entry, exactly like the network cap.
+      final oversized = utf8.encode(
+        '{"libraryId": "$validId", "libraryName": "${'x' * (5 * 1024)}"}',
+      );
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasIdentity: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'identity.json': oversized,
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.booksRestored, 1); // the catalogue restore is unaffected
+      expect(summary.restoredIdentity, isNull);
+      expect(summary.identityInvalid, isTrue);
+
+      // Inspection (the restore page's peek) sees the same "unreadable".
+      final inspected = (await r.inspectArchive(
+        zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(inspected.manifest.hasIdentity, isTrue);
+      expect(inspected.identity, isNull);
+    });
+
     test(
       'one corrupt network row ⇒ the others restore, drop counted (§6)',
       () async {
