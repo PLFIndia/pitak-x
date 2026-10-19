@@ -1,5 +1,12 @@
 # F-Droid release notes (pitak-x → dev.khoj.pitaka.fdroid)
 
+> **Status (2026-10-19):** 1.5.1 tagged (`1.5.1` → versionCodes 271/272/273)
+> and submitted upstream as fdroid/fdroiddata!53156 (manual MR — faster than
+> waiting for the checkupdates bot, which would also have picked the tag up
+> via `AutoUpdateMode: Version`). 1.5.0 was never tagged, so it is
+> intentionally absent from the recipe. The mirror below is re-synced to the
+> MR branch's file; re-sync again if review amends it.
+>
 > **Status (2026-10-15):** 1.4.0 tagged (`1.4.0` → versionCodes 241/242/243).
 > The recipe is on `AutoUpdateMode: Version` + `UpdateCheckMode: Tags`, so the
 > F-Droid checkupdates bot picks the tag up on its own: it reads

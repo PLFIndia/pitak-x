@@ -996,110 +996,6 @@ Builds:
         --flavor fdroid
     ndk: r28c
 
-  - versionName: 1.3.3
-    versionCode: 211
-    commit: 8914e643e639d3653efef91b1be54c93d98394d7
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add x86_64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-x64
-        --flavor fdroid
-    ndk: r28c
-
-  - versionName: 1.3.3
-    versionCode: 212
-    commit: 8914e643e639d3653efef91b1be54c93d98394d7
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add armv7-linux-androideabi
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm
-        --flavor fdroid
-    ndk: r28c
-
-  - versionName: 1.3.3
-    versionCode: 213
-    commit: 8914e643e639d3653efef91b1be54c93d98394d7
-    sudo:
-      - apt-get update
-      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
-    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
-    srclibs:
-      - flutter@stable
-    rm:
-      - ios
-      - macos
-      - windows
-      - linux
-    prebuild:
-      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
-      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
-      - '[[ $version ]]'
-      - git -C $$flutter$$ checkout -f $version
-      - rustup default 1.96.0
-      - rustup target add aarch64-linux-android
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - $$flutter$$/bin/flutter config --no-analytics
-      - $$flutter$$/bin/flutter pub get --enforce-lockfile
-    scandelete:
-      - .pub-cache
-    build:
-      - export PATH="$$flutter$$/bin:$PATH"
-      - export PUB_CACHE=$(pwd)/.pub-cache
-      - flutter build apk --release --split-per-abi --target-platform=android-arm64
-        --flavor fdroid
-    ndk: r28c
-
-  - versionName: 1.3.4
-    versionCode: 223
-    disable: non-free dep (Play Core via in_app_update plugin); fixed in 1.3.5
-    commit: ca0dfa237417ede9cb8043aa392ce93978edfefc
-
   - versionName: 1.3.5
     versionCode: 231
     commit: e8cc06b407b1f57bedc4730523690e53a47fee2c
@@ -1201,7 +1097,7 @@ Builds:
 
   - versionName: 1.4.0
     versionCode: 241
-    commit: 1.4.0
+    commit: a4782bbbc1750565576adbdc775920c7b03a7406
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -1234,7 +1130,7 @@ Builds:
 
   - versionName: 1.4.0
     versionCode: 242
-    commit: 1.4.0
+    commit: a4782bbbc1750565576adbdc775920c7b03a7406
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -1267,7 +1163,106 @@ Builds:
 
   - versionName: 1.4.0
     versionCode: 243
-    commit: 1.4.0
+    commit: a4782bbbc1750565576adbdc775920c7b03a7406
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add aarch64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm64
+        --flavor fdroid
+    ndk: r28c
+
+  - versionName: 1.5.1
+    versionCode: 271
+    commit: '1.5.1'
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-x86_64-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add x86_64-linux-android
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-x64
+        --flavor fdroid
+    ndk: r28c
+
+  - versionName: 1.5.1
+    versionCode: 272
+    commit: '1.5.1'
+    sudo:
+      - apt-get update
+      - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
+    output: build/app/outputs/apk/fdroid/release/app-fdroid-armeabi-v7a-release.apk
+    srclibs:
+      - flutter@stable
+    rm:
+      - ios
+      - macos
+      - windows
+      - linux
+    prebuild:
+      - sed -i -e "s/'stable'/'1.96.0'/" rust_builder/cargokit/build_tool/lib/src/builder.dart
+      - export version=$(grep flutter .fvmrc | cut -d ":" -f2 | cut -d "\"" -f2)
+      - '[[ $version ]]'
+      - git -C $$flutter$$ checkout -f $version
+      - rustup default 1.96.0
+      - rustup target add armv7-linux-androideabi
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - $$flutter$$/bin/flutter config --no-analytics
+      - $$flutter$$/bin/flutter pub get --enforce-lockfile
+    scandelete:
+      - .pub-cache
+    build:
+      - export PATH="$$flutter$$/bin:$PATH"
+      - export PUB_CACHE=$(pwd)/.pub-cache
+      - flutter build apk --release --split-per-abi --target-platform=android-arm
+        --flavor fdroid
+    ndk: r28c
+
+  - versionName: 1.5.1
+    versionCode: 273
+    commit: '1.5.1'
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -1305,5 +1300,5 @@ VercodeOperation:
   - '%c * 10 + 2'
   - '%c * 10 + 3'
 UpdateCheckData: pubspec.yaml|version:\s.+\+(\d+)|.|version:\s(.+)\+
-CurrentVersion: 1.4.0
-CurrentVersionCode: 243
+CurrentVersion: 1.5.1
+CurrentVersionCode: 273
