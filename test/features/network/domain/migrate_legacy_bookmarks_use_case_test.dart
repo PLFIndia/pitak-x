@@ -142,20 +142,25 @@ void main() {
   });
 }
 
-/// Repository fake with the two operations the migration touches.
+/// Repository fake with the two operations the migration touches. The
+/// migration passes no baselines (it has no snapshot — M1's guard is
+/// inert for it), so the fake reports a plain unconditional insert count.
 class _FakeRepo implements NetworkRepository {
   List<NetworkLibrary> rows = [];
   final List<(List<NetworkLibrary>, List<NetworkLibrary>)> applyCalls = [];
-  Either<Failure, Unit> applyResult = right(unit);
+  Either<Failure, RefreshApplyResult> applyResult = right(
+    const RefreshApplyResult(),
+  );
 
   @override
   Future<List<NetworkLibrary>> loadAll() async => List.of(rows);
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async {
+    List<NetworkLibrary> discovered, {
+    List<NetworkLibrary> baselines = const [],
+  }) async {
     applyCalls.add((List.of(updated), List.of(discovered)));
     if (applyResult.isLeft()) return applyResult;
     var nextId = rows.fold(0, (max, r) => r.id > max ? r.id : max);
@@ -163,7 +168,7 @@ class _FakeRepo implements NetworkRepository {
       nextId++;
       rows.add(insert.copyWith(id: nextId));
     }
-    return right(unit);
+    return right(RefreshApplyResult(inserted: discovered.length));
   }
 
   @override

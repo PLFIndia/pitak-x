@@ -239,20 +239,25 @@ void main() {
   );
 }
 
-/// In-memory repository fake applying refreshes like the Drift one.
+/// In-memory repository fake applying refreshes like the Drift one. The
+/// baseline guard (M1) is not simulated here — no controller test edits a
+/// row mid-run (that path is covered at repository and use-case level).
 class _FakeRepo implements NetworkRepository {
   List<NetworkLibrary> rows = [];
   final applyCalls = <(List<NetworkLibrary>, List<NetworkLibrary>)>[];
-  Either<Failure, Unit> applyResult = right(unit);
+  Either<Failure, RefreshApplyResult> applyResult = right(
+    const RefreshApplyResult(),
+  );
 
   @override
   Future<List<NetworkLibrary>> loadAll() async => List.of(rows);
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async {
+    List<NetworkLibrary> discovered, {
+    List<NetworkLibrary> baselines = const [],
+  }) async {
     applyCalls.add((List.of(updated), List.of(discovered)));
     if (applyResult.isLeft()) return applyResult;
     for (final update in updated) {
@@ -264,7 +269,9 @@ class _FakeRepo implements NetworkRepository {
       nextId++;
       rows.add(insert.copyWith(id: nextId));
     }
-    return right(unit);
+    return right(
+      RefreshApplyResult(applied: updated.length, inserted: discovered.length),
+    );
   }
 
   @override

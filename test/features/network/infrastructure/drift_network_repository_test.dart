@@ -241,6 +241,12 @@ void main() {
         ],
       );
       expect(result.isRight(), isTrue);
+      // No baselines ⇒ unconditional write: everything counts as applied.
+      final counts = result.toNullable()!;
+      expect(counts.applied, 1);
+      expect(counts.inserted, 1);
+      expect(counts.keptLocal, 0);
+      expect(counts.skippedExisting, 0);
 
       final rows = await repo.loadAll();
       expect(rows, hasLength(2));
@@ -276,6 +282,8 @@ void main() {
     );
 
     expect(result.isRight(), isTrue, reason: 'UNIQUE(site_url) not tripped');
+    expect(result.toNullable()!.skippedExisting, 1);
+    expect(result.toNullable()!.inserted, 0);
     final rows = await repo.loadAll();
     expect(rows, hasLength(2));
     final d = rows.firstWhere((r) => r.siteUrl == 'https://d.github.io/');
@@ -284,6 +292,102 @@ void main() {
     expect(d.source, NetworkSource.bookmark);
     final a = rows.firstWhere((r) => r.siteUrl == 'https://a.github.io/');
     expect(a.name, 'A fetched', reason: 'the update part still applied');
+  });
+
+  group('M1: a refresh never overwrites an edit made while it ran', () {
+    test(
+      'a row EDITED mid-run is kept, not overwritten — and counted',
+      () async {
+        // The run read this row (baseline) with no membership…
+        final baseline = (await repo.upsertBySiteUrl(
+          const NetworkLibrary(siteUrl: 'https://a.github.io/', name: 'A'),
+        )).toNullable()!;
+        // … and the user CONFIRMED the membership prompt while the run was
+        // still fetching (upsert is the controller's write path).
+        await repo.upsertBySiteUrl(
+          const NetworkLibrary(
+            siteUrl: 'https://a.github.io/',
+            membership: MembershipState.confirmed,
+          ),
+        );
+
+        // The run finishes, carrying the stale decision (pending) it computed
+        // from the baseline.
+        final result = (await repo.applyRefresh(
+          [baseline.copyWith(membership: MembershipState.pending)],
+          const [],
+          baselines: [baseline],
+        )).toNullable()!;
+
+        final stored = (await repo.loadAll()).single;
+        expect(
+          stored.membership,
+          MembershipState.confirmed,
+          reason:
+              "the user's edit wins — the stale snapshot must not revert it",
+        );
+        expect(stored.name, 'A', reason: 'nothing else on the row moved');
+        expect(result.keptLocal, 1);
+        expect(result.applied, 0);
+      },
+    );
+
+    test('a row DELETED mid-run is not resurrected', () async {
+      final baseline = (await repo.upsertBySiteUrl(
+        const NetworkLibrary(siteUrl: 'https://a.github.io/', name: 'A'),
+      )).toNullable()!;
+      await repo.removeById(baseline.id);
+
+      final result = (await repo.applyRefresh(
+        [baseline.copyWith(name: 'Fetched name')],
+        const [],
+        baselines: [baseline],
+      )).toNullable()!;
+
+      expect(await repo.loadAll(), isEmpty);
+      expect(result.applied, 0);
+      expect(result.keptLocal, 0);
+    });
+
+    test('an UNCHANGED baseline still applies (regression guard for the '
+        'normal path)', () async {
+      final baseline = (await repo.upsertBySiteUrl(
+        const NetworkLibrary(siteUrl: 'https://a.github.io/', name: 'A'),
+      )).toNullable()!;
+
+      final result = (await repo.applyRefresh(
+        [baseline.copyWith(name: 'A fetched', fetchedAt: 42)],
+        const [],
+        baselines: [baseline],
+      )).toNullable()!;
+
+      final stored = (await repo.loadAll()).single;
+      expect(stored.name, 'A fetched');
+      expect(stored.fetchedAt, 42);
+      expect(result.applied, 1);
+      expect(result.keptLocal, 0);
+    });
+
+    test('a baseline for a row not in the update list is simply unused; '
+        'an empty baseline list writes unconditionally', () async {
+      final baseline = (await repo.upsertBySiteUrl(
+        const NetworkLibrary(siteUrl: 'https://a.github.io/', name: 'A'),
+      )).toNullable()!;
+      // Edit mid-run WITHOUT passing the baseline: legacy behaviour (the
+      // import path has no snapshot) must still write.
+      await repo.upsertBySiteUrl(
+        const NetworkLibrary(
+          siteUrl: 'https://a.github.io/',
+          membership: MembershipState.confirmed,
+        ),
+      );
+      final result = (await repo.applyRefresh([
+        baseline.copyWith(membership: MembershipState.pending),
+      ], const [])).toNullable()!;
+      final stored = (await repo.loadAll()).single;
+      expect(stored.membership, MembershipState.pending);
+      expect(result.applied, 1);
+    });
   });
 
   group('constraints', () {

@@ -582,10 +582,13 @@ class _FakeRepo implements NetworkRepository {
   }
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async {
+    List<NetworkLibrary> discovered, {
+    // The page tests never edit a row mid-refresh, so the M1 baseline guard
+    // is accepted but not simulated (repository + use-case tests cover it).
+    List<NetworkLibrary> baselines = const [],
+  }) async {
     applyCalls.add((List.of(updated), List.of(discovered)));
     for (final update in updated) {
       final index = rows.indexWhere((r) => r.id == update.id);
@@ -596,7 +599,9 @@ class _FakeRepo implements NetworkRepository {
       nextId++;
       rows.add(insert.copyWith(id: nextId));
     }
-    return right(unit);
+    return right(
+      RefreshApplyResult(applied: updated.length, inserted: discovered.length),
+    );
   }
 
   @override

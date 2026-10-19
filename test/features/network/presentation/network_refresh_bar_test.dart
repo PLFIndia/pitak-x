@@ -54,6 +54,13 @@ void main() {
       expect(summary, isNot(contains('discovery capped')));
     });
 
-
+    test('mid-run edits are acknowledged, not silently dropped (M1)', () {
+      expect(
+        NetworkRefreshBar.reportSummary(
+          const RefreshReport(fetched: 10, keptLocalChanges: 2),
+        ),
+        'Refresh: 10 up to date · 2 kept your edits made during refresh.',
+      );
+    });
   });
 }

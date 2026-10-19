@@ -108,18 +108,38 @@ class DriftNetworkRepository implements NetworkRepository {
   }
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async {
+    List<NetworkLibrary> discovered, {
+    List<NetworkLibrary> baselines = const [],
+  }) async {
+    final expected = {for (final b in baselines) b.id: b};
+    var applied = 0;
+    var keptLocal = 0;
+    var inserted = 0;
+    var skippedExisting = 0;
     try {
       await _db.transaction(() async {
         for (final row in updated) {
+          final stored = await _findById(row.id);
+          // Deleted on this device while the run was fetching: never
+          // resurrect a row the user removed.
+          if (stored == null) continue;
+          // Edited on this device mid-run (a membership decision, a card
+          // scan): the user's edit wins; the fetched data lands next run
+          // (review M1). The compare is inside the transaction, so the
+          // read-compare-write is atomic.
+          final baseline = expected[row.id];
+          if (baseline != null && !stored.sameAs(baseline)) {
+            keptLocal++;
+            continue;
+          }
           // WHOLESALE write: the refresh use case computed the complete new
           // state (including deliberate nulls) from the previous row.
           await (_db.update(
             _db.networkLibraries,
           )..where((t) => t.id.equals(row.id))).write(_updateCompanion(row));
+          applied++;
         }
         for (final row in discovered) {
           // The user may have saved this very address while the refresh was
@@ -127,11 +147,22 @@ class DriftNetworkRepository implements NetworkRepository {
           // refresh). Their row wins; skipping — instead of letting
           // UNIQUE(site_url) abort the transaction — keeps the rest of the
           // run (port doc).
-          if (await _findBySiteUrl(row.siteUrl) != null) continue;
+          if (await _findBySiteUrl(row.siteUrl) != null) {
+            skippedExisting++;
+            continue;
+          }
           await _db.into(_db.networkLibraries).insert(_insertCompanion(row));
+          inserted++;
         }
       });
-      return right(unit);
+      return right(
+        RefreshApplyResult(
+          applied: applied,
+          keptLocal: keptLocal,
+          inserted: inserted,
+          skippedExisting: skippedExisting,
+        ),
+      );
     } on Object {
       // No `$e` in the Failure: a SqliteException message can carry the
       // statement's bound parameters (site URLs) — typed failure, fixed
@@ -154,6 +185,15 @@ class DriftNetworkRepository implements NetworkRepository {
     final row =
         await (_db.select(_db.networkLibraries)
               ..where((t) => t.siteUrl.equals(siteUrl))
+              ..limit(1))
+            .getSingleOrNull();
+    return row == null ? null : _toDomain(row);
+  }
+
+  Future<NetworkLibrary?> _findById(int id) async {
+    final row =
+        await (_db.select(_db.networkLibraries)
+              ..where((t) => t.id.equals(id))
               ..limit(1))
             .getSingleOrNull();
     return row == null ? null : _toDomain(row);

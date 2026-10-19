@@ -25,6 +25,7 @@ final class RefreshReport {
     this.conflicts = 0,
     this.cancelled = false,
     this.noLongerListed = const [],
+    this.keptLocalChanges = 0,
   });
 
   /// Descriptors that arrived valid (including ones that then conflicted).
@@ -58,11 +59,18 @@ final class RefreshReport {
   /// SiteUrls of CONFIRMED hubs whose descriptor no longer lists me.
   final List<String> noLongerListed;
 
+  /// Rows whose refresh write was SKIPPED because the user edited them on
+  /// this device while the run was fetching (review M1 — the membership
+  /// decision or card scan made mid-run always wins; the fetched data
+  /// applies on the next run). Surfaced in the summary so the user knows
+  /// their edit was kept, not lost.
+  final int keptLocalChanges;
+
   @override
   String toString() =>
       'RefreshReport(ok: $fetched, unreachable: $unreachable, '
       'invalid: $invalid, schemaTooNew: $schemaTooNew, '
       'discovered: $discovered, conflicts: $conflicts, '
       'pending: $pendingMemberships, truncated: $truncated, '
-      'cancelled: $cancelled)';
+      'cancelled: $cancelled, keptLocal: $keptLocalChanges)';
 }

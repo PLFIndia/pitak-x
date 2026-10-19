@@ -455,10 +455,11 @@ class _FakeRepo implements NetworkRepository {
   }
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async => right(unit);
+    List<NetworkLibrary> discovered, {
+    List<NetworkLibrary> baselines = const [],
+  }) async => right(const RefreshApplyResult());
 
   @override
   Future<int> count() async => rows.length;

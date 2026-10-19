@@ -56,6 +56,8 @@ class NetworkRefreshBar extends ConsumerWidget {
         '${report.pendingMemberships} membership questions below',
       if (report.noLongerListed.isNotEmpty)
         '${report.noLongerListed.length} no longer list you',
+      if (report.keptLocalChanges > 0)
+        '${report.keptLocalChanges} kept your edits made during refresh',
       // "refresh", not "discovery": the 500-row cap covers the saved rows
       // too (L4), so a capped run may simply not have reached every seed.
       if (report.truncated) 'refresh capped at 500 libraries',

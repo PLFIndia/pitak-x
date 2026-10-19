@@ -210,14 +210,23 @@ final class _Run {
       for (final planned in _plan.discovered) _states[planned.siteUrl]!,
     ];
 
-    final applied = await _repository.applyRefresh(updated, inserted);
+    // The baselines guard (review M1): the run READ `rows` minutes ago. Any
+    // row the user edited meanwhile (membership decision, card scan) no
+    // longer matches its baseline inside the repository's transaction, so
+    // that row's write is skipped — the user's edit always wins.
+    final applied = await _repository.applyRefresh(
+      updated,
+      inserted,
+      baselines: rows,
+    );
     return applied.map(
-      (_) => RefreshReport(
+      (result) => RefreshReport(
         fetched: _fetched,
         unreachable: _unreachable,
         invalid: _invalid,
         schemaTooNew: _schemaTooNew,
-        discovered: inserted.length,
+        discovered: result.inserted,
+        keptLocalChanges: result.keptLocal,
         truncated: _plan.truncated,
         pendingMemberships: _countNewlyPending(),
         conflicts: _countNewConflicts(),

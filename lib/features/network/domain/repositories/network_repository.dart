@@ -12,6 +12,29 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 
+/// What one refresh write actually did (the report reads these counts).
+final class RefreshApplyResult {
+  /// Creates the result with the four counts.
+  const RefreshApplyResult({
+    this.applied = 0,
+    this.keptLocal = 0,
+    this.inserted = 0,
+    this.skippedExisting = 0,
+  });
+
+  /// Updated rows written.
+  final int applied;
+
+  /// Skipped: the row changed on this device mid-run (the user's edit wins).
+  final int keptLocal;
+
+  /// Discovered rows inserted.
+  final int inserted;
+
+  /// Discovered rows whose siteUrl already existed when the write ran.
+  final int skippedExisting;
+}
+
 /// Loads and persists [NetworkLibrary] rows.
 abstract interface class NetworkRepository {
   /// All rows, ordered by [NetworkLibrary.sortOrder], then name — the list
@@ -40,15 +63,31 @@ abstract interface class NetworkRepository {
   /// the refresh use case computed them from the previous state and may set
   /// any field, including back to null — and [discovered] rows are inserted.
   ///
+  /// Why conditional: a refresh can run for minutes. A membership decision or
+  /// a card scan made meanwhile would otherwise be silently reverted by the
+  /// stale snapshot (review M1). The user's edit always wins; the fetched
+  /// data is applied on the next run.
+  ///
+  /// A stored row that no longer `sameAs` its [baselines] entry was edited on
+  /// this device while the run was fetching: its update is SKIPPED (counted
+  /// in [RefreshApplyResult.keptLocal]), and a row deleted mid-run is never
+  /// resurrected. The compare happens inside the same transaction as the
+  /// write, so the read-compare-write is atomic. An empty [baselines] means
+  /// an unconditional write (callers with no snapshot, e.g. the
+  /// legacy-bookmarks import).
+  ///
   /// A [discovered] row whose `siteUrl` already exists by the time the
   /// transaction runs (the user added that address while the refresh was in
   /// flight) is SKIPPED, not an error: the user's own row wins and the rest
   /// of the run still lands. The caller guarantees no two rows it hands over
   /// share a fingerprint (the refresh use case's uniqueness pass).
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  );
+    List<NetworkLibrary> discovered, {
+
+    /// The rows this run READ, by id. See the method doc for the skip rule.
+    List<NetworkLibrary> baselines = const [],
+  });
 
   /// Number of stored rows (cheap check for empty states / migration).
   Future<int> count();

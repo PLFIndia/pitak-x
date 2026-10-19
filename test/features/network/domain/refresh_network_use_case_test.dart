@@ -728,6 +728,58 @@ void main() {
     });
   });
 
+  group('mid-run edits (review M1)', () {
+    test('a membership decision made DURING the run survives it and is '
+        'reported — the stale snapshot never reverts it', () async {
+      repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(
+          seedUrl,
+          name: 'Hub',
+          members: const [
+            // The hub lists me ⇒ the run computes membership: pending.
+            MemberEntry(fingerprint: fpOwn, siteUrl: 'https://me.github.io/'),
+          ],
+        ),
+      );
+      // The user taps "Confirm" while the fetch is in flight: the stored
+      // row changes between loadAll and applyRefresh.
+      fetcher.onFetch = (_) {
+        repo.rows = [
+          repo.rows.single.copyWith(membership: MembershipState.confirmed),
+        ];
+      };
+
+      final report = (await useCase()(ownFingerprint: fpOwn)).toNullable()!;
+
+      expect(report.fetched, 1);
+      expect(report.keptLocalChanges, 1);
+      // The use case handed the repository the rows it READ as baselines.
+      expect(repo.baselinesSeen.single.map((r) => r.siteUrl), [seedUrl]);
+      final row = rowAfter(seedUrl);
+      expect(
+        row.membership,
+        MembershipState.confirmed,
+        reason: "the user's edit wins",
+      );
+      expect(row.name, '', reason: 'the stale computed row did not land');
+      expect(row.fetchStatus, FetchStatus.never);
+    });
+
+    test('a clean run (no mid-run edits) applies everything and reports 0 '
+        'kept rows', () async {
+      repo.rows = [const NetworkLibrary(id: 1, siteUrl: seedUrl)];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(seedUrl), // name defaults to 'Fetched Name'
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.keptLocalChanges, 0);
+      expect(rowAfter(seedUrl).name, 'Fetched Name');
+    });
+  });
+
   group('run bounds (§5.6: ≤ 500 rows per run, seeds included — L4)', () {
     test(
       '501 saved rows fetch exactly 500; the unplanned row is untouched',
@@ -932,37 +984,61 @@ void main() {
 /// In-memory repository fake: [applyRefresh] records every call AND applies
 /// it the way the Drift implementation would — wholesale updates by id,
 /// inserts with fresh ids, a discovered row whose siteUrl already exists is
-/// skipped, and the table's two UNIQUE constraints (`site_url`,
-/// `fingerprint` among non-null) are ENFORCED: a violation rolls the whole
-/// call back and returns a `StorageFailure`, exactly like SQLite would. The
-/// H1 regression was invisible while this fake accepted anything.
+/// skipped, a stored row that no longer matches its baseline is KEPT (the
+/// user edited it mid-run — M1), and the table's two UNIQUE constraints
+/// (`site_url`, `fingerprint` among non-null) are ENFORCED: a violation rolls
+/// the whole call back and returns a `StorageFailure`, exactly like SQLite
+/// would. The H1 regression was invisible while this fake accepted anything.
 class _FakeRepo implements NetworkRepository {
   List<NetworkLibrary> rows = [];
   final List<(List<NetworkLibrary>, List<NetworkLibrary>)> applyCalls = [];
-  Either<Failure, Unit> applyResult = right(unit);
+
+  /// The baselines each [applyRefresh] call received (M1's guard input).
+  final List<List<NetworkLibrary>> baselinesSeen = [];
+  Either<Failure, RefreshApplyResult> applyResult = right(
+    const RefreshApplyResult(),
+  );
 
   @override
   Future<List<NetworkLibrary>> loadAll() async => List.of(rows);
 
   @override
-  Future<Either<Failure, Unit>> applyRefresh(
+  Future<Either<Failure, RefreshApplyResult>> applyRefresh(
     List<NetworkLibrary> updated,
-    List<NetworkLibrary> discovered,
-  ) async {
+    List<NetworkLibrary> discovered, {
+    List<NetworkLibrary> baselines = const [],
+  }) async {
     applyCalls.add((List.of(updated), List.of(discovered)));
+    baselinesSeen.add(List.of(baselines));
     if (applyResult.isLeft()) return applyResult;
     // Work on a copy: a constraint violation must leave `rows` untouched
     // (one transaction, rolled back).
     final next = List.of(rows);
+    final expected = {for (final b in baselines) b.id: b};
+    var applied = 0;
+    var keptLocal = 0;
+    var inserted = 0;
+    var skippedExisting = 0;
     for (final update in updated) {
       final index = next.indexWhere((r) => r.id == update.id);
-      if (index >= 0) next[index] = update;
+      if (index < 0) continue; // deleted mid-run: never resurrect
+      final baseline = expected[update.id];
+      if (baseline != null && !next[index].sameAs(baseline)) {
+        keptLocal++; // edited on this device while the run was fetching
+        continue;
+      }
+      next[index] = update;
+      applied++;
     }
     var nextId = next.fold(0, (max, r) => r.id > max ? r.id : max);
     for (final insert in discovered) {
-      if (next.any((r) => r.siteUrl == insert.siteUrl)) continue;
+      if (next.any((r) => r.siteUrl == insert.siteUrl)) {
+        skippedExisting++;
+        continue;
+      }
       nextId++;
       next.add(insert.copyWith(id: nextId));
+      inserted++;
     }
     final fingerprints = <String>{};
     for (final row in next) {
@@ -974,7 +1050,14 @@ class _FakeRepo implements NetworkRepository {
       }
     }
     rows = next;
-    return right(unit);
+    return right(
+      RefreshApplyResult(
+        applied: applied,
+        keptLocal: keptLocal,
+        inserted: inserted,
+        skippedExisting: skippedExisting,
+      ),
+    );
   }
 
   @override
