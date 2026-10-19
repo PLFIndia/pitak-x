@@ -14,6 +14,10 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.5.2] - 2026-10 (tag `1.5.2`, versionCode 28)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `How Pitak works`.
+
 ### Added
 - **How Pitak works** — five short in-app guides (publish, map,
   backup/restore/export/import, vault & lending, hubs & members) from the
