@@ -29,16 +29,25 @@
 #     code was a day old). Only a wiped tree makes a stale-Dart release
 #     impossible.
 #  5. Verifies the OUTPUT, not just the inputs: the signer certificate inside
-#     the .aab must match the upload keystore's certificate, and the bundled
-#     versionCode/versionName must match pubspec.yaml. Prints the fingerprint
-#     (public data) for comparison with Play Console; never prints secrets.
+#     the .aab must match the upload keystore's certificate, the bundled
+#     versionCode/versionName must match pubspec.yaml, and — the check that
+#     would have caught both stale-snapshot incidents — a sentinel string
+#     that exists ONLY in the code being shipped must be present inside the
+#     compiled Dart (`libapp.so`). A fresh manifest around an old snapshot
+#     passes every other check. Prints the certificate fingerprint (public
+#     data) for comparison with Play Console; never prints secrets.
 #
 # USAGE
-#     tool/release_build.sh            # build + verify
-#     tool/release_build.sh --verify   # verify an existing bundle only
+#     tool/release_build.sh --sentinel 'ASCII text new in this release'
+#     tool/release_build.sh --verify --sentinel '...'   # verify an existing bundle only
+#
+# The sentinel must be ASCII-only: Dart stores a literal containing any
+# non-ASCII character (an em dash, Indic text) as UTF-16, which a byte scan
+# for the UTF-8 form never finds. A new class name works as well as a new UI
+# string — both survive AOT compilation.
 #
 # WHAT IT DOES NOT DO: bump the version, write changelogs, commit, tag or
-# upload. See README.md "Release checklist" for those steps.
+# upload. See docs/RELEASING.md for those steps.
 
 set -euo pipefail
 
@@ -49,11 +58,25 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${repo_root}"
 
 mode="build"
-case "${1:-}" in
-  "") ;;
-  --verify) mode="verify" ;;
-  *) die "unknown argument '$1' (expected nothing or --verify)" ;;
-esac
+sentinel=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --verify) mode="verify"; shift ;;
+    --sentinel)
+      [[ $# -ge 2 ]] || die "--sentinel needs a value."
+      sentinel="$2"; shift 2 ;;
+    *) die "unknown argument '$1' (expected --verify and/or --sentinel '<text>')" ;;
+  esac
+done
+[[ -n "${sentinel}" ]] \
+  || die "--sentinel '<ASCII text that exists only in this release>' is required; it is how a stale libapp.so is detected (docs/RELEASING.md section 4)."
+# Byte-for-byte check: any character above 0x7F would be stored as UTF-16 in
+# the snapshot and the scan below would miss it even when the code is fresh.
+# (Written as if/then, not `grep && die`: under `set -e` a non-matching
+# `grep -q` would otherwise abort the script silently with exit 1.)
+if LC_ALL=C grep -q '[^ -~]' <<<"${sentinel}"; then
+  die "the sentinel contains a non-ASCII character; pick an ASCII-only string (see the header)."
+fi
 
 # ---------------------------------------------------------------------------
 # 1. The pinned Flutter SDK, and nothing else.
@@ -85,10 +108,10 @@ version_line="$(sed -n 's/^version:[[:space:]]*\([^[:space:]#]*\).*/\1/p' pubspe
 expected_name="${version_line%%+*}"
 expected_code="${version_line##*+}"
 
-# CHANGELOG gate (architecture.md B7): the developer changelog must carry a
-# heading for the version being built, so engineering history is never
-# shipped undocumented. Why here: this script already verifies every other
-# version pin, and it runs before every release.
+# CHANGELOG gate: the developer changelog must carry a heading for the
+# version being built, so engineering history is never shipped undocumented.
+# Why here: this script already verifies every other version pin, and it
+# runs before every release.
 grep -qE "^## \[${expected_name}\]" CHANGELOG.md \
   || die "CHANGELOG.md has no '## [${expected_name}]' heading. Move the Unreleased entries under the new version first."
 
@@ -165,8 +188,20 @@ built_pkg="$(sed -n 's/.*[[:space:]]package="\([^"]*\)".*/\1/p' "${manifest}" | 
 [[ "${built_code}" == "${expected_code}" && "${built_name}" == "${expected_name}" ]] \
   || die "bundle is ${built_name} (${built_code}) but pubspec.yaml says ${expected_name} (${expected_code}). Rebuild."
 
-# 5d. Tag hygiene (architecture.md B9): one tag feeds both stores AND the
-#     F-Droid build server, so it must be an annotated, SIGNED object that
+# 5d. The compiled Dart is THIS release's Dart. The bundle's arm64 libapp.so
+#     is the AOT snapshot; a stale one carries a fresh manifest and passes
+#     5a-5c. `grep -c -F` on the raw bytes is enough for an ASCII sentinel
+#     (enforced above); `strings` is deliberately not used because it
+#     applies its own minimum-run heuristics.
+unzip -o -q "${aab}" 'base/lib/arm64-v8a/libapp.so' -d "${tmp}" \
+  || die "no base/lib/arm64-v8a/libapp.so inside ${aab} (is this a Flutter release bundle?)."
+if ! LC_ALL=C grep -q -F -- "${sentinel}" "${tmp}/base/lib/arm64-v8a/libapp.so"; then
+  die "sentinel '${sentinel}' is NOT in the bundled libapp.so. The Dart snapshot is stale (or the sentinel is not in lib/). Run 'flutter clean' and rebuild; DO NOT UPLOAD."
+fi
+say "    sentinel '${sentinel}' found in libapp.so (fresh Dart snapshot)."
+
+# 5e. Tag hygiene: one tag feeds both stores AND the F-Droid build server,
+#     so it must be an annotated, SIGNED object that
 #     points at the commit being released — a lightweight tag can be moved
 #     or forged, an unsigned one proves nothing, and a tag on the wrong
 #     commit ships code this script never verified. If the tag already
@@ -197,4 +232,4 @@ fi
 say "OK  ${aab} ($(du -h "${aab}" | cut -f1))"
 say "    ${built_pkg} versionName=${built_name} versionCode=${built_code}"
 say "    signed by upload key ${key_alias}, cert SHA-256 ${aab_fp}"
-say "Next: README.md 'Release checklist' (commit, tag ${expected_name}, push, upload)."
+say "Next: docs/RELEASING.md section 6 (upload, tag ${expected_name}, push)."
