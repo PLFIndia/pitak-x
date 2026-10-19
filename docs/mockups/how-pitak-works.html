@@ -1,0 +1,660 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitak — "How Pitak works" clickable mockup</title>
+<style>
+  /* Material 3 tones approximating ColorScheme.fromSeed(Colors.indigo) */
+  :root{
+    --primary:#4355B9; --on-primary:#fff; --primary-container:#DEE0FF; --on-primary-container:#00105C;
+    --secondary-container:#E1E0F9; --on-secondary-container:#191A2C;
+    --surface:#FBF8FF; --surface-low:#F5F2FA; --surface-high:#E9E7EF; --surface-highest:#E3E1EC;
+    --on-surface:#1B1B21; --on-surface-variant:#46464F; --outline:#767680; --outline-variant:#C7C5D0;
+    --error:#BA1A1A; --error-container:#FFDAD6; --on-error-container:#410002; --green:#2E7D32;
+    --annot:#B3261E;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%;background:#ECE9F1;font-family:Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--on-surface)}
+  .stage{display:flex;align-items:flex-start;justify-content:center;gap:28px;padding:24px;flex-wrap:wrap}
+
+  /* ---------- phone frame ---------- */
+  .phone{width:390px;height:844px;border:10px solid #15151a;border-radius:44px;background:var(--surface);position:relative;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);flex:none}
+  .view{position:absolute;inset:0;display:none;flex-direction:column;background:var(--surface)}
+  .view.active{display:flex}
+  .appbar{height:64px;display:flex;align-items:center;padding:0 8px;flex:none;gap:4px}
+  .appbar h1{font-size:22px;font-weight:400;margin:0 0 0 8px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .icon{width:48px;height:48px;border:none;background:none;border-radius:24px;display:grid;place-items:center;cursor:pointer;color:var(--on-surface-variant);font-size:22px;flex:none}
+  .icon:hover{background:rgba(0,0,0,.06)}
+  .icon svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .content{flex:1;overflow-y:auto;padding:16px;scrollbar-width:thin}
+  .content.flush{padding:0}
+  p{margin:0 0 12px;line-height:1.45;font-size:15px}
+  .small{font-size:13px;color:var(--on-surface-variant)}
+  h2{font-size:16px;font-weight:600;margin:20px 0 8px}
+  h2:first-child{margin-top:0}
+  b{font-weight:600}
+
+  /* list tiles */
+  .tile{display:flex;align-items:center;min-height:56px;padding:0 16px;gap:16px;cursor:pointer;user-select:none}
+  .tile:hover{background:rgba(0,0,0,.05)}
+  .tile .glyph{width:24px;text-align:center;font-size:20px;flex:none;color:var(--on-surface-variant)}
+  .tile .t{flex:1;font-size:16px}
+  .tile .s{font-size:13px;color:var(--on-surface-variant);margin-top:2px}
+  .divider{height:1px;background:var(--outline-variant);margin:0}
+  .section-label{font-size:14px;font-weight:600;color:var(--primary);padding:16px 16px 4px}
+
+  /* cards */
+  .card{background:var(--surface-low);border-radius:12px;padding:16px;margin-bottom:12px}
+  .card.tap{cursor:pointer;display:flex;gap:14px;align-items:center}
+  .card.tap:hover{background:var(--surface-high)}
+  .card.tap .glyph{font-size:24px;width:32px;text-align:center;flex:none}
+  .card.tap .t{font-size:16px;font-weight:600}
+  .card.tap .s{font-size:13px;color:var(--on-surface-variant);margin-top:2px}
+  .card.tap .chev{color:var(--on-surface-variant);font-size:22px;flex:none}
+  .callout{background:var(--secondary-container);color:var(--on-secondary-container);border-radius:12px;padding:12px 14px;margin:14px 0}
+  .callout h3{margin:0 0 6px;font-size:14px;font-weight:600}
+  .callout ul{margin:0;padding-left:18px}
+  .callout li{margin:4px 0;font-size:14px;line-height:1.4}
+  .danger{background:var(--error-container);color:var(--on-error-container)}
+  .info{display:flex;gap:10px;background:var(--surface-highest);border-radius:8px;padding:12px;font-size:13px;line-height:1.4;margin-bottom:12px}
+
+  /* buttons */
+  .btn{height:40px;border-radius:20px;padding:0 20px;font-size:14px;font-weight:500;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-family:inherit}
+  .btn.filled{background:var(--primary);color:var(--on-primary)}
+  .btn.filled:disabled{background:rgba(27,27,33,.12);color:rgba(27,27,33,.38);cursor:default}
+  .btn.outlined{background:none;border:1px solid var(--outline);color:var(--primary)}
+  .btn.outlined:disabled{color:rgba(27,27,33,.38);border-color:rgba(27,27,33,.12);cursor:default}
+  .btn.text{background:none;color:var(--primary);padding:0 12px}
+  .btn.tonal{background:var(--secondary-container);color:var(--on-secondary-container)}
+  .btn.wide{width:100%;justify-content:center;height:44px}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .fabs{position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;align-items:flex-end;gap:12px}
+  .fab{height:56px;border-radius:16px;padding:0 20px;background:var(--primary-container);color:var(--on-primary-container);border:none;font-size:14px;font-weight:500;box-shadow:0 4px 10px rgba(0,0,0,.2);cursor:pointer;display:inline-flex;align-items:center;gap:10px;font-family:inherit}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+  .chip{border:1px solid var(--outline);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--on-surface-variant)}
+
+  /* numbered steps */
+  ol.steps{list-style:none;margin:8px 0 4px;padding:0;counter-reset:s}
+  ol.steps li{position:relative;padding:0 0 12px 40px;font-size:15px;line-height:1.45;counter-increment:s}
+  ol.steps li::before{content:counter(s);position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:13px;background:var(--primary);color:#fff;font-size:13px;font-weight:600;display:grid;place-items:center}
+  ul.plain{margin:4px 0 8px;padding-left:18px}
+  ul.plain li{margin:6px 0;font-size:15px;line-height:1.45}
+  table.pick{width:100%;border-collapse:collapse;margin:8px 0 14px;font-size:14px}
+  table.pick td{padding:8px 6px;border-bottom:1px solid var(--outline-variant);vertical-align:top;line-height:1.35}
+  table.pick td:last-child{white-space:nowrap;font-weight:600}
+  code{background:var(--surface-highest);border-radius:4px;padding:1px 5px;font-size:13px}
+
+  /* tabs */
+  .tabs{display:flex;border-bottom:1px solid var(--outline-variant);flex:none}
+  .tab{flex:1;height:48px;border:none;background:none;font:inherit;font-size:14px;font-weight:500;color:var(--on-surface-variant);cursor:pointer;position:relative}
+  .tab.on{color:var(--primary)}
+  .tab.on::after{content:"";position:absolute;left:20%;right:20%;bottom:0;height:3px;border-radius:3px 3px 0 0;background:var(--primary)}
+  .pane{display:none}.pane.on{display:block}
+
+  /* fields */
+  .field{margin-bottom:14px}
+  .field label{display:block;font-size:12px;color:var(--on-surface-variant);margin:0 0 4px 4px}
+  .field input{width:100%;height:48px;border:1px solid var(--outline);border-radius:6px;padding:0 12px;font:inherit;font-size:15px;background:var(--surface)}
+  .field input:disabled{border-color:var(--outline-variant);background:var(--surface-low);color:var(--on-surface)}
+  .field .hint{font-size:12px;color:var(--on-surface-variant);margin:4px 0 0 4px}
+  .seg{display:flex;border:1px solid var(--outline);border-radius:24px;overflow:hidden;margin:6px 0 4px}
+  .seg button{flex:1;height:48px;border:none;background:none;font:inherit;font-size:13px;cursor:pointer;border-right:1px solid var(--outline)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--secondary-container);font-weight:600}
+  .seg button:disabled{cursor:default;color:var(--on-surface-variant)}
+
+  /* status badge */
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;border-radius:12px;padding:3px 10px}
+  .badge.red{background:#FFDAD6;color:#93000A}.badge.amber{background:#FFE9B8;color:#5C4200}.badge.green{background:#CDEFC9;color:#0A5B1A}
+  .signed{color:var(--green);font-weight:600;display:flex;align-items:center;gap:6px}
+
+  /* drawer */
+  .scrim{position:absolute;inset:0;background:rgba(0,0,0,.32);display:none;z-index:20}
+  .scrim.on{display:block}
+  .drawer{position:absolute;top:0;bottom:0;left:0;width:304px;background:#F7F2FA;z-index:21;transform:translateX(-105%);transition:transform .22s ease;display:flex;flex-direction:column;border-radius:0 16px 16px 0}
+  .drawer.on{transform:translateX(0)}
+  .dhead{display:flex;align-items:center;gap:14px;padding:18px 16px 14px 20px}
+  .logo{width:48px;height:48px;border-radius:12px;background:var(--primary-container);display:grid;place-items:center;font-size:22px;color:var(--on-primary-container)}
+  .dhead .name{font-size:22px}
+  .dlist{flex:1;overflow-y:auto}
+  .pill{font-size:10px;font-weight:700;color:#fff;background:var(--annot);border-radius:6px;padding:2px 6px;letter-spacing:.5px}
+  /* annotation pills: hidden unless <body> carries show-annot (a different
+     class name on purpose — `.annot` on <body> hid the whole page) */
+  .annot{display:none}
+  body.show-annot .annot{display:inline-block}
+
+  /* dialogs */
+  .dlg{position:absolute;inset:0;background:rgba(0,0,0,.32);display:none;z-index:30;align-items:center;justify-content:center;padding:24px}
+  .dlg.on{display:flex}
+  .box{background:#F3EDF7;border-radius:28px;padding:24px;width:100%;max-width:330px}
+  .box h3{margin:0 0 14px;font-size:22px;font-weight:400}
+  .box p{font-size:14px;color:var(--on-surface-variant)}
+  .box .actions{display:flex;justify-content:flex-end;gap:4px;margin-top:18px}
+  .code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:26px;letter-spacing:3px;text-align:center;background:var(--surface);border-radius:8px;padding:10px;margin:8px 0 14px;user-select:all}
+  .link{color:var(--primary);text-decoration:underline;word-break:break-all}
+
+  /* snackbar */
+  .snack{position:absolute;left:16px;right:16px;bottom:20px;background:#322F35;color:#F5EFF7;border-radius:6px;padding:14px 16px;font-size:14px;z-index:40;display:none;box-shadow:0 4px 12px rgba(0,0,0,.3)}
+  .snack.on{display:block}
+
+  /* fake book rows on home */
+  .book{display:flex;gap:12px;padding:10px 16px;align-items:center}
+  .book .cover{width:40px;height:56px;border-radius:4px;background:linear-gradient(135deg,#c5cae9,#7986cb);flex:none}
+  .book .t{font-size:15px}.book .a{font-size:13px;color:var(--on-surface-variant)}
+
+  /* ---------- reviewer notes panel ---------- */
+  .notes{width:360px;background:#fff;border-radius:16px;padding:20px 22px;font-size:14px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+  .notes h2{font-size:18px;margin:0 0 10px;font-weight:600}
+  .notes h3{font-size:14px;margin:18px 0 6px;font-weight:600;color:var(--primary)}
+  .notes ol,.notes ul{padding-left:18px;margin:0}
+  .notes li{margin:6px 0}
+  .notes label{display:flex;gap:8px;align-items:center;margin:8px 0;cursor:pointer}
+  .notes select,.notes input[type=text]{font:inherit;padding:4px 6px;border:1px solid var(--outline-variant);border-radius:6px}
+  .notes .muted{color:var(--on-surface-variant);font-size:13px}
+  kbd{border:1px solid #bbb;border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:#f7f7f7}
+</style>
+</head>
+<body class="show-annot">
+<div class="stage">
+
+<!-- =============================== PHONE =============================== -->
+<div class="phone" id="phone">
+
+  <!-- ---------- HOME (library list) ---------- -->
+  <section class="view active" id="v-home">
+    <header class="appbar">
+      <button class="icon" title="Menu" onclick="openDrawer()"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+      <h1 class="libname">Kadugodi Library</h1>
+      <button class="icon" onclick="toast('Search — exists in the app, not part of this mockup')"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
+    </header>
+    <div class="content flush">
+      <div class="book"><div class="cover"></div><div><div class="t">The God of Small Things</div><div class="a">Arundhati Roy</div></div></div>
+      <div class="book"><div class="cover" style="background:linear-gradient(135deg,#ffe0b2,#ff9800)"></div><div><div class="t">Malgudi Days</div><div class="a">R. K. Narayan</div></div></div>
+      <div class="book"><div class="cover" style="background:linear-gradient(135deg,#c8e6c9,#43a047)"></div><div><div class="t">Wings of Fire</div><div class="a">A. P. J. Abdul Kalam</div></div></div>
+      <div class="book"><div class="cover" style="background:linear-gradient(135deg,#f8bbd0,#e91e63)"></div><div><div class="t">Train to Pakistan</div><div class="a">Khushwant Singh</div></div></div>
+      <div class="book"><div class="cover" style="background:linear-gradient(135deg,#b3e5fc,#039be5)"></div><div><div class="t">Samskara</div><div class="a">U. R. Ananthamurthy</div></div></div>
+      <div class="book"><div class="cover" style="background:linear-gradient(135deg,#d7ccc8,#795548)"></div><div><div class="t">The Guide</div><div class="a">R. K. Narayan</div></div></div>
+      <p class="small" style="padding:16px 16px 0">Tap <b>☰</b> (top-left) to open the drawer. The new entry is marked.</p>
+    </div>
+    <div class="fabs"><button class="fab" onclick="toast('Add book — exists in the app')">＋ &nbsp;Add book</button></div>
+  </section>
+
+  <!-- ---------- GUIDES INDEX ---------- -->
+  <section class="view" id="v-guides">
+    <header class="appbar">
+      <button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+      <h1 class="glabel">How Pitak works</h1>
+    </header>
+    <div class="content">
+      <p class="small" style="margin-bottom:16px">Short guides, one per job. Each ends with a button to the right screen.</p>
+      <div class="card tap" onclick="go('v-g-publish')"><div class="glyph">☁️</div><div style="flex:1"><div class="t">Put your catalogue online</div><div class="s">A free public web page of your books — in 6 steps</div></div><div class="chev">›</div></div>
+      <div class="card tap" onclick="go('v-g-map')"><div class="glyph">📍</div><div style="flex:1"><div class="t">Put your library on the map</div><div class="s">Let nearby libraries find you — you choose how exact</div></div><div class="chev">›</div></div>
+      <div class="card tap" onclick="go('v-g-backup')"><div class="glyph">💾</div><div style="flex:1"><div class="t">Backup, restore, export, import</div><div class="s">Which one when</div></div><div class="chev">›</div></div>
+      <div class="card tap" onclick="go('v-g-vault')"><div class="glyph">🔒</div><div style="flex:1"><div class="t">Lending and the borrowers vault</div><div class="s">Who has what, when it's due, and keeping that private</div></div><div class="chev">›</div></div>
+      <div class="card tap fifth" onclick="go('v-g-network')"><div class="glyph">⬡</div><div style="flex:1"><div class="t">Hubs, members and library cards <span class="pill annot">OPTIONAL</span></div><div class="s">Associations, main libraries with branches — who lists whom</div></div><div class="chev">›</div></div>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 1: PUBLISH ---------- -->
+  <section class="view" id="v-g-publish">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Put your catalogue online</h1></header>
+    <div class="content">
+      <p>Pitak can turn your book list into a simple public web page that anyone can open and search. It is free — the page is hosted by GitHub.</p>
+      <p><b>What goes online:</b> titles, authors, covers, and — if your vault is unlocked when you publish — whether a book is available.<br><b>Never goes online:</b> borrowers, loans, notes, shelf locations.</p>
+      <div class="small">You need</div>
+      <div class="chips"><span class="chip">A free GitHub account (github.com — two minutes)</span><span class="chip">Internet</span></div>
+
+      <h2>First time</h2>
+      <ol class="steps">
+        <li>Open <b>☰ → Publish to web</b>.</li>
+        <li>Tap <b>Sign in to GitHub</b>. Pitak shows a short code.</li>
+        <li>Open the link shown (github.com/login/device) — on this phone or on a computer — log in to GitHub and type the code. Come back to Pitak; it continues by itself.</li>
+        <li>Tap <b>Set up a repository</b>, give it a short name like <code>my-library</code>, tap <b>Create</b>. (A repository is just the folder on GitHub that holds your page. Pitak creates it and switches the page on.)</li>
+        <li>Tap <b>Publish catalogue now</b>.</li>
+        <li>Your web address appears under <b>Your site</b>. Tap <b>Copy link</b> or <b>Share</b>. The first time, the page can take a minute or two to go live.</li>
+      </ol>
+
+      <h2>Every time after that</h2>
+      <p>Added or lent books? Open <b>Publish to web</b> and tap <b>Publish catalogue now</b> again. Only what changed is uploaded, so it takes seconds.</p>
+
+      <div class="callout"><h3>Good to know</h3><ul>
+        <li>The <b>Basic info</b> tab adds your library's name, address, email and phone to the page. Every field is optional.</li>
+        <li>Signing out of GitHub does not take your page down.</li>
+        <li>Sign-in not finishing? Keep the code screen open and type the code in a browser on a computer instead.</li>
+      </ul></div>
+      <button class="btn filled wide deeplink" onclick="go('v-publish',{tab:'conn'})">Open Publish to web →</button>
+      <p class="small" style="margin-top:10px">Try it: the stub screen behind this button simulates sign-in, repository setup and publishing.</p>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 2: MAP ---------- -->
+  <section class="view" id="v-g-map">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Put your library on the map</h1></header>
+    <div class="content">
+      <p>Other Pitak libraries that bookmark yours — by adding your web address (the GitHub Pages link Pitak created) to their <b>Library network</b> list — see it as a pin on their <b>Library network › Map</b>. Nothing is shown until you switch it on and publish — and you choose how exact the pin is.</p>
+      <h2>Steps</h2>
+      <ol class="steps">
+        <li>Find your coordinates: in Google Maps (or OpenStreetMap) press and hold on your library's spot. Two numbers appear, like <code>12.9716, 77.5946</code> — copy them.</li>
+        <li>Open <b>☰ → Publish to web → Basic info</b> and tap <b>Edit</b>.</li>
+        <li>Paste the numbers into <b>GPS location</b>.</li>
+        <li>Under <b>Share my location on the network map</b> pick <b>Approximate (~1 km)</b> or <b>Exact</b>. Tap <b>Save</b>.</li>
+        <li>Back on <b>Connection</b>, tap <b>Publish catalogue now</b>. The pin travels with your page.</li>
+        <li>Let other libraries save you: send them your site link (<b>☰ → Share Library Website</b>) or show them your card (<b>☰ → Library network → My card</b>). When they tap <b>Refresh</b>, your pin appears on their map.</li>
+      </ol>
+      <h2>How the map works</h2>
+      <ul class="plain">
+        <li>Your map shows only the libraries on your own <b>Library network</b> list — the ones you bookmarked, added as members, or that Pitak found through your hubs — and only those that publish a location.</li>
+        <li>Only web addresses made by Pitak can be bookmarked (they end in <code>github.io</code> or <code>pages.dev</code>). Other websites are not accepted.</li>
+        <li>Pin positions come from each library's published page, read when you tap <b>Refresh</b>. Nobody's location is sent anywhere else.</li>
+      </ul>
+      <div class="callout"><h3>Good to know</h3><ul>
+        <li>Pitak never reads your phone's location. It publishes only the numbers you type.</li>
+        <li><b>Approximate</b> rounds the pin to about 1 km — your neighbourhood, not your door.</li>
+        <li>To take the pin down, choose <b>Not shared</b> and publish again.</li>
+      </ul></div>
+      <button class="btn filled wide deeplink" onclick="go('v-publish',{tab:'basic'})">Open Basic info →</button>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 3: BACKUP ---------- -->
+  <section class="view" id="v-g-backup">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Backup, restore, export, import</h1></header>
+    <div class="content">
+      <p>All of these live under <b>☰ → Settings → Data</b>. Pick by what you want to do:</p>
+      <table class="pick">
+        <tr><td>Keep a complete copy, or move to a new phone</td><td>Create backup</td></tr>
+        <tr><td>Bring that copy back</td><td>Restore backup</td></tr>
+        <tr><td>Share or print my book list</td><td>Export</td></tr>
+        <tr><td>Add books from a file (a Pitak export, a Goodreads CSV)</td><td>Import</td></tr>
+        <tr><td>Combine another maintainer's Pitak library with mine</td><td>Merge from a file</td></tr>
+      </table>
+
+      <h2>Backup — what is inside</h2>
+      <p>Your books, wishlist, cover images, library identity and saved-libraries list, plus the borrowers vault if you have one (it stays encrypted and opens with the same passphrase).</p>
+      <p><b>Not inside:</b> events and posters, logo, contact details, publishing setup, app settings — set those up again after a restore.</p>
+      <p>Keep the file somewhere private (your Drive, a computer) — it is your data in plain form, except the vault.</p>
+
+      <h2>Make a backup</h2>
+      <ol class="steps">
+        <li><b>☰ → Settings → Data → Create backup</b>.</li>
+        <li>Tap <b>Create backup</b> and choose where to save the file.</li>
+      </ol>
+
+      <h2>Restore on a new phone</h2>
+      <ol class="steps">
+        <li>Install Pitak → <b>☰ → Settings → Data → Restore backup</b>.</li>
+        <li>Tap <b>Choose .pitabak file</b> and pick it. Pitak shows what the file contains.</li>
+        <li>If it contains a vault, enter that vault's passphrase. Tap <b>Restore</b>.</li>
+      </ol>
+      <p>Restoring <b>replaces</b> this phone's books, wishlist, covers, identity and saved libraries with the backup's. It is all-or-nothing: if anything goes wrong, nothing changes.</p>
+
+      <h2>Export vs backup</h2>
+      <p>Export is for <i>sharing</i>: JSON keeps every detail and can be imported again; CSV opens in a spreadsheet; PDF is a printable catalogue (you pick the columns). A backup is for <i>you</i>: it is the only file that carries the vault and the covers.</p>
+      <p><b>Import</b> adds to your library — nothing is deleted. A book that is already here is updated if it is the same Pitak book, or skipped if it has the same ISBN.</p>
+
+      <div class="callout"><h3>Good to know</h3><ul>
+        <li>Make a backup before a restore or a merge.</li>
+        <li>A backup that contains a vault replaces your current vault when restored.</li>
+      </ul></div>
+      <button class="btn filled wide deeplink" onclick="go('v-settings')">Open Settings → Data →</button>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 4: VAULT ---------- -->
+  <section class="view" id="v-g-vault">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Lending and the borrowers vault</h1></header>
+    <div class="content">
+      <p>The vault is Pitak's locked drawer: who borrowed which book, when it is due, and how to reach them. It is encrypted on this phone and opens only with your passphrase. Your book list is never locked — you can catalogue without opening the vault.</p>
+
+      <h2>Set up once</h2>
+      <ol class="steps">
+        <li><b>☰ → Borrowers vault</b>.</li>
+        <li>Choose a passphrase of at least 8 characters and type it twice. <b>Write it down somewhere safe</b> — it is the only key. Pitak never stores it and cannot reset it.</li>
+        <li>Optional: <b>☰ → Settings → Security → Biometric unlock</b> to open the vault with your fingerprint or face from then on.</li>
+      </ol>
+
+      <h2>Lend a book</h2>
+      <ol class="steps">
+        <li>Open the book and tap <b>Lend</b>. (Locked vault? Unlock it first.)</li>
+        <li>Pick an <b>Existing borrower</b>, or type a <b>New borrower name</b>.</li>
+        <li>Set a <b>Due date</b> if you want a reminder. Tap <b>Lend</b>.</li>
+      </ol>
+
+      <h2>Returns and reminders</h2>
+      <ul class="plain">
+        <li><b>☰ → Borrowers vault</b>, tap the borrower, tap <b>Edit</b> → <b>Return</b> next to the book.</li>
+        <li>The bell icon (<b>Pending</b>) on the vault screen lists overdue loans, loans due soon, and books missing details.</li>
+        <li>Add a phone or email on a borrower's page and you get <b>Call</b>, <b>WhatsApp</b> and <b>Email</b> buttons there.</li>
+      </ul>
+
+      <div class="callout"><h3>Good to know</h3><ul>
+        <li>The vault stays open until you tap the lock icon or close the app — there is no timer. Lock it before handing your phone to someone.</li>
+        <li><b>Require biometric to open Pitak</b> (Settings → Security) is a different thing: it covers the whole app with a prompt but does not encrypt anything. The vault is the encrypted part.</li>
+        <li>Your published page can show "available / on loan" — never who borrowed. It only does so if the vault was unlocked when you published.</li>
+      </ul></div>
+      <button class="btn filled wide deeplink" onclick="go('v-vault')">Open Borrowers vault →</button>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 5: NETWORK (optional) ---------- -->
+  <section class="view" id="v-g-network">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Hubs, members and library cards</h1></header>
+    <div class="content">
+      <p><b>☰ → Library network</b> is your list of other Pitak libraries. Nothing leaves your phone until you tap <b>Refresh</b>, which reads each library's published page.</p>
+      <h2>What a hub is</h2>
+      <p>A hub is a Pitak library that lists other libraries as its members — picture a wheel: the hub in the middle, the members as the spokes. Any library can be a hub; it only needs a published page, and it can have no books of its own.</p>
+      <h2>Two examples</h2>
+      <ol class="steps">
+        <li><b>A library association.</b> The association sets up Pitak and publishes a page. At each meeting it scans a member library's card (<b>Add member</b>). The association's page lists every member; each member is asked once whether to show the membership, and after it says yes and publishes, its page points back to the association.</li>
+        <li><b>A main library with branches.</b> Each branch runs its own Pitak with its own page. The main library scans each branch's card. Its page lists all the branches; each branch's page points back to the main library.</li>
+      </ol>
+      <h2>The buttons</h2>
+      <ul class="plain">
+        <li><b>Add bookmark</b> saves a library by its web address.</li>
+        <li><b>Add member</b> scans another library's card, in person. That makes you a <i>hub</i> and lists them on your page as your member.</li>
+        <li>If a hub lists <i>you</i>, Pitak asks once: "show that you're a member of X?" Say yes and it appears on your page; say no and you are not asked again.</li>
+        <li><b>My card</b> is your own card to show — it is your site address plus a public fingerprint, never your private library ID.</li>
+      </ul>
+      <button class="btn filled wide deeplink" style="margin-top:12px" onclick="go('v-network')">Open Library network →</button>
+    </div>
+  </section>
+
+  <!-- ---------- STUB: PUBLISH TO WEB ---------- -->
+  <section class="view" id="v-publish">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Publish to web</h1></header>
+    <div class="tabs">
+      <button class="tab on" data-tab="conn" onclick="setTab('v-publish','conn')">Connection</button>
+      <button class="tab" data-tab="basic" onclick="setTab('v-publish','basic')">Basic info</button>
+      <button class="tab" data-tab="events" onclick="setTab('v-publish','events')">Events</button>
+    </div>
+    <div class="content">
+      <!-- Connection -->
+      <div class="pane on" data-tab="conn">
+        <p>Publish a public, read-only catalogue of your library to the web. Borrower data, notes, shelf locations and private details are never included.</p>
+        <div class="card">
+          <div class="row" style="justify-content:space-between;margin-bottom:12px"><b>GitHub Pages</b><span class="badge red" id="gh-badge">⚠ Not configured</span></div>
+          <div id="gh-out"><button class="btn filled" onclick="openDlg('d-code')">🔑 &nbsp;Sign in to GitHub</button></div>
+          <div id="gh-in" style="display:none">
+            <div class="row" style="justify-content:space-between"><span class="signed">✔ Signed in</span><button class="btn text" onclick="signOut()">Sign out</button></div>
+            <h2 style="font-size:14px">Target repository</h2>
+            <div id="repo-current" class="small" style="display:none;margin-bottom:8px"></div>
+            <button class="btn filled" id="btn-setup" onclick="openDlg('d-repo')">＋ &nbsp;Set up a repository</button>
+            <div style="height:8px"></div>
+            <button class="btn outlined" onclick="toast('Lists your repositories (advanced) — not simulated')">Choose an existing repo (advanced)</button>
+          </div>
+        </div>
+        <div class="card"><div class="row" style="justify-content:space-between"><b>Cloudflare Pages</b><span class="badge red">Not configured</span></div><p class="small" style="margin:8px 0 0">Direct upload from the app is on the way. For now, you can host the same GitHub repo on Cloudflare Pages by connecting it in the Cloudflare dashboard.</p></div>
+        <div class="card" id="publish-card" style="display:none"><b>Publish</b><div style="height:10px"></div><button class="btn filled" id="btn-publish" onclick="publish()">☁️ &nbsp;Publish catalogue now</button></div>
+        <div class="card" id="site-card" style="display:none"><b>Your site</b><p style="margin:8px 0;word-break:break-all"><span class="link">https://you.github.io/my-library/</span></p><div class="row"><button class="btn outlined" onclick="toast('Link copied')">Copy link</button><button class="btn filled" onclick="toast('Share sheet: card + link, or link only')">Share</button></div></div>
+        <p class="small" id="status-msg"></p>
+      </div>
+      <!-- Basic info -->
+      <div class="pane" data-tab="basic">
+        <p class="small">This information appears publicly on your published library page so visitors can find and contact you. Every field is optional — leave blank to show nothing. The location switch below also decides what the Library network map may show.</p>
+        <h2 style="font-size:14px">Library</h2>
+        <div class="field"><label>Library name</label><input class="bi" disabled value="Kadugodi Library"><div class="hint">Shown as the page title (also set in Appearance)</div></div>
+        <h2 style="font-size:14px">Public contact</h2>
+        <div class="field"><label>Library address</label><input class="bi" disabled placeholder="A street address or place name (shown as a map search)"></div>
+        <div class="field"><label>GPS location</label><input class="bi" id="gps" disabled placeholder='Coordinates as "lat, lng" — shown as a map pin'></div>
+        <div class="small">Share my location on the network map</div>
+        <div class="seg" id="seg">
+          <button class="bi on" disabled onclick="seg(this)" title="No coordinates are published anywhere">Not shared</button>
+          <button class="bi" disabled onclick="seg(this)" title="Rounded to about 1.1 km — a city-map pin">Approximate (~1 km)</button>
+          <button class="bi" disabled onclick="seg(this)" title="Published exactly as typed">Exact</button>
+        </div>
+        <div style="height:12px"></div>
+        <div class="field"><label>Email</label><input class="bi" disabled placeholder="Shown as a mailto link"></div>
+        <div class="field"><label>Phone</label><input class="bi" disabled placeholder="Shown as a tel link"></div>
+        <button class="btn filled" id="bi-btn" onclick="toggleEdit()">✎ &nbsp;Edit</button>
+      </div>
+      <div class="pane" data-tab="events"><p class="small">Events page — exists in the app, not part of this mockup.</p></div>
+    </div>
+  </section>
+
+  <!-- ---------- STUB: SETTINGS → DATA ---------- -->
+  <section class="view" id="v-settings">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Settings</h1></header>
+    <div class="content flush">
+      <div class="section-label">Data</div>
+      <p class="small" style="padding:0 16px 8px">Import, export, and back up your library and wishlist.</p>
+      <div class="tile" onclick="toast('Opens Import — paste or choose a JSON / CSV / bundle')"><span class="glyph">⬇</span><div class="t">Import<div class="s">Add books from a file (JSON, CSV, bundle)</div></div></div>
+      <div class="tile" onclick="toast('Opens Export — JSON, CSV or PDF')"><span class="glyph">⬆</span><div class="t">Export<div class="s">Save your library to a file</div></div></div>
+      <div class="divider"></div>
+      <div class="tile" onclick="toast('Opens Merge from a file')"><span class="glyph">⛙</span><div class="t">Merge from a file<div class="s">Combine another maintainer's library with yours</div></div></div>
+      <div class="divider"></div>
+      <div class="tile" onclick="toast('Opens Create backup → tap Create backup → choose where to save')"><span class="glyph">💾</span><div class="t">Create backup<div class="s">.pitabak archive — only the borrowers vault inside is encrypted</div></div></div>
+      <div class="tile" onclick="toast('Opens Restore backup → Choose .pitabak file')"><span class="glyph">⟲</span><div class="t">Restore backup<div class="s">Replace local data from a .pitabak archive</div></div></div>
+      <div class="section-label">Security</div>
+      <div class="tile" onclick="toast('App lock toggle — covers the app with a prompt, encrypts nothing')"><span class="glyph">🛡</span><div class="t">Require biometric to open Pitak<div class="s">Off by default.</div></div></div>
+      <div class="tile" onclick="toast('Biometric unlock for the vault (opt-in)')"><span class="glyph">👆</span><div class="t">Biometric unlock<div class="s">Unlock the vault with biometrics (opt-in)</div></div></div>
+      <div class="tile" onclick="toast('Change vault passphrase')"><span class="glyph">🔑</span><div class="t">Change vault passphrase<div class="s">Re-wrap the vault under a new passphrase</div></div></div>
+      <p class="small" style="padding:12px 16px">Other Settings sections omitted from this mockup.</p>
+    </div>
+  </section>
+
+  <!-- ---------- STUB: BORROWERS VAULT (first-run) ---------- -->
+  <section class="view" id="v-vault">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Borrowers vault</h1>
+      <button class="icon" title="Pending" onclick="toast('Pending: overdue, due soon, books missing details')">🔔</button>
+      <button class="icon" title="Lock" onclick="toast('Locks the vault')">🔒</button></header>
+    <div class="content">
+      <p>Set up an encrypted vault for your borrowers and loans. Choose a passphrase you can remember — it is the ONLY way to open the vault, and it is never stored on this device. At least 8 characters.</p>
+      <div class="field"><label>Passphrase</label><input type="password" placeholder="At least 8 characters"></div>
+      <div class="field"><label>Confirm passphrase</label><input type="password" placeholder="Type it again"></div>
+      <button class="btn filled wide" onclick="toast('Creates the vault; next: Add borrower / lend from a book')">Create vault</button>
+      <div style="height:10px"></div>
+      <button class="btn outlined wide" onclick="toast('Biometric prompt (opt-in, after first unlock)')">Unlock with biometrics</button>
+      <p class="small" style="margin-top:16px">After unlocking you see the borrower list, <b>Add borrower</b>, the bell (Pending) and the lock icon — as in the app today.</p>
+    </div>
+  </section>
+
+  <!-- ---------- STUB: LIBRARY NETWORK ---------- -->
+  <section class="view" id="v-network">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Library network</h1></header>
+    <div class="tabs">
+      <button class="tab on" data-tab="list" onclick="setTab('v-network','list')">Libraries</button>
+      <button class="tab" data-tab="map" onclick="setTab('v-network','map')">Map</button>
+      <button class="tab" data-tab="card" onclick="setTab('v-network','card')">My card</button>
+    </div>
+    <div class="content">
+      <div class="pane on" data-tab="list">
+        <div class="info"><span>ℹ️</span><span>Libraries you save appear here. Nothing leaves your device until you tap Refresh, which reads each library's published details (name, optional map pin, hub links). A hub adds members by scanning their library card in person; tapping a library opens its published catalogue in your browser.</span></div>
+        <div class="card"><div class="row" style="justify-content:space-between"><span class="small">Never refreshed</span><button class="btn tonal" onclick="toast('Runs one Refresh — bounded, user-initiated')">⟳ Refresh</button></div></div>
+        <p class="small" style="text-align:center;padding:24px 8px">No libraries saved yet.<br><br>Tap "Add bookmark" to save a library by its web address, or "Add member" to scan their library card, in person.</p>
+      </div>
+      <div class="pane" data-tab="map"><div class="card"><b>Show the network map?</b><p class="small" style="margin:8px 0">The map picture comes from OpenStreetMap. While the map is open, your device downloads map images from their servers — they see your internet address and the area you are looking at, like any website you visit.<br><br>Your list of libraries never leaves the device. You can change this later in Settings.</p><div class="row" style="justify-content:flex-end"><button class="btn text" onclick="toast('Stays off')">Not now</button><button class="btn filled" onclick="toast('Map loads (consent remembered in Settings)')">Show map</button></div></div></div>
+      <div class="pane" data-tab="card"><p class="small">Your library card appears once you have published your catalogue (drawer → Publish to web). The card is how another library adds you as a member, in person.</p><div class="card" style="text-align:center;padding:28px"><div style="font-size:64px;line-height:1">▦</div><div class="small" style="margin-top:8px">QR: site address + public fingerprint</div></div></div>
+    </div>
+    <div class="fabs"><button class="fab" onclick="toast('Add bookmark — dialog: name + web address')">🔖 &nbsp;Add bookmark</button><button class="fab" onclick="toast('Add member — opens the camera to scan a card')">▦ &nbsp;Add member</button></div>
+  </section>
+
+  <!-- ---------- DRAWER ---------- -->
+  <div class="scrim" id="scrim" onclick="closeDrawer()"></div>
+  <nav class="drawer" id="drawer">
+    <div class="dhead"><div class="logo">📚</div><div class="name libname">Kadugodi Library</div></div>
+    <div class="divider"></div>
+    <div class="dlist" id="dlist">
+      <div class="tile" onclick="drawerGo('v-vault')"><span class="glyph">🔒</span><div class="t">Borrowers vault</div></div>
+      <div class="tile" onclick="drawerGo('v-publish')"><span class="glyph">☁️</span><div class="t">Publish to web</div></div>
+      <div class="tile" onclick="closeDrawer();toast('Wishlist — exists in the app')"><span class="glyph">🔖</span><div class="t">Wishlist</div></div>
+      <div class="tile" onclick="drawerGo('v-network')"><span class="glyph">⬡</span><div class="t">Library network</div></div>
+      <div class="tile" onclick="closeDrawer();toast('Share sheet: card + link, or link only')"><span class="glyph">↗</span><div class="t">Share Library Website</div></div>
+      <div class="tile" id="tile-guides" onclick="drawerGo('v-guides')"><span class="glyph">❔</span><div class="t"><span class="glabel">How Pitak works</span> &nbsp;<span class="pill annot">NEW</span></div></div>
+    </div>
+    <div class="divider"></div>
+    <div id="dbottom">
+      <div class="tile" onclick="drawerGo('v-settings')"><span class="glyph">⚙</span><div class="t">Settings</div></div>
+    </div>
+  </nav>
+
+  <!-- ---------- DIALOGS ---------- -->
+  <div class="dlg" id="d-code"><div class="box">
+    <h3>Authorize in your browser</h3>
+    <p>1. Open this page:</p>
+    <p><span class="link">github.com/login/device</span></p>
+    <p>2. Enter this code:</p>
+    <div class="code">WDJB-MJHT</div>
+    <p>Waiting for you to authorize… this dialog can stay open.</p>
+    <p class="small">Tip: sign-in not completing? Keep this screen open and enter the code in a browser on another device (like a computer) instead.</p>
+    <div class="actions"><button class="btn text" onclick="closeDlg('d-code')">Cancel</button><button class="btn filled" onclick="signIn()">Done (simulate authorized)</button></div>
+  </div></div>
+
+  <div class="dlg" id="d-repo"><div class="box">
+    <h3>Name your library repository</h3>
+    <p>Pitak will create this public repository on your GitHub account and switch on its web page.</p>
+    <div class="field"><label>Repository name</label><input id="repo-name" value="my-library"><div class="hint">Letters, numbers, dots, dashes, underscores</div></div>
+    <div class="actions"><button class="btn text" onclick="closeDlg('d-repo')">Later</button><button class="btn filled" onclick="createRepo()">Create</button></div>
+  </div></div>
+
+  <div class="snack" id="snack"></div>
+</div>
+
+<!-- =============================== NOTES PANEL =============================== -->
+<aside class="notes">
+  <h2>Clickable mockup — "How Pitak works"</h2>
+  <p class="muted">Nothing here is implemented. Tap ☰ in the phone, open the new drawer entry, walk the guides, and press the button at the bottom of each guide to land on a stub of the real screen. The Publish stub simulates sign-in → repository → publish. <kbd>Esc</kbd> = back.</p>
+
+  <h3>Try the variants</h3>
+  <label><input type="checkbox" id="opt-bottom" onchange="applyOpts()"> Pin the entry at the bottom, next to Settings</label>
+  <label><input type="checkbox" id="opt-fifth" checked onchange="applyOpts()"> Include the 5th card (hubs, members, cards)</label>
+  <label><input type="checkbox" id="opt-deep" checked onchange="applyOpts()"> Show the deep-link buttons on guides</label>
+  <label><input type="checkbox" id="opt-annot" checked onchange="applyOpts()"> Show mockup annotations (NEW / OPTIONAL pills)</label>
+  <label>Drawer label:
+    <select id="opt-label" onchange="applyOpts()">
+      <option>How Pitak works</option>
+      <option>Help &amp; guides</option>
+      <option>Information</option>
+    </select>
+  </label>
+  <label>Library name: <input type="text" id="opt-name" value="Kadugodi Library" oninput="applyOpts()"></label>
+
+  <h3>Things to decide</h3>
+  <ol>
+    <li><b>Label</b> — "How Pitak works" says what you get; "Information" does not.</li>
+    <li><b>Cards → pages</b> (shown) vs one accordion page. Pages keep the index scannable and give each guide a deep-link button.</li>
+    <li><b>Deep-link buttons</b> — cheap (screens exist); Basic info needs Publish opened on tab 2.</li>
+    <li><b>5th card</b> — the map guide mentions "My card" and "Add member"; without it those are unexplained.</li>
+    <li><b>Coordinates step</b> — add "or type your address in Library address — that becomes a map search link, not a pin"?</li>
+    <li>Later: a <b>?</b> icon in the Publish and Vault app bars opening the same guide.</li>
+  </ol>
+
+  <h3>Copy facts</h3>
+  <p class="muted">Every button name and claim in the guides was checked against the current screens (branch <code>libNetwork</code>). The source table is in <code>how-pitak-works.md</code> next to this file. One existing inconsistency to settle before shipping: Create backup says the logo is <i>not</i> included; Restore says covers "including the library logo" are replaced.</p>
+</aside>
+</div>
+
+<script>
+  // ---------- navigation ----------
+  let current = 'v-home';
+  const stack = [];
+  function go(id, opts) {
+    if (id === current) return;
+    document.getElementById(current).classList.remove('active');
+    document.getElementById(id).classList.add('active');
+    stack.push(current); current = id;
+    const c = document.querySelector('#' + id + ' .content'); if (c) c.scrollTop = 0;
+    if (opts && opts.tab) setTab(id, opts.tab);
+  }
+  function back() {
+    const prev = stack.pop(); if (!prev) return;
+    document.getElementById(current).classList.remove('active');
+    document.getElementById(prev).classList.add('active');
+    current = prev;
+  }
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') { if (document.querySelector('.dlg.on')) document.querySelectorAll('.dlg').forEach(d => d.classList.remove('on')); else if (document.getElementById('drawer').classList.contains('on')) closeDrawer(); else back(); } });
+
+  function setTab(viewId, name) {
+    const v = document.getElementById(viewId);
+    v.querySelectorAll('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === name));
+    v.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.dataset.tab === name));
+    const c = v.querySelector('.content'); if (c) c.scrollTop = 0;
+  }
+
+  // ---------- drawer ----------
+  function openDrawer() { document.getElementById('scrim').classList.add('on'); document.getElementById('drawer').classList.add('on'); }
+  function closeDrawer() { document.getElementById('scrim').classList.remove('on'); document.getElementById('drawer').classList.remove('on'); }
+  function drawerGo(id) { closeDrawer(); setTimeout(() => go(id), 180); }
+
+  // ---------- dialogs & snackbar ----------
+  function openDlg(id) { document.getElementById(id).classList.add('on'); }
+  function closeDlg(id) { document.getElementById(id).classList.remove('on'); }
+  let snackTimer;
+  function toast(msg) { const s = document.getElementById('snack'); s.textContent = msg; s.classList.add('on'); clearTimeout(snackTimer); snackTimer = setTimeout(() => s.classList.remove('on'), 2600); }
+
+  // ---------- publish stub state machine ----------
+  let repo = null;
+  function render() {
+    const signed = document.getElementById('gh-in').style.display !== 'none';
+    const badge = document.getElementById('gh-badge');
+    if (!signed) { badge.className = 'badge red'; badge.textContent = '⚠ Not configured'; }
+    else if (!repo) { badge.className = 'badge amber'; badge.textContent = '⚠ Partially configured'; }
+    else { badge.className = 'badge green'; badge.textContent = '✔ Configured'; }
+    document.getElementById('repo-current').style.display = repo ? 'block' : 'none';
+    document.getElementById('repo-current').textContent = repo ? 'Current: you/' + repo : '';
+    document.getElementById('btn-setup').innerHTML = (repo ? '＋ &nbsp;Create a new repository' : '＋ &nbsp;Set up a repository');
+    document.getElementById('publish-card').style.display = signed ? 'block' : 'none';
+    document.getElementById('btn-publish').disabled = !repo;
+  }
+  function signIn() {
+    closeDlg('d-code');
+    document.getElementById('gh-out').style.display = 'none';
+    document.getElementById('gh-in').style.display = 'block';
+    status('Signed in. Set up a repository to publish.');
+    render();
+  }
+  function signOut() {
+    document.getElementById('gh-out').style.display = 'block';
+    document.getElementById('gh-in').style.display = 'none';
+    repo = null; status(''); render();
+    toast('Signed out. Your published site stays online.');
+  }
+  function createRepo() {
+    const name = (document.getElementById('repo-name').value || '').trim();
+    if (!/^[A-Za-z0-9._-]{1,100}$/.test(name)) { toast('Repository names can use letters, numbers, dots, dashes and underscores (up to 100 characters).'); return; }
+    closeDlg('d-repo'); repo = name;
+    status('Repository you/' + name + ' created — ready to publish!');
+    render();
+  }
+  function publish() {
+    const b = document.getElementById('btn-publish');
+    b.disabled = true; b.innerHTML = '⏳ &nbsp;Publishing…'; status('Uploading books.json, covers, library.json…');
+    setTimeout(() => {
+      b.disabled = false; b.innerHTML = '☁️ &nbsp;Publish catalogue now';
+      document.getElementById('site-card').style.display = 'block';
+      status('Published! The commit is pushed — the site can take a minute to update.');
+    }, 1500);
+  }
+  function status(t) { document.getElementById('status-msg').textContent = t; }
+
+  // ---------- basic info stub ----------
+  let editing = false;
+  function toggleEdit() {
+    editing = !editing;
+    document.querySelectorAll('#v-publish .bi').forEach(el => el.disabled = !editing);
+    document.getElementById('bi-btn').innerHTML = editing ? '💾 &nbsp;Save' : '✎ &nbsp;Edit';
+    if (!editing) {
+      const gps = document.getElementById('gps').value.trim();
+      const sel = document.querySelector('#seg .on').textContent;
+      toast(sel === 'Not shared' ? 'Saved. No coordinates will be published.' : (gps ? 'Saved. Publish again so the pin goes live (' + sel + ').' : 'Saved — but GPS location is empty, so no pin is published yet.'));
+    }
+  }
+  function seg(btn) { document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b === btn)); }
+
+  // ---------- reviewer options ----------
+  function applyOpts() {
+    const bottom = document.getElementById('opt-bottom').checked;
+    const tile = document.getElementById('tile-guides');
+    (bottom ? document.getElementById('dbottom') : document.getElementById('dlist')).insertBefore(tile, bottom ? document.getElementById('dbottom').firstElementChild : null);
+    document.querySelectorAll('.fifth').forEach(el => el.style.display = document.getElementById('opt-fifth').checked ? '' : 'none');
+    document.querySelectorAll('.deeplink').forEach(el => el.style.display = document.getElementById('opt-deep').checked ? '' : 'none');
+    document.body.classList.toggle('show-annot', document.getElementById('opt-annot').checked);
+    const label = document.getElementById('opt-label').value;
+    document.querySelectorAll('.glabel').forEach(el => el.textContent = label);
+    const name = document.getElementById('opt-name').value.trim() || 'Pitak';
+    document.querySelectorAll('.libname').forEach(el => el.textContent = name);
+  }
+  applyOpts(); render();
+</script>
+</body>
+</html>
