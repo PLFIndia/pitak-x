@@ -151,42 +151,82 @@ class _LibrariesTab extends ConsumerWidget {
             // (D11); the indicator settles when the run finishes or cancels.
             onRefresh: () =>
                 ref.read(networkRefreshControllerProvider.notifier).refresh(),
-            child: ListView(
-              // Bottom padding clears the two stacked buttons (was 88 for
-              // one FAB).
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 150),
-              children: [
-                const _InfoNote(),
-                const SizedBox(height: 12),
-                NetworkRefreshBar(window: data.window),
-                const SizedBox(height: 12),
+            // CustomScrollView + SliverList.builder: tiles build LAZILY as
+            // they scroll into view, so a restored network of hundreds of
+            // rows does not build/layout every tile on each rebuild (review
+            // L6; AGENTS §8). The header and empty state stay box-identical.
+            child: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                  sliver: SliverList(
+                    delegate: SliverChildListDelegate([
+                      const _InfoNote(),
+                      const SizedBox(height: 12),
+                      NetworkRefreshBar(window: data.window),
+                    ]),
+                  ),
+                ),
                 if (rows.isEmpty)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32),
-                    child: Center(
-                      child: Text(
-                        'No libraries saved yet.\n\nTap "Add bookmark" to '
-                        'save a library by its web address, or "Add member" '
-                        'to scan their library card, in person.',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  SliverPadding(
+                    // Bottom padding clears the two stacked buttons (was 88
+                    // for one FAB).
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 150),
+                    sliver: SliverToBoxAdapter(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Center(
+                          child: Text(
+                            // Same words as before the sliver migration (L6)
+                            // — the empty-state tests look this text up.
+                            'No libraries saved yet.\n\n'
+                            'Tap "Add bookmark" to save a library by its web '
+                            'address, or "Add member" to scan their library '
+                            'card, in person.',
+                            textAlign: TextAlign.center,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurfaceVariant,
+                                ),
+                          ),
                         ),
                       ),
                     ),
                   )
                 else
-                  for (final row in rows)
-                    NetworkLibraryTile(
-                      row: row,
-                      onRemove: () => _remove(context, ref, row),
-                      onConfirmMembership: () =>
-                          _decide(context, ref, row, MembershipState.confirmed),
-                      onDeclineMembership: () =>
-                          _decide(context, ref, row, MembershipState.declined),
-                      onReconsiderMembership: () =>
-                          _decide(context, ref, row, MembershipState.pending),
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 150),
+                    sliver: SliverList.builder(
+                      itemCount: rows.length,
+                      itemBuilder: (context, i) {
+                        final row = rows[i];
+                        return NetworkLibraryTile(
+                          row: row,
+                          onRemove: () => _remove(context, ref, row),
+                          onConfirmMembership: () => _decide(
+                            context,
+                            ref,
+                            row,
+                            MembershipState.confirmed,
+                          ),
+                          onDeclineMembership: () => _decide(
+                            context,
+                            ref,
+                            row,
+                            MembershipState.declined,
+                          ),
+                          onReconsiderMembership: () => _decide(
+                            context,
+                            ref,
+                            row,
+                            MembershipState.pending,
+                          ),
+                        );
+                      },
                     ),
+                  ),
               ],
             ),
           );

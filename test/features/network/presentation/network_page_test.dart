@@ -12,6 +12,7 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../support/a11y.dart';
@@ -129,12 +130,12 @@ void main() {
     expect(find.text('https://m.github.io/x/'), findsOneWidget);
 
     // Off-screen rows need scrollUntilVisible, not ensureVisible: the lazy
-    // ListView has not BUILT them yet, so their finder matches nothing
+    // sliver list has not BUILT them yet, so their finder matches nothing
     // (600 dp test surface). The scrollable must be the LIST's own —
     // find.byType(Scrollable).first would grab the tab view's horizontal
     // PageView and drag us onto another tab.
     final listScrollable = find.descendant(
-      of: find.byType(ListView),
+      of: find.byType(CustomScrollView),
       matching: find.byType(Scrollable),
     );
     await tester.scrollUntilVisible(
@@ -508,6 +509,42 @@ void main() {
     ];
     await pumpPage(tester);
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  group('L6: the tile list builds lazily', () {
+    testWidgets('a 200-row list builds a bounded number of tiles and still '
+        'scrolls to the end', (tester) async {
+      repo.rows = [
+        for (var i = 0; i < 200; i++)
+          NetworkLibrary(
+            id: i + 1,
+            siteUrl: 'https://lib$i.github.io/',
+            name: 'Row $i',
+            sortOrder: i,
+          ),
+      ];
+      await pumpPage(tester);
+
+      // The whole point of the sliver list: only the on-screen tiles exist.
+      expect(
+        tester.widgetList(find.byType(NetworkLibraryTile)).length,
+        lessThan(40),
+        reason: 'an eager list would build all 200 tiles at once',
+      );
+      await expectMeetsA11yGuidelines(tester); // populated-list a11y gate
+
+      final listScrollable = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Row 199'),
+        400,
+        scrollable: listScrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Row 199'), findsOneWidget);
+    });
   });
 }
 
