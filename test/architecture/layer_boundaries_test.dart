@@ -178,10 +178,8 @@ void main() {
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      // 690 → 631 on 2026-10-17 (docs/ARCHITECTURE.md §3 network): the OSM-tiles consent
-      // switch was added and the Google-Books-key tile moved out to
-      // widgets/google_books_key_tile.dart to pay for it.
-      'lib/features/settings/presentation/pages/settings_page.dart': 631,
+      // settings_page.dart left this list on 2026-10-19: the community-library
+      // section moved to widgets/community_library_section.dart (631 → <500).
       'lib/features/library/presentation/pages/book_detail_page.dart': 676,
       'lib/features/publish/application/github_connection_controller.dart': 670,
       'lib/features/library/presentation/pages/add_book_page.dart': 638,
