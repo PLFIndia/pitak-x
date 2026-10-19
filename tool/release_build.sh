@@ -21,7 +21,13 @@
 #  3. Requires android/key.properties (the upload keystore wiring). Gradle
 #     already refuses a debug-signed Play release; failing here is earlier
 #     and clearer.
-#  4. Builds `appbundle --release --flavor play` from a clean build/ tree.
+#  4. Builds `appbundle --release --flavor play` from a GENUINELY clean tree:
+#     `flutter clean` wipes build/ AND .dart_tool first. This is not cosmetic
+#     — on 2026-10-18 the Flutter Gradle plugin judged the AOT compile
+#     up-to-date after a day of source edits and packaged a stale libapp.so
+#     (the manifest was fresh, so versionCode looked right while the Dart
+#     code was a day old). Only a wiped tree makes a stale-Dart release
+#     impossible.
 #  5. Verifies the OUTPUT, not just the inputs: the signer certificate inside
 #     the .aab must match the upload keystore's certificate, and the bundled
 #     versionCode/versionName must match pubspec.yaml. Prints the fingerprint
@@ -103,10 +109,16 @@ if [[ "${mode}" == "build" ]]; then
     || die "android/key.properties missing. Copy android/key.properties.example and point it at the upload keystore (kept outside the repo)."
 
   # -------------------------------------------------------------------------
-  # 4. Build from a clean output tree so no stale artifact can be mistaken
-  #    for this run's.
+  # 4. Build from a GENUINELY clean tree (see the header: a stale libapp.so
+  #    survived a "release" on 2026-10-18 because only the .aab was removed;
+  #    Gradle's up-to-date check on the AOT task cannot be trusted with a
+  #    day's worth of edits).
   # -------------------------------------------------------------------------
-  rm -f "${aab}"
+  say "flutter clean (stale-AOT guard) ..."
+  "${flutter_cmd[@]}" clean >/dev/null
+  # pub get again: clean removed .dart_tool's package config too.
+  "${flutter_cmd[@]}" pub get --enforce-lockfile >/dev/null \
+    || die "pubspec.lock is not what Flutter ${pinned} resolves after clean."
   say "building ${expected_name}+${expected_code} (play, release) ..."
   "${flutter_cmd[@]}" build appbundle --release --flavor play
 fi
