@@ -55,6 +55,8 @@ void main() {
         wishlist: [],
         workDir: '${h.directory.path}/build_archive',
         exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
       );
 
   Future<void> existing({bool returned = false}) async {

@@ -24,6 +24,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:http/http.dart' as http;
+import 'package:pitaka/core/network/app_user_agent.dart';
 
 /// Adds a User-Agent and one transient-error retry to GET requests.
 final class LookupHttpClient extends http.BaseClient {
@@ -41,8 +42,10 @@ final class LookupHttpClient extends http.BaseClient {
   final Future<void> Function(Duration) _sleep;
   final Random _random;
 
-  /// Descriptive UA per Open Library's API policy (app + contact point).
-  static const String userAgent = 'Pitaka/1.1 (https://github.com/PLFIndia)';
+  /// Descriptive UA per Open Library's API policy — the app-wide constant
+  /// (docs/ARCHITECTURE.md §3: ONE User-Agent for lookup, descriptor fetches and
+  /// OSM tiles, so services see a single honest identity).
+  static const String userAgent = AppUserAgent.value;
 
   /// Base backoff before the single retry; jitter is added on top.
   static const Duration baseBackoff = Duration(milliseconds: 800);

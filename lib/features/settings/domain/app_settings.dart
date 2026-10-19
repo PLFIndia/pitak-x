@@ -61,6 +61,41 @@ extension BookSortX on BookSort {
   }
 }
 
+/// How (and whether) this library shares its location publicly
+/// (docs/ARCHITECTURE.md §6 location sharing — one switch, one meaning).
+///
+/// It governs BOTH places a coordinate leaves the device: the GPS pin on the
+/// published `index.html` and the `location` block of `library.json` (the
+/// network-map descriptor). Default [off]: nothing location-shaped is
+/// published until the user opts in — explicit consent before location is
+/// public.
+enum LocationSharing {
+  /// No coordinates are published anywhere; the GPS field is ignored.
+  off,
+
+  /// Coordinates rounded to 2 decimals (~1.1 km) — a pin on a city map, not
+  /// the front door.
+  approximate,
+
+  /// Coordinates exactly as typed.
+  exact,
+}
+
+/// Tolerant parsing for [LocationSharing].
+extension LocationSharingX on LocationSharing {
+  /// Stable storage token (the enum name).
+  String get token => name;
+
+  /// Parses a stored token; unknown/blank → [LocationSharing.off] (fail
+  /// closed: an unreadable value must never publish MORE than the user set).
+  static LocationSharing fromToken(String? raw) {
+    for (final v in LocationSharing.values) {
+      if (v.name == raw) return v;
+    }
+    return LocationSharing.off;
+  }
+}
+
 /// Immutable snapshot of user settings.
 class AppSettings {
   /// Creates a settings snapshot.
@@ -75,6 +110,8 @@ class AppSettings {
     this.publishContactGps = '',
     this.publishContactEmail = '',
     this.publishContactPhone = '',
+    this.publishLocationSharing = LocationSharing.off,
+    this.networkMapTilesConsent = false,
     this.libraryLogo = '',
     this.appLockBiometric = false,
   });
@@ -116,6 +153,22 @@ class AppSettings {
   /// library can show a human address, an exact pin, or both.
   final String publishContactGps;
 
+  /// Whether/where the [publishContactGps] coordinates are published
+  /// (docs/ARCHITECTURE.md §6 location sharing): governs the `index.html` pin AND the network
+  /// `library.json` location. Default [LocationSharing.off]. NOTE: the
+  /// constructor default is `off`, but the prefs repository applies a
+  /// first-read rule (key absent + GPS non-blank ⇒ `exact`) so existing
+  /// publishers keep the pin they already had — see
+  /// `PrefsSettingsRepository`.
+  final LocationSharing publishLocationSharing;
+
+  /// Opt-in consent to fetch OpenStreetMap raster tiles for the network map
+  /// (docs/ARCHITECTURE.md §1 network egress). While the map is open, tile requests go to
+  /// `tile.openstreetmap.org`, which sees the device IP and the viewed area.
+  /// Default false: the map never builds (and no tile request ever leaves
+  /// the device) until the user accepts the consent dialog.
+  final bool networkMapTilesConsent;
+
   /// Optional public contact email shown on the published page (#32).
   final String publishContactEmail;
 
@@ -148,6 +201,8 @@ class AppSettings {
     String? publishContactGps,
     String? publishContactEmail,
     String? publishContactPhone,
+    LocationSharing? publishLocationSharing,
+    bool? networkMapTilesConsent,
     String? libraryLogo,
     bool? appLockBiometric,
   }) {
@@ -163,6 +218,10 @@ class AppSettings {
       publishContactGps: publishContactGps ?? this.publishContactGps,
       publishContactEmail: publishContactEmail ?? this.publishContactEmail,
       publishContactPhone: publishContactPhone ?? this.publishContactPhone,
+      publishLocationSharing:
+          publishLocationSharing ?? this.publishLocationSharing,
+      networkMapTilesConsent:
+          networkMapTilesConsent ?? this.networkMapTilesConsent,
       libraryLogo: libraryLogo ?? this.libraryLogo,
       appLockBiometric: appLockBiometric ?? this.appLockBiometric,
     );

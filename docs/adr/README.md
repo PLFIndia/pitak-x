@@ -17,3 +17,4 @@ delete — mark superseded instead.
 | [0009](0009-archive-package-in-domain.md) | `archive` allowed in domain for bounded zip extraction |
 | [0010](0010-no-cert-pinning-github.md) | No certificate pinning for GitHub |
 | [0011](0011-book-repository-isp-deferred.md) | `BookRepository` ISP split deferred |
+| [0012](0012-library-network-replaces-bookmarks.md) | Library network replaces bookmarks; the fingerprint — not the raw library ID — is the published identity |

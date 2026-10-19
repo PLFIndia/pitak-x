@@ -1,4 +1,4 @@
-/// Import/export/merge DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Import/export/merge DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the bundle reader + imported-cover store, the
 /// import/export use cases, the PDF renderer seams, and the multi-maintainer

@@ -1,6 +1,6 @@
 import 'dart:math';
 
-/// Tiny seeded generator for property-style tests (architecture.md B3, D5).
+/// Tiny seeded generator for property-style tests over hostile input.
 ///
 /// Why hand-rolled: the Dart property-testing packages are small and
 /// low-maintenance, and the repo rule is "no new package for a problem an
@@ -32,7 +32,7 @@ final class Fuzz {
   /// Base seed every property derives its per-case seeds from.
   static const int defaultSeed = 0x917A4;
 
-  /// Cases per property (architecture.md B3).
+  /// Cases per property.
   static const int cases = 200;
 
   /// The seed driving this instance (print it in failure messages).

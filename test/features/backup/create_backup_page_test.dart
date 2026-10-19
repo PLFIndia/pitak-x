@@ -14,6 +14,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
+import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 
 import '../../support/a11y.dart';
@@ -21,12 +22,19 @@ import '../../support/a11y.dart';
 /// Use-case fake: returns a fixed result. The collaborator fields are never
 /// touched — `noSuchMethod` throws if that ever changes.
 class _FakeCreateBackup implements CreateBackupUseCase {
-  _FakeCreateBackup(this._result);
+  _FakeCreateBackup(Either<Failure, Uint8List> result)
+    : _result = result.map(
+        (bytes) => CreateBackupResult(
+          bytes: bytes,
+          includesIdentity: true,
+          includesNetwork: true,
+        ),
+      );
 
-  final Either<Failure, Uint8List> _result;
+  final Either<Failure, CreateBackupResult> _result;
 
   @override
-  Future<Either<Failure, Uint8List>> call() async => _result;
+  Future<Either<Failure, CreateBackupResult>> call() async => _result;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

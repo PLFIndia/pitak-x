@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
+import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,14 +70,18 @@ void main() {
     expect(find.text('Pitak'), findsOneWidget);
   });
 
-  testWidgets('lists the Bookmarks destination below Wishlist', (tester) async {
+  testWidgets('lists the Library network destination below Wishlist', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(await _app());
     tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
     await tester.pumpAndSettle();
 
     expect(find.text('Wishlist'), findsOneWidget);
-    expect(find.text('Bookmarks'), findsOneWidget);
+    // ADR 0012: the bookmarks destination became the library network.
+    expect(find.text('Library network'), findsOneWidget);
+    expect(find.text('Bookmarks'), findsNothing);
   });
 
   testWidgets('"Share Library Website" is hidden before the first publish', (
@@ -133,12 +138,44 @@ void main() {
 
     // Settings sits lower on screen than every primary destination.
     final settingsY = tester.getTopLeft(find.text('Settings')).dy;
-    for (final label in ['Borrowers vault', 'Wishlist', 'Bookmarks']) {
+    for (final label in [
+      'Borrowers vault',
+      'Wishlist',
+      'Library network',
+      'How Pitak works',
+    ]) {
       expect(
         tester.getTopLeft(find.text(label)).dy,
         lessThan(settingsY),
         reason: '$label should be above Settings',
       );
     }
+  });
+
+  testWidgets('"How Pitak works" is listed after Share and opens GuidesPage', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      await _app(publishedUrl: 'https://user.github.io/my-library/'),
+    );
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    // Position: below Share, above the pinned Settings.
+    final guidesY = tester.getTopLeft(find.text('How Pitak works')).dy;
+    expect(
+      tester.getTopLeft(find.text('Share Library Website')).dy,
+      lessThan(guidesY),
+    );
+    expect(tester.getTopLeft(find.text('Settings')).dy, greaterThan(guidesY));
+
+    await tester.tap(find.text('How Pitak works'));
+    await tester.pumpAndSettle();
+
+    // The drawer closed and the guides index is on top (no providers needed).
+    expect(find.byType(GuidesPage), findsOneWidget);
+    expect(find.text('Put your catalogue online'), findsOneWidget);
+    expect(find.text('Borrowers vault'), findsNothing);
   });
 }

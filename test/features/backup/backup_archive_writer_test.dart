@@ -81,6 +81,8 @@ void main() {
       wishlist: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1700000000000,
+      identityJson: null,
+      networkJson: null,
     );
     final archive = unzip(bytes);
     final manifestBytes = entry(archive, 'manifest.json');
@@ -95,6 +97,38 @@ void main() {
     // No vault artifacts in the archive.
     expect(entry(archive, 'borrowers.db'), isNull);
     expect(entry(archive, 'backup_blob'), isNull);
+    // §3.4: null identity/network ⇒ no entries, flags false.
+    expect(manifest.hasIdentity, isFalse);
+    expect(manifest.hasNetwork, isFalse);
+    expect(entry(archive, 'identity.json'), isNull);
+    expect(entry(archive, 'network.json'), isNull);
+  });
+
+  test('identity.json + network.json are written and flagged (§3.4)', () async {
+    final bytes = await writer.build(
+      books: const [],
+      wishlist: const [],
+      workDir: '${tmp.path}/work',
+      exportedAt: 1,
+      identityJson: '{"libraryId": "${'a' * 32}", "libraryName": "Meera"}',
+      networkJson: '{"schemaVersion": 1, "libraries": []}',
+    );
+    final archive = unzip(bytes);
+    final manifest = BackupManifest.tryParse(
+      utf8.decode(entry(archive, 'manifest.json')!),
+    );
+    expect(manifest!.hasIdentity, isTrue);
+    expect(manifest.hasNetwork, isTrue);
+    // The entries carry the exact strings the use case handed over (they
+    // survive the worker-isolate round-trip untouched).
+    expect(
+      utf8.decode(entry(archive, 'identity.json')!),
+      contains('"libraryName": "Meera"'),
+    );
+    expect(
+      utf8.decode(entry(archive, 'network.json')!),
+      '{"schemaVersion": 1, "libraries": []}',
+    );
   });
 
   test('books round-trip through our own restore reader', () async {
@@ -116,6 +150,8 @@ void main() {
       wishlist: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
+      identityJson: null,
+      networkJson: null,
     );
     final booksDb = entry(unzip(bytes), 'books.db')!;
     final db = sqlite3.open(stageDb(booksDb, 'rt_books.db'));
@@ -146,6 +182,8 @@ void main() {
         wishlist: const [],
         workDir: '${tmp.path}/work',
         exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
       );
       final db = sqlite3.open(
         stageDb(entry(unzip(bytes), 'books.db')!, 'no_fts.db'),
@@ -181,6 +219,8 @@ void main() {
       wishlist: wishlist,
       workDir: '${tmp.path}/work',
       exportedAt: 1,
+      identityJson: null,
+      networkJson: null,
     );
     final db = sqlite3.open(
       stageDb(entry(unzip(bytes), 'wishlist.db')!, 'rt_wishlist.db'),
@@ -200,6 +240,8 @@ void main() {
       wishlist: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
+      identityJson: null,
+      networkJson: null,
     );
     final archive = unzip(bytes);
     expect(entry(archive, 'cover_abc.jpg'), isNotNull);
@@ -223,6 +265,8 @@ void main() {
       wishlist: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
+      identityJson: null,
+      networkJson: null,
     );
     final archive = unzip(bytes);
     expect(entry(archive, 'borrowers.db'), Uint8List.fromList([9, 9, 9]));
@@ -280,6 +324,8 @@ void main() {
         wishlist: const [],
         workDir: '${tmp.path}/work',
         exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
       );
       final firedAt = await fired.future;
       final bytes = await work;
@@ -306,6 +352,8 @@ void main() {
           wishlist: const [],
           workDir: '${tmp.path}/work',
           exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
         );
         final archive = unzip(bytes);
         final coverNames = [
@@ -346,6 +394,8 @@ void main() {
             wishlist: const [],
             workDir: '${tmp.path}/work_fail',
             exportedAt: 1,
+            identityJson: null,
+            networkJson: null,
           ),
           throwsA(isA<FileSystemException>()),
         );

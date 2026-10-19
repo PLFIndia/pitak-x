@@ -13,6 +13,10 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/restore_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/network/application/network_controller.dart';
+import 'package:pitaka/features/network/application/network_refresh_controller.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -21,6 +25,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../library/replacement_test_guard.dart';
 import '../vault/vault_repository_write_stub.dart';
@@ -85,6 +90,14 @@ class _LogoSettingsRepo implements SettingsRepository {
     required String phone,
   }) async => right(unit);
   @override
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) async => right(unit);
+  @override
   Future<Either<Failure, Unit>> setAppLockBiometric({
     required bool enabled,
   }) async => right(unit);
@@ -105,13 +118,20 @@ void main() {
   /// generation → database / covers / vault store → restorer. Only the Rust
   /// vault is faked. This is what proves the whole app follows a generation
   /// switch, not just the restorer.
-  ProviderContainer makeContainer({SettingsRepository? settings}) {
+  ProviderContainer makeContainer({
+    SettingsRepository? settings,
+    NetworkRepository? network,
+  }) {
     final container = ProviderContainer(
       overrides: [
         appDocsDirProvider.overrideWith((ref) async => tmp),
         vaultRepositoryProvider.overrideWithValue(_FakeVault()),
         if (settings != null)
           settingsRepositoryProvider.overrideWith((ref) async => settings),
+        // §5.10 failure-path seam: skip the real Drift repository (and its
+        // migration await) when the test needs a failing replaceAll.
+        if (network != null)
+          networkRepositoryProvider.overrideWith((ref) async => network),
       ],
     );
     addTearDown(() async {
@@ -236,7 +256,7 @@ void main() {
         .read(restoreControllerProvider.notifier)
         .inspectArchive(vaultOnlyArchive());
     final manifest = inspected.getOrElse((f) => fail('unexpected: $f'));
-    expect(manifest.hasBackupBlob, isTrue);
+    expect(manifest.manifest.hasBackupBlob, isTrue);
     // Still idle — inspection is not a restore.
     expect(container.read(restoreControllerProvider).value, isNull);
   });
@@ -510,4 +530,206 @@ void main() {
       expect(wishlistBuilds, greaterThan(wishlistBaseline));
     });
   });
+
+  group('§5.10 — identity + network adoption after the switch', () {
+    const archiveId = 'cccccccccccccccccccccccccccccccc';
+
+    /// An archive carrying books + identity.json + network.json (no vault).
+    Uint8List identityNetworkArchive({String identityJson = ''}) {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+          'hasIdentity': true,
+          'hasNetwork': true,
+        }),
+      );
+      final identity = utf8.encode(
+        identityJson.isEmpty
+            ? '{"libraryId": "$archiveId", "libraryName": "Meera Road"}'
+            : identityJson,
+      );
+      final network = utf8.encode(
+        '{"schemaVersion": 1, "libraries": [{"siteUrl": "https://hub.github.io/x/", "name": "Hub", "id": 9}]}',
+      );
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
+        ..addFile(ArchiveFile('identity.json', identity.length, identity))
+        ..addFile(ArchiveFile('network.json', network.length, network));
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    /// Holds the autoDispose restore chain alive for the whole test
+    /// (handoff §2: an autoDispose provider read via `.future` with several
+    /// awaits can be disposed mid-run, and the teardown dispose then
+    /// double-completes it). Pins the controller AND the repository chain
+    /// `_applyIdentityAndNetwork` reads through. Listeners die with the
+    /// container.
+    void pinRestoreController(ProviderContainer container) {
+      container
+        ..listen(restoreControllerProvider, (_, _) {})
+        ..listen(networkRepositoryProvider, (_, _) {})
+        ..listen(migrateLegacyBookmarksProvider, (_, _) {})
+        // DEBUG builds (tests) run riverpod's `_debugAssertCanDependOn`,
+        // which BUILDS the target of a `ref.invalidate` — so the restore's
+        // network-window invalidation constructs (and then disposes) the
+        // whole window/refresh chain mid-test. Pin them too, or teardown
+        // races their auto-dispose.
+        ..listen(networkControllerProvider, (_, _) {})
+        ..listen(networkRefreshControllerProvider, (_, _) {});
+    }
+
+    /// Settles the post-restore invalidation cascade (the controllers rebuild
+    /// against the new generation) so teardown never races an in-flight
+    /// rebuild with the database close.
+    Future<void> settleCascade(ProviderContainer container) async {
+      await container.read(libraryControllerProvider.future);
+      await container.read(wishlistControllerProvider.future);
+      await container.read(vaultSessionControllerProvider.future);
+      await container.pump();
+    }
+
+    test('adopts the identity and replaces the network rows after the '
+        'switch', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      SharedPreferences.setMockInitialValues({});
+      final container = makeContainer(settings: _LogoSettingsRepo());
+      pinRestoreController(container);
+
+      // Pre-seed the CURRENT generation's network table with a stale row —
+      // it must be GONE after the restore (replace, not merge), which also
+      // proves the write lands on the NEW generation's database.
+      final before = await container.read(networkRepositoryProvider.future);
+      await before.upsertBySiteUrl(
+        const NetworkLibrary(
+          siteUrl: 'https://stale.github.io/old/',
+          name: 'Stale',
+        ),
+      );
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: identityNetworkArchive());
+
+      final summary = container.read(restoreControllerProvider).value;
+      expect(summary, isNotNull);
+      expect(summary!.identityAdopted, isTrue);
+      expect(summary.networkApplied, isTrue);
+      expect(summary.networkRestored, 1);
+
+      // The identity went through the namespace port (N07): the settings
+      // STATE moved with disk.
+      final settings = await container.read(settingsControllerProvider.future);
+      expect(settings.libraryId, archiveId);
+      expect(settings.libraryName, 'Meera Road');
+
+      // The new generation's table holds exactly the archive's rows.
+      final repo = await container.read(networkRepositoryProvider.future);
+      final rows = await repo.loadAll();
+      expect(rows.map((r) => r.siteUrl), ['https://hub.github.io/x/']);
+
+      // And the window controller re-reads them (handoff: verify here).
+      final window = await container.read(networkControllerProvider.future);
+      expect(window.rows.map((r) => r.name), ['Hub']);
+      await settleCascade(container);
+    });
+
+    test('an identity adopt Left is reported; catalogue + network still '
+        'applied', () async {
+      TestWidgetsFlutterBinding.ensureInitialized();
+      SharedPreferences.setMockInitialValues({});
+      final container = makeContainer(settings: _AdoptFailingSettings());
+      pinRestoreController(container);
+
+      await container
+          .read(restoreControllerProvider.notifier)
+          .restore(archiveBytes: identityNetworkArchive());
+
+      final summary = container.read(restoreControllerProvider).value!;
+      expect(summary.identityAdopted, isFalse);
+      expect(summary.identityInvalid, isFalse); // valid entry, failed write
+      expect(summary.networkApplied, isTrue);
+      expect(summary.networkRestored, 1); // the other extra still applied
+      expect(summary.booksRestored, 0); // catalogue restore succeeded
+      await settleCascade(container);
+    });
+
+    test(
+      'an invalid identity.json leaves the current identity untouched',
+      () async {
+        TestWidgetsFlutterBinding.ensureInitialized();
+        SharedPreferences.setMockInitialValues({});
+        final container = makeContainer(settings: _LogoSettingsRepo());
+        pinRestoreController(container);
+
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(
+              archiveBytes: identityNetworkArchive(
+                identityJson: '{"libraryId": "NOT-HEX", "libraryName": "X"}',
+              ),
+            );
+
+        final summary = container.read(restoreControllerProvider).value!;
+        expect(summary.identityInvalid, isTrue);
+        expect(summary.identityAdopted, isFalse);
+        // The settings were never touched by an identity write.
+        final settings = await container.read(
+          settingsControllerProvider.future,
+        );
+        expect(settings.libraryId, ''); // _LogoSettingsRepo's initial default
+        expect(summary.networkApplied, isTrue);
+        expect(summary.networkRestored, 1);
+        await settleCascade(container);
+      },
+    );
+
+    test(
+      'a replaceAll Left reports networkRestored 0 and keeps the restore',
+      () async {
+        final container = makeContainer(
+          settings: _LogoSettingsRepo(),
+          network: _FailingNetworkRepo(),
+        );
+        pinRestoreController(container);
+
+        await container
+            .read(restoreControllerProvider.notifier)
+            .restore(archiveBytes: identityNetworkArchive());
+
+        final summary = container.read(restoreControllerProvider).value!;
+        expect(summary.networkApplied, isFalse);
+        expect(summary.networkRestored, 0);
+        expect(summary.restoredNetwork, hasLength(1)); // parsed fine…
+        expect(summary.networkInvalid, isFalse); // …just not writable
+        expect(summary.identityAdopted, isTrue); // identity unaffected
+        await settleCascade(container);
+      },
+    );
+  });
+}
+
+/// Settings fake whose ID write always fails — the adopt() Left path.
+class _AdoptFailingSettings extends _LogoSettingsRepo {
+  @override
+  Future<Either<Failure, Unit>> setLibraryId(String id) async =>
+      left(const StorageFailure('prefs read-only'));
+}
+
+/// Network repo whose replaceAll fails (the controller must contain it).
+class _FailingNetworkRepo implements NetworkRepository {
+  @override
+  Future<Either<Failure, Unit>> replaceAll(List<NetworkLibrary> rows) async =>
+      left(const StorageFailure('disk full'));
+
+  @override
+  Future<List<NetworkLibrary>> loadAll() async => const [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -13,6 +13,7 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
 import '../app_update/fake_app_update_service.dart';
@@ -157,6 +158,31 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Your library is empty'), findsOneWidget);
+  });
+
+  testWidgets('the app-bar map button sits left of scan and opens the '
+      'network screen on its Map tab', (tester) async {
+    SharedPreferences.setMockInitialValues(const {});
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+
+    final mapButton = find.byTooltip('Network map');
+    final scanButton = find.byTooltip('Scan to add');
+    expect(mapButton, findsOneWidget);
+    expect(scanButton, findsOneWidget);
+    expect(
+      tester.getTopLeft(mapButton).dx,
+      lessThan(tester.getTopLeft(scanButton).dx),
+    );
+
+    await tester.tap(mapButton);
+    await tester.pumpAndSettle();
+
+    // Landed on the Library network screen's Map tab: without tiles consent
+    // the gate asks first instead of building the map (§5.9). (The tab view
+    // lazily builds only the visible page, so no network providers run.)
+    expect(find.text('Library network'), findsOneWidget);
+    expect(find.text('Show the network map?'), findsOneWidget);
   });
 
   testWidgets('tapping a row opens the detail page', (tester) async {

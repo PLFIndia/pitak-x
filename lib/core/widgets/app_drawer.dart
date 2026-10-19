@@ -1,17 +1,19 @@
 /// App navigation drawer (presentation, AGENTS.md §3.1).
 ///
 /// Layout: the library header (logo + name) is pinned at the top, the primary
-/// destinations (Vault, Publish, Wishlist, Bookmarks) scroll in the middle, and
-/// Settings is pinned to the bottom edge. Data operations (import/export/backup/
-/// restore) live under Settings → Data, so the drawer stays a short, stable
-/// list of top-level places. Each tile closes the drawer and pushes the page.
+/// destinations (Vault, Publish, Wishlist, Library network, Share once a site
+/// exists, How Pitak works) scroll in the middle, and Settings is pinned to
+/// the bottom edge. Data operations (import/export/backup/restore) live under
+/// Settings → Data, so the drawer stays a short, stable list of top-level
+/// places. Each tile closes the drawer and pushes the page.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
-import 'package:pitaka/features/bookmarks/presentation/pages/bookmarks_page.dart';
+import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
+import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -86,9 +88,9 @@ class AppDrawer extends ConsumerWidget {
                     onTap: () => _go(context, const WishlistPage()),
                   ),
                   ListTile(
-                    leading: const Icon(Icons.collections_bookmark_outlined),
-                    title: const Text('Bookmarks'),
-                    onTap: () => _go(context, const BookmarksPage()),
+                    leading: const Icon(Icons.hub_outlined),
+                    title: const Text('Library network'),
+                    onTap: () => _go(context, const NetworkPage()),
                   ),
                   // Shown only once a site exists (published at least once):
                   // a share button with nothing to share would be a dead end.
@@ -108,6 +110,14 @@ class AppDrawer extends ConsumerWidget {
                         showShareLibrarySheet(hostContext, url: siteUrl);
                       },
                     ),
+                  // Short in-app guides, one per job (publish, map, backup,
+                  // vault, hubs). Last in the list: it is help, not a place
+                  // the user goes every day.
+                  ListTile(
+                    leading: const Icon(Icons.help_outline),
+                    title: const Text('How Pitak works'),
+                    onTap: () => _go(context, const GuidesPage()),
+                  ),
                 ],
               ),
             ),

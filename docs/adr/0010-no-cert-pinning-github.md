@@ -1,7 +1,7 @@
 # ADR 0010: No certificate pinning for GitHub
 
 - **Status:** Accepted
-- **Date:** 2026-10-16 (architecture.md §1.3)
+- **Date:** 2026-10-16 (docs/ARCHITECTURE.md §1.2)
 
 ## Context
 

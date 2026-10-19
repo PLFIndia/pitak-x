@@ -6,7 +6,7 @@ import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
 import '../../support/fuzz.dart';
 
-/// Property tests for `planMerge` (architecture.md B3). The merge engine
+/// Property tests for `planMerge`. The merge engine
 /// decides what a restore/import writes — a partition bug here is a
 /// data-loss bug, so the invariants are tested on [Fuzz.cases] seeded random
 /// libraries (one generator per case, so a printed seed replays one case),

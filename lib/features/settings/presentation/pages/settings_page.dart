@@ -19,33 +19,51 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/editable_text_field.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
-import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
-import 'package:pitaka/features/library/domain/value_objects/library_qr_payload.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
-import 'package:pitaka/features/settings/presentation/pages/scan_library_qr_page.dart';
-import 'package:pitaka/features/settings/presentation/widgets/google_books_key_dialog.dart';
+import 'package:pitaka/features/settings/presentation/widgets/community_library_section.dart';
+import 'package:pitaka/features/settings/presentation/widgets/google_books_key_tile.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/presentation/pages/biometric_settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/change_passphrase_page.dart';
 
-/// The app settings screen with four tabs.
+/// Tabs of the settings screen, in order.
+///
+/// Mirrors `PublishTab`: a caller that wants to land on a specific tab (the
+/// "How Pitak works" guides deep-link to Data) names it instead of passing a
+/// bare index that silently breaks when a tab is added or reordered.
+enum SettingsTab {
+  /// Theme, library name/icon, network toggles.
+  appearance,
+
+  /// Import / export / merge / backup / restore + community library.
+  data,
+
+  /// App lock + vault passphrase/biometrics.
+  security,
+}
+
+/// The app settings screen with three tabs.
 class SettingsPage extends ConsumerWidget {
-  /// Creates the settings page.
-  const SettingsPage({super.key});
+  /// Creates the settings page, optionally opening on [initialTab].
+  const SettingsPage({this.initialTab = SettingsTab.appearance, super.key});
+
+  /// Which tab to show first.
+  final SettingsTab initialTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(settingsControllerProvider);
 
     return DefaultTabController(
-      length: 3,
+      length: SettingsTab.values.length,
+      initialIndex: initialTab.index,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Settings'),
@@ -132,80 +150,21 @@ class _AppearanceTab extends ConsumerWidget {
           value: settings.loadRemoteCovers,
           onChanged: (v) => controller.setLoadRemoteCovers(enabled: v),
         ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Network map images (OpenStreetMap)'),
+          subtitle: const Text(
+            'Off by default. When on, the Library network › Map tab downloads '
+            'map images from OpenStreetMap while you view it — their servers '
+            'see your internet address and the area you look at. Your list '
+            'of libraries never leaves the device.',
+          ),
+          value: settings.networkMapTilesConsent,
+          onChanged: (v) => controller.setNetworkMapTilesConsent(enabled: v),
+        ),
         const SizedBox(height: 8),
-        const _GoogleBooksKeyTile(),
+        const GoogleBooksKeyTile(),
       ],
-    );
-  }
-}
-
-/// Entry for the user's own Google Books API key (optional).
-///
-/// Why this exists: keyless Google Books calls run on a quota pool shared by
-/// every anonymous client worldwide and are often rejected with "quota
-/// exceeded". A free personal key gives the user a dedicated daily quota.
-/// The key is a quota-bearing credential → stored in the OS secure store
-/// (never plain prefs, §6.3) and never shown back in full — only a masked
-/// tail, same idea as the vault's redaction rules.
-class _GoogleBooksKeyTile extends ConsumerStatefulWidget {
-  const _GoogleBooksKeyTile();
-
-  @override
-  ConsumerState<_GoogleBooksKeyTile> createState() =>
-      _GoogleBooksKeyTileState();
-}
-
-class _GoogleBooksKeyTileState extends ConsumerState<_GoogleBooksKeyTile> {
-  /// Masked tail of the stored key (e.g. "…Wk3c"), or null when none is set.
-  String? _maskedKey;
-  bool _loaded = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _refresh();
-  }
-
-  Future<void> _refresh() async {
-    final key = await ref.read(lookupKeyStoreProvider).googleBooksApiKey();
-    if (!mounted) return;
-    setState(() {
-      // Defensive: a foreign/legacy short value must not throw RangeError.
-      _maskedKey = key == null
-          ? null
-          : '…${key.length > 4 ? key.substring(key.length - 4) : key}';
-      _loaded = true;
-    });
-  }
-
-  Future<void> _edit() async {
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (_) => const GoogleBooksKeyDialog(),
-    );
-    if (saved ?? false) await _refresh();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_loaded) return const SizedBox.shrink();
-    final hasKey = _maskedKey != null;
-    return ListTile(
-      contentPadding: EdgeInsets.zero,
-      leading: const Icon(Icons.key_outlined),
-      title: const Text('Google Books API key'),
-      subtitle: Text(
-        hasKey
-            ? 'Your key $_maskedKey is used for ISBN lookups.'
-            : 'Optional. Without a key, lookups share a public quota that '
-                  'often runs out. A free personal key from Google gives '
-                  'you your own.',
-      ),
-      trailing: TextButton(
-        onPressed: _edit,
-        child: Text(hasKey ? 'Change' : 'Add'),
-      ),
-      onTap: _edit,
     );
   }
 }
@@ -248,7 +207,7 @@ class _DataTab extends ConsumerWidget {
           ),
           onTap: () => go(const MergePage()),
         ),
-        const _CommunityLibrarySection(),
+        const CommunityLibrarySection(),
         const Divider(),
         ListTile(
           leading: const Icon(Icons.backup_outlined),
@@ -265,166 +224,6 @@ class _DataTab extends ConsumerWidget {
           title: const Text('Restore backup'),
           subtitle: const Text('Replace local data from a .pitabak archive'),
           onTap: () => go(const RestorePage()),
-        ),
-      ],
-    );
-  }
-}
-
-/// "Community library" section (PLAN-merge.md D40): shows this device's library
-/// ID + a pairing QR, lets the user scan another device's QR to adopt its ID,
-/// and start a fresh library ID. Pairing is in-person only (QR), no network.
-class _CommunityLibrarySection extends ConsumerWidget {
-  const _CommunityLibrarySection();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final controller = ref.read(settingsControllerProvider.notifier);
-
-    Future<void> showQr() async {
-      // Mint the ID on demand so a never-exported device can still pair.
-      final id = await controller.getOrCreateLibraryId();
-      if (!context.mounted) return;
-      // M17: a failed mint/persist must not show a QR with a phantom ID.
-      if (id.isLeft()) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not load your library ID. Please try again.'),
-          ),
-        );
-        return;
-      }
-      final idValue = id.getOrElse((_) => '');
-      await showDialog<void>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Your library QR'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Have another maintainer scan this to join your library.',
-              ),
-              const SizedBox(height: 16),
-              Center(child: QrView(data: LibraryQrPayload.forId(idValue))),
-              const SizedBox(height: 12),
-              SelectableText(
-                idValue,
-                style: Theme.of(ctx).textTheme.bodySmall,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Done'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    /// First 8 chars + ellipsis — full library IDs are 16–64 lowercase hex,
-    /// too long to eyeball in a confirmation.
-    String shortId(String id) => id.length <= 8 ? id : '${id.substring(0, 8)}…';
-
-    Future<void> scanQr() async {
-      final id = await Navigator.of(context).push<String>(
-        MaterialPageRoute(builder: (_) => const ScanLibraryQrPage()),
-      );
-      if (id == null || !context.mounted) return;
-      // Confirm before adopting (REVIEW_FINDINGS_2 S8): a valid-SHAPED QR is
-      // not necessarily a TRUSTED one — a malicious QR at a pairing party
-      // could silently rebind this device to an attacker's library ID, whose
-      // export files would then pass the merge ID-gate as "matching library".
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Join this library?'),
-          content: Text(
-            'Library ${shortId(id)}.\n\nFiles exported by this maintainer '
-            'will be treated as matching this device when you merge. Only '
-            'join if you scanned the QR from someone you meant to pair with.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Join'),
-            ),
-          ],
-        ),
-      );
-      if (confirmed != true || !context.mounted) return;
-      await controller.setLibraryId(id);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Joined library — now merge their file.')),
-      );
-    }
-
-    Future<void> regenerate() async {
-      final ok = await showDialog<bool>(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Start a new library?'),
-          content: const Text(
-            'This gives this device a brand-new library identity. Files you '
-            'export afterwards will no longer match maintainers you previously '
-            'paired with. Your books are not changed.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Start new'),
-            ),
-          ],
-        ),
-      );
-      if (ok ?? false) {
-        final minted = await controller.regenerateLibraryId();
-        if (!context.mounted) return;
-        // M17: tell the user when the new identity was NOT persisted.
-        if (minted.isLeft()) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Could not save the new library ID. Please try again.',
-              ),
-            ),
-          );
-        }
-      }
-    }
-
-    return Column(
-      children: [
-        const Divider(),
-        ListTile(
-          leading: const Icon(Icons.qr_code_2),
-          title: const Text('Show library QR'),
-          subtitle: const Text('Let another maintainer scan to join you'),
-          onTap: showQr,
-        ),
-        ListTile(
-          leading: const Icon(Icons.qr_code_scanner),
-          title: const Text('Scan a library QR'),
-          subtitle: const Text("Join another maintainer's library"),
-          onTap: scanQr,
-        ),
-        ListTile(
-          leading: const Icon(Icons.autorenew),
-          title: const Text('Start a new library'),
-          subtitle: const Text('Give this device a fresh library identity'),
-          onTap: regenerate,
         ),
       ],
     );

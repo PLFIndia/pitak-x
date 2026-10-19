@@ -65,9 +65,33 @@ void main() {
     expect(find.text('Made with'), findsOneWidget);
     expect(find.text('Pitak'), findsOneWidget);
     expect(find.text('A community library app'), findsOneWidget);
-    // The QR encodes the FULL url, not the shortened display text.
+    // The QR encodes the FULL url, not the shortened display text — with no
+    // explicit qrData the bare URL is the fallback (§5.8).
     final qr = tester.widget<QrView>(find.byType(QrView));
     expect(qr.data, _url);
+  });
+
+  testWidgets('qrData replaces the QR payload but not the printed link', (
+    tester,
+  ) async {
+    const payload = '$_url#pitak-card=1&fp=abc&n=X';
+    await pumpBig(
+      tester,
+      _host(
+        const LibraryShareCard(
+          style: ShareCardStyle.classic,
+          libraryName: 'Riverside Community Library',
+          address: '',
+          url: _url,
+          qrData: payload,
+        ),
+      ),
+    );
+
+    // The QR carries the card payload …
+    expect(tester.widget<QrView>(find.byType(QrView)).data, payload);
+    // … while the human-readable link line still shows the plain site URL.
+    expect(find.text('user.github.io/my-library'), findsOneWidget);
   });
 
   testWidgets('blank name → "My Library" and a monogram tile', (tester) async {

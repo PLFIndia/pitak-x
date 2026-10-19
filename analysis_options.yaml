@@ -6,7 +6,7 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - "lib/src/rust/**" # flutter_rust_bridge-generated FFI bindings
-    # drift_dev-generated schema snapshots (architecture.md A4) — same policy
+    # drift_dev-generated schema snapshots (docs/ARCHITECTURE.md §5.4) — same policy
     # as *.g.dart: generated, committed, never hand-edited.
     - "test/core/database/generated/**"
   errors:

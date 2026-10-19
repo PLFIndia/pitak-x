@@ -35,6 +35,7 @@ import 'package:pitaka/features/library/presentation/widgets/empty_library_state
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
+import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
@@ -97,6 +98,17 @@ class LibraryPage extends ConsumerWidget {
         ),
         title: Text(libraryName.isEmpty ? 'Library' : libraryName),
         actions: [
+          // Shortcut to the network map (the Map tab is consent-gated — it
+          // asks there, not here).
+          IconButton(
+            icon: const Icon(Icons.map_outlined),
+            tooltip: 'Network map',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const NetworkPage(initialTab: 1),
+              ),
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan to add',

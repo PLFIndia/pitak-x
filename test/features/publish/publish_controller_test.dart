@@ -12,6 +12,9 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -257,11 +260,244 @@ void main() {
     expect(h.api.commits, hasLength(1));
     expect(tester.takeException(), isNull);
   });
+  testWidgets('a failed identity read refuses the whole publish', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.settings.identityFails = true;
+    final result = await h.publish(tester);
+
+    expect((result as PublishFailure).reason, 'Library identity unavailable');
+    expect(result.reason, isNot(contains('private-mint-detail')));
+    expect(h.api.commits, isEmpty);
+    expect(h.manifest.saves, 0);
+  });
+
+  testWidgets(
+    'SECURITY (M1): an unbuildable descriptor refuses the publish instead '
+    'of silently deleting the published library.json',
+    (tester) async {
+      final h = _Harness();
+      h.settings.identityMalformed = true; // stored ID is not a LibraryId
+      // A library.json from an earlier run is live on the site.
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect((result as PublishFailure).reason, 'Library identity unavailable');
+      expect(h.api.commits, isEmpty, reason: 'no commit — nothing deleted');
+      expect(h.manifest.saves, 0);
+    },
+  );
+
+  testWidgets(
+    'SECURITY (M14): an unreadable network table refuses the publish with '
+    'the real reason instead of publishing an empty member list',
+    (tester) async {
+      final h = _Harness(networkUnavailable: true);
+      // A library.json with members is live on the site.
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect(
+        (result as PublishFailure).reason,
+        'Could not read your saved libraries. Nothing was published. '
+        'Please try again.',
+      );
+      expect(h.api.commits, isEmpty, reason: 'no commit — members intact');
+      expect(h.manifest.saves, 0);
+      // The controller settled to a data state (not a dangling loading).
+      expect(h.states.last.hasValue, isTrue);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'an unchanged second publish reuses the live updatedAt and SKIPS the '
+    'library.json upload (review Lows)',
+    (tester) async {
+      final h = _Harness();
+      expect(await h.publish(tester), isA<PublishSuccess>());
+      expect(await h.publish(tester), isA<PublishSuccess>());
+
+      expect(h.api.commits, hasLength(2));
+      bool libraryJsonUploaded(List<DesiredFile> commit) => commit.any(
+        (f) => f.path == PublishLibraryUseCase.libraryJsonPath && f.upload,
+      );
+      expect(
+        libraryJsonUploaded(h.api.commits[0]),
+        isTrue,
+        reason: 'the first publish writes the descriptor',
+      );
+      expect(
+        libraryJsonUploaded(h.api.commits[1]),
+        isFalse,
+        reason: 'content unchanged ⇒ live timestamp reused ⇒ same blob sha',
+      );
+
+      // The two descriptor bytes are byte-identical even though the fake
+      // clock moved a minute between publishes.
+      List<int> descriptorBytes(List<DesiredFile> commit) =>
+          committedBytes(commit, PublishLibraryUseCase.libraryJsonPath);
+      final first = descriptorBytes(h.api.commits[0]);
+      final second = descriptorBytes(h.api.commits[1]);
+      expect(utf8.decode(second), utf8.decode(first));
+      // The reused timestamp is the FIRST publish's — the candidate's fresh
+      // one was replaced (the fake clock moved between publishes).
+      final firstUpdatedAt =
+          (jsonDecode(utf8.decode(first)) as Map<String, dynamic>)['updatedAt'];
+      final secondUpdatedAt =
+          (jsonDecode(utf8.decode(second))
+              as Map<String, dynamic>)['updatedAt'];
+      expect(secondUpdatedAt, firstUpdatedAt);
+    },
+  );
+
+  testWidgets(
+    'library.json rides along — fingerprint yes, raw library ID never',
+    (tester) async {
+      final h = _Harness();
+      expect(await h.publish(tester), isA<PublishSuccess>());
+
+      final descriptor = h.api.commits.single.firstWhere(
+        (file) => file.path == 'library.json',
+      );
+      final json = utf8.decode(descriptor.bytes);
+      // The published identity is the FINGERPRINT of the ID (D3) …
+      expect(json, contains(LibraryFingerprint.of('a' * 32)));
+      // … and the raw ID itself never appears in the published file.
+      expect(json, isNot(contains('a' * 32)));
+      // Sharing is off by default ⇒ no location block at all (D7).
+      expect(json, isNot(contains('"location"')));
+      // The descriptor points at the site being published.
+      expect(json, contains('https://me.github.io/lib/'));
+    },
+  );
+
+  testWidgets('isMember rows become library.json members (§5.5)', (
+    tester,
+  ) async {
+    const memberFp =
+        'adb28b53d57009ce04d4e0b28563ebcd395375c0d719fd53986908233687f664';
+    final h = _Harness();
+    h.network.rows = [
+      // A member with a fingerprint: listed.
+      const NetworkLibrary(
+        id: 1,
+        siteUrl: 'https://m.github.io/x/',
+        name: 'M Library',
+        fingerprint: memberFp,
+        source: NetworkSource.card,
+        isMember: true,
+        memberVerified: true,
+      ),
+      // A plain bookmark row (the default source): NOT listed.
+      const NetworkLibrary(id: 2, siteUrl: 'https://b.github.io/y/', name: 'B'),
+      // A member row without a fingerprint yet: cannot be listed (there is
+      // nothing to match on) — stays out.
+      const NetworkLibrary(
+        id: 3,
+        siteUrl: 'https://n.github.io/z/',
+        source: NetworkSource.card,
+        isMember: true,
+      ),
+      // memberOf (§5.5/§5.6-4): ONLY a CONFIRMED hub membership is published.
+      const NetworkLibrary(
+        id: 4,
+        siteUrl: 'https://hub.github.io/h/',
+        name: 'My Hub',
+        membership: MembershipState.confirmed,
+      ),
+      // Pending and declined memberships never appear in the descriptor —
+      // a membership is public only by the user's explicit choice.
+      const NetworkLibrary(
+        id: 5,
+        siteUrl: 'https://maybe.github.io/h/',
+        membership: MembershipState.pending,
+      ),
+      const NetworkLibrary(
+        id: 6,
+        siteUrl: 'https://nope.github.io/h/',
+        membership: MembershipState.declined,
+      ),
+    ];
+    expect(await h.publish(tester), isA<PublishSuccess>());
+
+    final descriptor = h.api.commits.single.firstWhere(
+      (file) => file.path == 'library.json',
+    );
+    final json =
+        jsonDecode(utf8.decode(descriptor.bytes)) as Map<String, dynamic>;
+    expect(json['members'], [
+      {
+        'fingerprint': memberFp,
+        'siteUrl': 'https://m.github.io/x/',
+        'name': 'M Library',
+      },
+    ]);
+    expect(json['memberOf'], ['https://hub.github.io/h/']);
+  });
+
+  testWidgets(
+    'SECURITY (L1): a member list over the wire cap REFUSES the publish — '
+    'nothing uploaded, nothing deleted',
+    (tester) async {
+      // 201 members would encode a library.json every peer refuses in full
+      // (decode truncates at 200 / rejects over 64 KiB) — the library would
+      // silently vanish from the network behind a "Published!".
+      final h = _Harness();
+      h.network.rows = [
+        for (var i = 0; i < 201; i++)
+          NetworkLibrary(
+            id: i + 1,
+            siteUrl: 'https://m$i.github.io/',
+            // Valid but DISTINCT 64-hex fingerprints (a real hub's members
+            // never share one — and the fake table would not either).
+            fingerprint: '${i.toRadixString(16).padLeft(8, '0')}${'f' * 56}',
+            source: NetworkSource.card,
+            isMember: true,
+          ),
+      ];
+      h.manifest.current = const PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'books.json': 'old-books-sha', 'library.json': 'old-lib'},
+      );
+
+      final result = await h.publish(tester);
+
+      expect(
+        (result as PublishFailure).reason,
+        'Your published member list is too large. Remove some members in '
+        'the Library network list, then publish again.',
+      );
+      expect(h.api.commits, isEmpty, reason: 'no commit — nothing uploaded');
+      expect(h.manifest.saves, 0);
+    },
+  );
+}
+
+/// The bytes one committed file carried (the harness records every commit's
+/// full desired-file list, uploaded or not).
+List<int> committedBytes(List<DesiredFile> commit, String path) {
+  for (final f in commit) {
+    if (f.path == path) return f.bytes;
+  }
+  throw StateError('no $path in commit');
 }
 
 /// Every side-effecting port is in memory; unexpected calls fail the test.
 class _Harness {
-  _Harness({bool observe = true}) {
+  /// [networkUnavailable] makes the network repository provider fail the way
+  /// the composition root does when the legacy-bookmarks migration cannot
+  /// complete (review M14).
+  _Harness({bool observe = true, bool networkUnavailable = false}) {
     container = ProviderContainer(
       overrides: [
         bookRepositoryProvider.overrideWith((ref) async => books),
@@ -269,7 +505,14 @@ class _Harness {
         publishCredentialStoreProvider.overrideWithValue(credentials),
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
-        settingsRepositoryProvider.overrideWith((ref) async => _Settings()),
+        settingsRepositoryProvider.overrideWith((ref) async => settings),
+        if (networkUnavailable)
+          networkRepositoryProvider.overrideWith(
+            (ref) async =>
+                throw const LegacyBookmarksMigrationException('StorageFailure'),
+          )
+        else
+          networkRepositoryProvider.overrideWith((ref) async => network),
         eventsRepositoryProvider.overrideWith((ref) async => _Events()),
         // A handle only: no local covers in these tests, so no disk access.
         appDocsDirProvider.overrideWith((ref) async => Directory('.')),
@@ -281,6 +524,7 @@ class _Harness {
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,
           required contact,
+          required sharing,
         }) async {
           viewerBuilds++;
           return utf8.encode('<html></html>');
@@ -289,12 +533,26 @@ class _Harness {
           remoteReads++;
           return null;
         }),
-        publishedFileFetcherProvider.overrideWithValue((_) async {
+        publishedFileFetcherProvider.overrideWithValue((url) async {
           liveReads++;
-          return api.commits.last
+          // Routes by URL like the live site: library.json serves the last
+          // committed descriptor (null before the first publish), anything
+          // else is the read-back poll for books.json.
+          if (api.commits.isEmpty) return null;
+          final committed = api.commits.last;
+          if (url.contains('library.json')) {
+            for (final file in committed) {
+              if (file.path == 'library.json') return file.bytes;
+            }
+            return null;
+          }
+          return committed
               .firstWhere((file) => file.path == 'books.json')
               .bytes;
         }),
+        // A clock that ticks a minute per read: two publishes never share a
+        // timestamp, so an updatedAt-reuse test is deterministic.
+        clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
       ],
     );
     if (observe) {
@@ -307,10 +565,13 @@ class _Harness {
     addTearDown(container.dispose);
   }
 
+  int _clockTicks = 0;
   final books = _Books();
   final api = _Api();
   final credentials = _Credentials();
   final manifest = _Manifest();
+  final settings = _Settings();
+  final network = _Network();
   late final ProviderContainer container;
   final states = <AsyncValue<PublishResult?>>[];
   int viewerBuilds = 0;
@@ -350,8 +611,25 @@ class _Books implements BookRepository {
 }
 
 class _Settings implements SettingsRepository {
+  /// Flipped by the identity-failure test: the publish must refuse rather
+  /// than ship a descriptor without an honest fingerprint (fail closed).
+  bool identityFails = false;
+
+  /// Flipped by the M1 test: the repository hands back whatever is stored,
+  /// and a malformed value must refuse the publish — not delete the
+  /// published descriptor behind a "Published!".
+  bool identityMalformed = false;
+
   @override
   Future<AppSettings> load() async => AppSettings.defaults;
+
+  // The library.json descriptor needs the identity (docs/ARCHITECTURE.md §5.1), so
+  // a publish now legitimately READS it through the controller's current().
+  @override
+  Future<Either<Failure, String>> getOrCreateLibraryId() async {
+    if (identityFails) return left(const StorageFailure('private-mint-detail'));
+    return right(identityMalformed ? 'NOT-A-HEX-ID' : 'a' * 32);
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -455,4 +733,18 @@ class _Api implements GitHubApi {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected GitHub operation');
+}
+
+/// In-memory network rows: the publish controller reads the `isMember` ones
+/// for library.json's members list (§5.5). No disk, no Drift.
+class _Network implements NetworkRepository {
+  List<NetworkLibrary> rows = const [];
+
+  @override
+  Future<List<NetworkLibrary>> loadAll() async => rows;
+  @override
+  Future<int> count() async => rows.length;
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected network operation');
 }

@@ -9,13 +9,16 @@ library;
 
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Produces the published viewer `index.html` bytes for the given library
-/// name + public contact info.
+/// name + public contact info. [sharing] gates the GPS pin (docs/ARCHITECTURE.md
+/// §6: the same switch that gates the `library.json` location).
 typedef ViewerHtmlFactory =
     Future<List<int>> Function({
       required String libraryName,
       required PublishContact contact,
+      required LocationSharing sharing,
     });
 
 /// Produces the published `events.html` bytes for the given library name +

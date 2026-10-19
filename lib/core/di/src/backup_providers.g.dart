@@ -7,11 +7,13 @@ part of 'backup_providers.dart';
 // **************************************************************************
 
 String _$createBackupUseCaseHash() =>
-    r'cde9a9cd8e0f40a1b167cefe49dec8e4b05ea7d6';
+    r'de1199e95813235f620695574ff1c82e92b278e7';
 
 /// Creates a `.pitabak` backup of the whole local catalog (#28B): Room-format
 /// books/wishlist written from Drift, the persistent vault copied verbatim, and
-/// covers bundled. Returns the archive bytes for the UI to save.
+/// covers bundled — plus the library identity and the saved-libraries list
+/// (docs/ARCHITECTURE.md §3 network, both gathered best-effort). Returns the archive
+/// bytes for the UI to save.
 ///
 /// Copied from [createBackupUseCase].
 @ProviderFor(createBackupUseCase)

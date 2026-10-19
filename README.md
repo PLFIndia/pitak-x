@@ -3,15 +3,20 @@
 A privacy-first, offline personal **library catalogue** for Android. Pitak is a
 Kotlin→Flutter port of the original Android app: catalogue your books, lend
 them to borrowers from an **encrypted vault**, keep a wishlist, import/export
-(JSON · CSV · PDF), make portable backups, and publish a read-only library site
-to GitHub Pages with event posters and bookmarks to other libraries.
+(JSON · CSV · PDF), make portable backups, publish a read-only library site
+to GitHub Pages with event posters, and link up with other Pitak libraries in
+a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.4.0**
-> (`pubspec.yaml`, tag `1.4.0`); F-Droid builds from the tag on its own
-> schedule, so its index may lag by a release. `PLAN.md` tracks the task in
-> flight; the maintainer's full engineering reference (`appDetails.md`) is
-> kept locally and is not part of this repository.
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.5.1**
+> (`pubspec.yaml`, tag `1.5.1`); F-Droid builds from the tag on its own
+> schedule, so its index may lag by a release.
+>
+> **Where things are documented:** `AGENTS.md` — the engineering rules;
+> `docs/ARCHITECTURE.md` — the shape of the app and its data contracts;
+> `docs/RELEASING.md` — building, signing and shipping to both stores;
+> `docs/adr/` — one page per non-obvious decision; `CHANGELOG.md` — what
+> changed per version; `CONTRIBUTING.md` — the short path to a mergeable PR.
 
 ---
 
@@ -33,17 +38,30 @@ to GitHub Pages with event posters and bookmarks to other libraries.
   the Kotlin app is retired and is not a restore target). **Honest limit:**
   the archive is *not* fully encrypted — books, wishlist and covers are stored
   plainly inside it; only the borrowers vault (when present) stays encrypted.
-  Treat backup files accordingly. Restore is all-or-nothing: the catalogue,
-  covers and vault are written into a new data folder and the app switches to
-  it in one step, so a failed or interrupted restore leaves your current data
-  untouched (the previous folder is deleted right after a successful switch).
+  The archive also carries your **library identity (name + ID) and your
+  saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
+  the ID your hubs know. Treat backup files accordingly. Restore is
+  all-or-nothing: the catalogue, covers and vault are written into a new data
+  folder and the app switches to it in one step, so a failed or interrupted
+  restore leaves your current data untouched (the previous folder is deleted
+  right after a successful switch).
 - **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
   auth + git data API), with PII redaction and an https-only cover allow-list.
+  The optional GPS pin is governed by its own opt-in switch (off /
+  approximate ~1 km / exact) and feeds both the page pin and the network
+  descriptor.
 - **Events** — attach a small set of event posters (image + optional short
   description) to the published site; images stay on-device as ordinary files.
-- **Bookmarks** — save labelled links to *other* libraries' published sites.
-  URLs are validated strictly (https only; GitHub Pages / Cloudflare Pages
-  hosts) and stored as a plain, non-secret list.
+- **Library network** — save *other* Pitak libraries (by URL, or by scanning a
+  library's card QR in person), see them on an opt-in map, and refresh their
+  public details on demand. Sites are validated strictly (https only; GitHub
+  Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
+  published `library.json` descriptors — nothing happens in the background —
+  and identities are checked by fingerprint, never by trusting a name. The map
+  downloads OpenStreetMap images only after you say yes (first tap asks;
+  changeable in Settings) and only while the map is open. Replaces the old
+  bookmarks feature, whose entries migrate into the network list automatically
+  on first open (on-device only).
 - **App-lock** — optional, opt-in biometric/device-credential gate before the
   library screen. It is a **screen cover, not a vault lock**: it deters casual
   access on an unlocked phone but does not encrypt data at rest and does not
@@ -58,8 +76,10 @@ bytes and never as Dart `String`s; the GitHub token and the ISBN-lookup key are
 the honest exceptions (their HTTP/plugin APIs are `String`-typed, so they
 transit as immutable strings).
 Network calls happen only on explicit user action (ISBN lookup,
-publish, remote covers — the last is opt-in, default off, host-allow-listed,
-and each cover is downloaded once and then kept as an ordinary local cover).
+publish, network refresh, remote covers, map tiles — the last three are
+opt-in: covers are default off, host-allow-listed, and downloaded once;
+the network map fetches OpenStreetMap tiles only after consent, and Refresh
+only reads the `library.json` of libraries you saved).
 
 **Platform matrix (M18):** Android is the only shipping target today.
 Screenshot/recents capture is blocked on Android (`FLAG_SECURE`) while
@@ -102,6 +122,9 @@ cover, not a vault lock (see the security notes below).
 - **State / DI:** Riverpod with code generation (`@riverpod`).
 - **Errors:** `fpdart` `Either<Failure, T>` (no exceptions for expected failures).
 - **Persistence:** Drift (SQLite); SQLCipher for the vault.
+- **Map:** `flutter_map` + OpenStreetMap raster tiles (BSD-3, pure Dart — no
+  native code, so the F-Droid build stays clean), consent-gated and only
+  while the network map is open.
 - **Native core:** a Rust crate (`rust/`, `pitak_crypto`) for Argon2id +
   AES-GCM + the SQLCipher vault, bridged via `flutter_rust_bridge` (cargokit
   builds it during the Android build).
@@ -112,7 +135,7 @@ cover, not a vault lock (see the security notes below).
 lib/
   core/        cross-cutting: app_lock, crypto, database, DI (core/di/providers.dart), error,
                images, layout, network, platform, storage, shared widgets
-  features/    library · vault · wishlist · lookup · publish · events · bookmarks ·
+  features/    library · vault · wishlist · lookup · publish · events · network ·
                backup · import_export · settings
   src/rust/    flutter_rust_bridge generated bindings (analyzer-excluded)
 rust/          pitak_crypto crate (crypto + vault boundary) + tests
@@ -124,9 +147,10 @@ fdroid/        the F-Droid build recipe, version-controlled next to the app
 fastlane/      store metadata + per-versionCode changelogs
 ```
 
-The two `AGENTS.md` files (repo + harness) are the binding engineering contract —
-read them before contributing. Non-obvious architectural decisions are recorded
-as ADRs in `docs/adr/`.
+`AGENTS.md` is the binding engineering contract — read it before contributing.
+The layer rules, module map, crypto chain and the cross-device data contracts
+(`library.json`, the card QR, `.pitabak`, the DB schema) are in
+`docs/ARCHITECTURE.md`; non-obvious decisions are ADRs in `docs/adr/`.
 
 ## Getting started
 
@@ -173,88 +197,22 @@ Git does not enable tracked hooks automatically, hence the one-time
 ```bash
 flutter run -d <device-id> --flavor fdroid            # debug, with hot reload
 flutter build apk --release --flavor fdroid           # universal APK (large: bundled Noto fonts + 4 Rust ABIs)
-flutter build apk --release --flavor fdroid --split-per-abi   # what the F-Droid recipe builds (one APK per ABI)
-tool/release_build.sh                                 # Google Play AAB — the ONLY way to build one for upload (below)
 flutter install -d <device-id> --release --flavor fdroid
 ```
 
-`tool/release_build.sh` is `flutter build appbundle --release --flavor play`
-with the reproducibility checks a hand-typed command skips: it uses only the
-Flutter pinned in `.fvmrc` (refusing PATH's), runs `pub get --enforce-lockfile`
-(the gate CI and the F-Droid recipe run), requires `android/key.properties`,
-builds from a clean output tree, and then verifies the *artifact*: the
-signer certificate inside the `.aab` must match the upload keystore and the
-bundled versionCode/versionName must match `pubspec.yaml`. It prints the
-certificate fingerprint (public) and never echoes a secret.
-`tool/release_build.sh --verify` re-checks an existing bundle.
-
-`flutter devices` lists ids. The app ships per-store flavors: `fdroid`
-(applicationId `dev.khoj.pitaka.fdroid`, matching the live F-Droid listing)
-and `play` (applicationId `dev.khoj.pitaka` for Google Play). Every build
-command needs a `--flavor`.
+`flutter devices` lists ids. The app ships per-store flavors — `fdroid`
+(`dev.khoj.pitaka.fdroid`) and `play` (`dev.khoj.pitaka`) — and **every build
+command needs a `--flavor`**. The `fdroid` flavor must never link a Google
+library; before adding any Flutter plugin, read `docs/RELEASING.md` §2.
 
 > First Android build is slow: cargokit cross-compiles the Rust core for every
 > ABI. Use `flutter build apk` (visible Gradle/Rust progress) rather than a bare
 > `flutter run` if you want to watch the compile.
 
-### Flavors: what may go where
-
-| flavor | applicationId | may use Google libraries? |
-|---|---|---|
-| `fdroid` | `dev.khoj.pitaka.fdroid` | **No.** F-Droid rejects any non-free dependency (Play Services, Play Core, Firebase, MLKit). |
-| `play` | `dev.khoj.pitaka` | Yes, when justified (today: Play Core for in-app updates). |
-
-The Dart code is identical in both; the difference is what the Android
-build links. Two things keep the `fdroid` flavor clean:
-
-1. **Flutter plugins link into EVERY flavor.** There is no way to add a pub
-   plugin to only one flavor. Before adding any plugin, open its
-   `android/build.gradle` (in `~/.pub-cache/hosted/pub.dev/<plugin>/`) and
-   look for `com.google.android.gms`, `com.google.android.play`, `firebase`
-   or `mlkit`. If any is there, do **not** add the plugin — write the feature
-   as flavor-split Kotlin instead (precedents: MLKit scanner → `flutter_zxing`;
-   `in_app_update` → our own `AppUpdateChannel.kt`).
-2. **Flavor-split Kotlin.** Put a class with the same name and public
-   surface in `android/app/src/play/kotlin/dev/khoj/pitaka/` (real
-   implementation) and `android/app/src/fdroid/kotlin/dev/khoj/pitaka/`
-   (inert no-op). `MainActivity` (in `src/main`) calls it without knowing
-   which one it got. The Google dependency goes into
-   `android/app/build.gradle.kts` as `"playImplementation"(…)` — never
-   `implementation(…)`. `AppUpdateChannel.kt` is the worked example; copy
-   its shape.
-
-Dependabot PRs are not exempt; the `fdroid-purity` CI job is the automated
-form of check 1, and it self-tests on every run by requiring the same grep to
-*match* on the `play` classpath (so a broken Gradle invocation cannot pass as
-"clean").
-
-Verify before tagging a release (neither `grep` may match — both print
-nothing; to prove the check works, run the second one on a `play` APK and
-watch it light up):
-
-```bash
-( cd android && ./gradlew -q :app:dependencies --configuration fdroidReleaseRuntimeClasspath 2>/dev/null ) \
-  | grep -E 'com\.google\.android\.(play|gms)|firebase|mlkit'
-flutter build apk --release --flavor fdroid --split-per-abi --target-platform=android-arm64
-unzip -p build/app/outputs/apk/fdroid/release/app-fdroid-arm64-v8a-release.apk 'classes*.dex' \
-  | strings -n 8 | grep -E 'google/android/(play|gms)|firebase|mlkit'
-```
-
-Release checklist (both stores build from the same tag): bump `version:` in
-`pubspec.yaml` (`x.y.z+N`); add Play changelog
-`fastlane/metadata/android/en-US/changelogs/N.txt` (≤ 500 characters — Play's
-limit) and F-Droid changelogs `N1.txt`, `N2.txt`, `N3.txt` (one per ABI split
-— the Gradle `abiCodes` rule makes versionCodes `N*10+1..3`); update the
-version in the status note at the top of this file; walk the
-Library → Vault → Settings path once with TalkBack on (5 minutes,
-architecture.md A6); run the on-device smoke test on a cleared install
-(`adb uninstall dev.khoj.pitaka.fdroid`, then
-`flutter test integration_test --flavor fdroid -d <device>` — it creates the
-vault, so it needs an empty app; architecture.md B1); run
-`tool/release_build.sh` and upload the verified `.aab` it prints; commit, tag
-`x.y.z` with an annotated signed tag (`git tag -s` — the script verifies),
-push the tag; then open the fdroiddata MR — see `fdroid/README.md`
-for the recipe side.
+**Shipping a version** — signing, the per-ABI versionCode scheme, the
+stale-artefact trap, `tool/release_build.sh` (the only way to build a Play
+`.aab`), the F-Droid recipe and the full checklist — is in
+`docs/RELEASING.md`. Do not type `flutter build appbundle` by hand.
 
 ## Quality gates
 
@@ -263,24 +221,16 @@ dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
 flutter analyze lib test                       # expect: No issues found!
 dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite (1868 tests on main as of 15 Oct 2026; 1441 at the 1.2.0 tag)
+flutter test                                   # full Dart suite
 ( cd rust && cargo fmt --check )               # rustfmt, zero diffs
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
-( cd rust && cargo test --release )            # native crate tests (35 run incl. 3 proptest properties; 2 #[ignore]d — need a real vault via PITAK_* env)
+( cd rust && cargo test --release )            # native crate tests (2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
 These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
-`.githooks/pre-commit` runs.
-
-**Schema version bumps** (architecture.md A4): every `schemaVersion` bump in
-`lib/core/database/app_database.dart` must (1) dump a new snapshot
-(`dart run drift_dev schema dump lib/core/database/app_database.dart
-drift_schemas/app_database/`), (2) regenerate the test helpers
-(`dart run drift_dev schema generate --data-classes --companions
-drift_schemas/app_database test/core/database/generated/`), and (3) add a row
-to the data matrix in `test/core/database/migration_test.dart`. A tripwire
-test fails if the snapshot for the current version is missing.
+`.githooks/pre-commit` runs. Schema version bumps have three extra steps —
+`docs/ARCHITECTURE.md` §5.4.
 
 Tip: the full widget suite can be slow under some harnesses — run by directory
 (`flutter test test/features/<area>`) to isolate a slow/hanging file.

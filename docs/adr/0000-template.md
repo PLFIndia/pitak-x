@@ -6,7 +6,7 @@
 ## Context
 
 <The forces at play: what problem, what constraints, what promises
-(architecture.md §1.2) are at risk.>
+(docs/ARCHITECTURE.md §1.1) are at risk.>
 
 ## Decision
 

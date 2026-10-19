@@ -55,9 +55,9 @@ part 'vault_session_controller.g.dart';
 class VaultSessionController extends _$VaultSessionController
     implements VaultLoanPurger, VaultLender, CatalogueReplacementGuard {
   /// Secret lifetime (held passphrase/S, active blob, pending secrets,
-  /// generation/lifetime fences) lives in this plain-Dart collaborator
-  /// (SOLID-PLAN S4) so the wipe invariants are unit-testable without vault
-  /// IO. See vault_secret_keeper.dart for the invariant list. Wired to
+  /// generation/lifetime fences) lives in this plain-Dart collaborator so
+  /// the wipe invariants are unit-testable without vault IO. See
+  /// vault_secret_keeper.dart for the invariant list. Wired to
   /// `ref.onDispose` in [build] — the wipe-on-dispose guarantee is unchanged.
   final VaultSecretKeeper _keeper = VaultSecretKeeper();
 

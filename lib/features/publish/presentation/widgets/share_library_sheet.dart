@@ -16,6 +16,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/application/my_library_card_controller.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/publish/application/share_card_style_controller.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
@@ -120,6 +122,10 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
     final settings = ref.watch(settingsControllerProvider).valueOrNull;
     final libraryName = settings?.libraryName ?? '';
     final address = settings?.publishContactAddress ?? '';
+    // The QR encodes the library-card payload when one exists (unpublished
+    // catalogue ⇒ null ⇒ the card falls back to the bare site URL, §5.8).
+    final card = ref.watch(myLibraryCardControllerProvider).valueOrNull;
+    final qrData = card == null ? null : LibraryCardPayload.encode(card);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -142,6 +148,7 @@ class _ShareLibrarySheetState extends ConsumerState<ShareLibrarySheet> {
                   libraryName: libraryName,
                   address: address,
                   url: widget.url,
+                  qrData: qrData,
                 ),
               ),
             ),

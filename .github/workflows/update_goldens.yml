@@ -1,7 +1,7 @@
 name: Update goldens
 
 # Regenerates the golden PNGs on the REFERENCE renderer (Linux —
-# architecture.md B2/D6: macOS rasterises text differently, so locally
+# golden tests are rendered on Linux CI: macOS rasterises text differently, so locally
 # generated goldens would flicker red on CI).
 #
 # Two ways to get fresh PNGs:

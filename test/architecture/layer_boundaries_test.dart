@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
-/// Architecture fitness functions beyond domain purity (architecture.md B4)
+/// Architecture fitness functions beyond domain purity (docs/ARCHITECTURE.md §2.1)
 /// plus the file-size ratchet (B8). Same style as
 /// `domain_purity_test.dart`: dependency-free source scanning, so the rules
 /// are enforced by `flutter test` with no extra tooling to supply-chain.
@@ -78,9 +78,13 @@ void main() {
 
   test('application and core/di import no Flutter UI libraries', () {
     // State orchestration and DI wiring never touch widgets; UI-only code
-    // lives in presentation (AGENTS §3.1).
+    // lives in presentation (AGENTS §3.1). flutter_map is on the list too
+    // (review M4): its TileLayer/NetworkTileProvider own an HTTP-client
+    // lifecycle, so they may only be constructed in presentation, per mount —
+    // never cached in a DI or application provider.
     final uiImport = RegExp(
-      r"^import 'package:flutter/(material|widgets|cupertino)\.dart'",
+      r"^import 'package:(flutter/(material|widgets|cupertino)\.dart|"
+      "flutter_map/)'",
     );
     final targets = <File>[
       ...featureFiles('/application/'),
@@ -95,8 +99,9 @@ void main() {
       violations,
       isEmpty,
       reason:
-          'application/core-di must not import Flutter UI libraries '
-          '(AGENTS §3.1). Violations:\n${violations.join('\n')}',
+          'application/core-di must not import Flutter UI libraries or '
+          'flutter_map (AGENTS §3.1, review M4). Violations:\n'
+          '${violations.join('\n')}',
     );
   });
 
@@ -119,7 +124,7 @@ void main() {
       isEmpty,
       reason:
           'Use appLog() (lib/core/platform/app_log.dart), never '
-          'print/debugPrint directly (architecture.md B5). Violations:\n'
+          'print/debugPrint directly (logging policy: nothing in release builds). Violations:\n'
           '${violations.join('\n')}',
     );
   });
@@ -173,7 +178,8 @@ void main() {
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      'lib/features/settings/presentation/pages/settings_page.dart': 682,
+      // settings_page.dart left this list on 2026-10-19: the community-library
+      // section moved to widgets/community_library_section.dart (631 → <500).
       'lib/features/library/presentation/pages/book_detail_page.dart': 676,
       'lib/features/publish/application/github_connection_controller.dart': 670,
       'lib/features/library/presentation/pages/add_book_page.dart': 638,
@@ -208,7 +214,7 @@ void main() {
           isEmpty,
           reason:
               'A file over 500 lines is a deliberate, reviewed size '
-              '(architecture.md B8). Split it, or add an allow-list entry in '
+              '(file-size ratchet, docs/ARCHITECTURE.md §2.1). Split it, or add an allow-list entry in '
               'layer_boundaries_test.dart with the reasoning. Violations:\n'
               '${violations.join('\n')}',
         );
@@ -242,7 +248,7 @@ void main() {
         isEmpty,
         reason:
             'File-size ratchet: allowed files may only shrink '
-            '(architecture.md B8/D9). Violations:\n${violations.join('\n')}',
+            '(file-size ratchet, docs/ARCHITECTURE.md §2.1). Violations:\n${violations.join('\n')}',
       );
     });
   });

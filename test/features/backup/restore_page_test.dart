@@ -44,6 +44,51 @@ class _RetainedRestoreController extends RestoreController {
   );
 }
 
+/// §5.10 outcome-copy fixture: identity adopted + 2 network rows restored.
+class _AdoptedRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    restoredIdentity: (id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'M'),
+    restoredNetwork: [],
+    identityAdopted: true,
+    networkApplied: true,
+    networkRestored: 2,
+  );
+}
+
+/// M9 fixture: the restore applied, but the archive dropped unreadable rows.
+class _DroppedRowsRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    restoredNetwork: [],
+    networkApplied: true,
+    networkRestored: 1,
+    networkRowsDropped: 2,
+  );
+}
+
+/// §5.10 outcome-copy fixture: identity present but not adoptable, network
+/// list unreadable — the two failure sentences.
+class _FailedExtrasRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 1,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    restoredIdentity: (id: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', name: 'M'),
+    networkInvalid: true,
+  );
+}
+
 class _FakeVault with VaultWriteUnsupported implements VaultRepository {
   @override
   Future<Either<Failure, VaultData>> unlockAndRead({
@@ -222,6 +267,7 @@ void main() {
     );
     await pick(tester);
     await tester.ensureVisible(find.text('Restore'));
+    await tester.pumpAndSettle(); // let the scroll settle before the tap
     await tester.tap(find.text('Restore'));
     await tester.pumpAndSettle();
     expect(find.text('Unlock the borrowers vault first.'), findsOneWidget);
@@ -393,6 +439,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'abc');
     await tester.pump();
     await tester.ensureVisible(find.text('Restore'));
+    await tester.pumpAndSettle(); // let the scroll settle before the tap
     await tester.tap(find.text('Restore'));
     await tester.pump();
     // The restore is now parked inside the (gated) vault unlock.
@@ -408,6 +455,155 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(lastSeen.error, isA<WrongPassphraseFailure>());
+  });
+
+  group('§5.10 — identity + network copy', () {
+    /// An archive that also carries identity.json + network.json.
+    Uint8List archiveWithExtras() {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 123,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+          'hasIdentity': true,
+          'hasNetwork': true,
+        }),
+      );
+      final identity = utf8.encode(
+        '{"libraryId": "${'a' * 32}", "libraryName": "Meera Road"}',
+      );
+      final network = utf8.encode('{"schemaVersion": 1, "libraries": []}');
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
+        ..addFile(ArchiveFile('identity.json', identity.length, identity))
+        ..addFile(ArchiveFile('network.json', network.length, network));
+      return Uint8List.fromList(ZipEncoder().encode(a)!);
+    }
+
+    testWidgets('inspection names the identity and lists the network', (
+      tester,
+    ) async {
+      await tester.pumpWidget(wrap(archiveWithExtras()));
+      await pick(tester);
+
+      expect(
+        find.text('• Library identity for "Meera Road" (restoring adopts it)'),
+        findsOneWidget,
+      );
+      expect(find.text('• Saved-libraries list'), findsOneWidget);
+    });
+
+    testWidgets('a flagged-but-invalid identity is called out, not promised', (
+      tester,
+    ) async {
+      final manifest = utf8.encode(
+        jsonEncode({
+          'schemaVersion': 1,
+          'exportedAt': 1,
+          'hasBooks': false,
+          'hasWishlist': false,
+          'hasBorrowers': false,
+          'hasBackupBlob': false,
+          'hasCovers': false,
+          'hasIdentity': true,
+        }),
+      );
+      final badIdentity = utf8.encode('{"libraryId": "NOPE"}');
+      final a = Archive()
+        ..addFile(ArchiveFile('manifest.json', manifest.length, manifest))
+        ..addFile(
+          ArchiveFile('identity.json', badIdentity.length, badIdentity),
+        );
+      final zip = Uint8List.fromList(ZipEncoder().encode(a)!);
+
+      await tester.pumpWidget(wrap(zip));
+      await pick(tester);
+
+      expect(
+        find.text('• Library identity (unreadable — it will not be adopted)'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('success sentences: identity adopted + libraries restored', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _AdoptedRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('This device now uses the backup’s library identity.'),
+        findsOneWidget,
+      );
+      expect(find.text('Saved libraries restored: 2'), findsOneWidget);
+    });
+
+    testWidgets('dropped network rows are named in one sentence (M9)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _DroppedRowsRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Saved libraries restored: 1'), findsOneWidget);
+      expect(
+        find.text(
+          '2 saved-libraries row(s) could not be read from the backup and '
+          'were skipped.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('failure sentences: identity not adopted, list unreadable', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _FailedExtrasRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(
+          'The library identity in this backup could not be adopted',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'The saved-libraries list in this backup could not be read',
+        ),
+        findsOneWidget,
+      );
+    });
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {

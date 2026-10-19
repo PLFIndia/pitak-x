@@ -2,8 +2,8 @@
 ///
 /// Library name + public address / GPS / email / phone — the info shown on
 /// the published page. Moved verbatim out of `publish_page.dart`
-/// (SOLID-PLAN S1) so the page file stays a thin renderer. Local state is
-/// UI-only: the text controllers and the edit/view toggle; persistence goes
+/// (render-only presentation, AGENTS §7) so the page file stays a thin
+/// renderer. Local state is UI-only: the text controllers and the edit/view toggle; persistence goes
 /// through `settingsControllerProvider`.
 library;
 
@@ -12,6 +12,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/labeled_value_field.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+
+/// Plain-words label for a location-sharing mode — the view-mode display row
+/// uses the same wording as the segmented control's segments.
+String sharingLabel(LocationSharing sharing) => switch (sharing) {
+  LocationSharing.off => 'Not shared',
+  LocationSharing.approximate => 'Approximate (~1 km)',
+  LocationSharing.exact => 'Exact',
+};
 
 /// The "Basic info" tab body.
 class BasicInfoTab extends ConsumerStatefulWidget {
@@ -28,6 +36,10 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
   final _gps = TextEditingController();
   final _email = TextEditingController();
   final _phone = TextEditingController();
+
+  /// Location-sharing choice being edited; null until Save writes it (the
+  /// segmented control then falls back to the persisted value).
+  LocationSharing? _sharing;
 
   bool _editing = false;
   bool _seeded = false;
@@ -48,6 +60,7 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
     _gps.text = s.publishContactGps;
     _email.text = s.publishContactEmail;
     _phone.text = s.publishContactPhone;
+    _sharing = s.publishLocationSharing;
     _seeded = true;
   }
 
@@ -60,6 +73,9 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
       email: _email.text,
       phone: _phone.text,
     );
+    // D7: the switch gates the published pin AND the network-map location —
+    // persisted through the single serialised settings writer (M16).
+    await notifier.setPublishLocationSharing(_sharing ?? LocationSharing.off);
     if (mounted) setState(() => _editing = false);
   }
 
@@ -82,7 +98,8 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
             Text(
               'This information appears publicly on your published library '
               'page so visitors can find and contact you. Every field is '
-              'optional — leave blank to show nothing.',
+              'optional — leave blank to show nothing. The location switch '
+              'below also decides what the Library network map may show.',
               style: textTheme.bodySmall,
             ),
             const SizedBox(height: 16),
@@ -107,10 +124,60 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
             const SizedBox(height: 16),
             LabeledValueField(
               label: 'GPS location',
-              hint: 'Coordinates as "lat, lng" — shown as a precise map pin',
+              hint: 'Coordinates as "lat, lng" — shown as a map pin',
               controller: _gps,
               editing: _editing,
             ),
+            const SizedBox(height: 8),
+            Text(
+              'Share my location on the network map',
+              style: textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            // 3-way opt-in (docs/ARCHITECTURE.md §6 location sharing): default is NOT SHARED — no
+            // coordinates leave the device until the user picks a precision.
+            // View mode shows the current choice as a plain value row (the
+            // LabeledValueField pattern this tab already uses) instead of a
+            // DISABLED control — disabled Material text fails the WCAG
+            // contrast guideline, and a read-only row says the same thing.
+            if (_editing)
+              SegmentedButton<LocationSharing>(
+                segments: const [
+                  ButtonSegment(
+                    value: LocationSharing.off,
+                    label: Text('Not shared'),
+                    tooltip: 'No coordinates are published anywhere',
+                  ),
+                  ButtonSegment(
+                    value: LocationSharing.approximate,
+                    label: Text('Approximate (~1 km)'),
+                    tooltip: 'Rounded to about 1.1 km — a city-map pin',
+                  ),
+                  ButtonSegment(
+                    value: LocationSharing.exact,
+                    label: Text('Exact'),
+                    tooltip: 'Published exactly as typed',
+                  ),
+                ],
+                selected: {_sharing ?? settings.publishLocationSharing},
+                onSelectionChanged: (selection) =>
+                    setState(() => _sharing = selection.first),
+                showSelectedIcon: false,
+                // 48 dp minimum tap height (accessibility guideline).
+                style: const ButtonStyle(
+                  minimumSize: WidgetStatePropertyAll(Size(0, 48)),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                child: Text(
+                  sharingLabel(_sharing ?? settings.publishLocationSharing),
+                  style: textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
+                ),
+              ),
             const SizedBox(height: 16),
             LabeledValueField(
               label: 'Email',

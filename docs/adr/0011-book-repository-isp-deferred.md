@@ -1,17 +1,17 @@
 # ADR 0011: `BookRepository` ISP split deferred
 
 - **Status:** Accepted
-- **Date:** 2026 (SOLID-PLAN D2; recorded 2026-10-16)
+- **Date:** 2026-10-14 (SOLID review; recorded 2026-10-16)
 
 ## Context
 
 The Interface Segregation Principle suggests splitting the broad
 `BookRepository` interface into role interfaces (catalogue reads, imports,
-merge, …). SOLID-PLAN item S6 scoped this split.
+merge, …). The 2026-10-14 SOLID review scoped this split.
 
 ## Decision
 
-Deferred (SOLID-PLAN D2). The repository has a single concrete
+Deferred. The repository has a single concrete
 implementation and a single consumer surface; splitting now adds files and
 indirection without a second client to justify it.
 

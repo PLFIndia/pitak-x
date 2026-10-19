@@ -7,6 +7,9 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/file_share.dart';
+import 'package:pitaka/core/widgets/qr_view.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
+import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
@@ -67,6 +70,9 @@ Widget _app(FileShareService share, {ShareCardStyleStore? styleStore}) {
       fileShareServiceProvider.overrideWithValue(share),
       if (styleStore != null)
         shareCardStyleStoreProvider.overrideWith((_) async => styleStore),
+      // The sheet's QR now encodes the library CARD (§5.8), which needs the
+      // published site URL — pin it so no manifest store / disk is touched.
+      publishedSiteUrlProvider.overrideWith((ref) async => _url),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -97,6 +103,9 @@ void main() {
     () => SharedPreferences.setMockInitialValues({
       'library_name': 'Riverside Community Library',
       'publish_contact_address': '12 Lakeview Road, Kochi',
+      // Fixed identity so the card fingerprint is deterministic (D3: the
+      // payload carries the FINGERPRINT, never this raw ID).
+      'library_id': 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
     }),
   );
 
@@ -182,6 +191,32 @@ void main() {
       expect(find.text('Share your library'), findsNothing);
     },
   );
+
+  testWidgets('the preview QR encodes the library-card payload (§5.8)', (
+    tester,
+  ) async {
+    await _open(tester, _app(_FakeShare()));
+
+    final qr = tester.widget<QrView>(
+      find.descendant(
+        of: find.byType(LibraryShareCard),
+        matching: find.byType(QrView),
+      ),
+    );
+    // One QR, two readers (D9): a camera opens the site, Pitak parses the
+    // fragment. The printed link line is unchanged (asserted elsewhere).
+    expect(qr.data, startsWith('$_url#pitak-card=1&fp='));
+    final card = LibraryCardPayload.parse(qr.data);
+    expect(card, isNotNull);
+    expect(card!.siteUrl, _url);
+    expect(
+      card.fingerprint,
+      LibraryFingerprint.of('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'),
+    );
+    expect(card.name, 'Riverside Community Library');
+    // Security: the raw library ID never appears in the payload.
+    expect(qr.data, isNot(contains('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')));
+  });
 
   testWidgets('"Share link only" shares the plain URL and closes', (
     tester,

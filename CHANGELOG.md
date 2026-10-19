@@ -15,9 +15,106 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **How Pitak works** — five short in-app guides (publish, map,
+  backup/restore/export/import, vault & lending, hubs & members) from the
+  drawer; each ends with a button to the screen it describes. The copy is a
+  typed, pure-Dart model (`features/guides/domain/`) with its invariants
+  under test. Settings can now be opened on a given tab
+  (`SettingsPage.initialTab`, `SettingsTab`), mirroring `PublishTab`.
+- `tool/release_build.sh --sentinel '<ASCII text>'` is now **required**: the
+  script extracts the bundle's arm64 `libapp.so` and refuses to pass if the
+  sentinel is absent — the check that would have caught both stale-snapshot
+  incidents (2026-09-03, 2026-10-18). Non-ASCII sentinels are rejected up
+  front (Dart stores such literals as UTF-16, which a byte scan misses).
+- `docs/ARCHITECTURE.md` — the app's shape in one place: product promises,
+  layer rules and the tests that enforce them, module map, crypto chain, and
+  every cross-device data contract (`library.json`, fingerprint, card QR,
+  Drift schema rules, `.pitabak` entries, validation bounds).
+- `docs/RELEASING.md` — the single release procedure: flavors and purity
+  check, per-ABI versionCodes, signing, the stale-artefact trap, the script,
+  the Play and F-Droid steps, toolchain pins, Play Console answers.
+
+### Changed
+- `README.md` keeps the front-door content (features, privacy posture,
+  getting started, quality gates) and points at the two docs for the rest.
+- Code comments that cited plan documents by item id (`architecture.md B3`,
+  `libNetwork.md §5.9`, `SOLID-PLAN S4`) now carry either the reason inline
+  or a pointer into `docs/ARCHITECTURE.md`.
+- Fixed: the 1.5.1 heading said versionCode 26; the release is `+27`.
+- Restore copy: the library logo is **not** restored (the setting that marks
+  a cover file as the logo is not in a `.pitabak`; `RestoreController`
+  clears a dangling reference). Restore said covers "including the library
+  logo" are replaced; it now lists the logo with the other things a restore
+  does not bring back, matching the Create-backup page and the backup guide.
+- `settings_page.dart` left the file-size-ratchet allow-list: the community
+  library section (Show / Scan library QR, Start a new library) moved to
+  `widgets/community_library_section.dart` unchanged.
+
+### Removed
+- Finished plan documents whose durable content moved into the two docs
+  above or already lived in ADRs: `architecture.md`, `SOLID-PLAN.md`,
+  `PLAN.md`, `libNetwork.md`, `libNetwork-handoff.md`, `fdroid/README.md`,
+  and the empty `rust_builder/README.md`.
+
+## [1.5.1] - 2026-10 (tag `1.5.1`, versionCode 27)
+
+### Added
+- **Map pin labels** (design 2026-10-18): the own pin
+  and every hub pin carry a permanent name label; any other pin shows its
+  label only while selected (pin tap toggles the label, label tap opens the
+  pin sheet; hub pins open it directly). "Hub" is derived from the rows —
+  `membership != none` or another row's `listedByHubUrl` — not stored. New
+  `map_pin_label.dart` widget + `hubSiteUrls`/`isHubRow` helpers.
+- **"Confirmed by member" badge**: refresh records whether a hub-listed
+  member's own `memberOf` links back to the listing hub (reciprocal consent
+  — the hub's `members` entry is the claim, the link-back is the member's
+  published agreement). Shown as a chip on list tiles and the map pin sheet
+  via `MembershipBadge`.
+- Home screen: a map button left of the scan icon opens the Library network
+  screen straight on its Map tab (`NetworkPage(initialTab: 1)`).
+- Network screen: an "Add bookmark" button beside "Add member" replaces the
+  app-bar add-by-URL icon (same dialog and flow).
+
+### Changed
+- flutter_map marker anchoring corrected: pins use `Alignment.topCenter`
+  (flutter_map's alignment is the marker's position RELATIVE TO the point),
+  so pin tips now sit ON their coordinate — `bottomCenter` had floated them
+  ~44 px below it.
+- Map viewport fit padding is asymmetric (top 120, sides 80, bottom 48) so
+  edge pins open with their 96 dp labels on-screen.
+
+### Database
+- Schema v4: `network_libraries.confirmed_by_member` (additive
+  `INTEGER NOT NULL DEFAULT 0` via `m.addColumn`). The v3 `createTable`
+  branch builds the table at its current shape, so the v3/v4 branches are
+  `else if` — proven by the v1→current migration test. New snapshot
+  `drift_schema_v4.json`, regenerated helpers, data-matrix row
+  "v3: a network row survives; confirmed_by_member defaults to false".
+
+## [1.5.0] - 2026-10 (tag `1.5.0`, versionCode 25)
+
+### Added
+- **Library network** (ADR 0012; contracts in `docs/ARCHITECTURE.md` §5): save other Pitak libraries
+  by URL or by scanning their library card QR in person; distance-sorted
+  list with membership/verification badges; user-initiated Refresh with
+  bounded discovery (two expansions, 500-row cap) and cancel; pending
+  membership confirmation with Reconsider; opt-in OpenStreetMap map tab
+  (`flutter_map`, consent-gated `networkMapTilesConsent`, app User-Agent,
+  HTTP-freshness tile cache, permanent attribution); own card QR with
+  fingerprint fragment for hub add-member flows.
+- Publish: `library.json` descriptor (fingerprint, name, site, optional
+  location, members/memberOf) rides along in the publish commit; opt-in
+  location sharing control (off / approximate ~1 km / exact) governs both
+  the descriptor and the `index.html` GPS pin.
+- Backup: `.pitabak` now carries `identity.json` (library ID + name) and
+  `network.json` (saved-libraries list), announced by new
+  `hasIdentity`/`hasNetwork` manifest flags (schema stays 1; both plain
+  JSON — documented honest limit). Restore adopts the identity through the
+  namespace port and replaces the network rows after the catalogue switch;
+  adoption failures are reported, never rolled back.
 - `LICENSE` (GPL-3.0-or-later) matching the F-Droid listing; `SECURITY.md`
   disclosure policy; `CONTRIBUTING.md` + PR template; `CHANGELOG.md`;
-  `docs/adr/` architecture decision records (architecture.md Phase 0).
+  `docs/adr/` architecture decision records.
 - CI: Dependabot for pub/cargo/github-actions; all actions SHA-pinned; OSV
   scan of both lockfiles; `fdroid-purity` job (no Google deps in the fdroid
   classpath); `update-goldens` workflow (A2, B2).
@@ -35,6 +132,11 @@ heading as part of the `chore(release):` commit.
   (B4, B8).
 
 ### Changed
+- **Bookmarks replaced by the library network** (D8): the bookmarks feature
+  is deleted; its saved links migrate one-time into the `network_libraries`
+  table (schema **v3**, data-matrix row included) on first open — on-device
+  only — and the prefs key is cleared. The drawer entry is now "Library
+  network".
 - All diagnostics route through `appLog` (debug builds only; release ships
   no logs to logcat) (B5).
 - `tool/release_build.sh` refuses a release whose version has no CHANGELOG
@@ -59,6 +161,17 @@ heading as part of the `chore(release):` commit.
   replays the failing case.
 - Architecture gate now also forbids `application → infrastructure` imports
   and recognises multi-line empty catch blocks.
+
+### Security
+- Library identities cross devices as SHA-256 **fingerprints**; the raw
+  library ID never appears in published files, cards, or logs (D3).
+- All descriptor/card/archive input is validated at the boundary: §6 char
+  rules for names (control/bidi rejection), the Pages-only URL allow-list
+  with a new 2048-char cap, bounded fetches (15 s, 64 KiB, redirect
+  re-validation per hop), discovery caps (D10).
+- Identity conflicts (a fetched fingerprint that belongs to another saved
+  row) are marked `identityConflict` and shown, never auto-merged (D12);
+  refused fetches never erase cached data or demote a known conflict.
 
 ## [1.4.0] - 2026-10 (tag `1.4.0`, versionCode 24)
 

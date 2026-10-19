@@ -110,7 +110,7 @@ void main() {
   );
 
   // Schema migrations are verified against committed drift snapshots in
-  // migration_test.dart (architecture.md A4) — the tripwire that used to
+  // migration_test.dart (docs/ARCHITECTURE.md §5.4) — the tripwire that used to
   // live here is replaced by its snapshot-existence check. Every
   // schemaVersion bump = dump a new snapshot + regenerate + extend the data
   // matrix (rule in README › Quality gates).
@@ -176,7 +176,9 @@ void main() {
         final version = await v2
             .customSelect('PRAGMA user_version')
             .getSingle();
-        expect(version.read<int>('user_version'), 2);
+        // The migration ran to the CURRENT schema (whatever version this
+        // build is at — pinning a literal here broke on the v3 bump).
+        expect(version.read<int>('user_version'), v2.schemaVersion);
         // Every row survived; the language-less one is untouched.
         final total = await v2
             .customSelect('SELECT COUNT(*) AS n FROM books')

@@ -1,5 +1,5 @@
-/// Unit tests for [SerialOpQueue] (SOLID-PLAN S4): FIFO serialization of
-/// vault mutations with error isolation between ops.
+/// Unit tests for [SerialOpQueue]: FIFO serialization of vault mutations
+/// with error isolation between ops.
 library;
 
 import 'dart:async';

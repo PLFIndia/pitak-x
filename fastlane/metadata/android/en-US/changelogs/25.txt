@@ -1,0 +1,3 @@
+* New: Library network replaces bookmarks (saved links migrate on first open) — save other Pitak libraries by link or card QR scan, see them distance-sorted with membership badges, browse an opt-in map, refresh to discover more.
+* New: optionally share your library's approximate or exact location on your published site.
+* Backups now carry your library identity and saved network; restores report anything they could not adopt.

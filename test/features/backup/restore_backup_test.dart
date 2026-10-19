@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:drift/drift.dart';
+import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -12,6 +12,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -143,16 +144,22 @@ void main() {
     return Uint8List.fromList(ZipEncoder().encode(a)!);
   }
 
-  String manifest({int schemaVersion = 1, bool hasBackupBlob = false}) =>
-      jsonEncode({
-        'schemaVersion': schemaVersion,
-        'exportedAt': 123,
-        'hasBooks': true,
-        'hasWishlist': true,
-        'hasBorrowers': hasBackupBlob,
-        'hasBackupBlob': hasBackupBlob,
-        'hasCovers': false,
-      });
+  String manifest({
+    int schemaVersion = 1,
+    bool hasBackupBlob = false,
+    bool hasIdentity = false,
+    bool hasNetwork = false,
+  }) => jsonEncode({
+    'schemaVersion': schemaVersion,
+    'exportedAt': 123,
+    'hasBooks': true,
+    'hasWishlist': true,
+    'hasBorrowers': hasBackupBlob,
+    'hasBackupBlob': hasBackupBlob,
+    'hasCovers': false,
+    if (hasIdentity) 'hasIdentity': true,
+    if (hasNetwork) 'hasNetwork': true,
+  });
 
   /// The pre-restore device vault store (inside the active generation).
   VaultStore vaultStore() => gen.store;
@@ -523,7 +530,7 @@ void main() {
       });
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final inspected = await r.inspectArchive(zip);
-      final m = inspected.getOrElse((f) => fail('unexpected: $f'));
+      final m = inspected.getOrElse((f) => fail('unexpected: $f')).manifest;
       expect(m.hasBackupBlob, isFalse);
       expect(m.hasBooks, isTrue);
       expect(m.hasWishlist, isTrue);
@@ -542,7 +549,7 @@ void main() {
       final r = restorer(_FakeVault(right(VaultData.empty)));
       final m = (await r.inspectArchive(
         zip,
-      )).getOrElse((f) => fail('unexpected: $f'));
+      )).getOrElse((f) => fail('unexpected: $f')).manifest;
       expect(m.hasBackupBlob, isTrue);
     });
 
@@ -600,5 +607,227 @@ void main() {
       // Fail closed BEFORE any device write.
       expect(await db.select(db.books).get(), isEmpty);
     });
+  });
+
+  group('§3.4 — identity.json / network.json entries', () {
+    const validId = 'cccccccccccccccccccccccccccccccc';
+
+    Uint8List networkJson(List<String> rows) =>
+        utf8.encode('{"schemaVersion": 1, "libraries": [${rows.join(',')}]}');
+
+    test('an archive WITHOUT the entries changes neither identity nor '
+        'network (Kotlin-era)', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredIdentity, isNull);
+      expect(summary.restoredNetwork, isNull);
+      expect(summary.identityInvalid, isFalse);
+      expect(summary.networkInvalid, isFalse);
+    });
+
+    test('valid entries are parsed + validated into the summary', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(
+          manifest(hasIdentity: true, hasNetwork: true),
+        ),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'identity.json': utf8.encode(
+          '{"libraryId": "$validId", "libraryName": "Meera Road"}',
+        ),
+        'network.json': networkJson([
+          '{"siteUrl": "https://hub.github.io/x/", "name": "Hub", "id": 5, "membership": "confirmed"}',
+        ]),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredIdentity!.id, validId);
+      expect(summary.restoredIdentity!.name, 'Meera Road');
+      final network = summary.restoredNetwork!;
+      expect(network.single.siteUrl, 'https://hub.github.io/x/');
+      expect(network.single.membership, MembershipState.confirmed);
+      expect(summary.identityInvalid, isFalse);
+      expect(summary.networkInvalid, isFalse);
+    });
+
+    test('an invalid identity.json is not adopted but IS reported', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasIdentity: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'identity.json': utf8.encode('{"libraryId": "NOT-HEX"}'),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final result = await r.restore(archiveBytes: zip);
+      // The catalogue restore itself is UNAFFECTED (additive extras never
+      // roll it back); the summary carries the truth.
+      final summary = result.getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.booksRestored, 1);
+      expect(summary.restoredIdentity, isNull);
+      expect(summary.identityInvalid, isTrue);
+    });
+
+    test('an oversized identity.json never reaches the JSON parser (L2 byte '
+        'cap) — not adopted, but reported', () async {
+      // A valid identity padded past the 4 KiB budget with a huge name. The
+      // zip extractor's per-entry cap (200 MiB, sized for covers) would
+      // happily inflate this; the reader's budget refuses it BEFORE decoding
+      // — fail closed like an invalid entry, exactly like the network cap.
+      final oversized = utf8.encode(
+        '{"libraryId": "$validId", "libraryName": "${'x' * (5 * 1024)}"}',
+      );
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasIdentity: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'identity.json': oversized,
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.booksRestored, 1); // the catalogue restore is unaffected
+      expect(summary.restoredIdentity, isNull);
+      expect(summary.identityInvalid, isTrue);
+
+      // Inspection (the restore page's peek) sees the same "unreadable".
+      final inspected = (await r.inspectArchive(
+        zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(inspected.manifest.hasIdentity, isTrue);
+      expect(inspected.identity, isNull);
+    });
+
+    test(
+      'one corrupt network row ⇒ the others restore, drop counted (§6)',
+      () async {
+        final zip = archive({
+          'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+          'books.db': buildBooksDb(),
+          'wishlist.db': buildWishlistDb(),
+          'network.json': networkJson([
+            '{"siteUrl": "https://good.github.io/x/", "name": "Good", "id": 1}',
+            '{"siteUrl": "https://evil.example.com/", "id": 2}',
+          ]),
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final summary = (await r.restore(
+          archiveBytes: zip,
+        )).getOrElse((f) => fail('unexpected: $f'));
+        expect(summary.restoredNetwork, hasLength(1));
+        expect(summary.restoredNetwork!.single.name, 'Good');
+        expect(summary.networkRowsDropped, 1);
+        expect(summary.networkInvalid, isFalse);
+      },
+    );
+
+    test('duplicate network rows collapse first-wins (M9) — a duplicated '
+        'siteUrl used to make the whole replaceAll fail on UNIQUE', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'network.json': networkJson([
+          '{"siteUrl": "https://dup.github.io/x/", "name": "First", "id": 1}',
+          '{"siteUrl": "https://dup.github.io/x/", "name": "Second", "id": 2}',
+          '{"siteUrl": "https://fine.github.io/y/", "name": "Fine", "id": 3}',
+        ]),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredNetwork!.map((row) => row.name), [
+        'First',
+        'Fine',
+      ]);
+      expect(summary.networkRowsDropped, 1);
+      expect(summary.networkInvalid, isFalse);
+    });
+
+    test('an oversized network.json reads as unusable (M9 byte cap)', () async {
+      // A valid row padded past the 4 MiB entry budget with a huge name.
+      // The zip extractor's per-entry cap (200 MiB, sized for covers) would
+      // happily inflate this; the codec budget refuses it BEFORE the JSON
+      // parser sees it — fail closed like a corrupt envelope.
+      final padded =
+          '{"siteUrl": "https://big.github.io/x/", "name": "${'x' * (4 * 1024 * 1024)}"}';
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'network.json': networkJson([padded]),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredNetwork, isNull);
+      expect(summary.networkInvalid, isTrue);
+    });
+
+    test('a flagged-but-unreadable network.json ⇒ networkInvalid', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest(hasNetwork: true)),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+        'network.json': utf8.encode('{broken'),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(
+        archiveBytes: zip,
+      )).getOrElse((f) => fail('unexpected: $f'));
+      expect(summary.restoredNetwork, isNull);
+      expect(summary.networkInvalid, isTrue);
+    });
+
+    test(
+      'inspectArchive surfaces the identity for the restore-page copy',
+      () async {
+        final zip = archive({
+          'manifest.json': utf8.encode(manifest(hasIdentity: true)),
+          'books.db': buildBooksDb(),
+          'wishlist.db': buildWishlistDb(),
+          'identity.json': utf8.encode(
+            '{"libraryId": "$validId", "libraryName": "Meera Road"}',
+          ),
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final inspected = (await r.inspectArchive(
+          zip,
+        )).getOrElse((f) => fail('unexpected: $f'));
+        expect(inspected.manifest.hasIdentity, isTrue);
+        expect(inspected.identity!.name, 'Meera Road');
+        expect(inspected.identity!.id, validId);
+      },
+    );
+
+    test(
+      'inspectArchive yields a null identity when the entry is invalid',
+      () async {
+        final zip = archive({
+          'manifest.json': utf8.encode(manifest(hasIdentity: true)),
+          'books.db': buildBooksDb(),
+          'wishlist.db': buildWishlistDb(),
+          'identity.json': utf8.encode('{"libraryId": "NOPE"}'),
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final inspected = (await r.inspectArchive(
+          zip,
+        )).getOrElse((f) => fail('unexpected: $f'));
+        // Flag true (the page says "unreadable"), identity null.
+        expect(inspected.manifest.hasIdentity, isTrue);
+        expect(inspected.identity, isNull);
+      },
+    );
   });
 }

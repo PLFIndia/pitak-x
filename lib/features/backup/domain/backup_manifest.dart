@@ -20,6 +20,8 @@ class BackupManifest {
     this.hasBorrowers = true,
     this.hasBackupBlob = true,
     this.hasCovers = false,
+    this.hasIdentity = false,
+    this.hasNetwork = false,
     this.backupHint,
   });
 
@@ -49,6 +51,16 @@ class BackupManifest {
   /// Whether the archive bundles `cover_*` entries.
   final bool hasCovers;
 
+  /// Whether the archive contains `identity.json` (docs/ARCHITECTURE.md §5.5).
+  /// Default false: Kotlin-era and pre-network archives lack the entry, and
+  /// the flag being absent must read as "not there", never "corrupt".
+  final bool hasIdentity;
+
+  /// Whether the archive contains `network.json` (docs/ARCHITECTURE.md §5.5) — the
+  /// saved-libraries list. Same default-false forward-compat rule as
+  /// [hasIdentity].
+  final bool hasNetwork;
+
   /// Optional user-facing passphrase hint.
   final String? backupHint;
 
@@ -73,6 +85,8 @@ class BackupManifest {
       hasBorrowers: _asBool(decoded['hasBorrowers']) ?? true,
       hasBackupBlob: _asBool(decoded['hasBackupBlob']) ?? true,
       hasCovers: _asBool(decoded['hasCovers']) ?? false,
+      hasIdentity: _asBool(decoded['hasIdentity']) ?? false,
+      hasNetwork: _asBool(decoded['hasNetwork']) ?? false,
       backupHint: decoded['backupHint'] is String
           ? decoded['backupHint'] as String
           : null,
@@ -92,6 +106,8 @@ class BackupManifest {
       'hasBorrowers': hasBorrowers,
       'hasBackupBlob': hasBackupBlob,
       'hasCovers': hasCovers,
+      'hasIdentity': hasIdentity,
+      'hasNetwork': hasNetwork,
       if (backupHint != null) 'backupHint': backupHint,
     };
     return const JsonEncoder.withIndent('  ').convert(map);

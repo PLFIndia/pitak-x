@@ -1,4 +1,4 @@
-/// S2 widget tests (SOLID-PLAN): the vault loan row resolves book titles
+/// Widget tests: the vault loan row resolves book titles
 /// through `bookTitleProvider` — the widget itself does no repository IO —
 /// and falls back to "Book #id" (fail-soft, no raw error text) when the
 /// read fails or the book is missing.

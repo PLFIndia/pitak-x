@@ -1,4 +1,4 @@
-/// Platform/OS-level DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Platform/OS-level DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: document/generation paths, the wall clock (+ the periodic
 /// tick), the bounded HTTP clients, OS screen-security and share-sheet seams,

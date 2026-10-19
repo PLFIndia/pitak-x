@@ -213,7 +213,7 @@ final publishedFileFetcherProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PublishedFileFetcherRef = AutoDisposeProviderRef<PublishedFileFetcher>;
-String _$viewerHtmlFactoryHash() => r'341b7961fe4a972e730e7da176011335efce9112';
+String _$viewerHtmlFactoryHash() => r'413b4a5cb4c970060bbcf1dcc9511344c1fbc407';
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
 /// effect, so it lives behind this seam) and substitutes the library values.

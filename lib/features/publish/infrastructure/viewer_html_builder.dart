@@ -11,6 +11,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Assembles the viewer HTML bytes for upload.
 final class ViewerHtmlBuilder {
@@ -18,6 +19,7 @@ final class ViewerHtmlBuilder {
   const ViewerHtmlBuilder({
     required this.libraryName,
     required this.contact,
+    required this.sharing,
     this.logoDataUrl = '',
   });
 
@@ -30,10 +32,18 @@ final class ViewerHtmlBuilder {
   /// Optional public contact triple.
   final PublishContact contact;
 
+  /// Location-sharing switch (docs/ARCHITECTURE.md §6 location sharing) — gates the GPS pin exactly
+  /// as it gates the `library.json` location block.
+  final LocationSharing sharing;
+
   /// Loads the template and returns the substituted HTML bytes.
   Future<List<int>> build() async {
     final template = await rootBundle.loadString('assets/publish/index.html');
-    final contactHtml = PublishContactLinks.render(contact, escape: _esc);
+    final contactHtml = PublishContactLinks.render(
+      contact,
+      escape: _esc,
+      sharing: sharing,
+    );
     final html = template
         .replaceAll('{{LIBRARY_NAME}}', _esc(_nonBlank(libraryName)))
         .replaceAll('{{LOGO_DATA_URL}}', _esc(_safeLogoDataUrl(logoDataUrl)))

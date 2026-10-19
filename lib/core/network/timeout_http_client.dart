@@ -92,6 +92,16 @@ final class TimeoutHttpClient extends http.BaseClient {
     // so the message names the bound that tripped.
     final deadline = _RequestDeadline(totalDeadline);
 
+    // A caller that handed us an ABORTABLE request keeps its own abort
+    // authority: its trigger completes OUR signal, so the inner request sees
+    // one trigger that fires for either reason (our limits or theirs).
+    // `_abortable` below re-wraps every request with our signal only — before
+    // this line the caller's trigger was simply dropped, and e.g. the bounded
+    // fetcher's 15 s deadline stopped nothing (review finding H2).
+    if (request case http.Abortable(:final abortTrigger?)) {
+      unawaited(abortTrigger.then((_) => deadline.abort()));
+    }
+
     final http.StreamedResponse resp;
     try {
       // (1) Connect + headers. `Future.timeout` alone would only stop
@@ -150,7 +160,9 @@ final class TimeoutHttpClient extends http.BaseClient {
   /// abortable, so the decorator does it here. Only `Request` bodies exist in
   /// this app (no multipart/streamed uploads), so copying `bodyBytes` is
   /// lossless; anything else is passed through unchanged (bounded but not
-  /// abortable) rather than silently mangled.
+  /// abortable) rather than silently mangled. A caller's own `abortTrigger`
+  /// (an `AbortableRequest` IS a `Request`) is not lost: `send` chains it
+  /// into [trigger] before calling this.
   http.BaseRequest _abortable(http.BaseRequest original, Future<void> trigger) {
     if (original is! http.Request) return original;
     return http.AbortableRequest(

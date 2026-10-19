@@ -59,9 +59,9 @@ android/build/
 android/key.properties
 *.jks
 
-# Local-only engineering reference (machine paths, keystore location, Play
-# Console answers, release status). Kept out of the public repo by choice;
-# PLAN.md and README.md are the public-facing companions.
+# Local-only notes (machine paths, keystore location, personal scratch).
+# Everything a contributor needs is tracked: docs/ARCHITECTURE.md and
+# docs/RELEASING.md are the public companions.
 appDetails.md
 *.keystore
 
@@ -71,3 +71,6 @@ GOOGLE_PLAY_FORM_RESPONSES.md
 # FVM: the Flutter version PIN is the tracked `.fvmrc`. `.fvm/` is per-machine
 # (a symlink into the SDK cache + legacy config) and must not be committed.
 .fvm/
+
+# Golden-test diff artefacts (written by flutter_test on a failed comparison)
+/test/golden/failures/

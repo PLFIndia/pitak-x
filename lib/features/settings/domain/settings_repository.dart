@@ -65,6 +65,20 @@ abstract interface class SettingsRepository {
     required String phone,
   });
 
+  /// Persists the location-sharing mode (docs/ARCHITECTURE.md §6 location sharing): governs the
+  /// published GPS pin AND the network descriptor's location. Off means no
+  /// coordinates leave the device in any published file.
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  );
+
+  /// Persists the OpenStreetMap tiles consent (docs/ARCHITECTURE.md §1 network egress). When
+  /// false, the network map never builds and no tile request ever leaves the
+  /// device. Non-secret; default false.
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  });
+
   /// Persists the user's library-logo reference (`covers/<uuid>.jpg`), or blank
   /// to clear it. Non-secret; the image lives on-device under app docs.
   Future<Either<Failure, Unit>> setLibraryLogo(String reference);

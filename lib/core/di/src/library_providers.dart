@@ -1,4 +1,4 @@
-/// Library-feature DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Library-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the book repository, cover store/coordinator/janitor,
 /// the library read models and the add/update/delete/find use cases.

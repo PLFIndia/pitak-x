@@ -16,8 +16,9 @@
 ///   3. Events — the poster editor (embedded EventsView); the library campaign
 ///      action deep-links to this tab so there is a single Events surface.
 ///
-/// Pure presentation (SOLID-PLAN S1): all Connection-tab orchestration — the
-/// device flow, token persistence, repo setup, publishing — lives in
+/// Pure presentation (render-only, AGENTS §7): all Connection-tab
+/// orchestration — the device flow, token persistence, repo setup,
+/// publishing — lives in
 /// `GitHubConnectionController`. This widget only renders the controller's
 /// state, forwards intents to it, and owns the dialogs (which are UI).
 library;

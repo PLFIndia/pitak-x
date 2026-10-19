@@ -1,4 +1,4 @@
-# cargo-deny configuration for pitak_crypto (architecture.md A3, D2).
+# cargo-deny configuration for pitak_crypto: advisories, licenses, bans, sources.
 # One tool replaces cargo-audit: advisories + licenses + bans + sources.
 # Policy intent: everything must be GPL-3.0-or-later compatible; unsound and
 # unmaintained crates are ERRORS (the same policy `cargo audit --deny
@@ -21,7 +21,7 @@ yanked = "deny"
 # Exactly the licenses present in today's graph (cargo-deny warns on unused
 # allowances, keeping this list honest). The vendored OpenSSL/SQLCipher C
 # code built by rusqlite carries no crate license tag; its licenses
-# (Apache-2.0 / BSD-style) are GPL-compatible per architecture.md A1.
+# (Apache-2.0 / BSD-style) are GPL-compatible per LICENSE must match the F-Droid listing.
 allow = [
   "MIT",
   "Apache-2.0",

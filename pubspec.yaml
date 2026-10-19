@@ -21,7 +21,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # F-Droid ships one APK per ABI (--split-per-abi); android/app/build.gradle.kts
 # rewrites each split's versionCode to (this +number)*10 + {1,2,3}, i.e.
 # 611/612/613, matching the recipe's VercodeOperation. All stay > the live 4.
-version: 1.4.0+24
+version: 1.5.1+27
 
 environment:
   sdk: ^3.11.0
@@ -141,6 +141,18 @@ dependencies:
   # the existing downscale; no network, no new data leaves the device.
   image_cropper: ^12.2.1
   font_awesome_flutter: ^11.0.0
+  # Network map (docs/ARCHITECTURE.md §3 network): the canonical FOSS Flutter map widget
+  # (BSD-3, pure Dart — no native code, no Google Play Services, so the
+  # F-Droid build stays clean). Renders OpenStreetMap raster tiles; tiles are
+  # fetched ONLY while the map tab is open and ONLY after the user accepts
+  # the tiles-consent dialog (`networkMapTilesConsent`). The OSM tile
+  # endpoint sees the device IP and viewed area — that is the whole point of
+  # the consent gate (PRIVACY.md).
+  flutter_map: ^8.3.2
+  # Latitude/longitude value type used by flutter_map's API. Already
+  # transitive via flutter_map; pinned direct so the map code can name
+  # `LatLng` without depending on a transitive version drifting.
+  latlong2: ^0.9.1
   # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
   # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
   # `in_app_update` plugin: a plugin links Google's proprietary Play Core
@@ -149,7 +161,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  # On-device smoke test (architecture.md B1): FFI + Keystore + real file IO
+  # On-device smoke test (run by hand before a release): FFI + Keystore + real file IO
   # never run in the Dart VM. First-party plugin; its Android side uses
   # AndroidX test only — no Google Play/Firebase deps (flavor rule checked;
   # README › Flavors). Runs by hand, not in CI (D4):

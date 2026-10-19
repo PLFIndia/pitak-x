@@ -20,9 +20,9 @@ interface. Google-dependent Flutter plugins are never added.
 
 ## Consequences
 
-- The README "Flavors: what may go where" section documents the check to
+- `docs/RELEASING.md` §2 documents the check to
   run before adding any plugin, plus verification commands.
 - CI enforces purity automatically via the `fdroid-purity` job
-  (architecture.md A2): the `fdroidReleaseRuntimeClasspath` dependency list
+  (supply chain: pinned actions + Dependabot): the `fdroidReleaseRuntimeClasspath` dependency list
   must not match Google coordinates.
 - Dependabot plugin bumps are explicitly not exempt from this check.

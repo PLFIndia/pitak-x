@@ -153,3 +153,100 @@ class WishlistBooks extends Table {
   BoolColumn get needsMetadata =>
       boolean().named('needs_metadata').withDefault(const Constant(false))();
 }
+
+/// Saved libraries on the network (docs/ARCHITECTURE.md §5.4, schema v3).
+///
+/// One row per OTHER library the user cares about — a bookmark, a hub's
+/// member added by card scan, or a library discovered through a fetched
+/// descriptor. The row is the single truth the old bookmarks list was
+/// replaced by (ADR 0012): `siteUrl` is the natural key (unique), and the
+/// published identity is the `fingerprint` (never the raw library ID, D3).
+///
+/// Unlike books/wishlist this table is NOT Room-mirrored: nothing here needs
+/// byte-compatibility with the Kotlin schema, so the uniqueness constraints
+/// are declared drift-side (`uniqueKeys`, `.unique()`) and appear in the
+/// schema snapshots — no raw-SQL indexes to babysit in `beforeOpen`.
+@DataClassName('NetworkLibraryRow')
+class NetworkLibraries extends Table {
+  @override
+  String get tableName => 'network_libraries';
+
+  /// Per-device autoincrement id.
+  IntColumn get id => integer().autoIncrement()();
+
+  /// Published site root URL (`BookmarkUrl`-normalized) — the natural key.
+  TextColumn get siteUrl => text().named('site_url').unique()();
+
+  /// Display name ('' until known — a URL-added row before its first fetch).
+  TextColumn get name => text().withDefault(const Constant(''))();
+
+  /// Published identity fingerprint (64 lowercase hex), or NULL until a
+  /// fetch/scan supplies it. UNIQUE among non-null values: SQLite treats
+  /// NULLs as distinct in a UNIQUE constraint, so any number of
+  /// not-yet-identified rows may coexist while two rows can never claim the
+  /// same fingerprint.
+  TextColumn get fingerprint => text().nullable()();
+
+  /// Opted-in latitude, or NULL when the library publishes none.
+  RealColumn get lat => real().nullable()();
+
+  /// Opted-in longitude, or NULL when the library publishes none.
+  RealColumn get lng => real().nullable()();
+
+  /// `LocationPrecision` token for lat/lng ('approximate'|'exact'), NULL
+  /// exactly when the coordinates are NULL.
+  TextColumn get precision => text().nullable()();
+
+  /// How the row got here: `NetworkSource` token
+  /// ('bookmark'|'card'|'discovered').
+  TextColumn get source => text()();
+
+  /// True when I (as a hub) added this library by scanning its card.
+  BoolColumn get isMember =>
+      boolean().named('is_member').withDefault(const Constant(false))();
+
+  /// True when a fetch confirmed the published fingerprint equals the one
+  /// scanned from the card (in-person add + network agreement).
+  BoolColumn get memberVerified =>
+      boolean().named('member_verified').withDefault(const Constant(false))();
+
+  /// For discovered rows: the hub site URL whose descriptor listed this
+  /// library (NULL for seeds).
+  TextColumn get listedByHubUrl =>
+      text().named('listed_by_hub_url').nullable()();
+
+  /// Am I a member of THIS row (when it is a hub)? `MembershipState` token
+  /// ('none'|'pending'|'confirmed'|'declined').
+  TextColumn get membership => text().withDefault(const Constant('none'))();
+
+  /// Last descriptor-fetch outcome: `FetchStatus` token
+  /// ('never'|'ok'|'unreachable'|'invalid'|'schemaTooNew'|'identityConflict').
+  TextColumn get fetchStatus =>
+      text().named('fetch_status').withDefault(const Constant('never'))();
+
+  /// Epoch millis of the last successful descriptor fetch (NULL = never).
+  IntColumn get fetchedAt => integer().named('fetched_at').nullable()();
+
+  /// Epoch millis when the row was created on this device.
+  IntColumn get createdAt => integer().named('created_at')();
+
+  /// Display order among the user's own rows (preserves the old bookmark
+  /// order through the one-time migration; new rows append).
+  IntColumn get sortOrder => integer().named('sort_order')();
+
+  /// For rows a hub listed (`listed_by_hub_url`): the member's OWN
+  /// descriptor links back to that hub via `memberOf` — the reciprocal
+  /// consent behind the "Confirmed by member" badge (schema v4).
+  BoolColumn get confirmedByMember => boolean()
+      .named('confirmed_by_member')
+      .withDefault(const Constant(false))();
+
+  /// Fingerprint is unique among non-null values (see the column doc). The
+  /// drift-visible UNIQUE ends up in the schema snapshot, which the
+  /// migration tests validate against — a raw-SQL index would be invisible
+  /// there.
+  @override
+  List<Set<Column>> get uniqueKeys => [
+    {fingerprint},
+  ];
+}

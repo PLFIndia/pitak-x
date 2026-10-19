@@ -1,4 +1,4 @@
-/// Drift database for the non-secret stores (books + wishlist).
+/// Drift database for the non-secret stores (books + wishlist + network).
 ///
 /// The encrypted borrowers vault is NOT here — it is owned by the Rust core
 /// (decision: secrets never live in Dart-side storage). FTS5 mirrors the
@@ -17,8 +17,8 @@ part 'app_database.g.dart';
 const _ftsColumns =
     'title, title_transliteration, author, isbn, location, genre';
 
-/// The non-secret application database (books + wishlist + FTS5).
-@DriftDatabase(tables: [Books, WishlistBooks])
+/// The non-secret application database (books + wishlist + network).
+@DriftDatabase(tables: [Books, WishlistBooks, NetworkLibraries])
 class AppDatabase extends _$AppDatabase {
   /// Opens the database over the given [executor].
   AppDatabase(super.executor);
@@ -27,14 +27,34 @@ class AppDatabase extends _$AppDatabase {
   ///  1 — initial (books + wishlist + FTS5).
   ///  2 — no shape change; data clean-up: one spelling per language
   ///      (Session 33, [_collapseLanguageSpellings]).
+  ///  3 — `network_libraries` table added (docs/ARCHITECTURE.md §3 network): saved libraries
+  ///      on the network replace the old prefs bookmarks (ADR 0012).
+  ///  4 — `network_libraries.confirmed_by_member` added (design 2026-10-18):
+  ///      reciprocal member→hub consent (`memberOf` link-back) for the
+  ///      "Confirmed by member" badge.
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
       if (from < 2) await _collapseLanguageSpellings();
+      // v3: a brand-new empty table — drift creates it from the snapshot-
+      // validated definition; the legacy bookmarks data migration into it
+      // happens separately (prefs → rows, docs/ARCHITECTURE.md §3 network), not here.
+      //
+      // ELSE-IF, not two ifs: `createTable` builds the table at its CURRENT
+      // definition, which already includes the v4 column — a v1/v2 database
+      // taking the create branch must not also run `addColumn` (duplicate
+      // column error, proven by the v1→current migration test).
+      if (from < 3) {
+        await m.createTable(networkLibraries);
+      } else if (from < 4) {
+        // v4: an additive boolean with a default — existing rows read as
+        // "not confirmed" until the next refresh re-evaluates the link-back.
+        await m.addColumn(networkLibraries, networkLibraries.confirmedByMember);
+      }
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a

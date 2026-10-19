@@ -1,4 +1,5 @@
-/// Database + preferences DI bindings (AGENTS.md §4; SOLID-PLAN S3).
+/// Database + preferences DI bindings (AGENTS.md §4; one DI module per
+/// feature).
 ///
 /// What lives here: the Drift catalogue database (opened inside the active
 /// data generation), its path companions, and SharedPreferences — the

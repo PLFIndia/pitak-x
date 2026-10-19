@@ -10,6 +10,9 @@
 /// from validated/encoded parts.
 library;
 
+import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+
 /// A user-supplied contact set for the published page.
 final class PublishContact {
   /// Creates a contact. All fields optional (blank = omitted).
@@ -37,19 +40,29 @@ final class PublishContact {
 abstract final class PublishContactLinks {
   /// Builds the inner HTML, or '' when nothing is set. [escape] escapes for the
   /// HTML context (injected so it stays pure/testable).
+  ///
+  /// [sharing] is the user's location-sharing switch (docs/ARCHITECTURE.md §6 location sharing — one
+  /// switch, one meaning): it gates the GPS pin here on `index.html` exactly
+  /// as it gates the `location` block of `library.json`. `off` hides the pin
+  /// entirely (the address SEARCH link is unaffected — an address is what the
+  /// user typed into a different field); `approximate` publishes coordinates
+  /// rounded to ~1.1 km (and nothing at all for non-coordinate text, which
+  /// cannot be rounded); `exact` publishes them as typed.
   static String render(
     PublishContact contact, {
     required String Function(String) escape,
+    required LocationSharing sharing,
   }) {
     final items = <String>[];
-    // Address → a Maps search link (free text). GPS → a precise pin.
+    // Address → a Maps search link (free text).
     final addr = locationHref(contact.address);
     if (addr != null) {
       items.add(_anchor(addr, '📍 ${contact.address.trim()}', escape));
     }
-    final pin = locationHref(contact.gps);
+    // GPS → a pin governed by the sharing switch (D7).
+    final pin = gpsItem(contact.gps, sharing);
     if (pin != null) {
-      items.add(_anchor(pin, '🗺 ${contact.gps.trim()}', escape));
+      items.add(_anchor(pin.$1, '🗺 ${pin.$2}', escape));
     }
     final mail = emailHref(contact.email);
     if (mail != null) {
@@ -61,6 +74,34 @@ abstract final class PublishContactLinks {
     }
     if (items.isEmpty) return '';
     return '<div class="contact">${items.join()}</div>';
+  }
+
+  /// The GPS pin as (href, label) under [sharing], or null when nothing may be
+  /// shown. The label carries the EFFECTIVE coordinates — under `approximate`
+  /// the page text must not leak the exact value the href hides.
+  ///
+  /// A gps value that is not a coordinate pair ("behind the temple") cannot
+  /// be coarsened, so it is published ONLY under `exact` (the historical
+  /// search-link fallback: free text the user chose to publish precisely).
+  /// Under `approximate` it is dropped: D7 promises "about 1 km", and a
+  /// street description can be far more precise than that. Fail closed.
+  static (String, String)? gpsItem(String raw, LocationSharing sharing) {
+    if (sharing == LocationSharing.off) return null;
+    final v = raw.trim();
+    if (v.isEmpty) return null;
+    final point = GeoPoint.parse(v);
+    if (point == null) {
+      if (sharing == LocationSharing.approximate) return null;
+      final href = locationHref(v); // search-link fallback, exact only
+      return href == null ? null : (href, v);
+    }
+    final effective = sharing == LocationSharing.approximate
+        ? point.coarsen()
+        : point;
+    return (
+      'https://www.google.com/maps?q=${effective.lat},${effective.lng}',
+      '${effective.lat}, ${effective.lng}',
+    );
   }
 
   static String _anchor(
@@ -76,22 +117,13 @@ abstract final class PublishContactLinks {
   static String? locationHref(String raw) {
     final v = raw.trim();
     if (v.isEmpty) return null;
-    final latLng = _parseLatLng(v);
-    if (latLng != null) {
-      return 'https://www.google.com/maps?q=${latLng.$1},${latLng.$2}';
+    // GeoPoint.parse is the single "lat, lng" rule in the app (docs/ARCHITECTURE.md
+    // §5.6): the network descriptor and the map pins validate identically.
+    final point = GeoPoint.parse(v);
+    if (point != null) {
+      return 'https://www.google.com/maps?q=${point.lat},${point.lng}';
     }
     return 'https://www.google.com/maps/search/?api=1&query=${_urlEncode(v)}';
-  }
-
-  static (double, double)? _parseLatLng(String v) {
-    final parts = v.split(',').map((s) => s.trim()).toList();
-    if (parts.length != 2) return null;
-    final lat = double.tryParse(parts[0]);
-    final lng = double.tryParse(parts[1]);
-    if (lat == null || lng == null) return null;
-    if (lat < -90.0 || lat > 90.0) return null;
-    if (lng < -180.0 || lng > 180.0) return null;
-    return (lat, lng);
   }
 
   /// Email → `mailto:`, or null when blank / obviously not an email.

@@ -131,6 +131,7 @@ class LibraryShareCard extends StatelessWidget {
     required this.libraryName,
     required this.address,
     required this.url,
+    this.qrData,
     super.key,
   });
 
@@ -155,8 +156,16 @@ class LibraryShareCard extends StatelessWidget {
   /// Raw public address (blank → line omitted).
   final String address;
 
-  /// Full published URL — encoded verbatim into the QR.
+  /// Full published URL — printed on the card (the link line) and the QR
+  /// fallback payload.
   final String url;
+
+  /// What the QR actually encodes (docs/ARCHITECTURE.md §5.3): the library-card
+  /// payload `<siteUrl>#pitak-card=1&fp=…&n=…` when this library has one, so
+  /// a Pitak scanner can adopt the library as a member while a phone camera
+  /// still just opens the site (D9). Null falls back to [url] — the printed
+  /// link line NEVER changes, only the QR's data.
+  final String? qrData;
 
   @override
   Widget build(BuildContext context) {
@@ -194,6 +203,7 @@ class LibraryShareCard extends StatelessWidget {
                         name: name,
                         address: trimmedAddress,
                         url: url,
+                        qrData: qrData ?? url,
                         // Slightly less top padding when the band eats 18px.
                         topPadding: palette.band == null ? 56 : 44,
                       ),
@@ -216,6 +226,7 @@ class _Body extends StatelessWidget {
     required this.name,
     required this.address,
     required this.url,
+    required this.qrData,
     required this.topPadding,
   });
 
@@ -223,6 +234,7 @@ class _Body extends StatelessWidget {
   final String name;
   final String address;
   final String url;
+  final String qrData;
   final double topPadding;
 
   static const double _logoSize = 120;
@@ -301,7 +313,7 @@ class _Body extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 48),
-          _QrColumn(palette: palette, url: url),
+          _QrColumn(palette: palette, data: qrData),
         ],
       ),
     );
@@ -343,10 +355,12 @@ class _MonogramTile extends StatelessWidget {
 }
 
 class _QrColumn extends StatelessWidget {
-  const _QrColumn({required this.palette, required this.url});
+  const _QrColumn({required this.palette, required this.data});
 
   final ShareCardPalette palette;
-  final String url;
+
+  /// The QR payload (the library-card URL with its fragment, §5.8).
+  final String data;
 
   @override
   Widget build(BuildContext context) {
@@ -365,7 +379,7 @@ class _QrColumn extends StatelessWidget {
                 ? Border.all(color: palette.frame!, width: 3)
                 : Border.all(color: palette.divider, width: 2),
           ),
-          child: QrView(data: url, size: 254),
+          child: QrView(data: data, size: 254),
         ),
         const SizedBox(height: 14),
         Text(

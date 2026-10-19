@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 void main() {
   // The builder reads a bundled asset via rootBundle, so the binding must be
@@ -12,6 +13,7 @@ void main() {
   test('substitutes library name + contact, escapes HTML', () async {
     final bytes = await const ViewerHtmlBuilder(
       libraryName: 'Ravi & Co <Books>',
+      sharing: LocationSharing.exact,
       contact: PublishContact(email: 'a@b.com'),
     ).build();
     final html = utf8.decode(bytes);
@@ -35,6 +37,7 @@ void main() {
       final html = utf8.decode(
         await const ViewerHtmlBuilder(
           libraryName: 'X',
+          sharing: LocationSharing.exact,
           contact: PublishContact(),
           logoDataUrl: logo,
         ).build(),
@@ -46,6 +49,7 @@ void main() {
       final html = utf8.decode(
         await const ViewerHtmlBuilder(
           libraryName: 'X',
+          sharing: LocationSharing.exact,
           contact: PublishContact(),
           logoDataUrl: 'x" onerror="alert(1)',
         ).build(),
@@ -64,6 +68,7 @@ void main() {
         final html = utf8.decode(
           await ViewerHtmlBuilder(
             libraryName: 'X',
+            sharing: LocationSharing.exact,
             contact: const PublishContact(),
             logoDataUrl: bad,
           ).build(),
@@ -77,6 +82,7 @@ void main() {
     final html = utf8.decode(
       await const ViewerHtmlBuilder(
         libraryName: '',
+        sharing: LocationSharing.exact,
         contact: PublishContact(),
       ).build(),
     );
@@ -87,6 +93,7 @@ void main() {
     final html = utf8.decode(
       await const ViewerHtmlBuilder(
         libraryName: 'X',
+        sharing: LocationSharing.exact,
         contact: PublishContact(),
       ).build(),
     );

@@ -1,6 +1,6 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-09-03 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-10-18 · Publisher: Parallel Line Foundation_
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -90,26 +90,61 @@ passive exception (item 5, Google Play builds only):
    library name, any contact details or event posters you enter under
    Publish, and the book covers. Before upload, Pitak redacts private fields
    (notes, location, source, lender details), and photos are re-encoded with
-   EXIF metadata — including GPS coordinates — stripped. During publishing
-   your device also downloads book covers from the same fixed cover hosts
-   listed above and, afterwards, checks the public site URL once to confirm
-   it is live. You can delete the published site at any time from GitHub.
-   Signing out in the app forgets the token on your device; to revoke the
-   app's access on GitHub's side, remove "Pitak" under GitHub → Settings →
-   Applications (the app cannot do this for you).
-4. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
+   EXIF metadata — including GPS coordinates — stripped. If you type GPS
+   coordinates under Publish › Basic info, a separate opt-in switch controls
+   whether they are published at all: "Not shared" (the default for new
+   installations) publishes no coordinates anywhere; "Approximate" publishes
+   them rounded to about 1 km; "Exact" publishes them as typed — both on your
+   published page and in the machine-readable `library.json` descriptor that
+   the library network reads. During publishing your device also downloads
+   book covers from the same fixed cover hosts listed above and, afterwards,
+   checks the public site URL once to confirm it is live. You can delete the
+   published site at any time from GitHub. Signing out in the app forgets the
+   token on your device; to revoke the app's access on GitHub's side, remove
+   "Pitak" under GitHub → Settings → Applications (the app cannot do this
+   for you).
+4. **Library network — Refresh.** The Library network screen keeps the list
+   of other Pitak libraries you save (by web address, or by scanning a
+   library's card in person). Nothing about it leaves your device until you
+   tap Refresh; Refresh then downloads the `library.json` descriptor from
+   each saved site — only from GitHub Pages or Cloudflare Pages addresses
+   that the app validated when you saved them — to update names, optional map
+   pins and hub/member links. A downloaded descriptor can itself list other
+   libraries (a hub's members, or the hubs a library belongs to); Refresh
+   also fetches the descriptors of those libraries, even though you never
+   saved them yourself, so that they can appear in your list and on the map.
+   This follows links at most two steps away from a library you saved, only
+   to the same validated kinds of address, and stops at 500 libraries per
+   run. Every site contacted — saved or discovered — sees your device's IP
+   address for that one request, as any web server does. Refresh runs only
+   when you ask for it; there is no background polling. If you used the old
+   bookmarks feature, its entries move into this list automatically the first
+   time you open the screen — that move happens entirely on your device.
+5. **Network map** (optional, off until you allow it). The first time you
+   open the Library network › Map tab, the app asks before showing the map.
+   If you accept, map images are downloaded from OpenStreetMap
+   (tile.openstreetmap.org) while the map is open — OpenStreetMap's servers
+   see your device's IP address and the map area you view, as any web server
+   does, and the app identifies itself with the same User-Agent string as
+   everywhere else. Declining keeps the list view, which works fully offline;
+   you can change your mind later in Settings. The map never sends your list
+   of libraries anywhere.
+6. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
    go. Backups you restore are read locally and never transmitted. Note:
    `.pitabak` backups are **not fully encrypted** — the books, wishlist and
    cover images inside are stored plainly; only the borrowers vault (when
-   you have one) remains encrypted inside the archive. Anyone who receives
-   your backup file can read the catalogue fields, so share backups only
-   with people you trust with that data. Restoring writes the new catalogue,
-   covers and vault into a fresh app-private folder and switches to it in one
-   step; the previous folder is deleted immediately after a successful switch
-   (and any half-built folder is removed on the next launch), so no second
-   copy of your data lingers on the device.
-5. **Update check (Google Play builds only).** When the app starts, the
+   you have one) remains encrypted inside the archive. The backup also
+   carries your library identity (library name and ID) and your
+   saved-libraries list as plain, unencrypted JSON, so a restored phone
+   stays recognisable to your hubs. Anyone who receives your backup file can
+   read those fields, so share backups only with people you trust with that
+   data. Restoring writes the new catalogue, covers and vault into a fresh
+   app-private folder and switches to it in one step; the previous folder is
+   deleted immediately after a successful switch (and any half-built folder
+   is removed on the next launch), so no second copy of your data lingers on
+   the device.
+7. **Update check (Google Play builds only).** When the app starts, the
    Play-distributed build asks the Google Play Store whether a newer version
    of Pitak is available; if one is, it downloads in the background through
    the Play Store and the app offers a restart once it is ready. The query

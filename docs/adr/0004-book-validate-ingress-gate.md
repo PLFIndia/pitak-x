@@ -1,7 +1,7 @@
 # ADR 0004: `Book.validate` static ingress gate instead of a private constructor
 
 - **Status:** Accepted
-- **Date:** 2026 (SOLID-PLAN S7, D3 Option A; recorded 2026-10-16)
+- **Date:** 2026-10-14 (SOLID review; recorded 2026-10-16)
 
 ## Context
 

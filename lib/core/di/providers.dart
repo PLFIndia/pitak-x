@@ -1,8 +1,8 @@
 /// Dependency-injection barrel (AGENTS.md §4: Riverpod codegen is the DI
 /// container — no GetIt, no service locators).
 ///
-/// Every provider lives in a per-feature module under `src/` (SOLID-PLAN
-/// S3); this file only re-exports them, so all call sites keep importing
+/// Every provider lives in a per-feature module under `src/`; this file
+/// only re-exports them, so all call sites keep importing
 /// `core/di/providers.dart` and a feature edit touches one small module
 /// instead of a 985-line monolith.
 ///
@@ -21,12 +21,12 @@ library;
 
 export 'package:pitaka/core/di/src/app_update_providers.dart';
 export 'package:pitaka/core/di/src/backup_providers.dart';
-export 'package:pitaka/core/di/src/bookmarks_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/events_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
 export 'package:pitaka/core/di/src/lookup_providers.dart';
+export 'package:pitaka/core/di/src/network_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 export 'package:pitaka/core/di/src/publish_providers.dart';
 export 'package:pitaka/core/di/src/settings_providers.dart';

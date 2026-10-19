@@ -22,6 +22,8 @@ import 'package:pitaka/features/library/domain/entities/book.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -32,8 +34,9 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
 import '../features/vault/vault_repository_write_stub.dart';
+import 'golden_names.dart';
 
-/// Golden tests for the five screens users see most (architecture.md B2).
+/// Golden tests for the five screens users see most.
 ///
 /// Plain `matchesGoldenFile`, no package (golden_toolkit is discontinued).
 /// The default test font (Ahem) keeps rendering deterministic. **Linux CI is
@@ -83,6 +86,15 @@ void main() {
     Widget widget,
     String name,
   ) async {
+    // Sync guard (review H1.2): every rendered golden must be listed in
+    // kGoldenNames, or the non-tagged existence guard cannot cover its PNG.
+    // The other direction (a listed name with no PNG) is caught by
+    // golden_files_exist_test.dart in the normal suite.
+    expect(
+      kGoldenNames,
+      contains(name),
+      reason: 'add "$name" to kGoldenNames in test/golden/golden_names.dart',
+    );
     usePhoneViewport(tester);
     await tester.pumpWidget(widget);
     await tester.pumpAndSettle();
@@ -148,6 +160,77 @@ void main() {
       ),
       'publish_connection',
     );
+  });
+
+  /// The network list tile in every badge state (docs/ARCHITECTURE.md §3 network): member
+  /// + verified, unverified, the pending-membership prompt, declined with
+  /// Reconsider, and an identity conflict. One column, one PNG — the badges
+  /// and their exact words are what a regression would break.
+  group('network library tile', () {
+    testWidgets('badge states', (tester) async {
+      void noop() {}
+      await expectGolden(
+        tester,
+        themedApp(
+          Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const NetworkLibraryTile(
+                    row: NetworkLibrary(
+                      id: 1,
+                      siteUrl: 'https://meera.github.io/books/',
+                      name: 'Meera Road Library',
+                      source: NetworkSource.card,
+                      isMember: true,
+                      memberVerified: true,
+                    ),
+                  ),
+                  const NetworkLibraryTile(
+                    row: NetworkLibrary(
+                      id: 2,
+                      siteUrl: 'https://banyan.github.io/club/',
+                      name: 'Banyan Reading Club',
+                      source: NetworkSource.card,
+                      isMember: true,
+                    ),
+                  ),
+                  NetworkLibraryTile(
+                    row: const NetworkLibrary(
+                      id: 3,
+                      siteUrl: 'https://hub.github.io/net/',
+                      name: 'District Hub',
+                      membership: MembershipState.pending,
+                    ),
+                    onConfirmMembership: noop,
+                    onDeclineMembership: noop,
+                  ),
+                  NetworkLibraryTile(
+                    row: const NetworkLibrary(
+                      id: 4,
+                      siteUrl: 'https://old.github.io/net/',
+                      name: 'Old Hub',
+                      membership: MembershipState.declined,
+                    ),
+                    onReconsiderMembership: noop,
+                  ),
+                  const NetworkLibraryTile(
+                    row: NetworkLibrary(
+                      id: 5,
+                      siteUrl: 'https://clash.github.io/x/',
+                      name: 'Clashing Library',
+                      fetchStatus: FetchStatus.identityConflict,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        'network_library_tiles',
+      );
+    });
   });
 
   group('restore page', () {

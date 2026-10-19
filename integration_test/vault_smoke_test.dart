@@ -1,4 +1,4 @@
-/// On-device integration smoke test (architecture.md B1, D4).
+/// On-device integration smoke test, run by hand before a release.
 ///
 /// FFI (`RustLib.init()`), SQLCipher, the Android Keystore, and real file IO
 /// never run in the Dart VM — 1 800+ unit tests cannot see a broken native
@@ -14,14 +14,15 @@
 /// cleared first; reinstalling alone keeps Android app data:
 ///
 /// ```bash
-/// adb uninstall dev.khoj.pitaka.fdroid   # or: adb shell pm clear dev.khoj.pitaka.fdroid
+/// adb uninstall dev.khoj.pitaka.fdroid
+///   # or: adb shell pm clear dev.khoj.pitaka.fdroid
 /// flutter test integration_test --flavor fdroid -d <device>
 /// ```
 ///
 /// Deliberately NOT in CI: hosted emulators plus the cargokit cross-compile
-/// cost 25+ minutes and flake for a solo maintainer (architecture.md D4).
+/// cost 25+ minutes and flake for a solo maintainer.
 /// Revisit when there is a second regular contributor or a self-hosted
-/// runner. It is the README release-checklist step before
+/// runner. It is the docs/RELEASING.md §6.1 checklist step before
 /// `tool/release_build.sh`.
 library;
 
@@ -124,12 +125,15 @@ void main() {
       createBackupUseCaseProvider.future,
     );
     final backupResult = await createUseCase();
-    final backupBytes = backupResult.toNullable();
+    // S6: the use case returns the archive bytes PLUS honest content flags
+    // (identity / network list included or not); only the bytes matter here.
+    final backup = backupResult.toNullable();
     expect(
-      backupBytes,
+      backup,
       isNotNull,
       reason: 'backup creation failed on device: $backupResult',
     );
+    final backupBytes = backup!.bytes;
 
     // --- 6. Restore it (vault-carrying archive needs the passphrase) -------
     final restorer = await container.read(restoreBackupProvider.future);
@@ -138,7 +142,7 @@ void main() {
     final secret = SecretBytes(Uint8List.fromList(utf8.encode(passphrase)));
     try {
       final restoreResult = await restorer.restore(
-        archiveBytes: backupBytes!,
+        archiveBytes: backupBytes,
         passphrase: secret,
       );
       expect(

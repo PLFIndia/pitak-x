@@ -55,6 +55,9 @@ class _CapturingApi implements GitHubGitDataApi {
   final PublishCommitResult? commitResult = null;
   List<DesiredFile>? committed;
 
+  /// deletePaths the commit was asked to remove (M14 / docs/ARCHITECTURE.md §5.1).
+  List<String> deleted = const [];
+
   /// Branch the commit was made to (N09: must be the Pages source branch).
   String? committedBranch;
 
@@ -94,6 +97,7 @@ class _CapturingApi implements GitHubGitDataApi {
   }) async {
     committed = files;
     committedBranch = branch;
+    deleted = deletePaths;
     return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
 }
@@ -151,6 +155,7 @@ void main() {
               books: [book()],
               activeLoanCounts: const {},
               encodeBooksJson: encode,
+              libraryJson: null,
             );
         expect((result as PublishSuccess).pagesLive, isTrue);
         expect(polled, hasLength(2));
@@ -178,6 +183,7 @@ void main() {
             books: [book()],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
+            libraryJson: null,
           );
       expect((result as PublishSuccess).pagesLive, isNull);
       expect(polls, PublishLibraryUseCase.readBackAttempts);
@@ -193,6 +199,7 @@ void main() {
             books: [book()],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
+            libraryJson: null,
           );
       expect((result as PublishSuccess).pagesLive, isNull);
     });
@@ -205,6 +212,7 @@ void main() {
       books: [book()],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
@@ -221,10 +229,12 @@ void main() {
   test('an explicitly empty catalogue is a valid publication input', () async {
     final api = _CapturingApi();
     final manifest = _MemManifest();
-    final result = await makeUseCase(
-      api,
-      manifest,
-    ).call(books: const [], activeLoanCounts: null, encodeBooksJson: encode);
+    final result = await makeUseCase(api, manifest).call(
+      books: const [],
+      activeLoanCounts: null,
+      encodeBooksJson: encode,
+      libraryJson: null,
+    );
 
     expect(result, isA<PublishSuccess>());
     final files = api.committed!;
@@ -246,6 +256,7 @@ void main() {
       books: [book()],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     final booksFile = api.committed!.firstWhere((f) => f.path == 'books.json');
     final json = utf8.decode(booksFile.bytes);
@@ -261,6 +272,7 @@ void main() {
       books: [book(), removed],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
@@ -277,6 +289,7 @@ void main() {
       books: [book()],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     final seeded = _MemManifest(m1.saved!);
 
@@ -285,6 +298,7 @@ void main() {
       books: [book()],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     // Same inputs ⇒ same shas ⇒ nothing flagged for upload.
     expect(api2.committed!.every((f) => !f.upload), isTrue);
@@ -292,10 +306,12 @@ void main() {
 
   test('availability omitted when vault locked (counts null)', () async {
     final api = _CapturingApi();
-    final result = await makeUseCase(
-      api,
-      _MemManifest(),
-    ).call(books: [book()], activeLoanCounts: null, encodeBooksJson: encode);
+    final result = await makeUseCase(api, _MemManifest()).call(
+      books: [book()],
+      activeLoanCounts: null,
+      encodeBooksJson: encode,
+      libraryJson: null,
+    );
     expect((result as PublishSuccess).availabilityOmitted, isTrue);
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
@@ -317,6 +333,7 @@ void main() {
       books: [book()],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
+      libraryJson: null,
     );
     expect(r, isA<PublishFailure>());
   });
@@ -339,6 +356,7 @@ void main() {
         books: [book(cover: 'covers/abc.jpg')],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
+        libraryJson: null,
       );
       final coverFile = api.committed!.firstWhere(
         (f) => f.path.startsWith('covers/'),
@@ -368,6 +386,7 @@ void main() {
           books: [book()],
           activeLoanCounts: const {},
           encodeBooksJson: encode,
+          libraryJson: null,
         );
         expect(result, isA<PublishSuccess>());
         expect(api.committedBranch, 'gh-pages');
@@ -382,6 +401,7 @@ void main() {
         books: [book()],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
+        libraryJson: null,
       );
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('GitHub Pages'));
@@ -403,6 +423,7 @@ void main() {
           books: [book()],
           activeLoanCounts: const {},
           encodeBooksJson: encode,
+          libraryJson: null,
         );
         expect(result, isA<PublishFailure>());
         expect(api.committed, isNull);
@@ -415,6 +436,7 @@ void main() {
         books: [book()],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
+        libraryJson: null,
       );
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('connection'));
@@ -437,10 +459,99 @@ void main() {
             books: [book()],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
+            libraryJson: null,
           );
       expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
       // The read-back polls the same resolved address.
       expect(polled.first, startsWith('https://me.github.io/books.json?rb='));
+    });
+  });
+
+  group('library.json (docs/ARCHITECTURE.md §5.1)', () {
+    final descriptor = utf8.encode('{"schemaVersion":1}');
+
+    test('a provided descriptor rides in the same atomic commit', () async {
+      final api = _CapturingApi();
+      final result = await makeUseCase(api, _MemManifest()).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: descriptor,
+      );
+      expect(result, isA<PublishSuccess>());
+      expect(api.committed!.map((f) => f.path), [
+        'books.json',
+        'library.json',
+        'index.html',
+      ]);
+      expect(api.deleted, isEmpty);
+    });
+
+    test('unchanged descriptor bytes are not re-uploaded (sha skip)', () async {
+      final api1 = _CapturingApi();
+      final m1 = _MemManifest();
+      await makeUseCase(api1, m1).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: descriptor,
+      );
+      expect(
+        api1.committed!.firstWhere((f) => f.path == 'library.json').upload,
+        isTrue,
+        reason: 'first publish uploads it',
+      );
+
+      // Second run with the persisted manifest: identical bytes ⇒ same git
+      // blob sha ⇒ the incremental publish skips the upload.
+      final api2 = _CapturingApi();
+      await makeUseCase(api2, _MemManifest(m1.saved!)).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: descriptor,
+      );
+      expect(
+        api2.committed!.firstWhere((f) => f.path == 'library.json').upload,
+        isFalse,
+      );
+    });
+
+    test(
+      'null descriptor REMOVES a previously published library.json',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            fileShas: {'library.json': 'OLD_SHA'},
+          ),
+        );
+        await makeUseCase(api, manifest).call(
+          books: [book()],
+          activeLoanCounts: const {},
+          encodeBooksJson: encode,
+          libraryJson: null,
+        );
+        // The opt-out deletes the stale file in the SAME commit (M14), so a
+        // previously published location never outlives the switch.
+        expect(api.deleted, ['library.json']);
+        expect(
+          api.committed!.map((f) => f.path),
+          isNot(contains('library.json')),
+        );
+      },
+    );
+
+    test('null descriptor with nothing published deletes nothing', () async {
+      final api = _CapturingApi();
+      await makeUseCase(api, _MemManifest()).call(
+        books: [book()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      expect(api.deleted, isEmpty);
     });
   });
 }

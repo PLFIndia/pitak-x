@@ -1,5 +1,5 @@
 /// Serializes vault mutations so two UI actions can never interleave writes
-/// (application layer; SOLID-PLAN S4).
+/// (application layer; vault session split by responsibility).
 ///
 /// Why: the Rust core re-derives the vault key per call; interleaving two
 /// operations doubles the KDF cost and races the re-read. A plain Dart
