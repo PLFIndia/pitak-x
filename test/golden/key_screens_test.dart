@@ -34,6 +34,7 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
 import '../features/vault/vault_repository_write_stub.dart';
+import 'golden_names.dart';
 
 /// Golden tests for the five screens users see most.
 ///
@@ -85,6 +86,15 @@ void main() {
     Widget widget,
     String name,
   ) async {
+    // Sync guard (review H1.2): every rendered golden must be listed in
+    // kGoldenNames, or the non-tagged existence guard cannot cover its PNG.
+    // The other direction (a listed name with no PNG) is caught by
+    // golden_files_exist_test.dart in the normal suite.
+    expect(
+      kGoldenNames,
+      contains(name),
+      reason: 'add "$name" to kGoldenNames in test/golden/golden_names.dart',
+    );
     usePhoneViewport(tester);
     await tester.pumpWidget(widget);
     await tester.pumpAndSettle();
