@@ -403,7 +403,7 @@ final class MergeLibraryUseCase {
   /// Applies the user's choice for one surfaced conflict / possible-duplicate.
   ///  - keep-mine   → no-op.
   ///  - take-theirs → overwrite the local row in place
-  ///    (preserve local id + bookUid so identity is stable; take the incoming
+  ///    (preserve local id + itemUid so identity is stable; take the incoming
   ///    catalogue fields).
   ///  - keep-both   → insert the incoming as a NEW separate
   ///    book with a FRESH identity (null uid so the mapper mints one; dropped
@@ -453,7 +453,7 @@ final class MergeLibraryUseCase {
         return _validated(
           incoming.copyWith(
             id: local.id,
-            bookUid: local.bookUid,
+            itemUid: local.itemUid,
             coverUrl: cover,
           ),
         ).match(

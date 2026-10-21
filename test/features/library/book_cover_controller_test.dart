@@ -24,7 +24,7 @@ class _FakeBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -70,7 +70,7 @@ class _FakeBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -247,7 +247,7 @@ class _NoLogoSettings implements SettingsRepository {
   Future<Either<Failure, Unit>> setMaintainerName(String name) async =>
       right(unit);
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) async =>
       right(unit);
   @override
   Future<Either<Failure, String>> getOrCreateLibraryId() async => right('');

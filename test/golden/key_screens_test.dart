@@ -291,7 +291,7 @@ class _GoldenBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
@@ -304,7 +304,7 @@ class _GoldenBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>

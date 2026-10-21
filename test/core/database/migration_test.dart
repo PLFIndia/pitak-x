@@ -131,6 +131,9 @@ void main() {
           .into(oldDb.books)
           .insert(
             v1.BooksCompanion.insert(
+              // The v1 helper is generated from the v1 snapshot and keeps the
+              // getter name of that era (`bookUid`); only the live schema's
+              // getter was renamed `itemUid` (plan F7).
               bookUid: const Value('uid-1'),
               title: 'The Migration Book',
               titleTransliteration: const Value('Migration Book'),
@@ -185,7 +188,7 @@ void main() {
       await verifier.migrateAndValidate(db, current);
 
       final book = await db.select(db.books).getSingle();
-      expect(book.bookUid, 'uid-1');
+      expect(book.itemUid, 'uid-1');
       expect(book.title, 'The Migration Book');
       expect(book.titleTransliteration, 'Migration Book');
       expect(book.author, 'A. Writer');

@@ -160,7 +160,8 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     // DB. M15/D2: clamping is now REPORTED as a warning, not silent.
     final candidate = CatalogueItem(
       title: r.text('title') ?? '',
-      bookUid: r.text('bookUid'),
+      // JSON key stays `bookUid` (wire contract, ADR 0014).
+      itemUid: r.text('bookUid'),
       titleTransliteration: r.text('titleTransliteration'),
       author: r.text('author'),
       isbn: r.text('isbn'),
@@ -172,7 +173,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       language: r.text('language'),
       notes: r.text('notes'),
       location: r.text('location'),
-      sourceType: BookSourceTypeX.fromToken(_asString(r.raw['sourceType'])),
+      sourceType: ItemSourceTypeX.fromToken(_asString(r.raw['sourceType'])),
       sourceDetail: r.text('sourceDetail'),
       ageGroup: AgeGroup.fromToken(_asString(r.raw['ageGroup'])),
       addedDate: _asInt(r.raw['addedDate']) ?? 0,

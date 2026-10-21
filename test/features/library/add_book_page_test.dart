@@ -31,7 +31,7 @@ class _MemRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -42,7 +42,7 @@ class _MemRepo implements BookRepository {
 
   @override
   Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
-    final saved = book.copyWith(id: _next++, bookUid: 'uid-${book.title}');
+    final saved = book.copyWith(id: _next++, itemUid: 'uid-${book.title}');
     books.add(saved);
     return right(saved);
   }
@@ -101,7 +101,7 @@ class _MemRepo implements BookRepository {
 
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
 
   @override
@@ -180,7 +180,7 @@ void main() {
 
     expect(repo.books.length, 1);
     expect(repo.books.single.title, 'Dune');
-    expect(repo.books.single.bookUid, isNotNull);
+    expect(repo.books.single.itemUid, isNotNull);
   });
 
   testWidgets('edit mode: prefills and updates in place, preserving id', (

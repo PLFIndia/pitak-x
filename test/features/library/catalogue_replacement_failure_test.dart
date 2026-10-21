@@ -37,9 +37,9 @@ class _InterceptBooks implements BookRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-const _book = CatalogueItem(id: 7, bookUid: 'stable', title: 'Original');
+const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Original');
 const _decision = MergeDiffersDecision(
-  incomingBooks: [CatalogueItem(id: 99, bookUid: 'stable', title: 'Updated')],
+  incomingBooks: [CatalogueItem(id: 99, itemUid: 'stable', title: 'Updated')],
   incomingLibraryId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   incomingLibraryName: 'Incoming',
   localLibraryName: 'Local',

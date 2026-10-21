@@ -55,7 +55,7 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -65,7 +65,7 @@ class _FakeBooks implements BookRepository {
   Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     final stored = book.copyWith(
       id: book.id == CatalogueItem.emptyId ? _nextId++ : book.id,
-      bookUid: book.bookUid ?? 'minted-$_nextId',
+      itemUid: book.itemUid ?? 'minted-$_nextId',
     );
     _books.add(stored);
     return right(stored);
@@ -133,7 +133,7 @@ class _FakeBooks implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -372,7 +372,7 @@ void main() {
       final books = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'old',
+          itemUid: 'old',
           title: 'OldBook',
           addedDate: 1,
         ),
@@ -549,7 +549,7 @@ void main() {
     _FakeBooks localWithGodaan() => _FakeBooks([
       const CatalogueItem(
         id: 1,
-        bookUid: 'u1',
+        itemUid: 'u1',
         title: 'Godaan',
         genre: 'Fiction',
         addedDate: 1,
@@ -694,14 +694,14 @@ void main() {
       final books = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Godaan',
           genre: 'Fiction',
           addedDate: 1,
         ),
         const CatalogueItem(
           id: 2,
-          bookUid: 'u2',
+          itemUid: 'u2',
           title: 'Nirmala',
           genre: 'Fiction',
           addedDate: 1,

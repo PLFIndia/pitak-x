@@ -135,7 +135,7 @@ void main() {
     final books = [
       const CatalogueItem(
         id: 1,
-        bookUid: 'uid-1',
+        itemUid: 'uid-1',
         title: 'पंचतंत्र', // Devanagari survives the round-trip
         author: 'Vishnu Sharma',
         isbn: '9781234567890',
@@ -160,7 +160,7 @@ void main() {
 
     expect(read.length, 2);
     final first = read.firstWhere((b) => b.id == 1);
-    expect(first.bookUid, 'uid-1');
+    expect(first.itemUid, 'uid-1');
     expect(first.title, 'पंचतंत्र');
     expect(first.author, 'Vishnu Sharma');
     expect(first.isbn, '9781234567890');

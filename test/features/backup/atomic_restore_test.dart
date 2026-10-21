@@ -205,7 +205,7 @@ void main() {
           BooksCompanion.insert(
             title: 'PreExisting',
             addedDate: 1,
-            bookUid: const Value('keep'),
+            itemUid: const Value('keep'),
             coverUrl: const Value('covers/old.jpg'),
           ),
         );
@@ -225,7 +225,7 @@ void main() {
     expect(generations.open().name, active.name);
     expect(switched, isEmpty);
     final rows = await live.select(live.books).get();
-    expect(rows.single.bookUid, 'keep');
+    expect(rows.single.itemUid, 'keep');
     expect(await live.select(live.wishlistBooks).get(), isEmpty);
     expect(File(p.join(active.coversDir, 'old.jpg')).readAsBytesSync(), [
       9,
@@ -270,7 +270,7 @@ void main() {
       addTearDown(db.close);
       final rows = await db.select(db.books).get();
       expect(rows.single.id, 7);
-      expect(rows.single.bookUid, 'uid-7');
+      expect(rows.single.itemUid, 'uid-7');
       expect((await db.select(db.wishlistBooks).get()).single.id, 3);
       final hits = await db
           .customSelect(

@@ -57,7 +57,7 @@ class LibraryController extends _$LibraryController {
   Timer? _debounce;
   String _query = '';
   String? _languageFilter;
-  BookSort _sort = BookSort.recentlyAdded;
+  LibrarySort _sort = LibrarySort.recentlyAdded;
 
   /// The intent the current rows belong to; null before the first build.
   LibraryQuery? _lastQuery;
@@ -93,7 +93,7 @@ class LibraryController extends _$LibraryController {
       settingsControllerProvider.select(
         (s) => s.maybeWhen(
           data: (settings) => settings.librarySort,
-          orElse: () => BookSort.recentlyAdded,
+          orElse: () => LibrarySort.recentlyAdded,
         ),
       ),
     );

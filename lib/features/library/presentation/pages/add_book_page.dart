@@ -65,7 +65,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   late final TextEditingController _quantity;
   late final TextEditingController _sourceDetail;
 
-  BookSourceType? _sourceType;
+  ItemSourceType? _sourceType;
   AgeGroup? _ageGroup;
   late int _addedDate;
   bool _titleError = false;
@@ -233,7 +233,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     return CatalogueItem(
       // Preserve identity in edit mode; add mode uses the sentinel.
       id: base?.id ?? CatalogueItem.emptyId,
-      bookUid: base?.bookUid,
+      itemUid: base?.itemUid,
       title: _title.text.trim(),
       titleTransliteration: _trimToNull(_transliteration),
       author: _trimToNull(_author),
@@ -405,7 +405,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             digitsOnly: true,
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<BookSourceType?>(
+          DropdownButtonFormField<ItemSourceType?>(
             initialValue: _sourceType,
             decoration: const InputDecoration(
               labelText: 'Source',
@@ -413,7 +413,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             ),
             items: [
               const DropdownMenuItem(child: Text('Not set')),
-              for (final t in BookSourceType.values)
+              for (final t in ItemSourceType.values)
                 DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
@@ -592,12 +592,12 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     );
   }
 
-  static String _sourceLabel(BookSourceType t) => switch (t) {
-    BookSourceType.purchased => 'Purchased',
-    BookSourceType.gift => 'Gift',
-    BookSourceType.donated => 'Donated',
-    BookSourceType.inherited => 'Inherited',
-    BookSourceType.other => 'Other',
+  static String _sourceLabel(ItemSourceType t) => switch (t) {
+    ItemSourceType.purchased => 'Purchased',
+    ItemSourceType.gift => 'Gift',
+    ItemSourceType.donated => 'Donated',
+    ItemSourceType.inherited => 'Inherited',
+    ItemSourceType.other => 'Other',
   };
 
   static String _ageGroupLabel(AgeGroup g) => switch (g) {

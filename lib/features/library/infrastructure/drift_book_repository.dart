@@ -152,14 +152,14 @@ class DriftBookRepository implements BookRepository {
   /// tie-breaks `added_date DESC, id ASC` so the order is TOTAL: two rows can
   /// never swap between two runs (or two pages) of the same statement.
   /// Twin of [_orderSql]; both must match `BookSorter` (tested).
-  static List<_OrderingOf> _orderingTerms(BookSort sort) {
+  static List<_OrderingOf> _orderingTerms(LibrarySort sort) {
     final byKey = switch (sort) {
-      BookSort.recentlyAdded => const <_OrderingOf>[],
-      BookSort.languageAsc => <_OrderingOf>[
+      LibrarySort.recentlyAdded => const <_OrderingOf>[],
+      LibrarySort.languageAsc => <_OrderingOf>[
         (t) => OrderingTerm.asc(_languageBlank(t)),
         (t) => OrderingTerm.asc(_languageKey(t)),
       ],
-      BookSort.ageGroupAsc => <_OrderingOf>[
+      LibrarySort.ageGroupAsc => <_OrderingOf>[
         (t) => OrderingTerm.asc(_ageRank(t)),
       ],
     };
@@ -176,14 +176,14 @@ class DriftBookRepository implements BookRepository {
   /// like [_orderingTerms] — `drift_book_repository_test.dart` checks both
   /// paths against the same oracle. Contains only compile-time constants
   /// (enum tokens), never user input.
-  static String _orderSql(BookSort sort) {
+  static String _orderSql(LibrarySort sort) {
     final byKey = switch (sort) {
-      BookSort.recentlyAdded => '',
-      BookSort.languageAsc =>
+      LibrarySort.recentlyAdded => '',
+      LibrarySort.languageAsc =>
         "CASE WHEN b.language IS NULL OR TRIM(b.language) = '' "
             'THEN 1 ELSE 0 END ASC, '
             "TRIM(COALESCE(b.language, '')) ASC, ",
-      BookSort.ageGroupAsc => '${_ageRankSql('b.age_group')} ASC, ',
+      LibrarySort.ageGroupAsc => '${_ageRankSql('b.age_group')} ASC, ',
     };
     return 'ORDER BY ${byKey}b.added_date DESC, b.id ASC';
   }
@@ -222,7 +222,7 @@ class DriftBookRepository implements BookRepository {
 
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async {
     try {
       // SQLite does the heavy lifting (one indexed-column scan, distinct,
@@ -278,8 +278,8 @@ class DriftBookRepository implements BookRepository {
       return await _db.transaction(() async {
         final resolver = _LanguageResolver(await _storedLanguages());
         final resolved = resolver.resolve(book);
-        final withUid = resolved.bookUid == null
-            ? resolved.copyWith(bookUid: _uuid.v4())
+        final withUid = resolved.itemUid == null
+            ? resolved.copyWith(itemUid: _uuid.v4())
             : resolved;
         final id = await _db.into(_db.books).insert(withUid.toCompanion());
         return right<Failure, CatalogueItem>(withUid.copyWith(id: id));
@@ -320,8 +320,8 @@ class DriftBookRepository implements BookRepository {
         // "rename language" is a separate feature, not an edit side-effect.)
         final resolver = _LanguageResolver(await _storedLanguages());
         final resolved = resolver.resolve(book);
-        final preserved = resolved.bookUid == null
-            ? resolved.copyWith(bookUid: existing.bookUid)
+        final preserved = resolved.itemUid == null
+            ? resolved.copyWith(itemUid: existing.itemUid)
             : resolved;
         // `update().replace` matches on the primary key; FTS5 stays in sync
         // via the AFTER UPDATE trigger in app_database.dart.
@@ -417,8 +417,8 @@ class DriftBookRepository implements BookRepository {
         await _db.batch((b) {
           for (final book in books) {
             final resolved = resolver.resolve(book);
-            final withUid = resolved.bookUid == null
-                ? resolved.copyWith(bookUid: _uuid.v4())
+            final withUid = resolved.itemUid == null
+                ? resolved.copyWith(itemUid: _uuid.v4())
                 : resolved;
             b.insert(_db.books, withUid.toCompanion());
             count++;
@@ -445,8 +445,8 @@ class DriftBookRepository implements BookRepository {
         var count = 0;
         for (final book in books) {
           final resolved = resolver.resolve(book);
-          final withUid = resolved.bookUid == null
-              ? resolved.copyWith(bookUid: _uuid.v4())
+          final withUid = resolved.itemUid == null
+              ? resolved.copyWith(itemUid: _uuid.v4())
               : resolved;
           await _db.into(_db.books).insert(withUid.toCompanion());
           count++;
@@ -474,13 +474,13 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async {
-    final uid = bookUid.trim();
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async {
+    final uid = itemUid.trim();
     if (uid.isEmpty) return right(null);
     try {
       final row =
           await (_db.select(_db.books)
-                ..where((t) => t.bookUid.equals(uid))
+                ..where((t) => t.itemUid.equals(uid))
                 ..limit(1))
               .getSingleOrNull();
       return right(row?.toDomain());

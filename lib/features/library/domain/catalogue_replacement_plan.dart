@@ -53,7 +53,7 @@ abstract final class CatalogueReplacementPlan {
       }
       if (!claimed.add(match.id)) return left(_unsafe);
       // Keep the established UID when a legacy file provides only an ISBN.
-      planned.add(book.copyWith(id: match.id, bookUid: localUid ?? uid));
+      planned.add(book.copyWith(id: match.id, itemUid: localUid ?? uid));
     }
     if (!claimed.containsAll(loanBookIds)) return left(_unsafe);
     return right(List.unmodifiable(planned));
@@ -66,7 +66,7 @@ abstract final class CatalogueReplacementPlan {
   );
 
   static String? _uid(CatalogueItem book) {
-    final value = book.bookUid?.trim();
+    final value = book.itemUid?.trim();
     return value == null || value.isEmpty ? null : value;
   }
 

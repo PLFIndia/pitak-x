@@ -398,7 +398,7 @@ class _DelegatingBookRepo implements BookRepository {
       inner.distinctLanguages();
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) => inner.distinctSourceDetails(type);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) => inner.getById(id);
@@ -420,8 +420,8 @@ class _DelegatingBookRepo implements BookRepository {
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) =>
       inner.findByIsbn(isbn);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) =>
-      inner.findByUid(bookUid);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) =>
+      inner.findByUid(itemUid);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
@@ -439,7 +439,7 @@ class _MemBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -479,7 +479,7 @@ class _MemBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async =>

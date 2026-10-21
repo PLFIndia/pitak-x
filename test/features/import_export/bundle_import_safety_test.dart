@@ -40,7 +40,7 @@ void main() {
       await books.insert(
         const CatalogueItem(
           title: 'Keep',
-          bookUid: 'old',
+          itemUid: 'old',
           isbn: '111',
           coverUrl: 'covers/existing.jpg',
         ),
@@ -76,7 +76,7 @@ void main() {
       expect(dir.listSync().whereType<File>(), hasLength(1));
       final rows = (await books.getAll()).toNullable()!;
       expect(rows, hasLength(2));
-      expect(rows.singleWhere((b) => b.bookUid == 'old').title, 'Keep');
+      expect(rows.singleWhere((b) => b.itemUid == 'old').title, 'Keep');
       final state = container.read(importControllerProvider);
       if (scenario == 'duplicate ISBN') {
         expect(state.requireValue!.booksSkipped, 1);

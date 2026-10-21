@@ -13,13 +13,16 @@ void main() {
     test('normalises text (trim) and language (trim, blank → null)', () {
       final q = LibraryQuery(
         text: '  gandhi ',
-        sort: BookSort.recentlyAdded,
+        sort: LibrarySort.recentlyAdded,
         language: '  ',
       );
       expect(q.text, 'gandhi');
       expect(q.isSearch, isTrue);
       expect(q.language, isNull);
-      final l = LibraryQuery(sort: BookSort.languageAsc, language: ' Hindi ');
+      final l = LibraryQuery(
+        sort: LibrarySort.languageAsc,
+        language: ' Hindi ',
+      );
       expect(l.language, 'Hindi');
       expect(l.text, '');
       expect(l.isSearch, isFalse);
@@ -29,12 +32,12 @@ void main() {
         'or against null', () {
       final a = LibraryQuery(
         text: 'x ',
-        sort: BookSort.ageGroupAsc,
+        sort: LibrarySort.ageGroupAsc,
         language: 'Hindi',
       );
       final b = LibraryQuery(
         text: ' x',
-        sort: BookSort.ageGroupAsc,
+        sort: LibrarySort.ageGroupAsc,
         language: ' Hindi',
       );
       expect(a.sameIntentAs(b), isTrue);
@@ -43,7 +46,7 @@ void main() {
         a.sameIntentAs(
           LibraryQuery(
             text: 'x',
-            sort: BookSort.recentlyAdded,
+            sort: LibrarySort.recentlyAdded,
             language: 'Hindi',
           ),
         ),
@@ -51,7 +54,7 @@ void main() {
         reason: 'sort differs',
       );
       expect(
-        a.sameIntentAs(LibraryQuery(text: 'x', sort: BookSort.ageGroupAsc)),
+        a.sameIntentAs(LibraryQuery(text: 'x', sort: LibrarySort.ageGroupAsc)),
         isFalse,
         reason: 'facet differs',
       );
@@ -59,7 +62,7 @@ void main() {
         a.sameIntentAs(
           LibraryQuery(
             text: 'y',
-            sort: BookSort.ageGroupAsc,
+            sort: LibrarySort.ageGroupAsc,
             language: 'Hindi',
           ),
         ),
@@ -75,7 +78,7 @@ void main() {
 
     test('toString never throws and names the fields', () {
       expect(
-        LibraryQuery(sort: BookSort.recentlyAdded).toString(),
+        LibraryQuery(sort: LibrarySort.recentlyAdded).toString(),
         contains('LibraryQuery'),
       );
     });

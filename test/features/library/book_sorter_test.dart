@@ -27,7 +27,7 @@ void main() {
         b('old', added: 1),
         b('newest', added: 3),
         b('mid', added: 2),
-      ], BookSort.recentlyAdded);
+      ], LibrarySort.recentlyAdded);
       expect(sorted.map((x) => x.title), ['newest', 'mid', 'old']);
     });
   });
@@ -40,7 +40,7 @@ void main() {
         b('blank', added: 8, language: '  '),
         b('hindi', added: 7, language: 'Hindi'),
         b('hindi2', added: 6, language: 'Hindi'),
-      ], BookSort.languageAsc);
+      ], LibrarySort.languageAsc);
       expect(sorted.map((x) => x.title), [
         'hindi',
         'hindi2',
@@ -58,7 +58,7 @@ void main() {
         b('none', added: 4),
         b('above3', age: AgeGroup.above3),
         b('above6', age: AgeGroup.above6),
-      ], BookSort.ageGroupAsc);
+      ], LibrarySort.ageGroupAsc);
       expect(sorted.map((x) => x.title), [
         'above3',
         'above6',
@@ -71,7 +71,7 @@ void main() {
       final sorted = BookSorter.sort([
         b('older', added: 1, age: AgeGroup.above6),
         b('newer', added: 2, age: AgeGroup.above6),
-      ], BookSort.ageGroupAsc);
+      ], LibrarySort.ageGroupAsc);
       expect(sorted.map((x) => x.title), ['newer', 'older']);
     });
   });
@@ -82,7 +82,7 @@ void main() {
       b('second', added: 5, language: 'X'),
     ];
     final snapshot = List<CatalogueItem>.of(input);
-    final sorted = BookSorter.sort(input, BookSort.languageAsc);
+    final sorted = BookSorter.sort(input, LibrarySort.languageAsc);
     expect(input, snapshot); // never mutates
     expect(sorted.map((x) => x.title), ['first', 'second']); // stable
   });

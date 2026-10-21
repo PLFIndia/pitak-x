@@ -68,7 +68,7 @@ class _FakeBookRepo implements BookRepository {
 
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
 
   @override
@@ -81,7 +81,7 @@ class _FakeBookRepo implements BookRepository {
 
   // Remaining members: inert defaults (this suite never calls them).
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -119,7 +119,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   @override
   Future<AppSettings> load() async => settings;
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) async =>
       right(unit);
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>

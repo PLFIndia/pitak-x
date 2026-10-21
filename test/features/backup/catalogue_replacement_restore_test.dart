@@ -32,7 +32,7 @@ class _RestoreDb extends AppDatabase {
   }
 }
 
-const _book = CatalogueItem(id: 7, bookUid: 'stable', title: 'Existing');
+const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Existing');
 const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
@@ -72,7 +72,7 @@ void main() {
         await existing(returned: returned);
         final restorer = await h.container.read(restoreBackupProvider.future);
         final bytes = await archive([
-          const CatalogueItem(id: 7, bookUid: 'new', title: 'New'),
+          const CatalogueItem(id: 7, itemUid: 'new', title: 'New'),
           _book.copyWith(id: 99, title: 'Changed'),
         ]);
         final result = await restorer.restore(archiveBytes: bytes);
@@ -98,7 +98,7 @@ void main() {
         await h.session.unlock(ReplacementHarness.secret());
         expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
         final again = await h.currentBooks();
-        expect((await again.getById(7)).toNullable()!.bookUid, 'stable');
+        expect((await again.getById(7)).toNullable()!.itemUid, 'stable');
       },
     );
   }
@@ -121,7 +121,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
         archiveBytes: await archive([
-          const CatalogueItem(id: 7, bookUid: 'unrelated', title: 'Other'),
+          const CatalogueItem(id: 7, itemUid: 'unrelated', title: 'Other'),
         ]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());

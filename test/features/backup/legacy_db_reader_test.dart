@@ -133,7 +133,7 @@ void main() {
 
       final rows = readBooksOk();
       expect(rows.single.id, 42);
-      expect(rows.single.bookUid, 'uid-42');
+      expect(rows.single.itemUid, 'uid-42');
       expect(rows.single.title, 'Godan');
       expect(rows.single.coverUrl, 'covers/abc.jpg');
       expect(rows.single.copyCount, 3);

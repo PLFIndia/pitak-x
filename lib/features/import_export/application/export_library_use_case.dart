@@ -319,18 +319,18 @@ PdfColumnLabels defaultPdfLabels() => const PdfColumnLabels(
   formatDate: _formatDate,
 );
 
-String _sourceTypeLabel(BookSourceType t) => switch (t) {
-  BookSourceType.purchased => 'Purchased',
-  BookSourceType.gift => 'Gift',
-  BookSourceType.donated => 'Donated',
-  BookSourceType.inherited => 'Inherited',
-  BookSourceType.other => 'Other',
+String _sourceTypeLabel(ItemSourceType t) => switch (t) {
+  ItemSourceType.purchased => 'Purchased',
+  ItemSourceType.gift => 'Gift',
+  ItemSourceType.donated => 'Donated',
+  ItemSourceType.inherited => 'Inherited',
+  ItemSourceType.other => 'Other',
 };
 
-/// The user-facing name of a [BookSourceType] ("Donated"), shared by the
+/// The user-facing name of an [ItemSourceType] ("Donated"), shared by the
 /// PDF cells, the export filter chips and the subtitle so the three never
 /// drift apart.
-String sourceTypeLabel(BookSourceType type) => _sourceTypeLabel(type);
+String sourceTypeLabel(ItemSourceType type) => _sourceTypeLabel(type);
 
 /// One line that says what a filtered export contains — the PDF subtitle.
 /// "Donated by Ram Sharma", "Purchased from City Books", or just "Donated
@@ -341,19 +341,19 @@ String describeSourceFilter(ExportSourceFilter filter) {
   final detail = filter.sourceDetail;
   if (detail == null) {
     return switch (type) {
-      BookSourceType.purchased => 'Purchased books',
-      BookSourceType.gift => 'Gifted books',
-      BookSourceType.donated => 'Donated books',
-      BookSourceType.inherited => 'Inherited books',
-      BookSourceType.other => 'Books from other sources',
+      ItemSourceType.purchased => 'Purchased books',
+      ItemSourceType.gift => 'Gifted books',
+      ItemSourceType.donated => 'Donated books',
+      ItemSourceType.inherited => 'Inherited books',
+      ItemSourceType.other => 'Books from other sources',
     };
   }
   return switch (type) {
-    BookSourceType.purchased => 'Purchased from $detail',
-    BookSourceType.gift => 'Gift from $detail',
-    BookSourceType.donated => 'Donated by $detail',
-    BookSourceType.inherited => 'Inherited from $detail',
-    BookSourceType.other => 'Source: $detail',
+    ItemSourceType.purchased => 'Purchased from $detail',
+    ItemSourceType.gift => 'Gift from $detail',
+    ItemSourceType.donated => 'Donated by $detail',
+    ItemSourceType.inherited => 'Inherited from $detail',
+    ItemSourceType.other => 'Source: $detail',
   };
 }
 

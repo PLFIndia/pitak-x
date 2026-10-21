@@ -29,7 +29,7 @@ void main() {
         await fixture.books.insert(
           const CatalogueItem(
             title: 'Old',
-            bookUid: 'u',
+            itemUid: 'u',
             coverUrl: 'covers/old.jpg',
           ),
         );
@@ -47,7 +47,7 @@ void main() {
               ? [
                   CatalogueItem(
                     title: 'New',
-                    bookUid: row == 'existing book' ? 'u' : null,
+                    itemUid: row == 'existing book' ? 'u' : null,
                     coverUrl: 'covers/a.jpg',
                   ),
                 ]
@@ -112,7 +112,7 @@ void main() {
       await fixture.books.insert(
         const CatalogueItem(
           title: 'Old',
-          bookUid: 'old',
+          itemUid: 'old',
           isbn: 'seed',
           coverUrl: 'covers/old.jpg',
         ),
@@ -130,13 +130,13 @@ void main() {
           books: [
             CatalogueItem(
               title: 'New',
-              bookUid: 'new',
+              itemUid: 'new',
               isbn: 'new',
               coverUrl: 'covers/a.jpg',
             ),
             CatalogueItem(
               title: 'Updated',
-              bookUid: 'old',
+              itemUid: 'old',
               isbn: 'seed',
               coverUrl: 'covers/b.jpg',
             ),
@@ -179,8 +179,8 @@ class _BookFaults extends DriftBookRepository {
   final String fault;
   bool bodySucceeded = false;
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
-      fault == 'uid' ? left(_failure) : super.findByUid(bookUid);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      fault == 'uid' ? left(_failure) : super.findByUid(itemUid);
   @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       fault == 'isbn' ? left(_failure) : super.findByIsbn(isbn);

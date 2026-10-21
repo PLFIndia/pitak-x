@@ -56,7 +56,7 @@ abstract interface class BookRepository {
   /// `CatalogueRules.sourceDetailKey` — the same key the export filter
   /// matches on, so every listed value matches at least one book.
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   );
 
   /// Finds a book by its per-device [id], or null when none exists.
@@ -88,10 +88,10 @@ abstract interface class BookRepository {
   /// import dedup (existing ISBN → skip).
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn);
 
-  /// Finds a book by its stable cross-device [bookUid], or null when none /
-  /// [bookUid] blank. Used by import to UPDATE a re-imported book in place
+  /// Finds a book by its stable cross-device [itemUid], or null when none /
+  /// [itemUid] blank. Used by import to UPDATE a re-imported book in place
   /// instead of colliding on the UNIQUE `book_uid` index (decision Q9).
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid);
 
   /// Runs [action] inside ONE database transaction: every repository call
   /// made within it (books AND wishlist — they share the database) commits

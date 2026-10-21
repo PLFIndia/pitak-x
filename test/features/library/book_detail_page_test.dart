@@ -59,7 +59,7 @@ class _MemBookRepo implements BookRepository {
 
   @override
   Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
-    final saved = book.copyWith(id: books.length + 1, bookUid: 'uid');
+    final saved = book.copyWith(id: books.length + 1, itemUid: 'uid');
     books.add(saved);
     return right(saved);
   }
@@ -85,13 +85,13 @@ class _MemBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       right(null);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -114,7 +114,7 @@ class _MemBookRepo implements BookRepository {
 
 const _seed = CatalogueItem(
   id: 7,
-  bookUid: 'uid-7',
+  itemUid: 'uid-7',
   title: 'Dune',
   author: 'Herbert',
   coverUrl: 'covers/old.jpg',
@@ -288,7 +288,7 @@ void main() {
         'covers/new.jpg',
         reason: 'the stale snapshot must not resurrect the deleted old cover',
       );
-      expect(saved.bookUid, 'uid-7');
+      expect(saved.itemUid, 'uid-7');
       // Back on the detail page, which now shows the edited row (no pop to
       // the list: the page renders truth).
       expect(find.text('Dune (annotated)'), findsOneWidget);
@@ -323,7 +323,7 @@ void main() {
     // render the row without a date instead of throwing a RangeError.
     const hostile = CatalogueItem(
       id: 7,
-      bookUid: 'uid-7',
+      itemUid: 'uid-7',
       title: 'Dune',
       addedDate: 8640000000000001, // maxDateMillis + 1
     );

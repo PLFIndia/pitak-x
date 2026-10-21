@@ -18,8 +18,8 @@ class _FakeBookRepo implements BookRepository {
   final List<CatalogueItem> stored = [];
 
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
-      right(stored.where((b) => b.bookUid == bookUid).firstOrNull);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(stored.where((b) => b.itemUid == itemUid).firstOrNull);
 
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -64,7 +64,7 @@ class _FakeBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -215,13 +215,13 @@ void main() {
     });
 
     // Decision Q9 (review 2026-09-03): a re-imported book with the SAME
-    // bookUid is updated in place — same id (vault loans keep resolving),
+    // itemUid is updated in place — same id (vault loans keep resolving),
     // same uid — instead of colliding on the UNIQUE book_uid index.
     test('updates a book in place when the file carries its bookUid', () async {
       bookRepo.stored.add(
         const CatalogueItem(
           id: 7,
-          bookUid: 'uid-7',
+          itemUid: 'uid-7',
           title: 'Old title',
           coverUrl: 'covers/local.jpg',
           addedBy: 'me',
@@ -240,7 +240,7 @@ void main() {
       expect(s.booksAdded, 0);
       final row = bookRepo.stored.single;
       expect(row.id, 7, reason: 'device id preserved');
-      expect(row.bookUid, 'uid-7');
+      expect(row.itemUid, 'uid-7');
       expect(row.title, 'New title');
       expect(row.author, 'A');
       expect(row.coverUrl, 'covers/local.jpg', reason: 'local cover kept');
@@ -254,7 +254,7 @@ void main() {
       bookRepo.stored.add(
         const CatalogueItem(
           id: 7,
-          bookUid: 'uid-7',
+          itemUid: 'uid-7',
           title: 'Old title',
           coverUrl: 'covers/photo.jpg',
         ),
@@ -281,7 +281,7 @@ void main() {
     test('M09: same-uid import takes the incoming https cover when the '
         'local row has NO cover', () async {
       bookRepo.stored.add(
-        const CatalogueItem(id: 7, bookUid: 'uid-7', title: 'Old title'),
+        const CatalogueItem(id: 7, itemUid: 'uid-7', title: 'Old title'),
       );
       ok(
         await useCase.importText(
@@ -355,7 +355,7 @@ class _FailingBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -393,7 +393,7 @@ class _FailingBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>

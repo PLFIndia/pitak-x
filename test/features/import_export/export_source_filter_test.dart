@@ -6,30 +6,30 @@ void main() {
   const donatedByRam = CatalogueItem(
     id: 1,
     title: 'Godaan',
-    sourceType: BookSourceType.donated,
+    sourceType: ItemSourceType.donated,
     sourceDetail: 'Ram Sharma',
   );
   const donatedByRamLoose = CatalogueItem(
     id: 2,
     title: 'Nirmala',
-    sourceType: BookSourceType.donated,
+    sourceType: ItemSourceType.donated,
     sourceDetail: '  ram sharma ',
   );
   const donatedBySita = CatalogueItem(
     id: 3,
     title: 'Gaban',
-    sourceType: BookSourceType.donated,
+    sourceType: ItemSourceType.donated,
     sourceDetail: 'Sita Devi',
   );
   const donatedNoDetail = CatalogueItem(
     id: 4,
     title: 'Rangbhoomi',
-    sourceType: BookSourceType.donated,
+    sourceType: ItemSourceType.donated,
   );
   const purchased = CatalogueItem(
     id: 5,
     title: 'Karmabhoomi',
-    sourceType: BookSourceType.purchased,
+    sourceType: ItemSourceType.purchased,
     sourceDetail: 'Ram Sharma', // same name, different role
   );
   const noSource = CatalogueItem(id: 6, title: 'Sevasadan');
@@ -57,20 +57,20 @@ void main() {
 
   group('ExportSourceFilter.byType', () {
     test('type only keeps every book of that type, detail or not', () {
-      final filter = ExportSourceFilter.byType(BookSourceType.donated);
+      final filter = ExportSourceFilter.byType(ItemSourceType.donated);
       expect(filter.isActive, isTrue);
       expect(filter.apply(all).map((b) => b.id), [1, 2, 3, 4]);
     });
 
     test('a book with no source never matches an active filter', () {
-      final filter = ExportSourceFilter.byType(BookSourceType.other);
+      final filter = ExportSourceFilter.byType(ItemSourceType.other);
       expect(filter.matches(noSource), isFalse);
       expect(filter.apply(all), isEmpty);
     });
 
     test('type + detail matches trimmed, case-insensitively', () {
       final filter = ExportSourceFilter.byType(
-        BookSourceType.donated,
+        ItemSourceType.donated,
         detail: 'RAM sharma',
       );
       expect(filter.apply(all).map((b) => b.id), [1, 2]);
@@ -82,26 +82,26 @@ void main() {
 
     test('a blank detail is normalised to "any detail"', () {
       final filter = ExportSourceFilter.byType(
-        BookSourceType.donated,
+        ItemSourceType.donated,
         detail: '   ',
       );
       expect(filter.sourceDetail, isNull);
       expect(
-        filter.sameAs(ExportSourceFilter.byType(BookSourceType.donated)),
+        filter.sameAs(ExportSourceFilter.byType(ItemSourceType.donated)),
         isTrue,
       );
     });
 
     test('the detail is stored trimmed', () {
       final filter = ExportSourceFilter.byType(
-        BookSourceType.gift,
+        ItemSourceType.gift,
         detail: '  Aunt May ',
       );
       expect(filter.sourceDetail, 'Aunt May');
     });
 
     test('preserves the input order of the matching books', () {
-      final filter = ExportSourceFilter.byType(BookSourceType.donated);
+      final filter = ExportSourceFilter.byType(ItemSourceType.donated);
       final reversed = all.reversed.toList();
       expect(filter.apply(reversed).map((b) => b.id), [4, 3, 2, 1]);
     });
@@ -109,14 +109,14 @@ void main() {
 
   group('sameAs', () {
     final donatedX = ExportSourceFilter.byType(
-      BookSourceType.donated,
+      ItemSourceType.donated,
       detail: 'X',
     );
 
     test('same type + detail mean the same subset', () {
       expect(
         donatedX.sameAs(
-          ExportSourceFilter.byType(BookSourceType.donated, detail: 'X'),
+          ExportSourceFilter.byType(ItemSourceType.donated, detail: 'X'),
         ),
         isTrue,
       );
@@ -125,20 +125,20 @@ void main() {
     test('a different detail, type or "all" does not', () {
       expect(
         donatedX.sameAs(
-          ExportSourceFilter.byType(BookSourceType.donated, detail: 'x'),
+          ExportSourceFilter.byType(ItemSourceType.donated, detail: 'x'),
         ),
         isFalse,
         reason: "stored spelling differs; matching is the use case's job",
       );
       expect(
         donatedX.sameAs(
-          ExportSourceFilter.byType(BookSourceType.purchased, detail: 'X'),
+          ExportSourceFilter.byType(ItemSourceType.purchased, detail: 'X'),
         ),
         isFalse,
       );
       expect(
         ExportSourceFilter.byType(
-          BookSourceType.donated,
+          ItemSourceType.donated,
         ).sameAs(const ExportSourceFilter.all()),
         isFalse,
       );

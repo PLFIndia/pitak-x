@@ -15,7 +15,7 @@ void main() {
     language: 'en',
     notes: 'Borrowed from Ravi — PII',
     location: 'Shelf 3B',
-    sourceType: BookSourceType.gift,
+    sourceType: ItemSourceType.gift,
     sourceDetail: 'Gift from Ravi',
     addedDate: 1700000000000,
     addedBy: 'maintainer-x',

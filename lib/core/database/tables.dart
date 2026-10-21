@@ -20,7 +20,9 @@ class Books extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   /// Stable cross-device UUID (unique among non-null). Minted at first persist.
-  TextColumn get bookUid => text().named('book_uid').nullable()();
+  /// The column stays `book_uid` (persisted contract, plan F7); only the Dart
+  /// getter says "item" because the row is the base of every item kind.
+  TextColumn get itemUid => text().named('book_uid').nullable()();
 
   /// Required title (native script).
   TextColumn get title => text()();

@@ -27,7 +27,7 @@ class _Books implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -55,7 +55,7 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
@@ -149,7 +149,7 @@ void main() {
       author: 'Ramachandra Guha',
       isbn: '978-1',
       ageGroup: AgeGroup.advanced,
-      sourceType: BookSourceType.gift,
+      sourceType: ItemSourceType.gift,
       language: 'Hindi',
       copyCount: 3,
       addedDate: 100,
@@ -194,7 +194,7 @@ void main() {
     expect(b.title, 'भारत: गांधी के बाद');
     expect(b.author, 'Ramachandra Guha');
     expect(b.ageGroup, AgeGroup.advanced);
-    expect(b.sourceType, BookSourceType.gift);
+    expect(b.sourceType, ItemSourceType.gift);
     expect(b.language, 'Hindi');
     expect(b.copyCount, 3);
     expect(b.removed, isTrue);
@@ -350,25 +350,25 @@ void main() {
     const sourced = [
       CatalogueItem(
         title: 'Godaan',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Ram Sharma',
         addedDate: 4,
       ),
       CatalogueItem(
         title: 'Nirmala',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'ram sharma',
         addedDate: 3,
       ),
       CatalogueItem(
         title: 'Gaban',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Sita Devi',
         addedDate: 2,
       ),
       CatalogueItem(
         title: 'Karmabhoomi',
-        sourceType: BookSourceType.purchased,
+        sourceType: ItemSourceType.purchased,
         sourceDetail: 'Ram Sharma',
         addedDate: 1,
       ),
@@ -385,7 +385,7 @@ void main() {
       final result = await useCase(
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
-        sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+        sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
       );
       final export = result.getOrElse((f) => fail('failed: $f'));
@@ -404,7 +404,7 @@ void main() {
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
         sourceFilter: ExportSourceFilter.byType(
-          BookSourceType.donated,
+          ItemSourceType.donated,
           detail: 'Ram Sharma',
         ),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -434,7 +434,7 @@ void main() {
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
         sourceFilter: ExportSourceFilter.byType(
-          BookSourceType.donated,
+          ItemSourceType.donated,
           detail: 'Sita Devi',
         ),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -474,7 +474,7 @@ void main() {
           bookRepo: _Books(const [
             CatalogueItem(
               title: 'गोदान',
-              sourceType: BookSourceType.gift,
+              sourceType: ItemSourceType.gift,
               sourceDetail: 'राम शर्मा',
             ),
           ]),
@@ -484,7 +484,7 @@ void main() {
           scope: ExportScope.libraryOnly,
           format: ExportFormat.pdf,
           sourceFilter: ExportSourceFilter.byType(
-            BookSourceType.gift,
+            ItemSourceType.gift,
             detail: 'राम शर्मा',
           ),
           now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -502,7 +502,7 @@ void main() {
         final result = await useCase(
           scope: ExportScope.libraryOnly,
           format: ExportFormat.json,
-          sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+          sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
         );
         final export = result.getOrElse((f) => fail('failed: $f'));
         expect(export.suggestedFileName, endsWith('.json'));

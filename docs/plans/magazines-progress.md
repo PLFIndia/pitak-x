@@ -6,10 +6,10 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S1** (`Book` → `CatalogueItem`)
+- Last completed session: **S2** (`itemUid`, `ItemSourceType`, `LibrarySort`)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S1's commit (S0 was `8899cc0`)
-- Full suite last green at: **S1, 2026-10-21** — 2426 tests, 63 s
+- Last commit: S2's commit (S1 was `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S2, 2026-10-21** — 2426 tests, 60 s
   (`flutter test --exclude-tags golden`)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
@@ -37,27 +37,33 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S2 — Rename `bookUid` → `itemUid`, `BookSourceType`, `BookSort`.** Nothing
-in flight. Follow the plan's S2 steps verbatim.
+**S3 — Rename repository, mapper, use cases, providers.** Nothing in flight.
+Follow the plan's S3 steps verbatim.
 
-Notes for it:
+Notes for it (rename technique, learned in S1/S2):
 
 - `git grep` on this macOS build does not support `\b`; use
-  `git grep -P '\bbookUid\b'` (PCRE). The system `grep` has no `-P` either.
-- Do the identifier replacement with a lexer that skips string literals and
-  comments (S1 used `/tmp/rename_book.py`-style tokenising: `//`, `/* */`,
-  `'…'`, `"…"`, `r'…'`, triple quotes, `${}` interpolation). A blind regex
-  would rewrite JSON keys and test fixtures — exactly what step 1's
-  "restore every string literal" clause warns about. Treat the `.g.dart`
-  files like any other file, then run `gen` and confirm it only re-emits what
-  the script already wrote.
-- `git ls-files -- 'lib/**/*.dart'` does NOT match top-level files
-  (`lib/main.dart`, `test/widget_test.dart`, `test/app_lock_navigator_test.dart`,
-  `integration_test/vault_smoke_test.dart`); include them explicitly.
-- Expect `dart format` to wrap lines where the identifier got longer and the
-  `lines_longer_than_80_chars` lint to flag comment lines — reflow those
-  paragraphs (S1 did this with a small textwrap script). Re-check the file-size
-  ratchet afterwards (see Deviations).
+  `git grep -P '\bBookRepository\b'` (PCRE). The system `grep` has no `-P`.
+- Do identifier replacement with a lexer that skips string literals (JSON
+  keys, UI text, fixtures) and handles `//`, `/* */`, `'…'`, `"…"`, `r'…'`,
+  triple quotes and `${}` interpolation; rename inside comments too, then
+  review the comment diff for references to Kotlin class names (restore
+  those: e.g. "Kotlin `BookSort`" stayed). A blind regex breaks raw-string
+  prefixes and fixtures. Treat `.g.dart` like any other file, then run `gen`
+  and confirm it only re-emits what the script already wrote (hash lines and
+  copied doc comments change — expected).
+- `git ls-files -- 'lib/*.dart'` (single star) matches everything under
+  `lib/`; `'lib/**/*.dart'` misses top-level files. Exclude `lib/src/rust/`
+  and `test/core/database/generated/` (version-pinned helpers) explicitly.
+- After the rename: `dart format`, then fix `lines_longer_than_80_chars` in
+  comments by reflowing the paragraph (S1 used a textwrap script), then
+  re-check the file-size ratchet (`layer_boundaries_test.dart`) — S3 re-keys
+  `drift_book_repository.dart` → `drift_catalogue_item_repository.dart` with
+  the same recorded size (597).
+- Generated riverpod provider names follow the function names after `gen`
+  (`bookRepositoryProvider` → `catalogueItemRepositoryProvider`); rename the
+  provider functions and let `gen` produce the `…Provider` identifiers, but
+  the lexer must rename the `…Provider` references in hand-written code too.
 
 ## Deviations from plan
 
@@ -81,4 +87,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 |---------|-------|--------|------|-------|
 | — | — | `9ca2dba` | 2026-10-21 | plan committed; no sessions run |
 | S0 | Done | `8899cc0` | 2026-10-21 | baseline: 2426 tests green in 86 s, 7 platform goldens (verify in CI); gen no diff |
-| S1 | Done | _(this commit)_ | 2026-10-21 | `Book` → `CatalogueItem`, 130 files; remaining `\bBook\b` in lib+test = 87, all prose/UI strings/fixtures; full green 2426 |
+| S1 | Done | `e216e6b` | 2026-10-21 | `Book` → `CatalogueItem`, 130 files; remaining `\bBook\b` in lib+test = 87, all prose/UI strings/fixtures; full green 2426 |
+| S2 | Done | _(this commit)_ | 2026-10-21 | `itemUid`/`ItemSourceType`/`LibrarySort`, 83 files. `git grep -n book_uid -- lib` (non-generated) = 18 lines, all column-name sites; `git grep -c "'bookUid'" -- lib` hand-written = 3 (unchanged: exporter, importer, `validate` field label); generated `app_database.g.dart` went 3 → 0 because the Drift row data-class JSON serializer (used nowhere in the app) now keys on the getter `itemUid`. The v1–v4 `test/core/database/generated/` helpers keep `bookUid` (version-pinned). Full green 2426 |

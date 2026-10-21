@@ -84,7 +84,7 @@ class _StrictXFile extends XFile {
 class _Books implements BookRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
-      right([const CatalogueItem(id: 7, title: 'Local', bookUid: 'old')]);
+      right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -389,14 +389,14 @@ void main() {
   group('N07 — per-row review cards', () {
     const local = CatalogueItem(
       id: 1,
-      bookUid: 'u1',
+      itemUid: 'u1',
       title: 'Godaan',
       author: 'Premchand',
       genre: 'Fiction',
       addedDate: 1,
     );
     const incoming = CatalogueItem(
-      bookUid: 'u1',
+      itemUid: 'u1',
       title: 'Godaan',
       author: 'Premchand',
       genre: 'Classic',
@@ -488,7 +488,7 @@ void main() {
         'similarity; a key collision shows a plain explanation and NO Take '
         'theirs', (tester) async {
       const earlierIncoming = CatalogueItem(
-        bookUid: 'uB',
+        itemUid: 'uB',
         title: 'Godaan',
         addedDate: 1,
       );
@@ -504,7 +504,7 @@ void main() {
             PossibleDuplicate(
               local: earlierIncoming,
               incoming: CatalogueItem(
-                bookUid: 'uB',
+                itemUid: 'uB',
                 title: 'Godaan (duplicate row)',
                 addedDate: 1,
               ),

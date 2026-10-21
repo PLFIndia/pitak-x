@@ -17,7 +17,7 @@ library;
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
-/// Narrows an export to one [BookSourceType], optionally to one
+/// Narrows an export to one [ItemSourceType], optionally to one
 /// [sourceDetail] within it.
 final class ExportSourceFilter {
   /// Every book, whatever its source (the default).
@@ -29,12 +29,12 @@ final class ExportSourceFilter {
   ///
   /// [detail] is normalised here — trimmed, blank → null — so callers never
   /// have to remember to.
-  ExportSourceFilter.byType(BookSourceType type, {String? detail})
+  ExportSourceFilter.byType(ItemSourceType type, {String? detail})
     : sourceType = type,
       sourceDetail = _trimToNull(detail);
 
   /// The provenance category to keep, or null for "all".
-  final BookSourceType? sourceType;
+  final ItemSourceType? sourceType;
 
   /// The free-text detail to keep (trimmed, never blank), or null for "any
   /// detail". Always null when [sourceType] is null.

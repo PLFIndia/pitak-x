@@ -152,8 +152,8 @@ class PdfColumnLabels {
   /// Column header text, keyed by column.
   final Map<PdfColumn, String> header;
 
-  /// Human label for a [BookSourceType].
-  final String Function(BookSourceType) sourceType;
+  /// Human label for an [ItemSourceType].
+  final String Function(ItemSourceType) sourceType;
 
   /// Human label for an [AgeGroup].
   final String Function(AgeGroup) ageGroup;

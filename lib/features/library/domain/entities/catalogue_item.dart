@@ -13,8 +13,8 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 /// Fixed provenance categories for `CatalogueItem.sourceType`. Stored as the
 /// Dart enum constant name (e.g. `purchased`) — mirrors Kotlin where it is
 /// persisted as the enum `name`. Tolerant parse via
-/// [BookSourceTypeX.fromToken].
-enum BookSourceType {
+/// [ItemSourceTypeX.fromToken].
+enum ItemSourceType {
   /// Bought.
   purchased,
 
@@ -31,16 +31,16 @@ enum BookSourceType {
   other,
 }
 
-/// Tolerant parsing for [BookSourceType].
-extension BookSourceTypeX on BookSourceType {
+/// Tolerant parsing for [ItemSourceType].
+extension ItemSourceTypeX on ItemSourceType {
   /// The stable storage token (Kotlin enum `name`, upper-case).
   String get token => name.toUpperCase();
 
   /// Parses a stored value tolerantly; unknown/blank → null (never throws).
-  static BookSourceType? fromToken(String? raw) {
+  static ItemSourceType? fromToken(String? raw) {
     final key = raw?.trim().toUpperCase();
     if (key == null || key.isEmpty) return null;
-    for (final v in BookSourceType.values) {
+    for (final v in ItemSourceType.values) {
       if (v.token == key) return v;
     }
     return null;
@@ -122,7 +122,7 @@ class CatalogueItem {
   const CatalogueItem({
     required this.title,
     this.id = emptyId,
-    this.bookUid,
+    this.itemUid,
     this.titleTransliteration,
     this.author,
     this.isbn,
@@ -148,13 +148,13 @@ class CatalogueItem {
   /// Sentinel meaning "not yet persisted".
   static const int emptyId = 0;
 
-  /// Per-device autoincrement id. Meaningless across installs (use [bookUid]).
+  /// Per-device autoincrement id. Meaningless across installs (use [itemUid]).
   final int id;
 
   /// Stable globally-unique identity (UUID), minted once at first persist and
   /// carried through export/import unchanged. The cross-device merge key.
   /// Null only means "not yet persisted / not yet minted".
-  final String? bookUid;
+  final String? itemUid;
 
   /// Required title, native script (UTF-8).
   final String title;
@@ -194,7 +194,7 @@ class CatalogueItem {
   final String? location;
 
   /// How this copy was acquired (private; stripped at publish).
-  final BookSourceType? sourceType;
+  final ItemSourceType? sourceType;
 
   /// Free-form provenance specifics (private; stripped at publish).
   final String? sourceDetail;
@@ -240,7 +240,9 @@ class CatalogueItem {
     // bloat the database. Importers truncate + report; forms reject.
     final textFields = <String, String?>{
       'title': title,
-      'bookUid': book.bookUid,
+      // Field label stays `bookUid`: it names the JSON key a user sees in
+      // an import report (wire contract, ADR 0014).
+      'bookUid': book.itemUid,
       'titleTransliteration': book.titleTransliteration,
       'author': book.author,
       'isbn': book.isbn,
@@ -300,7 +302,7 @@ class CatalogueItem {
     return right(
       CatalogueItem(
         id: book.id,
-        bookUid: book.bookUid,
+        itemUid: book.itemUid,
         title: title,
         titleTransliteration: book.titleTransliteration,
         author: book.author,
@@ -329,7 +331,7 @@ class CatalogueItem {
   /// Returns a copy with the given fields replaced.
   CatalogueItem copyWith({
     int? id,
-    String? bookUid,
+    String? itemUid,
     String? title,
     String? titleTransliteration,
     String? author,
@@ -342,7 +344,7 @@ class CatalogueItem {
     String? language,
     String? notes,
     String? location,
-    BookSourceType? sourceType,
+    ItemSourceType? sourceType,
     String? sourceDetail,
     AgeGroup? ageGroup,
     int? addedDate,
@@ -354,7 +356,7 @@ class CatalogueItem {
   }) {
     return CatalogueItem(
       id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
+      itemUid: itemUid ?? this.itemUid,
       title: title ?? this.title,
       titleTransliteration: titleTransliteration ?? this.titleTransliteration,
       author: author ?? this.author,

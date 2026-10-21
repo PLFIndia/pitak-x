@@ -15,7 +15,7 @@ extension BookRowMapper on BookRow {
   /// Persistence row → domain entity. Tolerant of unknown enum tokens (→ null).
   CatalogueItem toDomain() => CatalogueItem(
     id: id,
-    bookUid: bookUid,
+    itemUid: itemUid,
     title: title,
     titleTransliteration: titleTransliteration,
     author: author,
@@ -28,7 +28,7 @@ extension BookRowMapper on BookRow {
     language: language,
     notes: notes,
     location: location,
-    sourceType: BookSourceTypeX.fromToken(sourceType),
+    sourceType: ItemSourceTypeX.fromToken(sourceType),
     sourceDetail: sourceDetail,
     ageGroup: AgeGroup.fromToken(ageGroup),
     addedDate: addedDate,
@@ -47,7 +47,7 @@ extension BookCompanionMapper on CatalogueItem {
   /// `LOWER()`, so non-ASCII scripts fold correctly.
   BooksCompanion toCompanion() => BooksCompanion(
     id: id == CatalogueItem.emptyId ? const Value.absent() : Value(id),
-    bookUid: Value(bookUid),
+    itemUid: Value(itemUid),
     title: Value(title),
     titleTransliteration: Value(titleTransliteration),
     author: Value(author),

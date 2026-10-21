@@ -49,7 +49,8 @@ class PitakaJsonExporter implements LibraryJsonEncoder {
   }
 
   Map<String, dynamic> _book(CatalogueItem b) => _compact({
-    'bookUid': b.bookUid,
+    // JSON key stays `bookUid` (wire contract, ADR 0014).
+    'bookUid': b.itemUid,
     'title': b.title,
     'titleTransliteration': b.titleTransliteration,
     'author': b.author,

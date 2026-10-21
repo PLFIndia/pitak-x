@@ -4,7 +4,7 @@
 ///
 /// Sniffs the format, parses, and writes through both repositories. Dedup is
 /// idempotent on re-import:
-///  - library, matched by **bookUid** (the stable cross-device identity):
+///  - library, matched by **itemUid** (the stable cross-device identity):
 ///    the existing row is **updated in place** — same id, same uid, so vault
 ///    loans keep pointing at it — with the incoming catalogue fields. A
 ///    local cover is kept when the incoming file has none (plain JSON drops
@@ -59,7 +59,7 @@ class ImportSummary {
   /// New library books inserted.
   final int booksAdded;
 
-  /// Existing library books updated in place (same bookUid in the file).
+  /// Existing library books updated in place (same itemUid in the file).
   final int booksUpdated;
 
   /// Library books skipped because their ISBN already existed (no uid match).
@@ -192,7 +192,7 @@ final class ImportLibraryUseCase {
       }
       final book = checked.toNullable()!;
       // 1. Same stable identity already here → update that row in place.
-      final uid = book.bookUid?.trim();
+      final uid = book.itemUid?.trim();
       if (uid != null && uid.isNotEmpty) {
         final byUid = await _bookRepo.findByUid(uid);
         if (byUid.isLeft()) {
@@ -318,8 +318,8 @@ final class ImportLibraryUseCase {
     );
   }
 
-  /// The row to write when [incoming] (same bookUid) updates [existing]:
-  /// keep this device's `id` (vault loans reference it) and `bookUid`; take
+  /// The row to write when [incoming] (same itemUid) updates [existing]:
+  /// keep this device's `id` (vault loans reference it) and `itemUid`; take
   /// the incoming catalogue fields; the cover follows [resolveIncomingCover]
   /// (M09): a local photo is never replaced by an incoming remote URL, and
   /// a file carrying no cover keeps the local one.
@@ -333,7 +333,7 @@ final class ImportLibraryUseCase {
     );
     return CatalogueItem(
       id: existing.id,
-      bookUid: existing.bookUid,
+      itemUid: existing.itemUid,
       title: incoming.title,
       titleTransliteration: incoming.titleTransliteration,
       author: incoming.author,

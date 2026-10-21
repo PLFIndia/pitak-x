@@ -38,7 +38,7 @@ class _FailingSettingsRepo implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setLibraryName(String name) => throw _boom;
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) => throw _boom;
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) => throw _boom;
   @override
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
       throw _boom;
@@ -131,7 +131,8 @@ class _GatedSettingsRepo implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setLibraryName(String name) => _gate('name');
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) => _gate('sort');
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) =>
+      _gate('sort');
   @override
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
       _gate('covers');
@@ -170,7 +171,7 @@ void main() {
       expect(s.themeMode, AppThemeMode.system);
       expect(s.libraryName, '');
       expect(s.maintainerName, '');
-      expect(s.librarySort, BookSort.recentlyAdded);
+      expect(s.librarySort, LibrarySort.recentlyAdded);
       expect(s.loadRemoteCovers, false); // privacy default: off (#31)
       expect(s.libraryLogo, '');
       expect(s.appLockBiometric, false); // gate opt-in, default off
@@ -184,7 +185,7 @@ void main() {
       await repo.setThemeMode(AppThemeMode.dark);
       await repo.setLibraryName('  My Shelf  ');
       await repo.setMaintainerName('Asha');
-      await repo.setLibrarySort(BookSort.languageAsc);
+      await repo.setLibrarySort(LibrarySort.languageAsc);
       await repo.setLoadRemoteCovers(enabled: true);
       await repo.setLibraryLogo('  covers/abc.jpg  ');
       await repo.setAppLockBiometric(enabled: true);
@@ -193,7 +194,7 @@ void main() {
       expect(s.themeMode, AppThemeMode.dark);
       expect(s.libraryName, 'My Shelf'); // trimmed
       expect(s.maintainerName, 'Asha');
-      expect(s.librarySort, BookSort.languageAsc);
+      expect(s.librarySort, LibrarySort.languageAsc);
       expect(s.loadRemoteCovers, true);
       expect(s.libraryLogo, 'covers/abc.jpg'); // trimmed
       expect(s.appLockBiometric, true);
@@ -406,7 +407,7 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final s = await PrefsSettingsRepository(prefs).load();
       expect(s.themeMode, AppThemeMode.system);
-      expect(s.librarySort, BookSort.recentlyAdded);
+      expect(s.librarySort, LibrarySort.recentlyAdded);
     });
   });
 
@@ -581,7 +582,7 @@ void main() {
         expect((await repo.setLibraryName('x')).isLeft(), isTrue);
         expect((await repo.setMaintainerName('x')).isLeft(), isTrue);
         expect(
-          (await repo.setLibrarySort(BookSort.languageAsc)).isLeft(),
+          (await repo.setLibrarySort(LibrarySort.languageAsc)).isLeft(),
           isTrue,
         );
         expect(
@@ -724,7 +725,7 @@ void main() {
     test(
       'a failed write in the queue neither blocks nor reverts a later write',
       () async {
-        final sort = controller.setLibrarySort(BookSort.languageAsc);
+        final sort = controller.setLibrarySort(LibrarySort.languageAsc);
         final covers = controller.setLoadRemoteCovers(enabled: true);
         await pumpEventQueue();
 
@@ -739,7 +740,7 @@ void main() {
         // Last successful publish wins the visible state; the failed field
         // was never applied (fail closed, M17).
         expect(s.valueOrNull?.loadRemoteCovers, isTrue);
-        expect(s.valueOrNull?.librarySort, BookSort.recentlyAdded);
+        expect(s.valueOrNull?.librarySort, LibrarySort.recentlyAdded);
       },
     );
 

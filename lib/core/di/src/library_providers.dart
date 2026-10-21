@@ -97,7 +97,7 @@ Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
 }
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -107,7 +107,7 @@ Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
 @riverpod
 Future<List<String>> librarySourceDetails(
   LibrarySourceDetailsRef ref,
-  BookSourceType type,
+  ItemSourceType type,
 ) async {
   ref.watch(libraryControllerProvider);
   final repo = await ref.watch(bookRepositoryProvider.future);

@@ -65,18 +65,18 @@ void main() {
     });
   });
 
-  group('BookSourceType.fromToken', () {
+  group('ItemSourceType.fromToken', () {
     test('round-trips and is tolerant', () {
-      for (final v in BookSourceType.values) {
-        expect(BookSourceTypeX.fromToken(v.token), v);
-        expect(BookSourceTypeX.fromToken(v.name), v);
+      for (final v in ItemSourceType.values) {
+        expect(ItemSourceTypeX.fromToken(v.token), v);
+        expect(ItemSourceTypeX.fromToken(v.name), v);
       }
       expect(
-        BookSourceTypeX.fromToken('  purchased '),
-        BookSourceType.purchased,
+        ItemSourceTypeX.fromToken('  purchased '),
+        ItemSourceType.purchased,
       );
-      expect(BookSourceTypeX.fromToken(null), isNull);
-      expect(BookSourceTypeX.fromToken('bogus'), isNull);
+      expect(ItemSourceTypeX.fromToken(null), isNull);
+      expect(ItemSourceTypeX.fromToken('bogus'), isNull);
     });
   });
 
@@ -95,7 +95,7 @@ void main() {
       expect(book.copyCount, 1);
       expect(book.needsMetadata, isFalse);
       expect(book.removed, isFalse);
-      expect(book.bookUid, isNull);
+      expect(book.itemUid, isNull);
     });
   });
 }

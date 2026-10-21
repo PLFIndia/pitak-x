@@ -36,7 +36,7 @@ extension AppThemeModeX on AppThemeMode {
 }
 
 /// Library list sort order (Kotlin `BookSort`). Stored as the enum name.
-enum BookSort {
+enum LibrarySort {
   /// Newest-added first (default).
   recentlyAdded,
 
@@ -47,17 +47,17 @@ enum BookSort {
   ageGroupAsc,
 }
 
-/// Tolerant parsing for [BookSort].
-extension BookSortX on BookSort {
+/// Tolerant parsing for [LibrarySort].
+extension LibrarySortX on LibrarySort {
   /// Stable storage token (the enum name).
   String get token => name;
 
-  /// Parses a stored token; unknown/blank → [BookSort.recentlyAdded].
-  static BookSort fromToken(String? raw) {
-    for (final v in BookSort.values) {
+  /// Parses a stored token; unknown/blank → [LibrarySort.recentlyAdded].
+  static LibrarySort fromToken(String? raw) {
+    for (final v in LibrarySort.values) {
       if (v.name == raw) return v;
     }
-    return BookSort.recentlyAdded;
+    return LibrarySort.recentlyAdded;
   }
 }
 
@@ -104,7 +104,7 @@ class AppSettings {
     this.libraryName = '',
     this.libraryId = '',
     this.maintainerName = '',
-    this.librarySort = BookSort.recentlyAdded,
+    this.librarySort = LibrarySort.recentlyAdded,
     this.loadRemoteCovers = false,
     this.publishContactAddress = '',
     this.publishContactGps = '',
@@ -136,7 +136,7 @@ class AppSettings {
   final String maintainerName;
 
   /// Persisted library list sort.
-  final BookSort librarySort;
+  final LibrarySort librarySort;
 
   /// Opt-in to fetching `https://` book covers over the network (#31).
   /// Default false: remote covers show a placeholder and nothing leaves the
@@ -195,7 +195,7 @@ class AppSettings {
     String? libraryName,
     String? libraryId,
     String? maintainerName,
-    BookSort? librarySort,
+    LibrarySort? librarySort,
     bool? loadRemoteCovers,
     String? publishContactAddress,
     String? publishContactGps,

@@ -64,7 +64,7 @@ List<CatalogueItem> _fixture({int rows = 40, int seed = 20260913}) {
 /// [language] with the D1-a rule (exact match on the stored string).
 List<int> _expectedIds(
   List<CatalogueItem> all,
-  BookSort sort,
+  LibrarySort sort,
   String? language,
 ) {
   final narrowed = language == null
@@ -97,7 +97,7 @@ void main() {
         title: 'भारत: गांधी के बाद',
         author: 'Ramachandra Guha',
         ageGroup: AgeGroup.advanced,
-        sourceType: BookSourceType.gift,
+        sourceType: ItemSourceType.gift,
         addedDate: 100,
         copyCount: 3,
         removed: true,
@@ -105,7 +105,7 @@ void main() {
       );
 
       final inserted = ok<CatalogueItem>(await repo.insert(book));
-      expect(inserted.bookUid, isNotNull);
+      expect(inserted.itemUid, isNotNull);
       expect(inserted.id, greaterThan(0));
 
       final all = ok<List<CatalogueItem>>(await repo.getAll());
@@ -113,11 +113,11 @@ void main() {
       final got = all.single;
       expect(got.title, 'भारत: गांधी के बाद');
       expect(got.ageGroup, AgeGroup.advanced); // token persisted + parsed back
-      expect(got.sourceType, BookSourceType.gift);
+      expect(got.sourceType, ItemSourceType.gift);
       expect(got.copyCount, 3);
       expect(got.removed, isTrue);
       expect(got.removedAt, 200);
-      expect(got.bookUid, inserted.bookUid);
+      expect(got.itemUid, inserted.itemUid);
     },
   );
 
@@ -133,7 +133,7 @@ void main() {
 
     final hits = ok<BookPage>(
       await repo.page(
-        LibraryQuery(text: 'witt', sort: BookSort.recentlyAdded), // prefix
+        LibraryQuery(text: 'witt', sort: LibrarySort.recentlyAdded), // prefix
         limit: libraryPageSize,
       ),
     );
@@ -148,7 +148,7 @@ void main() {
     );
     // A bare '+' / quote must not crash the query.
     final res = await repo.page(
-      LibraryQuery(text: 'C++ "', sort: BookSort.recentlyAdded),
+      LibraryQuery(text: 'C++ "', sort: LibrarySort.recentlyAdded),
       limit: libraryPageSize,
     );
     expect(res.isRight(), isTrue);
@@ -156,15 +156,15 @@ void main() {
 
   test('insertAll preserves existing uids and assigns missing ones', () async {
     final res = await repo.insertAll(const [
-      CatalogueItem(title: 'A', bookUid: 'keep-me', addedDate: 1),
+      CatalogueItem(title: 'A', itemUid: 'keep-me', addedDate: 1),
       CatalogueItem(title: 'B', addedDate: 2),
     ]);
     expect(ok<int>(res), 2);
     final all = ok<List<CatalogueItem>>(await repo.getAll());
     final a = all.firstWhere((b) => b.title == 'A');
     final b = all.firstWhere((b) => b.title == 'B');
-    expect(a.bookUid, 'keep-me');
-    expect(b.bookUid, isNotNull);
+    expect(a.itemUid, 'keep-me');
+    expect(b.itemUid, isNotNull);
   });
 
   test('findByIsbn returns the match, null for unknown/blank', () async {
@@ -207,24 +207,24 @@ void main() {
 
     test('replaceAll swaps the catalogue and keeps incoming uids', () async {
       await repo.insert(
-        const CatalogueItem(title: 'Old', bookUid: 'old-uid', addedDate: 1),
+        const CatalogueItem(title: 'Old', itemUid: 'old-uid', addedDate: 1),
       );
       final res = await repo.replaceAll(const [
-        CatalogueItem(title: 'New1', bookUid: 'keep-uid', addedDate: 2),
+        CatalogueItem(title: 'New1', itemUid: 'keep-uid', addedDate: 2),
         CatalogueItem(title: 'New2', addedDate: 3),
       ]);
       expect(ok<int>(res), 2);
       final all = ok<List<CatalogueItem>>(await repo.getAll());
       expect(all.map((b) => b.title), unorderedEquals(['New1', 'New2']));
-      expect(all.firstWhere((b) => b.title == 'New1').bookUid, 'keep-uid');
-      expect(all.firstWhere((b) => b.title == 'New2').bookUid, isNotNull);
+      expect(all.firstWhere((b) => b.title == 'New1').itemUid, 'keep-uid');
+      expect(all.firstWhere((b) => b.title == 'New2').itemUid, isNotNull);
     });
 
     test('replaceAll rolls back the deletes when an insert fails', () async {
       await repo.insert(
         const CatalogueItem(
           title: 'Old',
-          bookUid: 'old-uid',
+          itemUid: 'old-uid',
           isbn: '999',
           addedDate: 1,
         ),
@@ -240,7 +240,7 @@ void main() {
       final all = ok<List<CatalogueItem>>(await repo.getAll());
       expect(all, hasLength(1));
       expect(all.single.title, 'Old');
-      expect(all.single.bookUid, 'old-uid');
+      expect(all.single.itemUid, 'old-uid');
     });
 
     test(
@@ -266,19 +266,19 @@ void main() {
       () async {
         ok(
           await repo.insert(
-            const CatalogueItem(title: 'Keep', bookUid: 'keep'),
+            const CatalogueItem(title: 'Keep', itemUid: 'keep'),
           ),
         );
         final result = await repo.runInTransaction<int>(() async {
           ok(
-            await repo.insert(const CatalogueItem(title: 'One', bookUid: 'u1')),
+            await repo.insert(const CatalogueItem(title: 'One', itemUid: 'u1')),
           );
           ok(
-            await repo.insert(const CatalogueItem(title: 'Two', bookUid: 'u2')),
+            await repo.insert(const CatalogueItem(title: 'Two', itemUid: 'u2')),
           );
           // A UNIQUE collision on book_uid → Left → whole transaction undone.
           final dup = await repo.insert(
-            const CatalogueItem(title: 'Dup', bookUid: 'u1'),
+            const CatalogueItem(title: 'Dup', itemUid: 'u1'),
           );
           if (dup.isLeft()) return dup.map((_) => 0);
           return right(3);
@@ -302,7 +302,7 @@ void main() {
     });
 
     test('findByUid finds by stable identity; blank → null', () async {
-      ok(await repo.insert(const CatalogueItem(title: 'A', bookUid: 'abc')));
+      ok(await repo.insert(const CatalogueItem(title: 'A', itemUid: 'abc')));
       expect(ok<CatalogueItem?>(await repo.findByUid('abc'))?.title, 'A');
       expect(ok<CatalogueItem?>(await repo.findByUid('zzz')), isNull);
       expect(ok<CatalogueItem?>(await repo.findByUid('  ')), isNull);
@@ -348,7 +348,10 @@ void main() {
         ok(await repo.insert(const CatalogueItem(title: 'none', addedDate: 1)));
 
         final page = ok<BookPage>(
-          await repo.page(LibraryQuery(sort: BookSort.ageGroupAsc), limit: 3),
+          await repo.page(
+            LibraryQuery(sort: LibrarySort.ageGroupAsc),
+            limit: 3,
+          ),
         );
         expect(page.items.map((b) => b.id).toList(), [
           ids[AgeGroup.above3],
@@ -364,7 +367,7 @@ void main() {
       'BookSorter on a seeded fixture (D1-a: exact stored language)',
       () async {
         await seed(repo);
-        for (final sort in BookSort.values) {
+        for (final sort in LibrarySort.values) {
           for (final lang in [null, 'Hindi', 'Ελληνικά']) {
             final got = (await _allPages(
               repo,
@@ -381,7 +384,7 @@ void main() {
     test('search: every sort × language filter, read page by page, matches '
         'BookSorter — the FTS path pages the FINAL list too', () async {
       await seed(repo);
-      for (final sort in BookSort.values) {
+      for (final sort in LibrarySort.values) {
         for (final lang in [null, 'Hindi', 'Ελληνικά']) {
           final got = (await _allPages(
             repo,
@@ -418,7 +421,7 @@ void main() {
           await repo.page(
             LibraryQuery(
               text: 'witt',
-              sort: BookSort.recentlyAdded,
+              sort: LibrarySort.recentlyAdded,
               language: 'Hindi',
             ),
             limit: libraryPageSize,
@@ -446,7 +449,7 @@ void main() {
       );
       final listed = ok<BookPage>(
         await repo.page(
-          LibraryQuery(sort: BookSort.recentlyAdded, language: 'Ελληνικά'),
+          LibraryQuery(sort: LibrarySort.recentlyAdded, language: 'Ελληνικά'),
           limit: libraryPageSize,
         ),
       );
@@ -455,7 +458,7 @@ void main() {
         await repo.page(
           LibraryQuery(
             text: 'probe',
-            sort: BookSort.recentlyAdded,
+            sort: LibrarySort.recentlyAdded,
             language: 'Ελληνικά',
           ),
           limit: libraryPageSize,
@@ -477,7 +480,7 @@ void main() {
             const CatalogueItem(title: 'probe b', language: 'X', addedDate: 7),
           ),
         );
-        for (final sort in BookSort.values) {
+        for (final sort in LibrarySort.values) {
           final listed = await _allPages(repo, LibraryQuery(sort: sort));
           expect(listed.map((x) => x.id).toList(), [
             a.id,
@@ -496,8 +499,8 @@ void main() {
     test('hasMore is true exactly while rows remain — both reads', () async {
       await seed(repo); // 40 rows
       for (final query in [
-        LibraryQuery(sort: BookSort.recentlyAdded),
-        LibraryQuery(text: 'probe', sort: BookSort.recentlyAdded),
+        LibraryQuery(sort: LibrarySort.recentlyAdded),
+        LibraryQuery(text: 'probe', sort: LibrarySort.recentlyAdded),
       ]) {
         final first = ok<BookPage>(await repo.page(query, limit: 30));
         expect(first.items, hasLength(30), reason: '$query');
@@ -525,7 +528,7 @@ void main() {
         'dropped, not leaked)', () async {
       await seed(repo);
       final page = ok<BookPage>(
-        await repo.page(LibraryQuery(sort: BookSort.languageAsc), limit: 5),
+        await repo.page(LibraryQuery(sort: LibrarySort.languageAsc), limit: 5),
       );
       expect(page.items, hasLength(5));
     });
@@ -534,7 +537,7 @@ void main() {
         'cannot turn a page into a whole-catalogue read or ask SQLite for a '
         'negative window', () async {
       await seed(repo);
-      final query = LibraryQuery(sort: BookSort.recentlyAdded);
+      final query = LibraryQuery(sort: LibrarySort.recentlyAdded);
       // limit <= 0 → the smallest useful page (1), not an error and not all.
       final zero = ok<BookPage>(await repo.page(query, limit: 0));
       expect(zero.items, hasLength(1));
@@ -571,7 +574,7 @@ void main() {
       await repo.insert(const CatalogueItem(title: 'Solo', addedDate: 1));
       final listed = ok<BookPage>(
         await repo.page(
-          LibraryQuery(text: '   ', sort: BookSort.recentlyAdded),
+          LibraryQuery(text: '   ', sort: LibrarySort.recentlyAdded),
           limit: libraryPageSize,
         ),
       );
@@ -592,7 +595,7 @@ void main() {
           await repo.insert(CatalogueItem(title: 'row $i', addedDate: 10 + i)),
         );
       }
-      final query = LibraryQuery(sort: BookSort.recentlyAdded);
+      final query = LibraryQuery(sort: LibrarySort.recentlyAdded);
       final first = ok<BookPage>(await repo.page(query, limit: 3));
       // Newest first: a row newer than everything lands at position 0.
       ok(
@@ -673,10 +676,10 @@ void main() {
       'a duplicate book_uid is NOT misreported as an ISBN duplicate',
       () async {
         ok(
-          await repo.insert(const CatalogueItem(title: 'A', bookUid: 'uid-1')),
+          await repo.insert(const CatalogueItem(title: 'A', itemUid: 'uid-1')),
         );
         final failure = failureOf(
-          await repo.insert(const CatalogueItem(title: 'B', bookUid: 'uid-1')),
+          await repo.insert(const CatalogueItem(title: 'B', itemUid: 'uid-1')),
         );
         expect(failure, isA<StorageFailure>());
         expect(failure, isNot(isA<DuplicateIsbnFailure>()));

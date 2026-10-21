@@ -12,7 +12,7 @@
 ///    incoming books the local device doesn't have; NEVER silently overwrite an
 ///    existing book. When the same book differs, surface it for the user.
 ///  - **identity, evaluated in order:**
-///      1. `bookUid` — the stable cross-device id. Same uid ⇒ same book.
+///      1. `itemUid` — the stable cross-device id. Same uid ⇒ same book.
 ///      2. `isbn` — for books with no uid match. Same ISBN ⇒ same physical book
 ///         (independently scanned on two phones reconciles here).
 ///      3. no uid, no isbn ⇒ fall to fuzzy.
@@ -60,7 +60,7 @@ typedef Tokenizer = Set<String> Function(CatalogueItem book);
 
 /// How an incoming book was matched to a local book (for UI explanation).
 enum MatchKind {
-  /// Matched by the stable cross-device `bookUid`.
+  /// Matched by the stable cross-device `itemUid`.
   uid,
 
   /// Matched by normalised ISBN.
@@ -191,7 +191,7 @@ MergePlan planMerge(
   final localByUid = <String, CatalogueItem>{};
   final localByIsbn = <String, CatalogueItem>{};
   for (final b in local) {
-    final uid = b.bookUid?.trim();
+    final uid = b.itemUid?.trim();
     if (uid != null && uid.isNotEmpty) {
       localByUid.putIfAbsent(uid, () => b);
     }
@@ -227,14 +227,14 @@ MergePlan planMerge(
 
   void routeToAdd(CatalogueItem b) {
     toAdd.add(b);
-    final uid = b.bookUid?.trim();
+    final uid = b.itemUid?.trim();
     if (uid != null && uid.isNotEmpty) addedByUid[uid] = b;
     final isbn = normIsbn(b.isbn);
     if (isbn.isNotEmpty) addedByIsbn[isbn] = b;
   }
 
   for (final inc in incoming) {
-    final incUid = inc.bookUid?.trim();
+    final incUid = inc.itemUid?.trim();
     final incIsbn = normIsbn(inc.isbn);
 
     // 1) uid match.
@@ -521,7 +521,7 @@ String? _flag(bool b) => b ? 'yes' : 'no';
 /// the other way round). Order = display order on the review card.
 ///
 /// Deliberately ABSENT: the per-device `id` and `addedDate` (local
-/// bookkeeping, expected to differ across devices), `bookUid` (already
+/// bookkeeping, expected to differ across devices), `itemUid` (already
 /// established equal by the caller, or irrelevant for an ISBN match), and
 /// `addedBy` (attribution travels but is not a catalogue-state difference).
 final List<_MergeFieldSpec> _mergeFieldSpecs = [

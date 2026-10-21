@@ -59,7 +59,7 @@ class _MemRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
@@ -75,7 +75,7 @@ class _MemRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -91,7 +91,7 @@ class _MemRepo implements BookRepository {
 
 const _existing = CatalogueItem(
   id: 7,
-  bookUid: 'uid-7',
+  itemUid: 'uid-7',
   title: 'Dune',
   isbn: '9780441172719',
 );

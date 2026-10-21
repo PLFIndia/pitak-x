@@ -25,16 +25,16 @@ library;
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
-/// Sorts book lists by the app's persisted [BookSort] contract.
+/// Sorts book lists by the app's persisted [LibrarySort] contract.
 abstract final class BookSorter {
   /// Returns a NEW list of [books] ordered by [sort]. Never mutates [books].
-  static List<CatalogueItem> sort(List<CatalogueItem> books, BookSort sort) {
+  static List<CatalogueItem> sort(List<CatalogueItem> books, LibrarySort sort) {
     final indexed = books.asMap().entries.toList()
       ..sort((a, b) {
         final byKey = switch (sort) {
-          BookSort.recentlyAdded => 0, // only the tie-break below applies
-          BookSort.languageAsc => _byLanguage(a.value, b.value),
-          BookSort.ageGroupAsc => _byAgeRank(a.value, b.value),
+          LibrarySort.recentlyAdded => 0, // only the tie-break below applies
+          LibrarySort.languageAsc => _byLanguage(a.value, b.value),
+          LibrarySort.ageGroupAsc => _byAgeRank(a.value, b.value),
         };
         if (byKey != 0) return byKey;
         // Shared tie-break: newest-added first (mirrors the SQL ORDER BY).

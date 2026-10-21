@@ -3,7 +3,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
-const _local = CatalogueItem(id: 7, bookUid: 'stable', title: 'Local');
+const _local = CatalogueItem(id: 7, itemUid: 'stable', title: 'Local');
 const _isbn = '9780306406157';
 
 void main() {
@@ -12,7 +12,7 @@ void main() {
     () {
       const incoming = CatalogueItem(
         id: 99,
-        bookUid: 'stable',
+        itemUid: 'stable',
         title: 'Updated',
       );
       final result = CatalogueReplacementPlan.build(
@@ -22,7 +22,7 @@ void main() {
       ).getOrElse((f) => fail('$f'));
       expect(result.single.id, 7);
       expect(result.single.title, 'Updated');
-      expect(result.single.bookUid, 'stable');
+      expect(result.single.itemUid, 'stable');
       expect(incoming.id, 99);
       expect(() => result.add(incoming), throwsUnsupportedError);
     },
@@ -40,25 +40,25 @@ void main() {
   test('valid ISBN-10 matches ISBN-13 when UID absent, keeping local UID', () {
     final result = CatalogueReplacementPlan.build(
       local: [
-        const CatalogueItem(id: 7, bookUid: 'stable', title: 'A', isbn: _isbn),
+        const CatalogueItem(id: 7, itemUid: 'stable', title: 'A', isbn: _isbn),
       ],
       incoming: [const CatalogueItem(title: 'B', isbn: '0-306-40615-2')],
       loanBookIds: {7},
     ).getOrElse((f) => fail('$f'));
     expect(result.single.id, 7);
-    expect(result.single.bookUid, 'stable');
+    expect(result.single.itemUid, 'stable');
   });
 
   test('legacy local ISBN can acquire an incoming UID', () {
     final result = CatalogueReplacementPlan.build(
       local: [const CatalogueItem(id: 7, title: 'A', isbn: _isbn)],
       incoming: [
-        const CatalogueItem(bookUid: 'new-uid', title: 'B', isbn: _isbn),
+        const CatalogueItem(itemUid: 'new-uid', title: 'B', isbn: _isbn),
       ],
       loanBookIds: {7},
     ).getOrElse((f) => fail('$f'));
     expect(result.single.id, 7);
-    expect(result.single.bookUid, 'new-uid');
+    expect(result.single.itemUid, 'new-uid');
   });
 
   void rejects(
@@ -81,7 +81,7 @@ void main() {
   rejects('missing loaned book', incoming: []);
   rejects(
     'same numeric ID is not identity',
-    incoming: [const CatalogueItem(id: 7, bookUid: 'other', title: 'Other')],
+    incoming: [const CatalogueItem(id: 7, itemUid: 'other', title: 'Other')],
   );
   rejects(
     'same title is not identity',
@@ -102,8 +102,8 @@ void main() {
   rejects('duplicate incoming UID', incoming: [_local, _local.copyWith(id: 8)]);
   rejects(
     'blank UIDs cannot prove identity',
-    local: [const CatalogueItem(id: 7, title: 'A', bookUid: ' ')],
-    incoming: [const CatalogueItem(title: 'A', bookUid: '')],
+    local: [const CatalogueItem(id: 7, title: 'A', itemUid: ' ')],
+    incoming: [const CatalogueItem(title: 'A', itemUid: '')],
   );
   rejects(
     'invalid ISBN cannot prove identity',
@@ -113,22 +113,22 @@ void main() {
   rejects(
     'conflicting UIDs cannot fall back to matching ISBN',
     local: [
-      const CatalogueItem(id: 7, title: 'A', bookUid: 'one', isbn: _isbn),
+      const CatalogueItem(id: 7, title: 'A', itemUid: 'one', isbn: _isbn),
     ],
-    incoming: [const CatalogueItem(title: 'A', bookUid: 'two', isbn: _isbn)],
+    incoming: [const CatalogueItem(title: 'A', itemUid: 'two', isbn: _isbn)],
   );
   rejects(
     'UID and ISBN resolve to different local books',
     local: [
       _local,
-      const CatalogueItem(id: 8, bookUid: 'other', title: 'B', isbn: _isbn),
+      const CatalogueItem(id: 8, itemUid: 'other', title: 'B', isbn: _isbn),
     ],
-    incoming: [const CatalogueItem(bookUid: 'stable', title: 'A', isbn: _isbn)],
+    incoming: [const CatalogueItem(itemUid: 'stable', title: 'A', isbn: _isbn)],
   );
   rejects(
     'two incoming books claim the same local row',
     local: [
-      const CatalogueItem(id: 7, bookUid: 'stable', title: 'A', isbn: _isbn),
+      const CatalogueItem(id: 7, itemUid: 'stable', title: 'A', isbn: _isbn),
     ],
     incoming: [
       _local,

@@ -19,7 +19,7 @@ T ok<T>(Either<Failure, T> e) =>
 /// so one page IS the list). N10-d part 2: `page` is the only list read.
 Future<List<CatalogueItem>> firstPage(
   DriftBookRepository repo, {
-  required BookSort sort,
+  required LibrarySort sort,
   String text = '',
   String? language,
 }) async => ok<BookPage>(
@@ -55,30 +55,30 @@ void main() {
 
     test('update edits fields and preserves id + book_uid', () async {
       final inserted = ok(await repo.insert(const CatalogueItem(title: 'Old')));
-      final uid = inserted.bookUid;
+      final uid = inserted.itemUid;
       expect(uid, isNotNull);
 
       final edited = inserted.copyWith(title: 'New', author: 'Author');
       final updated = ok(await repo.update(edited));
       expect(updated.id, inserted.id);
-      expect(updated.bookUid, uid); // merge key preserved
+      expect(updated.itemUid, uid); // merge key preserved
 
       final reread = ok(await repo.getById(inserted.id))!;
       expect(reread.title, 'New');
       expect(reread.author, 'Author');
-      expect(reread.bookUid, uid);
+      expect(reread.itemUid, uid);
     });
 
     test('update recovers book_uid if the edit dropped it', () async {
       final inserted = ok(
         await repo.insert(const CatalogueItem(title: 'Keep uid')),
       );
-      final uid = inserted.bookUid;
+      final uid = inserted.itemUid;
       // Simulate a form that rebuilt the CatalogueItem without carrying the
       // uid.
       final edited = CatalogueItem(id: inserted.id, title: 'Edited no uid');
       final updated = ok(await repo.update(edited));
-      expect(updated.bookUid, uid);
+      expect(updated.itemUid, uid);
     });
 
     test('update of a non-existent row is NotFoundFailure', () async {
@@ -96,13 +96,13 @@ void main() {
       final hits = await firstPage(
         repo,
         text: 'Bravo',
-        sort: BookSort.recentlyAdded,
+        sort: LibrarySort.recentlyAdded,
       );
       expect(hits.map((b) => b.title), contains('Bravo'));
       final old = await firstPage(
         repo,
         text: 'Alpha',
-        sort: BookSort.recentlyAdded,
+        sort: LibrarySort.recentlyAdded,
       );
       expect(old, isEmpty);
     });
@@ -118,7 +118,7 @@ void main() {
           const CatalogueItem(title: 'Hin1', language: 'Hindi'),
         );
 
-        final byLang = await firstPage(repo, sort: BookSort.languageAsc);
+        final byLang = await firstPage(repo, sort: LibrarySort.languageAsc);
         // English < Hindi, blank language sorts last.
         expect(byLang.map((b) => b.title).toList(), ['Eng1', 'Hin1', 'NoLang']);
 
@@ -127,13 +127,13 @@ void main() {
         // compare silently missed non-Latin languages.
         final filtered = await firstPage(
           repo,
-          sort: BookSort.recentlyAdded,
+          sort: LibrarySort.recentlyAdded,
           language: 'Hindi',
         );
         expect(filtered.map((b) => b.title), ['Hin1']);
         final otherCase = await firstPage(
           repo,
-          sort: BookSort.recentlyAdded,
+          sort: LibrarySort.recentlyAdded,
           language: 'hindi',
         );
         expect(otherCase, isEmpty);
@@ -154,14 +154,14 @@ void main() {
         await repo.insert(
           const CatalogueItem(
             title: 'a',
-            sourceType: BookSourceType.donated,
+            sourceType: ItemSourceType.donated,
             sourceDetail: 'Sita Devi',
           ),
         );
         await repo.insert(
           const CatalogueItem(
             title: 'b',
-            sourceType: BookSourceType.donated,
+            sourceType: ItemSourceType.donated,
             sourceDetail: '  Ram Sharma ',
           ),
         );
@@ -169,7 +169,7 @@ void main() {
         await repo.insert(
           const CatalogueItem(
             title: 'c',
-            sourceType: BookSourceType.purchased,
+            sourceType: ItemSourceType.purchased,
             sourceDetail: 'Ram Sharma',
           ),
         );
@@ -177,24 +177,24 @@ void main() {
         await repo.insert(
           const CatalogueItem(
             title: 'd',
-            sourceType: BookSourceType.donated,
+            sourceType: ItemSourceType.donated,
             sourceDetail: '   ',
           ),
         );
         await repo.insert(
-          const CatalogueItem(title: 'e', sourceType: BookSourceType.donated),
+          const CatalogueItem(title: 'e', sourceType: ItemSourceType.donated),
         );
         await repo.insert(const CatalogueItem(title: 'f'));
 
-        expect(ok(await repo.distinctSourceDetails(BookSourceType.donated)), [
+        expect(ok(await repo.distinctSourceDetails(ItemSourceType.donated)), [
           'Ram Sharma',
           'Sita Devi',
         ]);
-        expect(ok(await repo.distinctSourceDetails(BookSourceType.purchased)), [
+        expect(ok(await repo.distinctSourceDetails(ItemSourceType.purchased)), [
           'Ram Sharma',
         ]);
         expect(
-          ok(await repo.distinctSourceDetails(BookSourceType.gift)),
+          ok(await repo.distinctSourceDetails(ItemSourceType.gift)),
           isEmpty,
         );
       });
@@ -208,7 +208,7 @@ void main() {
           await repo.insert(
             CatalogueItem(
               title: spelling,
-              sourceType: BookSourceType.donated,
+              sourceType: ItemSourceType.donated,
               sourceDetail: spelling,
             ),
           );
@@ -216,19 +216,19 @@ void main() {
         await repo.insert(
           const CatalogueItem(
             title: 'g1',
-            sourceType: BookSourceType.donated,
+            sourceType: ItemSourceType.donated,
             sourceDetail: 'Ελένη',
           ),
         );
         await repo.insert(
           const CatalogueItem(
             title: 'g2',
-            sourceType: BookSourceType.donated,
+            sourceType: ItemSourceType.donated,
             sourceDetail: 'ΕΛΈΝΗ',
           ),
         );
         final details = ok(
-          await repo.distinctSourceDetails(BookSourceType.donated),
+          await repo.distinctSourceDetails(ItemSourceType.donated),
         );
         // One entry per person; the non-Latin pair dedupes too (SQLite's
         // NOCASE alone would have kept both Greek spellings).
@@ -266,7 +266,7 @@ void main() {
           // The exact-match facet (D1-a) now finds all three.
           final filtered = await firstPage(
             repo,
-            sort: BookSort.recentlyAdded,
+            sort: LibrarySort.recentlyAdded,
             language: 'English',
           );
           expect(filtered.map((b) => b.title).toSet(), {'a', 'b', 'c'});
@@ -402,7 +402,7 @@ void main() {
       await repo.insert(
         const CatalogueItem(title: 'a3', ageGroup: AgeGroup.above3),
       );
-      final byAge = await firstPage(repo, sort: BookSort.ageGroupAsc);
+      final byAge = await firstPage(repo, sort: LibrarySort.ageGroupAsc);
       expect(byAge.map((b) => b.title).toList(), ['a3', 'adv', 'none']);
     });
 
@@ -431,7 +431,7 @@ void main() {
       final useCase = AddBookUseCase(repo);
       final saved = ok(await useCase(const CatalogueItem(title: 'Valid')));
       expect(saved.id, isNot(CatalogueItem.emptyId));
-      expect(saved.bookUid, isNotNull);
+      expect(saved.itemUid, isNotNull);
     });
 
     test('M15: rejects copyCount 0 with ValidationFailure', () async {
@@ -493,7 +493,7 @@ void main() {
         final useCase = AddBookUseCase(repo);
         ok(await useCase(const CatalogueItem(title: 'No ISBN A')));
         ok(await useCase(const CatalogueItem(title: 'No ISBN B')));
-        final all = await firstPage(repo, sort: BookSort.recentlyAdded);
+        final all = await firstPage(repo, sort: LibrarySort.recentlyAdded);
         expect(
           all.map((b) => b.title),
           containsAll(['No ISBN A', 'No ISBN B']),
@@ -595,7 +595,7 @@ class _FailingFindByIsbnRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
@@ -610,7 +610,7 @@ class _FailingFindByIsbnRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(

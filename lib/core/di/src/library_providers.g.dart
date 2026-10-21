@@ -139,7 +139,7 @@ final libraryLanguagesProvider =
 // ignore: unused_element
 typedef LibraryLanguagesRef = AutoDisposeFutureProviderRef<List<String>>;
 String _$librarySourceDetailsHash() =>
-    r'e2bca095a816bbbda506ded7090368e05b1b2459';
+    r'6f544663d07bdda1bdc010a8e1180182886d5df4';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -163,7 +163,7 @@ class _SystemHash {
 }
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -176,7 +176,7 @@ class _SystemHash {
 const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -187,7 +187,7 @@ const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
 /// Copied from [librarySourceDetails].
 class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -199,7 +199,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   const LibrarySourceDetailsFamily();
 
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -208,7 +208,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// itself still runs; nothing here is worth blocking the screen for.
   ///
   /// Copied from [librarySourceDetails].
-  LibrarySourceDetailsProvider call(BookSourceType type) {
+  LibrarySourceDetailsProvider call(ItemSourceType type) {
     return LibrarySourceDetailsProvider(type);
   }
 
@@ -235,7 +235,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
 }
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -247,7 +247,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
 class LibrarySourceDetailsProvider
     extends AutoDisposeFutureProvider<List<String>> {
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -256,7 +256,7 @@ class LibrarySourceDetailsProvider
   /// itself still runs; nothing here is worth blocking the screen for.
   ///
   /// Copied from [librarySourceDetails].
-  LibrarySourceDetailsProvider(BookSourceType type)
+  LibrarySourceDetailsProvider(ItemSourceType type)
     : this._internal(
         (ref) => librarySourceDetails(ref as LibrarySourceDetailsRef, type),
         from: librarySourceDetailsProvider,
@@ -280,7 +280,7 @@ class LibrarySourceDetailsProvider
     required this.type,
   }) : super.internal();
 
-  final BookSourceType type;
+  final ItemSourceType type;
 
   @override
   Override overrideWith(
@@ -323,7 +323,7 @@ class LibrarySourceDetailsProvider
 // ignore: unused_element
 mixin LibrarySourceDetailsRef on AutoDisposeFutureProviderRef<List<String>> {
   /// The parameter `type` of this provider.
-  BookSourceType get type;
+  ItemSourceType get type;
 }
 
 class _LibrarySourceDetailsProviderElement
@@ -332,7 +332,7 @@ class _LibrarySourceDetailsProviderElement
   _LibrarySourceDetailsProviderElement(super.provider);
 
   @override
-  BookSourceType get type => (origin as LibrarySourceDetailsProvider).type;
+  ItemSourceType get type => (origin as LibrarySourceDetailsProvider).type;
 }
 
 String _$addBookUseCaseHash() => r'5634f963c49d02ac7f830fcbfcc674d4abb5a929';

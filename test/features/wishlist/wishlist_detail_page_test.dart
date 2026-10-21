@@ -89,7 +89,7 @@ class _ScriptedBookRepo implements BookRepository {
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       right(stored.where((b) => b.isbn == isbn).firstOrNull);
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
@@ -112,7 +112,7 @@ class _ScriptedBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async =>

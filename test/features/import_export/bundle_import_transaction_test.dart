@@ -20,7 +20,7 @@ void main() {
     final old = (await fixture.books.insert(
       const CatalogueItem(
         title: 'Old',
-        bookUid: 'u',
+        itemUid: 'u',
         coverUrl: 'covers/old.jpg',
       ),
     )).toNullable()!;
@@ -28,7 +28,7 @@ void main() {
     final result = await fixture.apply(
       const ImportPayload(
         books: [
-          CatalogueItem(title: 'New', bookUid: 'u', coverUrl: 'covers/a.jpg'),
+          CatalogueItem(title: 'New', itemUid: 'u', coverUrl: 'covers/a.jpg'),
         ],
       ),
       images: {'a.jpg': a},
@@ -36,7 +36,7 @@ void main() {
     expect(result.toNullable()!.booksUpdated, 1);
     final saved = (await fixture.books.getAll()).toNullable()!.single;
     expect(saved.id, old.id);
-    expect(saved.bookUid, old.bookUid);
+    expect(saved.itemUid, old.itemUid);
     expect(fixture.cover(saved.coverUrl!).readAsBytesSync(), a);
     expect(fixture.cover('covers/old.jpg').readAsBytesSync(), [9]);
   });
@@ -48,15 +48,15 @@ void main() {
           books: [
             CatalogueItem(
               title: 'First',
-              bookUid: 'u',
+              itemUid: 'u',
               coverUrl: 'covers/a.jpg',
             ),
             CatalogueItem(
               title: 'Second',
-              bookUid: 'u',
+              itemUid: 'u',
               coverUrl: 'covers/b.jpg',
             ),
-            CatalogueItem(title: 'Final', bookUid: 'u'),
+            CatalogueItem(title: 'Final', itemUid: 'u'),
           ],
         ),
         images: {'a.jpg': a, 'b.jpg': b},

@@ -14,7 +14,7 @@ CatalogueItem _book({
   String? uid,
 }) => CatalogueItem(
   id: id,
-  bookUid: uid,
+  itemUid: uid,
   title: title,
   author: 'A',
   addedDate: 1,
@@ -63,19 +63,19 @@ void main() {
 
       expect(actual.identical, expected.identical);
       expect(
-        actual.toAdd.map((b) => b.bookUid),
-        expected.toAdd.map((b) => b.bookUid),
+        actual.toAdd.map((b) => b.itemUid),
+        expected.toAdd.map((b) => b.itemUid),
       );
       expect(
-        actual.conflicts.map((c) => (c.local.id, c.incoming.bookUid)),
-        expected.conflicts.map((c) => (c.local.id, c.incoming.bookUid)),
+        actual.conflicts.map((c) => (c.local.id, c.incoming.itemUid)),
+        expected.conflicts.map((c) => (c.local.id, c.incoming.itemUid)),
       );
       expect(
         actual.possibleDuplicates.map(
-          (d) => (d.local.id, d.incoming.bookUid, d.similarity, d.reason),
+          (d) => (d.local.id, d.incoming.itemUid, d.similarity, d.reason),
         ),
         expected.possibleDuplicates.map(
-          (d) => (d.local.id, d.incoming.bookUid, d.similarity, d.reason),
+          (d) => (d.local.id, d.incoming.itemUid, d.similarity, d.reason),
         ),
       );
       // Entities survive the isolate hop with their fields intact.

@@ -145,7 +145,7 @@ class LegacyDbReader {
 
   CatalogueItem _book(Row r) => CatalogueItem(
     id: _int(r['id']) ?? CatalogueItem.emptyId,
-    bookUid: _str(r['book_uid']),
+    itemUid: _str(r['book_uid']),
     title: _str(r['title']) ?? '',
     titleTransliteration: _str(r['title_transliteration']),
     author: _str(r['author']),
@@ -158,7 +158,7 @@ class LegacyDbReader {
     language: _str(r['language']),
     notes: _str(r['notes']),
     location: _str(r['location']),
-    sourceType: BookSourceTypeX.fromToken(_str(r['source_type'])),
+    sourceType: ItemSourceTypeX.fromToken(_str(r['source_type'])),
     sourceDetail: _str(r['source_detail']),
     ageGroup: AgeGroup.fromToken(_str(r['age_group'])),
     // M15: a PRESENT but uncoercible added_date (e.g. REAL Infinity) must not

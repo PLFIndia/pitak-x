@@ -278,7 +278,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         for (final b in books) {
           stmt.execute([
             b.id,
-            b.bookUid,
+            b.itemUid,
             b.title,
             b.titleTransliteration,
             b.author,

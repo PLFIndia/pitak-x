@@ -22,7 +22,7 @@ void main() {
       id: id,
       title: 'Title ${fuzz.nextInt(20)}',
       author: 'Author ${fuzz.nextInt(10)}',
-      bookUid: fuzz.nextInt(3) == 0 ? 'uid-${fuzz.nextInt(8)}' : null,
+      itemUid: fuzz.nextInt(3) == 0 ? 'uid-${fuzz.nextInt(8)}' : null,
       isbn: hasIsbn ? 'isbn-${fuzz.nextInt(8)}' : null,
       publisher: fuzz.nextInt(2) == 0 ? 'Pub ${fuzz.nextInt(4)}' : null,
       pageCount: fuzz.nextInt(3) == 0 ? 100 + fuzz.nextInt(400) : null,
@@ -126,7 +126,7 @@ void main() {
             CatalogueItem(
               title: 'Title ${fuzz.nextInt(20)}',
               author: 'Author ${fuzz.nextInt(10)}',
-              bookUid: 'case-$i-uid-$j',
+              itemUid: 'case-$i-uid-$j',
               isbn: 'case-$i-isbn-$j',
               addedDate: fuzz.nextInt(1000000),
             ),
@@ -139,7 +139,7 @@ void main() {
 
         String signature(MergePlan p) {
           String sig(CatalogueItem book) =>
-              '${book.title}|${book.author}|${book.isbn}|${book.bookUid}';
+              '${book.title}|${book.author}|${book.isbn}|${book.itemUid}';
           final toAdd = p.toAdd.map(sig).toList()..sort();
           final conflicts =
               p.conflicts

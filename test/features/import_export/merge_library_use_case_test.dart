@@ -46,7 +46,7 @@ class _FakeBooks implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -78,7 +78,7 @@ class _FakeBooks implements BookRepository {
     insertCalls++;
     final stored = book.copyWith(
       id: book.id == CatalogueItem.emptyId ? _nextId++ : book.id,
-      bookUid: book.bookUid ?? 'minted-$_nextId',
+      itemUid: book.itemUid ?? 'minted-$_nextId',
     );
     _books.add(stored);
     return right(stored);
@@ -118,7 +118,7 @@ class _FakeBooks implements BookRepository {
   Future<Either<Failure, List<String>>> distinctLanguages() async => right([]);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
@@ -223,7 +223,7 @@ void main() {
     File(store.dbPath).writeAsBytesSync([1]);
     store.writeBlob('synthetic.blob.only');
     final books = _FakeBooks([
-      const CatalogueItem(id: 7, bookUid: 'loaned', title: 'Loaned book'),
+      const CatalogueItem(id: 7, itemUid: 'loaned', title: 'Loaned book'),
     ]);
     // Built through the REAL provider: the identity port is the real
     // SettingsController over this settings repo (N07), so the assertion
@@ -247,7 +247,7 @@ void main() {
     final result = await useCase.applyOverwrite(
       const MergeDiffersDecision(
         incomingBooks: [
-          CatalogueItem(id: 7, bookUid: 'unrelated', title: 'Other book'),
+          CatalogueItem(id: 7, itemUid: 'unrelated', title: 'Other book'),
         ],
         incomingLibraryId: otherId,
         incomingLibraryName: 'Other',
@@ -256,7 +256,7 @@ void main() {
       ),
     );
     expect(result.isLeft(), isTrue);
-    expect(books.books.single.bookUid, 'loaned');
+    expect(books.books.single.itemUid, 'loaned');
     expect(books.books.single.id, 7);
     expect(settings.id, matchingId);
   });
@@ -278,7 +278,7 @@ void main() {
     final repo = _FakeBooks([
       const CatalogueItem(
         id: 1,
-        bookUid: 'u1',
+        itemUid: 'u1',
         title: 'Godaan',
         isbn: '111',
         addedDate: 1,
@@ -305,7 +305,7 @@ void main() {
     expect(merged.result.added, 1);
     expect(repo.books.any((b) => b.title == '1984'), isTrue);
     // The added book KEEPS its incoming uid so future merges reconcile.
-    expect(repo.books.firstWhere((b) => b.title == '1984').bookUid, 'u2');
+    expect(repo.books.firstWhere((b) => b.title == '1984').itemUid, 'u2');
   });
 
   group('N10-c — the plan is computed through the injected planner', () {
@@ -317,7 +317,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Godaan',
           isbn: '111',
           addedDate: 1,
@@ -353,8 +353,8 @@ void main() {
       final res = await useCase.call(json);
       final outcome = res.getOrElse((f) => fail('merge failed: $f'));
       expect(calls, 1);
-      expect(seenLocal!.single.bookUid, 'u1');
-      expect(seenIncoming!.single.bookUid, 'u2');
+      expect(seenLocal!.single.itemUid, 'u1');
+      expect(seenIncoming!.single.itemUid, 'u2');
       expect((outcome as MergeMerged).result.added, 0);
       expect(repo.books.any((b) => b.title == '1984'), isFalse);
     });
@@ -367,7 +367,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Godaan',
           addedDate: 1,
         ),
@@ -397,7 +397,7 @@ void main() {
 
   test('differing library id returns a decision, applies nothing', () async {
     final repo = _FakeBooks([
-      const CatalogueItem(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
+      const CatalogueItem(id: 1, itemUid: 'u1', title: 'Godaan', addedDate: 1),
     ]);
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
@@ -462,7 +462,7 @@ void main() {
     const decision = MergeDiffersDecision(
       incomingBooks: [
         CatalogueItem(
-          bookUid: 'u9',
+          itemUid: 'u9',
           title: 'Joined',
           isbn: '999',
           addedDate: 1,
@@ -486,7 +486,7 @@ void main() {
     final repo = _FakeBooks([
       const CatalogueItem(
         id: 1,
-        bookUid: 'old',
+        itemUid: 'old',
         title: 'OldBook',
         addedDate: 1,
       ),
@@ -502,7 +502,7 @@ void main() {
 
     const decision = MergeDiffersDecision(
       incomingBooks: [
-        CatalogueItem(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
+        CatalogueItem(itemUid: 'u9', title: 'FreshReplica', addedDate: 1),
       ],
       incomingLibraryId: otherId,
       incomingLibraryName: 'Riverside',
@@ -546,7 +546,7 @@ void main() {
       expect(merged.result.possibleDuplicates, hasLength(1));
       // Reported state == committed state: exactly one new row.
       expect(repo.books, hasLength(1));
-      expect(repo.books.single.bookUid, 'uA');
+      expect(repo.books.single.itemUid, 'uA');
     },
   );
 
@@ -559,7 +559,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'old',
+          itemUid: 'old',
           title: 'OldBook',
           addedDate: 1,
         ),
@@ -578,7 +578,7 @@ void main() {
 
       const decision = MergeDiffersDecision(
         incomingBooks: [
-          CatalogueItem(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
+          CatalogueItem(itemUid: 'u9', title: 'FreshReplica', addedDate: 1),
         ],
         incomingLibraryId: otherId,
         incomingLibraryName: 'Riverside',
@@ -599,7 +599,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Local',
           genre: 'A',
           addedDate: 1,
@@ -615,7 +615,7 @@ void main() {
       await useCase.applyResolution(
         local: repo.books.first,
         incoming: const CatalogueItem(
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Local',
           genre: 'B',
           addedDate: 1,
@@ -629,7 +629,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 7,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Local',
           genre: 'A',
           addedDate: 1,
@@ -646,7 +646,7 @@ void main() {
         local: repo.books.first,
         incoming: const CatalogueItem(
           id: 999,
-          bookUid: 'uOther',
+          itemUid: 'uOther',
           title: 'Local',
           genre: 'B',
           addedDate: 2,
@@ -655,7 +655,7 @@ void main() {
       );
       final row = repo.books.single;
       expect(row.id, 7); // local id preserved
-      expect(row.bookUid, 'u1'); // local uid preserved
+      expect(row.itemUid, 'u1'); // local uid preserved
       expect(row.genre, 'B'); // their field taken
     });
 
@@ -667,7 +667,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 7,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Local',
           genre: 'A',
           coverUrl: 'covers/photo.jpg',
@@ -685,7 +685,7 @@ void main() {
         local: repo.books.first,
         incoming: const CatalogueItem(
           id: 999,
-          bookUid: 'uOther',
+          itemUid: 'uOther',
           title: 'Local',
           genre: 'B',
           coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
@@ -701,7 +701,7 @@ void main() {
     test('M09: takeTheirs takes the incoming https cover when there is no '
         'local cover', () async {
       final repo = _FakeBooks([
-        const CatalogueItem(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+        const CatalogueItem(id: 7, itemUid: 'u1', title: 'Local', addedDate: 1),
       ]);
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
@@ -713,7 +713,7 @@ void main() {
       await useCase.applyResolution(
         local: repo.books.first,
         incoming: const CatalogueItem(
-          bookUid: 'uOther',
+          itemUid: 'uOther',
           title: 'Local',
           coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
           addedDate: 2,
@@ -732,7 +732,7 @@ void main() {
         final repo = _FakeBooks([
           const CatalogueItem(
             id: 1,
-            bookUid: 'u1',
+            itemUid: 'u1',
             title: 'Dohe',
             isbn: '555',
             addedDate: 1,
@@ -748,7 +748,7 @@ void main() {
         await useCase.applyResolution(
           local: repo.books.first,
           incoming: const CatalogueItem(
-            bookUid: 'u1',
+            itemUid: 'u1',
             title: 'Dohe',
             isbn: '555',
             genre: 'extra',
@@ -760,7 +760,7 @@ void main() {
         final dup = repo.books.firstWhere((b) => b.id != 1);
         // Fresh identity: minted uid (not 'u1'), and ISBN dropped to avoid the
         // unique-column collision with the original row (D2).
-        expect(dup.bookUid, isNot('u1'));
+        expect(dup.itemUid, isNot('u1'));
         expect(dup.isbn, isNull);
         expect(dup.genre, 'extra'); // catalogue fields preserved
       },
@@ -786,12 +786,12 @@ void main() {
 
         final result = await useCase.applyResolution(
           local: const CatalogueItem(
-            bookUid: 'uB',
+            itemUid: 'uB',
             title: 'Godaan',
             addedDate: 1,
           ),
           incoming: const CatalogueItem(
-            bookUid: 'uB',
+            itemUid: 'uB',
             title: 'Godaan (duplicate row)',
             addedDate: 1,
           ),
@@ -816,7 +816,7 @@ void main() {
           final repo = _FakeBooks([
             const CatalogueItem(
               id: 7,
-              bookUid: 'u1',
+              itemUid: 'u1',
               title: 'Local',
               addedDate: 1,
             ),
@@ -832,7 +832,7 @@ void main() {
           final result = await useCase.applyResolution(
             local: repo.books.first,
             incoming: const CatalogueItem(
-              bookUid: 'uOther',
+              itemUid: 'uOther',
               title: 'Local',
               copyCount: 0, // invalid: must be at least 1
               addedDate: 1,
@@ -850,7 +850,7 @@ void main() {
         final repo = _FakeBooks([
           const CatalogueItem(
             id: 1,
-            bookUid: 'u1',
+            itemUid: 'u1',
             title: 'Dohe',
             addedDate: 1,
           ),
@@ -866,7 +866,7 @@ void main() {
         final result = await useCase.applyResolution(
           local: repo.books.first,
           incoming: const CatalogueItem(
-            bookUid: 'u1',
+            itemUid: 'u1',
             title: 'Dohe',
             publishedYear: 0, // invalid: outside 1..9999
             addedDate: 1,
@@ -886,7 +886,7 @@ void main() {
         final repo = _FakeBooks([
           const CatalogueItem(
             id: 7,
-            bookUid: 'u1',
+            itemUid: 'u1',
             title: 'Local',
             addedDate: 1,
           ),
@@ -902,7 +902,7 @@ void main() {
         final result = await useCase.applyResolution(
           local: repo.books.first,
           incoming: const CatalogueItem(
-            bookUid: 'uOther',
+            itemUid: 'uOther',
             title: 'Local',
             coverUrl: 'https://evil.example/x.jpg',
             addedDate: 1,
@@ -925,7 +925,7 @@ void main() {
     const decision = MergeDiffersDecision(
       incomingBooks: [
         CatalogueItem(
-          bookUid: 'u9',
+          itemUid: 'u9',
           title: 'Their book',
           isbn: '999',
           addedDate: 1,
@@ -1020,7 +1020,7 @@ void main() {
       );
       const noId = MergeDiffersDecision(
         incomingBooks: [
-          CatalogueItem(bookUid: 'u9', title: 'Their book', addedDate: 1),
+          CatalogueItem(itemUid: 'u9', title: 'Their book', addedDate: 1),
         ],
         incomingLibraryId: '',
         incomingLibraryName: 'Riverside',
@@ -1043,7 +1043,7 @@ void main() {
         final repo = _FakeBooks([
           const CatalogueItem(
             id: 1,
-            bookUid: 'old',
+            itemUid: 'old',
             title: 'OldBook',
             addedDate: 1,
           ),
@@ -1080,7 +1080,7 @@ void main() {
       final repo = _FakeBooks([
         const CatalogueItem(
           id: 1,
-          bookUid: 'old',
+          itemUid: 'old',
           title: 'OldBook',
           addedDate: 1,
         ),

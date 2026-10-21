@@ -50,12 +50,12 @@ void main() {
       final b = payload.books.single;
       // Fresh id on import — the file's id is ignored.
       expect(b.id, CatalogueItem.emptyId);
-      expect(b.bookUid, 'uid-abc');
+      expect(b.itemUid, 'uid-abc');
       expect(b.title, 'गोदान');
       expect(b.titleTransliteration, 'Godaan');
       expect(b.publishedYear, 1936);
       expect(b.pageCount, 384);
-      expect(b.sourceType, BookSourceType.gift);
+      expect(b.sourceType, ItemSourceType.gift);
       expect(b.ageGroup, AgeGroup.advanced);
       expect(b.copyCount, 2);
       expect(b.addedBy, 'Asha');

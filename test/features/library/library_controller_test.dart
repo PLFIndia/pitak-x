@@ -24,7 +24,7 @@ class _FakeBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -43,7 +43,8 @@ class _FakeBookRepo implements BookRepository {
   final List<({LibraryQuery query, int limit, int offset})> pagesSeen = [];
 
   /// Sorts seen by page(), to prove the watched sort reaches the repo.
-  List<BookSort> get sortsSeen => pagesSeen.map((p) => p.query.sort).toList();
+  List<LibrarySort> get sortsSeen =>
+      pagesSeen.map((p) => p.query.sort).toList();
 
   int markRemovedCalls = 0;
 
@@ -102,7 +103,7 @@ class _FakeBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
@@ -191,7 +192,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   @override
   Future<AppSettings> load() async => settings;
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async {
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) async {
     settings = settings.copyWith(librarySort: sort);
     return right(unit);
   }
@@ -322,19 +323,19 @@ void main() {
       final repo = _FakeBookRepo([...books]);
       final container = makeContainer(repo);
       await container.read(libraryControllerProvider.future);
-      expect(repo.sortsSeen, [BookSort.recentlyAdded]);
+      expect(repo.sortsSeen, [LibrarySort.recentlyAdded]);
 
       // Change the sort through the settings controller — the library
       // controller WATCHES it, so it must rebuild without any manual refresh.
       await container.read(settingsControllerProvider.future);
       await container
           .read(settingsControllerProvider.notifier)
-          .setLibrarySort(BookSort.languageAsc);
+          .setLibrarySort(LibrarySort.languageAsc);
       // Allow the dependent provider rebuild to run.
       await container.read(libraryControllerProvider.future);
       await Future<void>.delayed(Duration.zero);
 
-      expect(repo.sortsSeen, contains(BookSort.languageAsc));
+      expect(repo.sortsSeen, contains(LibrarySort.languageAsc));
     },
   );
 
@@ -395,7 +396,7 @@ void main() {
     final repo = _FixedSearchRepo(const [], fromRepo);
     final settings = _FakeSettingsRepo()
       ..settings = AppSettings.defaults.copyWith(
-        librarySort: BookSort.languageAsc,
+        librarySort: LibrarySort.languageAsc,
       );
     final container = makeContainer(repo, settings: settings)
       ..listen(libraryControllerProvider, (_, _) {}); // keep alive
@@ -409,7 +410,7 @@ void main() {
 
     final searchRead = repo.pagesSeen.last;
     expect(searchRead.query.text, 'x');
-    expect(searchRead.query.sort, BookSort.languageAsc);
+    expect(searchRead.query.sort, LibrarySort.languageAsc);
     expect(searchRead.query.language, 'Zulu');
     expect(searchRead.offset, 0);
     expect(searchRead.limit, libraryPageSize);
@@ -584,9 +585,9 @@ void main() {
       await container.read(settingsControllerProvider.future);
       await container
           .read(settingsControllerProvider.notifier)
-          .setLibrarySort(BookSort.ageGroupAsc);
+          .setLibrarySort(LibrarySort.ageGroupAsc);
       var window = await container.read(libraryControllerProvider.future);
-      expect(repo.pagesSeen.last.query.sort, BookSort.ageGroupAsc);
+      expect(repo.pagesSeen.last.query.sort, LibrarySort.ageGroupAsc);
       expect(repo.pagesSeen.last.limit, libraryPageSize);
       expect(window.books, hasLength(libraryPageSize));
 

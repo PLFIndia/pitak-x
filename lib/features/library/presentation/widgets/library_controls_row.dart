@@ -26,7 +26,7 @@ class LibraryControlsRow extends ConsumerWidget {
       settingsControllerProvider.select(
         (s) => s.maybeWhen(
           data: (settings) => settings.librarySort,
-          orElse: () => BookSort.recentlyAdded,
+          orElse: () => LibrarySort.recentlyAdded,
         ),
       ),
     );
@@ -71,24 +71,24 @@ class LibraryControlsRow extends ConsumerWidget {
 class _SortChip extends ConsumerWidget {
   const _SortChip({required this.sort});
 
-  final BookSort sort;
+  final LibrarySort sort;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String label(BookSort s) => switch (s) {
-      BookSort.recentlyAdded => 'Date added',
-      BookSort.languageAsc => 'Language',
-      BookSort.ageGroupAsc => 'Age group',
+    String label(LibrarySort s) => switch (s) {
+      LibrarySort.recentlyAdded => 'Date added',
+      LibrarySort.languageAsc => 'Language',
+      LibrarySort.ageGroupAsc => 'Age group',
     };
 
-    return PopupMenuButton<BookSort>(
+    return PopupMenuButton<LibrarySort>(
       onSelected: (s) =>
           // LibraryController.build WATCHES the sort setting (select), so the
           // list re-queries by itself — a manual refresh() here caused a
           // second load and a visible flash.
           ref.read(settingsControllerProvider.notifier).setLibrarySort(s),
       itemBuilder: (context) => [
-        for (final s in BookSort.values)
+        for (final s in LibrarySort.values)
           PopupMenuItem(value: s, child: Text(label(s))),
       ],
       child: Chip(

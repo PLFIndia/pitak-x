@@ -377,14 +377,14 @@ class _BookDetailBody extends ConsumerWidget {
   static bool _has(String? v) => v != null && v.trim().isNotEmpty;
 
   /// Human label for the acquisition source enum (null/`other` handled).
-  static String? _sourceLabel(BookSourceType? type) {
+  static String? _sourceLabel(ItemSourceType? type) {
     return switch (type) {
       null => null,
-      BookSourceType.purchased => 'Purchased',
-      BookSourceType.gift => 'Gift',
-      BookSourceType.donated => 'Donated',
-      BookSourceType.inherited => 'Inherited',
-      BookSourceType.other => 'Other',
+      ItemSourceType.purchased => 'Purchased',
+      ItemSourceType.gift => 'Gift',
+      ItemSourceType.donated => 'Donated',
+      ItemSourceType.inherited => 'Inherited',
+      ItemSourceType.other => 'Other',
     };
   }
 

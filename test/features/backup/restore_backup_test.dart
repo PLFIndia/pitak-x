@@ -204,7 +204,7 @@ void main() {
     addTearDown(active.close);
     final books = await active.select(active.books).get();
     expect(books.single.id, 7);
-    expect(books.single.bookUid, 'uid-7');
+    expect(books.single.itemUid, 'uid-7');
     expect(books.single.title, 'गोदान');
     expect(books.single.copyCount, 2);
 
@@ -283,7 +283,7 @@ void main() {
           BooksCompanion.insert(
             title: 'OLD',
             addedDate: 1,
-            bookUid: const Value('old'),
+            itemUid: const Value('old'),
           ),
         );
     final zip = archive({
@@ -298,7 +298,7 @@ void main() {
 
     final books = await activeBooks();
     expect(books.length, 1);
-    expect(books.single.bookUid, 'uid-7'); // OLD row gone
+    expect(books.single.itemUid, 'uid-7'); // OLD row gone
   });
 
   test('refuses a manifest schemaVersion newer than known', () async {
@@ -327,7 +327,7 @@ void main() {
           BooksCompanion.insert(
             title: 'KEEP',
             addedDate: 1,
-            bookUid: const Value('keep'),
+            itemUid: const Value('keep'),
           ),
         );
     final zip = archive({
@@ -348,7 +348,7 @@ void main() {
     );
     // Pre-existing row must be untouched (overwrite never happened).
     final books = await db.select(db.books).get();
-    expect(books.single.bookUid, 'keep');
+    expect(books.single.itemUid, 'keep');
   });
 
   test('C1: persists the restored vault to the live VaultStore', () async {
@@ -393,7 +393,7 @@ void main() {
           BooksCompanion.insert(
             title: 'KEEP',
             addedDate: 1,
-            bookUid: const Value('keep'),
+            itemUid: const Value('keep'),
           ),
         );
     // Sabotage the vault install: delete the staged borrowers.db copy right
@@ -424,7 +424,7 @@ void main() {
     // could not be installed (no "new library + old vault" split-brain).
     expect(gen.switched, isEmpty);
     final books = await db.select(db.books).get();
-    expect(books.single.bookUid, 'keep');
+    expect(books.single.itemUid, 'keep');
     expect(gen.store.isInitialized(), isFalse);
   });
 
@@ -460,7 +460,7 @@ void main() {
         .insert(
           const CatalogueItem(
             id: 7,
-            bookUid: 'different-uid',
+            itemUid: 'different-uid',
             title: 'Keep me',
           ).toCompanion(),
         );
@@ -475,7 +475,7 @@ void main() {
     p.dispose();
 
     expect(result.isLeft(), isTrue);
-    expect((await db.select(db.books).get()).single.bookUid, 'different-uid');
+    expect((await db.select(db.books).get()).single.itemUid, 'different-uid');
     // The device vault is untouched, byte for byte.
     expect(store.isInitialized(), isTrue);
     expect(File(store.dbPath).readAsBytesSync(), [9, 9, 9]);

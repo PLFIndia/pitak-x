@@ -46,7 +46,7 @@ final class LibraryQuery {
   final String text;
 
   /// Persisted list sort.
-  final BookSort sort;
+  final LibrarySort sort;
 
   /// Exact stored language to narrow to (N10-d D1-a), or null for all.
   final String? language;

@@ -21,11 +21,11 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
       'PRIMARY KEY AUTOINCREMENT',
     ),
   );
-  static const VerificationMeta _bookUidMeta = const VerificationMeta(
-    'bookUid',
+  static const VerificationMeta _itemUidMeta = const VerificationMeta(
+    'itemUid',
   );
   @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+  late final GeneratedColumn<String> itemUid = GeneratedColumn<String>(
     'book_uid',
     aliasedName,
     true,
@@ -289,7 +289,7 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
   @override
   List<GeneratedColumn> get $columns => [
     id,
-    bookUid,
+    itemUid,
     title,
     titleTransliteration,
     author,
@@ -331,8 +331,8 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     }
     if (data.containsKey('book_uid')) {
       context.handle(
-        _bookUidMeta,
-        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+        _itemUidMeta,
+        itemUid.isAcceptableOrUnknown(data['book_uid']!, _itemUidMeta),
       );
     }
     if (data.containsKey('title')) {
@@ -502,7 +502,7 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
-      bookUid: attachedDatabase.typeMapping.read(
+      itemUid: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}book_uid'],
       ),
@@ -612,7 +612,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   final int id;
 
   /// Stable cross-device UUID (unique among non-null). Minted at first persist.
-  final String? bookUid;
+  /// The column stays `book_uid` (persisted contract, plan F7); only the Dart
+  /// getter says "item" because the row is the base of every item kind.
+  final String? itemUid;
 
   /// Required title (native script).
   final String title;
@@ -684,7 +686,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   final String? addedBy;
   const BookRow({
     required this.id,
-    this.bookUid,
+    this.itemUid,
     required this.title,
     this.titleTransliteration,
     this.author,
@@ -713,8 +715,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    if (!nullToAbsent || bookUid != null) {
-      map['book_uid'] = Variable<String>(bookUid);
+    if (!nullToAbsent || itemUid != null) {
+      map['book_uid'] = Variable<String>(itemUid);
     }
     map['title'] = Variable<String>(title);
     if (!nullToAbsent || titleTransliteration != null) {
@@ -777,9 +779,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   BooksCompanion toCompanion(bool nullToAbsent) {
     return BooksCompanion(
       id: Value(id),
-      bookUid: bookUid == null && nullToAbsent
+      itemUid: itemUid == null && nullToAbsent
           ? const Value.absent()
-          : Value(bookUid),
+          : Value(itemUid),
       title: Value(title),
       titleTransliteration: titleTransliteration == null && nullToAbsent
           ? const Value.absent()
@@ -843,7 +845,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BookRow(
       id: serializer.fromJson<int>(json['id']),
-      bookUid: serializer.fromJson<String?>(json['bookUid']),
+      itemUid: serializer.fromJson<String?>(json['itemUid']),
       title: serializer.fromJson<String>(json['title']),
       titleTransliteration: serializer.fromJson<String?>(
         json['titleTransliteration'],
@@ -876,7 +878,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookUid': serializer.toJson<String?>(bookUid),
+      'itemUid': serializer.toJson<String?>(itemUid),
       'title': serializer.toJson<String>(title),
       'titleTransliteration': serializer.toJson<String?>(titleTransliteration),
       'author': serializer.toJson<String?>(author),
@@ -905,7 +907,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
 
   BookRow copyWith({
     int? id,
-    Value<String?> bookUid = const Value.absent(),
+    Value<String?> itemUid = const Value.absent(),
     String? title,
     Value<String?> titleTransliteration = const Value.absent(),
     Value<String?> author = const Value.absent(),
@@ -931,7 +933,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     Value<String?> addedBy = const Value.absent(),
   }) => BookRow(
     id: id ?? this.id,
-    bookUid: bookUid.present ? bookUid.value : this.bookUid,
+    itemUid: itemUid.present ? itemUid.value : this.itemUid,
     title: title ?? this.title,
     titleTransliteration: titleTransliteration.present
         ? titleTransliteration.value
@@ -963,7 +965,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   BookRow copyWithCompanion(BooksCompanion data) {
     return BookRow(
       id: data.id.present ? data.id.value : this.id,
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      itemUid: data.itemUid.present ? data.itemUid.value : this.itemUid,
       title: data.title.present ? data.title.value : this.title,
       titleTransliteration: data.titleTransliteration.present
           ? data.titleTransliteration.value
@@ -1006,7 +1008,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   String toString() {
     return (StringBuffer('BookRow(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('itemUid: $itemUid, ')
           ..write('title: $title, ')
           ..write('titleTransliteration: $titleTransliteration, ')
           ..write('author: $author, ')
@@ -1037,7 +1039,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   @override
   int get hashCode => Object.hashAll([
     id,
-    bookUid,
+    itemUid,
     title,
     titleTransliteration,
     author,
@@ -1067,7 +1069,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       identical(this, other) ||
       (other is BookRow &&
           other.id == this.id &&
-          other.bookUid == this.bookUid &&
+          other.itemUid == this.itemUid &&
           other.title == this.title &&
           other.titleTransliteration == this.titleTransliteration &&
           other.author == this.author &&
@@ -1095,7 +1097,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
 
 class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<int> id;
-  final Value<String?> bookUid;
+  final Value<String?> itemUid;
   final Value<String> title;
   final Value<String?> titleTransliteration;
   final Value<String?> author;
@@ -1121,7 +1123,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<String?> addedBy;
   const BooksCompanion({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.itemUid = const Value.absent(),
     this.title = const Value.absent(),
     this.titleTransliteration = const Value.absent(),
     this.author = const Value.absent(),
@@ -1148,7 +1150,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   });
   BooksCompanion.insert({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.itemUid = const Value.absent(),
     required String title,
     this.titleTransliteration = const Value.absent(),
     this.author = const Value.absent(),
@@ -1176,7 +1178,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
        addedDate = Value(addedDate);
   static Insertable<BookRow> custom({
     Expression<int>? id,
-    Expression<String>? bookUid,
+    Expression<String>? itemUid,
     Expression<String>? title,
     Expression<String>? titleTransliteration,
     Expression<String>? author,
@@ -1203,7 +1205,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (bookUid != null) 'book_uid': bookUid,
+      if (itemUid != null) 'book_uid': itemUid,
       if (title != null) 'title': title,
       if (titleTransliteration != null)
         'title_transliteration': titleTransliteration,
@@ -1233,7 +1235,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
 
   BooksCompanion copyWith({
     Value<int>? id,
-    Value<String?>? bookUid,
+    Value<String?>? itemUid,
     Value<String>? title,
     Value<String?>? titleTransliteration,
     Value<String?>? author,
@@ -1260,7 +1262,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   }) {
     return BooksCompanion(
       id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
+      itemUid: itemUid ?? this.itemUid,
       title: title ?? this.title,
       titleTransliteration: titleTransliteration ?? this.titleTransliteration,
       author: author ?? this.author,
@@ -1293,8 +1295,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
+    if (itemUid.present) {
+      map['book_uid'] = Variable<String>(itemUid.value);
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
@@ -1374,7 +1376,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   String toString() {
     return (StringBuffer('BooksCompanion(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('itemUid: $itemUid, ')
           ..write('title: $title, ')
           ..write('titleTransliteration: $titleTransliteration, ')
           ..write('author: $author, ')
@@ -3381,7 +3383,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
 typedef $$BooksTableCreateCompanionBuilder =
     BooksCompanion Function({
       Value<int> id,
-      Value<String?> bookUid,
+      Value<String?> itemUid,
       required String title,
       Value<String?> titleTransliteration,
       Value<String?> author,
@@ -3409,7 +3411,7 @@ typedef $$BooksTableCreateCompanionBuilder =
 typedef $$BooksTableUpdateCompanionBuilder =
     BooksCompanion Function({
       Value<int> id,
-      Value<String?> bookUid,
+      Value<String?> itemUid,
       Value<String> title,
       Value<String?> titleTransliteration,
       Value<String?> author,
@@ -3448,8 +3450,8 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get bookUid => $composableBuilder(
-    column: $table.bookUid,
+  ColumnFilters<String> get itemUid => $composableBuilder(
+    column: $table.itemUid,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3583,8 +3585,8 @@ class $$BooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get bookUid => $composableBuilder(
-    column: $table.bookUid,
+  ColumnOrderings<String> get itemUid => $composableBuilder(
+    column: $table.itemUid,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3716,8 +3718,8 @@ class $$BooksTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get bookUid =>
-      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<String> get itemUid =>
+      $composableBuilder(column: $table.itemUid, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -3830,7 +3832,7 @@ class $$BooksTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<String?> bookUid = const Value.absent(),
+                Value<String?> itemUid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<String?> titleTransliteration = const Value.absent(),
                 Value<String?> author = const Value.absent(),
@@ -3856,7 +3858,7 @@ class $$BooksTableTableManager
                 Value<String?> addedBy = const Value.absent(),
               }) => BooksCompanion(
                 id: id,
-                bookUid: bookUid,
+                itemUid: itemUid,
                 title: title,
                 titleTransliteration: titleTransliteration,
                 author: author,
@@ -3884,7 +3886,7 @@ class $$BooksTableTableManager
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<String?> bookUid = const Value.absent(),
+                Value<String?> itemUid = const Value.absent(),
                 required String title,
                 Value<String?> titleTransliteration = const Value.absent(),
                 Value<String?> author = const Value.absent(),
@@ -3910,7 +3912,7 @@ class $$BooksTableTableManager
                 Value<String?> addedBy = const Value.absent(),
               }) => BooksCompanion.insert(
                 id: id,
-                bookUid: bookUid,
+                itemUid: itemUid,
                 title: title,
                 titleTransliteration: titleTransliteration,
                 author: author,

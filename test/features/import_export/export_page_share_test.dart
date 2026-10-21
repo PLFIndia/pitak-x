@@ -113,7 +113,7 @@ class _Books implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
@@ -141,7 +141,7 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
@@ -240,19 +240,19 @@ void main() {
       CatalogueItem(
         id: 1,
         title: 'Godaan',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Ram Sharma',
       ),
       CatalogueItem(
         id: 2,
         title: 'Gaban',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Sita Devi',
       ),
       CatalogueItem(
         id: 3,
         title: 'Karmabhoomi',
-        sourceType: BookSourceType.purchased,
+        sourceType: ItemSourceType.purchased,
       ),
       CatalogueItem(id: 4, title: 'Sevasadan'),
     ];
@@ -275,10 +275,10 @@ void main() {
             exportLibraryUseCaseProvider.overrideWith((ref) async => useCase),
             fileShareServiceProvider.overrideWithValue(share),
             // The facet the picker lists — what the repository would return.
-            for (final type in BookSourceType.values)
+            for (final type in ItemSourceType.values)
               librarySourceDetailsProvider(type).overrideWith(
                 (ref) async => switch (type) {
-                  BookSourceType.donated => const ['Ram Sharma', 'Sita Devi'],
+                  ItemSourceType.donated => const ['Ram Sharma', 'Sita Devi'],
                   _ => const <String>[],
                 },
               ),

@@ -74,11 +74,11 @@ void main() {
       );
       const book = CatalogueItem(
         title: 'X',
-        sourceType: BookSourceType.gift,
+        sourceType: ItemSourceType.gift,
         sourceDetail: 'from a friend',
       );
       // Two logical lines: type then detail.
-      expect(merged.cell(book), [BookSourceType.gift.name, 'from a friend']);
+      expect(merged.cell(book), [ItemSourceType.gift.name, 'from a friend']);
     });
 
     test('Source alone is a single-line column (no merge)', () {
