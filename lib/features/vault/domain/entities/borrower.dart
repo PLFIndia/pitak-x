@@ -40,15 +40,18 @@ class Borrower {
   }
 }
 
-/// A lending record tying a book to a borrower. Dates are epoch millis.
+/// A lending record tying a catalogue item to a borrower. Dates are epoch
+/// millis.
 ///
-/// `bookId` is a logical cross-DB reference to a library book (no DB-level FK,
-/// since books live in Drift and loans in the Rust vault). Integrity is
+/// `itemId` is a logical cross-DB reference to a catalogue item (no DB-level
+/// FK, since items live in Drift and loans in the Rust vault). Integrity is
 /// enforced in the application layer (AGENTS.md; see `loan_integrity.dart`).
+/// The vault column (and the FRB-generated field) stays `book_id`/`bookId`
+/// (F2: a new kind never touches the vault); `FfiVaultRepository` translates.
 class Loan {
-  /// Creates a loan. [bookId], [borrowerId] and [lentDate] are required.
+  /// Creates a loan. [itemId], [borrowerId] and [lentDate] are required.
   const Loan({
-    required this.bookId,
+    required this.itemId,
     required this.borrowerId,
     required this.lentDate,
     this.id = emptyId,
@@ -63,8 +66,9 @@ class Loan {
   /// Per-device autoincrement id.
   final int id;
 
-  /// Logical reference to the borrowed book (library `book.id`).
-  final int bookId;
+  /// Logical reference to the lent catalogue item (`CatalogueItem.id`, the
+  /// base row of any kind). Persisted in the vault as `book_id`.
+  final int itemId;
 
   /// Logical reference to the borrower.
   final int borrowerId;
@@ -90,7 +94,7 @@ class Loan {
   /// Returns a copy with the given fields replaced.
   Loan copyWith({
     int? id,
-    int? bookId,
+    int? itemId,
     int? borrowerId,
     int? lentDate,
     int? dueDate,
@@ -99,7 +103,7 @@ class Loan {
   }) {
     return Loan(
       id: id ?? this.id,
-      bookId: bookId ?? this.bookId,
+      itemId: itemId ?? this.itemId,
       borrowerId: borrowerId ?? this.borrowerId,
       lentDate: lentDate ?? this.lentDate,
       dueDate: dueDate ?? this.dueDate,

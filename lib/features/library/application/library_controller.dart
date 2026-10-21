@@ -39,7 +39,7 @@ import 'dart:math' as math;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -236,7 +236,7 @@ class LibraryController extends _$LibraryController {
       (failure) =>
           // ignore: only_throw_errors, Riverpod surfaces errors via throw
           throw failure,
-      (BookPage page) {
+      (CatalogueItemPage page) {
         _loadedDepth = math.max(page.items.length, libraryPageSize);
         return LibraryWindow(
           books: List<CatalogueItem>.unmodifiable(page.items),

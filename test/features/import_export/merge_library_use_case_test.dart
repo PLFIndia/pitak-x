@@ -9,7 +9,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
@@ -34,7 +34,7 @@ class _LoanVault with VaultWriteUnsupported implements VaultRepository {
   }) async => right(
     const VaultData(
       borrowers: [Borrower(id: 1, name: 'Test borrower')],
-      loans: [Loan(bookId: 7, borrowerId: 1, lentDate: 1)],
+      loans: [Loan(itemId: 7, borrowerId: 1, lentDate: 1)],
     ),
   );
 }
@@ -101,7 +101,7 @@ class _FakeBooks implements CatalogueItemRepository {
 
   // Unused by the merge use case.
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -110,7 +110,10 @@ class _FakeBooks implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 

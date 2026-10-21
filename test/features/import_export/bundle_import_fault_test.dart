@@ -43,7 +43,7 @@ void main() {
         final files = ControlledBundleFiles(fixture.files)..failures.add(fault);
         if (fault == 'rollback') files.failures.add('retain');
         final payload = ImportPayload(
-          books: row.endsWith('book')
+          items: row.endsWith('book')
               ? [
                   CatalogueItem(
                     title: 'New',
@@ -127,7 +127,7 @@ void main() {
       final books = _BookFaults(fixture, fault);
       final result = await fixture.apply(
         const ImportPayload(
-          books: [
+          items: [
             CatalogueItem(
               title: 'New',
               itemUid: 'new',

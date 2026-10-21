@@ -1,6 +1,6 @@
 /// Session-wide scheduler for remote-cover downloads (M09).
 ///
-/// The `BookCover` widget calls `request` when asked to show a book whose
+/// The `ItemCover` widget calls `request` when asked to show a book whose
 /// cover is an allow-listed `https://` URL. This notifier is the single gate
 /// between that UI event and any network packet:
 ///

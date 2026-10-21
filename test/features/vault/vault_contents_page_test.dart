@@ -45,7 +45,7 @@ class _TitleBooks implements CatalogueItemRepository {
 
 void main() {
   const borrower = Borrower(id: 1, name: 'Asha');
-  const loan = Loan(id: 10, bookId: 7, borrowerId: 1, lentDate: 1000);
+  const loan = Loan(id: 10, itemId: 7, borrowerId: 1, lentDate: 1000);
   const data = VaultData(borrowers: [borrower], loans: [loan]);
 
   /// Pumps the contents page with [books] behind the read model.

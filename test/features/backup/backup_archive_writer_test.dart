@@ -67,12 +67,12 @@ void main() {
   // unwrap-or-fail helpers keep the assertions readable.
   List<CatalogueItem> readBooksOk(CommonDatabase db) => LegacyDbReader(db)
       .readBooks()
-      .fold((f) => fail('readBooks refused a written row: $f'), (r) => r.books);
+      .fold((f) => fail('readBooks refused a written row: $f'), (r) => r.items);
 
   List<WishlistBook> readWishlistOk(CommonDatabase db) =>
       LegacyDbReader(db).readWishlist().fold(
         (f) => fail('readWishlist refused a written row: $f'),
-        (r) => r.books,
+        (r) => r.items,
       );
 
   test('writes a manifest reflecting no vault when none exists', () async {

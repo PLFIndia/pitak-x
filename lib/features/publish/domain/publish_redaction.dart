@@ -2,7 +2,7 @@
 ///
 /// Port of Kotlin `redactForPublish` + `PublishBook.fromRedacted`, fused into
 /// one pure function mapping a private `CatalogueItem` to a world-facing
-/// `PublishBook`. Doing the mapping directly (rather than mutating a
+/// `PublishItem`. Doing the mapping directly (rather than mutating a
 /// `CatalogueItem`) avoids relying on `copyWith` to null-out fields and makes
 /// the stripped set explicit.
 ///
@@ -19,15 +19,15 @@ library;
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 
-/// Maps [book] to a redacted [PublishBook]. [availability] is the coarse,
-/// vault-derived status ([PublishBook.available]/[PublishBook.out]) or null.
-PublishBook redactForPublish(
+/// Maps [book] to a redacted [PublishItem]. [availability] is the coarse,
+/// vault-derived status ([PublishItem.available]/[PublishItem.out]) or null.
+PublishItem redactForPublish(
   CatalogueItem book, {
   required String? Function(CatalogueItem) resolveCoverUrl,
   String? availability,
 }) {
   final coverUrl = resolveCoverUrl(book);
-  return PublishBook(
+  return PublishItem(
     title: book.title,
     titleTransliteration: book.titleTransliteration,
     author: book.author,

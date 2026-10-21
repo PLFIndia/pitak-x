@@ -14,7 +14,7 @@ import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -37,7 +37,7 @@ class _Books implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -46,7 +46,10 @@ class _Books implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -187,10 +190,10 @@ void main() {
 
     final payload = const PitakaJsonImporter().parse(utf8.decode(export.bytes));
     expect(payload.parseErrors, isEmpty);
-    expect(payload.books.length, 2);
+    expect(payload.items.length, 2);
     expect(payload.wishlist.length, 1);
 
-    final b = payload.books.firstWhere((x) => x.isbn == '978-1');
+    final b = payload.items.firstWhere((x) => x.isbn == '978-1');
     expect(b.title, 'भारत: गांधी के बाद');
     expect(b.author, 'Ramachandra Guha');
     expect(b.ageGroup, AgeGroup.advanced);
@@ -220,7 +223,7 @@ void main() {
     );
     final export = result.getOrElse((f) => fail('failed: $f'));
     final payload = const PitakaJsonImporter().parse(utf8.decode(export.bytes));
-    expect(payload.books.length, 2);
+    expect(payload.items.length, 2);
     expect(payload.wishlist, isEmpty);
   });
 
@@ -509,7 +512,7 @@ void main() {
         final payload = const PitakaJsonImporter().parse(
           utf8.decode(export.bytes),
         );
-        expect(payload.books, hasLength(5));
+        expect(payload.items, hasLength(5));
       },
     );
   });

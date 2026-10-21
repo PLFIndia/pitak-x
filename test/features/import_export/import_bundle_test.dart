@@ -12,15 +12,15 @@ void main() {
     final bytes = Uint8List.fromList([1, 2]);
     final covers = {'a.png': bytes};
     final bundle = ImportBundle.validate(
-      ImportPayload(books: books),
+      ImportPayload(items: books),
       covers,
     ).toNullable()!;
     books.clear();
     covers.clear();
     bytes[0] = 9;
-    expect(bundle.payload.books, hasLength(1));
+    expect(bundle.payload.items, hasLength(1));
     expect(bundle.covers['a.png'], [1, 2]);
-    expect(bundle.payload.books.clear, throwsUnsupportedError);
+    expect(bundle.payload.items.clear, throwsUnsupportedError);
     expect(bundle.covers.clear, throwsUnsupportedError);
     expect(() => bundle.covers['a.png']![0] = 3, throwsUnsupportedError);
   });
@@ -34,7 +34,7 @@ void main() {
     for (final wishlist in [false, true]) {
       test('rejects unsafe/missing local ref ($wishlist): $reference', () {
         final payload = ImportPayload(
-          books: wishlist
+          items: wishlist
               ? []
               : [CatalogueItem(title: 'A', coverUrl: reference)],
           wishlist: wishlist
@@ -48,7 +48,7 @@ void main() {
   test('library and wishlist may share a legacy source leaf', () {
     final result = ImportBundle.validate(
       const ImportPayload(
-        books: [
+        items: [
           CatalogueItem(title: 'A', coverUrl: 'file:///another/device/a.jpg'),
         ],
         wishlist: [WishlistBook(title: 'B', coverUrl: 'covers/a.jpg')],
@@ -62,7 +62,7 @@ void main() {
   test('remote and absent refs need no images and make no requests', () {
     final result = ImportBundle.validate(
       const ImportPayload(
-        books: [
+        items: [
           CatalogueItem(title: 'A'),
           CatalogueItem(
             title: 'B',

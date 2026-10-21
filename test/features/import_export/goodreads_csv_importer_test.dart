@@ -16,7 +16,7 @@ void main() {
       ]);
       final payload = importer.parse(text);
       expect(payload.parseErrors, isEmpty);
-      expect(payload.books.single.title, 'Owned Book');
+      expect(payload.items.single.title, 'Owned Book');
       expect(payload.wishlist.single.title, 'Wanted Book');
     });
 
@@ -25,7 +25,7 @@ void main() {
         ['Title', 'ISBN13', 'Exclusive Shelf'],
         ['B', '="978-0-00-000000-1"', 'read'],
       ]);
-      expect(importer.parse(text).books.single.isbn, '9780000000001');
+      expect(importer.parse(text).items.single.isbn, '9780000000001');
     });
 
     test('prefers ISBN13 over ISBN10', () {
@@ -33,7 +33,7 @@ void main() {
         ['Title', 'ISBN', 'ISBN13', 'Exclusive Shelf'],
         ['B', '="0000000001"', '="9780000000001"', 'read'],
       ]);
-      expect(importer.parse(text).books.single.isbn, '9780000000001');
+      expect(importer.parse(text).items.single.isbn, '9780000000001');
     });
 
     test('falls back to ISBN10 when ISBN13 empty', () {
@@ -41,7 +41,7 @@ void main() {
         ['Title', 'ISBN', 'ISBN13', 'Exclusive Shelf'],
         ['B', '="0000000001"', '=""', 'read'],
       ]);
-      expect(importer.parse(text).books.single.isbn, '0000000001');
+      expect(importer.parse(text).items.single.isbn, '0000000001');
     });
 
     test('collects per-row error for a missing title, keeps going', () {
@@ -51,7 +51,7 @@ void main() {
         ['Good', 'read'],
       ]);
       final payload = importer.parse(text);
-      expect(payload.books.single.title, 'Good');
+      expect(payload.items.single.title, 'Good');
       expect(payload.parseErrors.single, contains('Row 2'));
     });
 
@@ -80,7 +80,7 @@ void main() {
         ],
         ['B', '', '1925', 'read'],
       ]);
-      expect(importer.parse(text).books.single.publishedYear, 1925);
+      expect(importer.parse(text).items.single.publishedYear, 1925);
     });
   });
 }

@@ -25,7 +25,7 @@ final class ImportBundle {
     }
     final referenced = <String>{};
     for (final ref in [
-      ...payload.books.map((b) => b.coverUrl),
+      ...payload.items.map((b) => b.coverUrl),
       ...payload.wishlist.map((b) => b.coverUrl),
     ]) {
       if (!CoverPaths.isLocal(ref)) continue;
@@ -49,7 +49,7 @@ final class ImportBundle {
     return right(
       ImportBundle._(
         ImportPayload(
-          books: List.unmodifiable(payload.books),
+          items: List.unmodifiable(payload.items),
           wishlist: List.unmodifiable(payload.wishlist),
         ),
         Map.unmodifiable(

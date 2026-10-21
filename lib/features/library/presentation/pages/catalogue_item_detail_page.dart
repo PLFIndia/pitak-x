@@ -23,7 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/widgets/book_cover.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
@@ -66,11 +66,15 @@ const CropAspectRatioPresetData _coverInitPreset = _Ratio2x3Preset();
 
 /// Displays the book with id [bookId], kept current, with Edit and
 /// Remove/Restore actions.
-class BookDetailPage extends ConsumerWidget {
+class CatalogueItemDetailPage extends ConsumerWidget {
   /// Creates the detail page for the book with [bookId]. [initialBook] is the
   /// row the caller already has (the tapped list row); it is shown only until
   /// the observed row arrives, so the first frame is not a spinner.
-  const BookDetailPage({required this.bookId, this.initialBook, super.key});
+  const CatalogueItemDetailPage({
+    required this.bookId,
+    this.initialBook,
+    super.key,
+  });
 
   /// Per-device id of the book to observe.
   final int bookId;
@@ -87,13 +91,13 @@ class BookDetailPage extends ConsumerWidget {
     // to null" (the row is gone) from "not resolved yet".
     if (observed.hasValue) {
       final book = observed.valueOrNull;
-      if (book == null) return const _BookGoneScaffold();
-      return _BookDetailBody(book: book);
+      if (book == null) return const _ItemGoneScaffold();
+      return _ItemDetailBody(book: book);
     }
-    if (observed.hasError) return const _BookLoadFailedScaffold();
+    if (observed.hasError) return const _ItemLoadFailedScaffold();
     final first = initialBook;
     if (first != null && first.id == bookId) {
-      return _BookDetailBody(book: first);
+      return _ItemDetailBody(book: first);
     }
     return const Scaffold(
       appBar: _DetailAppBar(),
@@ -116,8 +120,8 @@ class _DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
 /// Shown when the observed row no longer exists (deleted from another screen
 /// or device while this page was open). No actions: there is nothing to
 /// edit, remove or lend.
-class _BookGoneScaffold extends StatelessWidget {
-  const _BookGoneScaffold();
+class _ItemGoneScaffold extends StatelessWidget {
+  const _ItemGoneScaffold();
 
   @override
   Widget build(BuildContext context) {
@@ -142,8 +146,8 @@ class _BookGoneScaffold extends StatelessWidget {
 
 /// Shown when the row could not be read. Plain-language only (repo AGENTS.md
 /// §5: never raw exception text).
-class _BookLoadFailedScaffold extends StatelessWidget {
-  const _BookLoadFailedScaffold();
+class _ItemLoadFailedScaffold extends StatelessWidget {
+  const _ItemLoadFailedScaffold();
 
   @override
   Widget build(BuildContext context) {
@@ -169,8 +173,8 @@ class _BookLoadFailedScaffold extends StatelessWidget {
 /// The detail screen proper, rendered for the CURRENT [book]. Every action
 /// here uses this observed row — the edit form, the cover pipeline and the
 /// janitor all see fresh values.
-class _BookDetailBody extends ConsumerWidget {
-  const _BookDetailBody({required this.book});
+class _ItemDetailBody extends ConsumerWidget {
+  const _ItemDetailBody({required this.book});
 
   final CatalogueItem book;
 
@@ -184,7 +188,7 @@ class _BookDetailBody extends ConsumerWidget {
     // Same rule the lend use case enforces; evaluated here only to render an
     // honest button state + reason (review 2026-09-03, decision Q4).
     final lendDecision = session is VaultUnlocked
-        ? LendDecision.forBook(book, session.data.loans)
+        ? LendDecision.forItem(book, session.data.loans)
         : null;
 
     return Scaffold(
@@ -510,7 +514,7 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        BookCover(
+        ItemCover(
           // Key on the cover ref so a new capture forces an image reload.
           key: ValueKey(widget.book.coverUrl),
           title: widget.book.title,

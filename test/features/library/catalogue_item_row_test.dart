@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 
 void main() {
   Widget host(CatalogueItem book, {bool unavailable = false}) => MaterialApp(
     home: Scaffold(
-      body: BookRow(book: book, unavailable: unavailable, onTap: () {}),
+      body: CatalogueItemRow(
+        book: book,
+        unavailable: unavailable,
+        onTap: () {},
+      ),
     ),
   );
 

@@ -104,8 +104,8 @@ class _LoanRow extends ConsumerWidget {
     // a cosmetic label. The provider watches libraryControllerProvider, so a
     // rename while this page is open re-reads the row (N06).
     final title =
-        ref.watch(bookTitleProvider(bookId: loan.bookId)).valueOrNull ??
-        'Book #${loan.bookId}';
+        ref.watch(bookTitleProvider(bookId: loan.itemId)).valueOrNull ??
+        'Book #${loan.itemId}';
 
     return ListTile(
       dense: true,

@@ -372,11 +372,11 @@ void main() {
       expect(payload.parseErrors, isEmpty);
       // The local cover ref really was nulled by the parse (precondition).
       expect(
-        payload.books.firstWhere((b) => b.itemUid == 'u1').coverUrl,
+        payload.items.firstWhere((b) => b.itemUid == 'u1').coverUrl,
         isNull,
       );
 
-      final plan = planMerge(lib, payload.books);
+      final plan = planMerge(lib, payload.items);
 
       expect(plan.isNoOp, isTrue);
       expect(plan.identical, 3);

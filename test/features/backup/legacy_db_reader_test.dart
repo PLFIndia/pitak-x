@@ -99,7 +99,7 @@ void main() {
     final result = LegacyDbReader(db).readBooks();
     return result.fold(
       (f) => fail('unexpected refusal: $f'),
-      (rows) => rows.books,
+      (rows) => rows.items,
     );
   }
 
@@ -112,7 +112,7 @@ void main() {
     final result = LegacyDbReader(db).readWishlist();
     return result.fold(
       (f) => fail('unexpected refusal: $f'),
-      (rows) => rows.books,
+      (rows) => rows.items,
     );
   }
 
@@ -269,7 +269,7 @@ void main() {
       insertBook({'cover_url': "'http://evil.example/x.jpg'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -278,7 +278,7 @@ void main() {
       insertBook({'cover_url': "'covers/../../etc/passwd'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -287,7 +287,7 @@ void main() {
       insertBook({'cover_url': "'https://tracker.example/c.jpg'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -298,7 +298,7 @@ void main() {
       });
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNotNull);
+      expect(rows.items.single.coverUrl, isNotNull);
       expect(rows.coversDropped, 0);
     });
   });
@@ -369,7 +369,7 @@ void main() {
       insertWishlist({'cover_url': "'https://tracker.example/c.jpg'"});
       final result = LegacyDbReader(db).readWishlist();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
   });

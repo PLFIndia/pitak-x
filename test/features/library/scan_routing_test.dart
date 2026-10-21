@@ -18,16 +18,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
-import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
+import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 
 /// In-memory repo fake: enough for the pages pushed by the routing
-/// (BookDetailPage reads through `catalogueItemByIdProvider` → this repo).
+/// (CatalogueItemDetailPage reads through `catalogueItemByIdProvider` → this
+/// repo).
 class _MemRepo implements CatalogueItemRepository {
   _MemRepo(this.books);
 
@@ -38,11 +39,11 @@ class _MemRepo implements CatalogueItemRepository {
       right(books.where((b) => b.id == id).firstOrNull);
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
-  }) async => right(BookPage(items: books, hasMore: false));
+  }) async => right(CatalogueItemPage(items: books, hasMore: false));
 
   @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
@@ -151,7 +152,7 @@ void main() {
 
     await tester.tap(find.text('View book'));
     await tester.pumpAndSettle();
-    expect(find.byType(BookDetailPage), findsOneWidget);
+    expect(find.byType(CatalogueItemDetailPage), findsOneWidget);
     expect(find.text('Dune'), findsWidgets, reason: 'detail header rendered');
   });
 
@@ -167,7 +168,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AddBookPage), findsNothing);
-    expect(find.byType(BookDetailPage), findsNothing);
+    expect(find.byType(CatalogueItemDetailPage), findsNothing);
   });
 
   testWidgets('an unknown ISBN opens the add form pre-filled', (tester) async {

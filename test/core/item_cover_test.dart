@@ -8,7 +8,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/core/widgets/book_cover.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -78,7 +78,7 @@ Widget _host(
     ],
     child: MaterialApp(
       home: Scaffold(
-        body: BookCover(title: 'Hobbit', coverUrl: coverUrl, bookId: bookId),
+        body: ItemCover(title: 'Hobbit', coverUrl: coverUrl, bookId: bookId),
       ),
     ),
   );
@@ -163,7 +163,7 @@ void main() {
     expect(materializer.requested, [7]);
 
     final container = ProviderScope.containerOf(
-      tester.element(find.byType(BookCover)),
+      tester.element(find.byType(ItemCover)),
     );
     await container.read(settingsControllerProvider.future);
     final controller = container.read(settingsControllerProvider.notifier);
@@ -205,7 +205,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(materializer.requested, [7]);
     final container = ProviderScope.containerOf(
-      tester.element(find.byType(BookCover)),
+      tester.element(find.byType(ItemCover)),
     );
     await container.read(settingsControllerProvider.future);
     final controller = container.read(settingsControllerProvider.notifier);
@@ -242,7 +242,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     final container = ProviderScope.containerOf(
-      tester.element(find.byType(BookCover)),
+      tester.element(find.byType(ItemCover)),
     );
     await container.read(settingsControllerProvider.future);
     await container

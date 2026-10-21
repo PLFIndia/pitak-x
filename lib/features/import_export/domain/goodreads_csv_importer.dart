@@ -134,7 +134,7 @@ final class GoodreadsCsvImporter implements Importer {
       }
     }
 
-    return ImportPayload(books: books, wishlist: wishlist, parseErrors: errors);
+    return ImportPayload(items: books, wishlist: wishlist, parseErrors: errors);
   }
 
   static String? _cell(List<String> row, Map<String, int> index, String name) {

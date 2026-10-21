@@ -488,7 +488,7 @@ void main() {
         const VaultData(
           borrowers: [Borrower(id: 1, name: 'Asha')],
           loans: [
-            Loan(bookId: 999, borrowerId: 1, lentDate: 1), // book 999 missing
+            Loan(itemId: 999, borrowerId: 1, lentDate: 1), // book 999 missing
           ],
         ),
       ),

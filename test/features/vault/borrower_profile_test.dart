@@ -15,7 +15,7 @@ void main() {
     int id = 0,
   }) => Loan(
     id: id,
-    bookId: bookId,
+    itemId: bookId,
     borrowerId: borrowerId,
     lentDate: lentDate,
     dueDate: dueDate,

@@ -4,7 +4,7 @@
 /// uploaded to GitHub Pages. SEPARATE from the re-importable export payload on
 /// purpose: it carries ONLY viewer-facing catalog metadata plus a coarse
 /// availability flag — never id, notes, location, source, addedDate (those are
-/// stripped before a [PublishBook] is built; see `redactForPublish`).
+/// stripped before a [PublishItem] is built; see `redactForPublish`).
 library;
 
 /// The full world-facing payload serialised to `books.json`.
@@ -27,7 +27,7 @@ final class PublishExport {
   final int exportedAt;
 
   /// The world-facing book rows.
-  final List<PublishBook> books;
+  final List<PublishItem> books;
 
   /// JSON map (camelCase keys mirror the Kotlin payload + viewer reads).
   Map<String, dynamic> toJson() => {
@@ -38,9 +38,9 @@ final class PublishExport {
 }
 
 /// One book in the world-facing payload. No id/notes/location/source/addedDate.
-final class PublishBook {
+final class PublishItem {
   /// Creates a publish row.
-  const PublishBook({
+  const PublishItem({
     required this.title,
     this.titleTransliteration,
     this.author,

@@ -28,9 +28,9 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
-import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
+import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
@@ -257,7 +257,8 @@ class _BookList extends ConsumerWidget {
     // first frame's content.
     void openDetail(CatalogueItem book) => Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BookDetailPage(bookId: book.id, initialBook: book),
+        builder: (_) =>
+            CatalogueItemDetailPage(bookId: book.id, initialBook: book),
       ),
     );
 
@@ -298,7 +299,7 @@ class _BookList extends ConsumerWidget {
                     itemCount: books.length,
                     itemBuilder: (context, index) {
                       final book = books[index];
-                      return BookGridCard(
+                      return CatalogueItemGridCard(
                         book: book,
                         unavailable: unavailableOf(book),
                         onTap: () => openDetail(book),
@@ -322,7 +323,7 @@ class _BookList extends ConsumerWidget {
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final book = books[index];
-                    return BookRow(
+                    return CatalogueItemRow(
                       book: book,
                       unavailable: unavailableOf(book),
                       onTap: () => openDetail(book),
@@ -384,7 +385,8 @@ Future<void> routeScannedIsbn(
   if ((open ?? false) && context.mounted) {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BookDetailPage(bookId: found.id, initialBook: found),
+        builder: (_) =>
+            CatalogueItemDetailPage(bookId: found.id, initialBook: found),
       ),
     );
   }

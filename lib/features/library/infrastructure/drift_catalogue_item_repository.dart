@@ -18,9 +18,9 @@
 /// read, wrong for any page. Until S30 the controller read the whole catalogue
 /// on every load.
 ///
-/// The ordering rules are the domain's `BookSorter` contract (N05). The SQL
-/// here is its twin, and `drift_book_repository_test.dart` proves the two
-/// agree for every sort × filter combination on a seeded fixture, read back
+/// The ordering rules are the domain's `CatalogueItemSorter` contract (N05).
+/// The SQL here is its twin, and `drift_book_repository_test.dart` proves the
+/// two agree for every sort × filter combination on a seeded fixture, read back
 /// through small pages so every seam is crossed.
 ///
 /// `hasMore` is decided here by asking for `limit + 1` rows and dropping the
@@ -32,7 +32,7 @@ import 'package:drift/drift.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
@@ -64,7 +64,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
   }
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -83,7 +83,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       final items = (hasMore ? rows.take(size) : rows)
           .map((r) => r.toDomain())
           .toList(growable: false);
-      return right(BookPage(items: items, hasMore: hasMore));
+      return right(CatalogueItemPage(items: items, hasMore: hasMore));
     } on Object catch (e) {
       return left(StorageFailure('page: $e'));
     }
@@ -143,16 +143,16 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         orElse: const Constant(0),
       );
 
-  /// The language as `BookSorter` compares it: `(language ?? '').trim()`.
-  /// Without the COALESCE, SQLite would put NULL before `''` inside the
-  /// "blank" bucket, while the domain treats both as the same key.
+  /// The language as `CatalogueItemSorter` compares it: `(language ??
+  /// '').trim()`. Without the COALESCE, SQLite would put NULL before `''`
+  /// inside the "blank" bucket, while the domain treats both as the same key.
   static Expression<String> _languageKey($BooksTable t) =>
       coalesce<String>([t.language, const Constant('')]).trim();
 
   /// The typed ORDER BY for [sort]. Every sort ends with the shared
   /// tie-breaks `added_date DESC, id ASC` so the order is TOTAL: two rows can
   /// never swap between two runs (or two pages) of the same statement.
-  /// Twin of [_orderSql]; both must match `BookSorter` (tested).
+  /// Twin of [_orderSql]; both must match `CatalogueItemSorter` (tested).
   static List<_OrderingOf> _orderingTerms(LibrarySort sort) {
     final byKey = switch (sort) {
       LibrarySort.recentlyAdded => const <_OrderingOf>[],

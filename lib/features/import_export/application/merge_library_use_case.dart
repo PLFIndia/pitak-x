@@ -248,7 +248,7 @@ final class MergeLibraryUseCase {
     }
 
     final payload = _json.parse(text);
-    if (payload.books.isEmpty && payload.parseErrors.isNotEmpty) {
+    if (payload.items.isEmpty && payload.parseErrors.isNotEmpty) {
       return left(ValidationFailure(payload.parseErrors.first));
     }
 
@@ -276,7 +276,7 @@ final class MergeLibraryUseCase {
       return localBooks.flatMap(
         (books) => right(
           MergeDiffersDecision(
-            incomingBooks: payload.books,
+            incomingBooks: payload.items,
             incomingLibraryId: incomingLibraryId,
             incomingLibraryName: incomingLibraryName,
             localLibraryName: local.name,
@@ -289,7 +289,7 @@ final class MergeLibraryUseCase {
     }
 
     final merged = await _applyEngineMerge(
-      payload.books,
+      payload.items,
       skippedRows: payload.parseErrors,
       adjustments: payload.warnings,
     );

@@ -79,6 +79,8 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     final warnings = <String>[];
 
     // M4: cap each collection's row count; drop the overflow with one error.
+    // JSON key stays `books` (wire contract, ADR 0014); the payload field is
+    // `items` because the list carries every catalogue item kind.
     final rawBooks = decoded['books'];
     if (rawBooks is List) {
       for (var i = 0; i < rawBooks.length; i++) {
@@ -118,7 +120,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     }
 
     return ImportPayload(
-      books: books,
+      items: books,
       wishlist: wishlist,
       parseErrors: errors,
       warnings: warnings,

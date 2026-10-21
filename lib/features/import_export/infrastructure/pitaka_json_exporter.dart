@@ -42,6 +42,7 @@ class PitakaJsonExporter implements LibraryJsonEncoder {
       'exportedAt': exportedAt,
       if (libraryId.trim().isNotEmpty) 'libraryId': libraryId.trim(),
       if (libraryName.trim().isNotEmpty) 'libraryName': libraryName.trim(),
+      // JSON key stays `books` (wire contract, ADR 0014).
       'books': books.map(_book).toList(),
       'wishlist': wishlist.map(_wishlist).toList(),
     };

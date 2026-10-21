@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -31,7 +31,7 @@ class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(byId.values.toList());
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -42,7 +42,10 @@ class _Books implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -108,39 +111,39 @@ void main() {
   const single = CatalogueItem(id: 1, title: 'One copy');
   const triple = CatalogueItem(id: 2, title: 'Three copies', copyCount: 3);
   const removed = CatalogueItem(id: 3, title: 'Gone', removed: true);
-  Loan out(int bookId) => Loan(bookId: bookId, borrowerId: 9, lentDate: 1);
+  Loan out(int bookId) => Loan(itemId: bookId, borrowerId: 9, lentDate: 1);
   Loan back(int bookId) =>
-      Loan(bookId: bookId, borrowerId: 9, lentDate: 1, returnedDate: 2);
+      Loan(itemId: bookId, borrowerId: 9, lentDate: 1, returnedDate: 2);
 
   group('LendDecision (pure policy)', () {
     test('allowed when copies are free; counts only ACTIVE loans', () {
-      final d = LendDecision.forBook(triple, [out(2), back(2), back(2)]);
+      final d = LendDecision.forItem(triple, [out(2), back(2), back(2)]);
       expect(d, isA<LendAllowed>());
       expect((d as LendAllowed).copiesFree, 2);
       expect(d.reason, isNull);
     });
 
     test('refused when every copy is out, with a plain-language reason', () {
-      final d1 = LendDecision.forBook(single, [out(1)]);
+      final d1 = LendDecision.forItem(single, [out(1)]);
       expect(d1, isA<LendRefusedAllCopiesOut>());
       expect(d1.reason, contains('already out on loan'));
 
-      final d3 = LendDecision.forBook(triple, [out(2), out(2), out(2)]);
+      final d3 = LendDecision.forItem(triple, [out(2), out(2), out(2)]);
       expect(d3, isA<LendRefusedAllCopiesOut>());
       expect(d3.reason, contains('All 3 copies'));
     });
 
     test('refused for a removed book regardless of loans', () {
-      final d = LendDecision.forBook(removed, const []);
+      final d = LendDecision.forItem(removed, const []);
       expect(d, isA<LendRefusedRemoved>());
       expect(d.reason, contains('marked as removed'));
     });
 
     test('a malformed copyCount of 0 behaves like 1', () {
       const zero = CatalogueItem(id: 4, title: 'Z', copyCount: 0);
-      expect(LendDecision.forBook(zero, const []), isA<LendAllowed>());
+      expect(LendDecision.forItem(zero, const []), isA<LendAllowed>());
       expect(
-        LendDecision.forBook(zero, [out(4)]),
+        LendDecision.forItem(zero, [out(4)]),
         isA<LendRefusedAllCopiesOut>(),
       );
     });

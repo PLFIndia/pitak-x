@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -84,13 +84,13 @@ void main() {
     });
   });
 
-  group('BookPage / LibraryWindow', () {
+  group('CatalogueItemPage / LibraryWindow', () {
     const dune = CatalogueItem(id: 1, title: 'Dune');
 
-    test('BookPage.empty is terminal', () {
-      expect(BookPage.empty.items, isEmpty);
-      expect(BookPage.empty.hasMore, isFalse);
-      expect(BookPage.empty.toString(), contains('0 items'));
+    test('CatalogueItemPage.empty is terminal', () {
+      expect(CatalogueItemPage.empty.items, isEmpty);
+      expect(CatalogueItemPage.empty.hasMore, isFalse);
+      expect(CatalogueItemPage.empty.toString(), contains('0 items'));
     });
 
     test('LibraryWindow.copyWith replaces only the given fields', () {

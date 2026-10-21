@@ -480,7 +480,7 @@ final class RestoreBackup {
       }
       final books = validated.getOrElse((_) => throw StateError('x'));
       rows
-        ..books = books.books
+        ..books = books.items
         ..coversDropped = rows.coversDropped + books.coversDropped;
     }
     if (manifest.hasWishlist) {
@@ -499,7 +499,7 @@ final class RestoreBackup {
       }
       final wishlist = validated.getOrElse((_) => throw StateError('x'));
       rows
-        ..wishlist = wishlist.books
+        ..wishlist = wishlist.items
         ..coversDropped = rows.coversDropped + wishlist.coversDropped;
     }
     return right(rows);

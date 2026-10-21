@@ -47,7 +47,7 @@ void main() {
 
       final payload = importer.parse(json);
       expect(payload.parseErrors, isEmpty);
-      final b = payload.books.single;
+      final b = payload.items.single;
       // Fresh id on import — the file's id is ignored.
       expect(b.id, CatalogueItem.emptyId);
       expect(b.itemUid, 'uid-abc');
@@ -75,7 +75,7 @@ void main() {
         'wishlist': <dynamic>[],
       });
 
-      final books = importer.parse(json).books;
+      final books = importer.parse(json).items;
       expect(books[0].coverUrl, isNull); // relative local dropped
       expect(books[1].coverUrl, isNull); // legacy file:// dropped
       // Allow-listed remote kept (M15: non-allow-listed https is rejected).
@@ -93,7 +93,7 @@ void main() {
         'wishlist': <dynamic>[],
       });
       expect(
-        bundleImporter.parse(json).books.single.coverUrl,
+        bundleImporter.parse(json).items.single.coverUrl,
         'covers/uuid-1.jpg',
       );
     });
@@ -104,9 +104,9 @@ void main() {
         '{"schemaVersion": 1, "books": [{"title": "A", "publishedYear": 1e400,'
         ' "pageCount": 1e999, "copyCount": -1e400}]}',
       );
-      expect(payload.books, hasLength(1));
-      expect(payload.books.single.publishedYear, isNull);
-      expect(payload.books.single.pageCount, isNull);
+      expect(payload.items, hasLength(1));
+      expect(payload.items.single.publishedYear, isNull);
+      expect(payload.items.single.pageCount, isNull);
     });
 
     test('refuses a schemaVersion newer than this build', () {
@@ -130,7 +130,7 @@ void main() {
         ],
         'wishlist': <dynamic>[],
       });
-      expect(importer.parse(json).books.single.ageGroup, AgeGroup.above10);
+      expect(importer.parse(json).items.single.ageGroup, AgeGroup.above10);
     });
 
     test('reads wishlist fields incl. priceEstimate and priority', () {
@@ -209,7 +209,7 @@ void main() {
             ],
           ),
         );
-        expect(payload.books.single.title, 'Good');
+        expect(payload.items.single.title, 'Good');
         expect(payload.parseErrors.single, contains('addedDate'));
         expect(payload.parseErrors.single, contains('Bad date'));
       });
@@ -224,7 +224,7 @@ void main() {
             ],
           ),
         );
-        expect(payload.books.single.title, 'Fine');
+        expect(payload.items.single.title, 'Fine');
         expect(payload.parseErrors, hasLength(2));
         expect(payload.parseErrors.first, contains('copyCount'));
       });
@@ -238,7 +238,7 @@ void main() {
             ],
           ),
         );
-        expect(payload.books.single.title, 'Real');
+        expect(payload.items.single.title, 'Real');
         expect(payload.parseErrors.single, contains('title'));
       });
 
@@ -290,7 +290,7 @@ void main() {
             ],
           ),
         );
-        expect(payload.books.single.addedBy, hasLength(8000));
+        expect(payload.items.single.addedBy, hasLength(8000));
         expect(payload.warnings.single, contains('addedBy'));
         expect(payload.warnings.single, contains('shortened'));
         expect(payload.parseErrors, isEmpty);
@@ -313,10 +313,10 @@ void main() {
               ],
             ),
           );
-          expect(payload.books, hasLength(2));
-          expect(payload.books[0].coverUrl, isNull);
+          expect(payload.items, hasLength(2));
+          expect(payload.items[0].coverUrl, isNull);
           expect(
-            payload.books[1].coverUrl,
+            payload.items[1].coverUrl,
             'https://covers.openlibrary.org/b/id/1.jpg',
           );
           expect(payload.warnings.single, contains('cover'));
@@ -366,7 +366,7 @@ void main() {
           ),
         );
         expect(payload.parseErrors, isEmpty);
-        expect(payload.books.single.copyCount, 3);
+        expect(payload.items.single.copyCount, 3);
         expect(payload.wishlist.single.priority, 0);
       });
     });

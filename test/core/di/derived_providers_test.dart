@@ -19,7 +19,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -42,7 +42,7 @@ class _FakeBookRepo implements CatalogueItemRepository {
       right(List.of(books));
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -51,7 +51,10 @@ class _FakeBookRepo implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -271,7 +274,7 @@ void main() {
     const hour = 60 * 60 * 1000;
 
     Loan loanDueAt(int due) =>
-        Loan(id: 1, bookId: 1, borrowerId: 1, lentDate: t0, dueDate: due);
+        Loan(id: 1, itemId: 1, borrowerId: 1, lentDate: t0, dueDate: due);
 
     VaultData vaultWith(Loan loan) => VaultData(
       borrowers: const [Borrower(id: 1, name: 'Asha')],

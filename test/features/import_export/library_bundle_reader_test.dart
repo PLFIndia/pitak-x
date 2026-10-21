@@ -34,8 +34,8 @@ void main() {
         }),
       );
       final bundle = result.toNullable()!;
-      expect(bundle.payload.books.single.title, 'गोदान');
-      expect(bundle.payload.books.single.coverUrl, 'covers/uuid-1.jpg');
+      expect(bundle.payload.items.single.title, 'गोदान');
+      expect(bundle.payload.items.single.coverUrl, 'covers/uuid-1.jpg');
       expect(bundle.covers['uuid-1.jpg'], [9, 9, 9]);
     },
   );

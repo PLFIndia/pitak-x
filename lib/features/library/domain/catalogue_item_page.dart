@@ -11,14 +11,17 @@ library;
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// A contiguous slice of the ordered, filtered library list.
-final class BookPage {
+final class CatalogueItemPage {
   /// Creates a page. [items] is taken as-is (the repository already returns
   /// an unmodifiable list); [hasMore] is true when at least one more row
   /// follows the last item in the same order.
-  const BookPage({required this.items, required this.hasMore});
+  const CatalogueItemPage({required this.items, required this.hasMore});
 
   /// An empty terminal page.
-  static const BookPage empty = BookPage(items: [], hasMore: false);
+  static const CatalogueItemPage empty = CatalogueItemPage(
+    items: [],
+    hasMore: false,
+  );
 
   /// The rows in list order.
   final List<CatalogueItem> items;
@@ -27,5 +30,6 @@ final class BookPage {
   final bool hasMore;
 
   @override
-  String toString() => 'BookPage(${items.length} items, hasMore: $hasMore)';
+  String toString() =>
+      'CatalogueItemPage(${items.length} items, hasMore: $hasMore)';
 }

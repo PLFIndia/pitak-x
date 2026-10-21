@@ -97,7 +97,7 @@ void main() {
         };
         if (failFirst) files.failures.add('stage');
         const payload = ImportPayload(
-          books: [
+          items: [
             CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
           ],
         );

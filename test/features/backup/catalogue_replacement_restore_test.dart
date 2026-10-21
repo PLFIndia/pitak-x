@@ -33,7 +33,7 @@ class _RestoreDb extends AppDatabase {
 }
 
 const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Existing');
-const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
+const _loan = Loan(id: 1, itemId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
   late ReplacementHarness h;
@@ -84,7 +84,7 @@ void main() {
         final books = await h.currentBooks();
         expect((await books.getById(7)).toNullable()!.title, 'Changed');
         expect((await books.getAll()).toNullable()!.length, 2);
-        expect(h.vault.loans.single.bookId, 7);
+        expect(h.vault.loans.single.itemId, 7);
         expect(h.vault.writes, 0);
         // The retained vault moved with the catalogue into the new generation.
         final store = await h.currentStore();

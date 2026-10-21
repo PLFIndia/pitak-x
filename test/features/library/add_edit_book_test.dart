@@ -5,7 +5,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -22,7 +22,7 @@ Future<List<CatalogueItem>> firstPage(
   required LibrarySort sort,
   String text = '',
   String? language,
-}) async => ok<BookPage>(
+}) async => ok<CatalogueItemPage>(
   await repo.page(
     LibraryQuery(text: text, sort: sort, language: language),
     limit: libraryPageSize,
@@ -585,11 +585,11 @@ class _FailingFindByIsbnRepo implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(const []);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
-  }) async => right(BookPage.empty);
+  }) async => right(CatalogueItemPage.empty);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);

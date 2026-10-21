@@ -375,7 +375,7 @@ final class PublishLibraryUseCase {
   String? _availabilityFor(CatalogueItem book, Map<int, int>? counts) {
     if (counts == null) return null;
     final active = counts[book.id] ?? 0;
-    return active >= book.copyCount ? PublishBook.out : PublishBook.available;
+    return active >= book.copyCount ? PublishItem.out : PublishItem.available;
   }
 
   DesiredFile _desiredFile(

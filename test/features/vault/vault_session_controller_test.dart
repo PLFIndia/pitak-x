@@ -491,7 +491,7 @@ void main() {
       () async {
         final container = makeContainer(_InMemoryVault());
         final (notifier, id) = await unlockedWithBorrower(container);
-        await notifier.addLoan(Loan(bookId: 1, borrowerId: id, lentDate: 1));
+        await notifier.addLoan(Loan(itemId: 1, borrowerId: id, lentDate: 1));
 
         final plan = notifier.planDeleteBorrower(id);
         expect(plan, isA<BorrowerDeletionBlocked>());
@@ -518,10 +518,10 @@ void main() {
         final container = makeContainer(_InMemoryVault());
         final (notifier, id) = await unlockedWithBorrower(container);
         await notifier.addLoan(
-          Loan(bookId: 1, borrowerId: id, lentDate: 1, returnedDate: 2),
+          Loan(itemId: 1, borrowerId: id, lentDate: 1, returnedDate: 2),
         );
         await notifier.addLoan(
-          Loan(bookId: 2, borrowerId: id, lentDate: 1, returnedDate: 3),
+          Loan(itemId: 2, borrowerId: id, lentDate: 1, returnedDate: 3),
         );
 
         final plan = notifier.planDeleteBorrower(id);

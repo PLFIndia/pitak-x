@@ -17,7 +17,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -278,7 +278,7 @@ class _GoldenBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -286,7 +286,10 @@ class _GoldenBookRepo implements CatalogueItemRepository {
     final end = (offset + limit).clamp(0, _all.length);
     final start = offset.clamp(0, end);
     return right(
-      BookPage(items: _all.sublist(start, end), hasMore: end < _all.length),
+      CatalogueItemPage(
+        items: _all.sublist(start, end),
+        hasMore: end < _all.length,
+      ),
     );
   }
 

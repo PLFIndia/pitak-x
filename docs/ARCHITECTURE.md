@@ -101,7 +101,7 @@ These fail the build; change them deliberately, never to "make it pass".
 |------|----------|
 | `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
-| `test/architecture/book_validation_gate_test.dart` | every `Book` construction site goes through `Book.validate` (ADR 0004) |
+| `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
 
 ---
@@ -130,7 +130,9 @@ lib/
     platform/             screen_security.dart (FLAG_SECURE), app_log.dart
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
-    library/              books; paged SQL reads (BookRepository.page); merge engine
+    library/              catalogue items (`CatalogueItem`, the base row of every
+                          kind — books today); paged SQL reads
+                          (CatalogueItemRepository.page); merge engine
     vault/                encrypted borrowers + loans; passphrase + biometric unlock
     wishlist/
     lookup/               barcode scan (flutter_zxing) + ISBN lookup chain
@@ -340,8 +342,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
   saved row) are marked with a badge, never auto-merged.
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
-- **Library list reads are paged in SQL** (`BookRepository.page`, 60 rows,
-  OFFSET/LIMIT); `BookSorter` (domain) is the oracle the SQL is tested against.
+- **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,
+  60 rows, OFFSET/LIMIT); `CatalogueItemSorter` (domain) is the oracle the SQL
+  is tested against.
   Language facet matches the stored string exactly (SQLite `lower()` is
   ASCII-only).
 - **Merge** is add-only, removal-as-conflict, identity order uid → ISBN →

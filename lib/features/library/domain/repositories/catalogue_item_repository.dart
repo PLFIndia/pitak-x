@@ -6,7 +6,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 
@@ -18,14 +18,14 @@ abstract interface class CatalogueItemRepository {
   /// ONE window of the library list for [query] (review finding N10-d: the
   /// list used to load the whole catalogue).
   ///
-  /// This is the only list read the Library screen uses. A blank
-  /// `query.text` lists every book; non-blank text is a full-text search over
-  /// the FTS5 index. Either way the rows are narrowed to `query.language`
-  /// (exact match on the stored string; null = all) and ordered by
-  /// `query.sort` with the domain's `BookSorter` rules. The order is FINAL
-  /// and TOTAL (ties broken newest-first, then by id), and the window is cut
-  /// by SQLite on the SAME statement that orders — so `offset` rows in, the
-  /// next `limit` rows out, are exactly the rows the user should see there.
+  /// This is the only list read the Library screen uses. A blank `query.text`
+  /// lists every book; non-blank text is a full-text search over the FTS5
+  /// index. Either way the rows are narrowed to `query.language` (exact match
+  /// on the stored string; null = all) and ordered by `query.sort` with the
+  /// domain's `CatalogueItemSorter` rules. The order is FINAL and TOTAL (ties
+  /// broken newest-first, then by id), and the window is cut by SQLite on the
+  /// SAME statement that orders — so `offset` rows in, the next `limit` rows
+  /// out, are exactly the rows the user should see there.
   ///
   /// [limit] is clamped to `1..maxLibraryPageSize` and [offset] to `>= 0` by
   /// the implementation: a caller can never turn a page back into a whole-
@@ -38,7 +38,7 @@ abstract interface class CatalogueItemRepository {
   /// in the app refreshes the list controller, which reloads from offset 0,
   /// so the UI never pages across its own write; the limitation is pinned by
   /// a test in `drift_book_repository_test.dart` so it stays visible.
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,

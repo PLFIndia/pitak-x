@@ -28,7 +28,7 @@ void main() {
     final p = redactForPublish(
       sample(),
       resolveCoverUrl: (b) => 'covers/${b.id}.jpg',
-      availability: PublishBook.out,
+      availability: PublishItem.out,
     );
     expect(p.title, 'The Odyssey');
     expect(p.author, 'Homer');
@@ -38,7 +38,7 @@ void main() {
     expect(p.genre, 'Epic');
     expect(p.language, 'en');
     expect(p.ageGroup, 'above-10');
-    expect(p.availability, PublishBook.out);
+    expect(p.availability, PublishItem.out);
     // Cover resolved via callback (had access to the real id).
     expect(p.coverUrl, 'covers/42.jpg');
   });

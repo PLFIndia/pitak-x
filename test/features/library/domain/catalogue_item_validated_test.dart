@@ -3,7 +3,7 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 void main() {
-  group('Book.validate (M15)', () {
+  group('CatalogueItem.validate (M15)', () {
     test('accepts a minimal valid book', () {
       final r = CatalogueItem.validate(const CatalogueItem(title: 'Godaan'));
       expect(r.isRight(), isTrue);

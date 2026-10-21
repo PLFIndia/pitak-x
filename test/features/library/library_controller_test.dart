@@ -8,7 +8,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -55,26 +55,26 @@ class _FakeBookRepo implements CatalogueItemRepository {
   /// verbatim; a search returns nothing (tests that need search rows use a
   /// subclass).
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     pagesSeen.add((query: query, limit: limit, offset: offset));
-    if (query.isSearch) return right(BookPage.empty);
+    if (query.isSearch) return right(CatalogueItemPage.empty);
     return right(slice(_all, limit: limit, offset: offset));
   }
 
   /// OFFSET/LIMIT over an in-memory list with the repository's `hasMore`
   /// rule (one row beyond the window exists).
-  static BookPage slice(
+  static CatalogueItemPage slice(
     List<CatalogueItem> rows, {
     required int limit,
     int offset = 0,
   }) {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
-    return BookPage(
+    return CatalogueItemPage(
       items: rows.sublist(start, end),
       hasMore: end < rows.length,
     );
@@ -126,21 +126,21 @@ class _FakeBookRepo implements CatalogueItemRepository {
 /// are keyed by their text; listing reads by `'list@<offset>'`.
 class _GatedRepo extends _FakeBookRepo {
   _GatedRepo(super.all);
-  final Map<String, Completer<BookPage>> gates = {};
+  final Map<String, Completer<CatalogueItemPage>> gates = {};
 
   static String keyFor(LibraryQuery query, int offset) =>
       query.isSearch ? query.text : 'list@$offset';
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) {
     pagesSeen.add((query: query, limit: limit, offset: offset));
-    return (gates[keyFor(query, offset)] ??= Completer<BookPage>()).future.then(
-      right,
-    );
+    return (gates[keyFor(query, offset)] ??= Completer<CatalogueItemPage>())
+        .future
+        .then(right);
   }
 }
 
@@ -153,7 +153,7 @@ class _FixedSearchRepo extends _FakeBookRepo {
   final List<CatalogueItem> searchResults;
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -171,7 +171,7 @@ class _FailingLaterRepo extends _FakeBookRepo {
   int okReads;
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -348,7 +348,8 @@ void main() {
     final container = makeContainer(repo)
       ..listen(libraryControllerProvider, (_, _) {});
     final notifier = container.read(libraryControllerProvider.notifier);
-    repo.gates['list@0'] = Completer<BookPage>()..complete(BookPage.empty);
+    repo.gates['list@0'] = Completer<CatalogueItemPage>()
+      ..complete(CatalogueItemPage.empty);
     await container.read(libraryControllerProvider.future);
 
     notifier.onQueryChanged('slow');
@@ -358,14 +359,14 @@ void main() {
 
     // Complete the NEW query first, then let the OLD one land late.
     repo.gates['fast']!.complete(
-      const BookPage(
+      const CatalogueItemPage(
         items: [CatalogueItem(id: 2, title: 'FAST')],
         hasMore: false,
       ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     repo.gates['slow']!.complete(
-      const BookPage(
+      const CatalogueItemPage(
         items: [CatalogueItem(id: 1, title: 'SLOW')],
         hasMore: false,
       ),
@@ -470,7 +471,7 @@ void main() {
       final container = makeContainer(repo)
         ..listen(libraryControllerProvider, (_, _) {});
       final notifier = container.read(libraryControllerProvider.notifier);
-      repo.gates['list@0'] = Completer<BookPage>()
+      repo.gates['list@0'] = Completer<CatalogueItemPage>()
         ..complete(_FakeBookRepo.slice(manyBooks(150), limit: 60));
       await container.read(libraryControllerProvider.future);
 
@@ -503,7 +504,7 @@ void main() {
       final container = makeContainer(repo)
         ..listen(libraryControllerProvider, (_, _) {});
       final notifier = container.read(libraryControllerProvider.notifier);
-      repo.gates['list@0'] = Completer<BookPage>()
+      repo.gates['list@0'] = Completer<CatalogueItemPage>()
         ..complete(_FakeBookRepo.slice(manyBooks(150), limit: 60));
       await container.read(libraryControllerProvider.future);
 
@@ -512,7 +513,7 @@ void main() {
       notifier.onQueryChanged('zzz'); // a new list supersedes it
       await Future<void>.delayed(const Duration(milliseconds: 150));
       repo.gates['zzz']!.complete(
-        const BookPage(
+        const CatalogueItemPage(
           items: [CatalogueItem(id: 999, title: 'hit')],
           hasMore: false,
         ),

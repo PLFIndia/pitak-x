@@ -93,7 +93,7 @@ class LendBookUseCase {
     if (found.isLeft()) return found.map((_) => unit);
     if (book == null) return left(const NotFoundFailure());
 
-    final decision = LendDecision.forBook(book, loans);
+    final decision = LendDecision.forItem(book, loans);
     if (decision is! LendAllowed) {
       return left(ValidationFailure(decision.reason!));
     }
@@ -117,7 +117,7 @@ class LendBookUseCase {
 
     final written = await vault.addLoan(
       Loan(
-        bookId: bookId,
+        itemId: bookId,
         borrowerId: borrowerId,
         lentDate: lentDate,
         dueDate: dueDate,

@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -27,7 +27,7 @@ class _EmptyRepo implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(const []);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -38,7 +38,10 @@ class _EmptyRepo implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 

@@ -9,11 +9,11 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
-import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
+import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -67,7 +67,7 @@ class _MemBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -76,7 +76,10 @@ class _MemBookRepo implements CatalogueItemRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -155,8 +158,10 @@ Widget _host(
           child: TextButton(
             onPressed: () => Navigator.of(context).push(
               MaterialPageRoute<void>(
-                builder: (_) =>
-                    BookDetailPage(bookId: _seed.id, initialBook: initialBook),
+                builder: (_) => CatalogueItemDetailPage(
+                  bookId: _seed.id,
+                  initialBook: initialBook,
+                ),
               ),
             ),
             child: const Text('open detail'),
@@ -194,7 +199,7 @@ Future<void> _tapSave(WidgetTester tester) async {
 /// writing a row: signal the library that something changed.
 void _signalLibraryChanged(WidgetTester tester) {
   ProviderScope.containerOf(
-    tester.element(find.byType(BookDetailPage)),
+    tester.element(find.byType(CatalogueItemDetailPage)),
   ).invalidate(libraryControllerProvider);
 }
 
@@ -526,7 +531,7 @@ void main() {
             ).copyWith(textScaler: const TextScaler.linear(2)),
             child: child!,
           ),
-          home: BookDetailPage(bookId: _seed.id, initialBook: _seed),
+          home: CatalogueItemDetailPage(bookId: _seed.id, initialBook: _seed),
         ),
       ),
     );

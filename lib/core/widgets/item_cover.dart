@@ -43,12 +43,12 @@ import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 /// A book cover thumbnail with a graceful initial-letter fallback.
-class BookCover extends ConsumerStatefulWidget {
+class ItemCover extends ConsumerStatefulWidget {
   /// Creates a cover for [title], rendering [coverUrl] when it is a local file.
   ///
   /// [bookId] lets an allow-listed remote cover be materialised for that row;
   /// without it a remote reference simply shows the placeholder.
-  const BookCover({
+  const ItemCover({
     required this.title,
     required this.coverUrl,
     this.bookId,
@@ -74,10 +74,10 @@ class BookCover extends ConsumerStatefulWidget {
   final double height;
 
   @override
-  ConsumerState<BookCover> createState() => _BookCoverState();
+  ConsumerState<ItemCover> createState() => _ItemCoverState();
 }
 
-class _BookCoverState extends ConsumerState<BookCover> {
+class _ItemCoverState extends ConsumerState<ItemCover> {
   /// Consent-bit subscription; present only while this cover is a pending
   /// (fetchable) download. Closed automatically on unmount by flutter_riverpod
   /// (`ConsumerStatefulElement.unmount`, 2.6.1) — and explicitly when the row
@@ -91,7 +91,7 @@ class _BookCoverState extends ConsumerState<BookCover> {
   }
 
   @override
-  void didUpdateWidget(BookCover old) {
+  void didUpdateWidget(ItemCover old) {
     super.didUpdateWidget(old);
     // A list row is recycled for a different book: ask again for the new one.
     if (old.coverUrl != widget.coverUrl || old.bookId != widget.bookId) {

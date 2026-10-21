@@ -13,7 +13,7 @@ void main() {
     // '<token>'` for the FTS search ORDER BY. That is only safe while tokens
     // stay in this charset (no quotes, no whitespace). Ranks must also be
     // distinct or two bands would tie in SQL and break the equivalence with
-    // BookSorter.
+    // CatalogueItemSorter.
     test('tokens are SQL-literal-safe and ranks are distinct', () {
       final safe = RegExp(r'^[a-z0-9-]+$');
       for (final v in AgeGroup.values) {
@@ -80,7 +80,7 @@ void main() {
     });
   });
 
-  group('Book', () {
+  group('CatalogueItem', () {
     test('copyWith replaces only given fields', () {
       const book = CatalogueItem(title: 'A', author: 'X');
       final updated = book.copyWith(author: 'Y', copyCount: 2);

@@ -44,10 +44,11 @@ import 'package:sqlite3/common.dart';
 /// cover references were dropped because they pointed to an unsupported site.
 final class LegacyRows<T> {
   /// Creates a validated row set.
-  const LegacyRows(this.books, {this.coversDropped = 0});
+  const LegacyRows(this.items, {this.coversDropped = 0});
 
-  /// The validated entities, in row order.
-  final List<T> books;
+  /// The validated entities, in row order (catalogue items or wishlist
+  /// entries — the table read is still `books` / `wishlist_books`).
+  final List<T> items;
 
   /// Cover references normalised to null (see `CatalogueItem.validate`).
   final int coversDropped;

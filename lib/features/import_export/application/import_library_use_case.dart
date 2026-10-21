@@ -175,7 +175,7 @@ final class ImportLibraryUseCase {
     var wishlistAdded = 0;
     var wishlistReplaced = 0;
 
-    for (final rawBook in payload.books) {
+    for (final rawBook in payload.items) {
       // M15 defence in depth: parsers already validate each row, but the
       // write path re-checks so a FUTURE parser can never bypass the gate.
       // A Left here means a parser bug — fail the whole import (the

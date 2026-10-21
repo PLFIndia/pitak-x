@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
 
 void main() {
   Widget host(CatalogueItem book, {bool unavailable = false}) => ProviderScope(
@@ -13,7 +13,7 @@ void main() {
           child: SizedBox(
             width: 180,
             height: 280,
-            child: BookGridCard(
+            child: CatalogueItemGridCard(
               book: book,
               unavailable: unavailable,
               onTap: () {},

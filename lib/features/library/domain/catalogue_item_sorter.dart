@@ -26,7 +26,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Sorts book lists by the app's persisted [LibrarySort] contract.
-abstract final class BookSorter {
+abstract final class CatalogueItemSorter {
   /// Returns a NEW list of [books] ordered by [sort]. Never mutates [books].
   static List<CatalogueItem> sort(List<CatalogueItem> books, LibrarySort sort) {
     final indexed = books.asMap().entries.toList()

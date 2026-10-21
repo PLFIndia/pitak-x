@@ -88,7 +88,7 @@ void main() {
   late Directory tmp;
 
   const borrower = Borrower(id: 1, name: 'Asha');
-  const loan = Loan(id: 10, bookId: 7, borrowerId: 1, lentDate: 1000);
+  const loan = Loan(id: 10, itemId: 7, borrowerId: 1, lentDate: 1000);
 
   setUp(() => tmp = Directory.systemTemp.createTempSync('profile_test'));
   tearDown(() => tmp.deleteSync(recursive: true));

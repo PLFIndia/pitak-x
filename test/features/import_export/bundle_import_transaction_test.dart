@@ -27,7 +27,7 @@ void main() {
     fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
     final result = await fixture.apply(
       const ImportPayload(
-        books: [
+        items: [
           CatalogueItem(title: 'New', itemUid: 'u', coverUrl: 'covers/a.jpg'),
         ],
       ),
@@ -45,7 +45,7 @@ void main() {
     () async {
       final result = await fixture.apply(
         const ImportPayload(
-          books: [
+          items: [
             CatalogueItem(
               title: 'First',
               itemUid: 'u',
@@ -92,7 +92,7 @@ void main() {
   test('same numeric ID in different tables keeps both covers', () async {
     final result = await fixture.apply(
       const ImportPayload(
-        books: [CatalogueItem(title: 'A', coverUrl: 'covers/a.jpg')],
+        items: [CatalogueItem(title: 'A', coverUrl: 'covers/a.jpg')],
         wishlist: [WishlistBook(title: 'B', coverUrl: 'covers/b.jpg')],
       ),
       images: {'a.jpg': a, 'b.jpg': b},
@@ -109,7 +109,7 @@ void main() {
     'reimport by ISBN skips images; shared wishlist still receives one',
     () async {
       const payload = ImportPayload(
-        books: [
+        items: [
           CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
         ],
       );
@@ -120,7 +120,7 @@ void main() {
       expect(fixture.images.single.readAsBytesSync(), a);
       final shared = await fixture.apply(
         const ImportPayload(
-          books: [
+          items: [
             CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
           ],
           wishlist: [WishlistBook(title: 'Wish', coverUrl: 'covers/a.jpg')],
@@ -141,7 +141,7 @@ void main() {
   test('one shared file for library, wishlist and legacy references', () async {
     final result = await fixture.apply(
       const ImportPayload(
-        books: [CatalogueItem(title: 'A', coverUrl: 'covers/a.png')],
+        items: [CatalogueItem(title: 'A', coverUrl: 'covers/a.png')],
         wishlist: [
           WishlistBook(title: 'B', coverUrl: 'file:///old/device/a.png'),
         ],

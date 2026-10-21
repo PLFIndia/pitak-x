@@ -825,7 +825,7 @@ void main() {
         (await h.controller.updateLoan(
           const Loan(
             id: 1,
-            bookId: 5,
+            itemId: 5,
             borrowerId: 1,
             lentDate: 1,
             returnedDate: 2,

@@ -12,7 +12,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'replacement_harness.dart';
 
 const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Loaned');
-const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
+const _loan = Loan(id: 1, itemId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
   late ReplacementHarness h;
@@ -40,7 +40,7 @@ void main() {
       final books = (await h.books.getAll()).toNullable()!;
       expect(books.singleWhere((b) => b.itemUid == 'stable').id, 7);
       expect(books.singleWhere((b) => b.title == 'New').id, greaterThan(500));
-      expect(h.vault.loans.single.bookId, 7);
+      expect(h.vault.loans.single.itemId, 7);
       expect(h.vault.writes, 0);
       expect(File(h.store.dbPath).readAsBytesSync(), [1, 2, 3]);
       expect(h.store.readBlob(), 'synthetic.blob.only');

@@ -2,7 +2,7 @@
 ///
 /// Writes a captured + downscaled cover to `<coversDir>/<uuid>.jpg` and returns
 /// the relative `covers/<uuid>.jpg` reference stored on the book row (the same
-/// shape the importer/bundle reader and `BookCover` widget already understand).
+/// shape the importer/bundle reader and `ItemCover` widget already understand).
 /// Pure file IO; the bytes are produced by `ImageDownscaler` before they reach
 /// here.
 library;

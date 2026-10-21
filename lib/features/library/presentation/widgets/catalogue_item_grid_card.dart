@@ -1,20 +1,20 @@
 /// A single library *grid* card (presentation layer, AGENTS.md §3.1).
 ///
-/// The wide-screen counterpart to `BookRow`: a cover-forward card used by the
-/// library grid on tablets/desktops. Same data and tap contract as the row, but
-/// status markers (Removed / Not available / Needs info / copy-count) are shown
-/// as small overlay pills on the cover so the title/author text below stays
-/// uncluttered. Pure presentation — no business logic.
+/// The wide-screen counterpart to `CatalogueItemRow`: a cover-forward card used
+/// by the library grid on tablets/desktops. Same data and tap contract as the
+/// row, but status markers (Removed / Not available / Needs info / copy-count)
+/// are shown as small overlay pills on the cover so the title/author text below
+/// stays uncluttered. Pure presentation — no business logic.
 library;
 
 import 'package:flutter/material.dart';
-import 'package:pitaka/core/widgets/book_cover.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// One tappable book card for the wide-screen grid.
-class BookGridCard extends StatelessWidget {
+class CatalogueItemGridCard extends StatelessWidget {
   /// Creates a card for [book]; [onTap] opens its detail.
-  const BookGridCard({
+  const CatalogueItemGridCard({
     required this.book,
     required this.onTap,
     this.unavailable = false,
@@ -56,8 +56,8 @@ class BookGridCard extends StatelessWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: SizedBox.expand(
-                        // BookCover scales to fill the available cell width.
-                        child: BookCover(
+                        // ItemCover scales to fill the available cell width.
+                        child: ItemCover(
                           title: book.title,
                           coverUrl: book.coverUrl,
                           bookId: book.id,

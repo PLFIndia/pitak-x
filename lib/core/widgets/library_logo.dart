@@ -7,7 +7,7 @@
 ///
 /// Local-only: the logo file lives under app documents and is never fetched
 /// from the network. Resolution reuses [CoverPaths] (single source of truth for
-/// safe leaf extraction) + the covers-dir provider, exactly like `BookCover`.
+/// safe leaf extraction) + the covers-dir provider, exactly like `ItemCover`.
 library;
 
 import 'dart:io';

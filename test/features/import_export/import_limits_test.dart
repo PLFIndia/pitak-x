@@ -41,7 +41,7 @@ void main() {
         limits: tiny,
       ).parse(jsonWithBooks(10));
 
-      expect(payload.books.length, 2);
+      expect(payload.items.length, 2);
       expect(payload.parseErrors, isNotEmpty);
       expect(payload.parseErrors.first, contains('first 2 books'));
     });
@@ -56,14 +56,14 @@ void main() {
         }),
       );
 
-      expect(payload.books.single.title, 'WAY_T'); // 5 chars
+      expect(payload.items.single.title, 'WAY_T'); // 5 chars
     });
 
     test('rejects an oversized file before decoding', () {
       final huge = 'x' * (tinyText.maxTextChars + 1);
       final payload = const PitakaJsonImporter(limits: tinyText).parse(huge);
 
-      expect(payload.books, isEmpty);
+      expect(payload.items, isEmpty);
       expect(payload.parseErrors.single, contains('too large'));
     });
   });
@@ -78,7 +78,7 @@ void main() {
         limits: tiny,
       ).parse(buf.toString());
 
-      expect(payload.books.length, 2);
+      expect(payload.items.length, 2);
       expect(
         payload.parseErrors.any((e) => e.contains('first 2 rows')),
         isTrue,

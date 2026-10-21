@@ -94,7 +94,7 @@ void main() {
   test(
     'changed lending availability is enforced inside the vault FIFO',
     () async {
-      const loan = Loan(bookId: 7, borrowerId: 1, lentDate: 1);
+      const loan = Loan(itemId: 7, borrowerId: 1, lentDate: 1);
       expect((await h.session.addLoan(loan)).isRight(), isTrue);
       expect(
         (await h.session.addLoan(loan)).getLeft().toNullable(),

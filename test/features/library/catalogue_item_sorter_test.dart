@@ -1,10 +1,10 @@
-/// BookSorter unit tests (N05): the Dart-side ordering must match the SQL
-/// path's semantics — blanks/nulls last, band order by sortRank, newest-first
-/// tie-breaks — and must be stable and non-mutating.
+/// CatalogueItemSorter unit tests (N05): the Dart-side ordering must match the
+/// SQL path's semantics — blanks/nulls last, band order by sortRank,
+/// newest-first tie-breaks — and must be stable and non-mutating.
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/book_sorter.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_sorter.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
@@ -23,7 +23,7 @@ CatalogueItem b(
 void main() {
   group('recentlyAdded', () {
     test('newest addedDate first', () {
-      final sorted = BookSorter.sort([
+      final sorted = CatalogueItemSorter.sort([
         b('old', added: 1),
         b('newest', added: 3),
         b('mid', added: 2),
@@ -34,7 +34,7 @@ void main() {
 
   group('languageAsc', () {
     test('A→Z with blank/null languages LAST, ties newest-first', () {
-      final sorted = BookSorter.sort([
+      final sorted = CatalogueItemSorter.sort([
         b('noLang', added: 9),
         b('urdu', added: 5, language: 'Urdu'),
         b('blank', added: 8, language: '  '),
@@ -53,7 +53,7 @@ void main() {
 
   group('ageGroupAsc', () {
     test('band order follows sortRank (not token order), nulls last', () {
-      final sorted = BookSorter.sort([
+      final sorted = CatalogueItemSorter.sort([
         b('advanced', age: AgeGroup.advanced),
         b('none', added: 4),
         b('above3', age: AgeGroup.above3),
@@ -68,7 +68,7 @@ void main() {
     });
 
     test('ties inside a band are newest-first', () {
-      final sorted = BookSorter.sort([
+      final sorted = CatalogueItemSorter.sort([
         b('older', added: 1, age: AgeGroup.above6),
         b('newer', added: 2, age: AgeGroup.above6),
       ], LibrarySort.ageGroupAsc);
@@ -82,7 +82,7 @@ void main() {
       b('second', added: 5, language: 'X'),
     ];
     final snapshot = List<CatalogueItem>.of(input);
-    final sorted = BookSorter.sort(input, LibrarySort.languageAsc);
+    final sorted = CatalogueItemSorter.sort(input, LibrarySort.languageAsc);
     expect(input, snapshot); // never mutates
     expect(sorted.map((x) => x.title), ['first', 'second']); // stable
   });

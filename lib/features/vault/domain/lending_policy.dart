@@ -18,7 +18,7 @@ sealed class LendDecision {
 
   /// Decides for [book] given the vault's current [loans] (any book's loans
   /// may be passed; others are ignored).
-  factory LendDecision.forBook(CatalogueItem book, Iterable<Loan> loans) {
+  factory LendDecision.forItem(CatalogueItem book, Iterable<Loan> loans) {
     if (book.removed) return const LendRefusedRemoved();
     final counts = activeLoanCountsByBook(loans);
     final out = counts[book.id] ?? 0;

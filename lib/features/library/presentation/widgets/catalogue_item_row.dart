@@ -7,13 +7,13 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:pitaka/core/widgets/book_cover.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// One tappable book row.
-class BookRow extends StatelessWidget {
+class CatalogueItemRow extends StatelessWidget {
   /// Creates a row for [book]; [onTap] opens its detail.
-  const BookRow({
+  const CatalogueItemRow({
     required this.book,
     required this.onTap,
     this.unavailable = false,
@@ -45,7 +45,7 @@ class BookRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
-            BookCover(
+            ItemCover(
               title: book.title,
               coverUrl: book.coverUrl,
               bookId: book.id,
