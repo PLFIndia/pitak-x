@@ -6,12 +6,13 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S4** (rename map A.7 complete)
+- Last completed session: **S5** (ADR 0013, ADR 0014, docs, changelog)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S4's commit (S3 was `34a7045`, S2 `2959034`, S1 `e216e6b`,
-  S0 `8899cc0`)
+- Last commit: S5's commit (S4 was `29689f8`, S3 `34a7045`, S2 `2959034`,
+  S1 `e216e6b`, S0 `8899cc0`)
 - Full suite last green at: **S4, 2026-10-21** — 2426 tests, 56 s
-  (`flutter test --exclude-tags golden`)
+  (`flutter test --exclude-tags golden`); S5 changed no Dart (`analyze` +
+  `format` green)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -38,10 +39,27 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S5 — Records: ADR 0013, ADR 0014, docs, changelog.** Nothing in flight.
-Follow the plan's S5 steps verbatim.
+**S6 — Domain: `ItemKind`, `ItemDetails`, `CatalogueItem.details`, failures,
+`LibraryQuery`.** Nothing in flight. Follow the plan's S6 steps verbatim.
 
 Notes for it:
+
+- ADR 0013/0014 are the written record now; cite them (not the plan) from
+  code comments. `docs/ARCHITECTURE.md` §5.4/§5.5/§5.7 and the CHANGELOG
+  `[Unreleased]` block describe the v5/v4 shapes as **pending** — S22
+  reconciles that wording.
+- `FieldError.userMessage` (`catalogue_rules.dart`) maps field names to
+  labels with a `switch`; add the `issn`, `frequency`,
+  `subscriptionStart/End` and `issue.*` labels there. The UI failure→message
+  mapping to extend is found with
+  `grep -rn "DuplicateIsbnFailure" lib/features/library/presentation`.
+- The gate test now scans `CatalogueItem(`; S6 adds no construction sites
+  (`copyWith(details:)` lives in the entity file, already allow-listed).
+- `test/features/library/domain/catalogue_item_validated_test.dart` is the
+  renamed `book_validated_test.dart` (S4) — extend it, do not create a
+  second file.
+
+Notes from S5 for later sessions:
 
 - Real names to use in the ADRs (after S1–S4): `CatalogueItem` /
   `CatalogueItem.validate` / `itemUid`, `ItemSourceType`, `LibrarySort`,
@@ -124,4 +142,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S1 | Done | `e216e6b` | 2026-10-21 | `Book` → `CatalogueItem`, 130 files; remaining `\bBook\b` in lib+test = 87, all prose/UI strings/fixtures; full green 2426 |
 | S2 | Done | `2959034` | 2026-10-21 | `itemUid`/`ItemSourceType`/`LibrarySort`, 83 files. `git grep -n book_uid -- lib` (non-generated) = 18 lines, all column-name sites; `git grep -c "'bookUid'" -- lib` hand-written = 3 (unchanged: exporter, importer, `validate` field label); generated `app_database.g.dart` went 3 → 0 because the Drift row data-class JSON serializer (used nowhere in the app) now keys on the getter `itemUid`. The v1–v4 `test/core/database/generated/` helpers keep `bookUid` (version-pinned). Full green 2426 |
 | S3 | Done | `34a7045` | 2026-10-21 | `CatalogueItemRepository`, `DriftCatalogueItemRepository`, `CatalogueItemRowMapper`, `Add/Update/DeleteCatalogueItemUseCase`, `catalogueItemRepositoryProvider`, `catalogueItemByIdProvider` (+ use-case providers); 6 lib + 2 test files moved; ratchet re-keyed (597 → 599, see Deviations); ADR 0011 note; full green 2426 |
-| S4 | Done | _(this commit)_ | 2026-10-21 | A.7 complete: `CatalogueItemPage/Sorter/Row/GridCard`, `ItemCover`, `CatalogueItemDetailPage`, `LendDecision.forItem`, `Loan.itemId`, `PublishItem`, `ImportPayload.items`, `LegacyRows.items`; 6 lib + 7 test files moved; AGENTS §3.3 + ARCHITECTURE §2.1/§3 updated; ratchet re-keyed (677 → 681, see Deviations); `git grep` done-when returns only kept names, UI strings, fixtures and prose; full green 2426 |
+| S4 | Done | `29689f8` | 2026-10-21 | A.7 complete: `CatalogueItemPage/Sorter/Row/GridCard`, `ItemCover`, `CatalogueItemDetailPage`, `LendDecision.forItem`, `Loan.itemId`, `PublishItem`, `ImportPayload.items`, `LegacyRows.items`; 6 lib + 7 test files moved; AGENTS §3.3 + ARCHITECTURE §2.1/§3 updated; ratchet re-keyed (677 → 681, see Deviations); `git grep` done-when returns only kept names, UI strings, fixtures and prose; full green 2426 |
+| S5 | Done | _(this commit)_ | 2026-10-21 | ADR 0013 (F1–F8, D1–D11, O1–O4, recipe, resolved-decisions log), ADR 0014 (W1–W4 with JSON shapes), ADR index, ARCHITECTURE §3 module map (`periodicals/`), §5.4 v5 pending, §5.5 `item_kinds.json`/`periodicals.json` rows + old-build note, new §5.7 Pitaka-JSON v4 / `books.json` (§5.6 numbering kept — code comments cite it), §6 standing decision; AGENTS §3.3 `Periodical.validate`; CHANGELOG `[Unreleased]` Added/Changed with an in-progress note. No Dart changed; analyze + format green |

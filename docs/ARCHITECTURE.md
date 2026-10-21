@@ -131,8 +131,12 @@ lib/
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
-                          kind — books today); paged SQL reads
-                          (CatalogueItemRepository.page); merge engine
+                          kind: books, magazine issues, others — ADR 0013);
+                          paged SQL reads (CatalogueItemRepository.page);
+                          merge engine
+    periodicals/          magazine titles (`Periodical`, ISSN, frequency,
+                          derived subscription status) and their issues'
+                          kind-specific rules (ADR 0013; in progress)
     vault/                encrypted borrowers + loans; passphrase + biometric unlock
     wishlist/
     lookup/               barcode scan (flutter_zxing) + ISBN lookup chain
@@ -286,6 +290,13 @@ bump (enforced by `test/core/database/migration_test.dart`):
 An older build opening a newer database refuses with `SchemaTooNewFailure`
 (forward-compat, fail closed). Migrations are transactional and idempotent.
 
+Pending (ADR 0013, branch `magazines`): **v5** adds `books.kind`
+(`TEXT NOT NULL DEFAULT 'book'`), the `magazine_issues` detail table
+(`item_id → books.id ON DELETE CASCADE`, so `PRAGMA foreign_keys = ON` is
+turned on in `beforeOpen` — no earlier table declares a FK) and the
+`periodicals` table, and rebuilds the FTS index with `notes` added to its
+columns.
+
 ### 5.5 `.pitabak` backup archive (manifest schema 1)
 
 A ZIP with Room-shaped SQLite databases (the Kotlin-era format — the writer
@@ -298,6 +309,8 @@ to false** (the `hasX` forward-compat pattern):
 | borrowers vault + key blob | `hasVault` | the **only encrypted** part |
 | `identity.json` | `hasIdentity` | `{ "libraryId": "<16–64 hex>", "libraryName": "…" }` — **plain** |
 | `network.json` | `hasNetwork` | `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }` — **plain** |
+| `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014, pending) — **plain** |
+| `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014, pending) — **plain** |
 
 - **Honest limit:** books, wishlist, covers, identity and network are plain
   inside the archive; only the vault is encrypted. Whole-archive encryption is
@@ -306,7 +319,10 @@ to false** (the `hasX` forward-compat pattern):
   and the app switches to it in one step; a failed restore leaves current data
   untouched.
 - Compatibility is **one-way**: Pitak restores Kotlin-era archives; the Kotlin
-  app is not a restore target.
+  app is not a restore target. `books.db` holds the base rows of **every**
+  item kind in the Room shape, so a build older than ADR 0013 restores
+  magazine issues and other items as plain books (it ignores the two
+  kind entries above); a flag-less archive restores exactly as before.
 - Hostile-input bounds on read: bounded ZIP extraction (ADR 0009), 4 MiB per
   JSON entry, 5000 network rows, every row re-validated, invalid rows dropped
   and counted in the restore summary.
@@ -330,6 +346,19 @@ to false** (the `hasX` forward-compat pattern):
 
 Refusal reasons are coarse enums that never carry URLs or exception text
 (a URL can contain the user's API key).
+
+### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014, pending)
+
+- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**.
+  Every row in `books[]` gains `kind` (`book` | `magazine-issue` | `other`;
+  absent ⇒ `book`); an issue row carries a nested `issue{}`; the document
+  gains a top-level `periodicals[]`. The keys `books` and `bookUid` keep
+  their names. Older builds refuse a v4 file with the existing "update the
+  app" message (a silent import would drop kinds, P1). An unknown `kind` is
+  skipped and reported, never imported as a book.
+- **`books.json`** (published): stays schema **1** — additive `kind` per
+  entry (+ `issue{}`), top-level `periodicals[]` with public fields only.
+  Older viewers ignore the new keys.
 
 ---
 
@@ -357,3 +386,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
 - **Lookup order:** Open Library → Google Books → in-memory cache; ISBN-10↔13
   retry on double not-found.
 - **Hard delete stays vault-gated**; lending on removed books is refused.
+- **One base row per catalogue item of any kind** (`books` table,
+  `CatalogueItem`, `kind` column + sealed `ItemDetails`); kind-specific data
+  in a per-kind detail table; **the base row is the lendable unit** and **a
+  new kind never touches the vault** (`loans.book_id`). Kinds are
+  app-defined. Periodicals are a specific concept, not generic collections
+  (ADR 0013; interchange/backup shapes in ADR 0014).

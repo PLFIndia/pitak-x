@@ -89,6 +89,8 @@ lib/
     item kind; named `Book` until 2026-10) uses a static ingress gate
     (`CatalogueItem.validate`) instead of a private constructor; the gate is
     enforced by `test/architecture/catalogue_item_validation_gate_test.dart`.
+    `Periodical.validate` (ADR 0013) follows the same pattern and is scanned
+    by the same test.
 - **No leaking of DTOs** (`*Model`) into domain or presentation. Map at the infrastructure boundary.
 - **Repositories** are declared in `domain`, implemented in `infrastructure`.
 - **Use cases** are single-responsibility, return a `Result`/`Either`, never throw for expected failures.

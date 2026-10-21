@@ -14,6 +14,56 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+_Branch `magazines` (in progress). The entries below record the decisions of
+ADR 0013/0014 (`docs/plans/magazines.md`); the release-hygiene session
+reconciles them against what actually shipped before this heading gets a
+version._
+
+### Added
+- **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —
+  `book`, `magazine-issue` or `other` — defined by the app, never by users.
+  One base row per physical thing, one lendable unit, one list, one search
+  index for every kind; kind-specific data lives in a per-kind detail table.
+- **Magazines:** magazine titles (`Periodical`: ISSN with check digit,
+  frequency, optional subscription window with a derived status — untracked /
+  active / expiring within 30 days / lapsed), issues grouped under their
+  title and lent individually, bound volumes as one row with a date range,
+  a Magazines page from the drawer, a magazine-barcode (`977…`) scan route
+  to the add-issue flow.
+- **Others:** a built-in catch-all kind (a DVD, a board game, a map) with a
+  Description field — the existing notes column, which is now searchable.
+- Library screen: kind chips (Books · Magazines · Others), a "+" sheet with
+  one entry per kind, row badges for issues, bound volumes and others.
+- `docs/adr/0013-catalogue-item-kinds.md`,
+  `docs/adr/0014-catalogue-interchange-and-backup.md`.
+
+### Changed
+- **Schema v5** (`lib/core/database/app_database.dart`): `books.kind`
+  (default `'book'`), new `magazine_issues` (FK cascade to `books`;
+  `PRAGMA foreign_keys = ON`) and `periodicals` tables; the FTS index is
+  rebuilt once on upgrade with `notes` added to its columns.
+- **Pitaka-JSON schema 3 → 4**: per-row `kind` + nested `issue{}`, top-level
+  `periodicals[]`. Older builds refuse a v4 file ("update the app"); v3
+  files still import. Unknown kinds are skipped and reported.
+- **`books.json`** (publish) stays schema 1 and gains additive `kind` /
+  `issue{}` per entry and `periodicals[]`; the viewer gets a kind facet and
+  groups issues under their title.
+- **`.pitabak`**: `books.db` keeps its Room shape and holds every kind; two
+  new plain entries, `item_kinds.json` (`hasItemKinds`) and
+  `periodicals.json` (`hasPeriodicals`), announced by manifest flags that
+  default to false. Flag-less archives restore exactly as before.
+- CSV export gains `Kind`, `Series`, `Volume`, `Issue`, `Issue date`,
+  `Bound until`, `Issue label` columns.
+- **Rename (no behaviour change):** `Book` → `CatalogueItem`, `bookUid` →
+  `itemUid`, `BookSourceType` → `ItemSourceType`, `BookSort` → `LibrarySort`,
+  `BookRepository` → `CatalogueItemRepository` (+ Drift impl, mapper, use
+  cases, providers), `BookPage`/`BookSorter`/`BookRow` widget/`BookGridCard`/
+  `BookCover`/`BookDetailPage` → `CatalogueItem…` / `ItemCover`,
+  `LendDecision.forBook` → `forItem`, `Loan.bookId` → `itemId`,
+  `PublishBook` → `PublishItem`, `ImportPayload.books` → `items`. Every
+  persisted and wire name (`books`, `book_uid`, `bookUid`, `book_id`,
+  `books.db`, `books.json`) is unchanged.
+
 ## [1.5.2] - 2026-10 (tag `1.5.2`, versionCode 28)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `How Pitak works`.
