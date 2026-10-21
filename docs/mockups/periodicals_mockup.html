@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pitaka — Magazines & Issues UI mockup</title>
+<style>
+  /* Material 3 tones derived from the app's indigo seed (lib/core/theme/app_theme.dart). */
+  :root {
+    --primary: #4355b9; --on-primary: #fff;
+    --primary-container: #dee0ff; --on-primary-container: #00105c;
+    --secondary-container: #e0e0f9; --on-secondary-container: #191a2c;
+    --tertiary-container: #ffd8e4; --on-tertiary-container: #31111d;
+    --surface: #fbf8fd; --surface-low: #f5f2f7; --surface-high: #e9e7ec;
+    --on-surface: #1b1b1f; --on-surface-variant: #46464f;
+    --outline: #767680; --outline-variant: #c7c5d0;
+    --error: #ba1a1a; --error-container: #ffdad6; --on-error-container: #410002;
+    --ok: #1b5e20; --ok-container: #c8e6c9;
+    --warn: #7a4f00; --warn-container: #ffe08a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: Roboto, "Segoe UI", system-ui, sans-serif; background: #2b2b33; color: var(--on-surface);
+         display: flex; gap: 32px; justify-content: center; align-items: flex-start; padding: 24px; flex-wrap: wrap; }
+  .phone { width: 390px; height: 800px; background: var(--surface); border-radius: 36px; border: 10px solid #111;
+           overflow: hidden; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,.5); }
+  .notes { color: #ddd; max-width: 380px; font-size: 14px; line-height: 1.5; }
+  .notes h1 { font-size: 18px; margin: 0 0 8px; color: #fff; }
+  .notes h2 { font-size: 14px; margin: 16px 0 4px; color: #fff; }
+  .notes code { background: #444; padding: 1px 5px; border-radius: 4px; }
+  .notes ol { padding-left: 18px; }
+  .screen { position: absolute; inset: 0; display: none; flex-direction: column; background: var(--surface); }
+  .screen.active { display: flex; }
+
+  /* App bar */
+  .appbar { height: 64px; display: flex; align-items: center; padding: 0 8px; gap: 4px; flex: none; }
+  .appbar .title { flex: 1; font-size: 22px; font-weight: 400; padding-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .iconbtn { width: 48px; height: 48px; border: 0; background: none; border-radius: 24px; font-size: 22px; color: var(--on-surface-variant);
+             display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .iconbtn:hover { background: var(--surface-high); }
+  .logo { width: 32px; height: 32px; border-radius: 8px; background: var(--primary); color: #fff; font-weight: 700; font-size: 16px;
+          display: inline-flex; align-items: center; justify-content: center; }
+
+  .body { flex: 1; overflow-y: auto; }
+  .search { margin: 4px 16px 8px; height: 48px; border-radius: 28px; background: var(--surface-high); display: flex; align-items: center;
+            padding: 0 16px; gap: 12px; color: var(--on-surface-variant); font-size: 15px; }
+  .chips { display: flex; gap: 8px; padding: 4px 16px 8px; overflow-x: auto; scrollbar-width: none; }
+  .chip { flex: none; height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--outline); font-size: 14px;
+          display: inline-flex; align-items: center; gap: 6px; background: none; cursor: pointer; color: var(--on-surface-variant); }
+  .chip.sel { background: var(--secondary-container); border-color: transparent; color: var(--on-secondary-container); font-weight: 500; }
+  .chip.assist { border-color: var(--outline-variant); }
+
+  /* Rows */
+  .row { display: flex; gap: 12px; padding: 12px 16px; cursor: pointer; align-items: center; }
+  .row:hover { background: var(--surface-low); }
+  .cover { width: 48px; height: 68px; border-radius: 6px; flex: none; display: flex; align-items: center; justify-content: center;
+           color: #fff; font-size: 11px; font-weight: 600; text-align: center; padding: 4px; line-height: 1.2; }
+  .cover.mag { width: 52px; height: 68px; }
+  .row .text { flex: 1; min-width: 0; }
+  .row .t { font-size: 16px; line-height: 1.3; }
+  .row .s { font-size: 14px; color: var(--on-surface-variant); margin-top: 2px; }
+  .badges { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 6px; background: var(--surface-high); color: var(--on-surface-variant); }
+  .badge.issue { background: var(--primary-container); color: var(--on-primary-container); }
+  .badge.bound { background: var(--tertiary-container); color: var(--on-tertiary-container); }
+  .badge.out { background: var(--error-container); color: var(--on-error-container); }
+  .badge.ok { background: var(--ok-container); color: var(--ok); }
+  .badge.warn { background: var(--warn-container); color: var(--warn); }
+  .badge.lapsed { background: var(--error-container); color: var(--on-error-container); }
+  .divider { height: 1px; background: var(--outline-variant); margin: 0 16px; opacity: .6; }
+  .section { font-size: 14px; font-weight: 500; color: var(--primary); padding: 16px 16px 4px; }
+
+  /* FAB + sheet */
+  .fab { position: absolute; right: 16px; bottom: 16px; height: 56px; min-width: 56px; padding: 0 16px; border-radius: 16px;
+         background: var(--primary-container); color: var(--on-primary-container); border: 0; font-size: 24px;
+         box-shadow: 0 4px 10px rgba(0,0,0,.25); cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .fab span { font-size: 14px; font-weight: 500; }
+  .scrim { position: absolute; inset: 0; background: rgba(0,0,0,.35); display: none; }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface-low); border-radius: 28px 28px 0 0; padding: 12px 0 16px; display: none; }
+  .sheet .handle { width: 32px; height: 4px; background: var(--outline); border-radius: 2px; margin: 0 auto 12px; opacity: .5; }
+  .sheet .item { display: flex; gap: 16px; align-items: center; padding: 14px 24px; font-size: 16px; cursor: pointer; }
+  .sheet .item:hover { background: var(--surface-high); }
+  .sheet .item small { display: block; font-size: 13px; color: var(--on-surface-variant); }
+  .show { display: block !important; }
+
+  /* Detail */
+  .hero { display: flex; gap: 16px; padding: 16px; }
+  .hero .cover { width: 96px; height: 132px; font-size: 14px; }
+  .hero h2 { margin: 0; font-size: 22px; font-weight: 400; line-height: 1.25; }
+  .hero .meta { color: var(--on-surface-variant); font-size: 14px; margin-top: 4px; }
+  .kv { padding: 4px 16px; display: grid; grid-template-columns: 130px 1fr; gap: 6px 12px; font-size: 14px; }
+  .kv .k { color: var(--on-surface-variant); }
+  .card { margin: 8px 16px; border-radius: 12px; background: var(--surface-low); padding: 12px 16px; font-size: 14px; }
+  .card.warn { background: var(--warn-container); color: var(--warn); }
+  .card.lapsed { background: var(--error-container); color: var(--on-error-container); }
+  .card.ok { background: var(--ok-container); color: var(--ok); }
+  .card b { display: block; margin-bottom: 2px; }
+  .actions { display: flex; gap: 8px; padding: 8px 16px; flex-wrap: wrap; }
+  .btn { height: 40px; padding: 0 20px; border-radius: 20px; border: 0; font-size: 14px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+  .btn.filled { background: var(--primary); color: var(--on-primary); }
+  .btn.tonal { background: var(--secondary-container); color: var(--on-secondary-container); }
+  .btn.outlined { background: none; border: 1px solid var(--outline); color: var(--primary); }
+  .btn.text { background: none; color: var(--primary); }
+  .btn.danger { background: none; color: var(--error); }
+
+  /* Forms */
+  .form { padding: 8px 16px 96px; display: flex; flex-direction: column; gap: 14px; }
+  .field { position: relative; }
+  .field label { position: absolute; top: -8px; left: 12px; background: var(--surface); padding: 0 4px; font-size: 12px; color: var(--primary); }
+  .field .in { height: 56px; border: 1px solid var(--outline); border-radius: 4px; padding: 0 16px; display: flex; align-items: center; font-size: 16px; justify-content: space-between; }
+  .field .in.ph { color: var(--on-surface-variant); }
+  .field .help { font-size: 12px; color: var(--on-surface-variant); padding: 4px 16px 0; }
+  .field .err { font-size: 12px; color: var(--error); padding: 4px 16px 0; }
+  .field.error .in { border-color: var(--error); } .field.error label { color: var(--error); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .switchrow { display: flex; align-items: center; justify-content: space-between; padding: 6px 4px; font-size: 16px; cursor: pointer; }
+  .switchrow small { display: block; font-size: 13px; color: var(--on-surface-variant); }
+  .switch { width: 52px; height: 32px; border-radius: 16px; background: var(--surface-high); border: 2px solid var(--outline); position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 6px; left: 6px; width: 16px; height: 16px; border-radius: 8px; background: var(--outline); transition: .15s; }
+  .switch.on { background: var(--primary); border-color: var(--primary); }
+  .switch.on::after { left: 24px; width: 24px; height: 24px; top: 2px; background: #fff; }
+  .hidden { display: none !important; }
+  .bottombar { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px; background: var(--surface-low); display: flex; justify-content: flex-end; gap: 8px; }
+  .snack { position: absolute; left: 16px; right: 16px; bottom: 80px; background: #313033; color: #f4eff4; padding: 14px 16px; border-radius: 4px; font-size: 14px; display: none; }
+</style>
+</head>
+<body>
+
+<div class="notes">
+  <h1>Magazines &amp; issues — clickable mockup</h1>
+  <p>Vanilla HTML, no build. Click around inside the phone. The <b>←</b> button walks a real back stack.</p>
+  <h2>Try this path</h2>
+  <ol>
+    <li>Library → tap the <b>Magazines</b> chip (issues appear as rows among books; the chip narrows to magazine titles).</li>
+    <li>Tap <b>National Geographic</b> → series page with subscription badge and newest-first issues; a <b>bound</b> volume is one row.</li>
+    <li><b>+ Add issue</b> → the form is prefilled with the next number/date from the frequency. Toggle <b>Bound volume</b>.</li>
+    <li>Tap an issue → it is a normal catalogue item: lend, copies, location — all the existing book features.</li>
+    <li>On Library, the FAB opens a sheet: Add book / Add magazine issue / New magazine.</li>
+    <li>Magazines list: <b>Frontline</b> shows <i>Expiring soon</i>, <b>Chandamama</b> shows <i>Lapsed</i> (subscription tracking is optional per title).</li>
+  </ol>
+  <h2>Mapping to the plan</h2>
+  <p>Issue row = <code>Book</code> with <code>periodicalUid</code>, <code>volume</code>, <code>issueNumber</code>, <code>issueNumberEnd</code> (bound), <code>issueDate</code>, <code>issueLabel</code>. Series page = <code>Periodical</code> entity. Badges come from <code>SubscriptionStatus</code> (30-day window).</p>
+</div>
+
+<div class="phone" id="phone">
+
+  <!-- ============ LIBRARY ============ -->
+  <section class="screen active" id="library">
+    <div class="appbar">
+      <button class="iconbtn"><span class="logo">P</span></button>
+      <div class="title">Sharma Community Library</div>
+      <button class="iconbtn" title="Network map">🗺</button>
+      <button class="iconbtn" title="Scan to add">▣</button>
+      <button class="iconbtn" title="More">⋮</button>
+    </div>
+    <div class="body">
+      <div class="search">🔍 <span>Search title, author, ISBN, ISSN…</span></div>
+      <div class="chips">
+        <button class="chip">⇅ Sort: Date added</button>
+        <button class="chip" id="chipAll" onclick="setKind('all')">All</button>
+        <button class="chip" onclick="setKind('books')">Books</button>
+        <button class="chip" onclick="setKind('mags')">Magazines</button>
+        <button class="chip">Hindi</button>
+        <button class="chip">English</button>
+        <button class="chip">Tamil</button>
+      </div>
+
+      <div id="listAll">
+        <div class="row" onclick="go('issueDetail')">
+          <div class="cover" style="background:#c9a227">NAT GEO</div>
+          <div class="text">
+            <div class="t">National Geographic — Vol 249 No 10 (Oct 2026)</div>
+            <div class="s">National Geographic Society · Monthly</div>
+            <div class="badges"><span class="badge issue">Issue</span><span class="badge out">Not available</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="snack('Opens the existing book detail page')">
+          <div class="cover" style="background:#4355b9">गोदान</div>
+          <div class="text">
+            <div class="t">गोदान</div>
+            <div class="s">मुंशी प्रेमचंद</div>
+            <div class="badges"><span class="badge">×2</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="go('issueDetail')">
+          <div class="cover" style="background:#b71c1c">FRONT LINE</div>
+          <div class="text">
+            <div class="t">Frontline — Vol 43 No 20 (Oct 2026)</div>
+            <div class="s">The Hindu Group · Fortnightly</div>
+            <div class="badges"><span class="badge issue">Issue</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="snack('Opens the existing book detail page')">
+          <div class="cover" style="background:#00695c">THE WHITE TIGER</div>
+          <div class="text">
+            <div class="t">The White Tiger</div>
+            <div class="s">Aravind Adiga</div>
+          </div>
+        </div>
+        <div class="row" onclick="go('periodical')">
+          <div class="cover" style="background:#c9a227">NAT GEO</div>
+          <div class="text">
+            <div class="t">National Geographic — Vol 248 (Nos 1–12, 2025)</div>
+            <div class="s">National Geographic Society · Monthly</div>
+            <div class="badges"><span class="badge issue">Issue</span><span class="badge bound">Bound volume</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="snack('Opens the existing book detail page')">
+          <div class="cover" style="background:#6a1b9a">பொன்னியின் செல்வன்</div>
+          <div class="text">
+            <div class="t">பொன்னியின் செல்வன்</div>
+            <div class="s">கல்கி</div>
+            <div class="badges"><span class="badge">×3</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="listMags" class="hidden">
+        <div class="section">Magazine titles · 3</div>
+        <div class="row" onclick="go('periodical')">
+          <div class="cover mag" style="background:#c9a227">NAT GEO</div>
+          <div class="text">
+            <div class="t">National Geographic</div>
+            <div class="s">ISSN 0027-9358 · Monthly · 23 issues</div>
+            <div class="badges"><span class="badge ok">Subscribed to Mar 2027</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="go('periodical')">
+          <div class="cover mag" style="background:#b71c1c">FRONT LINE</div>
+          <div class="text">
+            <div class="t">Frontline</div>
+            <div class="s">ISSN 0970-1710 · Fortnightly · 41 issues</div>
+            <div class="badges"><span class="badge warn">Expiring soon · 12 days</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="go('periodical')">
+          <div class="cover mag" style="background:#2e7d32">चंदा मामा</div>
+          <div class="text">
+            <div class="t">चंदामामा</div>
+            <div class="s">Monthly · 8 issues · Hindi</div>
+            <div class="badges"><span class="badge lapsed">Lapsed · Jun 2026</span><span class="badge">No tracking: 0 titles</span></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div class="section">Issues · 72</div>
+        <div class="row" onclick="go('issueDetail')">
+          <div class="cover" style="background:#c9a227">NAT GEO</div>
+          <div class="text">
+            <div class="t">National Geographic — Vol 249 No 10 (Oct 2026)</div>
+            <div class="badges"><span class="badge issue">Issue</span><span class="badge out">Not available</span></div>
+          </div>
+        </div>
+        <div class="row" onclick="go('issueDetail')">
+          <div class="cover" style="background:#b71c1c">FRONT LINE</div>
+          <div class="text">
+            <div class="t">Frontline — Vol 43 No 20 (Oct 2026)</div>
+            <div class="badges"><span class="badge issue">Issue</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="height:90px"></div>
+    </div>
+    <button class="fab" onclick="openSheet()">+ <span>Add</span></button>
+    <div class="scrim" id="scrim" onclick="closeSheet()"></div>
+    <div class="sheet" id="sheet">
+      <div class="handle"></div>
+      <div class="item" onclick="closeSheet(); snack('Opens the existing Add book form')">📘 <div>Add book<small>Scan ISBN or type details</small></div></div>
+      <div class="item" onclick="closeSheet(); go('addIssue')">📰 <div>Add magazine issue<small>Pick a title, number and date are prefilled</small></div></div>
+      <div class="item" onclick="closeSheet(); go('addPeriodical')">➕ <div>New magazine title<small>Series info, ISSN, subscription</small></div></div>
+    </div>
+  </section>
+
+  <!-- ============ PERIODICAL DETAIL ============ -->
+  <section class="screen" id="periodical">
+    <div class="appbar">
+      <button class="iconbtn" onclick="back()">←</button>
+      <div class="title">National Geographic</div>
+      <button class="iconbtn" onclick="go('addPeriodical')" title="Edit">✎</button>
+      <button class="iconbtn" onclick="snack('Menu: Mark removed · Delete (blocked while issues exist)')">⋮</button>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover" style="background:#c9a227">NAT GEO</div>
+        <div>
+          <h2>National Geographic</h2>
+          <div class="meta">National Geographic Society</div>
+          <div class="meta">ISSN 0027-9358 · Monthly · English</div>
+          <div class="meta">23 issues · 1 bound volume</div>
+          <div class="badges"><span class="badge">Above 10</span><span class="badge">Shelf B-4</span></div>
+        </div>
+      </div>
+      <div class="card ok">
+        <b>Subscription active</b>
+        1 Apr 2026 – 31 Mar 2027 · 161 days left · Purchased
+      </div>
+      <div class="actions">
+        <button class="btn filled" onclick="go('addIssue')">+ Add issue</button>
+        <button class="btn outlined" onclick="snack('Share card / publish preview')">Share</button>
+      </div>
+      <div class="section">Issues · newest first</div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">OCT 2026</div>
+        <div class="text">
+          <div class="t">Vol 249 No 10 · Oct 2026</div>
+          <div class="s">“The Deep Ocean” special</div>
+          <div class="badges"><span class="badge out">Not available</span></div>
+        </div>
+      </div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">SEP 2026</div>
+        <div class="text"><div class="t">Vol 249 No 9 · Sep 2026</div></div>
+      </div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">AUG 2026</div>
+        <div class="text"><div class="t">Vol 249 No 8 · Aug 2026</div><div class="badges"><span class="badge">×2</span></div></div>
+      </div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">JUL 2026</div>
+        <div class="text"><div class="t">Vol 249 No 7 · Jul 2026</div></div>
+      </div>
+      <div class="row" onclick="snack('Gap: issue 6 was never catalogued — tap “Add issue” to fill it')">
+        <div class="cover" style="background:var(--surface-high); color:var(--outline); border:1px dashed var(--outline)">—</div>
+        <div class="text"><div class="t" style="color:var(--on-surface-variant)">Vol 249 No 6 · missing</div><div class="s">Not catalogued</div></div>
+      </div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">2025</div>
+        <div class="text">
+          <div class="t">Vol 248 · Nos 1–12 · 2025</div>
+          <div class="s">Bound in one volume</div>
+          <div class="badges"><span class="badge bound">Bound volume</span></div>
+        </div>
+      </div>
+      <div class="row" onclick="go('issueDetail')">
+        <div class="cover" style="background:#c9a227">2024</div>
+        <div class="text">
+          <div class="t">Vol 247 · Nos 1–12 · 2024</div>
+          <div class="badges"><span class="badge bound">Bound volume</span></div>
+        </div>
+      </div>
+      <div style="height:24px"></div>
+    </div>
+  </section>
+
+  <!-- ============ ISSUE DETAIL ============ -->
+  <section class="screen" id="issueDetail">
+    <div class="appbar">
+      <button class="iconbtn" onclick="back()">←</button>
+      <div class="title">Issue</div>
+      <button class="iconbtn" onclick="go('addIssue')" title="Edit">✎</button>
+      <button class="iconbtn" onclick="snack('Menu: Mark removed · Delete')">⋮</button>
+    </div>
+    <div class="body">
+      <div class="hero">
+        <div class="cover" style="background:#c9a227">OCT 2026</div>
+        <div>
+          <h2>National Geographic — Vol 249 No 10 (Oct 2026)</h2>
+          <div class="meta">“The Deep Ocean” special</div>
+          <div class="badges"><span class="badge issue">Issue</span><span class="badge out">Not available</span></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn filled" onclick="snack('Opens the existing Lend flow (vault) — an issue is a lendable Book row')">Lend</button>
+        <button class="btn tonal" onclick="go('periodical')">Open series ↗</button>
+      </div>
+      <div class="card">
+        <b>On loan</b> Priya Nair · due 28 Oct 2026
+      </div>
+      <div class="section">Issue</div>
+      <div class="kv">
+        <div class="k">Series</div><div>National Geographic</div>
+        <div class="k">Volume / Issue</div><div>249 / 10</div>
+        <div class="k">Issue date</div><div>1 Oct 2026</div>
+        <div class="k">Label</div><div>The Deep Ocean</div>
+        <div class="k">Pages</div><div>128</div>
+      </div>
+      <div class="section">From the series</div>
+      <div class="kv">
+        <div class="k">Publisher</div><div>National Geographic Society</div>
+        <div class="k">ISSN</div><div>0027-9358</div>
+        <div class="k">Language</div><div>English</div>
+        <div class="k">Age group</div><div>Above 10</div>
+      </div>
+      <div class="section">This copy</div>
+      <div class="kv">
+        <div class="k">Copies</div><div>1</div>
+        <div class="k">Location</div><div>Shelf B-4</div>
+        <div class="k">Source</div><div>Purchased · subscription</div>
+        <div class="k">Added</div><div>3 Oct 2026 by ramesh</div>
+      </div>
+      <div style="height:24px"></div>
+    </div>
+  </section>
+
+  <!-- ============ ADD / EDIT ISSUE ============ -->
+  <section class="screen" id="addIssue">
+    <div class="appbar">
+      <button class="iconbtn" onclick="back()">✕</button>
+      <div class="title">Add issue</div>
+    </div>
+    <div class="body">
+      <div class="form">
+        <div class="field">
+          <label>Magazine title *</label>
+          <div class="in" onclick="snack('Picker: National Geographic · Frontline · चंदामामा · + New title')">National Geographic <span>▾</span></div>
+          <div class="help">Publisher, ISSN and language come from the series.</div>
+        </div>
+        <div class="switchrow" onclick="toggleBound()">
+          <div>Bound volume<small>Several issues bound as one physical item</small></div>
+          <div class="switch" id="boundSw"></div>
+        </div>
+        <div class="two">
+          <div class="field"><label>Volume</label><div class="in">249</div></div>
+          <div class="field" id="issueNoField"><label id="issueNoLabel">Issue no.</label><div class="in" id="issueNoVal">11</div></div>
+        </div>
+        <div class="two hidden" id="boundRange">
+          <div class="field"><label>First issue no.</label><div class="in">1</div></div>
+          <div class="field"><label>Last issue no.</label><div class="in">12</div></div>
+        </div>
+        <div class="field">
+          <label id="dateLabel">Issue date</label>
+          <div class="in" id="dateVal">1 Nov 2026 <span>📅</span></div>
+          <div class="help" id="dateHelp">Prefilled: one month after the last issue (Monthly).</div>
+        </div>
+        <div class="field"><label>Label (optional)</label><div class="in ph">e.g. Diwali special</div></div>
+        <div class="field"><label>Cover</label><div class="in ph">Use series cover <span>▾</span></div></div>
+        <div class="two">
+          <div class="field"><label>Copies</label><div class="in">1</div></div>
+          <div class="field"><label>Pages</label><div class="in ph">—</div></div>
+        </div>
+        <div class="field"><label>Location</label><div class="in">Shelf B-4</div><div class="help">Prefilled from the series; change per issue if needed.</div></div>
+        <div class="field"><label>Notes (private)</label><div class="in ph">—</div></div>
+        <div class="field error">
+          <label>Preview title</label>
+          <div class="in" id="previewTitle">National Geographic — Vol 249 No 11 (Nov 2026)</div>
+          <div class="help" style="color:var(--on-surface-variant)">Generated automatically; this is what search, lending and the published site show.</div>
+        </div>
+      </div>
+    </div>
+    <div class="bottombar">
+      <button class="btn text" onclick="back()">Cancel</button>
+      <button class="btn filled" onclick="snack('Saved. Validation: issue ≥ 1, last ≥ first, date representable, label ≤ 8000 chars'); setTimeout(back, 900)">Save</button>
+    </div>
+  </section>
+
+  <!-- ============ ADD / EDIT PERIODICAL ============ -->
+  <section class="screen" id="addPeriodical">
+    <div class="appbar">
+      <button class="iconbtn" onclick="back()">✕</button>
+      <div class="title">New magazine title</div>
+    </div>
+    <div class="body">
+      <div class="form">
+        <div class="field"><label>Title *</label><div class="in">National Geographic</div></div>
+        <div class="field"><label>Title (Roman script)</label><div class="in ph">For search, if the title is in another script</div></div>
+        <div class="field"><label>ISSN</label><div class="in">0027-9358</div><div class="help">8 digits, check digit verified. Unique per title.</div></div>
+        <div class="field"><label>Publisher</label><div class="in">National Geographic Society</div></div>
+        <div class="two">
+          <div class="field"><label>Frequency</label><div class="in">Monthly <span>▾</span></div></div>
+          <div class="field"><label>Language</label><div class="in">English <span>▾</span></div></div>
+        </div>
+        <div class="field"><label>Cover</label><div class="in ph">Pick image… <span>📷</span></div></div>
+        <div class="field"><label>Age group</label><div class="in">Above 10 <span>▾</span></div></div>
+
+        <div class="switchrow" onclick="toggleSub()">
+          <div>Track subscription<small>Optional: get an “expiring soon” badge</small></div>
+          <div class="switch on" id="subSw"></div>
+        </div>
+        <div id="subFields">
+          <div class="two">
+            <div class="field"><label>Starts</label><div class="in">1 Apr 2026 📅</div></div>
+            <div class="field"><label>Ends</label><div class="in">31 Mar 2027 📅</div></div>
+          </div>
+          <div class="field" style="margin-top:14px"><label>Source</label><div class="in">Purchased <span>▾</span></div></div>
+          <div class="field" style="margin-top:14px"><label>Source detail (private)</label><div class="in ph">e.g. agent / donor name</div></div>
+        </div>
+        <div class="field"><label>Default location</label><div class="in">Shelf B-4</div><div class="help">New issues start with this shelf.</div></div>
+        <div class="field"><label>Notes (private)</label><div class="in ph">—</div></div>
+      </div>
+    </div>
+    <div class="bottombar">
+      <button class="btn text" onclick="back()">Cancel</button>
+      <button class="btn filled" onclick="snack('Saved title. Next: add its first issue.'); setTimeout(()=>{back(); go('periodical')}, 900)">Save</button>
+    </div>
+  </section>
+
+  <div class="snack" id="snack"></div>
+</div>
+
+<script>
+  // Tiny screen router with a back stack — enough to feel the navigation.
+  const stack = ['library'];
+  function show(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('active', s.id === id));
+    document.querySelector('#' + id + ' .body')?.scrollTo(0, 0);
+  }
+  function go(id) { stack.push(id); show(id); }
+  function back() { if (stack.length > 1) stack.pop(); show(stack[stack.length - 1]); }
+
+  function openSheet() { document.getElementById('scrim').classList.add('show'); document.getElementById('sheet').classList.add('show'); }
+  function closeSheet() { document.getElementById('scrim').classList.remove('show'); document.getElementById('sheet').classList.remove('show'); }
+
+  function setKind(kind) {
+    document.querySelectorAll('#library .chip').forEach(c => c.classList.remove('sel'));
+    const label = { all: 'All', books: 'Books', mags: 'Magazines' }[kind];
+    [...document.querySelectorAll('#library .chip')].find(c => c.textContent.trim() === label)?.classList.add('sel');
+    document.getElementById('listAll').classList.toggle('hidden', kind === 'mags');
+    document.getElementById('listMags').classList.toggle('hidden', kind !== 'mags');
+    if (kind === 'books') snack('Books only: issue rows hidden');
+  }
+  setKind('all');
+
+  let bound = false;
+  function toggleBound() {
+    bound = !bound;
+    document.getElementById('boundSw').classList.toggle('on', bound);
+    document.getElementById('boundRange').classList.toggle('hidden', !bound);
+    document.getElementById('issueNoField').classList.toggle('hidden', bound);
+    document.getElementById('dateLabel').textContent = bound ? 'Year / period' : 'Issue date';
+    document.getElementById('dateVal').innerHTML = bound ? '2026 <span>📅</span>' : '1 Nov 2026 <span>📅</span>';
+    document.getElementById('dateHelp').textContent = bound ? 'The period the bound volume covers.' : 'Prefilled: one month after the last issue (Monthly).';
+    document.getElementById('previewTitle').textContent = bound
+      ? 'National Geographic — Vol 249 (Nos 1–12, 2026)'
+      : 'National Geographic — Vol 249 No 11 (Nov 2026)';
+  }
+  let sub = true;
+  function toggleSub() {
+    sub = !sub;
+    document.getElementById('subSw').classList.toggle('on', sub);
+    document.getElementById('subFields').classList.toggle('hidden', !sub);
+  }
+
+  let snackTimer;
+  function snack(msg) {
+    const el = document.getElementById('snack');
+    el.textContent = msg; el.style.display = 'block';
+    clearTimeout(snackTimer); snackTimer = setTimeout(() => el.style.display = 'none', 2200);
+  }
+</script>
+</body>
+</html>
