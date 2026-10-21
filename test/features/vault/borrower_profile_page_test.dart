@@ -13,7 +13,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -73,8 +73,9 @@ class _TitleBooks implements BookRepository {
   final Map<int, String> byId;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
-      right(byId.containsKey(id) ? Book(id: id, title: byId[id]!) : null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(
+    byId.containsKey(id) ? CatalogueItem(id: id, title: byId[id]!) : null,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

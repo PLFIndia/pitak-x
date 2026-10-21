@@ -7,7 +7,7 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Builds a `.pitabak` archive from the current catalog + vault artifacts.
@@ -30,7 +30,7 @@ abstract interface class BackupArchiveBuilder {
   /// work for a large library. Implementations are expected to do that off
   /// the calling isolate so the UI keeps painting.
   Future<Uint8List> build({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,

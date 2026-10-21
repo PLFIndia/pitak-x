@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/pending_snapshot.dart';
 
@@ -83,9 +83,9 @@ void main() {
     final s = buildPendingSnapshot(
       loans: const [],
       books: const [
-        Book(id: 1, title: 'Needs', needsMetadata: true),
-        Book(id: 2, title: 'Fine'),
-        Book(id: 3, title: 'Gone', needsMetadata: true, removed: true),
+        CatalogueItem(id: 1, title: 'Needs', needsMetadata: true),
+        CatalogueItem(id: 2, title: 'Fine'),
+        CatalogueItem(id: 3, title: 'Gone', needsMetadata: true, removed: true),
       ],
       now: now,
     );
@@ -98,7 +98,7 @@ void main() {
         loan(id: 1, dueDate: now - day),
         loan(id: 2, dueDate: now + day),
       ],
-      books: const [Book(id: 9, title: 'X', needsMetadata: true)],
+      books: const [CatalogueItem(id: 9, title: 'X', needsMetadata: true)],
       now: now,
     );
     expect(s.count, 3);

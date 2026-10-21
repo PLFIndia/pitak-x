@@ -417,17 +417,18 @@ final deleteBookUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef DeleteBookUseCaseRef = AutoDisposeFutureProviderRef<DeleteBookUseCase>;
-String _$bookByIdHash() => r'f7ac65edbecd807956445160bedf1cfac802390d';
+String _$bookByIdHash() => r'a1ba926cfe8426a06495c84a42beeea98107dbd5';
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -445,13 +446,14 @@ const bookByIdProvider = BookByIdFamily();
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -464,16 +466,17 @@ const bookByIdProvider = BookByIdFamily();
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 ///
 /// Copied from [bookById].
-class BookByIdFamily extends Family<AsyncValue<Book?>> {
+class BookByIdFamily extends Family<AsyncValue<CatalogueItem?>> {
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -490,13 +493,14 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
 
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -535,13 +539,14 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -554,16 +559,17 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 ///
 /// Copied from [bookById].
-class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
+class BookByIdProvider extends AutoDisposeFutureProvider<CatalogueItem?> {
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -602,7 +608,9 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
   final int bookId;
 
   @override
-  Override overrideWith(FutureOr<Book?> Function(BookByIdRef provider) create) {
+  Override overrideWith(
+    FutureOr<CatalogueItem?> Function(BookByIdRef provider) create,
+  ) {
     return ProviderOverride(
       origin: this,
       override: BookByIdProvider._internal(
@@ -618,7 +626,7 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
   }
 
   @override
-  AutoDisposeFutureProviderElement<Book?> createElement() {
+  AutoDisposeFutureProviderElement<CatalogueItem?> createElement() {
     return _BookByIdProviderElement(this);
   }
 
@@ -638,12 +646,13 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin BookByIdRef on AutoDisposeFutureProviderRef<Book?> {
+mixin BookByIdRef on AutoDisposeFutureProviderRef<CatalogueItem?> {
   /// The parameter `bookId` of this provider.
   int get bookId;
 }
 
-class _BookByIdProviderElement extends AutoDisposeFutureProviderElement<Book?>
+class _BookByIdProviderElement
+    extends AutoDisposeFutureProviderElement<CatalogueItem?>
     with BookByIdRef {
   _BookByIdProviderElement(super.provider);
 

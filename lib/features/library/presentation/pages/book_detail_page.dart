@@ -7,13 +7,13 @@
 /// Edit + Remove/Restore actions.
 ///
 /// **Observes the book by id (N03).** The page is pushed with a `bookId` (and,
-/// optionally, the list row's `Book` so the first frame is not a spinner) and
-/// watches `bookByIdProvider(bookId)` from then on. Everything that can change
-/// the row while this page is open — a cover captured right here, the
-/// remote-cover materializer, the edit form — signals through the library
-/// controller, and this page re-reads the row on that signal. So a new cover
-/// appears in place, Edit always opens on the CURRENT row, and there is no
-/// stale snapshot left to write back. A row that vanished shows a safe empty
+/// optionally, the list row's `CatalogueItem` so the first frame is not a
+/// spinner) and watches `bookByIdProvider(bookId)` from then on. Everything
+/// that can change the row while this page is open — a cover captured right
+/// here, the remote-cover materializer, the edit form — signals through the
+/// library controller, and this page re-reads the row on that signal. So a new
+/// cover appears in place, Edit always opens on the CURRENT row, and there is
+/// no stale snapshot left to write back. A row that vanished shows a safe empty
 /// state; a repository failure shows a safe message, never raw text.
 library;
 
@@ -28,7 +28,7 @@ import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
@@ -76,7 +76,7 @@ class BookDetailPage extends ConsumerWidget {
 
   /// Optional snapshot for the first frame; never used once the provider has
   /// resolved, and never handed to any action.
-  final Book? initialBook;
+  final CatalogueItem? initialBook;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -171,7 +171,7 @@ class _BookLoadFailedScaffold extends StatelessWidget {
 class _BookDetailBody extends ConsumerWidget {
   const _BookDetailBody({required this.book});
 
-  final Book book;
+  final CatalogueItem book;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -427,7 +427,7 @@ class _BookDetailBody extends ConsumerWidget {
 class _EditableCover extends ConsumerStatefulWidget {
   const _EditableCover({required this.book});
 
-  final Book book;
+  final CatalogueItem book;
 
   @override
   ConsumerState<_EditableCover> createState() => _EditableCoverState();
@@ -604,7 +604,7 @@ class _RemovedBadge extends StatelessWidget {
 class _DeleteForeverButton extends ConsumerStatefulWidget {
   const _DeleteForeverButton({required this.book});
 
-  final Book book;
+  final CatalogueItem book;
 
   @override
   ConsumerState<_DeleteForeverButton> createState() =>

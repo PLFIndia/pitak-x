@@ -34,7 +34,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
@@ -51,7 +51,7 @@ class DriftBookRepository implements BookRepository {
   final Uuid _uuid;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async {
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async {
     try {
       final query = _db.select(_db.books)
         ..orderBy([(t) => OrderingTerm.desc(t.addedDate)]);
@@ -256,7 +256,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     try {
       final row =
           await (_db.select(_db.books)
@@ -270,7 +270,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     try {
       // One transaction: the "which spellings exist" read and the insert
       // cannot interleave with another write, so two concurrent adds of
@@ -282,7 +282,7 @@ class DriftBookRepository implements BookRepository {
             ? resolved.copyWith(bookUid: _uuid.v4())
             : resolved;
         final id = await _db.into(_db.books).insert(withUid.toCompanion());
-        return right<Failure, Book>(withUid.copyWith(id: id));
+        return right<Failure, CatalogueItem>(withUid.copyWith(id: id));
       });
     } on Object catch (e) {
       // S34 race net: the UNIQUE isbn index may have refused this write (a
@@ -297,8 +297,8 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
-    if (book.id == Book.emptyId) {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
+    if (book.id == CatalogueItem.emptyId) {
       return left(const NotFoundFailure());
     }
     try {
@@ -312,7 +312,7 @@ class DriftBookRepository implements BookRepository {
                   ..limit(1))
                 .getSingleOrNull();
         if (existing == null) {
-          return left<Failure, Book>(const NotFoundFailure());
+          return left<Failure, CatalogueItem>(const NotFoundFailure());
         }
         // The row's own current spelling is part of the stored set, so
         // re-typing `english` on the only English book keeps `English`:
@@ -326,7 +326,7 @@ class DriftBookRepository implements BookRepository {
         // `update().replace` matches on the primary key; FTS5 stays in sync
         // via the AFTER UPDATE trigger in app_database.dart.
         await _db.update(_db.books).replace(preserved.toCompanion());
-        return right<Failure, Book>(preserved);
+        return right<Failure, CatalogueItem>(preserved);
       });
     } on Object catch (e) {
       // S34 race net, same as [insert]: an edit moved onto ANOTHER row's ISBN
@@ -406,7 +406,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async {
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async {
     try {
       // One explicit transaction around the spellings read + the batch, so
       // the whole import is all-or-nothing AND every row is snapped against
@@ -432,7 +432,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     try {
       // One explicit transaction: the deletes and the inserts commit together
       // or roll back together, so a mid-way failure (e.g. a UNIQUE violation
@@ -459,7 +459,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async {
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
     if (isbn.trim().isEmpty) return right(null);
     try {
       final row =
@@ -474,7 +474,7 @@ class DriftBookRepository implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async {
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async {
     final uid = bookUid.trim();
     if (uid.isEmpty) return right(null);
     try {
@@ -566,9 +566,9 @@ typedef _OrderingOf = OrderingTerm Function($BooksTable t);
 /// and GROWS as it accepts new ones, so within a single batch the first
 /// spelling of a new language wins for every later row of that batch.
 ///
-/// Why here and not in `Book.validate`: only the repository can see what is
-/// already stored, and every ingress (form, import, merge, restore) ends in
-/// this class, so this is the one place the rule cannot be bypassed.
+/// Why here and not in `CatalogueItem.validate`: only the repository can see
+/// what is already stored, and every ingress (form, import, merge, restore)
+/// ends in this class, so this is the one place the rule cannot be bypassed.
 final class _LanguageResolver {
   _LanguageResolver(Iterable<String> stored) : _known = [...stored];
 
@@ -579,7 +579,7 @@ final class _LanguageResolver {
   /// field, and every read already treats NULL and blank as the same "no
   /// language" (`distinctLanguages` filters `TRIM(language) != ''`, the
   /// sort buckets both LAST), so a stored blank is inert.
-  Book resolve(Book book) {
+  CatalogueItem resolve(CatalogueItem book) {
     final raw = book.language;
     if (raw == null) return book;
     final canonical = LanguageName.canonicalise(raw, _known);

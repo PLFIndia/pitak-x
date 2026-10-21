@@ -3,12 +3,12 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 void main() {
   test('owns immutable copies of rows, mapping and bytes', () {
-    final books = [const Book(title: 'A', coverUrl: 'covers/a.png')];
+    final books = [const CatalogueItem(title: 'A', coverUrl: 'covers/a.png')];
     final bytes = Uint8List.fromList([1, 2]);
     final covers = {'a.png': bytes};
     final bundle = ImportBundle.validate(
@@ -34,7 +34,9 @@ void main() {
     for (final wishlist in [false, true]) {
       test('rejects unsafe/missing local ref ($wishlist): $reference', () {
         final payload = ImportPayload(
-          books: wishlist ? [] : [Book(title: 'A', coverUrl: reference)],
+          books: wishlist
+              ? []
+              : [CatalogueItem(title: 'A', coverUrl: reference)],
           wishlist: wishlist
               ? [WishlistBook(title: 'A', coverUrl: reference)]
               : [],
@@ -46,7 +48,9 @@ void main() {
   test('library and wishlist may share a legacy source leaf', () {
     final result = ImportBundle.validate(
       const ImportPayload(
-        books: [Book(title: 'A', coverUrl: 'file:///another/device/a.jpg')],
+        books: [
+          CatalogueItem(title: 'A', coverUrl: 'file:///another/device/a.jpg'),
+        ],
         wishlist: [WishlistBook(title: 'B', coverUrl: 'covers/a.jpg')],
       ),
       {
@@ -59,8 +63,11 @@ void main() {
     final result = ImportBundle.validate(
       const ImportPayload(
         books: [
-          Book(title: 'A'),
-          Book(title: 'B', coverUrl: 'https://covers.openlibrary.org/x'),
+          CatalogueItem(title: 'A'),
+          CatalogueItem(
+            title: 'B',
+            coverUrl: 'https://covers.openlibrary.org/x',
+          ),
         ],
       ),
       {},

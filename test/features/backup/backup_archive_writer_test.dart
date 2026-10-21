@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -65,7 +65,7 @@ void main() {
   // M15: the reader now returns Either<Failure, LegacyRows<T>>. These tests
   // round-trip rows the writer just produced, which are always valid, so the
   // unwrap-or-fail helpers keep the assertions readable.
-  List<Book> readBooksOk(CommonDatabase db) => LegacyDbReader(db)
+  List<CatalogueItem> readBooksOk(CommonDatabase db) => LegacyDbReader(db)
       .readBooks()
       .fold((f) => fail('readBooks refused a written row: $f'), (r) => r.books);
 
@@ -133,7 +133,7 @@ void main() {
 
   test('books round-trip through our own restore reader', () async {
     final books = [
-      const Book(
+      const CatalogueItem(
         id: 1,
         bookUid: 'uid-1',
         title: 'पंचतंत्र', // Devanagari survives the round-trip
@@ -143,7 +143,7 @@ void main() {
         ageGroup: AgeGroup.above10,
         needsMetadata: true,
       ),
-      const Book(id: 2, title: 'Plain Book'),
+      const CatalogueItem(id: 2, title: 'Plain Book'),
     ];
     final bytes = await writer.build(
       books: books,
@@ -178,7 +178,7 @@ void main() {
       // virtual table threw `no such module: fts4` and aborted every backup.
       // The writer must NOT create that table; books must still be readable.
       final bytes = await writer.build(
-        books: const [Book(id: 1, title: 'Findable')],
+        books: const [CatalogueItem(id: 1, title: 'Findable')],
         wishlist: const [],
         workDir: '${tmp.path}/work',
         exportedAt: 1,
@@ -298,9 +298,9 @@ void main() {
       );
     }
 
-    List<Book> bigBooks() => [
+    List<CatalogueItem> bigBooks() => [
       for (var i = 0; i < 4000; i++)
-        Book(
+        CatalogueItem(
           id: i + 1,
           title: 'Title $i',
           author: 'Author ${i % 50}',
@@ -348,7 +348,7 @@ void main() {
         // one intact and in the same sorted order as before.
         final w = await bigFixture();
         final bytes = await w.build(
-          books: const [Book(id: 1, title: 'One')],
+          books: const [CatalogueItem(id: 1, title: 'One')],
           wishlist: const [],
           workDir: '${tmp.path}/work',
           exportedAt: 1,
@@ -390,7 +390,7 @@ void main() {
         );
         await expectLater(
           w.build(
-            books: const [Book(id: 1, title: 'One')],
+            books: const [CatalogueItem(id: 1, title: 'One')],
             wishlist: const [],
             workDir: '${tmp.path}/work_fail',
             exportedAt: 1,

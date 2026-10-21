@@ -9,7 +9,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -24,13 +24,14 @@ class _FakeBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
 
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
 
   /// When set, markRemoved/restoreRemoved return this failure.
   Failure? failWritesWith;
@@ -47,7 +48,7 @@ class _FakeBookRepo implements BookRepository {
   int markRemovedCalls = 0;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
 
   /// Slices [_all] like a real store would: a plain listing pages `_all`
   /// verbatim; a search returns nothing (tests that need search rows use a
@@ -65,7 +66,11 @@ class _FakeBookRepo implements BookRepository {
 
   /// OFFSET/LIMIT over an in-memory list with the repository's `hasMore`
   /// rule (one row beyond the window exists).
-  static BookPage slice(List<Book> rows, {required int limit, int offset = 0}) {
+  static BookPage slice(
+    List<CatalogueItem> rows, {
+    required int limit,
+    int offset = 0,
+  }) {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return BookPage(
@@ -88,9 +93,10 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
@@ -101,14 +107,16 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
@@ -141,7 +149,7 @@ class _GatedRepo extends _FakeBookRepo {
 /// this list.
 class _FixedSearchRepo extends _FakeBookRepo {
   _FixedSearchRepo(super.all, this.searchResults);
-  final List<Book> searchResults;
+  final List<CatalogueItem> searchResults;
 
   @override
   Future<Either<Failure, BookPage>> page(
@@ -234,12 +242,12 @@ class _FakeSettingsRepo implements SettingsRepository {
 }
 
 void main() {
-  const books = [Book(id: 1, title: 'Dune', author: 'Herbert')];
+  const books = [CatalogueItem(id: 1, title: 'Dune', author: 'Herbert')];
 
   /// [n] distinct books, ids 1..n, newest first (the fake pages them as-is).
-  List<Book> manyBooks(int n) => List.generate(
+  List<CatalogueItem> manyBooks(int n) => List.generate(
     n,
-    (i) => Book(id: i + 1, title: 'book ${i + 1}', addedDate: n - i),
+    (i) => CatalogueItem(id: i + 1, title: 'book ${i + 1}', addedDate: n - i),
   );
 
   ProviderContainer makeContainer(
@@ -349,11 +357,17 @@ void main() {
 
     // Complete the NEW query first, then let the OLD one land late.
     repo.gates['fast']!.complete(
-      const BookPage(items: [Book(id: 2, title: 'FAST')], hasMore: false),
+      const BookPage(
+        items: [CatalogueItem(id: 2, title: 'FAST')],
+        hasMore: false,
+      ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     repo.gates['slow']!.complete(
-      const BookPage(items: [Book(id: 1, title: 'SLOW')], hasMore: false),
+      const BookPage(
+        items: [CatalogueItem(id: 1, title: 'SLOW')],
+        hasMore: false,
+      ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -370,8 +384,8 @@ void main() {
     // Deliberately NOT in languageAsc order and NOT all Zulu: a controller
     // that still sorted or filtered would change this list.
     final fromRepo = [
-      const Book(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
-      const Book(
+      const CatalogueItem(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
+      const CatalogueItem(
         id: 2,
         title: 'afrikaans',
         addedDate: 2,
@@ -497,7 +511,10 @@ void main() {
       notifier.onQueryChanged('zzz'); // a new list supersedes it
       await Future<void>.delayed(const Duration(milliseconds: 150));
       repo.gates['zzz']!.complete(
-        const BookPage(items: [Book(id: 999, title: 'hit')], hasMore: false),
+        const BookPage(
+          items: [CatalogueItem(id: 999, title: 'hit')],
+          hasMore: false,
+        ),
       );
       await container.read(libraryControllerProvider.future);
       // Now the OLD page-2 lands late.

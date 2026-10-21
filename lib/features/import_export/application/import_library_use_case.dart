@@ -34,7 +34,7 @@ import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -180,9 +180,9 @@ final class ImportLibraryUseCase {
       // write path re-checks so a FUTURE parser can never bypass the gate.
       // A Left here means a parser bug — fail the whole import (the
       // transaction rolls back) rather than persist an invalid row.
-      final checked = Book.validate(rawBook);
+      final checked = CatalogueItem.validate(rawBook);
       if (checked.isLeft()) {
-        final errs = (checked as Left<List<FieldError>, Book>).value;
+        final errs = (checked as Left<List<FieldError>, CatalogueItem>).value;
         return left(
           ValidationFailure(
             'A parsed book failed validation: '
@@ -201,7 +201,7 @@ final class ImportLibraryUseCase {
         final existing = byUid.toNullable();
         if (existing != null) {
           final prepared = images == null
-              ? right<Failure, Book>(book)
+              ? right<Failure, CatalogueItem>(book)
               : await images.prepareBook(book);
           if (prepared.isLeft()) {
             return prepared.map((_) => const ImportSummary(format: null));
@@ -234,7 +234,7 @@ final class ImportLibraryUseCase {
       }
       // 3. New to this library → insert.
       final prepared = images == null
-          ? right<Failure, Book>(book)
+          ? right<Failure, CatalogueItem>(book)
           : await images.prepareBook(book);
       if (prepared.isLeft()) {
         return prepared.map((_) => const ImportSummary(format: null));
@@ -323,15 +323,15 @@ final class ImportLibraryUseCase {
   /// the incoming catalogue fields; the cover follows [resolveIncomingCover]
   /// (M09): a local photo is never replaced by an incoming remote URL, and
   /// a file carrying no cover keeps the local one.
-  static Book _mergeIntoExisting({
-    required Book existing,
-    required Book incoming,
+  static CatalogueItem _mergeIntoExisting({
+    required CatalogueItem existing,
+    required CatalogueItem incoming,
   }) {
     final cover = resolveIncomingCover(
       existing: existing.coverUrl,
       incoming: incoming.coverUrl,
     );
-    return Book(
+    return CatalogueItem(
       id: existing.id,
       bookUid: existing.bookUid,
       title: incoming.title,

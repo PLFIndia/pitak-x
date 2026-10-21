@@ -18,7 +18,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
@@ -52,8 +52,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const books = [
-    Book(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
-    Book(id: 2, title: 'Dune', author: 'Herbert'),
+    CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
   ];
 
   /// Phone profile (≈ Pixel-class, 412×915 dp at 2.625×). Android is the
@@ -74,12 +74,15 @@ void main() {
     home: home,
   );
 
-  Widget libraryApp(List<Book> list, {bool dark = false}) => ProviderScope(
-    overrides: [
-      bookRepositoryProvider.overrideWith((ref) async => _GoldenBookRepo(list)),
-    ],
-    child: themedApp(const LibraryPage(), dark: dark),
-  );
+  Widget libraryApp(List<CatalogueItem> list, {bool dark = false}) =>
+      ProviderScope(
+        overrides: [
+          bookRepositoryProvider.overrideWith(
+            (ref) async => _GoldenBookRepo(list),
+          ),
+        ],
+        child: themedApp(const LibraryPage(), dark: dark),
+      );
 
   Future<void> expectGolden(
     WidgetTester tester,
@@ -270,10 +273,10 @@ void main() {
 /// In-memory book repo returning a fixed list (enough for a rendered frame).
 class _GoldenBookRepo implements BookRepository {
   _GoldenBookRepo(this._all);
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
@@ -288,11 +291,13 @@ class _GoldenBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(_all.where((b) => b.id == id).firstOrNull);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
@@ -309,18 +314,20 @@ class _GoldenBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 

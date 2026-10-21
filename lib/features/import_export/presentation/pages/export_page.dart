@@ -29,7 +29,7 @@ import 'package:pitaka/features/import_export/application/export_controller.dart
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Screen to export the library/wishlist to a file.
 class ExportPage extends ConsumerStatefulWidget {

@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 import 'bundle_test_fixture.dart';
@@ -18,12 +18,18 @@ void main() {
 
   test('UID update preserves identity and old shared files', () async {
     final old = (await fixture.books.insert(
-      const Book(title: 'Old', bookUid: 'u', coverUrl: 'covers/old.jpg'),
+      const CatalogueItem(
+        title: 'Old',
+        bookUid: 'u',
+        coverUrl: 'covers/old.jpg',
+      ),
     )).toNullable()!;
     fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
     final result = await fixture.apply(
       const ImportPayload(
-        books: [Book(title: 'New', bookUid: 'u', coverUrl: 'covers/a.jpg')],
+        books: [
+          CatalogueItem(title: 'New', bookUid: 'u', coverUrl: 'covers/a.jpg'),
+        ],
       ),
       images: {'a.jpg': a},
     );
@@ -40,9 +46,17 @@ void main() {
       final result = await fixture.apply(
         const ImportPayload(
           books: [
-            Book(title: 'First', bookUid: 'u', coverUrl: 'covers/a.jpg'),
-            Book(title: 'Second', bookUid: 'u', coverUrl: 'covers/b.jpg'),
-            Book(title: 'Final', bookUid: 'u'),
+            CatalogueItem(
+              title: 'First',
+              bookUid: 'u',
+              coverUrl: 'covers/a.jpg',
+            ),
+            CatalogueItem(
+              title: 'Second',
+              bookUid: 'u',
+              coverUrl: 'covers/b.jpg',
+            ),
+            CatalogueItem(title: 'Final', bookUid: 'u'),
           ],
         ),
         images: {'a.jpg': a, 'b.jpg': b},
@@ -78,7 +92,7 @@ void main() {
   test('same numeric ID in different tables keeps both covers', () async {
     final result = await fixture.apply(
       const ImportPayload(
-        books: [Book(title: 'A', coverUrl: 'covers/a.jpg')],
+        books: [CatalogueItem(title: 'A', coverUrl: 'covers/a.jpg')],
         wishlist: [WishlistBook(title: 'B', coverUrl: 'covers/b.jpg')],
       ),
       images: {'a.jpg': a, 'b.jpg': b},
@@ -95,7 +109,9 @@ void main() {
     'reimport by ISBN skips images; shared wishlist still receives one',
     () async {
       const payload = ImportPayload(
-        books: [Book(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg')],
+        books: [
+          CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
+        ],
       );
       await fixture.apply(payload, images: {'a.jpg': a});
       final repeated = await fixture.apply(payload, images: {'a.jpg': b});
@@ -104,7 +120,9 @@ void main() {
       expect(fixture.images.single.readAsBytesSync(), a);
       final shared = await fixture.apply(
         const ImportPayload(
-          books: [Book(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg')],
+          books: [
+            CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
+          ],
           wishlist: [WishlistBook(title: 'Wish', coverUrl: 'covers/a.jpg')],
         ),
         images: {'a.jpg': b},
@@ -123,7 +141,7 @@ void main() {
   test('one shared file for library, wishlist and legacy references', () async {
     final result = await fixture.apply(
       const ImportPayload(
-        books: [Book(title: 'A', coverUrl: 'covers/a.png')],
+        books: [CatalogueItem(title: 'A', coverUrl: 'covers/a.png')],
         wishlist: [
           WishlistBook(title: 'B', coverUrl: 'file:///old/device/a.png'),
         ],

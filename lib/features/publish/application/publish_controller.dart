@@ -10,7 +10,7 @@ library;
 import 'dart:convert';
 
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -64,7 +64,7 @@ class PublishController extends _$PublishController {
     );
   }
 
-  Future<PublishResult> _publishBooks(List<Book> books) async {
+  Future<PublishResult> _publishBooks(List<CatalogueItem> books) async {
     final api = ref.read(gitHubApiProvider);
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);

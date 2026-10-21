@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
@@ -27,7 +27,11 @@ void main() {
         addTearDown(fixture.dispose);
         fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
         await fixture.books.insert(
-          const Book(title: 'Old', bookUid: 'u', coverUrl: 'covers/old.jpg'),
+          const CatalogueItem(
+            title: 'Old',
+            bookUid: 'u',
+            coverUrl: 'covers/old.jpg',
+          ),
         );
         await fixture.wishlist.insert(
           const WishlistBook(
@@ -41,7 +45,7 @@ void main() {
         final payload = ImportPayload(
           books: row.endsWith('book')
               ? [
-                  Book(
+                  CatalogueItem(
                     title: 'New',
                     bookUid: row == 'existing book' ? 'u' : null,
                     coverUrl: 'covers/a.jpg',
@@ -106,7 +110,7 @@ void main() {
       addTearDown(fixture.dispose);
       fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
       await fixture.books.insert(
-        const Book(
+        const CatalogueItem(
           title: 'Old',
           bookUid: 'old',
           isbn: 'seed',
@@ -124,13 +128,13 @@ void main() {
       final result = await fixture.apply(
         const ImportPayload(
           books: [
-            Book(
+            CatalogueItem(
               title: 'New',
               bookUid: 'new',
               isbn: 'new',
               coverUrl: 'covers/a.jpg',
             ),
-            Book(
+            CatalogueItem(
               title: 'Updated',
               bookUid: 'old',
               isbn: 'seed',
@@ -175,16 +179,16 @@ class _BookFaults extends DriftBookRepository {
   final String fault;
   bool bodySucceeded = false;
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
       fault == 'uid' ? left(_failure) : super.findByUid(bookUid);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       fault == 'isbn' ? left(_failure) : super.findByIsbn(isbn);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
       fault == 'insert' ? left(_failure) : super.insert(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
       fault == 'update' ? left(_failure) : super.update(book);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(

@@ -7,13 +7,13 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 
 /// Read/write access to the library books store.
 abstract interface class BookRepository {
   /// All books (including soft-removed), newest first.
-  Future<Either<Failure, List<Book>>> getAll();
+  Future<Either<Failure, List<CatalogueItem>>> getAll();
 
   /// ONE window of the library list for [query] (review finding N10-d: the
   /// list used to load the whole catalogue).
@@ -60,15 +60,15 @@ abstract interface class BookRepository {
   );
 
   /// Finds a book by its per-device [id], or null when none exists.
-  Future<Either<Failure, Book?>> getById(int id);
+  Future<Either<Failure, CatalogueItem?>> getById(int id);
 
   /// Inserts a new book, returning it with its assigned id (and minted uid).
-  Future<Either<Failure, Book>> insert(Book book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book);
 
-  /// Updates an existing book in place (matched by [Book.id]); the id and
-  /// `book_uid` are preserved. Returns the updated book. A row that no longer
-  /// exists yields [NotFoundFailure].
-  Future<Either<Failure, Book>> update(Book book);
+  /// Updates an existing book in place (matched by [CatalogueItem.id]); the id
+  /// and `book_uid` are preserved. Returns the updated book. A row that no
+  /// longer exists yields [NotFoundFailure].
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book);
 
   /// Soft-deletes a book: sets `removed = true` and `removed_at = [at]`. The
   /// row stays (visible-but-inert), mirroring Kotlin `markRemoved`. NOT a hard
@@ -86,12 +86,12 @@ abstract interface class BookRepository {
 
   /// Finds a book by exact ISBN, or null when none / [isbn] blank. Used by
   /// import dedup (existing ISBN → skip).
-  Future<Either<Failure, Book?>> findByIsbn(String isbn);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn);
 
   /// Finds a book by its stable cross-device [bookUid], or null when none /
   /// [bookUid] blank. Used by import to UPDATE a re-imported book in place
   /// instead of colliding on the UNIQUE `book_uid` index (decision Q9).
-  Future<Either<Failure, Book?>> findByUid(String bookUid);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid);
 
   /// Runs [action] inside ONE database transaction: every repository call
   /// made within it (books AND wishlist — they share the database) commits
@@ -105,7 +105,7 @@ abstract interface class BookRepository {
 
   /// Bulk insert used by restore/import. Returns the number inserted.
   /// Atomic: either every row lands or none does.
-  Future<Either<Failure, int>> insertAll(List<Book> books);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books);
 
   /// Atomically replaces the ENTIRE catalogue with [books] (delete all +
   /// insert all in one transaction). Used by merge OVERWRITE: a failure
@@ -113,5 +113,5 @@ abstract interface class BookRepository {
   /// empty catalogue reported as success/failure incorrectly
   /// (REVIEW_FINDINGS_2 S5). Rows keep their incoming `book_uid` (cross-device
   /// identity); a null uid is minted fresh, matching [insert].
-  Future<Either<Failure, int>> replaceAll(List<Book> books);
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books);
 }

@@ -47,7 +47,7 @@ import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dar
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
@@ -544,7 +544,7 @@ final class _ReplacementRefused implements Exception {
 
 /// Internal carrier for rows read out of the legacy DBs.
 class _LegacyRows {
-  List<Book> books = const [];
+  List<CatalogueItem> books = const [];
   List<WishlistBook> wishlist = const [];
 
   /// Cover references normalised to null by validation (M15), surfaced in

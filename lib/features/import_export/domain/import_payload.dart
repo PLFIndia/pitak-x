@@ -6,7 +6,7 @@
 /// ingested (Kotlin D26: no terminal dead-ends).
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Parsed, not-yet-persisted books + wishlist entries from an import file.
@@ -20,7 +20,7 @@ class ImportPayload {
   });
 
   /// Books to import (ids not yet assigned).
-  final List<Book> books;
+  final List<CatalogueItem> books;
 
   /// Wishlist entries to import (ids not yet assigned).
   final List<WishlistBook> wishlist;

@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 void main() {
@@ -49,7 +49,7 @@ void main() {
       expect(payload.parseErrors, isEmpty);
       final b = payload.books.single;
       // Fresh id on import — the file's id is ignored.
-      expect(b.id, Book.emptyId);
+      expect(b.id, CatalogueItem.emptyId);
       expect(b.bookUid, 'uid-abc');
       expect(b.title, 'गोदान');
       expect(b.titleTransliteration, 'Godaan');

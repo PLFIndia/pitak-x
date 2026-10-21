@@ -1,16 +1,15 @@
 /// Add / edit book form (presentation layer, AGENTS.md §3.1).
 ///
-/// One screen for both modes: passed no book → "Add", passed a [Book] →
-/// "Edit" (prefilled). The form owns only view state (text controllers,
+/// One screen for both modes: passed no book → "Add", passed a [CatalogueItem]
+/// → "Edit" (prefilled). The form owns only view state (text controllers,
 /// dropdown selections); all persistence + validation goes through
-/// [AddBookController]. On a successful save it refreshes the library and
-/// pops.
+/// [AddBookController]. On a successful save it refreshes the library and pops.
 ///
-/// N03: in edit mode the [Book] passed in only PREFILLS the form. At save
-/// time the controller re-reads the row and this form builds the new value on
-/// top of that fresh row — fields the form does not edit (cover, removed
-/// flag, attribution, uid) come from the database as it is now, never from
-/// the snapshot the screen was opened with.
+/// N03: in edit mode the [CatalogueItem] passed in only PREFILLS the form. At
+/// save time the controller re-reads the row and this form builds the new value
+/// on top of that fresh row — fields the form does not edit (cover, removed
+/// flag, attribution, uid) come from the database as it is now, never from the
+/// snapshot the screen was opened with.
 ///
 /// ISBN entry supports a barcode scan (#29) and a metadata lookup (#30):
 /// Open Library → Google Books, chained over a cache. A successful lookup
@@ -25,7 +24,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
@@ -42,7 +41,7 @@ class AddBookPage extends ConsumerStatefulWidget {
   const AddBookPage({this.book, this.initialIsbn, super.key});
 
   /// The book to edit, or null to add a new one.
-  final Book? book;
+  final CatalogueItem? book;
 
   /// Optional ISBN to pre-fill in add mode (from a barcode scan).
   final String? initialIsbn;
@@ -222,15 +221,18 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Assembles the [Book] to persist from the form fields, taking every
-  /// field the form does not edit from [base]: null in add mode, the FRESH
-  /// row in edit mode (N03). [maintainerStamp] attributes a new book that has
-  /// no `addedBy` yet; it is read before any await so this stays pure.
-  Book _buildBook(Book? base, {required String? maintainerStamp}) {
+  /// Assembles the [CatalogueItem] to persist from the form fields, taking
+  /// every field the form does not edit from [base]: null in add mode, the
+  /// FRESH row in edit mode (N03). [maintainerStamp] attributes a new book that
+  /// has no `addedBy` yet; it is read before any await so this stays pure.
+  CatalogueItem _buildBook(
+    CatalogueItem? base, {
+    required String? maintainerStamp,
+  }) {
     final qty = int.tryParse(_quantity.text.trim()) ?? 1;
-    return Book(
+    return CatalogueItem(
       // Preserve identity in edit mode; add mode uses the sentinel.
-      id: base?.id ?? Book.emptyId,
+      id: base?.id ?? CatalogueItem.emptyId,
       bookUid: base?.bookUid,
       title: _title.text.trim(),
       titleTransliteration: _trimToNull(_transliteration),

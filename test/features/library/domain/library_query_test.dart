@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
@@ -82,7 +82,7 @@ void main() {
   });
 
   group('BookPage / LibraryWindow', () {
-    const dune = Book(id: 1, title: 'Dune');
+    const dune = CatalogueItem(id: 1, title: 'Dune');
 
     test('BookPage.empty is terminal', () {
       expect(BookPage.empty.items, isEmpty);

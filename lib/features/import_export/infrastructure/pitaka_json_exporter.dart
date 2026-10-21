@@ -14,7 +14,7 @@ import 'dart:convert';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart'
     show kPitakaSchemaVersion;
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Serialises library + wishlist rows to a Pitaka JSON export string.
@@ -31,7 +31,7 @@ class PitakaJsonExporter implements LibraryJsonEncoder {
   /// file with no ID is treated as "unknown library" by the merge gate).
   @override
   String export({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required int exportedAt,
     String libraryId = '',
@@ -48,7 +48,7 @@ class PitakaJsonExporter implements LibraryJsonEncoder {
     return const JsonEncoder.withIndent('  ').convert(doc);
   }
 
-  Map<String, dynamic> _book(Book b) => _compact({
+  Map<String, dynamic> _book(CatalogueItem b) => _compact({
     'bookUid': b.bookUid,
     'title': b.title,
     'titleTransliteration': b.titleTransliteration,

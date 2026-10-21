@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
 
 void main() {
-  Widget host(Book book, {bool unavailable = false}) => ProviderScope(
+  Widget host(CatalogueItem book, {bool unavailable = false}) => ProviderScope(
     child: MaterialApp(
       home: Scaffold(
         // A fixed, realistic grid-cell box so overflow would actually throw.
@@ -26,7 +26,7 @@ void main() {
 
   testWidgets('renders title and author', (tester) async {
     await tester.pumpWidget(
-      host(const Book(title: 'The Hobbit', author: 'Tolkien')),
+      host(const CatalogueItem(title: 'The Hobbit', author: 'Tolkien')),
     );
     await tester.pump();
     expect(find.text('The Hobbit'), findsOneWidget);
@@ -34,7 +34,9 @@ void main() {
   });
 
   testWidgets('shows the copy-count pill when copyCount > 1', (tester) async {
-    await tester.pumpWidget(host(const Book(title: 'Dune', copyCount: 4)));
+    await tester.pumpWidget(
+      host(const CatalogueItem(title: 'Dune', copyCount: 4)),
+    );
     await tester.pump();
     expect(find.text('×4'), findsOneWidget);
   });
@@ -43,7 +45,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      host(const Book(title: 'Old Tales', removed: true), unavailable: true),
+      host(
+        const CatalogueItem(title: 'Old Tales', removed: true),
+        unavailable: true,
+      ),
     );
     await tester.pump();
     expect(find.text('Removed'), findsOneWidget);
@@ -57,7 +62,7 @@ void main() {
     // worst case for the fixed-height grid cell.
     await tester.pumpWidget(
       host(
-        const Book(
+        const CatalogueItem(
           title: 'A Tremendously Long Book Title That Would Wrap Many Lines',
           author: 'An Equally Long Author Name For Good Measure',
           copyCount: 12,

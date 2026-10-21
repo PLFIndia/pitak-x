@@ -3,7 +3,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/bundle_cover_files.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Per-import bookkeeping: one new file per source image, final refs per row.
@@ -35,7 +35,9 @@ final class BundleImportImages {
   }
 
   /// Called only AFTER UID/ISBN checks establish that this row will be written.
-  Future<Either<Failure, Book>> prepareBook(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> prepareBook(
+    CatalogueItem book,
+  ) async =>
       (await _cover(book.coverUrl)).map((ref) => book.copyWith(coverUrl: ref));
 
   /// Wishlist rows use the same source-image mapping as library rows.
@@ -45,7 +47,7 @@ final class BundleImportImages {
       (await _cover(book.coverUrl)).map((ref) => book.copyWith(coverUrl: ref));
 
   /// Records the actual persisted identity, including UID updates in place.
-  void recordBook(Book book) => _books[book.id] = book.coverUrl;
+  void recordBook(CatalogueItem book) => _books[book.id] = book.coverUrl;
 
   /// Records the final wishlist reference after replacement/insert.
   void recordWishlist(WishlistBook book) => _wishlist[book.id] = book.coverUrl;

@@ -27,7 +27,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -121,7 +121,7 @@ final class MergeDone extends MergeUiState {
             // earlier row from the same file (never persisted under that
             // object). Only the latter has nothing to overwrite.
             DuplicateReason.identityKey =>
-              d.local.id == Book.emptyId
+              d.local.id == CatalogueItem.emptyId
                   ? MergeReviewKind.inFileCollision
                   : MergeReviewKind.identityKey,
           },
@@ -204,10 +204,10 @@ final class MergeReviewItem {
 
   /// The book already on the winning side (a local row — or, for
   /// [MergeReviewKind.inFileCollision], the earlier incoming row).
-  final Book local;
+  final CatalogueItem local;
 
   /// The incoming book.
-  final Book incoming;
+  final CatalogueItem incoming;
 
   /// Jaccard similarity for [MergeReviewKind.similarTitle]; 1.0 otherwise.
   final double similarity;

@@ -1,16 +1,19 @@
-/// Pure domain model for a book in the user's library.
+/// Pure domain model for one catalogue item (any kind) in the user's library.
 ///
-/// Mirror of Kotlin `dev.khoj.pitaka.domain.model.Book` (source app). Pure
-/// Dart: no Flutter/Drift/Riverpod imports (AGENTS.md §3.1). Immutable;
-/// `copyWith` for edits.
+/// The catalogue item row — ADR 0013 (pending). Originally ported from Kotlin
+/// `dev.khoj.pitaka.domain.model.Book` (source app) and named `Book` until
+/// 2026-10; renamed because the same row is the base of every item kind, not
+/// only books. Pure Dart: no Flutter/Drift/Riverpod imports (AGENTS.md §3.1).
+/// Immutable; `copyWith` for edits.
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 
-/// Fixed provenance categories for `Book.sourceType`. Stored as the Dart enum
-/// constant name (e.g. `purchased`) — mirrors Kotlin where it is persisted as
-/// the enum `name`. Tolerant parse via [BookSourceTypeX.fromToken].
+/// Fixed provenance categories for `CatalogueItem.sourceType`. Stored as the
+/// Dart enum constant name (e.g. `purchased`) — mirrors Kotlin where it is
+/// persisted as the enum `name`. Tolerant parse via
+/// [BookSourceTypeX.fromToken].
 enum BookSourceType {
   /// Bought.
   purchased,
@@ -112,10 +115,11 @@ enum AgeGroup {
   }
 }
 
-/// A book in the user's library. `id == emptyId` means "not yet persisted".
-class Book {
-  /// Creates a book. Only [title] is required (matches Kotlin).
-  const Book({
+/// One item in the user's library — a book today; the base row of every item
+/// kind (ADR 0013, pending). `id == emptyId` means "not yet persisted".
+class CatalogueItem {
+  /// Creates an item. Only [title] is required (matches Kotlin).
+  const CatalogueItem({
     required this.title,
     this.id = emptyId,
     this.bookUid,
@@ -224,7 +228,7 @@ class Book {
   /// crafted file cannot plant values that crash normal screens later (see
   /// `catalogue_rules.dart` for the threat model). The plain constructor stays
   /// for already-trusted data (DB mapper, `copyWith` on a persisted row).
-  static Either<List<FieldError>, Book> validate(Book book) {
+  static Either<List<FieldError>, CatalogueItem> validate(CatalogueItem book) {
     final errors = <FieldError>[];
 
     final title = book.title.trim();
@@ -294,7 +298,7 @@ class Book {
     if (errors.isNotEmpty) return left(errors);
     if (title == book.title && safeCover == book.coverUrl) return right(book);
     return right(
-      Book(
+      CatalogueItem(
         id: book.id,
         bookUid: book.bookUid,
         title: title,
@@ -323,7 +327,7 @@ class Book {
   }
 
   /// Returns a copy with the given fields replaced.
-  Book copyWith({
+  CatalogueItem copyWith({
     int? id,
     String? bookUid,
     String? title,
@@ -348,7 +352,7 @@ class Book {
     int? removedAt,
     String? addedBy,
   }) {
-    return Book(
+    return CatalogueItem(
       id: id ?? this.id,
       bookUid: bookUid ?? this.bookUid,
       title: title ?? this.title,

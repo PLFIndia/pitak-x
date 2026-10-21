@@ -6,10 +6,11 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S0** (baseline recorded)
+- Last completed session: **S1** (`Book` → `CatalogueItem`)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: `9ca2dba` (plan rev 5) at S0 start; S0's own commit follows it
-- Full suite last green at: **S0, 2026-10-21** (`flutter test --exclude-tags golden`)
+- Last commit: S1's commit (S0 was `8899cc0`)
+- Full suite last green at: **S1, 2026-10-21** — 2426 tests, 63 s
+  (`flutter test --exclude-tags golden`)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -36,16 +37,38 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S1 — Rename `Book` → `CatalogueItem`.** Nothing in flight. Follow the
-plan's S1 steps verbatim.
+**S2 — Rename `bookUid` → `itemUid`, `BookSourceType`, `BookSort`.** Nothing
+in flight. Follow the plan's S2 steps verbatim.
 
-Notes for it: `git grep` on this macOS build does not support `\b`; use
-`git grep -P '\bBook\b'` (PCRE) or `grep -rnw` for the identifier census.
+Notes for it:
+
+- `git grep` on this macOS build does not support `\b`; use
+  `git grep -P '\bbookUid\b'` (PCRE). The system `grep` has no `-P` either.
+- Do the identifier replacement with a lexer that skips string literals and
+  comments (S1 used `/tmp/rename_book.py`-style tokenising: `//`, `/* */`,
+  `'…'`, `"…"`, `r'…'`, triple quotes, `${}` interpolation). A blind regex
+  would rewrite JSON keys and test fixtures — exactly what step 1's
+  "restore every string literal" clause warns about. Treat the `.g.dart`
+  files like any other file, then run `gen` and confirm it only re-emits what
+  the script already wrote.
+- `git ls-files -- 'lib/**/*.dart'` does NOT match top-level files
+  (`lib/main.dart`, `test/widget_test.dart`, `test/app_lock_navigator_test.dart`,
+  `integration_test/vault_smoke_test.dart`); include them explicitly.
+- Expect `dart format` to wrap lines where the identifier got longer and the
+  `lines_longer_than_80_chars` lint to flag comment lines — reflow those
+  paragraphs (S1 did this with a small textwrap script). Re-check the file-size
+  ratchet afterwards (see Deviations).
 
 ## Deviations from plan
 
-_(None yet. Record as: `S<n>` — what the plan said — what was done instead —
-why. A deviation is a decision; the next planning step reconciles it.)_
+- `S1` — plan step 5 said "Ratchet map: no paths change in this session"
+  (and B.5: no test-expectation changes) — two ratchet SIZES were bumped:
+  `add_book_page.dart` 638 → 640 and `merge_library_use_case.dart` 543 → 544
+  — the longer identifier made `dart format` wrap a method signature and an
+  expression body; no logic was added. Comment paragraphs with slack were
+  reflowed first (`library_merge_engine.dart` came back to exactly 721). The
+  bump carries a comment in `layer_boundaries_test.dart`. S8 and S14 lower
+  these files anyway.
 
 ## Open issues / blocked
 
@@ -57,4 +80,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | Session | State | Commit | Date | Notes |
 |---------|-------|--------|------|-------|
 | — | — | `9ca2dba` | 2026-10-21 | plan committed; no sessions run |
-| S0 | Done | _(this commit)_ | 2026-10-21 | baseline: 2426 tests green in 86 s, 7 platform goldens (verify in CI); gen no diff |
+| S0 | Done | `8899cc0` | 2026-10-21 | baseline: 2426 tests green in 86 s, 7 platform goldens (verify in CI); gen no diff |
+| S1 | Done | _(this commit)_ | 2026-10-21 | `Book` → `CatalogueItem`, 130 files; remaining `\bBook\b` in lib+test = 87, all prose/UI strings/fixtures; full green 2426 |

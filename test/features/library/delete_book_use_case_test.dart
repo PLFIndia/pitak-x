@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_book_use_case.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 
 /// Minimal book repo recording deletes; only `delete` is exercised here.
@@ -10,7 +10,8 @@ class _FakeBooks implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
@@ -19,10 +20,10 @@ class _FakeBooks implements BookRepository {
   Failure? deleteFailure;
 
   /// The row the use case reads (for its cover) before deleting; null = gone.
-  Book? row;
+  CatalogueItem? row;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(row?.id == id ? row : null);
 
   @override
@@ -139,7 +140,7 @@ void main() {
   // file — AFTER the row is gone, and never when the delete failed.
   test('a successful delete releases the cover reference', () async {
     final books = _FakeBooks()
-      ..row = const Book(id: 5, title: 'X', coverUrl: 'covers/a.jpg');
+      ..row = const CatalogueItem(id: 5, title: 'X', coverUrl: 'covers/a.jpg');
     final released = <String?>[];
     final useCase = DeleteBookUseCase(
       books: books,
@@ -153,7 +154,7 @@ void main() {
 
   test('a failed delete does NOT release the cover', () async {
     final books = _FakeBooks()
-      ..row = const Book(id: 5, title: 'X', coverUrl: 'covers/a.jpg')
+      ..row = const CatalogueItem(id: 5, title: 'X', coverUrl: 'covers/a.jpg')
       ..deleteFailure = const StorageFailure('locked');
     final released = <String?>[];
     final useCase = DeleteBookUseCase(

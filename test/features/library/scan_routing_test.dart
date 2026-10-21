@@ -19,7 +19,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
@@ -31,10 +31,10 @@ import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 class _MemRepo implements BookRepository {
   _MemRepo(this.books);
 
-  final List<Book> books;
+  final List<CatalogueItem> books;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(books.where((b) => b.id == id).firstOrNull);
 
   @override
@@ -45,12 +45,15 @@ class _MemRepo implements BookRepository {
   }) async => right(BookPage(items: books, hasMore: false));
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(
-    isbn.trim().isEmpty ? null : books.where((b) => b.isbn == isbn).firstOrNull,
-  );
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(
+        isbn.trim().isEmpty
+            ? null
+            : books.where((b) => b.isbn == isbn).firstOrNull,
+      );
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
@@ -59,9 +62,11 @@ class _MemRepo implements BookRepository {
     BookSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -70,19 +75,21 @@ class _MemRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
-const _existing = Book(
+const _existing = CatalogueItem(
   id: 7,
   bookUid: 'uid-7',
   title: 'Dune',
@@ -95,7 +102,7 @@ Widget _host(
   _MemRepo repo,
   String coversDir,
   String isbn,
-  Future<Either<Failure, Book?>> Function(String isbn) findByIsbn,
+  Future<Either<Failure, CatalogueItem?>> Function(String isbn) findByIsbn,
 ) => ProviderScope(
   overrides: [
     bookRepositoryProvider.overrideWith((ref) async => repo),

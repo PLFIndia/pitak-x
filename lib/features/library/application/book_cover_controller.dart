@@ -15,7 +15,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'book_cover_controller.g.dart';
@@ -35,7 +35,7 @@ class BookCoverController extends _$BookCoverController {
   /// path is typed: unprocessable image → [ValidationFailure]; store/repo
   /// errors surface as their own [Failure] (never swallowed, §5).
   Future<Either<Failure, String>> replaceCover(
-    Book book,
+    CatalogueItem book,
     Uint8List rawBytes,
   ) async {
     // Worker isolate (N10-a): a fresh camera capture is a multi-megapixel

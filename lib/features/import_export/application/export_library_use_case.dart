@@ -26,7 +26,7 @@ import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -135,11 +135,13 @@ class ExportLibraryUseCase {
   }) async {
     final stamp = now ?? DateTime.now().millisecondsSinceEpoch;
 
-    var bookList = <Book>[];
+    var bookList = <CatalogueItem>[];
     if (scope != ExportScope.wishlistOnly || format == ExportFormat.pdf) {
       final res = await _books.getAll();
-      if (res.isLeft()) return left((res as Left<Failure, List<Book>>).value);
-      bookList = res.getOrElse((_) => const <Book>[]);
+      if (res.isLeft()) {
+        return left((res as Left<Failure, List<CatalogueItem>>).value);
+      }
+      bookList = res.getOrElse((_) => const <CatalogueItem>[]);
     }
     var wishlistList = <WishlistBook>[];
     if (scope != ExportScope.libraryOnly && format != ExportFormat.pdf) {
@@ -210,7 +212,7 @@ class ExportLibraryUseCase {
   }
 
   /// Flat library CSV with a header row; values RFC4180-quoted.
-  String _libraryCsv(List<Book> books) {
+  String _libraryCsv(List<CatalogueItem> books) {
     const headers = [
       'title',
       'author',

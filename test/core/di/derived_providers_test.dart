@@ -20,7 +20,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -35,10 +35,11 @@ import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 class _FakeBookRepo implements BookRepository {
   _FakeBookRepo(this.books);
 
-  final List<Book> books;
+  final List<CatalogueItem> books;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(List.of(books));
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(List.of(books));
 
   @override
   Future<Either<Failure, BookPage>> page(
@@ -46,7 +47,7 @@ class _FakeBookRepo implements BookRepository {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : List.of(books);
+    final rows = query.isSearch ? const <CatalogueItem>[] : List.of(books);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -71,7 +72,7 @@ class _FakeBookRepo implements BookRepository {
   ) async => right(const []);
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     for (final b in books) {
       if (b.id == id) return right(b);
     }
@@ -80,13 +81,15 @@ class _FakeBookRepo implements BookRepository {
 
   // Remaining members: inert defaults (this suite never calls them).
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -95,14 +98,16 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
@@ -198,7 +203,7 @@ void main() {
   group('N04 — derived providers watch their real inputs', () {
     test('libraryLanguages follows a library mutation', () async {
       final repo = _FakeBookRepo([
-        const Book(id: 1, title: 'Godaan', language: 'Hindi'),
+        const CatalogueItem(id: 1, title: 'Godaan', language: 'Hindi'),
       ]);
       final container = makeContainer(repo);
       final sub = container.listen(libraryLanguagesProvider, (_, __) {});
@@ -206,7 +211,9 @@ void main() {
       await container.read(libraryControllerProvider.future);
       expect(await container.read(libraryLanguagesProvider.future), ['Hindi']);
 
-      repo.books.add(const Book(id: 2, title: 'Dune', language: 'English'));
+      repo.books.add(
+        const CatalogueItem(id: 2, title: 'Dune', language: 'English'),
+      );
       await container.read(libraryControllerProvider.notifier).refresh();
 
       expect(
@@ -216,7 +223,9 @@ void main() {
     });
 
     test('bookTitle follows a rename', () async {
-      final repo = _FakeBookRepo([const Book(id: 1, title: 'Old title')]);
+      final repo = _FakeBookRepo([
+        const CatalogueItem(id: 1, title: 'Old title'),
+      ]);
       final container = makeContainer(repo);
       final sub = container.listen(bookTitleProvider(bookId: 1), (_, __) {});
       addTearDown(sub.close);
@@ -226,7 +235,7 @@ void main() {
         'Old title',
       );
 
-      repo.books[0] = const Book(id: 1, title: 'New title');
+      repo.books[0] = const CatalogueItem(id: 1, title: 'New title');
       await container.read(libraryControllerProvider.notifier).refresh();
 
       expect(
@@ -247,7 +256,9 @@ void main() {
       final first = await container.read(pendingSnapshotProvider.future);
       expect(first!.staleMetadataBooks, isEmpty);
 
-      repo.books.add(const Book(id: 1, title: 'Bare', needsMetadata: true));
+      repo.books.add(
+        const CatalogueItem(id: 1, title: 'Bare', needsMetadata: true),
+      );
       await container.read(libraryControllerProvider.notifier).refresh();
 
       final second = await container.read(pendingSnapshotProvider.future);

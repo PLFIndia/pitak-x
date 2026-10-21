@@ -21,7 +21,7 @@
 /// only upload size. Flagged as a follow-up.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -161,7 +161,7 @@ final class PublishLibraryUseCase {
   /// previously published descriptor in the same commit (M14 `deletePaths`),
   /// so a stale location never outlives the user's opt-out.
   Future<PublishResult> call({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required Map<int, int>? activeLoanCounts,
     required List<int> Function(PublishExport) encodeBooksJson,
     required List<int>? libraryJson,
@@ -372,7 +372,7 @@ final class PublishLibraryUseCase {
     return true;
   }
 
-  String? _availabilityFor(Book book, Map<int, int>? counts) {
+  String? _availabilityFor(CatalogueItem book, Map<int, int>? counts) {
     if (counts == null) return null;
     final active = counts[book.id] ?? 0;
     return active >= book.copyCount ? PublishBook.out : PublishBook.available;
@@ -393,7 +393,7 @@ final class PublishLibraryUseCase {
   }
 
   Future<_CoverDecision> _decideCover(
-    Book book,
+    CatalogueItem book,
     PublishManifest manifest,
   ) async {
     final src = book.coverUrl?.trim() ?? '';

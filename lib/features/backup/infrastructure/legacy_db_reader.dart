@@ -16,7 +16,7 @@
 /// This is the opposite of JSON/CSV *import* (which mints fresh ids): a backup
 /// restore is an authoritative overwrite of local state, not an additive merge.
 ///
-/// Review finding M15: every row is passed through `Book.validate` /
+/// Review finding M15: every row is passed through `CatalogueItem.validate` /
 /// `WishlistBook.validate` BEFORE it is returned. A backup is untrusted input
 /// — anyone can hand the user a `.pitabak` file — and coercion is not
 /// validation: an out-of-range `added_date` used to persist and then throw
@@ -29,18 +29,18 @@
 /// [ValidationFailure] naming the table, row id and field — never the value.
 /// Cover references are the one exception: they are NORMALISED (dropped to
 /// null) and counted, never a rejection, so a real pre-M15 backup carrying a
-/// now-disallowed https host still restores (see `Book.validate`).
+/// now-disallowed https host still restores (see `CatalogueItem.validate`).
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 
 /// The validated result of reading one legacy table: the rows (already
-/// normalised by `Book.validate` / `WishlistBook.validate`) and how many
+/// normalised by `CatalogueItem.validate` / `WishlistBook.validate`) and how many
 /// cover references were dropped because they pointed to an unsupported site.
 final class LegacyRows<T> {
   /// Creates a validated row set.
@@ -49,7 +49,7 @@ final class LegacyRows<T> {
   /// The validated entities, in row order.
   final List<T> books;
 
-  /// Cover references normalised to null (see `Book.validate`).
+  /// Cover references normalised to null (see `CatalogueItem.validate`).
   final int coversDropped;
 }
 
@@ -60,25 +60,29 @@ class LegacyDbReader {
 
   final CommonDatabase _db;
 
-  /// Reads every row of the `books` table into validated [Book] entities,
-  /// preserving `id` and `book_uid`. Tolerant enum tokens (unknown → null).
+  /// Reads every row of the `books` table into validated [CatalogueItem]
+  /// entities, preserving `id` and `book_uid`. Tolerant enum tokens (unknown →
+  /// null).
   ///
-  /// Returns a Left on the first row that fails `Book.validate`; the caller
-  /// refuses the whole archive. A Right carries the validated rows and the
-  /// count of cover references that were normalised to null.
-  Either<Failure, LegacyRows<Book>> readBooks() {
+  /// Returns a Left on the first row that fails `CatalogueItem.validate`; the
+  /// caller refuses the whole archive. A Right carries the validated rows and
+  /// the count of cover references that were normalised to null.
+  Either<Failure, LegacyRows<CatalogueItem>> readBooks() {
     final result = _db.select(
       'SELECT id, book_uid, title, title_transliteration, author, isbn, '
       'publisher, published_year, genre, cover_url, page_count, language, '
       'notes, location, source_type, source_detail, age_group, added_date, '
       'copy_count, needs_metadata, removed, removed_at, added_by FROM books',
     );
-    final books = <Book>[];
+    final books = <CatalogueItem>[];
     var coversDropped = 0;
     for (final row in result) {
       final built = _book(row);
-      final checked = Book.validate(built);
-      final validated = checked.fold<Book?>((errors) => null, (book) => book);
+      final checked = CatalogueItem.validate(built);
+      final validated = checked.fold<CatalogueItem?>(
+        (errors) => null,
+        (book) => book,
+      );
       if (validated == null) {
         return left(
           _refusal('books', built.id, checked.getLeft().toNullable()!),
@@ -139,8 +143,8 @@ class LegacyDbReader {
     );
   }
 
-  Book _book(Row r) => Book(
-    id: _int(r['id']) ?? Book.emptyId,
+  CatalogueItem _book(Row r) => CatalogueItem(
+    id: _int(r['id']) ?? CatalogueItem.emptyId,
     bookUid: _str(r['book_uid']),
     title: _str(r['title']) ?? '',
     titleTransliteration: _str(r['title_transliteration']),
@@ -212,7 +216,7 @@ class LegacyDbReader {
   /// A required epoch-millis date column. NULL (absent) maps to the `0`
   /// "unset" sentinel; a present, valid value is kept; a present but
   /// UNCOERCIBLE value (REAL Infinity, an unparseable string) maps to null so
-  /// the row is refused by `Book.validate` / `WishlistBook.validate` instead
+  /// the row is refused by `CatalogueItem.validate` / `WishlistBook.validate` instead
   /// of being silently rewritten to "unset".
   static int _requiredDateMillis(Object? v) {
     if (v == null) return 0;

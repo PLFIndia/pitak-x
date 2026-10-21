@@ -7,7 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
@@ -65,7 +65,7 @@ void main() {
     'a refused download logs the book id and reason, never the URL',
     () async {
       final repo = _OneBookRepo(
-        const Book(id: 42, title: 'Dune', coverUrl: url),
+        const CatalogueItem(id: 42, title: 'Dune', coverUrl: url),
       );
       final c = make(repo, const CoverRefused(CoverRefusal.redirectRefused));
 
@@ -85,7 +85,9 @@ void main() {
   );
 
   test('a successful download logs nothing', () async {
-    final repo = _OneBookRepo(const Book(id: 42, title: 'Dune', coverUrl: url));
+    final repo = _OneBookRepo(
+      const CatalogueItem(id: 42, title: 'Dune', coverUrl: url),
+    );
     final c = make(repo, const CoverFetched([1, 2, 3]));
 
     final useCase = await c.read(materializeRemoteCoverUseCaseProvider.future);
@@ -120,20 +122,20 @@ void main() {
 
 class _OneBookRepo implements BookRepository {
   _OneBookRepo(this.book);
-  Book book;
+  CatalogueItem book;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(id == book.id ? book : null);
 
   @override
-  Future<Either<Failure, Book>> update(Book b) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async {
     book = b;
     return right(b);
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right([book]);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right([book]);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

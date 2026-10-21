@@ -3,7 +3,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
@@ -17,13 +17,13 @@ class _InterceptBooks implements BookRepository {
   Future<void> Function()? afterRead;
   Future<void> Function()? afterReplace;
   @override
-  Future<Either<Failure, List<Book>>> getAll() async {
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async {
     await afterRead?.call();
     return readFailure == null ? delegate.getAll() : left(readFailure!);
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     final result = await delegate.replaceAll(books);
     await afterReplace?.call();
     return result;
@@ -37,9 +37,9 @@ class _InterceptBooks implements BookRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Original');
+const _book = CatalogueItem(id: 7, bookUid: 'stable', title: 'Original');
 const _decision = MergeDiffersDecision(
-  incomingBooks: [Book(id: 99, bookUid: 'stable', title: 'Updated')],
+  incomingBooks: [CatalogueItem(id: 99, bookUid: 'stable', title: 'Updated')],
   incomingLibraryId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   incomingLibraryName: 'Incoming',
   localLibraryName: 'Local',

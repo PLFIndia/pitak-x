@@ -9,7 +9,7 @@
 library;
 
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Parses Pitaka-JSON library files (schema v3) without throwing.
@@ -33,7 +33,7 @@ abstract interface class LibraryJsonEncoder {
   /// [libraryId]/[libraryName] are omitted (merge gate treats them as
   /// "unknown library").
   String export({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required int exportedAt,
     String libraryId,

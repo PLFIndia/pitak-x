@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 
 Uint8List _bundle(String json) {
@@ -38,14 +38,14 @@ void main() {
       addTearDown(db.close);
       final books = DriftBookRepository(db);
       await books.insert(
-        const Book(
+        const CatalogueItem(
           title: 'Keep',
           bookUid: 'old',
           isbn: '111',
           coverUrl: 'covers/existing.jpg',
         ),
       );
-      await books.insert(const Book(title: 'Other', isbn: '999'));
+      await books.insert(const CatalogueItem(title: 'Other', isbn: '999'));
       final container = ProviderContainer(
         overrides: [
           appDatabaseProvider.overrideWith((ref) async => db),

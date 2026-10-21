@@ -5,7 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
@@ -31,23 +31,24 @@ class _MemRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> books = [];
+  final List<CatalogueItem> books = [];
   int _next = 1;
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     final saved = book.copyWith(id: _next++, bookUid: 'uid-${book.title}');
     books.add(saved);
     return right(saved);
   }
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     final i = books.indexWhere((b) => b.id == book.id);
     if (i < 0) return left(const NotFoundFailure());
     books[i] = book;
@@ -55,11 +56,11 @@ class _MemRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(books.where((b) => b.id == id).firstOrNull);
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
@@ -67,7 +68,7 @@ class _MemRepo implements BookRepository {
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
@@ -79,7 +80,7 @@ class _MemRepo implements BookRepository {
   // S34: derived from the stored books, like the real repository, so the
   // AddBookUseCase duplicate-ISBN pre-check fires in widget tests too.
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async {
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
     if (isbn.trim().isEmpty) return right(null);
     return right(books.where((b) => b.isbn == isbn).firstOrNull);
   }
@@ -112,9 +113,10 @@ class _MemRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -131,7 +133,7 @@ Future<void> _tapSave(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
-Widget _host(_MemRepo repo, {Book? book, LookupResult? lookup}) {
+Widget _host(_MemRepo repo, {CatalogueItem? book, LookupResult? lookup}) {
   return ProviderScope(
     overrides: [
       bookRepositoryProvider.overrideWith((ref) async => repo),
@@ -186,7 +188,7 @@ void main() {
   ) async {
     final repo = _MemRepo();
     final existing = (await repo.insert(
-      const Book(title: 'Original'),
+      const CatalogueItem(title: 'Original'),
     )).getOrElse((_) => throw StateError('seed failed'));
 
     await tester.pumpWidget(_host(repo, book: existing));
@@ -272,7 +274,7 @@ void main() {
     );
     final repo = _MemRepo();
     final existing = (await repo.insert(
-      const Book(title: 'Local cover', coverUrl: 'covers/local.jpg'),
+      const CatalogueItem(title: 'Local cover', coverUrl: 'covers/local.jpg'),
     )).getOrElse((_) => throw StateError('seed failed'));
 
     await tester.pumpWidget(
@@ -303,7 +305,7 @@ void main() {
   ) async {
     final repo = _MemRepo();
     final stale = (await repo.insert(
-      const Book(title: 'Original', coverUrl: 'covers/old.jpg'),
+      const CatalogueItem(title: 'Original', coverUrl: 'covers/old.jpg'),
     )).getOrElse((_) => throw StateError('seed failed'));
     // The row moved on after the snapshot was taken.
     await repo.update(
@@ -330,7 +332,7 @@ void main() {
   ) async {
     final repo = _MemRepo();
     final gone = (await repo.insert(
-      const Book(title: 'Ghost'),
+      const CatalogueItem(title: 'Ghost'),
     )).getOrElse((_) => throw StateError('seed failed'));
     repo.books.clear();
 
@@ -352,7 +354,9 @@ void main() {
     'S34: saving a duplicate ISBN says it is already in the library',
     (tester) async {
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'Dune', isbn: '9780441172719'));
+      await repo.insert(
+        const CatalogueItem(title: 'Dune', isbn: '9780441172719'),
+      );
 
       await tester.pumpWidget(_host(repo));
       await tester.pumpAndSettle();
@@ -382,7 +386,11 @@ void main() {
   ) async {
     final repo = _MemRepo();
     await repo.insert(
-      const Book(title: 'Old copy', isbn: '9780441172719', removed: true),
+      const CatalogueItem(
+        title: 'Old copy',
+        isbn: '9780441172719',
+        removed: true,
+      ),
     );
 
     await tester.pumpWidget(_host(repo));
@@ -443,8 +451,8 @@ void main() {
       tester,
     ) async {
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'seed1', language: 'Hindi'));
-      await repo.insert(const Book(title: 'seed2', language: 'Tamil'));
+      await repo.insert(const CatalogueItem(title: 'seed1', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'seed2', language: 'Tamil'));
       await tester.pumpWidget(_host(repo));
       await tester.pumpAndSettle();
 
@@ -462,7 +470,7 @@ void main() {
       tester,
     ) async {
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'seed', language: 'Hindi'));
       await tester.pumpWidget(_host(repo));
       await tester.pumpAndSettle();
 
@@ -480,9 +488,9 @@ void main() {
       tester,
     ) async {
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'seed', language: 'Hindi'));
       // Bypass the repo list on purpose: an old-backup spelling.
-      const stray = Book(id: 42, title: 'Old', language: 'Sanskrit');
+      const stray = CatalogueItem(id: 42, title: 'Old', language: 'Sanskrit');
       repo.books.add(stray);
       // Only `Hindi` is offered: the stray row is not in the list.
       repo.books.removeWhere((b) => b.id == 42);
@@ -501,7 +509,7 @@ void main() {
     ) async {
       final repo = _MemRepo();
       final existing = (await repo.insert(
-        const Book(title: 'Seed', language: 'Hindi'),
+        const CatalogueItem(title: 'Seed', language: 'Hindi'),
       )).getOrElse((_) => throw StateError('seed failed'));
 
       await tester.pumpWidget(_host(repo, book: existing));
@@ -519,7 +527,9 @@ void main() {
       // the name and, since it is in the list, selects it.
       const meta = BookMetadata(isbn: '9780140449136', language: 'English');
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'seed', language: 'English'));
+      await repo.insert(
+        const CatalogueItem(title: 'seed', language: 'English'),
+      );
       await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
       await tester.pumpAndSettle();
 
@@ -541,7 +551,7 @@ void main() {
     ) async {
       const meta = BookMetadata(isbn: '9780140449136', language: 'Greek');
       final repo = _MemRepo();
-      await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'seed', language: 'Hindi'));
       await tester.pumpWidget(_host(repo, lookup: const LookupFound(meta)));
       await tester.pumpAndSettle();
 

@@ -7,7 +7,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/book_sorter.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -19,12 +19,12 @@ T ok<T>(Either<Failure, T> either) =>
 /// with a deliberately small [pageSize] so every test crosses several page
 /// seams. This is how the controller consumes the repository (N10-d part 2);
 /// there is no whole-list read any more.
-Future<List<Book>> _allPages(
+Future<List<CatalogueItem>> _allPages(
   DriftBookRepository repo,
   LibraryQuery query, {
   int pageSize = 7,
 }) async {
-  final out = <Book>[];
+  final out = <CatalogueItem>[];
   var page = ok<BookPage>(await repo.page(query, limit: pageSize));
   out.addAll(page.items);
   // Guard against a repository that never says "done".
@@ -44,13 +44,13 @@ Future<List<Book>> _allPages(
 /// deliberate `addedDate` ties, and titles that all share the FTS token
 /// `probe` so a search returns the whole set. Seeded [Random] = repeatable
 /// fixture, not security randomness.
-List<Book> _fixture({int rows = 40, int seed = 20260913}) {
+List<CatalogueItem> _fixture({int rows = 40, int seed = 20260913}) {
   final rnd = Random(seed);
   const bands = [...AgeGroup.values, null];
   const languages = ['Hindi', 'English', 'Ελληνικά', '', null];
   return List.generate(
     rows,
-    (i) => Book(
+    (i) => CatalogueItem(
       title: 'probe $i',
       ageGroup: bands[rnd.nextInt(bands.length)],
       language: languages[rnd.nextInt(languages.length)],
@@ -62,13 +62,18 @@ List<Book> _fixture({int rows = 40, int seed = 20260913}) {
 
 /// The Dart-side oracle: [BookSorter] over the persisted rows, narrowed to
 /// [language] with the D1-a rule (exact match on the stored string).
-List<int> _expectedIds(List<Book> all, BookSort sort, String? language) {
+List<int> _expectedIds(
+  List<CatalogueItem> all,
+  BookSort sort,
+  String? language,
+) {
   final narrowed = language == null
       ? all
       : all.where((b) => b.language == language).toList();
   // Ties are broken by id ASC in SQL; the oracle must state the same rule so
   // the comparison is total (BookSorter alone is only stable on input order).
-  final byId = List<Book>.of(narrowed)..sort((a, b) => a.id.compareTo(b.id));
+  final byId = List<CatalogueItem>.of(narrowed)
+    ..sort((a, b) => a.id.compareTo(b.id));
   return BookSorter.sort(byId, sort).map((b) => b.id).toList();
 }
 
@@ -88,7 +93,7 @@ void main() {
   test(
     'insert mints a uid and round-trips every field incl. age token',
     () async {
-      const book = Book(
+      const book = CatalogueItem(
         title: 'भारत: गांधी के बाद',
         author: 'Ramachandra Guha',
         ageGroup: AgeGroup.advanced,
@@ -99,11 +104,11 @@ void main() {
         removedAt: 200,
       );
 
-      final inserted = ok<Book>(await repo.insert(book));
+      final inserted = ok<CatalogueItem>(await repo.insert(book));
       expect(inserted.bookUid, isNotNull);
       expect(inserted.id, greaterThan(0));
 
-      final all = ok<List<Book>>(await repo.getAll());
+      final all = ok<List<CatalogueItem>>(await repo.getAll());
       expect(all.length, 1);
       final got = all.single;
       expect(got.title, 'भारत: गांधी के बाद');
@@ -118,9 +123,13 @@ void main() {
 
   test('search hits the FTS5 index and returns full domain books', () async {
     await repo.insert(
-      const Book(title: 'Wittgenstein', author: 'Ray Monk', addedDate: 1),
+      const CatalogueItem(
+        title: 'Wittgenstein',
+        author: 'Ray Monk',
+        addedDate: 1,
+      ),
     );
-    await repo.insert(const Book(title: 'Gandhi', addedDate: 2));
+    await repo.insert(const CatalogueItem(title: 'Gandhi', addedDate: 2));
 
     final hits = ok<BookPage>(
       await repo.page(
@@ -134,7 +143,9 @@ void main() {
   });
 
   test('search neutralises FTS operators in user input', () async {
-    await repo.insert(const Book(title: 'C++ Programming', addedDate: 1));
+    await repo.insert(
+      const CatalogueItem(title: 'C++ Programming', addedDate: 1),
+    );
     // A bare '+' / quote must not crash the query.
     final res = await repo.page(
       LibraryQuery(text: 'C++ "', sort: BookSort.recentlyAdded),
@@ -145,11 +156,11 @@ void main() {
 
   test('insertAll preserves existing uids and assigns missing ones', () async {
     final res = await repo.insertAll(const [
-      Book(title: 'A', bookUid: 'keep-me', addedDate: 1),
-      Book(title: 'B', addedDate: 2),
+      CatalogueItem(title: 'A', bookUid: 'keep-me', addedDate: 1),
+      CatalogueItem(title: 'B', addedDate: 2),
     ]);
     expect(ok<int>(res), 2);
-    final all = ok<List<Book>>(await repo.getAll());
+    final all = ok<List<CatalogueItem>>(await repo.getAll());
     final a = all.firstWhere((b) => b.title == 'A');
     final b = all.firstWhere((b) => b.title == 'B');
     expect(a.bookUid, 'keep-me');
@@ -157,20 +168,22 @@ void main() {
   });
 
   test('findByIsbn returns the match, null for unknown/blank', () async {
-    await repo.insert(const Book(title: 'X', isbn: '12345', addedDate: 1));
-    expect(ok<Book?>(await repo.findByIsbn('12345'))!.title, 'X');
-    expect(ok<Book?>(await repo.findByIsbn('nope')), isNull);
-    expect(ok<Book?>(await repo.findByIsbn('')), isNull);
+    await repo.insert(
+      const CatalogueItem(title: 'X', isbn: '12345', addedDate: 1),
+    );
+    expect(ok<CatalogueItem?>(await repo.findByIsbn('12345'))!.title, 'X');
+    expect(ok<CatalogueItem?>(await repo.findByIsbn('nope')), isNull);
+    expect(ok<CatalogueItem?>(await repo.findByIsbn('')), isNull);
   });
 
   test(
     'delete hard-removes the row; deleting a missing id is a no-op',
     () async {
-      final inserted = ok<Book>(
-        await repo.insert(const Book(title: 'Doomed', addedDate: 1)),
+      final inserted = ok<CatalogueItem>(
+        await repo.insert(const CatalogueItem(title: 'Doomed', addedDate: 1)),
       );
       ok<Unit>(await repo.delete(inserted.id));
-      expect(ok<List<Book>>(await repo.getAll()), isEmpty);
+      expect(ok<List<CatalogueItem>>(await repo.getAll()), isEmpty);
       // Idempotent: deleting again does not throw / errors out.
       ok<Unit>(await repo.delete(inserted.id));
     },
@@ -183,25 +196,25 @@ void main() {
       'insertAll rolls back entirely when one row violates UNIQUE isbn',
       () async {
         final res = await repo.insertAll(const [
-          Book(title: 'A', isbn: '111', addedDate: 1),
-          Book(title: 'B', isbn: '111', addedDate: 2),
+          CatalogueItem(title: 'A', isbn: '111', addedDate: 1),
+          CatalogueItem(title: 'B', isbn: '111', addedDate: 2),
         ]);
         expect(res.isLeft(), isTrue);
         // Nothing committed — not even the first, valid row.
-        expect(ok<List<Book>>(await repo.getAll()), isEmpty);
+        expect(ok<List<CatalogueItem>>(await repo.getAll()), isEmpty);
       },
     );
 
     test('replaceAll swaps the catalogue and keeps incoming uids', () async {
       await repo.insert(
-        const Book(title: 'Old', bookUid: 'old-uid', addedDate: 1),
+        const CatalogueItem(title: 'Old', bookUid: 'old-uid', addedDate: 1),
       );
       final res = await repo.replaceAll(const [
-        Book(title: 'New1', bookUid: 'keep-uid', addedDate: 2),
-        Book(title: 'New2', addedDate: 3),
+        CatalogueItem(title: 'New1', bookUid: 'keep-uid', addedDate: 2),
+        CatalogueItem(title: 'New2', addedDate: 3),
       ]);
       expect(ok<int>(res), 2);
-      final all = ok<List<Book>>(await repo.getAll());
+      final all = ok<List<CatalogueItem>>(await repo.getAll());
       expect(all.map((b) => b.title), unorderedEquals(['New1', 'New2']));
       expect(all.firstWhere((b) => b.title == 'New1').bookUid, 'keep-uid');
       expect(all.firstWhere((b) => b.title == 'New2').bookUid, isNotNull);
@@ -209,17 +222,22 @@ void main() {
 
     test('replaceAll rolls back the deletes when an insert fails', () async {
       await repo.insert(
-        const Book(title: 'Old', bookUid: 'old-uid', isbn: '999', addedDate: 1),
+        const CatalogueItem(
+          title: 'Old',
+          bookUid: 'old-uid',
+          isbn: '999',
+          addedDate: 1,
+        ),
       );
       // Crafted file: two rows sharing one ISBN — the second insert violates
       // the UNIQUE index AFTER the catalogue was deleted.
       final res = await repo.replaceAll(const [
-        Book(title: 'New1', isbn: '111', addedDate: 2),
-        Book(title: 'New2', isbn: '111', addedDate: 3),
+        CatalogueItem(title: 'New1', isbn: '111', addedDate: 2),
+        CatalogueItem(title: 'New2', isbn: '111', addedDate: 3),
       ]);
       expect(res.isLeft(), isTrue);
       // The pre-overwrite catalogue is fully intact.
-      final all = ok<List<Book>>(await repo.getAll());
+      final all = ok<List<CatalogueItem>>(await repo.getAll());
       expect(all, hasLength(1));
       expect(all.single.title, 'Old');
       expect(all.single.bookUid, 'old-uid');
@@ -231,11 +249,11 @@ void main() {
         // Only a crafted import produces isbn '' (the UI trims to null); two
         // such rows must not collide on the UNIQUE index.
         final res = await repo.insertAll(const [
-          Book(title: 'A', isbn: '', addedDate: 1),
-          Book(title: 'B', isbn: '  ', addedDate: 2),
+          CatalogueItem(title: 'A', isbn: '', addedDate: 1),
+          CatalogueItem(title: 'B', isbn: '  ', addedDate: 2),
         ]);
         expect(ok<int>(res), 2);
-        final all = ok<List<Book>>(await repo.getAll());
+        final all = ok<List<CatalogueItem>>(await repo.getAll());
         expect(all.map((b) => b.isbn), everyElement(isNull));
       },
     );
@@ -246,19 +264,27 @@ void main() {
     test(
       'runInTransaction rolls back every write when the body fails',
       () async {
-        ok(await repo.insert(const Book(title: 'Keep', bookUid: 'keep')));
+        ok(
+          await repo.insert(
+            const CatalogueItem(title: 'Keep', bookUid: 'keep'),
+          ),
+        );
         final result = await repo.runInTransaction<int>(() async {
-          ok(await repo.insert(const Book(title: 'One', bookUid: 'u1')));
-          ok(await repo.insert(const Book(title: 'Two', bookUid: 'u2')));
+          ok(
+            await repo.insert(const CatalogueItem(title: 'One', bookUid: 'u1')),
+          );
+          ok(
+            await repo.insert(const CatalogueItem(title: 'Two', bookUid: 'u2')),
+          );
           // A UNIQUE collision on book_uid → Left → whole transaction undone.
           final dup = await repo.insert(
-            const Book(title: 'Dup', bookUid: 'u1'),
+            const CatalogueItem(title: 'Dup', bookUid: 'u1'),
           );
           if (dup.isLeft()) return dup.map((_) => 0);
           return right(3);
         });
         expect(result.isLeft(), isTrue);
-        final all = ok<List<Book>>(await repo.getAll());
+        final all = ok<List<CatalogueItem>>(await repo.getAll());
         expect(all.map((b) => b.title), [
           'Keep',
         ], reason: 'One/Two rolled back');
@@ -267,19 +293,19 @@ void main() {
 
     test('runInTransaction commits when the body succeeds', () async {
       final result = await repo.runInTransaction<int>(() async {
-        ok(await repo.insert(const Book(title: 'One')));
-        ok(await repo.insert(const Book(title: 'Two')));
+        ok(await repo.insert(const CatalogueItem(title: 'One')));
+        ok(await repo.insert(const CatalogueItem(title: 'Two')));
         return right(2);
       });
       expect(ok<int>(result), 2);
-      expect(ok<List<Book>>(await repo.getAll()), hasLength(2));
+      expect(ok<List<CatalogueItem>>(await repo.getAll()), hasLength(2));
     });
 
     test('findByUid finds by stable identity; blank → null', () async {
-      ok(await repo.insert(const Book(title: 'A', bookUid: 'abc')));
-      expect(ok<Book?>(await repo.findByUid('abc'))?.title, 'A');
-      expect(ok<Book?>(await repo.findByUid('zzz')), isNull);
-      expect(ok<Book?>(await repo.findByUid('  ')), isNull);
+      ok(await repo.insert(const CatalogueItem(title: 'A', bookUid: 'abc')));
+      expect(ok<CatalogueItem?>(await repo.findByUid('abc'))?.title, 'A');
+      expect(ok<CatalogueItem?>(await repo.findByUid('zzz')), isNull);
+      expect(ok<CatalogueItem?>(await repo.findByUid('  ')), isNull);
     });
   });
 
@@ -290,12 +316,12 @@ void main() {
   // domain's ordering contract (`BookSorter`, N05), reading the fixture back
   // through SMALL pages so every seam is crossed.
   group('N10-d — order, filter and page are final in SQL', () {
-    late List<Book> persisted;
+    late List<CatalogueItem> persisted;
 
     Future<void> seed(DriftBookRepository into) async {
       persisted = [];
       for (final b in _fixture()) {
-        persisted.add(ok<Book>(await into.insert(b)));
+        persisted.add(ok<CatalogueItem>(await into.insert(b)));
       }
     }
 
@@ -313,13 +339,13 @@ void main() {
           AgeGroup.above6,
           AgeGroup.advanced,
         ]) {
-          ids[band] = ok<Book>(
+          ids[band] = ok<CatalogueItem>(
             await repo.insert(
-              Book(title: band.token, ageGroup: band, addedDate: 1),
+              CatalogueItem(title: band.token, ageGroup: band, addedDate: 1),
             ),
           ).id;
         }
-        ok(await repo.insert(const Book(title: 'none', addedDate: 1)));
+        ok(await repo.insert(const CatalogueItem(title: 'none', addedDate: 1)));
 
         final page = ok<BookPage>(
           await repo.page(LibraryQuery(sort: BookSort.ageGroupAsc), limit: 3),
@@ -372,13 +398,21 @@ void main() {
       'search still narrows by the FTS match before ordering/filtering',
       () async {
         await repo.insert(
-          const Book(title: 'Wittgenstein', language: 'Hindi', addedDate: 1),
+          const CatalogueItem(
+            title: 'Wittgenstein',
+            language: 'Hindi',
+            addedDate: 1,
+          ),
         );
         await repo.insert(
-          const Book(title: 'Gandhi', language: 'Hindi', addedDate: 2),
+          const CatalogueItem(title: 'Gandhi', language: 'Hindi', addedDate: 2),
         );
         await repo.insert(
-          const Book(title: 'Wittgenstein 2', language: 'Tamil', addedDate: 3),
+          const CatalogueItem(
+            title: 'Wittgenstein 2',
+            language: 'Tamil',
+            addedDate: 3,
+          ),
         );
         final hits = ok<BookPage>(
           await repo.page(
@@ -397,10 +431,18 @@ void main() {
     test('a non-ASCII language is found by both reads (SQLite lower() is '
         'ASCII-only; the filter must not depend on it)', () async {
       await repo.insert(
-        const Book(title: 'probe greek', language: 'Ελληνικά', addedDate: 1),
+        const CatalogueItem(
+          title: 'probe greek',
+          language: 'Ελληνικά',
+          addedDate: 1,
+        ),
       );
       await repo.insert(
-        const Book(title: 'probe hindi', language: 'Hindi', addedDate: 2),
+        const CatalogueItem(
+          title: 'probe hindi',
+          language: 'Hindi',
+          addedDate: 2,
+        ),
       );
       final listed = ok<BookPage>(
         await repo.page(
@@ -425,14 +467,14 @@ void main() {
     test(
       'exact ties (same sort key, same addedDate) come back id ASC',
       () async {
-        final a = ok<Book>(
+        final a = ok<CatalogueItem>(
           await repo.insert(
-            const Book(title: 'probe a', language: 'X', addedDate: 7),
+            const CatalogueItem(title: 'probe a', language: 'X', addedDate: 7),
           ),
         );
-        final b = ok<Book>(
+        final b = ok<CatalogueItem>(
           await repo.insert(
-            const Book(title: 'probe b', language: 'X', addedDate: 7),
+            const CatalogueItem(title: 'probe b', language: 'X', addedDate: 7),
           ),
         );
         for (final sort in BookSort.values) {
@@ -511,7 +553,11 @@ void main() {
       // limit > maxLibraryPageSize → maxLibraryPageSize. Seed enough rows to
       // prove the cap bites (40 fixture rows + 500 more = 540 > 500).
       for (var i = 0; i < maxLibraryPageSize; i++) {
-        ok(await repo.insert(Book(title: 'bulk $i', addedDate: 5000 + i)));
+        ok(
+          await repo.insert(
+            CatalogueItem(title: 'bulk $i', addedDate: 5000 + i),
+          ),
+        );
       }
       final capped = ok<BookPage>(
         await repo.page(query, limit: maxLibraryPageSize * 10),
@@ -522,7 +568,7 @@ void main() {
 
     test('a blank text with surrounding whitespace lists (not searches); the '
         'FTS path is only taken for real text', () async {
-      await repo.insert(const Book(title: 'Solo', addedDate: 1));
+      await repo.insert(const CatalogueItem(title: 'Solo', addedDate: 1));
       final listed = ok<BookPage>(
         await repo.page(
           LibraryQuery(text: '   ', sort: BookSort.recentlyAdded),
@@ -542,12 +588,16 @@ void main() {
     test('OFFSET seam (documented D1-a): an insert that sorts before the seam '
         'makes the next page repeat one row', () async {
       for (var i = 0; i < 6; i++) {
-        ok(await repo.insert(Book(title: 'row $i', addedDate: 10 + i)));
+        ok(
+          await repo.insert(CatalogueItem(title: 'row $i', addedDate: 10 + i)),
+        );
       }
       final query = LibraryQuery(sort: BookSort.recentlyAdded);
       final first = ok<BookPage>(await repo.page(query, limit: 3));
       // Newest first: a row newer than everything lands at position 0.
-      ok(await repo.insert(const Book(title: 'newest', addedDate: 999)));
+      ok(
+        await repo.insert(const CatalogueItem(title: 'newest', addedDate: 999)),
+      );
       final second = ok<BookPage>(await repo.page(query, limit: 3, offset: 3));
       expect(second.items.first.id, first.items.last.id, reason: 'seam repeat');
       // Reloading from the top (what the controller does after a write) is
@@ -569,10 +619,14 @@ void main() {
       'insert colliding on the UNIQUE isbn index reports the duplicate',
       () async {
         ok(
-          await repo.insert(const Book(title: 'First', isbn: '9780140449136')),
+          await repo.insert(
+            const CatalogueItem(title: 'First', isbn: '9780140449136'),
+          ),
         );
         final failure = failureOf(
-          await repo.insert(const Book(title: 'Second', isbn: '9780140449136')),
+          await repo.insert(
+            const CatalogueItem(title: 'Second', isbn: '9780140449136'),
+          ),
         );
         expect(failure, isA<DuplicateIsbnFailure>());
         failure as DuplicateIsbnFailure;
@@ -584,19 +638,21 @@ void main() {
 
     test('the duplicate failure carries the removed flag', () async {
       final first = ok(
-        await repo.insert(const Book(title: 'Gone', isbn: '333')),
+        await repo.insert(const CatalogueItem(title: 'Gone', isbn: '333')),
       );
       ok(await repo.markRemoved(first.id, 42));
       final failure = failureOf(
-        await repo.insert(const Book(title: 'Again', isbn: '333')),
+        await repo.insert(const CatalogueItem(title: 'Again', isbn: '333')),
       );
       expect(failure, isA<DuplicateIsbnFailure>());
       expect((failure as DuplicateIsbnFailure).existingIsRemoved, isTrue);
     });
 
     test("update onto ANOTHER row's ISBN reports the duplicate", () async {
-      final a = ok(await repo.insert(const Book(title: 'A', isbn: '111')));
-      ok(await repo.insert(const Book(title: 'B', isbn: '222')));
+      final a = ok(
+        await repo.insert(const CatalogueItem(title: 'A', isbn: '111')),
+      );
+      ok(await repo.insert(const CatalogueItem(title: 'B', isbn: '222')));
       final failure = failureOf(await repo.update(a.copyWith(isbn: '222')));
       expect(failure, isA<DuplicateIsbnFailure>());
       expect((failure as DuplicateIsbnFailure).existingTitle, 'B');
@@ -605,7 +661,9 @@ void main() {
     });
 
     test('update keeping its OWN ISBN succeeds (no self-collision)', () async {
-      final a = ok(await repo.insert(const Book(title: 'A', isbn: '111')));
+      final a = ok(
+        await repo.insert(const CatalogueItem(title: 'A', isbn: '111')),
+      );
       final updated = ok(await repo.update(a.copyWith(title: 'A2')));
       expect(updated.isbn, '111');
       expect(updated.title, 'A2');
@@ -614,9 +672,11 @@ void main() {
     test(
       'a duplicate book_uid is NOT misreported as an ISBN duplicate',
       () async {
-        ok(await repo.insert(const Book(title: 'A', bookUid: 'uid-1')));
+        ok(
+          await repo.insert(const CatalogueItem(title: 'A', bookUid: 'uid-1')),
+        );
         final failure = failureOf(
-          await repo.insert(const Book(title: 'B', bookUid: 'uid-1')),
+          await repo.insert(const CatalogueItem(title: 'B', bookUid: 'uid-1')),
         );
         expect(failure, isA<StorageFailure>());
         expect(failure, isNot(isA<DuplicateIsbnFailure>()));

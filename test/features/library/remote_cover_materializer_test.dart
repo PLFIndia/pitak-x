@@ -10,7 +10,7 @@ import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -40,7 +40,7 @@ class _CountingBooks implements BookRepository {
   final _ScriptedUseCase script;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     script.started.add(id);
     if (!script.holdRuns) return right(null); // → right(unit): "nothing to do"
     final gate = script.gates.putIfAbsent(id, Completer.new);

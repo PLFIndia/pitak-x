@@ -5,13 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 import 'replacement_harness.dart';
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Loaned');
+const _book = CatalogueItem(id: 7, bookUid: 'stable', title: 'Loaned');
 const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
@@ -23,12 +23,17 @@ void main() {
     'real merge preserves loan IDs and never recycles historical IDs',
     () async {
       await h.books.insert(_book);
-      await h.books.insert(const Book(id: 500, title: 'Deleted long ago'));
+      await h.books.insert(
+        const CatalogueItem(id: 500, title: 'Deleted long ago'),
+      );
       await h.books.delete(500);
       h.vault.loans.add(_loan);
       await h.initialize();
       final result = await h.overwrite([
-        const Book(id: 7, title: 'New'), // ordered before the preserved row
+        const CatalogueItem(
+          id: 7,
+          title: 'New',
+        ), // ordered before the preserved row
         _book.copyWith(id: 99, title: 'Updated'),
       ]);
       expect(result.isRight(), isTrue);
@@ -52,7 +57,7 @@ void main() {
         h.vault.loans.add(returned ? _loan.copyWith(returnedDate: 2) : _loan);
         await h.initialize();
         final result = await h.overwrite([
-          const Book(id: 7, bookUid: 'other', title: 'Substitution'),
+          const CatalogueItem(id: 7, bookUid: 'other', title: 'Substitution'),
         ]);
         expect(result.getLeft().toNullable(), isA<ValidationFailure>());
         expect((await h.books.getAll()).toNullable()!.single.bookUid, 'stable');
@@ -245,7 +250,7 @@ void main() {
       expect(
         (await h.overwrite([
           _book,
-          const Book(title: 'Rejected'),
+          const CatalogueItem(title: 'Rejected'),
         ])).getLeft().toNullable(),
         isA<StorageFailure>(),
       );

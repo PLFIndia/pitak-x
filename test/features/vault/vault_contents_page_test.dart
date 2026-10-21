@@ -11,7 +11,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -30,10 +30,12 @@ class _TitleBooks implements BookRepository {
   final Failure? failure;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     final f = failure;
     if (f != null) return left(f);
-    return right(byId.containsKey(id) ? Book(id: id, title: byId[id]!) : null);
+    return right(
+      byId.containsKey(id) ? CatalogueItem(id: id, title: byId[id]!) : null,
+    );
   }
 
   @override

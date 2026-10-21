@@ -10,7 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
@@ -24,16 +24,17 @@ class _FakeBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  Book? updated;
+  CatalogueItem? updated;
   Failure? failUpdateWith;
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     final f = failUpdateWith;
     if (f != null) return left(f);
     updated = book;
@@ -41,7 +42,7 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(updated == null ? const [] : [updated!]);
   @override
   Future<Either<Failure, BookPage>> page(
@@ -49,7 +50,9 @@ class _FakeBookRepo implements BookRepository {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : const <Book>[];
+    final rows = query.isSearch
+        ? const <CatalogueItem>[]
+        : const <CatalogueItem>[];
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -58,9 +61,10 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
@@ -76,12 +80,13 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
@@ -121,7 +126,7 @@ void main() {
     return container;
   }
 
-  const book = Book(id: 7, title: 'Dune');
+  const book = CatalogueItem(id: 7, title: 'Dune');
 
   test('replaceCover stores the JPEG and persists the reference', () async {
     final repo = _FakeBookRepo();
@@ -147,7 +152,11 @@ void main() {
     final container = makeContainer(repo);
     // An existing cover file the book currently points at.
     File('${tmp.path}/old.jpg').writeAsBytesSync([1, 2, 3]);
-    const withOld = Book(id: 7, title: 'Dune', coverUrl: 'covers/old.jpg');
+    const withOld = CatalogueItem(
+      id: 7,
+      title: 'Dune',
+      coverUrl: 'covers/old.jpg',
+    );
 
     final result = await container
         .read(bookCoverControllerProvider.notifier)
@@ -167,7 +176,11 @@ void main() {
       ..failUpdateWith = const StorageFailure('disk full');
     final container = makeContainer(repo);
     File('${tmp.path}/old.jpg').writeAsBytesSync([1, 2, 3]);
-    const withOld = Book(id: 7, title: 'Dune', coverUrl: 'covers/old.jpg');
+    const withOld = CatalogueItem(
+      id: 7,
+      title: 'Dune',
+      coverUrl: 'covers/old.jpg',
+    );
 
     final result = await container
         .read(bookCoverControllerProvider.notifier)

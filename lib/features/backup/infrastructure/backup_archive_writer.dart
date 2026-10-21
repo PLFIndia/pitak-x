@@ -54,7 +54,7 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
@@ -90,7 +90,7 @@ CommonDatabase _openSqlite(String path) => sqlite3.open(path);
 /// record makes it visually obvious at the `Isolate.run` call that only data
 /// crosses.
 typedef _BackupJob = ({
-  List<Book> books,
+  List<CatalogueItem> books,
   List<WishlistBook> wishlist,
   String workDir,
   int exportedAt,
@@ -131,7 +131,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// read, and the blob is ciphertext that already lives as a plain file.
   @override
   Future<Uint8List> build({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,
@@ -237,7 +237,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Writes a Room-compatible `books.db` with the books table and the Room
   /// identity row. No FTS mirror is written (see class doc / the inline note):
   /// the bundled SQLite lacks the FTS4 module and restore never reads it.
-  static void _writeBooksDb(String path, List<Book> books) {
+  static void _writeBooksDb(String path, List<CatalogueItem> books) {
     final db = _openSqlite(path);
     try {
       db

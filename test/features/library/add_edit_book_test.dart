@@ -6,7 +6,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_use_case.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -17,7 +17,7 @@ T ok<T>(Either<Failure, T> e) =>
 
 /// First page of the list for the given intent (these tests seed a few rows,
 /// so one page IS the list). N10-d part 2: `page` is the only list read.
-Future<List<Book>> firstPage(
+Future<List<CatalogueItem>> firstPage(
   DriftBookRepository repo, {
   required BookSort sort,
   String text = '',
@@ -47,14 +47,14 @@ void main() {
 
   group('repository getById + update', () {
     test('getById returns the inserted book, null for missing', () async {
-      final inserted = ok(await repo.insert(const Book(title: 'A')));
+      final inserted = ok(await repo.insert(const CatalogueItem(title: 'A')));
       final found = ok(await repo.getById(inserted.id));
       expect(found?.title, 'A');
       expect(ok(await repo.getById(999999)), isNull);
     });
 
     test('update edits fields and preserves id + book_uid', () async {
-      final inserted = ok(await repo.insert(const Book(title: 'Old')));
+      final inserted = ok(await repo.insert(const CatalogueItem(title: 'Old')));
       final uid = inserted.bookUid;
       expect(uid, isNotNull);
 
@@ -70,21 +70,28 @@ void main() {
     });
 
     test('update recovers book_uid if the edit dropped it', () async {
-      final inserted = ok(await repo.insert(const Book(title: 'Keep uid')));
+      final inserted = ok(
+        await repo.insert(const CatalogueItem(title: 'Keep uid')),
+      );
       final uid = inserted.bookUid;
-      // Simulate a form that rebuilt the Book without carrying the uid.
-      final edited = Book(id: inserted.id, title: 'Edited no uid');
+      // Simulate a form that rebuilt the CatalogueItem without carrying the
+      // uid.
+      final edited = CatalogueItem(id: inserted.id, title: 'Edited no uid');
       final updated = ok(await repo.update(edited));
       expect(updated.bookUid, uid);
     });
 
     test('update of a non-existent row is NotFoundFailure', () async {
-      final r = await repo.update(const Book(id: 4242, title: 'ghost'));
+      final r = await repo.update(
+        const CatalogueItem(id: 4242, title: 'ghost'),
+      );
       expect(err(r), isA<NotFoundFailure>());
     });
 
     test('updated book is findable by new title via FTS search', () async {
-      final inserted = ok(await repo.insert(const Book(title: 'Alpha')));
+      final inserted = ok(
+        await repo.insert(const CatalogueItem(title: 'Alpha')),
+      );
       await repo.update(inserted.copyWith(title: 'Bravo'));
       final hits = await firstPage(
         repo,
@@ -103,9 +110,13 @@ void main() {
     test(
       'query sorts by language (blanks last) and filters by language',
       () async {
-        await repo.insert(const Book(title: 'Eng1', language: 'English'));
-        await repo.insert(const Book(title: 'NoLang'));
-        await repo.insert(const Book(title: 'Hin1', language: 'Hindi'));
+        await repo.insert(
+          const CatalogueItem(title: 'Eng1', language: 'English'),
+        );
+        await repo.insert(const CatalogueItem(title: 'NoLang'));
+        await repo.insert(
+          const CatalogueItem(title: 'Hin1', language: 'Hindi'),
+        );
 
         final byLang = await firstPage(repo, sort: BookSort.languageAsc);
         // English < Hindi, blank language sorts last.
@@ -130,10 +141,10 @@ void main() {
     );
 
     test('distinctLanguages returns non-blank, sorted, deduped', () async {
-      await repo.insert(const Book(title: 'a', language: 'Hindi'));
-      await repo.insert(const Book(title: 'b', language: 'English'));
-      await repo.insert(const Book(title: 'c', language: 'Hindi'));
-      await repo.insert(const Book(title: 'd'));
+      await repo.insert(const CatalogueItem(title: 'a', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'b', language: 'English'));
+      await repo.insert(const CatalogueItem(title: 'c', language: 'Hindi'));
+      await repo.insert(const CatalogueItem(title: 'd'));
       final langs = ok(await repo.distinctLanguages());
       expect(langs, ['English', 'Hindi']);
     });
@@ -141,14 +152,14 @@ void main() {
     group('distinctSourceDetails', () {
       test("lists one type's non-blank details, sorted, trimmed", () async {
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'a',
             sourceType: BookSourceType.donated,
             sourceDetail: 'Sita Devi',
           ),
         );
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'b',
             sourceType: BookSourceType.donated,
             sourceDetail: '  Ram Sharma ',
@@ -156,7 +167,7 @@ void main() {
         );
         // Same name under another type must NOT leak into "donated".
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'c',
             sourceType: BookSourceType.purchased,
             sourceDetail: 'Ram Sharma',
@@ -164,16 +175,16 @@ void main() {
         );
         // Blank / absent details are not facet values.
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'd',
             sourceType: BookSourceType.donated,
             sourceDetail: '   ',
           ),
         );
         await repo.insert(
-          const Book(title: 'e', sourceType: BookSourceType.donated),
+          const CatalogueItem(title: 'e', sourceType: BookSourceType.donated),
         );
-        await repo.insert(const Book(title: 'f'));
+        await repo.insert(const CatalogueItem(title: 'f'));
 
         expect(ok(await repo.distinctSourceDetails(BookSourceType.donated)), [
           'Ram Sharma',
@@ -195,7 +206,7 @@ void main() {
           'RAM SHARMA',
         ]) {
           await repo.insert(
-            Book(
+            CatalogueItem(
               title: spelling,
               sourceType: BookSourceType.donated,
               sourceDetail: spelling,
@@ -203,14 +214,14 @@ void main() {
           );
         }
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'g1',
             sourceType: BookSourceType.donated,
             sourceDetail: 'Ελένη',
           ),
         );
         await repo.insert(
-          const Book(
+          const CatalogueItem(
             title: 'g2',
             sourceType: BookSourceType.donated,
             sourceDetail: 'ΕΛΈΝΗ',
@@ -235,12 +246,18 @@ void main() {
       test(
         'insert snaps a case/space variant to the stored spelling',
         () async {
-          await repo.insert(const Book(title: 'a', language: 'English'));
+          await repo.insert(
+            const CatalogueItem(title: 'a', language: 'English'),
+          );
           final b = ok(
-            await repo.insert(const Book(title: 'b', language: ' english ')),
+            await repo.insert(
+              const CatalogueItem(title: 'b', language: ' english '),
+            ),
           );
           final c = ok(
-            await repo.insert(const Book(title: 'c', language: 'ENGLISH')),
+            await repo.insert(
+              const CatalogueItem(title: 'c', language: 'ENGLISH'),
+            ),
           );
           expect(b.language, 'English');
           expect(c.language, 'English');
@@ -259,9 +276,13 @@ void main() {
       test(
         'insert keeps the FIRST spelling even when it is lowercase',
         () async {
-          await repo.insert(const Book(title: 'a', language: 'isiZulu'));
+          await repo.insert(
+            const CatalogueItem(title: 'a', language: 'isiZulu'),
+          );
           final b = ok(
-            await repo.insert(const Book(title: 'b', language: 'IsiZulu')),
+            await repo.insert(
+              const CatalogueItem(title: 'b', language: 'IsiZulu'),
+            ),
           );
           expect(b.language, 'isiZulu');
           expect(ok(await repo.distinctLanguages()), ['isiZulu']);
@@ -272,12 +293,16 @@ void main() {
         'insert converts an ISO 639-1 code to the stored/table name',
         () async {
           final first = ok(
-            await repo.insert(const Book(title: 'a', language: 'hi')),
+            await repo.insert(const CatalogueItem(title: 'a', language: 'hi')),
           );
           expect(first.language, 'Hindi'); // nothing stored yet → table name
-          await repo.insert(const Book(title: 'b', language: 'english'));
+          await repo.insert(
+            const CatalogueItem(title: 'b', language: 'english'),
+          );
           final viaCode = ok(
-            await repo.insert(const Book(title: 'c', language: 'en-GB')),
+            await repo.insert(
+              const CatalogueItem(title: 'c', language: 'en-GB'),
+            ),
           );
           expect(viaCode.language, 'english'); // snaps to the stored spelling
           expect(ok(await repo.distinctLanguages()), ['english', 'Hindi']);
@@ -287,9 +312,13 @@ void main() {
       test(
         'non-Latin spellings round-trip and dedupe by Unicode case',
         () async {
-          await repo.insert(const Book(title: 'a', language: 'Ελληνικά'));
+          await repo.insert(
+            const CatalogueItem(title: 'a', language: 'Ελληνικά'),
+          );
           final b = ok(
-            await repo.insert(const Book(title: 'b', language: 'ΕΛΛΗΝΙΚΆ')),
+            await repo.insert(
+              const CatalogueItem(title: 'b', language: 'ΕΛΛΗΝΙΚΆ'),
+            ),
           );
           expect(b.language, 'Ελληνικά');
           expect(ok(await repo.distinctLanguages()), ['Ελληνικά']);
@@ -300,7 +329,9 @@ void main() {
         'update snaps too, and a lone book keeps its own spelling',
         () async {
           final only = ok(
-            await repo.insert(const Book(title: 'a', language: 'English')),
+            await repo.insert(
+              const CatalogueItem(title: 'a', language: 'English'),
+            ),
           );
           final edited = ok(
             await repo.update(only.copyWith(language: 'english')),
@@ -314,14 +345,16 @@ void main() {
       test(
         'insertAll dedupes within the batch AND against stored rows',
         () async {
-          await repo.insert(const Book(title: 'seed', language: 'Hindi'));
+          await repo.insert(
+            const CatalogueItem(title: 'seed', language: 'Hindi'),
+          );
           final n = ok(
             await repo.insertAll(const [
-              Book(title: 'a', language: 'english'),
-              Book(title: 'b', language: 'English'),
-              Book(title: 'c', language: 'en'),
-              Book(title: 'd', language: 'HINDI'),
-              Book(title: 'e', language: 'Tamil'),
+              CatalogueItem(title: 'a', language: 'english'),
+              CatalogueItem(title: 'b', language: 'English'),
+              CatalogueItem(title: 'c', language: 'en'),
+              CatalogueItem(title: 'd', language: 'HINDI'),
+              CatalogueItem(title: 'e', language: 'Tamil'),
             ]),
           );
           expect(n, 5);
@@ -335,12 +368,14 @@ void main() {
       );
 
       test('replaceAll resolves only within the incoming file', () async {
-        await repo.insert(const Book(title: 'old', language: 'English'));
+        await repo.insert(
+          const CatalogueItem(title: 'old', language: 'English'),
+        );
         final n = ok(
           await repo.replaceAll(const [
-            Book(title: 'a', language: 'english'),
-            Book(title: 'b', language: 'ENGLISH'),
-            Book(title: 'c', language: 'hi'),
+            CatalogueItem(title: 'a', language: 'english'),
+            CatalogueItem(title: 'b', language: 'ENGLISH'),
+            CatalogueItem(title: 'c', language: 'hi'),
           ]),
         );
         expect(n, 3);
@@ -349,10 +384,10 @@ void main() {
       });
 
       test('absent language stays absent; blank stays blank', () async {
-        final none = ok(await repo.insert(const Book(title: 'a')));
+        final none = ok(await repo.insert(const CatalogueItem(title: 'a')));
         expect(none.language, isNull);
         final blank = ok(
-          await repo.insert(const Book(title: 'b', language: '   ')),
+          await repo.insert(const CatalogueItem(title: 'b', language: '   ')),
         );
         expect(blank.language, '   ');
         expect(ok(await repo.distinctLanguages()), isEmpty);
@@ -360,15 +395,19 @@ void main() {
     });
 
     test('query ageGroupAsc orders by band rank, nulls last', () async {
-      await repo.insert(const Book(title: 'adv', ageGroup: AgeGroup.advanced));
-      await repo.insert(const Book(title: 'none'));
-      await repo.insert(const Book(title: 'a3', ageGroup: AgeGroup.above3));
+      await repo.insert(
+        const CatalogueItem(title: 'adv', ageGroup: AgeGroup.advanced),
+      );
+      await repo.insert(const CatalogueItem(title: 'none'));
+      await repo.insert(
+        const CatalogueItem(title: 'a3', ageGroup: AgeGroup.above3),
+      );
       final byAge = await firstPage(repo, sort: BookSort.ageGroupAsc);
       expect(byAge.map((b) => b.title).toList(), ['a3', 'adv', 'none']);
     });
 
     test('markRemoved sets removed+removedAt; restoreRemoved clears', () async {
-      final ins = ok(await repo.insert(const Book(title: 'Soft')));
+      final ins = ok(await repo.insert(const CatalogueItem(title: 'Soft')));
       ok(await repo.markRemoved(ins.id, 999));
       final removed = ok(await repo.getById(ins.id))!;
       expect(removed.removed, isTrue);
@@ -384,27 +423,29 @@ void main() {
   group('AddBookUseCase', () {
     test('rejects a blank title with ValidationFailure', () async {
       final useCase = AddBookUseCase(repo);
-      final r = await useCase(const Book(title: '   '));
+      final r = await useCase(const CatalogueItem(title: '   '));
       expect(err(r), isA<ValidationFailure>());
     });
 
     test('inserts a valid book and mints a uid', () async {
       final useCase = AddBookUseCase(repo);
-      final saved = ok(await useCase(const Book(title: 'Valid')));
-      expect(saved.id, isNot(Book.emptyId));
+      final saved = ok(await useCase(const CatalogueItem(title: 'Valid')));
+      expect(saved.id, isNot(CatalogueItem.emptyId));
       expect(saved.bookUid, isNotNull);
     });
 
     test('M15: rejects copyCount 0 with ValidationFailure', () async {
       final useCase = AddBookUseCase(repo);
-      final r = await useCase(const Book(title: 'Valid', copyCount: 0));
+      final r = await useCase(
+        const CatalogueItem(title: 'Valid', copyCount: 0),
+      );
       expect(err(r), isA<ValidationFailure>());
     });
 
     test('M15: rejects an out-of-range addedDate', () async {
       final useCase = AddBookUseCase(repo);
       final r = await useCase(
-        const Book(title: 'Valid', addedDate: 8640000000000001),
+        const CatalogueItem(title: 'Valid', addedDate: 8640000000000001),
       );
       expect(err(r), isA<ValidationFailure>());
     });
@@ -414,9 +455,15 @@ void main() {
     // existing book, instead of letting a raw storage error surface.
     test('S34: a duplicate ISBN is refused as DuplicateIsbnFailure', () async {
       final useCase = AddBookUseCase(repo);
-      ok(await repo.insert(const Book(title: 'First', isbn: '9780140449136')));
+      ok(
+        await repo.insert(
+          const CatalogueItem(title: 'First', isbn: '9780140449136'),
+        ),
+      );
       final failure = err(
-        await useCase(const Book(title: 'Second', isbn: '9780140449136')),
+        await useCase(
+          const CatalogueItem(title: 'Second', isbn: '9780140449136'),
+        ),
       );
       expect(failure, isA<DuplicateIsbnFailure>());
       failure as DuplicateIsbnFailure;
@@ -429,11 +476,11 @@ void main() {
       () async {
         final useCase = AddBookUseCase(repo);
         final first = ok(
-          await repo.insert(const Book(title: 'Gone', isbn: '333')),
+          await repo.insert(const CatalogueItem(title: 'Gone', isbn: '333')),
         );
         ok(await repo.markRemoved(first.id, 42));
         final failure = err(
-          await useCase(const Book(title: 'Again', isbn: '333')),
+          await useCase(const CatalogueItem(title: 'Again', isbn: '333')),
         );
         expect(failure, isA<DuplicateIsbnFailure>());
         expect((failure as DuplicateIsbnFailure).existingIsRemoved, isTrue);
@@ -444,8 +491,8 @@ void main() {
       'S34: blank ISBNs never collide — two no-ISBN books both save',
       () async {
         final useCase = AddBookUseCase(repo);
-        ok(await useCase(const Book(title: 'No ISBN A')));
-        ok(await useCase(const Book(title: 'No ISBN B')));
+        ok(await useCase(const CatalogueItem(title: 'No ISBN A')));
+        ok(await useCase(const CatalogueItem(title: 'No ISBN B')));
         final all = await firstPage(repo, sort: BookSort.recentlyAdded);
         expect(
           all.map((b) => b.title),
@@ -463,7 +510,7 @@ void main() {
         final fake = _FailingFindByIsbnRepo();
         final useCase = AddBookUseCase(fake);
         final failure = err(
-          await useCase(const Book(title: 'X', isbn: '9780140449136')),
+          await useCase(const CatalogueItem(title: 'X', isbn: '9780140449136')),
         );
         expect(failure, isA<StorageFailure>());
         expect(fake.insertCalls, 0, reason: 'insert must not be attempted');
@@ -474,20 +521,22 @@ void main() {
   group('UpdateBookUseCase', () {
     test('rejects a blank title', () async {
       final useCase = UpdateBookUseCase(repo);
-      final inserted = ok(await repo.insert(const Book(title: 'X')));
+      final inserted = ok(await repo.insert(const CatalogueItem(title: 'X')));
       final r = await useCase(inserted.copyWith(title: ''));
       expect(err(r), isA<ValidationFailure>());
     });
 
     test('rejects an unpersisted book (emptyId) as NotFound', () async {
       final useCase = UpdateBookUseCase(repo);
-      final r = await useCase(const Book(title: 'never saved'));
+      final r = await useCase(const CatalogueItem(title: 'never saved'));
       expect(err(r), isA<NotFoundFailure>());
     });
 
     test('updates a persisted book', () async {
       final useCase = UpdateBookUseCase(repo);
-      final inserted = ok(await repo.insert(const Book(title: 'Before')));
+      final inserted = ok(
+        await repo.insert(const CatalogueItem(title: 'Before')),
+      );
       final saved = ok(await useCase(inserted.copyWith(title: 'After')));
       expect(saved.title, 'After');
       expect(saved.id, inserted.id);
@@ -500,7 +549,9 @@ void main() {
         // rejecting would make the book uneditable forever (the form copies
         // base.coverUrl verbatim). The inert link is dropped instead.
         final useCase = UpdateBookUseCase(repo);
-        final inserted = ok(await repo.insert(const Book(title: 'Before')));
+        final inserted = ok(
+          await repo.insert(const CatalogueItem(title: 'Before')),
+        );
         final saved = ok(
           await useCase(
             inserted.copyWith(coverUrl: 'https://evil.example/c.jpg'),
@@ -521,17 +572,18 @@ class _FailingFindByIsbnRepo implements BookRepository {
   int insertCalls = 0;
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       left(const StorageFailure('synthetic read failure'));
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     insertCalls++;
     return right(book);
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
@@ -546,9 +598,10 @@ class _FailingFindByIsbnRepo implements BookRepository {
     BookSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -557,15 +610,16 @@ class _FailingFindByIsbnRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }

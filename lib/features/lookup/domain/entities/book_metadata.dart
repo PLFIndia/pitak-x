@@ -1,7 +1,8 @@
 /// Metadata returned by an ISBN lookup (pure domain, AGENTS.md §3.1).
 ///
-/// Mirror of Kotlin `BookMetadata`: the subset of `Book` fields that public
-/// ISBN APIs reliably populate. Every field except `isbn` is optional — Open
+/// Mirror of Kotlin `BookMetadata`: the subset of `CatalogueItem` fields that
+/// public ISBN APIs reliably populate. Every field except `isbn` is optional —
+/// Open
 /// Library and Google Books return wildly inconsistent records, so we accept
 /// what's present and ignore what isn't (graceful degradation). Pure Dart: no
 /// Flutter/IO/JSON imports.

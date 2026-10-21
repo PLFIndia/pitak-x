@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Minimal labels for resolving cells in tests (English, fixed date).
 PdfColumnLabels _labels() => PdfColumnLabels(
@@ -72,7 +72,7 @@ void main() {
         merged.weight,
         PdfColumn.source.weight + PdfColumn.sourceDetail.weight,
       );
-      const book = Book(
+      const book = CatalogueItem(
         title: 'X',
         sourceType: BookSourceType.gift,
         sourceDetail: 'from a friend',
@@ -95,7 +95,7 @@ void main() {
         PdfColumn.title,
         PdfColumn.author,
       ], _labels());
-      const book = Book(title: 'Only');
+      const book = CatalogueItem(title: 'Only');
       final author = cols.firstWhere((c) => c.key == PdfColumn.author);
       expect(author.cell(book), isEmpty);
     });

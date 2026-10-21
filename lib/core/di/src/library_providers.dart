@@ -20,7 +20,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/update_book_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
@@ -153,13 +153,14 @@ Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -171,7 +172,7 @@ Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 @riverpod
-Future<Book?> bookById(BookByIdRef ref, int bookId) async {
+Future<CatalogueItem?> bookById(BookByIdRef ref, int bookId) async {
   ref.watch(libraryControllerProvider);
   final repo = await ref.watch(bookRepositoryProvider.future);
   final result = await repo.getById(bookId);

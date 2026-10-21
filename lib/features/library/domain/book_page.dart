@@ -8,7 +8,7 @@
 /// a second full walk of the index.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// A contiguous slice of the ordered, filtered library list.
 final class BookPage {
@@ -21,7 +21,7 @@ final class BookPage {
   static const BookPage empty = BookPage(items: [], hasMore: false);
 
   /// The rows in list order.
-  final List<Book> items;
+  final List<CatalogueItem> items;
 
   /// Whether a further page exists after [items].
   final bool hasMore;

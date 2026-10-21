@@ -46,7 +46,7 @@
 library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 
 /// Default Jaccard-token similarity threshold for the no-ISBN fuzzy pass.
@@ -56,7 +56,7 @@ const double kDefaultFuzzyThreshold = 0.6;
 /// test can count how often each book is tokenised; production always uses
 /// [tokenSet]. (Same dependency-injection shape as the use cases' optional
 /// `clock` parameter: a plain function, defaulted, never a framework.)
-typedef Tokenizer = Set<String> Function(Book book);
+typedef Tokenizer = Set<String> Function(CatalogueItem book);
 
 /// How an incoming book was matched to a local book (for UI explanation).
 enum MatchKind {
@@ -79,10 +79,10 @@ class MergeConflict {
   });
 
   /// The local book.
-  final Book local;
+  final CatalogueItem local;
 
   /// The incoming book that matched it.
-  final Book incoming;
+  final CatalogueItem incoming;
 
   /// What established the match.
   final MatchKind matchedBy;
@@ -120,7 +120,7 @@ enum DuplicateReason {
 ///    earlier incoming row from the SAME file, so inserting it would violate
 ///    the UNIQUE indexes; [similarity] is 1.0 and [local] is whichever row
 ///    holds the key (for an in-file collision that is the earlier INCOMING
-///    row — `id == Book.emptyId`, not a persisted local book, so "take
+///    row — `id == CatalogueItem.emptyId`, not a persisted local book, so "take
 ///    theirs" has no row to overwrite).
 class PossibleDuplicate {
   /// Creates a possible-duplicate pair.
@@ -133,10 +133,10 @@ class PossibleDuplicate {
 
   /// The book already on the winning side (a local row, or — for an in-file
   /// key collision — the earlier incoming row already queued to add).
-  final Book local;
+  final CatalogueItem local;
 
   /// The incoming book resembling it.
-  final Book incoming;
+  final CatalogueItem incoming;
 
   /// Token-set Jaccard similarity in (0,1]; exactly 1.0 for an identity-key
   /// collision.
@@ -157,7 +157,7 @@ class MergePlan {
   });
 
   /// Incoming books with NO local match — applied automatically.
-  final List<Book> toAdd;
+  final List<CatalogueItem> toAdd;
 
   /// Matched but differing — await user resolution.
   final List<MergeConflict> conflicts;
@@ -182,14 +182,14 @@ class MergePlan {
 ///
 /// [tokenizer] is a test seam (see [Tokenizer]); leave it at the default.
 MergePlan planMerge(
-  List<Book> local,
-  List<Book> incoming, {
+  List<CatalogueItem> local,
+  List<CatalogueItem> incoming, {
   double fuzzyThreshold = kDefaultFuzzyThreshold,
   Tokenizer tokenizer = tokenSet,
 }) {
   // Indexes for O(1) exact matching. Blank keys are ignored.
-  final localByUid = <String, Book>{};
-  final localByIsbn = <String, Book>{};
+  final localByUid = <String, CatalogueItem>{};
+  final localByIsbn = <String, CatalogueItem>{};
   for (final b in local) {
     final uid = b.bookUid?.trim();
     if (uid != null && uid.isNotEmpty) {
@@ -208,7 +208,7 @@ MergePlan planMerge(
     tokenizer,
   );
 
-  final toAdd = <Book>[];
+  final toAdd = <CatalogueItem>[];
   final conflicts = <MergeConflict>[];
   final possibleDuplicates = <PossibleDuplicate>[];
   var identical = 0;
@@ -222,10 +222,10 @@ MergePlan planMerge(
   // review instead of added (REVIEW_FINDINGS_2 S5: two rows in one file
   // sharing an ISBN otherwise both landed in toAdd and the second insert
   // failed mid-apply, leaving a partial union misreported as total failure).
-  final addedByUid = <String, Book>{};
-  final addedByIsbn = <String, Book>{};
+  final addedByUid = <String, CatalogueItem>{};
+  final addedByIsbn = <String, CatalogueItem>{};
 
-  void routeToAdd(Book b) {
+  void routeToAdd(CatalogueItem b) {
     toAdd.add(b);
     final uid = b.bookUid?.trim();
     if (uid != null && uid.isNotEmpty) addedByUid[uid] = b;
@@ -344,12 +344,11 @@ MergePlan planMerge(
 class _FuzzyIndex {
   _FuzzyIndex(this._candidates, this._tokenizer);
 
-  final List<Book> _candidates;
+  final List<CatalogueItem> _candidates;
   final Tokenizer _tokenizer;
 
-  /// Token set per candidate, parallel to [_candidates]. Only the SIZE is
-  /// read at query time (for the union); the sets themselves feed the
-  /// postings.
+  /// Token set per candidate, parallel to [_candidates]. Only the SIZE is read
+  /// at query time (for the union); the sets themselves feed the postings.
   late final List<Set<String>> _tokens = [
     for (final c in _candidates) _tokenizer(c),
   ];
@@ -413,65 +412,65 @@ class _FuzzyIndex {
 
 class _FuzzyHit {
   const _FuzzyHit(this.book, this.score);
-  final Book book;
+  final CatalogueItem book;
   final double score;
 }
 
 /// The catalogue fields the merge compares (N07). One entry per field in
 /// [_mergeFieldSpecs]; the review card labels rows by this enum.
 enum MergeField {
-  /// `Book.title`.
+  /// `CatalogueItem.title`.
   title,
 
-  /// `Book.titleTransliteration`.
+  /// `CatalogueItem.titleTransliteration`.
   titleTransliteration,
 
-  /// `Book.author`.
+  /// `CatalogueItem.author`.
   author,
 
-  /// `Book.isbn` (compared normalised).
+  /// `CatalogueItem.isbn` (compared normalised).
   isbn,
 
-  /// `Book.publisher`.
+  /// `CatalogueItem.publisher`.
   publisher,
 
-  /// `Book.publishedYear`.
+  /// `CatalogueItem.publishedYear`.
   publishedYear,
 
-  /// `Book.genre`.
+  /// `CatalogueItem.genre`.
   genre,
 
-  /// `Book.coverUrl` (compared via [_coversEqual]).
+  /// `CatalogueItem.coverUrl` (compared via [_coversEqual]).
   cover,
 
-  /// `Book.pageCount`.
+  /// `CatalogueItem.pageCount`.
   pageCount,
 
-  /// `Book.language`.
+  /// `CatalogueItem.language`.
   language,
 
-  /// `Book.notes`.
+  /// `CatalogueItem.notes`.
   notes,
 
-  /// `Book.location`.
+  /// `CatalogueItem.location`.
   location,
 
-  /// `Book.sourceType`.
+  /// `CatalogueItem.sourceType`.
   sourceType,
 
-  /// `Book.sourceDetail`.
+  /// `CatalogueItem.sourceDetail`.
   sourceDetail,
 
-  /// `Book.ageGroup`.
+  /// `CatalogueItem.ageGroup`.
   ageGroup,
 
-  /// `Book.copyCount`.
+  /// `CatalogueItem.copyCount`.
   copyCount,
 
-  /// `Book.needsMetadata`.
+  /// `CatalogueItem.needsMetadata`.
   needsMetadata,
 
-  /// `Book.removed` (soft-delete state).
+  /// `CatalogueItem.removed` (soft-delete state).
   removed,
 }
 
@@ -501,8 +500,8 @@ class MergeFieldDifference {
 class _MergeFieldSpec {
   const _MergeFieldSpec(this.field, this.equals, this.show);
   final MergeField field;
-  final bool Function(Book a, Book b) equals;
-  final String? Function(Book b) show;
+  final bool Function(CatalogueItem a, CatalogueItem b) equals;
+  final String? Function(CatalogueItem b) show;
 }
 
 String? _text(String? s) => (s == null || s.trim().isEmpty) ? null : s;
@@ -635,7 +634,7 @@ final List<_MergeFieldSpec> _mergeFieldSpecs = [
 /// soft-delete flag — exactly the fields in [_mergeFieldSpecs], so this is
 /// always `mergeDifferences(a, b).isEmpty` without the allocation (this runs
 /// once per matched pair inside [planMerge]).
-bool mergeEquals(Book a, Book b) {
+bool mergeEquals(CatalogueItem a, CatalogueItem b) {
   for (final spec in _mergeFieldSpecs) {
     if (!spec.equals(a, b)) return false;
   }
@@ -645,15 +644,16 @@ bool mergeEquals(Book a, Book b) {
 /// The fields on which [a] (local) and [b] (incoming) differ for merge
 /// purposes, in display order, each with both sides rendered as text (N07).
 /// Empty exactly when [mergeEquals] is true.
-List<MergeFieldDifference> mergeDifferences(Book a, Book b) => [
-  for (final spec in _mergeFieldSpecs)
-    if (!spec.equals(a, b))
-      MergeFieldDifference(
-        field: spec.field,
-        local: spec.show(a),
-        incoming: spec.show(b),
-      ),
-];
+List<MergeFieldDifference> mergeDifferences(CatalogueItem a, CatalogueItem b) =>
+    [
+      for (final spec in _mergeFieldSpecs)
+        if (!spec.equals(a, b))
+          MergeFieldDifference(
+            field: spec.field,
+            local: spec.show(a),
+            incoming: spec.show(b),
+          ),
+    ];
 
 /// Whether two cover refs describe the same catalogue state for merge purposes.
 ///
@@ -693,7 +693,7 @@ final RegExp _whitespace = RegExp(r'\s+');
 /// depunctuated). \p{M} is essential for Indic scripts — Devanagari / Gurmukhi
 /// vowel signs (e.g. the ी in कबीर) are Marks, not Letters, and dropping them
 /// would shatter a word into fragments (D8 bilingual posture).
-Set<String> tokenSet(Book book) {
+Set<String> tokenSet(CatalogueItem book) {
   final buf = StringBuffer(book.title);
   final author = book.author;
   if (author != null) buf.write(' $author');

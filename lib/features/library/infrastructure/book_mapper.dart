@@ -1,4 +1,5 @@
-/// Maps between the Drift `BookRow` (persistence) and the `Book` domain entity.
+/// Maps between the Drift `BookRow` (persistence) and the `CatalogueItem`
+/// domain entity.
 ///
 /// DTOs never leak into domain/presentation (AGENTS.md §3.3): all translation
 /// happens here at the infrastructure boundary. Enum↔token conversion uses the
@@ -7,12 +8,12 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
-/// Translation between [BookRow] and [Book].
+/// Translation between [BookRow] and [CatalogueItem].
 extension BookRowMapper on BookRow {
   /// Persistence row → domain entity. Tolerant of unknown enum tokens (→ null).
-  Book toDomain() => Book(
+  CatalogueItem toDomain() => CatalogueItem(
     id: id,
     bookUid: bookUid,
     title: title,
@@ -39,13 +40,13 @@ extension BookRowMapper on BookRow {
   );
 }
 
-/// Translation from [Book] to a Drift insert/update companion.
-extension BookCompanionMapper on Book {
+/// Translation from [CatalogueItem] to a Drift insert/update companion.
+extension BookCompanionMapper on CatalogueItem {
   /// Domain entity → Drift companion. Computes the Unicode-aware sort shadows
   /// (lowercase) the same way the Kotlin `BookMapper` does — NOT SQLite
   /// `LOWER()`, so non-ASCII scripts fold correctly.
   BooksCompanion toCompanion() => BooksCompanion(
-    id: id == Book.emptyId ? const Value.absent() : Value(id),
+    id: id == CatalogueItem.emptyId ? const Value.absent() : Value(id),
     bookUid: Value(bookUid),
     title: Value(title),
     titleTransliteration: Value(titleTransliteration),

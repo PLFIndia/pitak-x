@@ -174,7 +174,7 @@ void main() {
     // its recorded size (measured 2026-10-16). An allow-listed file may
     // SHRINK but never exceed its recorded size; when it drops under 500,
     // delete its entry. Adding a new entry is a deliberate, reviewed change —
-    // same bar as the Book.validate allow-list.
+    // same bar as the CatalogueItem.validate allow-list.
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
@@ -182,13 +182,16 @@ void main() {
       // section moved to widgets/community_library_section.dart (631 → <500).
       'lib/features/library/presentation/pages/book_detail_page.dart': 676,
       'lib/features/publish/application/github_connection_controller.dart': 670,
-      'lib/features/library/presentation/pages/add_book_page.dart': 638,
+      // 2026-10 (plan F7): `Book` → `CatalogueItem` is a longer identifier, so
+      // dart format wrapped a signature here (+2) and in
+      // merge_library_use_case.dart (+1). No logic was added.
+      'lib/features/library/presentation/pages/add_book_page.dart': 640,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,
       'lib/features/publish/infrastructure/http_github_api.dart': 600,
       'lib/features/library/infrastructure/drift_book_repository.dart': 597,
       'lib/features/backup/infrastructure/restore_backup.dart': 553,
-      'lib/features/import_export/application/merge_library_use_case.dart': 543,
+      'lib/features/import_export/application/merge_library_use_case.dart': 544,
       'lib/features/import_export/presentation/pages/merge_page.dart': 538,
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
     };

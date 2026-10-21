@@ -1,38 +1,38 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 void main() {
-  const donatedByRam = Book(
+  const donatedByRam = CatalogueItem(
     id: 1,
     title: 'Godaan',
     sourceType: BookSourceType.donated,
     sourceDetail: 'Ram Sharma',
   );
-  const donatedByRamLoose = Book(
+  const donatedByRamLoose = CatalogueItem(
     id: 2,
     title: 'Nirmala',
     sourceType: BookSourceType.donated,
     sourceDetail: '  ram sharma ',
   );
-  const donatedBySita = Book(
+  const donatedBySita = CatalogueItem(
     id: 3,
     title: 'Gaban',
     sourceType: BookSourceType.donated,
     sourceDetail: 'Sita Devi',
   );
-  const donatedNoDetail = Book(
+  const donatedNoDetail = CatalogueItem(
     id: 4,
     title: 'Rangbhoomi',
     sourceType: BookSourceType.donated,
   );
-  const purchased = Book(
+  const purchased = CatalogueItem(
     id: 5,
     title: 'Karmabhoomi',
     sourceType: BookSourceType.purchased,
     sourceDetail: 'Ram Sharma', // same name, different role
   );
-  const noSource = Book(id: 6, title: 'Sevasadan');
+  const noSource = CatalogueItem(id: 6, title: 'Sevasadan');
   const all = [
     donatedByRam,
     donatedByRamLoose,

@@ -11,10 +11,10 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 
-/// Validates and updates an existing [Book].
+/// Validates and updates an existing [CatalogueItem].
 class UpdateBookUseCase {
   /// Creates the use case over [_repository].
   const UpdateBookUseCase(this._repository);
@@ -22,15 +22,15 @@ class UpdateBookUseCase {
   final BookRepository _repository;
 
   /// Updates [book] after validating it against the shared catalogue rules
-  /// (M15: `Book.validate` is the single gate) and checking the id is set.
-  /// Returns the updated book or a typed [Failure].
-  Future<Either<Failure, Book>> call(Book book) {
-    return Book.validate(book).match(
+  /// (M15: `CatalogueItem.validate` is the single gate) and checking the id is
+  /// set. Returns the updated book or a typed [Failure].
+  Future<Either<Failure, CatalogueItem>> call(CatalogueItem book) {
+    return CatalogueItem.validate(book).match(
       (errors) {
         return Future.value(left(ValidationFailure(errors.first.userMessage)));
       },
       (valid) {
-        if (valid.id == Book.emptyId) {
+        if (valid.id == CatalogueItem.emptyId) {
           return Future.value(left(const NotFoundFailure()));
         }
         return _repository.update(valid);

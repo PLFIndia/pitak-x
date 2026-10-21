@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
 
 void main() {
-  Book sample() => const Book(
+  CatalogueItem sample() => const CatalogueItem(
     id: 42,
     title: 'The Odyssey',
     author: 'Homer',

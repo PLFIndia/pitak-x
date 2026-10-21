@@ -5,7 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/application/create_backup_use_case.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
@@ -119,7 +119,7 @@ class _RecordingWriter implements BackupArchiveBuilder {
 
   @override
   Future<Uint8List> build({
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required String workDir,
     required int exportedAt,
@@ -133,14 +133,15 @@ class _RecordingWriter implements BackupArchiveBuilder {
 
 class _Books implements BookRepository {
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FailingBooks implements BookRepository {
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       left(const StorageFailure('db gone'));
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

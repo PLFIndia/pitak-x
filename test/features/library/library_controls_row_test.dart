@@ -6,7 +6,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
@@ -16,23 +16,25 @@ class _Repo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   static const all = [
-    Book(title: 'Godaan', language: 'Hindi'),
-    Book(title: 'Dune', language: 'English'),
+    CatalogueItem(title: 'Godaan', language: 'Hindi'),
+    CatalogueItem(title: 'Dune', language: 'English'),
   ];
   int queryCalls = 0;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(all);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
 
   /// Narrows by the facet like the real store (exact match, D1-a) so the
   /// chip tests can see the list change; a search returns everything.
@@ -69,13 +71,16 @@ class _Repo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 

@@ -8,7 +8,7 @@ import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
@@ -115,7 +115,8 @@ class _NoWishlist implements WishlistRepository {
 
 class _NoBooks implements BookRepository {
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('${invocation.memberName} not used here');

@@ -10,7 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
@@ -46,12 +46,13 @@ class _FakeBooks implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _books;
+  final List<CatalogueItem> _books;
   int _nextId = 1000;
 
   /// Test-only failure injection for [replaceAll].
@@ -67,16 +68,16 @@ class _FakeBooks implements BookRepository {
   /// How many times [insert] was called.
   int insertCalls = 0;
 
-  List<Book> get books => _books;
+  List<CatalogueItem> get books => _books;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     insertCalls++;
     final stored = book.copyWith(
-      id: book.id == Book.emptyId ? _nextId++ : book.id,
+      id: book.id == CatalogueItem.emptyId ? _nextId++ : book.id,
       bookUid: book.bookUid ?? 'minted-$_nextId',
     );
     _books.add(stored);
@@ -84,7 +85,7 @@ class _FakeBooks implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     updateCalls++;
     final i = _books.indexWhere((b) => b.id == book.id);
     if (i < 0) return left(const NotFoundFailure());
@@ -105,7 +106,7 @@ class _FakeBooks implements BookRepository {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : _books;
+    final rows = query.isSearch ? const <CatalogueItem>[] : _books;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -120,7 +121,7 @@ class _FakeBooks implements BookRepository {
     BookSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(_books.where((b) => b.id == id).firstOrNull);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -128,9 +129,10 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async {
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async {
     // Mirrors the atomic contract: failure leaves the store untouched.
     final failure = insertAllFailure;
     if (failure != null) return left(failure);
@@ -141,7 +143,7 @@ class _FakeBooks implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     // Mirrors the transactional contract: failure leaves the store untouched.
     final failure = replaceAllFailure;
     if (failure != null) return left(failure);
@@ -221,7 +223,7 @@ void main() {
     File(store.dbPath).writeAsBytesSync([1]);
     store.writeBlob('synthetic.blob.only');
     final books = _FakeBooks([
-      const Book(id: 7, bookUid: 'loaned', title: 'Loaned book'),
+      const CatalogueItem(id: 7, bookUid: 'loaned', title: 'Loaned book'),
     ]);
     // Built through the REAL provider: the identity port is the real
     // SettingsController over this settings repo (N07), so the assertion
@@ -244,7 +246,9 @@ void main() {
     final useCase = await container.read(mergeLibraryUseCaseProvider.future);
     final result = await useCase.applyOverwrite(
       const MergeDiffersDecision(
-        incomingBooks: [Book(id: 7, bookUid: 'unrelated', title: 'Other book')],
+        incomingBooks: [
+          CatalogueItem(id: 7, bookUid: 'unrelated', title: 'Other book'),
+        ],
         incomingLibraryId: otherId,
         incomingLibraryName: 'Other',
         localLibraryName: 'Mine',
@@ -272,7 +276,7 @@ void main() {
 
   test('matching library id merges (add-only union, auto-applied)', () async {
     final repo = _FakeBooks([
-      const Book(
+      const CatalogueItem(
         id: 1,
         bookUid: 'u1',
         title: 'Godaan',
@@ -311,7 +315,7 @@ void main() {
       // returns — here a planner that reports an empty plan, so nothing is
       // inserted even though the file has a genuinely new book.
       final repo = _FakeBooks([
-        const Book(
+        const CatalogueItem(
           id: 1,
           bookUid: 'u1',
           title: 'Godaan',
@@ -320,8 +324,8 @@ void main() {
         ),
       ]);
       var calls = 0;
-      List<Book>? seenLocal;
-      List<Book>? seenIncoming;
+      List<CatalogueItem>? seenLocal;
+      List<CatalogueItem>? seenIncoming;
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
@@ -361,7 +365,12 @@ void main() {
       // a matching-ID merge through the REAL provider and checking the union
       // lands (the plan must have been computed somewhere).
       final repo = _FakeBooks([
-        const Book(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
+        const CatalogueItem(
+          id: 1,
+          bookUid: 'u1',
+          title: 'Godaan',
+          addedDate: 1,
+        ),
       ]);
       final settings = ReplacementSettings()..id = matchingId;
       final container = ProviderContainer(
@@ -388,7 +397,7 @@ void main() {
 
   test('differing library id returns a decision, applies nothing', () async {
     final repo = _FakeBooks([
-      const Book(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
+      const CatalogueItem(id: 1, bookUid: 'u1', title: 'Godaan', addedDate: 1),
     ]);
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
@@ -452,7 +461,12 @@ void main() {
 
     const decision = MergeDiffersDecision(
       incomingBooks: [
-        Book(bookUid: 'u9', title: 'Joined', isbn: '999', addedDate: 1),
+        CatalogueItem(
+          bookUid: 'u9',
+          title: 'Joined',
+          isbn: '999',
+          addedDate: 1,
+        ),
       ],
       incomingLibraryId: otherId,
       incomingLibraryName: 'Riverside',
@@ -470,7 +484,12 @@ void main() {
 
   test('applyOverwrite replaces local books and adopts the id', () async {
     final repo = _FakeBooks([
-      const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+      const CatalogueItem(
+        id: 1,
+        bookUid: 'old',
+        title: 'OldBook',
+        addedDate: 1,
+      ),
     ]);
     final settings = _FakeNamespace(libraryId: matchingId, libraryName: 'Mine');
     final useCase = MergeLibraryUseCase(
@@ -482,7 +501,9 @@ void main() {
     );
 
     const decision = MergeDiffersDecision(
-      incomingBooks: [Book(bookUid: 'u9', title: 'FreshReplica', addedDate: 1)],
+      incomingBooks: [
+        CatalogueItem(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
+      ],
       incomingLibraryId: otherId,
       incomingLibraryName: 'Riverside',
       localLibraryName: 'Mine',
@@ -536,7 +557,12 @@ void main() {
     'applyOverwrite failure keeps the local catalogue and settings',
     () async {
       final repo = _FakeBooks([
-        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+        const CatalogueItem(
+          id: 1,
+          bookUid: 'old',
+          title: 'OldBook',
+          addedDate: 1,
+        ),
       ])..replaceAllFailure = const StorageFailure('disk full');
       final settings = _FakeNamespace(
         libraryId: matchingId,
@@ -552,7 +578,7 @@ void main() {
 
       const decision = MergeDiffersDecision(
         incomingBooks: [
-          Book(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
+          CatalogueItem(bookUid: 'u9', title: 'FreshReplica', addedDate: 1),
         ],
         incomingLibraryId: otherId,
         incomingLibraryName: 'Riverside',
@@ -571,7 +597,7 @@ void main() {
   group('applyResolution', () {
     test('keepMine is a no-op', () async {
       final repo = _FakeBooks([
-        const Book(
+        const CatalogueItem(
           id: 1,
           bookUid: 'u1',
           title: 'Local',
@@ -588,7 +614,7 @@ void main() {
       );
       await useCase.applyResolution(
         local: repo.books.first,
-        incoming: const Book(
+        incoming: const CatalogueItem(
           bookUid: 'u1',
           title: 'Local',
           genre: 'B',
@@ -601,7 +627,7 @@ void main() {
 
     test('takeTheirs overwrites in place, keeping local id + uid', () async {
       final repo = _FakeBooks([
-        const Book(
+        const CatalogueItem(
           id: 7,
           bookUid: 'u1',
           title: 'Local',
@@ -618,7 +644,7 @@ void main() {
       );
       await useCase.applyResolution(
         local: repo.books.first,
-        incoming: const Book(
+        incoming: const CatalogueItem(
           id: 999,
           bookUid: 'uOther',
           title: 'Local',
@@ -639,7 +665,7 @@ void main() {
     test('M09: takeTheirs keeps the local PHOTO over an incoming https '
         'cover', () async {
       final repo = _FakeBooks([
-        const Book(
+        const CatalogueItem(
           id: 7,
           bookUid: 'u1',
           title: 'Local',
@@ -657,7 +683,7 @@ void main() {
       );
       await useCase.applyResolution(
         local: repo.books.first,
-        incoming: const Book(
+        incoming: const CatalogueItem(
           id: 999,
           bookUid: 'uOther',
           title: 'Local',
@@ -675,7 +701,7 @@ void main() {
     test('M09: takeTheirs takes the incoming https cover when there is no '
         'local cover', () async {
       final repo = _FakeBooks([
-        const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+        const CatalogueItem(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
       ]);
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
@@ -686,7 +712,7 @@ void main() {
       );
       await useCase.applyResolution(
         local: repo.books.first,
-        incoming: const Book(
+        incoming: const CatalogueItem(
           bookUid: 'uOther',
           title: 'Local',
           coverUrl: 'https://covers.openlibrary.org/b/id/1-L.jpg',
@@ -704,7 +730,7 @@ void main() {
       'keepBoth inserts a fresh-identity duplicate (no uid, no isbn)',
       () async {
         final repo = _FakeBooks([
-          const Book(
+          const CatalogueItem(
             id: 1,
             bookUid: 'u1',
             title: 'Dohe',
@@ -721,7 +747,7 @@ void main() {
         );
         await useCase.applyResolution(
           local: repo.books.first,
-          incoming: const Book(
+          incoming: const CatalogueItem(
             bookUid: 'u1',
             title: 'Dohe',
             isbn: '555',
@@ -759,8 +785,12 @@ void main() {
         );
 
         final result = await useCase.applyResolution(
-          local: const Book(bookUid: 'uB', title: 'Godaan', addedDate: 1),
-          incoming: const Book(
+          local: const CatalogueItem(
+            bookUid: 'uB',
+            title: 'Godaan',
+            addedDate: 1,
+          ),
+          incoming: const CatalogueItem(
             bookUid: 'uB',
             title: 'Godaan (duplicate row)',
             addedDate: 1,
@@ -784,7 +814,12 @@ void main() {
         'takeTheirs validates the built book before writing (M15 gate)',
         () async {
           final repo = _FakeBooks([
-            const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+            const CatalogueItem(
+              id: 7,
+              bookUid: 'u1',
+              title: 'Local',
+              addedDate: 1,
+            ),
           ]);
           final useCase = MergeLibraryUseCase(
             jsonParser: const PitakaJsonImporter(),
@@ -796,7 +831,7 @@ void main() {
 
           final result = await useCase.applyResolution(
             local: repo.books.first,
-            incoming: const Book(
+            incoming: const CatalogueItem(
               bookUid: 'uOther',
               title: 'Local',
               copyCount: 0, // invalid: must be at least 1
@@ -813,7 +848,12 @@ void main() {
 
       test('keepBoth validates the fresh copy before inserting', () async {
         final repo = _FakeBooks([
-          const Book(id: 1, bookUid: 'u1', title: 'Dohe', addedDate: 1),
+          const CatalogueItem(
+            id: 1,
+            bookUid: 'u1',
+            title: 'Dohe',
+            addedDate: 1,
+          ),
         ]);
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
@@ -825,7 +865,7 @@ void main() {
 
         final result = await useCase.applyResolution(
           local: repo.books.first,
-          incoming: const Book(
+          incoming: const CatalogueItem(
             bookUid: 'u1',
             title: 'Dohe',
             publishedYear: 0, // invalid: outside 1..9999
@@ -841,10 +881,15 @@ void main() {
 
       test('takeTheirs writes the NORMALISED book (cover dropped when '
           'disallowed)', () async {
-        // `Book.validate` normalises rather than rejects a bad cover ref (M15)
-        // — the row that lands must be the normalised one.
+        // `CatalogueItem.validate` normalises rather than rejects a bad cover
+        // ref (M15) — the row that lands must be the normalised one.
         final repo = _FakeBooks([
-          const Book(id: 7, bookUid: 'u1', title: 'Local', addedDate: 1),
+          const CatalogueItem(
+            id: 7,
+            bookUid: 'u1',
+            title: 'Local',
+            addedDate: 1,
+          ),
         ]);
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
@@ -856,7 +901,7 @@ void main() {
 
         final result = await useCase.applyResolution(
           local: repo.books.first,
-          incoming: const Book(
+          incoming: const CatalogueItem(
             bookUid: 'uOther',
             title: 'Local',
             coverUrl: 'https://evil.example/x.jpg',
@@ -879,7 +924,12 @@ void main() {
   group('N07 — namespace adoption is coordinated with the data', () {
     const decision = MergeDiffersDecision(
       incomingBooks: [
-        Book(bookUid: 'u9', title: 'Their book', isbn: '999', addedDate: 1),
+        CatalogueItem(
+          bookUid: 'u9',
+          title: 'Their book',
+          isbn: '999',
+          addedDate: 1,
+        ),
       ],
       incomingLibraryId: otherId,
       incomingLibraryName: 'Riverside',
@@ -969,7 +1019,9 @@ void main() {
         planner: planMergeInline,
       );
       const noId = MergeDiffersDecision(
-        incomingBooks: [Book(bookUid: 'u9', title: 'Their book', addedDate: 1)],
+        incomingBooks: [
+          CatalogueItem(bookUid: 'u9', title: 'Their book', addedDate: 1),
+        ],
         incomingLibraryId: '',
         incomingLibraryName: 'Riverside',
         localLibraryName: 'Mine',
@@ -989,7 +1041,12 @@ void main() {
       'Overwrite is reported as a replacement with the real count',
       () async {
         final repo = _FakeBooks([
-          const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+          const CatalogueItem(
+            id: 1,
+            bookUid: 'old',
+            title: 'OldBook',
+            addedDate: 1,
+          ),
         ]);
         final namespace = _FakeNamespace(
           libraryId: matchingId,
@@ -1021,7 +1078,12 @@ void main() {
     test('Overwrite: catalogue replaced, identity write fails → success with '
         'the omission reported', () async {
       final repo = _FakeBooks([
-        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+        const CatalogueItem(
+          id: 1,
+          bookUid: 'old',
+          title: 'OldBook',
+          addedDate: 1,
+        ),
       ]);
       final namespace = _FakeNamespace(
         libraryId: matchingId,

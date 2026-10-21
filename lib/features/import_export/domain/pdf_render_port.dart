@@ -12,7 +12,7 @@ import 'dart:typed_data';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Raw TTF bytes for one weight (regular or bold), ordered by preference.
 ///
@@ -46,7 +46,7 @@ abstract interface class LibraryPdfRenderer {
   /// text tiles at any time.
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,

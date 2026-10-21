@@ -22,7 +22,7 @@ import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Highest `schemaVersion` this build can read (Kotlin `SCHEMA_VERSION = 3`).
@@ -73,7 +73,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       return ImportPayload(parseErrors: [msg]);
     }
 
-    final books = <Book>[];
+    final books = <CatalogueItem>[];
     final wishlist = <WishlistBook>[];
     final errors = <String>[];
     final warnings = <String>[];
@@ -146,19 +146,19 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     }
   }
 
-  /// Builds one [Book] from a JSON row and validates it (M15): the row is
-  /// either returned normalised or rejected with its field errors — never
+  /// Builds one [CatalogueItem] from a JSON row and validates it (M15): the row
+  /// is either returned normalised or rejected with its field errors — never
   /// silently coerced. Over-long text is truncated + reported (D2); a
   /// disallowed cover link is dropped + reported.
-  Either<List<FieldError>, Book> _book(_RowReader r) {
+  Either<List<FieldError>, CatalogueItem> _book(_RowReader r) {
     // Fresh id on import; drop LOCAL cover refs unless bundled. Remote https
-    // covers are allow-list-checked by Book.validate below.
+    // covers are allow-list-checked by CatalogueItem.validate below.
     final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
     if (unsafe != null) return left([unsafe]);
     final cover = r.cover(keepLocalCovers: keepLocalCovers);
     // M4: clamp every persisted text field so one giant cell can't bloat the
     // DB. M15/D2: clamping is now REPORTED as a warning, not silent.
-    final candidate = Book(
+    final candidate = CatalogueItem(
       title: r.text('title') ?? '',
       bookUid: r.text('bookUid'),
       titleTransliteration: r.text('titleTransliteration'),
@@ -183,7 +183,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       // M15: addedBy was the ONE text field that skipped the cap.
       addedBy: r.text('addedBy'),
     );
-    return Book.validate(candidate).map((valid) {
+    return CatalogueItem.validate(candidate).map((valid) {
       r.reportDroppedCover(valid.coverUrl, cover);
       return valid;
     });

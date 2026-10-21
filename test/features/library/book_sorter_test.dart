@@ -5,11 +5,20 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/book_sorter.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
-Book b(String title, {int added = 0, String? language, AgeGroup? age}) =>
-    Book(title: title, addedDate: added, language: language, ageGroup: age);
+CatalogueItem b(
+  String title, {
+  int added = 0,
+  String? language,
+  AgeGroup? age,
+}) => CatalogueItem(
+  title: title,
+  addedDate: added,
+  language: language,
+  ageGroup: age,
+);
 
 void main() {
   group('recentlyAdded', () {
@@ -72,7 +81,7 @@ void main() {
       b('first', added: 5, language: 'X'),
       b('second', added: 5, language: 'X'),
     ];
-    final snapshot = List<Book>.of(input);
+    final snapshot = List<CatalogueItem>.of(input);
     final sorted = BookSorter.sort(input, BookSort.languageAsc);
     expect(input, snapshot); // never mutates
     expect(sorted.map((x) => x.title), ['first', 'second']); // stable

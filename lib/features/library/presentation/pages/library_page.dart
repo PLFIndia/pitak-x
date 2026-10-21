@@ -26,7 +26,7 @@ import 'package:pitaka/features/import_export/presentation/pages/export_page.dar
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
@@ -246,7 +246,7 @@ class _BookList extends ConsumerWidget {
     // "Not available" badge is hidden otherwise (availability unknown).
     final activeCounts = ref.watch(activeLoanCountsProvider);
 
-    bool unavailableOf(Book book) =>
+    bool unavailableOf(CatalogueItem book) =>
         activeCounts != null &&
         isBookUnavailable(
           bookId: book.id,
@@ -255,7 +255,7 @@ class _BookList extends ConsumerWidget {
         );
     // N03: the detail page observes the row by id; the tapped row is only the
     // first frame's content.
-    void openDetail(Book book) => Navigator.of(context).push(
+    void openDetail(CatalogueItem book) => Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => BookDetailPage(bookId: book.id, initialBook: book),
       ),
@@ -353,7 +353,7 @@ class _BookList extends ConsumerWidget {
 Future<void> routeScannedIsbn(
   BuildContext context,
   String isbn,
-  Future<Either<Failure, Book?>> Function(String isbn) findByIsbn,
+  Future<Either<Failure, CatalogueItem?>> Function(String isbn) findByIsbn,
 ) async {
   final existing = await findByIsbn(isbn);
   if (!context.mounted) return;

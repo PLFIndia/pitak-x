@@ -12,7 +12,7 @@ import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -214,7 +214,9 @@ class ReplacementHarness {
   static SecretBytes secret() =>
       SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]));
 
-  Future<Either<Failure, MergeResult>> overwrite(List<Book> incoming) async {
+  Future<Either<Failure, MergeResult>> overwrite(
+    List<CatalogueItem> incoming,
+  ) async {
     final useCase = await container.read(mergeLibraryUseCaseProvider.future);
     return useCase.applyOverwrite(
       MergeDiffersDecision(

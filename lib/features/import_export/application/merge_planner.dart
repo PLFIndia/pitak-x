@@ -11,11 +11,14 @@
 /// composition root, exactly like `LibraryJsonParser` / `PitakaJsonImporter`.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
 /// Computes a [MergePlan] for [incoming] against [local], possibly on another
 /// isolate. `MergeLibraryUseCase` depends on this signature only; tests inject
 /// a synchronous or recording planner.
 typedef MergePlanner =
-    Future<MergePlan> Function(List<Book> local, List<Book> incoming);
+    Future<MergePlan> Function(
+      List<CatalogueItem> local,
+      List<CatalogueItem> incoming,
+    );

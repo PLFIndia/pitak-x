@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
 
 void main() {
-  Widget host(Book book, {bool unavailable = false}) => MaterialApp(
+  Widget host(CatalogueItem book, {bool unavailable = false}) => MaterialApp(
     home: Scaffold(
       body: BookRow(book: book, unavailable: unavailable, onTap: () {}),
     ),
@@ -14,13 +14,13 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      host(const Book(title: 'Hobbit'), unavailable: true),
+      host(const CatalogueItem(title: 'Hobbit'), unavailable: true),
     );
     expect(find.text('Not available'), findsOneWidget);
   });
 
   testWidgets('no availability badge when available', (tester) async {
-    await tester.pumpWidget(host(const Book(title: 'Hobbit')));
+    await tester.pumpWidget(host(const CatalogueItem(title: 'Hobbit')));
     expect(find.text('Not available'), findsNothing);
   });
 
@@ -28,7 +28,10 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(
-      host(const Book(title: 'Hobbit', removed: true), unavailable: true),
+      host(
+        const CatalogueItem(title: 'Hobbit', removed: true),
+        unavailable: true,
+      ),
     );
     expect(find.text('Removed'), findsOneWidget);
     expect(find.text('Not available'), findsNothing);
@@ -44,7 +47,7 @@ void main() {
 
     await tester.pumpWidget(
       host(
-        const Book(
+        const CatalogueItem(
           title: 'An Extremely Long Book Title That On Its Own Fills The Row',
           author: 'A Long Author Name As Well',
           copyCount: 99,

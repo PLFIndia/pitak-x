@@ -11,7 +11,7 @@
 /// two-line merge.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// The set of book fields the user can choose as PDF columns.
 ///
@@ -191,7 +191,7 @@ class PrintColumn {
   final int wrapLines;
 
   /// Per-book cell value as 1+ logical lines (blanks dropped).
-  final List<String> Function(Book) cell;
+  final List<String> Function(CatalogueItem) cell;
 }
 
 /// Resolves the printable columns for a render: the user's selection in
@@ -255,7 +255,7 @@ List<PrintColumn> resolvePrintColumns(
   return out;
 }
 
-String _cellValue(PdfColumn col, Book b, PdfColumnLabels labels) =>
+String _cellValue(PdfColumn col, CatalogueItem b, PdfColumnLabels labels) =>
     switch (col) {
       PdfColumn.title => b.title,
       PdfColumn.author => b.author ?? '',

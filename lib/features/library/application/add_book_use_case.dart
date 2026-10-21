@@ -15,10 +15,10 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 
-/// Validates and inserts a new [Book].
+/// Validates and inserts a new [CatalogueItem].
 class AddBookUseCase {
   /// Creates the use case over [_repository].
   const AddBookUseCase(this._repository);
@@ -26,13 +26,14 @@ class AddBookUseCase {
   final BookRepository _repository;
 
   /// Inserts [book] after validating it against the shared catalogue rules
-  /// (M15: `Book.validate` is the single gate every ingress passes through —
-  /// the form pre-checks the title, but the use case is the source of truth).
+  /// (M15: `CatalogueItem.validate` is the single gate every ingress passes
+  /// through — the form pre-checks the title, but the use case is the source of
+  /// truth).
   /// A non-blank ISBN that the library already holds is refused with a
   /// [DuplicateIsbnFailure] naming the existing book. Returns the persisted
   /// book (with its assigned id + minted uid) or a typed [Failure].
-  Future<Either<Failure, Book>> call(Book book) {
-    return Book.validate(book).match(
+  Future<Either<Failure, CatalogueItem>> call(CatalogueItem book) {
+    return CatalogueItem.validate(book).match(
       (errors) =>
           Future.value(left(ValidationFailure(errors.first.userMessage))),
       _insertIfIsbnIsNew,
@@ -53,7 +54,9 @@ class AddBookUseCase {
   /// miss the collision the index is about to report). A FAILED read is
   /// propagated, not skipped: if we cannot read the library we do not
   /// blind-insert (fail closed).
-  Future<Either<Failure, Book>> _insertIfIsbnIsNew(Book book) async {
+  Future<Either<Failure, CatalogueItem>> _insertIfIsbnIsNew(
+    CatalogueItem book,
+  ) async {
     final isbn = book.isbn;
     if (isbn != null && isbn.trim().isNotEmpty) {
       final existing = await _repository.findByIsbn(isbn);

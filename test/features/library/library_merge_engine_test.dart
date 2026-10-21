@@ -3,12 +3,12 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
 /// Faithful port of Kotlin `LibraryMergeEngineTest` (PLAN-merge.md S3).
 void main() {
-  Book book({
+  CatalogueItem book({
     int id = 0,
     String? uid,
     String title = 'Title',
@@ -19,7 +19,7 @@ void main() {
     String? language,
     bool removed = false,
     int copyCount = 1,
-  }) => Book(
+  }) => CatalogueItem(
     id: id,
     bookUid: uid,
     title: title,
@@ -474,7 +474,7 @@ void main() {
 
       final dup = plan.possibleDuplicates.single;
       expect(dup.reason, DuplicateReason.identityKey);
-      expect(dup.local.id, Book.emptyId);
+      expect(dup.local.id, CatalogueItem.emptyId);
     });
 
     test('a fuzzy hit with identical tokens scores 1.0 but is still '
@@ -572,14 +572,14 @@ void main() {
 
     test('mergeDifferences ignores per-device bookkeeping (id, uid, '
         'addedDate, addedBy)', () {
-      const a = Book(
+      const a = CatalogueItem(
         id: 1,
         bookUid: 'u1',
         title: 'T',
         addedDate: 1,
         addedBy: 'me',
       );
-      const b = Book(
+      const b = CatalogueItem(
         id: 2,
         bookUid: 'u2',
         title: 'T',
@@ -593,7 +593,7 @@ void main() {
         'compared field', () {
       // Both must read the SAME field list, or a future field added to one
       // and not the other would make the summary lie about a conflict.
-      const base = Book(
+      const base = CatalogueItem(
         id: 1,
         title: 'T',
         titleTransliteration: 'tt',
@@ -613,7 +613,7 @@ void main() {
         addedDate: 1,
         copyCount: 2,
       );
-      final variants = <Book>[
+      final variants = <CatalogueItem>[
         base.copyWith(title: 'X'),
         base.copyWith(titleTransliteration: 'X'),
         base.copyWith(author: 'X'),
@@ -663,7 +663,7 @@ void main() {
           book(uid: 'N$i', title: 'Incoming Title $i', author: 'W$i'),
       ];
       final calls = <String, int>{};
-      Set<String> counting(Book b) {
+      Set<String> counting(CatalogueItem b) {
         calls.update(b.bookUid!, (n) => n + 1, ifAbsent: () => 1);
         return tokenSet(b);
       }
@@ -777,7 +777,7 @@ void main() {
       ];
       String phrase(int n) =>
           List.generate(n, (_) => vocab[rng.nextInt(vocab.length)]).join(' ');
-      Book row(String uid, int id) => book(
+      CatalogueItem row(String uid, int id) => book(
         id: id,
         uid: uid,
         title: phrase(1 + rng.nextInt(3)),
@@ -787,7 +787,7 @@ void main() {
       for (var round = 0; round < 25; round++) {
         final local = [for (var i = 0; i < 40; i++) row('L$round-$i', i + 1)];
         final incoming = [
-          for (var i = 0; i < 40; i++) row('N$round-$i', Book.emptyId),
+          for (var i = 0; i < 40; i++) row('N$round-$i', CatalogueItem.emptyId),
         ];
         final threshold = const [0.3, 0.5, 0.6, 0.8][rng.nextInt(4)];
 
@@ -847,8 +847,8 @@ void main() {
 /// highest Jaccard (earliest on ties), claims it when ≥ threshold. All rows
 /// are no-ISBN with unique uids, so the key-matching steps never fire.
 ({List<(String?, int, double)> surfaced, List<String?> added}) _bruteForceFuzzy(
-  List<Book> local,
-  List<Book> incoming,
+  List<CatalogueItem> local,
+  List<CatalogueItem> incoming,
   double threshold,
 ) {
   final claimed = <int>{};
@@ -856,7 +856,7 @@ void main() {
   final added = <String?>[];
   for (final inc in incoming) {
     final incTokens = tokenSet(inc);
-    Book? best;
+    CatalogueItem? best;
     var bestScore = 0.0;
     if (incTokens.isNotEmpty) {
       for (final c in local) {

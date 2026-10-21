@@ -9,7 +9,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
@@ -27,17 +27,18 @@ class _FakeBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
 
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
   Failure? failWith;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_all);
 
   /// Every page read the page asked for, as (offset, limit) — N10-d part 2.
@@ -63,11 +64,13 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   // N03: the detail page observes its row by id, so the fake must answer
   // from the same list the rows came from.
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => failWith != null
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
+      failWith != null
       ? left(failWith!)
       : right(_all.where((b) => b.id == id).firstOrNull);
   @override
@@ -86,14 +89,16 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
@@ -108,9 +113,9 @@ void main() {
   // Distinct ids: rows are opened by id (N03), and three books sharing the
   // `emptyId` sentinel would be indistinguishable to the detail page.
   const books = [
-    Book(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
-    Book(id: 2, title: 'Dune', author: 'Herbert'),
-    Book(id: 3, title: 'Old Tales', removed: true),
+    CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
+    CatalogueItem(id: 3, title: 'Old Tales', removed: true),
   ];
 
   testWidgets('renders all books newest-first on load', (tester) async {
@@ -214,7 +219,11 @@ void main() {
   group('N10-d part 2 — windowed list', () {
     final many = List.generate(
       150,
-      (i) => Book(id: i + 1, title: 'Book number ${i + 1}', addedDate: 150 - i),
+      (i) => CatalogueItem(
+        id: i + 1,
+        title: 'Book number ${i + 1}',
+        addedDate: 150 - i,
+      ),
     );
 
     testWidgets('first paint reads ONE page and shows only its rows', (

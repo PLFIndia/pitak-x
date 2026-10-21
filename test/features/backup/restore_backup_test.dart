@@ -10,7 +10,7 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -77,7 +77,7 @@ void main() {
   });
 
   /// Rows of whichever generation is CURRENT after a restore.
-  Future<List<Book>> activeBooks() async {
+  Future<List<CatalogueItem>> activeBooks() async {
     final active = gen.openActiveCatalogue();
     try {
       return (await active.select(active.books).get())
@@ -223,7 +223,9 @@ void main() {
     // Pre-restore device state: one existing book.
     await db
         .into(db.books)
-        .insert(const Book(title: 'PreExisting', addedDate: 1).toCompanion());
+        .insert(
+          const CatalogueItem(title: 'PreExisting', addedDate: 1).toCompanion(),
+        );
 
     final zip = archive({
       'manifest.json': utf8.encode(manifest()),
@@ -456,7 +458,7 @@ void main() {
     await db
         .into(db.books)
         .insert(
-          const Book(
+          const CatalogueItem(
             id: 7,
             bookUid: 'different-uid',
             title: 'Keep me',

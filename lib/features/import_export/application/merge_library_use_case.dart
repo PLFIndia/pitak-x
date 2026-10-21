@@ -52,7 +52,7 @@ import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
@@ -172,7 +172,7 @@ final class MergeDiffersDecision extends MergeOutcome {
   });
 
   /// The parsed incoming books (not yet applied).
-  final List<Book> incomingBooks;
+  final List<CatalogueItem> incomingBooks;
 
   /// Rows the parser rejected — forwarded into the apply's [MergeResult] so
   /// a Join/Overwrite still tells the user what the file lost (N07).
@@ -338,7 +338,7 @@ final class MergeLibraryUseCase {
     // prevents a vault write from changing the loan set between them (M03).
     final replaced = await _bookRepo.runInTransaction<int>(() async {
       var incoming = decision.incomingBooks
-          .map((b) => b.copyWith(id: Book.emptyId))
+          .map((b) => b.copyWith(id: CatalogueItem.emptyId))
           .toList();
       final loanIds = scope.retainedLoanBookIds;
       if (loanIds != null) {
@@ -412,26 +412,27 @@ final class MergeLibraryUseCase {
   ///
   /// N07 guards (this is a catalogue ingress like any other):
   ///  - take-theirs is REFUSED when [local] was never persisted
-  ///    (`id == Book.emptyId`). That is the in-file key-collision shape —
-  ///    `PossibleDuplicate.local` is then the earlier row from the SAME file,
-  ///    not a book on this device — so there is no row to overwrite. Before,
-  ///    this reached the repository and came back as a misleading "not
+  ///    (`id == CatalogueItem.emptyId`). That is the in-file key-collision
+  ///    shape — `PossibleDuplicate.local` is then the earlier row from the SAME
+  ///    file, not a book on this device — so there is no row to overwrite.
+  ///    Before, this reached the repository and came back as a misleading "not
   ///    found". The page hides the button too; this is the belt.
-  ///  - both writing branches pass the built book through [Book.validate]
-  ///    (M15, same as `UpdateBookUseCase`): the incoming rows were validated
-  ///    by the parser, but the row written here is BUILT from them, and the
-  ///    gate belongs right before the write. The normalised book is what
-  ///    lands (a disallowed cover ref is dropped, not rejected).
+  ///  - both writing branches pass the built book through
+  ///    [CatalogueItem.validate] (M15, same as `UpdateBookUseCase`): the
+  ///    incoming rows were validated by the parser, but the row written here is
+  ///    BUILT from them, and the gate belongs right before the write. The
+  ///    normalised book is what lands (a disallowed cover ref is dropped, not
+  ///    rejected).
   Future<Either<Failure, Unit>> applyResolution({
-    required Book local,
-    required Book incoming,
+    required CatalogueItem local,
+    required CatalogueItem incoming,
     required MergeResolution resolution,
   }) async {
     switch (resolution) {
       case MergeResolution.keepMine:
         return right(unit);
       case MergeResolution.takeTheirs:
-        if (local.id == Book.emptyId) {
+        if (local.id == CatalogueItem.emptyId) {
           return left(
             const ValidationFailure(
               'Both of these rows come from the same file, so there is no '
@@ -471,14 +472,15 @@ final class MergeLibraryUseCase {
   }
 
   /// The M15 gate as a typed failure (first field error, user wording).
-  static Either<Failure, Book> _validated(Book book) => Book.validate(
-    book,
-  ).mapLeft((errors) => ValidationFailure(errors.first.userMessage));
+  static Either<Failure, CatalogueItem> _validated(CatalogueItem book) =>
+      CatalogueItem.validate(
+        book,
+      ).mapLeft((errors) => ValidationFailure(errors.first.userMessage));
 
   /// A separate-entry copy of [b] with a CLEARED cross-device identity: no uid
   /// (the repo mints one), no ISBN (unique, still held by the original row),
   /// and an unset id (a brand-new row). Keeps every catalogue field.
-  static Book _freshCopyOf(Book b) => Book(
+  static CatalogueItem _freshCopyOf(CatalogueItem b) => CatalogueItem(
     title: b.title,
     titleTransliteration: b.titleTransliteration,
     author: b.author,
@@ -506,12 +508,11 @@ final class MergeLibraryUseCase {
   /// reconcile). Conflicts + possible-duplicates are returned, not applied.
   ///
   /// The adds land via ONE [BookRepository.insertAll] call, which is atomic —
-  /// the reported [MergeResult.added] can never disagree with the committed
-  /// DB state (REVIEW_FINDINGS_2 S5: the old sequential loop committed rows
-  /// 1..N and then reported total failure when row N+1 violated a UNIQUE
-  /// index).
+  /// the reported [MergeResult.added] can never disagree with the committed DB
+  /// state (REVIEW_FINDINGS_2 S5: the old sequential loop committed rows 1..N
+  /// and then reported total failure when row N+1 violated a UNIQUE index).
   Future<Either<Failure, MergeResult>> _applyEngineMerge(
-    List<Book> incoming, {
+    List<CatalogueItem> incoming, {
     required List<String> skippedRows,
     required List<String> adjustments,
   }) async {
@@ -519,11 +520,11 @@ final class MergeLibraryUseCase {
     if (localRes.isLeft()) {
       return localRes.match(left, (_) => throw StateError('unreachable'));
     }
-    final local = localRes.getOrElse((_) => const <Book>[]);
+    final local = localRes.getOrElse((_) => const <CatalogueItem>[]);
     final plan = await _planner(local, incoming);
     if (plan.toAdd.isNotEmpty) {
       final ins = await _bookRepo.insertAll(
-        plan.toAdd.map((b) => b.copyWith(id: Book.emptyId)).toList(),
+        plan.toAdd.map((b) => b.copyWith(id: CatalogueItem.emptyId)).toList(),
       );
       if (ins.isLeft()) {
         return ins.match(left, (_) => throw StateError('unreachable'));

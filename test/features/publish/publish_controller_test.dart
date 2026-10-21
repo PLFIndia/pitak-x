@@ -10,7 +10,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
@@ -110,13 +110,13 @@ void main() {
     (tester) async {
       final h = _Harness();
       h.books.read = () async => right(const [
-        Book(
+        CatalogueItem(
           id: 1,
           title: 'Visible title',
           notes: 'private-note',
           location: 'private-shelf',
         ),
-        Book(id: 2, title: 'Removed title', removed: true),
+        CatalogueItem(id: 2, title: 'Removed title', removed: true),
       ]);
       expect(await h.publish(tester), isA<PublishSuccess>());
       final json = utf8.decode(
@@ -137,7 +137,8 @@ void main() {
       final h = _Harness();
       h.books.read = () async => left(const StorageFailure('private-first'));
       expect(await h.publish(tester), isA<PublishFailure>());
-      h.books.read = () async => right(const [Book(id: 1, title: 'Recovered')]);
+      h.books.read = () async =>
+          right(const [CatalogueItem(id: 1, title: 'Recovered')]);
       expect(await h.publish(tester), isA<PublishSuccess>());
       final saved = h.manifest.current;
       h.books.read = () async => left(const StorageFailure('private-second'));
@@ -157,7 +158,7 @@ void main() {
       tester,
     ) async {
       final h = _Harness();
-      final read = Completer<Either<Failure, List<Book>>>();
+      final read = Completer<Either<Failure, List<CatalogueItem>>>();
       h.books.read = () => read.future;
       final pending = h.container
           .read(publishControllerProvider.notifier)
@@ -182,7 +183,7 @@ void main() {
       'unobserved publish stays alive until read completes ($succeeds)',
       (tester) async {
         final h = _Harness(observe: false);
-        final read = Completer<Either<Failure, List<Book>>>();
+        final read = Completer<Either<Failure, List<CatalogueItem>>>();
         h.books.read = () => read.future;
         final pending = h.container
             .read(publishControllerProvider.notifier)
@@ -596,11 +597,12 @@ class _Salt implements PublishCoverSaltStore {
 }
 
 class _Books implements BookRepository {
-  Future<Either<Failure, List<Book>>> Function() read = () async => right([]);
+  Future<Either<Failure, List<CatalogueItem>>> Function() read = () async =>
+      right([]);
   int reads = 0;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() {
+  Future<Either<Failure, List<CatalogueItem>>> getAll() {
     reads++;
     return read();
   }

@@ -7,7 +7,7 @@ import 'package:pitaka/features/import_export/application/import_library_use_cas
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -15,10 +15,10 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 
 /// In-memory fakes so the use case is tested without Drift.
 class _FakeBookRepo implements BookRepository {
-  final List<Book> stored = [];
+  final List<CatalogueItem> stored = [];
 
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async =>
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
       right(stored.where((b) => b.bookUid == bookUid).firstOrNull);
 
   @override
@@ -27,22 +27,22 @@ class _FakeBookRepo implements BookRepository {
   ) => action();
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async {
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
     final match = stored.where((b) => b.isbn == isbn).firstOrNull;
     return right(match);
   }
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     final withId = book.copyWith(id: stored.length + 1);
     stored.add(withId);
     return right(withId);
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(stored);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
@@ -50,7 +50,7 @@ class _FakeBookRepo implements BookRepository {
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
@@ -75,7 +75,7 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     final i = stored.indexWhere((b) => b.id == book.id);
     if (i < 0) return left(const NotFoundFailure());
     stored[i] = book;
@@ -83,13 +83,13 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async {
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async {
     stored.addAll(books);
     return right(books.length);
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     stored
       ..clear()
       ..addAll(books);
@@ -197,7 +197,9 @@ void main() {
     });
 
     test('skips a library book whose ISBN already exists', () async {
-      bookRepo.stored.add(const Book(title: 'Existing', isbn: '111', id: 1));
+      bookRepo.stored.add(
+        const CatalogueItem(title: 'Existing', isbn: '111', id: 1),
+      );
       final s = ok(
         await useCase.importText(
           jsonWith(
@@ -217,7 +219,7 @@ void main() {
     // same uid — instead of colliding on the UNIQUE book_uid index.
     test('updates a book in place when the file carries its bookUid', () async {
       bookRepo.stored.add(
-        const Book(
+        const CatalogueItem(
           id: 7,
           bookUid: 'uid-7',
           title: 'Old title',
@@ -250,7 +252,7 @@ void main() {
     test('M09: same-uid import keeps the local PHOTO over an incoming '
         'https cover', () async {
       bookRepo.stored.add(
-        const Book(
+        const CatalogueItem(
           id: 7,
           bookUid: 'uid-7',
           title: 'Old title',
@@ -279,7 +281,7 @@ void main() {
     test('M09: same-uid import takes the incoming https cover when the '
         'local row has NO cover', () async {
       bookRepo.stored.add(
-        const Book(id: 7, bookUid: 'uid-7', title: 'Old title'),
+        const CatalogueItem(id: 7, bookUid: 'uid-7', title: 'Old title'),
       );
       ok(
         await useCase.importText(
@@ -353,21 +355,23 @@ class _FailingBookRepo implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       left(const StorageFailure('boom'));
   @override
-  Future<Either<Failure, Book>> insert(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
       left(const StorageFailure('boom'));
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
@@ -375,7 +379,7 @@ class _FailingBookRepo implements BookRepository {
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
@@ -400,9 +404,12 @@ class _FailingBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async => right(0);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
+      right(0);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async => right(0);
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
+      right(0);
 }

@@ -1,21 +1,22 @@
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 
 /// Pure replacement planning: preserve verified local identities rather than
 /// rewriting encrypted loan rows in another database (M03, policy C).
 abstract final class CatalogueReplacementPlan {
   /// Maps incoming rows onto local IDs, or refuses before any write. New rows
-  /// use [Book.emptyId]; SQLite AUTOINCREMENT must allocate their IDs without
-  /// resetting sqlite_sequence. Thus old, deleted IDs are never recycled.
+  /// use [CatalogueItem.emptyId]; SQLite AUTOINCREMENT must allocate their IDs
+  /// without resetting sqlite_sequence. Thus old, deleted IDs are never
+  /// recycled.
   ///
   /// Exact nonblank UIDs are authoritative. A valid normalized ISBN is a
   /// fallback only if a UID is absent, never if two UIDs disagree. No fuzzy
   /// matching. Duplicate/contradictory keys are refused, not first-match-wins.
-  static Either<Failure, List<Book>> build({
-    required List<Book> local,
-    required List<Book> incoming,
+  static Either<Failure, List<CatalogueItem>> build({
+    required List<CatalogueItem> local,
+    required List<CatalogueItem> incoming,
     required Set<int> loanBookIds,
   }) {
     final localIds = <int>{};
@@ -32,7 +33,7 @@ abstract final class CatalogueReplacementPlan {
       if (!incomingKeys.add(book)) return left(_unsafe);
     }
     final claimed = <int>{};
-    final planned = <Book>[];
+    final planned = <CatalogueItem>[];
     for (final book in incoming) {
       final uid = _uid(book);
       final isbn = _isbn(book);
@@ -43,7 +44,7 @@ abstract final class CatalogueReplacementPlan {
       }
       final match = byUid ?? byIsbn;
       if (match == null) {
-        planned.add(book.copyWith(id: Book.emptyId));
+        planned.add(book.copyWith(id: CatalogueItem.emptyId));
         continue;
       }
       final localUid = _uid(match);
@@ -64,12 +65,12 @@ abstract final class CatalogueReplacementPlan {
     'instead; missing or conflicting identities must be resolved first.',
   );
 
-  static String? _uid(Book book) {
+  static String? _uid(CatalogueItem book) {
     final value = book.bookUid?.trim();
     return value == null || value.isEmpty ? null : value;
   }
 
-  static String? _isbn(Book book) {
+  static String? _isbn(CatalogueItem book) {
     final value = IsbnFormat.normalize(book.isbn ?? '');
     if (!IsbnFormat.isValid(value)) return null;
     return value.length == 10 ? IsbnFormat.toIsbn13(value) : value;
@@ -78,10 +79,10 @@ abstract final class CatalogueReplacementPlan {
 
 /// Indexes exact keys, refusing ambiguity instead of selecting the first row.
 final class _IdentityIndex {
-  final uids = <String, Book>{};
-  final isbns = <String, Book>{};
+  final uids = <String, CatalogueItem>{};
+  final isbns = <String, CatalogueItem>{};
 
-  bool add(Book book) {
+  bool add(CatalogueItem book) {
     final uid = CatalogueReplacementPlan._uid(book);
     final isbn = CatalogueReplacementPlan._isbn(book);
     if (uid != null && uids.containsKey(uid)) return false;

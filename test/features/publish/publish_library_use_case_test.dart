@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -103,7 +103,7 @@ class _CapturingApi implements GitHubGitDataApi {
 }
 
 void main() {
-  Book book({int id = 1, String? cover}) => Book(
+  CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
     title: 'The Odyssey',
     author: 'Homer',
@@ -267,7 +267,7 @@ void main() {
 
   test('removed books are excluded entirely', () async {
     final api = _CapturingApi();
-    const removed = Book(id: 9, title: 'Gone', removed: true);
+    const removed = CatalogueItem(id: 9, title: 'Gone', removed: true);
     await makeUseCase(api, _MemManifest()).call(
       books: [book(), removed],
       activeLoanCounts: const {},

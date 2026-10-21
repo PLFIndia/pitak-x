@@ -7,7 +7,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
@@ -32,7 +32,7 @@ class _RestoreDb extends AppDatabase {
   }
 }
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Existing');
+const _book = CatalogueItem(id: 7, bookUid: 'stable', title: 'Existing');
 const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
@@ -46,7 +46,7 @@ void main() {
   });
   tearDown(() => h.close());
 
-  Future<Uint8List> archive(List<Book> incoming) =>
+  Future<Uint8List> archive(List<CatalogueItem> incoming) =>
       BackupArchiveWriter(
         vaultStore: VaultStore(baseDir: '${h.directory.path}/no_source_vault'),
         coversDir: '${h.directory.path}/incoming_covers',
@@ -72,7 +72,7 @@ void main() {
         await existing(returned: returned);
         final restorer = await h.container.read(restoreBackupProvider.future);
         final bytes = await archive([
-          const Book(id: 7, bookUid: 'new', title: 'New'),
+          const CatalogueItem(id: 7, bookUid: 'new', title: 'New'),
           _book.copyWith(id: 99, title: 'Changed'),
         ]);
         final result = await restorer.restore(archiveBytes: bytes);
@@ -121,7 +121,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
         archiveBytes: await archive([
-          const Book(id: 7, bookUid: 'unrelated', title: 'Other'),
+          const CatalogueItem(id: 7, bookUid: 'unrelated', title: 'Other'),
         ]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());

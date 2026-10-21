@@ -5,7 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -15,11 +15,11 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 
 class _Books implements BookRepository {
   const _Books(this.rows, {this.fail = false});
-  final List<Book> rows;
+  final List<CatalogueItem> rows;
   final bool fail;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       fail ? left(const StorageFailure('db closed')) : right(rows);
 
   @override
@@ -78,9 +78,12 @@ void main() {
   test('sweep removes only unreferenced cover-shaped files', () async {
     final janitor = CoverFileJanitor(
       books: const _Books([
-        Book(title: 'A', coverUrl: 'covers/$a'),
-        Book(title: 'B', coverUrl: 'file:///old/path/$b'), // legacy ref
-        Book(title: 'R', coverUrl: 'https://covers.openlibrary.org/x'),
+        CatalogueItem(title: 'A', coverUrl: 'covers/$a'),
+        CatalogueItem(
+          title: 'B',
+          coverUrl: 'file:///old/path/$b',
+        ), // legacy ref
+        CatalogueItem(title: 'R', coverUrl: 'https://covers.openlibrary.org/x'),
       ]),
       wishlist: const _Wishlist([]),
       settings: _Settings(logo: 'covers/$logo'),
@@ -109,7 +112,7 @@ void main() {
     'releaseReference deletes a file only once nothing points at it',
     () async {
       final janitor = CoverFileJanitor(
-        books: const _Books([Book(title: 'A', coverUrl: 'covers/$a')]),
+        books: const _Books([CatalogueItem(title: 'A', coverUrl: 'covers/$a')]),
         wishlist: const _Wishlist([]),
         settings: _Settings(logo: 'covers/$logo'),
         store: store,

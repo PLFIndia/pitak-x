@@ -3,17 +3,26 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
 /// No-ISBN books with unique uids so the plan exercises the fuzzy pass (the
 /// expensive part) rather than the O(1) key lookups.
-Book _book({required String title, int id = Book.emptyId, String? uid}) =>
-    Book(id: id, bookUid: uid, title: title, author: 'A', addedDate: 1);
+CatalogueItem _book({
+  required String title,
+  int id = CatalogueItem.emptyId,
+  String? uid,
+}) => CatalogueItem(
+  id: id,
+  bookUid: uid,
+  title: title,
+  author: 'A',
+  addedDate: 1,
+);
 
 /// Deterministic 3000 × 3000 fixture (same shape as the N10-b wall-clock
 /// test): enough work that a synchronous plan visibly blocks the event loop.
-({List<Book> local, List<Book> incoming}) _bigFixture() {
+({List<CatalogueItem> local, List<CatalogueItem> incoming}) _bigFixture() {
   final rng = Random(7);
   String phrase(int n) =>
       List.generate(n, (_) => 'w${rng.nextInt(400)}x').join(' ');

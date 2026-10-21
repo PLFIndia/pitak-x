@@ -11,7 +11,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -201,7 +201,7 @@ class MarkWishlistPurchasedUseCase {
     if (isbn != null && isbn.isNotEmpty) {
       final existing = await books.findByIsbn(isbn);
       if (existing.isLeft()) {
-        return left((existing as Left<Failure, Book?>).value);
+        return left((existing as Left<Failure, CatalogueItem?>).value);
       }
       final hit = existing.toNullable();
       if (hit != null) {
@@ -215,8 +215,11 @@ class MarkWishlistPurchasedUseCase {
     // it is inserted. A Left refuses the move INSIDE the transaction, so the
     // wishlist purchase rolls back with it. The returned entity is the
     // normalised one (e.g. a hostile cover is dropped, not copied).
-    final checked = Book.validate(_toLibraryBook(book, stamp));
-    final toInsert = checked.fold<Book?>((errors) => null, (valid) => valid);
+    final checked = CatalogueItem.validate(_toLibraryBook(book, stamp));
+    final toInsert = checked.fold<CatalogueItem?>(
+      (errors) => null,
+      (valid) => valid,
+    );
     if (toInsert == null) {
       return left(
         ValidationFailure(checked.getLeft().toNullable()!.first.userMessage),
@@ -224,7 +227,7 @@ class MarkWishlistPurchasedUseCase {
     }
     final inserted = await books.insert(toInsert);
     if (inserted.isLeft()) {
-      return left((inserted as Left<Failure, Book>).value);
+      return left((inserted as Left<Failure, CatalogueItem>).value);
     }
     final stamped = await _stampPurchased(book, stamp);
     return stamped.map(MarkPurchasedSuccess.new);
@@ -247,7 +250,7 @@ class MarkWishlistPurchasedUseCase {
 
   /// Maps a purchased wishlist entry to a fresh library book (Kotlin
   /// `toLibraryBook`): new acquisition date, single copy.
-  static Book _toLibraryBook(WishlistBook w, int now) => Book(
+  static CatalogueItem _toLibraryBook(WishlistBook w, int now) => CatalogueItem(
     title: w.title,
     titleTransliteration: w.titleTransliteration,
     author: w.author,

@@ -22,13 +22,13 @@
 /// without changing the SQL twin makes that test fail loudly — intended.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Sorts book lists by the app's persisted [BookSort] contract.
 abstract final class BookSorter {
   /// Returns a NEW list of [books] ordered by [sort]. Never mutates [books].
-  static List<Book> sort(List<Book> books, BookSort sort) {
+  static List<CatalogueItem> sort(List<CatalogueItem> books, BookSort sort) {
     final indexed = books.asMap().entries.toList()
       ..sort((a, b) {
         final byKey = switch (sort) {
@@ -48,7 +48,7 @@ abstract final class BookSorter {
 
   /// Blank/null languages sort LAST, then code-unit A→Z (SQLite BINARY
   /// collation parity with the SQL path).
-  static int _byLanguage(Book a, Book b) {
+  static int _byLanguage(CatalogueItem a, CatalogueItem b) {
     final la = (a.language ?? '').trim();
     final lb = (b.language ?? '').trim();
     final aBlank = la.isEmpty;
@@ -58,7 +58,7 @@ abstract final class BookSorter {
   }
 
   /// Band order is [AgeGroup.sortRank]; books with no band sort last.
-  static int _byAgeRank(Book a, Book b) {
+  static int _byAgeRank(CatalogueItem a, CatalogueItem b) {
     final ra = a.ageGroup?.sortRank ?? 1 << 30;
     final rb = b.ageGroup?.sortRank ?? 1 << 30;
     return ra.compareTo(rb);

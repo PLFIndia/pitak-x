@@ -8,7 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:pitaka/core/widgets/book_cover.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// One tappable book row.
 class BookRow extends StatelessWidget {
@@ -21,7 +21,7 @@ class BookRow extends StatelessWidget {
   });
 
   /// The book to render.
-  final Book book;
+  final CatalogueItem book;
 
   /// Called when the row is tapped.
   final VoidCallback onTap;

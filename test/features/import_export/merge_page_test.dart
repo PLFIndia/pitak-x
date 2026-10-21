@@ -15,7 +15,7 @@ import 'package:pitaka/features/import_export/application/merge_controller.dart'
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -83,8 +83,8 @@ class _StrictXFile extends XFile {
 
 class _Books implements BookRepository {
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
-      right([const Book(id: 7, title: 'Local', bookUid: 'old')]);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right([const CatalogueItem(id: 7, title: 'Local', bookUid: 'old')]);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -387,7 +387,7 @@ void main() {
   // review item is a card showing what differs (or why it looks like a
   // duplicate) with the three resolutions as buttons.
   group('N07 — per-row review cards', () {
-    const local = Book(
+    const local = CatalogueItem(
       id: 1,
       bookUid: 'u1',
       title: 'Godaan',
@@ -395,7 +395,7 @@ void main() {
       genre: 'Fiction',
       addedDate: 1,
     );
-    const incoming = Book(
+    const incoming = CatalogueItem(
       bookUid: 'u1',
       title: 'Godaan',
       author: 'Premchand',
@@ -487,7 +487,7 @@ void main() {
     testWidgets('a fuzzy possible duplicate shows both titles and the '
         'similarity; a key collision shows a plain explanation and NO Take '
         'theirs', (tester) async {
-      const earlierIncoming = Book(
+      const earlierIncoming = CatalogueItem(
         bookUid: 'uB',
         title: 'Godaan',
         addedDate: 1,
@@ -497,13 +497,13 @@ void main() {
         resultWith(
           duplicates: const [
             PossibleDuplicate(
-              local: Book(id: 3, title: 'Kabir ke Dohe', addedDate: 1),
-              incoming: Book(title: 'Kabir Dohe', addedDate: 1),
+              local: CatalogueItem(id: 3, title: 'Kabir ke Dohe', addedDate: 1),
+              incoming: CatalogueItem(title: 'Kabir Dohe', addedDate: 1),
               similarity: 0.75,
             ),
             PossibleDuplicate(
               local: earlierIncoming,
-              incoming: Book(
+              incoming: CatalogueItem(
                 bookUid: 'uB',
                 title: 'Godaan (duplicate row)',
                 addedDate: 1,

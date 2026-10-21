@@ -6,14 +6,17 @@ part of 'add_book_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$addBookControllerHash() => r'1f5bceeeea5c4a0ff263d5e39fb4f1da41b062e7';
+String _$addBookControllerHash() => r'd3ddcbb415812b18d2ab740617e34073fafc2e81';
 
-/// Drives a one-shot add or edit and surfaces the saved [Book].
+/// Drives a one-shot add or edit and surfaces the saved [CatalogueItem].
 ///
 /// Copied from [AddBookController].
 @ProviderFor(AddBookController)
 final addBookControllerProvider =
-    AutoDisposeAsyncNotifierProvider<AddBookController, Book?>.internal(
+    AutoDisposeAsyncNotifierProvider<
+      AddBookController,
+      CatalogueItem?
+    >.internal(
       AddBookController.new,
       name: r'addBookControllerProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -23,6 +26,6 @@ final addBookControllerProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$AddBookController = AutoDisposeAsyncNotifier<Book?>;
+typedef _$AddBookController = AutoDisposeAsyncNotifier<CatalogueItem?>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

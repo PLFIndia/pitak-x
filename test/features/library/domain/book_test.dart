@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 void main() {
   group('AgeGroup.fromToken (tolerant, mirrors Kotlin)', () {
@@ -82,7 +82,7 @@ void main() {
 
   group('Book', () {
     test('copyWith replaces only given fields', () {
-      const book = Book(title: 'A', author: 'X');
+      const book = CatalogueItem(title: 'A', author: 'X');
       final updated = book.copyWith(author: 'Y', copyCount: 2);
       expect(updated.title, 'A');
       expect(updated.author, 'Y');
@@ -90,8 +90,8 @@ void main() {
     });
 
     test('defaults match Kotlin', () {
-      const book = Book(title: 'T');
-      expect(book.id, Book.emptyId);
+      const book = CatalogueItem(title: 'T');
+      expect(book.id, CatalogueItem.emptyId);
       expect(book.copyCount, 1);
       expect(book.needsMetadata, isFalse);
       expect(book.removed, isFalse);

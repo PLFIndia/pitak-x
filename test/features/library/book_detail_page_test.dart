@@ -10,7 +10,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
@@ -32,9 +32,9 @@ import '../vault/vault_repository_write_stub.dart';
 /// materializer do in production (write the row, then invalidate
 /// `libraryControllerProvider`).
 class _MemBookRepo implements BookRepository {
-  _MemBookRepo(List<Book> seed) : books = List.of(seed);
+  _MemBookRepo(List<CatalogueItem> seed) : books = List.of(seed);
 
-  final List<Book> books;
+  final List<CatalogueItem> books;
 
   /// When set, `getById` returns this failure (safe-error test).
   Failure? failGetByIdWith;
@@ -42,7 +42,7 @@ class _MemBookRepo implements BookRepository {
   int getByIdCalls = 0;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     getByIdCalls++;
     final f = failGetByIdWith;
     if (f != null) return left(f);
@@ -50,7 +50,7 @@ class _MemBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     final i = books.indexWhere((b) => b.id == book.id);
     if (i < 0) return left(const NotFoundFailure());
     books[i] = book;
@@ -58,21 +58,21 @@ class _MemBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     final saved = book.copyWith(id: books.length + 1, bookUid: 'uid');
     books.add(saved);
     return right(saved);
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
   @override
   Future<Either<Failure, BookPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : books;
+    final rows = query.isSearch ? const <CatalogueItem>[] : books;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -88,9 +88,11 @@ class _MemBookRepo implements BookRepository {
     BookSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String bookUid) async =>
+      right(null);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -103,13 +105,14 @@ class _MemBookRepo implements BookRepository {
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
-const _seed = Book(
+const _seed = CatalogueItem(
   id: 7,
   bookUid: 'uid-7',
   title: 'Dune',
@@ -137,7 +140,7 @@ class _StubVault with VaultWriteUnsupported implements VaultRepository {
 Widget _host(
   _MemBookRepo repo,
   String coversDir, {
-  Book? initialBook,
+  CatalogueItem? initialBook,
   List<Override> extraOverrides = const [],
 }) => ProviderScope(
   overrides: [
@@ -318,7 +321,7 @@ void main() {
     // Rows persisted before M15 (or by a hostile file on an old build) can
     // hold an addedDate that DateTime cannot represent. The detail page must
     // render the row without a date instead of throwing a RangeError.
-    const hostile = Book(
+    const hostile = CatalogueItem(
       id: 7,
       bookUid: 'uid-7',
       title: 'Dune',

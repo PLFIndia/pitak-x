@@ -40,7 +40,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -165,7 +165,10 @@ class LibraryController extends _$LibraryController {
     final latest = state.valueOrNull ?? current;
     state = AsyncData(
       result.fold((_) => latest.copyWith(isLoadingMore: false), (page) {
-        final books = List<Book>.unmodifiable([...latest.books, ...page.items]);
+        final books = List<CatalogueItem>.unmodifiable([
+          ...latest.books,
+          ...page.items,
+        ]);
         _loadedDepth = books.length;
         return LibraryWindow(books: books, hasMore: page.hasMore);
       }),
@@ -236,7 +239,7 @@ class LibraryController extends _$LibraryController {
       (BookPage page) {
         _loadedDepth = math.max(page.items.length, libraryPageSize);
         return LibraryWindow(
-          books: List<Book>.unmodifiable(page.items),
+          books: List<CatalogueItem>.unmodifiable(page.items),
           hasMore: page.hasMore,
         );
       },

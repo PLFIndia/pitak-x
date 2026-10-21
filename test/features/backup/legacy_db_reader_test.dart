@@ -1,6 +1,6 @@
 /// Review finding M15 part 2: the backup-restore reader is the last
 /// ingress that built catalogue entities with the plain constructors. Every
-/// row must pass `Book.validate` / `WishlistBook.validate` before it can be
+/// row must pass `CatalogueItem.validate` / `WishlistBook.validate` before it can be
 /// persisted, and the archive must be REFUSED (typed `ValidationFailure`,
 /// never a throw) on the first invalid row — restore is an authoritative
 /// overwrite, so silently skipping or truncating a row would break the
@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -95,7 +95,7 @@ void main() {
     return result.fold((f) => f, (_) => fail('expected a refusal'));
   }
 
-  List<Book> readBooksOk() {
+  List<CatalogueItem> readBooksOk() {
     final result = LegacyDbReader(db).readBooks();
     return result.fold(
       (f) => fail('unexpected refusal: $f'),
