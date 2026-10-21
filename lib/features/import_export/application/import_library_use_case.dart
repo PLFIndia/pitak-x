@@ -35,7 +35,7 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -83,7 +83,7 @@ class ImportSummary {
 final class ImportLibraryUseCase {
   /// Creates the use case over its collaborators.
   const ImportLibraryUseCase({
-    required BookRepository bookRepo,
+    required CatalogueItemRepository bookRepo,
     required WishlistRepository wishlistRepo,
     // N14: concrete JSON codec lives in infrastructure; injected via DI.
     required LibraryJsonParser jsonParser,
@@ -93,7 +93,7 @@ final class ImportLibraryUseCase {
        _json = jsonParser,
        _goodreads = goodreadsImporter;
 
-  final BookRepository _bookRepo;
+  final CatalogueItemRepository _bookRepo;
   final WishlistRepository _wishlistRepo;
   final LibraryJsonParser _json;
   final GoodreadsCsvImporter _goodreads;

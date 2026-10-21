@@ -1,4 +1,4 @@
-/// Drift-backed implementation of [BookRepository] (AGENTS.md §3.3).
+/// Drift-backed implementation of [CatalogueItemRepository] (AGENTS.md §3.3).
 ///
 /// Side effects live at this edge; expected failures are caught and returned as
 /// typed [Failure]s (fail-closed). UUIDs are minted here at first persist,
@@ -6,17 +6,17 @@
 ///
 /// ## Ordering, filtering AND paging happen INSIDE SQLite (N10-d, review N10)
 ///
-/// The one list read, [DriftBookRepository.page], has two statements behind
-/// it — a typed Drift select for a blank search box and a hand-written FTS5
-/// join for typed text — and both return rows in their FINAL order, already
-/// narrowed to the language facet, already cut to the requested window.
+/// The one list read, [DriftCatalogueItemRepository.page], has two statements
+/// behind it — a typed Drift select for a blank search box and a hand-written
+/// FTS5 join for typed text — and both return rows in their FINAL order,
+/// already narrowed to the language facet, already cut to the requested window.
 /// Nothing is re-sorted, re-filtered or sliced in Dart afterwards. Why that
 /// matters: a `LIMIT/OFFSET` page can only be correct if SQLite's rows
-/// `offset..offset+limit` ARE the rows the user should see there. Until S29
-/// the Age-group sort ordered by the raw token in SQL (`above-10 < above-15 <
-/// above-3`, alphabetical) and fixed the order in Dart — fine for a
-/// whole-table read, wrong for any page. Until S30 the controller read the
-/// whole catalogue on every load.
+/// `offset..offset+limit` ARE the rows the user should see there. Until S29 the
+/// Age-group sort ordered by the raw token in SQL (`above-10 < above-15 <
+/// above-3`, alphabetical) and fixed the order in Dart — fine for a whole-table
+/// read, wrong for any page. Until S30 the controller read the whole catalogue
+/// on every load.
 ///
 /// The ordering rules are the domain's `BookSorter` contract (N05). The SQL
 /// here is its twin, and `drift_book_repository_test.dart` proves the two
@@ -36,16 +36,17 @@ import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
-import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:uuid/uuid.dart';
 
 /// Persists books in the Drift [AppDatabase].
-class DriftBookRepository implements BookRepository {
+class DriftCatalogueItemRepository implements CatalogueItemRepository {
   /// Creates the repository over [_db], optionally with a custom [Uuid].
-  DriftBookRepository(this._db, {Uuid? uuid}) : _uuid = uuid ?? const Uuid();
+  DriftCatalogueItemRepository(this._db, {Uuid? uuid})
+    : _uuid = uuid ?? const Uuid();
 
   final AppDatabase _db;
   final Uuid _uuid;
@@ -590,7 +591,8 @@ final class _LanguageResolver {
 }
 
 /// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
-/// [DriftBookRepository.runInTransaction]. Never escapes the repository.
+/// [DriftCatalogueItemRepository.runInTransaction]. Never escapes the
+/// repository.
 final class _RollbackWith implements Exception {
   _RollbackWith(this.result);
   final Object result;

@@ -6,11 +6,11 @@
 /// storage base every repository module builds on.
 ///
 /// Why `wishlistRepository` sits here and not in the wishlist module: the
-/// library cover janitor needs it (M11 — wishlist rows keep cover files
-/// alive) AND the wishlist module's mark-purchased use case needs the
-/// library module's bookRepository. Housing this pure Drift binding with
-/// the database breaks that would-be import cycle between feature modules
-/// (the plan's cycle rule: the binding moves to a shared base module).
+/// library cover janitor needs it (M11 — wishlist rows keep cover files alive)
+/// AND the wishlist module's mark-purchased use case needs the library module's
+/// catalogueItemRepository. Housing this pure Drift binding with the database
+/// breaks that would-be import cycle between feature modules (the plan's cycle
+/// rule: the binding moves to a shared base module).
 library;
 
 import 'dart:io';

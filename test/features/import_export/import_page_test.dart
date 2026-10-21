@@ -19,15 +19,15 @@ import 'package:pitaka/features/import_export/presentation/pages/import_page.dar
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 import '../../support/a11y.dart';
 
-class _MemBookRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _MemBookRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -134,7 +134,9 @@ void main() {
     overrides: [
       importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
       // Library/Wishlist controllers refresh on success — give them repos.
-      bookRepositoryProvider.overrideWith((ref) async => _MemBookRepo()),
+      catalogueItemRepositoryProvider.overrideWith(
+        (ref) async => _MemBookRepo(),
+      ),
       wishlistRepositoryProvider.overrideWith(
         (ref) async => _MemWishlistRepo(),
       ),
@@ -231,7 +233,9 @@ void main() {
         overrides: [
           importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
           // Library/Wishlist controllers refresh on success — give them repos.
-          bookRepositoryProvider.overrideWith((ref) async => _MemBookRepo()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _MemBookRepo(),
+          ),
           wishlistRepositoryProvider.overrideWith(
             (ref) async => _MemWishlistRepo(),
           ),
@@ -277,7 +281,9 @@ void main() {
             await gate.future;
             return useCase;
           }),
-          bookRepositoryProvider.overrideWith((ref) async => _MemBookRepo()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _MemBookRepo(),
+          ),
           wishlistRepositoryProvider.overrideWith(
             (ref) async => _MemWishlistRepo(),
           ),

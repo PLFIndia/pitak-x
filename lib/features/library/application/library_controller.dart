@@ -148,7 +148,7 @@ class LibraryController extends _$LibraryController {
   Future<void> _loadMore(LibraryWindow current) async {
     final rev = _revision;
     state = AsyncData(current.copyWith(isLoadingMore: true));
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.page(
       _intent(_query),
       limit: libraryPageSize,
@@ -190,7 +190,7 @@ class LibraryController extends _$LibraryController {
   /// Fail closed (§5): a repository Left becomes `AsyncError(Failure)` — a
   /// failed write must never refresh the list as if it succeeded.
   Future<void> remove(int id) async {
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.markRemoved(
       id,
       DateTime.now().millisecondsSinceEpoch,
@@ -204,7 +204,7 @@ class LibraryController extends _$LibraryController {
   /// Clears the soft-delete flag on book [id], then refreshes. Fails closed
   /// like [remove].
   Future<void> restoreRemoved(int id) async {
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.restoreRemoved(id);
     await result.fold(
       (failure) async => state = AsyncError(failure, StackTrace.current),
@@ -230,7 +230,7 @@ class LibraryController extends _$LibraryController {
     _lastQuery = query;
     _loadedDepth = depth;
 
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.page(query, limit: depth);
     return result.fold(
       (failure) =>

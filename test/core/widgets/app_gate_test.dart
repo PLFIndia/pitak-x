@@ -12,7 +12,7 @@ import 'package:pitaka/core/widgets/splash_screen.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -20,9 +20,9 @@ import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Empty book repo so the gate's LibraryPage can build without a database.
-class _EmptyRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _EmptyRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -136,7 +136,7 @@ Widget _gateBuilder(BuildContext context, Widget? child) =>
 
 Widget _app(List<Override> overrides) => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+    catalogueItemRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
     ...overrides,
   ],
   child: _shell(),
@@ -282,7 +282,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _EmptyRepo(),
+          ),
           biometricAuthenticatorProvider.overrideWithValue(auth),
         ],
         child: Consumer(

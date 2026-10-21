@@ -11,7 +11,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Translation between [BookRow] and [CatalogueItem].
-extension BookRowMapper on BookRow {
+extension CatalogueItemRowMapper on BookRow {
   /// Persistence row → domain entity. Tolerant of unknown enum tokens (→ null).
   CatalogueItem toDomain() => CatalogueItem(
     id: id,
@@ -41,7 +41,7 @@ extension BookRowMapper on BookRow {
 }
 
 /// Translation from [CatalogueItem] to a Drift insert/update companion.
-extension BookCompanionMapper on CatalogueItem {
+extension CatalogueItemCompanionMapper on CatalogueItem {
   /// Domain entity → Drift companion. Computes the Unicode-aware sort shadows
   /// (lowercase) the same way the Kotlin `BookMapper` does — NOT SQLite
   /// `LOWER()`, so non-ASCII scripts fold correctly.

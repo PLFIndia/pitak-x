@@ -5,7 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
@@ -158,7 +158,7 @@ void main() {
           'a.jpg': Uint8List.fromList([1]),
           'b.jpg': Uint8List.fromList([2]),
         },
-        bookRepository: books,
+        catalogueItemRepository: books,
         wishlistRepository: _WishFaults(fixture, fault),
       );
       expect(result.isLeft(), isTrue);
@@ -174,7 +174,7 @@ void main() {
   }
 }
 
-class _BookFaults extends DriftBookRepository {
+class _BookFaults extends DriftCatalogueItemRepository {
   _BookFaults(BundleTestFixture fixture, this.fault) : super(fixture.database);
   final String fault;
   bool bodySucceeded = false;

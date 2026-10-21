@@ -14,14 +14,14 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 
 /// Returns the book holding the given ISBN, or null when none does.
 class FindByIsbnUseCase {
   /// Creates the use case over [_repository].
   const FindByIsbnUseCase(this._repository);
 
-  final BookRepository _repository;
+  final CatalogueItemRepository _repository;
 
   /// Looks [isbn] up; a blank ISBN is never stored, so it yields null.
   Future<Either<Failure, CatalogueItem?>> call(String isbn) =>

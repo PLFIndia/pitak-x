@@ -11,18 +11,18 @@ import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 /// In-memory repo whose write results are scriptable, so the controller's
 /// fail-closed behavior (§5) can be asserted.
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -257,7 +257,7 @@ void main() {
   }) {
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
         settingsRepositoryProvider.overrideWith(
           (ref) async => settings ?? _FakeSettingsRepo(),
         ),

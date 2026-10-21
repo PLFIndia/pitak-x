@@ -20,7 +20,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -29,7 +29,7 @@ import '../library/replacement_test_guard.dart';
 
 /// In-memory book repo: just enough surface for the merge use case (mirrors
 /// merge_library_use_case_test.dart's fake).
-class _FakeBooks implements BookRepository {
+class _FakeBooks implements CatalogueItemRepository {
   _FakeBooks(this._books);
 
   final List<CatalogueItem> _books;
@@ -222,7 +222,9 @@ void main() {
         }),
         // The library controller (invalidated on a successful merge) needs a
         // repo + settings to build.
-        bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+        catalogueItemRepositoryProvider.overrideWith(
+          (ref) async => _FakeBooks([]),
+        ),
         settingsRepositoryProvider.overrideWith((ref) async => repo),
       ],
     );
@@ -504,7 +506,9 @@ void main() {
               planner: planMergeInline,
             );
           }),
-          bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBooks([]),
+          ),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _FakeSettings(libraryId: matchingId),
           ),
@@ -862,7 +866,9 @@ void main() {
               planner: planMergeInline,
             ),
           ),
-          bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBooks([]),
+          ),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _FakeSettings(libraryId: matchingId),
           ),

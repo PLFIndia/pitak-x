@@ -27,7 +27,7 @@ import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -78,7 +78,7 @@ class ExportResult {
 class ExportLibraryUseCase {
   /// Creates the use case over its collaborators.
   const ExportLibraryUseCase({
-    required BookRepository bookRepo,
+    required CatalogueItemRepository bookRepo,
     required WishlistRepository wishlistRepo,
     // N14: the concrete JSON codec and PDF renderer live in infrastructure;
     // the use case depends on the domain ports, injected via DI.
@@ -89,7 +89,7 @@ class ExportLibraryUseCase {
        _json = jsonEncoder,
        _pdf = pdfRenderer;
 
-  final BookRepository _books;
+  final CatalogueItemRepository _books;
   final WishlistRepository _wishlist;
   final LibraryJsonEncoder _json;
   final LibraryPdfRenderer _pdf;

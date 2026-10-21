@@ -53,7 +53,7 @@ class BookCoverController extends _$BookCoverController {
       // roll back).
       return left(const StorageFailure('could not write the cover file'));
     }
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.update(book.copyWith(coverUrl: coverRef));
     if (result.isLeft()) {
       // The row still points at the OLD cover; the new file is now an orphan.

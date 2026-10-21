@@ -16,14 +16,14 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 
 /// Validates and inserts a new [CatalogueItem].
-class AddBookUseCase {
+class AddCatalogueItemUseCase {
   /// Creates the use case over [_repository].
-  const AddBookUseCase(this._repository);
+  const AddCatalogueItemUseCase(this._repository);
 
-  final BookRepository _repository;
+  final CatalogueItemRepository _repository;
 
   /// Inserts [book] after validating it against the shared catalogue rules
   /// (M15: `CatalogueItem.validate` is the single gate every ingress passes

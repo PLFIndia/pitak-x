@@ -12,7 +12,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -31,7 +31,7 @@ import '../vault/vault_repository_write_stub.dart';
 /// the page's back, the way `BookCoverController` / the remote-cover
 /// materializer do in production (write the row, then invalidate
 /// `libraryControllerProvider`).
-class _MemBookRepo implements BookRepository {
+class _MemBookRepo implements CatalogueItemRepository {
   _MemBookRepo(List<CatalogueItem> seed) : books = List.of(seed);
 
   final List<CatalogueItem> books;
@@ -144,7 +144,7 @@ Widget _host(
   List<Override> extraOverrides = const [],
 }) => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith((ref) async => repo),
+    catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
     coversDirProvider.overrideWith((ref) async => coversDir),
     ...extraOverrides,
   ],
@@ -516,7 +516,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => repo),
+          catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
           coversDirProvider.overrideWith((ref) async => tmp.path),
         ],
         child: MaterialApp(

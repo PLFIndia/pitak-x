@@ -21,7 +21,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
@@ -40,7 +40,7 @@ class CreateBackupUseCase {
   });
 
   /// Library source.
-  final BookRepository books;
+  final CatalogueItemRepository books;
 
   /// Wishlist source.
   final WishlistRepository wishlist;

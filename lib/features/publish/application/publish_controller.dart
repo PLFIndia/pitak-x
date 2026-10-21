@@ -52,7 +52,7 @@ class PublishController extends _$PublishController {
   }
 
   Future<PublishResult> _run() async {
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final books = await repo.getAll();
     // A failed read is not an empty library: stop before preparing any publish.
     // Diagnostics can contain private database details; never show them.

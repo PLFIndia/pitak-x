@@ -48,7 +48,7 @@ import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/infrastructure/book_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';

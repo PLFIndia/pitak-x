@@ -8,13 +8,14 @@
 ///
 /// **Observes the book by id (N03).** The page is pushed with a `bookId` (and,
 /// optionally, the list row's `CatalogueItem` so the first frame is not a
-/// spinner) and watches `bookByIdProvider(bookId)` from then on. Everything
-/// that can change the row while this page is open — a cover captured right
-/// here, the remote-cover materializer, the edit form — signals through the
-/// library controller, and this page re-reads the row on that signal. So a new
-/// cover appears in place, Edit always opens on the CURRENT row, and there is
-/// no stale snapshot left to write back. A row that vanished shows a safe empty
-/// state; a repository failure shows a safe message, never raw text.
+/// spinner) and watches `catalogueItemByIdProvider(bookId)` from then on.
+/// Everything that can change the row while this page is open — a cover
+/// captured right here, the remote-cover materializer, the edit form — signals
+/// through the library controller, and this page re-reads the row on that
+/// signal. So a new cover appears in place, Edit always opens on the CURRENT
+/// row, and there is no stale snapshot left to write back. A row that vanished
+/// shows a safe empty state; a repository failure shows a safe message, never
+/// raw text.
 library;
 
 import 'package:flutter/material.dart';
@@ -25,7 +26,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/book_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -80,7 +81,7 @@ class BookDetailPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final observed = ref.watch(bookByIdProvider(bookId));
+    final observed = ref.watch(catalogueItemByIdProvider(bookId));
     // `valueOrNull` keeps the previous value during a reload, so a rewritten
     // row swaps in without a loading flash; `hasValue` distinguishes "resolved
     // to null" (the row is gone) from "not resolved yet".
@@ -598,8 +599,8 @@ class _RemovedBadge extends StatelessWidget {
 }
 
 /// "Delete permanently" action (#27/D3). A hard delete must purge the book's
-/// vault loans, so it routes through [DeleteBookUseCase]: if the vault is
-/// locked it asks the user to unlock first (we never delete while we can't
+/// vault loans, so it routes through [DeleteCatalogueItemUseCase]: if the vault
+/// is locked it asks the user to unlock first (we never delete while we can't
 /// confirm/purge loans — fail-closed, no vault-state leak).
 class _DeleteForeverButton extends ConsumerStatefulWidget {
   const _DeleteForeverButton({required this.book});
@@ -638,7 +639,7 @@ class _DeleteForeverButtonState extends ConsumerState<_DeleteForeverButton> {
     if (confirmed != true || !mounted) return;
 
     setState(() => _busy = true);
-    final useCase = await ref.read(deleteBookUseCaseProvider.future);
+    final useCase = await ref.read(deleteCatalogueItemUseCaseProvider.future);
     final result = await useCase(widget.book.id);
     if (!mounted) return;
     setState(() => _busy = false);

@@ -12,7 +12,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
@@ -270,10 +270,10 @@ void main() {
   }) {
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async {
+        catalogueItemRepositoryProvider.overrideWith((ref) async {
           final db = AppDatabase(NativeDatabase.memory());
           ref.onDispose(db.close);
-          final books = DriftBookRepository(db);
+          final books = DriftCatalogueItemRepository(db);
           await books.insert(const CatalogueItem(id: 1, title: 'First'));
           await books.insert(const CatalogueItem(id: 2, title: 'Second'));
           return books;

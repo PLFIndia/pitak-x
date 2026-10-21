@@ -11,7 +11,7 @@ import 'package:pitaka/features/library/application/materialize_remote_cover_use
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -35,7 +35,7 @@ class _ScriptedUseCase {
 /// The scripted use case is driven through `getById`: that is the first thing
 /// the real use case does, so intercepting it gives full control of timing
 /// and outcome without a second fake of the whole class.
-class _CountingBooks implements BookRepository {
+class _CountingBooks implements CatalogueItemRepository {
   _CountingBooks(this.script);
   final _ScriptedUseCase script;
 

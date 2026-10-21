@@ -23,7 +23,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/serial_op_queue.dart';
@@ -542,7 +542,7 @@ class VaultSessionController extends _$VaultSessionController
   Future<Either<Failure, Unit>> addLoan(Loan loan) =>
       _mutate((p, store, blob) async {
         final generation = _keeper.generation;
-        final books = await ref.read(bookRepositoryProvider.future);
+        final books = await ref.read(catalogueItemRepositoryProvider.future);
         if (!_keeper.isCurrent(generation)) return left(_cancelled);
         final found = await books.getById(loan.bookId);
         if (!_keeper.isCurrent(generation)) return left(_cancelled);

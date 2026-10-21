@@ -48,7 +48,7 @@ final bundleCoverFilesProvider =
 // ignore: unused_element
 typedef BundleCoverFilesRef = AutoDisposeFutureProviderRef<BundleCoverFiles>;
 String _$importLibraryUseCaseHash() =>
-    r'30ac257e30c36a352ce4ff67e895c819020133a2';
+    r'214b32504477027b2ce15f04a766703cc38b844a';
 
 /// One-shot library/wishlist import use case.
 ///
@@ -92,7 +92,7 @@ final exportLogoReaderProvider =
 typedef ExportLogoReaderRef =
     AutoDisposeFutureProviderRef<Future<Uint8List?> Function(String)>;
 String _$exportLibraryUseCaseHash() =>
-    r'efe6913015990d9cd6a03e40e1b26de914f4e14e';
+    r'a2494d77f525e18815f625ed878dea3cfa3bf54e';
 
 /// One-shot library/wishlist export use case.
 ///
@@ -160,7 +160,7 @@ final pdfTextRasterizerProvider =
 // ignore: unused_element
 typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
-    r'3be3d0337d2d255a58b32cb5c4aa18a49e1ab251';
+    r'c193d5afe28ff1ec313cccf07e663d371d2e976f';
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID

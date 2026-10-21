@@ -9,7 +9,7 @@ import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/book_sorter.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 T ok<T>(Either<Failure, T> either) =>
@@ -20,7 +20,7 @@ T ok<T>(Either<Failure, T> either) =>
 /// seams. This is how the controller consumes the repository (N10-d part 2);
 /// there is no whole-list read any more.
 Future<List<CatalogueItem>> _allPages(
-  DriftBookRepository repo,
+  DriftCatalogueItemRepository repo,
   LibraryQuery query, {
   int pageSize = 7,
 }) async {
@@ -79,11 +79,11 @@ List<int> _expectedIds(
 
 void main() {
   late AppDatabase db;
-  late DriftBookRepository repo;
+  late DriftCatalogueItemRepository repo;
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
-    repo = DriftBookRepository(db);
+    repo = DriftCatalogueItemRepository(db);
   });
 
   tearDown(() async {
@@ -318,7 +318,7 @@ void main() {
   group('N10-d — order, filter and page are final in SQL', () {
     late List<CatalogueItem> persisted;
 
-    Future<void> seed(DriftBookRepository into) async {
+    Future<void> seed(DriftCatalogueItemRepository into) async {
       persisted = [];
       for (final b in _fixture()) {
         persisted.add(ok<CatalogueItem>(await into.insert(b)));

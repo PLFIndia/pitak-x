@@ -7,7 +7,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_lookup_service.dart';
@@ -27,9 +27,9 @@ class _FakeLookup implements IsbnLookupService {
 }
 
 /// In-memory repo with autoincrement ids, enough to drive add + edit.
-class _MemRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _MemRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -78,7 +78,7 @@ class _MemRepo implements BookRepository {
   }
 
   // S34: derived from the stored books, like the real repository, so the
-  // AddBookUseCase duplicate-ISBN pre-check fires in widget tests too.
+  // AddCatalogueItemUseCase duplicate-ISBN pre-check fires in widget tests too.
   @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
     if (isbn.trim().isEmpty) return right(null);
@@ -136,7 +136,7 @@ Future<void> _tapSave(WidgetTester tester) async {
 Widget _host(_MemRepo repo, {CatalogueItem? book, LookupResult? lookup}) {
   return ProviderScope(
     overrides: [
-      bookRepositoryProvider.overrideWith((ref) async => repo),
+      catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
       if (lookup != null)
         isbnLookupServiceProvider.overrideWithValue(_FakeLookup(lookup)),
     ],
@@ -581,7 +581,9 @@ void main() {
     final repo = _MemRepo();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+        overrides: [
+          catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+        ],
         child: MaterialApp(
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(

@@ -25,7 +25,7 @@ library;
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -42,7 +42,7 @@ class CoverFileJanitor {
   });
 
   /// Source of truth for which covers are referenced by library books.
-  final BookRepository books;
+  final CatalogueItemRepository books;
 
   /// Source of truth for which covers are referenced by wishlist entries
   /// (M11: they share the same `covers/` directory, so their references are

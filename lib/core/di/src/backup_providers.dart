@@ -31,7 +31,7 @@ part 'backup_providers.g.dart';
 Future<CreateBackupUseCase> createBackupUseCase(
   CreateBackupUseCaseRef ref,
 ) async {
-  final books = await ref.watch(bookRepositoryProvider.future);
+  final books = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlist = await ref.watch(wishlistRepositoryProvider.future);
   final store = await ref.watch(vaultStoreProvider.future);
   final coversDir = await ref.watch(coversDirProvider.future);

@@ -8,13 +8,13 @@ import 'package:pitaka/features/library/application/library_filter_controller.da
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 
 /// Two languages; `query` honours the language facet like the real repo.
-class _Repo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _Repo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -91,7 +91,9 @@ void main() {
   setUp(() {
     repo = _Repo();
     container = ProviderContainer(
-      overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+      overrides: [
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+      ],
     );
     addTearDown(container.dispose);
   });

@@ -6,14 +6,14 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   const _Books(this.rows, {this.fail = false});
   final List<CatalogueItem> rows;
   final bool fail;

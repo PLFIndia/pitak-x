@@ -11,7 +11,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
@@ -501,7 +501,7 @@ class _Harness {
   _Harness({bool observe = true, bool networkUnavailable = false}) {
     container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => books),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
         gitHubApiProvider.overrideWithValue(api),
         publishCredentialStoreProvider.overrideWithValue(credentials),
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
@@ -596,7 +596,7 @@ class _Salt implements PublishCoverSaltStore {
   Future<List<int>> salt() => throw UnsupportedError('Unexpected cover access');
 }
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> Function() read = () async =>
       right([]);
   int reads = 0;

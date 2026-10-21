@@ -12,18 +12,18 @@ library;
 
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/settings_providers.dart';
-import 'package:pitaka/features/library/application/add_book_use_case.dart';
+import 'package:pitaka/features/library/application/add_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/find_by_isbn_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/application/update_book_use_case.dart';
+import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -31,9 +31,11 @@ part 'library_providers.g.dart';
 
 /// Library books repository.
 @riverpod
-Future<BookRepository> bookRepository(BookRepositoryRef ref) async {
+Future<CatalogueItemRepository> catalogueItemRepository(
+  CatalogueItemRepositoryRef ref,
+) async {
   final db = await ref.watch(appDatabaseProvider.future);
-  return DriftBookRepository(db);
+  return DriftCatalogueItemRepository(db);
 }
 
 /// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers,
@@ -55,7 +57,7 @@ CoverFileCoordinator coverFileCoordinator(CoverFileCoordinatorRef ref) =>
 /// to sweep orphans left by older versions.
 @riverpod
 Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
-  final books = await ref.watch(bookRepositoryProvider.future);
+  final books = await ref.watch(catalogueItemRepositoryProvider.future);
   // M11: wishlist rows reference covers in the same directory; the janitor
   // must count them as live references or startup sweeps delete their art.
   final wishlist = await ref.watch(wishlistRepositoryProvider.future);
@@ -86,12 +88,12 @@ Future<int> orphanCoverSweep(OrphanCoverSweepRef ref) async {
 /// Distinct non-blank languages present in the library (filter-chip facets).
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) — watching only the repository OBJECT never fires,
-/// so without this an add/edit/import/restore left the chips stale.
+/// pattern as [catalogueItemById]) — watching only the repository OBJECT never
+/// fires, so without this an add/edit/import/restore left the chips stale.
 @riverpod
 Future<List<String>> libraryLanguages(LibraryLanguagesRef ref) async {
   ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.distinctLanguages();
   return result.getOrElse((_) => const []);
 }
@@ -110,41 +112,47 @@ Future<List<String>> librarySourceDetails(
   ItemSourceType type,
 ) async {
   ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.distinctSourceDetails(type);
   return result.getOrElse((_) => const []);
 }
 
 /// Adds a new book to the library (title-required validation + persist).
 @riverpod
-Future<AddBookUseCase> addBookUseCase(AddBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  return AddBookUseCase(repo);
+Future<AddCatalogueItemUseCase> addCatalogueItemUseCase(
+  AddCatalogueItemUseCaseRef ref,
+) async {
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
+  return AddCatalogueItemUseCase(repo);
 }
 
 /// Finds a library book by exact ISBN (S34: quick-add scan routing — an
 /// already-catalogued scan opens the existing book, not the add form).
 @riverpod
 Future<FindByIsbnUseCase> findByIsbnUseCase(FindByIsbnUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   return FindByIsbnUseCase(repo);
 }
 
 /// Updates an existing library book (title-required, id-immutable).
 @riverpod
-Future<UpdateBookUseCase> updateBookUseCase(UpdateBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
-  return UpdateBookUseCase(repo);
+Future<UpdateCatalogueItemUseCase> updateCatalogueItemUseCase(
+  UpdateCatalogueItemUseCaseRef ref,
+) async {
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
+  return UpdateCatalogueItemUseCase(repo);
 }
 
 /// Hard-deletes a library book, purging its vault loans when unlocked (#27/D3).
 /// The vault side is the session controller (it satisfies [VaultLoanPurger]).
 @riverpod
-Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
+Future<DeleteCatalogueItemUseCase> deleteCatalogueItemUseCase(
+  DeleteCatalogueItemUseCaseRef ref,
+) async {
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final vault = ref.read(vaultSessionControllerProvider.notifier);
   final janitor = await ref.watch(coverFileJanitorProvider.future);
-  return DeleteBookUseCase(
+  return DeleteCatalogueItemUseCase(
     books: repo,
     vault: vault,
     releaseCover: janitor.releaseReference,
@@ -172,9 +180,12 @@ Future<DeleteBookUseCase> deleteBookUseCase(DeleteBookUseCaseRef ref) async {
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 @riverpod
-Future<CatalogueItem?> bookById(BookByIdRef ref, int bookId) async {
+Future<CatalogueItem?> catalogueItemById(
+  CatalogueItemByIdRef ref,
+  int bookId,
+) async {
   ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final result = await repo.getById(bookId);
   return result.fold(
     // ignore: only_throw_errors, Riverpod surfaces typed errors via throw

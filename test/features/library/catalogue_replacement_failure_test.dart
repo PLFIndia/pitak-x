@@ -4,15 +4,15 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 import 'replacement_harness.dart';
 import 'replacement_test_guard.dart';
 
-class _InterceptBooks implements BookRepository {
+class _InterceptBooks implements CatalogueItemRepository {
   _InterceptBooks(this.delegate);
-  final BookRepository delegate;
+  final CatalogueItemRepository delegate;
   Failure? readFailure;
   Future<void> Function()? afterRead;
   Future<void> Function()? afterReplace;

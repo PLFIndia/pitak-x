@@ -34,7 +34,7 @@ import 'dart:typed_data';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 
@@ -56,7 +56,7 @@ typedef ReportCoverRefusal = void Function(int bookId, CoverRefusal reason);
 final class MaterializeRemoteCoverUseCase {
   /// Creates the use case over its collaborators.
   const MaterializeRemoteCoverUseCase({
-    required BookRepository books,
+    required CatalogueItemRepository books,
     required CoverFiles files,
     required BoundedCoverDownload download,
     required ReleaseCoverReference releaseReference,
@@ -67,7 +67,7 @@ final class MaterializeRemoteCoverUseCase {
        _release = releaseReference,
        _onRefused = onRefused;
 
-  final BookRepository _books;
+  final CatalogueItemRepository _books;
   final CoverFiles _files;
   final BoundedCoverDownload _download;
   final ReleaseCoverReference _release;

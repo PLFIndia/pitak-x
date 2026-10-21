@@ -11,7 +11,7 @@ import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -21,11 +21,11 @@ import '../app_update/fake_app_update_service.dart';
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
 /// that contain the query (case-insensitive), mimicking the FTS5 contract
 /// enough for a widget test without a real database.
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -102,9 +102,11 @@ class _FakeBookRepo implements BookRepository {
       right(books.length);
 }
 
-Widget _app(BookRepository repo) {
+Widget _app(CatalogueItemRepository repo) {
   return ProviderScope(
-    overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+    overrides: [
+      catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+    ],
     child: const MaterialApp(home: LibraryPage()),
   );
 }
@@ -311,7 +313,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
           appUpdateServiceProvider.overrideWithValue(updates),
@@ -340,7 +342,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
         ],
@@ -358,7 +360,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
         ],

@@ -12,7 +12,7 @@ import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -20,9 +20,9 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
 /// Records update() calls; scriptable failure for the fail-closed test.
-class _FakeBookRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _FakeBookRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -107,7 +107,7 @@ void main() {
     final store = CoverStore(coversDir: tmp.path);
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
         coverStoreProvider.overrideWith((ref) async => store),
         // Real janitor over the fake repo + an empty settings fake, so the
         // orphan rule is exercised end to end against the temp directory.

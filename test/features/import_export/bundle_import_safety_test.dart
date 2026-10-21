@@ -10,7 +10,7 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 
 Uint8List _bundle(String json) {
   final archive = Archive();
@@ -36,7 +36,7 @@ void main() {
         ..writeAsBytesSync([1, 2, 3]);
       final db = AppDatabase(NativeDatabase.memory());
       addTearDown(db.close);
-      final books = DriftBookRepository(db);
+      final books = DriftCatalogueItemRepository(db);
       await books.insert(
         const CatalogueItem(
           title: 'Keep',

@@ -21,14 +21,14 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 
 /// In-memory repo fake: enough for the pages pushed by the routing
-/// (BookDetailPage reads through `bookByIdProvider` → this repo).
-class _MemRepo implements BookRepository {
+/// (BookDetailPage reads through `catalogueItemByIdProvider` → this repo).
+class _MemRepo implements CatalogueItemRepository {
   _MemRepo(this.books);
 
   final List<CatalogueItem> books;
@@ -105,7 +105,7 @@ Widget _host(
   Future<Either<Failure, CatalogueItem?>> Function(String isbn) findByIsbn,
 ) => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith((ref) async => repo),
+    catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
     coversDirProvider.overrideWith((ref) async => coversDir),
   ],
   child: MaterialApp(

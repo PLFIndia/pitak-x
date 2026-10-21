@@ -9,7 +9,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -113,7 +113,7 @@ class _NoWishlist implements WishlistRepository {
       throw UnimplementedError('${invocation.memberName} not used here');
 }
 
-class _NoBooks implements BookRepository {
+class _NoBooks implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(const []);

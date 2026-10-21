@@ -19,13 +19,13 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Minimal repo so the app shell can boot without a real database.
-class _EmptyRepo implements BookRepository {
+class _EmptyRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -134,7 +134,9 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => _EmptyRepo(),
+            ),
             biometricAuthenticatorProvider.overrideWithValue(auth),
             // No publish manifest on disk in tests.
             publishedSiteUrlProvider.overrideWith((ref) async => null),
@@ -213,7 +215,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _EmptyRepo(),
+          ),
           biometricAuthenticatorProvider.overrideWithValue(auth),
           publishedSiteUrlProvider.overrideWith((ref) async => null),
         ],
@@ -284,7 +288,9 @@ void _backButtonTests() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => _EmptyRepo(),
+            ),
             biometricAuthenticatorProvider.overrideWithValue(auth),
             publishedSiteUrlProvider.overrideWith((ref) async => null),
           ],

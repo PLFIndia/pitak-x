@@ -6,8 +6,8 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_use_cases.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
@@ -188,10 +188,10 @@ void main() {
   // so a rollback is observable; the in-memory `_MemBookRepo` above cannot
   // prove that (its `runInTransaction` is a pass-through — M04 lesson).
   group('M13 — purchase/move is transactional and idempotent', () {
-    late DriftBookRepository realBooks;
+    late DriftCatalogueItemRepository realBooks;
 
     setUp(() {
-      realBooks = DriftBookRepository(db);
+      realBooks = DriftCatalogueItemRepository(db);
     });
 
     test('a failed library insert rolls the wishlist purchase back (row stays '
@@ -350,9 +350,9 @@ void main() {
   });
 }
 
-/// Decorator over a REAL [DriftBookRepository] that fails only `insert` —
-/// everything else (including the transaction) is the real thing, so the test
-/// proves the rollback actually happens in Drift.
+/// Decorator over a REAL [DriftCatalogueItemRepository] that fails only
+/// `insert` — everything else (including the transaction) is the real thing, so
+/// the test proves the rollback actually happens in Drift.
 class _InsertFailsBookRepo extends _DelegatingBookRepo {
   _InsertFailsBookRepo(super.inner);
 
@@ -378,12 +378,12 @@ class _LookupFailsBookRepo extends _DelegatingBookRepo {
   }
 }
 
-/// Forwards every [BookRepository] call to [inner]; subclasses override the one
-/// method they want to sabotage.
-class _DelegatingBookRepo implements BookRepository {
+/// Forwards every [CatalogueItemRepository] call to [inner]; subclasses
+/// override the one method they want to sabotage.
+class _DelegatingBookRepo implements CatalogueItemRepository {
   _DelegatingBookRepo(this.inner);
 
-  final BookRepository inner;
+  final CatalogueItemRepository inner;
 
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() => inner.getAll();
@@ -434,10 +434,10 @@ class _DelegatingBookRepo implements BookRepository {
       inner.replaceAll(books);
 }
 
-/// Minimal in-memory BookRepository for the move-to-library tests.
-class _MemBookRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+/// Minimal in-memory CatalogueItemRepository for the move-to-library tests.
+class _MemBookRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);

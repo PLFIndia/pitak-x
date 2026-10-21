@@ -9,7 +9,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -59,7 +59,7 @@ class _MemWishlistRepo implements WishlistRepository {
       right(b.length);
 }
 
-class _ScriptedBookRepo implements BookRepository {
+class _ScriptedBookRepo implements CatalogueItemRepository {
   /// When set, `insert` returns this failure.
   Failure? failInsertWith;
 
@@ -143,7 +143,7 @@ Widget _host(_MemWishlistRepo wishlist, _ScriptedBookRepo books) =>
     ProviderScope(
       overrides: [
         wishlistRepositoryProvider.overrideWith((ref) async => wishlist),
-        bookRepositoryProvider.overrideWith((ref) async => books),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
       ],
       child: MaterialApp(
         home: Builder(

@@ -7,17 +7,17 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
 
 /// Minimal in-memory repo returning a fixed list (mirrors library_page_test).
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -78,7 +78,7 @@ class _FakeBookRepo implements BookRepository {
 
 Widget _app() => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith(
+    catalogueItemRepositoryProvider.overrideWith(
       (ref) async => _FakeBookRepo(const [
         CatalogueItem(title: 'The Hobbit', author: 'Tolkien'),
         CatalogueItem(title: 'Dune', author: 'Herbert'),

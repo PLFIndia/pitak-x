@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 
 /// Minimal book repo recording deletes; only `delete` is exercised here.
-class _FakeBooks implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _FakeBooks implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -74,7 +74,7 @@ void main() {
     () async {
       final books = _FakeBooks();
       final purger = _FakePurger(isUnlocked: false, vaultExists: false);
-      final useCase = DeleteBookUseCase(books: books, vault: purger);
+      final useCase = DeleteCatalogueItemUseCase(books: books, vault: purger);
 
       final result = await useCase(9);
       expect(result.getOrElse((_) => fail('right')), DeleteBookOutcome.deleted);
@@ -86,7 +86,7 @@ void main() {
   test('locked vault → requiresVaultUnlock, nothing deleted', () async {
     final books = _FakeBooks();
     final purger = _FakePurger(isUnlocked: false);
-    final useCase = DeleteBookUseCase(books: books, vault: purger);
+    final useCase = DeleteCatalogueItemUseCase(books: books, vault: purger);
 
     final result = await useCase(1);
     expect(
@@ -100,7 +100,7 @@ void main() {
   test('unlocked, no loans → deletes book without purging', () async {
     final books = _FakeBooks();
     final purger = _FakePurger(isUnlocked: true);
-    final useCase = DeleteBookUseCase(books: books, vault: purger);
+    final useCase = DeleteCatalogueItemUseCase(books: books, vault: purger);
 
     final result = await useCase(7);
     expect(result.getOrElse((_) => fail('right')), DeleteBookOutcome.deleted);
@@ -111,7 +111,7 @@ void main() {
   test('unlocked with loans → purges first, then deletes', () async {
     final books = _FakeBooks();
     final purger = _FakePurger(isUnlocked: true, loansForBook: true);
-    final useCase = DeleteBookUseCase(books: books, vault: purger);
+    final useCase = DeleteCatalogueItemUseCase(books: books, vault: purger);
 
     final result = await useCase(3);
     expect(result.getOrElse((_) => fail('right')), DeleteBookOutcome.deleted);
@@ -128,7 +128,7 @@ void main() {
         loansForBook: true,
         purgeFailure: const CryptoFailure('boom'),
       );
-      final useCase = DeleteBookUseCase(books: books, vault: purger);
+      final useCase = DeleteCatalogueItemUseCase(books: books, vault: purger);
 
       final result = await useCase(3);
       expect(result.isLeft(), isTrue);
@@ -142,7 +142,7 @@ void main() {
     final books = _FakeBooks()
       ..row = const CatalogueItem(id: 5, title: 'X', coverUrl: 'covers/a.jpg');
     final released = <String?>[];
-    final useCase = DeleteBookUseCase(
+    final useCase = DeleteCatalogueItemUseCase(
       books: books,
       vault: _FakePurger(isUnlocked: true),
       releaseCover: (ref) async => released.add(ref),
@@ -157,7 +157,7 @@ void main() {
       ..row = const CatalogueItem(id: 5, title: 'X', coverUrl: 'covers/a.jpg')
       ..deleteFailure = const StorageFailure('locked');
     final released = <String?>[];
-    final useCase = DeleteBookUseCase(
+    final useCase = DeleteCatalogueItemUseCase(
       books: books,
       vault: _FakePurger(isUnlocked: true),
       releaseCover: (ref) async => released.add(ref),

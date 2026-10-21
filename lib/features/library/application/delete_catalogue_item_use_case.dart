@@ -20,7 +20,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 
 /// The vault operations the delete flow needs, kept as a narrow interface so
 /// the use case does not depend on the Riverpod session controller directly.
@@ -57,11 +57,11 @@ enum DeleteBookOutcome {
 typedef ReleaseCoverFile = Future<void> Function(String? coverRef);
 
 /// Permanently deletes a book, purging its vault loans when needed.
-class DeleteBookUseCase {
+class DeleteCatalogueItemUseCase {
   /// Creates the use case. [releaseCover] is called with the deleted book's
   /// cover reference AFTER the row is gone (decision Q12: no orphan files);
   /// it defaults to a no-op.
-  const DeleteBookUseCase({
+  const DeleteCatalogueItemUseCase({
     required this.books,
     required this.vault,
     this.releaseCover = _noRelease,
@@ -70,7 +70,7 @@ class DeleteBookUseCase {
   static Future<void> _noRelease(String? _) async {}
 
   /// Library repository (owns the hard `delete`).
-  final BookRepository books;
+  final CatalogueItemRepository books;
 
   /// Vault side (loan purge + unlock state).
   final VaultLoanPurger vault;

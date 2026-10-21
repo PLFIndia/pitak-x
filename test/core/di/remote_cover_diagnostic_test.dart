@@ -8,7 +8,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -43,7 +43,7 @@ void main() {
     final store = CoverStore(coversDir: tmp.path);
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
         coverStoreProvider.overrideWith((ref) async => store),
         coverFileJanitorProvider.overrideWith(
           (ref) async => CoverFileJanitor(
@@ -120,7 +120,7 @@ void main() {
   });
 }
 
-class _OneBookRepo implements BookRepository {
+class _OneBookRepo implements CatalogueItemRepository {
   _OneBookRepo(this.book);
   CatalogueItem book;
 

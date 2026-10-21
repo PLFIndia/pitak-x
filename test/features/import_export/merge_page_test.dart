@@ -17,7 +17,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 import '../../support/a11y.dart';
@@ -81,7 +81,7 @@ class _StrictXFile extends XFile {
       encoding.decode(_bytes);
 }
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);

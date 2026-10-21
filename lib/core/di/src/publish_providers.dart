@@ -116,7 +116,7 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
 Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
   MaterializeRemoteCoverUseCaseRef ref,
 ) async {
-  final books = await ref.watch(bookRepositoryProvider.future);
+  final books = await ref.watch(catalogueItemRepositoryProvider.future);
   final files = await ref.watch(coverStoreProvider.future);
   final janitor = await ref.watch(coverFileJanitorProvider.future);
   return MaterializeRemoteCoverUseCase(

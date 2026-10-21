@@ -44,7 +44,9 @@ class AddBookController extends _$AddBookController {
       );
       return;
     }
-    final result = await (await ref.read(addBookUseCaseProvider.future))(book);
+    final result = await (await ref.read(
+      addCatalogueItemUseCaseProvider.future,
+    ))(book);
     _publish(result);
   }
 
@@ -57,7 +59,7 @@ class AddBookController extends _$AddBookController {
     CatalogueItem Function(CatalogueItem current) applyEdits,
   ) async {
     state = const AsyncLoading();
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final current = await repo.getById(id);
     final result = await current.fold(
       (failure) async => left<Failure, CatalogueItem>(failure),
@@ -65,7 +67,9 @@ class AddBookController extends _$AddBookController {
         if (book == null) {
           return left<Failure, CatalogueItem>(const NotFoundFailure());
         }
-        final useCase = await ref.read(updateBookUseCaseProvider.future);
+        final useCase = await ref.read(
+          updateCatalogueItemUseCaseProvider.future,
+        );
         return useCase(applyEdits(book));
       },
     );

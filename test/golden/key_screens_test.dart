@@ -20,7 +20,7 @@ import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
@@ -77,7 +77,7 @@ void main() {
   Widget libraryApp(List<CatalogueItem> list, {bool dark = false}) =>
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _GoldenBookRepo(list),
           ),
         ],
@@ -271,7 +271,7 @@ void main() {
 }
 
 /// In-memory book repo returning a fixed list (enough for a rendered frame).
-class _GoldenBookRepo implements BookRepository {
+class _GoldenBookRepo implements CatalogueItemRepository {
   _GoldenBookRepo(this._all);
   final List<CatalogueItem> _all;
 

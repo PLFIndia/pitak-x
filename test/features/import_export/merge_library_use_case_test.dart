@@ -13,7 +13,7 @@ import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -40,11 +40,11 @@ class _LoanVault with VaultWriteUnsupported implements VaultRepository {
 }
 
 /// In-memory book repo: just enough surface for the merge use case.
-class _FakeBooks implements BookRepository {
+class _FakeBooks implements CatalogueItemRepository {
   _FakeBooks(this._books);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
@@ -233,7 +233,7 @@ void main() {
       overrides: [
         vaultStoreProvider.overrideWith((ref) async => store),
         vaultRepositoryProvider.overrideWithValue(_LoanVault()),
-        bookRepositoryProvider.overrideWith((ref) async => books),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
       ],
     );
@@ -375,7 +375,7 @@ void main() {
       final settings = ReplacementSettings()..id = matchingId;
       final container = ProviderContainer(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => repo),
+          catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
           settingsRepositoryProvider.overrideWith((ref) async => settings),
         ],
       );

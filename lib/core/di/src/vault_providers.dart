@@ -6,8 +6,8 @@
 /// screen-capture policy, and the read-only archive opener.
 ///
 /// Cross-feature note (beginner): several read models need the LIBRARY
-/// catalogue (a loan only stores a book id). This module imports the library
-/// DI module for `bookRepositoryProvider` — one direction only; library
+/// catalogue (a loan only stores a book id). This module imports the library DI
+/// module for `catalogueItemRepositoryProvider` — one direction only; library
 /// never imports this module, so the graph stays acyclic.
 library;
 
@@ -69,7 +69,7 @@ Future<VaultStore> vaultStore(VaultStoreRef ref) async {
 /// (it satisfies [VaultLender]).
 @riverpod
 Future<LendBookUseCase> lendBookUseCase(LendBookUseCaseRef ref) async {
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final vault = ref.read(vaultSessionControllerProvider.notifier);
   return LendBookUseCase(books: repo, vault: vault);
 }
@@ -91,11 +91,11 @@ Map<int, int>? activeLoanCounts(ActiveLoanCountsRef ref) {
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) so a rename reaches open borrower screens.
+/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
 @riverpod
 Future<String?> bookTitle(BookTitleRef ref, {required int bookId}) async {
   ref.watch(libraryControllerProvider);
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final book = (await repo.getById(bookId)).toNullable();
   return book?.title;
 }
@@ -126,8 +126,8 @@ BorrowerProfile? borrowerProfile(BorrowerProfileRef ref, int borrowerId) {
 /// null when the vault is locked. Recomputes when either source changes.
 ///
 /// N04: watches [libraryControllerProvider] as the catalogue mutation signal
-/// (same pattern as [bookById]) — watching only the repository OBJECT never
-/// fired, so a needs-metadata edit, import or restore left the reminders
+/// (same pattern as [catalogueItemById]) — watching only the repository OBJECT
+/// never fired, so a needs-metadata edit, import or restore left the reminders
 /// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
 /// over while the screen stays open.
 @riverpod
@@ -138,7 +138,7 @@ Future<PendingSnapshot?> pendingSnapshot(PendingSnapshotRef ref) async {
     ..watch(libraryControllerProvider)
     ..watch(nowTickProvider);
   final now = ref.watch(clockProvider)();
-  final repo = await ref.watch(bookRepositoryProvider.future);
+  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   final books = (await repo.getAll()).getOrElse((_) => const []);
   return buildPendingSnapshot(
     loans: session.data.loans,

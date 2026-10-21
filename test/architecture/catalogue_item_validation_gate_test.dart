@@ -43,16 +43,16 @@ void main() {
     // re-validating on every read would double the gate (and break nothing —
     // but the constructor is intentionally the trusted fast path, see
     // catalogue_item.dart's "plain constructor" doc).
-    'lib/features/library/infrastructure/book_mapper.dart':
+    'lib/features/library/infrastructure/catalogue_item_mapper.dart':
         'DB mapper (rows validated on write)',
     // The add/edit form ASSEMBLES a CatalogueItem from its text fields and
-    // hands it to AddBookUseCase / UpdateBookUseCase, which ARE the gate (both
+    // hands it to AddCatalogueItemUseCase / UpdateCatalogueItemUseCase, which ARE the gate (both
     // call CatalogueItem.validate — pinned by the spot-check test below). The
     // widget may not validate itself (AGENTS §7: no business logic in
     // widgets), so the construction is trusted here and the gate is one hop
     // downstream.
     'lib/features/library/presentation/pages/add_book_page.dart':
-        'form assembly; gate is Add/UpdateBookUseCase',
+        'form assembly; gate is Add/UpdateCatalogueItemUseCase',
   };
 
   /// Matches a `CatalogueItem(` construction and NOT a longer identifier that
@@ -126,8 +126,8 @@ void main() {
       'lib/features/import_export/domain/goodreads_csv_importer.dart',
       'lib/features/import_export/infrastructure/pitaka_json_importer.dart',
       'lib/features/backup/infrastructure/legacy_db_reader.dart',
-      'lib/features/library/application/add_book_use_case.dart',
-      'lib/features/library/application/update_book_use_case.dart',
+      'lib/features/library/application/add_catalogue_item_use_case.dart',
+      'lib/features/library/application/update_catalogue_item_use_case.dart',
       'lib/features/wishlist/application/wishlist_use_cases.dart',
     ];
     for (final path in gated) {
@@ -146,7 +146,7 @@ void main() {
       trustedConstructors.keys,
       unorderedEquals([
         'lib/features/library/domain/entities/catalogue_item.dart',
-        'lib/features/library/infrastructure/book_mapper.dart',
+        'lib/features/library/infrastructure/catalogue_item_mapper.dart',
         'lib/features/library/presentation/pages/add_book_page.dart',
       ]),
     );

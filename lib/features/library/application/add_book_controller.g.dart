@@ -6,7 +6,7 @@ part of 'add_book_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$addBookControllerHash() => r'd3ddcbb415812b18d2ab740617e34073fafc2e81';
+String _$addBookControllerHash() => r'6ad4203a0592d7666e742cd2c456906a451cd354';
 
 /// Drives a one-shot add or edit and surfaces the saved [CatalogueItem].
 ///

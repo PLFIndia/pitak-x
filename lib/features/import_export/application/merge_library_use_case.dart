@@ -54,7 +54,7 @@ import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/library_id.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 
@@ -210,7 +210,7 @@ enum MergeResolution {
 final class MergeLibraryUseCase {
   /// Creates the use case over its collaborators.
   const MergeLibraryUseCase({
-    required BookRepository bookRepo,
+    required CatalogueItemRepository bookRepo,
     // N07: the library identity is read/adopted through its single owner
     // (`SettingsController`), not the settings repository.
     required LibraryNamespace namespace,
@@ -232,7 +232,7 @@ final class MergeLibraryUseCase {
 
   final CatalogueReplacementGuard _replacementGuard;
   final MergePlanner _planner;
-  final BookRepository _bookRepo;
+  final CatalogueItemRepository _bookRepo;
   final LibraryNamespace _namespace;
   final LibraryJsonParser _json;
 
@@ -324,9 +324,9 @@ final class MergeLibraryUseCase {
   /// responsible for an explicit confirm before invoking this.
   ///
   /// The delete+insert runs as ONE repository transaction
-  /// ([BookRepository.replaceAll]): a failure mid-way (e.g. a UNIQUE violation
-  /// on a crafted file) rolls back, so the device is never left with a
-  /// partially-deleted catalogue (REVIEW_FINDINGS_2 S5).
+  /// ([CatalogueItemRepository.replaceAll]): a failure mid-way (e.g. a UNIQUE
+  /// violation on a crafted file) rolls back, so the device is never left with
+  /// a partially-deleted catalogue (REVIEW_FINDINGS_2 S5).
   ///
   /// Returns a [MergeResult] with `replaced: true` and `added` = the number of
   /// books now on the device, so the page can describe a replacement as a
@@ -418,11 +418,11 @@ final class MergeLibraryUseCase {
   ///    Before, this reached the repository and came back as a misleading "not
   ///    found". The page hides the button too; this is the belt.
   ///  - both writing branches pass the built book through
-  ///    [CatalogueItem.validate] (M15, same as `UpdateBookUseCase`): the
-  ///    incoming rows were validated by the parser, but the row written here is
-  ///    BUILT from them, and the gate belongs right before the write. The
-  ///    normalised book is what lands (a disallowed cover ref is dropped, not
-  ///    rejected).
+  ///    [CatalogueItem.validate] (M15, same as `UpdateCatalogueItemUseCase`):
+  ///    the incoming rows were validated by the parser, but the row written
+  ///    here is BUILT from them, and the gate belongs right before the write.
+  ///    The normalised book is what lands (a disallowed cover ref is dropped,
+  ///    not rejected).
   Future<Either<Failure, Unit>> applyResolution({
     required CatalogueItem local,
     required CatalogueItem incoming,
@@ -507,10 +507,11 @@ final class MergeLibraryUseCase {
   /// union (the new rows get fresh ids but KEEP their uid so future merges
   /// reconcile). Conflicts + possible-duplicates are returned, not applied.
   ///
-  /// The adds land via ONE [BookRepository.insertAll] call, which is atomic —
-  /// the reported [MergeResult.added] can never disagree with the committed DB
-  /// state (REVIEW_FINDINGS_2 S5: the old sequential loop committed rows 1..N
-  /// and then reported total failure when row N+1 violated a UNIQUE index).
+  /// The adds land via ONE [CatalogueItemRepository.insertAll] call, which is
+  /// atomic — the reported [MergeResult.added] can never disagree with the
+  /// committed DB state (REVIEW_FINDINGS_2 S5: the old sequential loop
+  /// committed rows 1..N and then reported total failure when row N+1 violated
+  /// a UNIQUE index).
   Future<Either<Failure, MergeResult>> _applyEngineMerge(
     List<CatalogueItem> incoming, {
     required List<String> skippedRows,

@@ -11,7 +11,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 
 /// Read/write access to the library books store.
-abstract interface class BookRepository {
+abstract interface class CatalogueItemRepository {
   /// All books (including soft-removed), newest first.
   Future<Either<Failure, List<CatalogueItem>>> getAll();
 

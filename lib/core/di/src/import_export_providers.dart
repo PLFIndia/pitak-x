@@ -47,7 +47,7 @@ Future<BundleCoverFiles> bundleCoverFiles(BundleCoverFilesRef ref) async =>
 Future<ImportLibraryUseCase> importLibraryUseCase(
   ImportLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
   return ImportLibraryUseCase(
     bookRepo: bookRepo,
@@ -73,7 +73,7 @@ Future<Future<Uint8List?> Function(String)> exportLogoReader(
 Future<ExportLibraryUseCase> exportLibraryUseCase(
   ExportLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
   return ExportLibraryUseCase(
     bookRepo: bookRepo,
@@ -117,7 +117,7 @@ PdfTextRasterizer pdfTextRasterizer(PdfTextRasterizerRef ref) =>
 Future<MergeLibraryUseCase> mergeLibraryUseCase(
   MergeLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   return MergeLibraryUseCase(
     bookRepo: bookRepo,
     namespace: ref.read(settingsControllerProvider.notifier),

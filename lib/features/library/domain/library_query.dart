@@ -2,14 +2,14 @@
 /// AGENTS.md §3.1).
 ///
 /// Why this exists (review finding N10-d part 2, paged library reads): the
-/// Library screen's
-/// controller always carried the same three things — the search-box text,
-/// the persisted sort and the language chip — and the repository had two
-/// methods (`query` for a blank box, `search` for a typed one) that took them
-/// apart again. Pagination made a third split (whole list vs page) tempting.
-/// Instead there is ONE read, `BookRepository.page`, that takes this value
-/// plus a window; the "blank text → plain select, typed text → FTS" branch
-/// lives in the repository next to the SQL that differs.
+/// Library screen's controller always carried the same three things — the
+/// search-box text, the persisted sort and the language chip — and the
+/// repository had two methods (`query` for a blank box, `search` for a typed
+/// one) that took them apart again. Pagination made a third split (whole list
+/// vs page) tempting. Instead there is ONE read,
+/// `CatalogueItemRepository.page`, that takes this value plus a window; the
+/// "blank text → plain select, typed text → FTS" branch lives in the repository
+/// next to the SQL that differs.
 ///
 /// Value Object: immutable and normalised at construction. The controller
 /// uses `sameIntentAs` to tell "the same list changed underneath me" (reload

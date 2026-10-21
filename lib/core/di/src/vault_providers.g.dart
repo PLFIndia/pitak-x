@@ -93,7 +93,7 @@ final vaultStoreProvider = AutoDisposeFutureProvider<VaultStore>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef VaultStoreRef = AutoDisposeFutureProviderRef<VaultStore>;
-String _$lendBookUseCaseHash() => r'702f1ef9462049d97263029661828927bf72eb52';
+String _$lendBookUseCaseHash() => r'430e8bd3d266f7f5fc883557e0997d5dab0edb15';
 
 /// Lends a library book, enforcing the lending policy (removed / all copies
 /// out → refused with a reason). The vault side is the session controller
@@ -136,7 +136,7 @@ final activeLoanCountsProvider = AutoDisposeProvider<Map<int, int>?>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef ActiveLoanCountsRef = AutoDisposeProviderRef<Map<int, int>?>;
-String _$bookTitleHash() => r'28364f805a0d70587da0bc12c5972ee98c3ec4f5';
+String _$bookTitleHash() => r'33d89cdb3238dad5a0e5d8d62d59238c8aa7e0a2';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -164,7 +164,7 @@ class _SystemHash {
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) so a rename reaches open borrower screens.
+/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
 ///
 /// Copied from [bookTitle].
 @ProviderFor(bookTitle)
@@ -175,7 +175,7 @@ const bookTitleProvider = BookTitleFamily();
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) so a rename reaches open borrower screens.
+/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
 ///
 /// Copied from [bookTitle].
 class BookTitleFamily extends Family<AsyncValue<String?>> {
@@ -184,7 +184,7 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
   /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [bookById]) so a rename reaches open borrower screens.
+  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   const BookTitleFamily();
@@ -194,7 +194,7 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
   /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [bookById]) so a rename reaches open borrower screens.
+  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider call({required int bookId}) {
@@ -226,7 +226,7 @@ class BookTitleFamily extends Family<AsyncValue<String?>> {
 /// Null when the book no longer exists (the UI falls back to "Book #id").
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) so a rename reaches open borrower screens.
+/// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
 ///
 /// Copied from [bookTitle].
 class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
@@ -235,7 +235,7 @@ class BookTitleProvider extends AutoDisposeFutureProvider<String?> {
   /// Null when the book no longer exists (the UI falls back to "Book #id").
   ///
   /// N04: watches [libraryControllerProvider] as the mutation signal (same
-  /// pattern as [bookById]) so a rename reaches open borrower screens.
+  /// pattern as [catalogueItemById]) so a rename reaches open borrower screens.
   ///
   /// Copied from [bookTitle].
   BookTitleProvider({required int bookId})
@@ -466,15 +466,15 @@ class _BorrowerProfileProviderElement
   int get borrowerId => (origin as BorrowerProfileProvider).borrowerId;
 }
 
-String _$pendingSnapshotHash() => r'49a6e23baf531178e17b9f6f78a12fa400007c62';
+String _$pendingSnapshotHash() => r'fdb2980d7fc2750f0be79db2348bd094b683221c';
 
 /// The vault-gated pending/reminders snapshot (#27b): overdue + due-soon loans
 /// (from the unlocked vault) and needs-metadata books (from the library), or
 /// null when the vault is locked. Recomputes when either source changes.
 ///
 /// N04: watches [libraryControllerProvider] as the catalogue mutation signal
-/// (same pattern as [bookById]) — watching only the repository OBJECT never
-/// fired, so a needs-metadata edit, import or restore left the reminders
+/// (same pattern as [catalogueItemById]) — watching only the repository OBJECT
+/// never fired, so a needs-metadata edit, import or restore left the reminders
 /// stale — and the [nowTickProvider] tick, so overdue/due-soon buckets roll
 /// over while the screen stays open.
 ///

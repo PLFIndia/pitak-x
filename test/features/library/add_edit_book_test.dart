@@ -3,13 +3,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/add_book_use_case.dart';
-import 'package:pitaka/features/library/application/update_book_use_case.dart';
+import 'package:pitaka/features/library/application/add_catalogue_item_use_case.dart';
+import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 T ok<T>(Either<Failure, T> e) =>
@@ -18,7 +18,7 @@ T ok<T>(Either<Failure, T> e) =>
 /// First page of the list for the given intent (these tests seed a few rows,
 /// so one page IS the list). N10-d part 2: `page` is the only list read.
 Future<List<CatalogueItem>> firstPage(
-  DriftBookRepository repo, {
+  DriftCatalogueItemRepository repo, {
   required LibrarySort sort,
   String text = '',
   String? language,
@@ -34,11 +34,11 @@ Failure err<T>(Either<Failure, T> e) =>
 
 void main() {
   late AppDatabase db;
-  late DriftBookRepository repo;
+  late DriftCatalogueItemRepository repo;
 
   setUp(() {
     db = AppDatabase(NativeDatabase.memory());
-    repo = DriftBookRepository(db);
+    repo = DriftCatalogueItemRepository(db);
   });
 
   tearDown(() async {
@@ -420,22 +420,22 @@ void main() {
     });
   });
 
-  group('AddBookUseCase', () {
+  group('AddCatalogueItemUseCase', () {
     test('rejects a blank title with ValidationFailure', () async {
-      final useCase = AddBookUseCase(repo);
+      final useCase = AddCatalogueItemUseCase(repo);
       final r = await useCase(const CatalogueItem(title: '   '));
       expect(err(r), isA<ValidationFailure>());
     });
 
     test('inserts a valid book and mints a uid', () async {
-      final useCase = AddBookUseCase(repo);
+      final useCase = AddCatalogueItemUseCase(repo);
       final saved = ok(await useCase(const CatalogueItem(title: 'Valid')));
       expect(saved.id, isNot(CatalogueItem.emptyId));
       expect(saved.itemUid, isNotNull);
     });
 
     test('M15: rejects copyCount 0 with ValidationFailure', () async {
-      final useCase = AddBookUseCase(repo);
+      final useCase = AddCatalogueItemUseCase(repo);
       final r = await useCase(
         const CatalogueItem(title: 'Valid', copyCount: 0),
       );
@@ -443,7 +443,7 @@ void main() {
     });
 
     test('M15: rejects an out-of-range addedDate', () async {
-      final useCase = AddBookUseCase(repo);
+      final useCase = AddCatalogueItemUseCase(repo);
       final r = await useCase(
         const CatalogueItem(title: 'Valid', addedDate: 8640000000000001),
       );
@@ -454,7 +454,7 @@ void main() {
     // index always refused the row; the use case now says WHY, naming the
     // existing book, instead of letting a raw storage error surface.
     test('S34: a duplicate ISBN is refused as DuplicateIsbnFailure', () async {
-      final useCase = AddBookUseCase(repo);
+      final useCase = AddCatalogueItemUseCase(repo);
       ok(
         await repo.insert(
           const CatalogueItem(title: 'First', isbn: '9780140449136'),
@@ -474,7 +474,7 @@ void main() {
     test(
       'S34: a duplicate of a REMOVED book carries the removed flag',
       () async {
-        final useCase = AddBookUseCase(repo);
+        final useCase = AddCatalogueItemUseCase(repo);
         final first = ok(
           await repo.insert(const CatalogueItem(title: 'Gone', isbn: '333')),
         );
@@ -490,7 +490,7 @@ void main() {
     test(
       'S34: blank ISBNs never collide — two no-ISBN books both save',
       () async {
-        final useCase = AddBookUseCase(repo);
+        final useCase = AddCatalogueItemUseCase(repo);
         ok(await useCase(const CatalogueItem(title: 'No ISBN A')));
         ok(await useCase(const CatalogueItem(title: 'No ISBN B')));
         final all = await firstPage(repo, sort: LibrarySort.recentlyAdded);
@@ -508,7 +508,7 @@ void main() {
         // read failure and never blind-insert: the index would catch a true
         // duplicate, but the honest error is "the check failed".
         final fake = _FailingFindByIsbnRepo();
-        final useCase = AddBookUseCase(fake);
+        final useCase = AddCatalogueItemUseCase(fake);
         final failure = err(
           await useCase(const CatalogueItem(title: 'X', isbn: '9780140449136')),
         );
@@ -518,22 +518,22 @@ void main() {
     );
   });
 
-  group('UpdateBookUseCase', () {
+  group('UpdateCatalogueItemUseCase', () {
     test('rejects a blank title', () async {
-      final useCase = UpdateBookUseCase(repo);
+      final useCase = UpdateCatalogueItemUseCase(repo);
       final inserted = ok(await repo.insert(const CatalogueItem(title: 'X')));
       final r = await useCase(inserted.copyWith(title: ''));
       expect(err(r), isA<ValidationFailure>());
     });
 
     test('rejects an unpersisted book (emptyId) as NotFound', () async {
-      final useCase = UpdateBookUseCase(repo);
+      final useCase = UpdateCatalogueItemUseCase(repo);
       final r = await useCase(const CatalogueItem(title: 'never saved'));
       expect(err(r), isA<NotFoundFailure>());
     });
 
     test('updates a persisted book', () async {
-      final useCase = UpdateBookUseCase(repo);
+      final useCase = UpdateCatalogueItemUseCase(repo);
       final inserted = ok(
         await repo.insert(const CatalogueItem(title: 'Before')),
       );
@@ -548,7 +548,7 @@ void main() {
         // Normalise-don't-reject: a pre-M15 row could already carry such a URL;
         // rejecting would make the book uneditable forever (the form copies
         // base.coverUrl verbatim). The inert link is dropped instead.
-        final useCase = UpdateBookUseCase(repo);
+        final useCase = UpdateCatalogueItemUseCase(repo);
         final inserted = ok(
           await repo.insert(const CatalogueItem(title: 'Before')),
         );
@@ -568,7 +568,7 @@ void main() {
 /// pre-check (S34): when the duplicate check cannot be read, the add must
 /// abort with the read failure — never blind-insert. Every other member is
 /// an inert stub; the use case under test only touches these two.
-class _FailingFindByIsbnRepo implements BookRepository {
+class _FailingFindByIsbnRepo implements CatalogueItemRepository {
   int insertCalls = 0;
 
   @override

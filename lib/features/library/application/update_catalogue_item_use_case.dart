@@ -12,14 +12,14 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 
 /// Validates and updates an existing [CatalogueItem].
-class UpdateBookUseCase {
+class UpdateCatalogueItemUseCase {
   /// Creates the use case over [_repository].
-  const UpdateBookUseCase(this._repository);
+  const UpdateCatalogueItemUseCase(this._repository);
 
-  final BookRepository _repository;
+  final CatalogueItemRepository _repository;
 
   /// Updates [book] after validating it against the shared catalogue rules
   /// (M15: `CatalogueItem.validate` is the single gate) and checking the id is

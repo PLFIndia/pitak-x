@@ -22,7 +22,7 @@ import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/book_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
@@ -32,7 +32,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
 /// In-memory book repo over a MUTABLE list, so a test can change the
 /// catalogue behind the provider's back and then fire the mutation signal.
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this.books);
 
   final List<CatalogueItem> books;
@@ -185,7 +185,7 @@ void main() {
   }) {
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
         settingsRepositoryProvider.overrideWith(
           (ref) async => _FakeSettingsRepo(),
         ),

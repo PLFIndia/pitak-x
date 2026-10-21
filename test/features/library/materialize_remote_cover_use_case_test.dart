@@ -6,13 +6,13 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 
 /// In-memory rows with scriptable update failure. `getById` is the FRESH read
 /// the use case must rely on (not a UI snapshot).
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this.rows);
   final List<CatalogueItem> rows;
   Failure? failUpdateWith;
