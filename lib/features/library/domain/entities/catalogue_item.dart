@@ -9,6 +9,8 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 /// Fixed provenance categories for `CatalogueItem.sourceType`. Stored as the
 /// Dart enum constant name (e.g. `purchased`) — mirrors Kotlin where it is
@@ -115,10 +117,13 @@ enum AgeGroup {
   }
 }
 
-/// One item in the user's library — a book today; the base row of every item
-/// kind (ADR 0013, pending). `id == emptyId` means "not yet persisted".
+/// One item in the user's library: the base row of every item kind
+/// (ADR 0013). A book is the default; a magazine issue or an "other" item is
+/// the same row with [details] set. `id == emptyId` means "not yet
+/// persisted".
 class CatalogueItem {
-  /// Creates an item. Only [title] is required (matches Kotlin).
+  /// Creates an item. Only [title] is required (matches Kotlin). [details]
+  /// is null for a book.
   const CatalogueItem({
     required this.title,
     this.id = emptyId,
@@ -143,6 +148,7 @@ class CatalogueItem {
     this.removed = false,
     this.removedAt,
     this.addedBy,
+    this.details,
   });
 
   /// Sentinel meaning "not yet persisted".
@@ -220,6 +226,23 @@ class CatalogueItem {
   /// Self-asserted maintainer handle that first catalogued this book.
   final String? addedBy;
 
+  /// Kind-specific data (ADR 0013 F5): `null` for a book, an [IssueOf] for a
+  /// magazine issue, an [OtherItemOf] for an "other" item. The kind is
+  /// derived from this value ([kind]), so the two can never disagree.
+  final ItemDetails? details;
+
+  /// What this row is — derived from [details]; a row without details is a
+  /// book. Persisted as `books.kind` and carried in every wire format.
+  ItemKind get kind => details?.kind ?? ItemKind.book;
+
+  /// The issue details when this row is a magazine issue, else null. A
+  /// convenience over `details is IssueOf` for the many call sites that only
+  /// care about issues.
+  IssueOf? get issue => switch (details) {
+    final IssueOf issue => issue,
+    OtherItemOf() || null => null,
+  };
+
   /// Validates [book] against the shared [CatalogueRules] (M15) and returns
   /// a normalised copy (title trimmed) or every field error found.
   ///
@@ -286,6 +309,9 @@ class CatalogueItem {
         ),
       );
     }
+    // Kind-specific rules live with the kind (ADR 0013 F5): each `details`
+    // member validates itself and reports `issue.<field>` style errors.
+    errors.addAll(book.details?.validate() ?? const []);
     // The cover is NORMALISED, never a rejection (M15): a row already in the
     // database from before this rule could carry a now-disallowed URL, and
     // rejecting would make that book uneditable forever — the edit form
@@ -324,6 +350,7 @@ class CatalogueItem {
         removed: book.removed,
         removedAt: book.removedAt,
         addedBy: book.addedBy,
+        details: book.details,
       ),
     );
   }
@@ -353,6 +380,7 @@ class CatalogueItem {
     bool? removed,
     int? removedAt,
     String? addedBy,
+    ItemDetails? details,
   }) {
     return CatalogueItem(
       id: id ?? this.id,
@@ -378,6 +406,9 @@ class CatalogueItem {
       removed: removed ?? this.removed,
       removedAt: removedAt ?? this.removedAt,
       addedBy: addedBy ?? this.addedBy,
+      // Like every other field, null keeps the current details: a row's kind
+      // cannot be changed after creation (ADR 0013 D8).
+      details: details ?? this.details,
     );
   }
 }

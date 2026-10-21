@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 void main() {
   group('CatalogueItem.validate (M15)', () {
@@ -199,6 +201,68 @@ void main() {
         errors.map((e) => e.field),
         containsAll(['title', 'copyCount', 'publishedYear']),
       );
+    });
+  });
+
+  // ADR 0013 F5: the kind is derived from `details`; the entity gate appends
+  // the member's own rules so one ingress check covers every kind.
+  group('CatalogueItem.details (item kinds)', () {
+    const issue = IssueOf(periodicalUid: 'p-1', volume: 2, issueNumber: 7);
+
+    test('no details ⇒ a book; details decide the kind', () {
+      const book = CatalogueItem(title: 'A');
+      const mag = CatalogueItem(title: 'A', details: issue);
+      const other = CatalogueItem(title: 'A', details: OtherItemOf());
+      expect(book.kind, ItemKind.book);
+      expect(book.issue, isNull);
+      expect(mag.kind, ItemKind.magazineIssue);
+      expect(mag.issue, same(issue));
+      expect(other.kind, ItemKind.other);
+      expect(other.issue, isNull);
+    });
+
+    test('validate keeps the details on the normalised copy', () {
+      final r = CatalogueItem.validate(
+        const CatalogueItem(title: '  Vol 2  ', details: issue),
+      );
+      final item = r.toNullable()!;
+      expect(item.title, 'Vol 2');
+      expect(item.kind, ItemKind.magazineIssue);
+      expect(item.issue!.sameAs(issue), isTrue);
+      // The unchanged fast path returns the same instance, details included.
+      const clean = CatalogueItem(title: 'A', details: OtherItemOf());
+      expect(CatalogueItem.validate(clean).toNullable(), same(clean));
+    });
+
+    test('validate appends the issue rules as issue.* field errors', () {
+      final r = CatalogueItem.validate(
+        const CatalogueItem(
+          title: '',
+          details: IssueOf(periodicalUid: '', issueNumber: 0),
+        ),
+      );
+      final fields = r.getLeft().toNullable()!.map((e) => e.field);
+      expect(
+        fields,
+        containsAll(['title', 'issue.periodicalUid', 'issue.issueNumber']),
+      );
+    });
+
+    test('an Other item has no extra rules', () {
+      final r = CatalogueItem.validate(
+        const CatalogueItem(title: 'Carrom board', details: OtherItemOf()),
+      );
+      expect(r.isRight(), isTrue);
+      expect(r.toNullable()!.kind, ItemKind.other);
+    });
+
+    test('copyWith keeps details unless given new ones', () {
+      const mag = CatalogueItem(title: 'A', details: issue);
+      expect(mag.copyWith(title: 'B').kind, ItemKind.magazineIssue);
+      expect(mag.copyWith(title: 'B').issue!.sameAs(issue), isTrue);
+      final renumbered = mag.copyWith(details: issue.copyWith(issueNumber: 8));
+      expect(renumbered.issue!.issueNumber, 8);
+      expect(mag.issue!.issueNumber, 7);
     });
   });
 }

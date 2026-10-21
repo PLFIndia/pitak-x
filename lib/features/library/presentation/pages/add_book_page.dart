@@ -20,12 +20,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
+import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
@@ -474,7 +474,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
           if (state.hasError) ...[
             const SizedBox(height: 12),
             Text(
-              _messageFor(state.error!),
+              catalogueSaveMessage(state.error!),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
@@ -615,26 +615,5 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     final mm = d.month.toString().padLeft(2, '0');
     final dd = d.day.toString().padLeft(2, '0');
     return '${d.year}-$mm-$dd';
-  }
-
-  static String _messageFor(Object error) {
-    if (error is ValidationFailure) return error.message;
-    // S34: a duplicate ISBN is an expected outcome, not a broken save — say
-    // plainly that the book is already catalogued, naming the existing row
-    // when the title is known.
-    if (error is DuplicateIsbnFailure) {
-      final title = error.existingTitle?.trim() ?? '';
-      final base = title.isEmpty
-          ? 'This book is already in your library.'
-          : "'$title' is already in your library.";
-      return error.existingIsRemoved
-          ? '$base It is marked as removed — open it from the library list '
-                'to restore it.'
-          : base;
-    }
-    if (error is NotFoundFailure) {
-      return 'This book no longer exists and could not be saved.';
-    }
-    return 'Could not save the book. Please try again.';
   }
 }

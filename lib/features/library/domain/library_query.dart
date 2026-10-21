@@ -17,6 +17,7 @@
 /// again from the first page) — see `LibraryController`.
 library;
 
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// Rows fetched per window of the library list. Roughly three phone screens
@@ -31,16 +32,22 @@ const int libraryPageSize = 60;
 /// read back into a whole-catalogue read.
 const int maxLibraryPageSize = 500;
 
-/// What the library list should show: which rows ([text], [language]) in
-/// which order ([sort]).
+/// What the library list should show: which rows ([text], [language],
+/// [kind], [periodicalUid]) in which order ([sort]).
 final class LibraryQuery {
-  /// Creates a normalised query. [text] and [language] are trimmed; a blank
-  /// [text] becomes `''` (= "no search, list everything") and a blank
-  /// [language] becomes `null` (= "all languages"), so two intents that mean
-  /// the same thing are equal.
-  LibraryQuery({required this.sort, String text = '', String? language})
-    : text = text.trim(),
-      language = _blankToNull(language);
+  /// Creates a normalised query. [text], [language] and [periodicalUid] are
+  /// trimmed; a blank [text] becomes `''` (= "no search, list everything")
+  /// and a blank [language] / [periodicalUid] becomes `null` (= "all"), so
+  /// two intents that mean the same thing are equal.
+  LibraryQuery({
+    required this.sort,
+    String text = '',
+    String? language,
+    this.kind,
+    String? periodicalUid,
+  }) : text = text.trim(),
+       language = _blankToNull(language),
+       periodicalUid = _blankToNull(periodicalUid);
 
   /// Search-box text, trimmed. Empty means "no search".
   final String text;
@@ -50,6 +57,15 @@ final class LibraryQuery {
 
   /// Exact stored language to narrow to (N10-d D1-a), or null for all.
   final String? language;
+
+  /// Item kind to narrow to (the Library kind chips, ADR 0013 U1), or null
+  /// for every kind.
+  final ItemKind? kind;
+
+  /// Periodical whose issues to list (the series page, ADR 0013 U2), or
+  /// null for the whole catalogue. The repository orders such a list by the
+  /// issue rules (newest issue first) instead of [sort].
+  final String? periodicalUid;
 
   /// True when the list is a full-text search rather than a plain listing.
   bool get isSearch => text.isNotEmpty;
@@ -61,7 +77,9 @@ final class LibraryQuery {
       other != null &&
       other.text == text &&
       other.sort == sort &&
-      other.language == language;
+      other.language == language &&
+      other.kind == kind &&
+      other.periodicalUid == periodicalUid;
 
   static String? _blankToNull(String? value) {
     final trimmed = value?.trim();
@@ -70,5 +88,6 @@ final class LibraryQuery {
 
   @override
   String toString() =>
-      'LibraryQuery(text: "$text", sort: $sort, language: $language)';
+      'LibraryQuery(text: "$text", sort: $sort, language: $language, '
+      'kind: $kind, periodicalUid: $periodicalUid)';
 }

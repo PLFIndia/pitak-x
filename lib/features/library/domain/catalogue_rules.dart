@@ -57,6 +57,12 @@ abstract final class CatalogueRules {
   static bool isValidOptionalDateMillis(int? value) =>
       value == null || isValidDateMillis(value);
 
+  /// A date range in order: true when either end is absent or [until] is on
+  /// or after [from] (same day counts). Used for a bound volume's
+  /// `issueDate..boundUntil` and a subscription window (ADR 0013 D4, D5).
+  static bool isValidDateOrder(int? from, int? until) =>
+      from == null || until == null || until >= from;
+
   /// A publication year: null (unknown) or 1..9999.
   static bool isValidYear(int? year) =>
       year == null || (year >= minYear && year <= maxYear);
@@ -140,6 +146,18 @@ final class FieldError {
       'priority' => 'The priority',
       'priceEstimate' => 'The price estimate',
       'coverUrl' => 'The cover link',
+      // Periodicals (ADR 0013 D2, D5, D7).
+      'issn' => 'The ISSN',
+      'frequency' => 'The frequency',
+      'subscriptionStart' => 'The subscription start date',
+      'subscriptionEnd' => 'The subscription end date',
+      // Magazine issues (`IssueOf.validate`, ADR 0013 D1, D4).
+      'issue.periodicalUid' => 'The magazine title',
+      'issue.volume' => 'The volume number',
+      'issue.issueNumber' => 'An issue number',
+      'issue.issueDate' => 'The issue date',
+      'issue.boundUntil' => 'The last issue date',
+      'issue.label' => 'The issue label',
       _ => field,
     };
     return '$label $problem.';
