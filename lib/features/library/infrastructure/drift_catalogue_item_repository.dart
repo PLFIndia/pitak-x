@@ -39,25 +39,46 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_collisions.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_sql.dart';
+import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:uuid/uuid.dart';
 
-/// Persists books in the Drift [AppDatabase].
+/// Persists catalogue items of every kind in the Drift [AppDatabase]
+/// (ADR 0013): the base row in `books`, an issue's detail row in
+/// `magazine_issues` through [DriftItemDetails], both in one transaction.
 class DriftCatalogueItemRepository implements CatalogueItemRepository {
   /// Creates the repository over [_db], optionally with a custom [Uuid].
   DriftCatalogueItemRepository(this._db, {Uuid? uuid})
-    : _uuid = uuid ?? const Uuid();
+    : _uuid = uuid ?? const Uuid(),
+      _details = DriftItemDetails(_db),
+      _collisions = CatalogueCollisions(_db);
 
   final AppDatabase _db;
   final Uuid _uuid;
+  final DriftItemDetails _details;
+  final CatalogueCollisions _collisions;
+
+  CatalogueItem _toDomain(TypedResult row) =>
+      row.toCatalogueItem(_db, _details);
+
+  /// One row by base-row [id] with its details, or null.
+  Future<CatalogueItem?> _getById(int id) async {
+    final row =
+        await (CatalogueSql.joined(_db)
+              ..where(_db.books.id.equals(id))
+              ..limit(1))
+            .getSingleOrNull();
+    return row == null ? null : _toDomain(row);
+  }
 
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async {
     try {
-      final query = _db.select(_db.books)
-        ..orderBy([(t) => OrderingTerm.desc(t.addedDate)]);
-      final rows = await query.get();
-      return right(rows.map((r) => r.toDomain()).toList());
+      final rows = await (CatalogueSql.joined(
+        _db,
+      )..orderBy([OrderingTerm.desc(_db.books.addedDate)])).get();
+      return right(rows.map(_toDomain).toList());
     } on Object catch (e) {
       return left(StorageFailure('getAll: $e'));
     }
@@ -79,45 +100,45 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       final rows = query.isSearch
           ? await CatalogueSql.searchRows(
               _db,
+              _details,
               query,
               limit: size + 1,
               offset: skip,
             )
           : await _listRows(query, limit: size + 1, offset: skip);
       final hasMore = rows.length > size;
-      final items = (hasMore ? rows.take(size) : rows)
-          .map((r) => r.toDomain())
-          .toList(growable: false);
+      final items = (hasMore ? rows.take(size) : rows).toList(growable: false);
       return right(CatalogueItemPage(items: items, hasMore: hasMore));
     } on Object catch (e) {
       return left(StorageFailure('page: $e'));
     }
   }
 
-  /// Blank search box: typed Drift select, ordered by
-  /// [CatalogueSql.orderingTerms], narrowed to the facet, windowed by SQLite.
-  Future<List<BookRow>> _listRows(
+  /// Blank search box: typed Drift select over the join, narrowed to the
+  /// facets ([CatalogueSql.facetPredicate]), ordered by
+  /// [CatalogueSql.orderingTerms] — or, on a series page, by the issue
+  /// rules ([CatalogueSql.issueOrderingTerms]) — and windowed by SQLite.
+  Future<List<CatalogueItem>> _listRows(
     LibraryQuery query, {
     required int limit,
     required int offset,
-  }) {
-    final q = _db.select(_db.books);
-    final lang = query.language;
-    if (lang != null) {
-      // D1-a: exact match on the STORED string. The facet value comes from
-      // `distinctLanguages()` (the stored spelling verbatim), so equality
-      // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
-      // previous `lower(language) = lower(?)` silently missed every
-      // non-Latin language name (e.g. `Ελληνικά`).
-      q.where((t) => t.language.equals(lang));
-    }
+  }) async {
+    final q = CatalogueSql.joined(_db);
+    final facets = CatalogueSql.facetPredicate(_db, query);
+    if (facets != null) q.where(facets);
+    final order = query.periodicalUid == null
+        ? CatalogueSql.orderingTerms(
+            query.sort,
+          ).map((term) => term(_db.books)).toList()
+        : CatalogueSql.issueOrderingTerms(_db);
     q
-      ..orderBy(CatalogueSql.orderingTerms(query.sort))
+      ..orderBy(order)
       // Drift writes `LIMIT n OFFSET m` from these two ints (verified in
       // drift 2.28.2 `components/limit.dart`); they are clamped ints, never
       // user text.
       ..limit(limit, offset: offset);
-    return q.get();
+    final rows = await q.get();
+    return rows.map(_toDomain).toList(growable: false);
   }
 
   @override
@@ -182,12 +203,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     try {
-      final row =
-          await (_db.select(_db.books)
-                ..where((t) => t.id.equals(id))
-                ..limit(1))
-              .getSingleOrNull();
-      return right(row?.toDomain());
+      return right(await _getById(id));
     } on Object catch (e) {
       return left(StorageFailure('getById: $e'));
     }
@@ -206,6 +222,9 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
             ? resolved.copyWith(itemUid: _uuid.v4())
             : resolved;
         final id = await _db.into(_db.books).insert(withUid.toCompanion());
+        // The detail row (an issue's volume/number/dates) lands in the same
+        // transaction as the base row: both or neither (ADR 0013 F4).
+        await _details.write(id, withUid.details);
         return right<Failure, CatalogueItem>(withUid.copyWith(id: id));
       });
     } on Object catch (e) {
@@ -214,8 +233,11 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       // parsing SQLite exception text, ask the table: if a colliding row
       // exists NOW, the honest user-facing failure is "already in your
       // library". Anything else keeps the opaque storage error.
-      final duplicate = await _isbnCollision(book.isbn);
+      final duplicate = await _collisions.isbn(book.isbn);
       if (duplicate != null) return left(duplicate);
+      // Same net for the two issue identity keys (ADR 0013 D6).
+      final duplicateIssue = await _collisions.issue(book.issue);
+      if (duplicateIssue != null) return left(duplicateIssue);
       return left(StorageFailure('insert: $e'));
     }
   }
@@ -238,6 +260,14 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         if (existing == null) {
           return left<Failure, CatalogueItem>(const NotFoundFailure());
         }
+        // ADR 0013 F6: a row whose stored kind this build does not know was
+        // READ as a book (fail-soft); writing it back would silently turn it
+        // into one. Refuse instead — the user updates the app to edit it.
+        if (!DriftItemDetails.isSupported(existing.kind)) {
+          return left<Failure, CatalogueItem>(
+            UnsupportedItemKindFailure(existing.kind),
+          );
+        }
         // The row's own current spelling is part of the stored set, so
         // re-typing `english` on the only English book keeps `English`:
         // one spelling per language, consistently. (A library-wide
@@ -250,48 +280,21 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         // `update().replace` matches on the primary key; FTS5 stays in sync
         // via the AFTER UPDATE trigger in app_database.dart.
         await _db.update(_db.books).replace(preserved.toCompanion());
+        await _details.write(preserved.id, preserved.details);
         return right<Failure, CatalogueItem>(preserved);
       });
     } on Object catch (e) {
       // S34 race net, same as [insert]: an edit moved onto ANOTHER row's ISBN
       // is refused by the UNIQUE index; report it as the duplicate it is.
       // The book's own id is excluded — keeping your own ISBN is no collision.
-      final duplicate = await _isbnCollision(book.isbn, excludeId: book.id);
+      final duplicate = await _collisions.isbn(book.isbn, excludeId: book.id);
       if (duplicate != null) return left(duplicate);
-      return left(StorageFailure('update: $e'));
-    }
-  }
-
-  /// Best-effort check, after a FAILED write, that [isbn] is now held by
-  /// another row: returns the typed [DuplicateIsbnFailure] describing it, or
-  /// null when there is no collision, the ISBN is blank, or the re-read
-  /// itself fails (the caller then falls back to [StorageFailure]).
-  ///
-  /// The lookup uses the ISBN exactly as the mapper would store it (raw;
-  /// blanks are never stored), so it finds precisely the row the UNIQUE
-  /// index collided with. [excludeId] names the row being updated, which
-  /// cannot collide with itself.
-  Future<DuplicateIsbnFailure?> _isbnCollision(
-    String? isbn, {
-    int? excludeId,
-  }) async {
-    final raw = isbn;
-    if (raw == null || raw.trim().isEmpty) return null;
-    try {
-      final row =
-          await (_db.select(_db.books)
-                ..where((t) => t.isbn.equals(raw))
-                ..limit(1))
-              .getSingleOrNull();
-      if (row == null) return null;
-      if (excludeId != null && row.id == excludeId) return null;
-      return DuplicateIsbnFailure(
-        existingTitle: row.title,
-        existingBookId: row.id,
-        existingIsRemoved: row.removed,
+      final duplicateIssue = await _collisions.issue(
+        book.issue,
+        excludeId: book.id,
       );
-    } on Object {
-      return null; // best-effort only; the caller reports the original error
+      if (duplicateIssue != null) return left(duplicateIssue);
+      return left(StorageFailure('update: $e'));
     }
   }
 
@@ -338,16 +341,18 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       return await _db.transaction(() async {
         final resolver = LanguageResolver(await _storedLanguages());
         var count = 0;
-        await _db.batch((b) {
-          for (final book in books) {
-            final resolved = resolver.resolve(book);
-            final withUid = resolved.itemUid == null
-                ? resolved.copyWith(itemUid: _uuid.v4())
-                : resolved;
-            b.insert(_db.books, withUid.toCompanion());
-            count++;
-          }
-        });
+        // Row by row (not a batch): an issue's detail row needs the id the
+        // base-row insert assigns. Still one transaction, so the cost is one
+        // statement per row inside a single commit.
+        for (final book in books) {
+          final resolved = resolver.resolve(book);
+          final withUid = resolved.itemUid == null
+              ? resolved.copyWith(itemUid: _uuid.v4())
+              : resolved;
+          final id = await _db.into(_db.books).insert(withUid.toCompanion());
+          await _details.write(id, withUid.details);
+          count++;
+        }
         return right<Failure, int>(count);
       });
     } on Object catch (e) {
@@ -362,6 +367,8 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       // or roll back together, so a mid-way failure (e.g. a UNIQUE violation
       // on a crafted file) can never leave a partially-replaced catalogue.
       return await _db.transaction(() async {
+        // The FK cascade (schema v5) removes every detail row with its base
+        // row, so one delete empties both tables.
         await _db.delete(_db.books).go();
         // The table is empty here, so spellings are resolved only against
         // earlier rows of the SAME file: first spelling in the file wins.
@@ -372,7 +379,8 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
           final withUid = resolved.itemUid == null
               ? resolved.copyWith(itemUid: _uuid.v4())
               : resolved;
-          await _db.into(_db.books).insert(withUid.toCompanion());
+          final id = await _db.into(_db.books).insert(withUid.toCompanion());
+          await _details.write(id, withUid.details);
           count++;
         }
         return right<Failure, int>(count);
@@ -387,11 +395,11 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     if (isbn.trim().isEmpty) return right(null);
     try {
       final row =
-          await (_db.select(_db.books)
-                ..where((t) => t.isbn.equals(isbn))
+          await (CatalogueSql.joined(_db)
+                ..where(_db.books.isbn.equals(isbn))
                 ..limit(1))
               .getSingleOrNull();
-      return right(row?.toDomain());
+      return right(row == null ? null : _toDomain(row));
     } on Object catch (e) {
       return left(StorageFailure('findByIsbn: $e'));
     }
@@ -403,11 +411,11 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     if (uid.isEmpty) return right(null);
     try {
       final row =
-          await (_db.select(_db.books)
-                ..where((t) => t.itemUid.equals(uid))
+          await (CatalogueSql.joined(_db)
+                ..where(_db.books.itemUid.equals(uid))
                 ..limit(1))
               .getSingleOrNull();
-      return right(row?.toDomain());
+      return right(row == null ? null : _toDomain(row));
     } on Object catch (e) {
       return left(StorageFailure('findByUid: $e'));
     }

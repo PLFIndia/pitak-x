@@ -15,6 +15,8 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
+import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
 /// One ORDER BY term over the `books` table (Drift's `orderBy` callback shape).
@@ -22,6 +24,17 @@ typedef OrderingOf = OrderingTerm Function($BooksTable t);
 
 /// Ordering, search and query-text helpers over the `books` table.
 abstract final class CatalogueSql {
+  /// The read every repository query starts from: `books` LEFT JOIN
+  /// `magazine_issues`, so an issue comes back with its detail row and a
+  /// book or an "other" item simply has none (ADR 0013 F4).
+  static JoinedSelectStatement<HasResultSet, dynamic> joined(AppDatabase db) =>
+      db.select(db.books).join([
+        leftOuterJoin(
+          db.magazineIssues,
+          db.magazineIssues.itemId.equalsExp(db.books.id),
+        ),
+      ]);
+
   /// Age band as an integer rank, in SQL. `AgeGroup.sortRank` (not the token's
   /// alphabetical order) defines band order; NULL — and any token the domain
   /// parser would not recognise — falls to `ELSE` and sorts LAST, exactly as
@@ -78,6 +91,58 @@ abstract final class CatalogueSql {
     ];
   }
 
+  /// The typed ORDER BY of a series page (ADR 0013 U2): `IssueSorter`'s
+  /// contract — issue date, volume, issue number, each DESC with NULLs
+  /// last, then id DESC — over the joined `magazine_issues` columns.
+  /// Twin of [issueOrderSql]; both are tested against `IssueSorter`.
+  static List<OrderingTerm> issueOrderingTerms(AppDatabase db) {
+    final m = db.magazineIssues;
+    return [
+      OrderingTerm(
+        expression: m.issueDate,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm(
+        expression: m.volume,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm(
+        expression: m.issueNumber,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm.desc(db.books.id),
+    ];
+  }
+
+  /// The raw-SQL twin of [issueOrderingTerms]; `b` is `books` and `m` is
+  /// `magazine_issues` in the FTS statement.
+  static const String issueOrderSql =
+      'ORDER BY m.issue_date DESC NULLS LAST, m.volume DESC NULLS LAST, '
+      'm.issue_number DESC NULLS LAST, b.id DESC';
+
+  /// The typed WHERE for the facets of [query] (language, kind, series), or
+  /// null when it has none. Every value is a bound parameter: the language
+  /// is the stored spelling the user tapped, the kind is an enum token, the
+  /// series uid is a stored identity.
+  static Expression<bool>? facetPredicate(AppDatabase db, LibraryQuery query) {
+    final parts = <Expression<bool>>[
+      // D1-a: exact match on the STORED string. The facet value comes from
+      // `distinctLanguages()` (the stored spelling verbatim), so equality
+      // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
+      // previous `lower(language) = lower(?)` silently missed every
+      // non-Latin language name (e.g. `Ελληνικά`).
+      if (query.language case final lang?) db.books.language.equals(lang),
+      if (query.kind case final kind?) db.books.kind.equals(kind.token),
+      if (query.periodicalUid case final uid?)
+        db.magazineIssues.periodicalUid.equals(uid),
+    ];
+    if (parts.isEmpty) return null;
+    return parts.reduce((acc, part) => acc & part);
+  }
+
   /// The raw-SQL ORDER BY for [sort], for the FTS statement in [searchRows]
   /// (hand-written SQL because `books_fts` is a virtual table Drift does not
   /// model). `b` is the alias of `books` in that statement. MUST order exactly
@@ -104,41 +169,68 @@ abstract final class CatalogueSql {
     return 'CASE $column $whens ELSE $_unrankedAge END';
   }
 
-  /// Typed search box: match the FTS5 index, join back to `books` for full
-  /// rows, then narrow, order AND window in the SAME statement so the page
-  /// is final (N10-d). The search text and the facet are bound variables
-  /// (never interpolated); the ORDER BY text is built from enum constants
-  /// only; LIMIT/OFFSET are bound clamped ints.
-  static Future<List<BookRow>> searchRows(
+  /// Typed search box: match the FTS5 index, join back to `books` (and the
+  /// optional `magazine_issues` detail row) for full rows, then narrow,
+  /// order AND window in the SAME statement so the page is final (N10-d).
+  /// The search text and every facet are bound variables (never
+  /// interpolated); the ORDER BY text is built from constants only;
+  /// LIMIT/OFFSET are bound clamped ints.
+  ///
+  /// Returns entities (not rows): the detail row is read through [details]
+  /// so an unknown kind reads fail-soft as a book here too.
+  static Future<List<CatalogueItem>> searchRows(
     AppDatabase db,
+    DriftItemDetails details,
     LibraryQuery query, {
     required int limit,
     required int offset,
   }) async {
-    final lang = query.language;
-    // Positional binding: ?1 match, ?2/?3 limit+offset when there is no
-    // facet, or ?2 facet then ?3/?4 limit+offset. Built as a list so the
-    // indices in the SQL text and the variables list cannot drift apart.
+    // Predicates and their variables are built side by side, so the `?`
+    // placeholders and the bound values cannot drift apart.
+    final where = StringBuffer('WHERE books_fts MATCH ?');
     final variables = <Variable<Object>>[
       Variable<String>(ftsQuery(query.text)),
-      if (lang != null) Variable<String>(lang),
-      Variable<int>(limit),
-      Variable<int>(offset),
     ];
-    final limitIndex = lang == null ? 2 : 3;
+    if (query.language case final lang?) {
+      where.write(' AND b.language = ?');
+      variables.add(Variable<String>(lang));
+    }
+    if (query.kind case final kind?) {
+      where.write(' AND b.kind = ?');
+      variables.add(Variable<String>(kind.token));
+    }
+    if (query.periodicalUid case final uid?) {
+      where.write(' AND m.periodical_uid = ?');
+      variables.add(Variable<String>(uid));
+    }
+    variables
+      ..add(Variable<int>(limit))
+      ..add(Variable<int>(offset));
+    final order = query.periodicalUid == null
+        ? orderSql(query.sort)
+        : issueOrderSql;
     final rows = await db
         .customSelect(
-          'SELECT b.* FROM books_fts f '
+          'SELECT b.*, m.* FROM books_fts f '
           'JOIN books b ON b.id = f.rowid '
-          'WHERE books_fts MATCH ?1 '
-          '${lang == null ? '' : 'AND b.language = ?2 '}'
-          '${orderSql(query.sort)} '
-          'LIMIT ?$limitIndex OFFSET ?${limitIndex + 1}',
+          'LEFT JOIN magazine_issues m ON m.item_id = b.id '
+          '$where $order LIMIT ? OFFSET ?',
           variables: variables,
-          readsFrom: {db.books},
+          readsFrom: {db.books, db.magazineIssues},
         )
         .get();
-    return rows.map((r) => db.books.map(r.data)).toList(growable: false);
+    return rows
+        .map((r) {
+          final base = db.books.map(r.data);
+          // The LEFT JOIN leaves every `m.*` column NULL for a non-issue;
+          // `item_id` is the detail table's primary key, so NULL there means
+          // "no detail row".
+          final issue = r.data['item_id'] == null
+              ? null
+              : db.magazineIssues.map(r.data);
+          return base.toDomain(details: details.read(base.kind, issue));
+        })
+        .toList(growable: false);
   }
 
   /// Turns free text into a safe FTS5 prefix query, quoting each token to
