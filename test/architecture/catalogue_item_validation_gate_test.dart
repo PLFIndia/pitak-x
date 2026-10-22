@@ -53,6 +53,12 @@ void main() {
     // downstream.
     'lib/features/library/presentation/pages/add_book_page.dart':
         'form assembly; gate is Add/UpdateCatalogueItemUseCase',
+    // ADR 0013 D3: rebuilds an issue row from an already-validated row and
+    // a validated periodical (a pure field copy — `copyWith` cannot null a
+    // field, so the row is rebuilt). The issue use cases validate the
+    // projected row before persisting, so the gate is one hop downstream.
+    'lib/features/periodicals/domain/issue_projection.dart':
+        'series → issue projection; gate is the issue use cases',
   };
 
   /// Matches a `CatalogueItem(` construction and NOT a longer identifier that
@@ -139,6 +145,67 @@ void main() {
     }
   });
 
+  // ADR 0013: `Periodical` follows the same gate pattern
+  // (`Periodical.validate`, AGENTS §3.3). Separate regex and allow-list so
+  // the two censuses cannot mask each other; the reasoning for each trusted
+  // site is the same as above.
+  group('Periodical gate', () {
+    const trustedPeriodicalConstructors = <String, String>{
+      // The entity itself: plain constructor, copyWith and the gate.
+      'lib/features/periodicals/domain/entities/periodical.dart':
+          'the entity itself',
+    };
+    final constructsPeriodical = RegExp(r'(?<![a-zA-Z])Periodical\(');
+
+    test('every Periodical-constructing file under lib/ passes through '
+        'Periodical.validate or is an explicitly trusted constructor', () {
+      final offenders = <String>[];
+      final constructing = <String>[];
+      for (final file in dartFiles(scanRoot)) {
+        final src = file.readAsStringSync();
+        if (!constructsPeriodical.hasMatch(src)) continue;
+        constructing.add(file.path);
+        if (trustedPeriodicalConstructors.containsKey(file.path)) continue;
+        if (!src.contains('Periodical.validate')) offenders.add(file.path);
+      }
+      expect(
+        constructing,
+        hasLength(greaterThanOrEqualTo(1)),
+        reason: 'expected at least the entity file to be scanned',
+      );
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            'these files construct a Periodical without referencing '
+            'Periodical.validate — route them through the gate, or add them '
+            'to trustedPeriodicalConstructors with a justification comment',
+      );
+    });
+
+    test('every allow-list entry is a real, scanned, Periodical-constructing '
+        'file (no dead entries)', () {
+      for (final path in trustedPeriodicalConstructors.keys) {
+        final file = File(path);
+        expect(file.existsSync(), isTrue, reason: '$path no longer exists');
+        expect(
+          constructsPeriodical.hasMatch(file.readAsStringSync()),
+          isTrue,
+          reason: '$path no longer constructs a Periodical — drop it',
+        );
+      }
+    });
+
+    test('the allow-list stays exactly as reviewed (no silent growth)', () {
+      expect(
+        trustedPeriodicalConstructors.keys,
+        unorderedEquals([
+          'lib/features/periodicals/domain/entities/periodical.dart',
+        ]),
+      );
+    });
+  });
+
   test('the allow-list stays exactly as reviewed (no silent growth)', () {
     // If you ADD an entry here, the PR must say why the constructor is
     // trusted (AGENTS.md footer: deliberate, reviewed changes only).
@@ -148,6 +215,7 @@ void main() {
         'lib/features/library/domain/entities/catalogue_item.dart',
         'lib/features/library/infrastructure/catalogue_item_mapper.dart',
         'lib/features/library/presentation/pages/add_book_page.dart',
+        'lib/features/periodicals/domain/issue_projection.dart',
       ]),
     );
   });

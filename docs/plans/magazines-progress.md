@@ -6,11 +6,11 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S6** (domain kind seam)
+- Last completed session: **S7** (periodicals domain)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S6's commit (S5 was `415adfd`, S4 `29689f8`, S3 `34a7045`,
-  S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S6, 2026-10-21** — 2465 tests, 59 s
+- Last commit: S7's commit (S6 was `0517263`, S5 `415adfd`, S4 `29689f8`,
+  S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S7, 2026-10-22** — 2533 tests, 64 s
   (`flutter test --exclude-tags golden`)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
@@ -38,36 +38,40 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S7 — Domain: periodicals feature.** Nothing in flight. Follow the plan's
-S7 steps verbatim.
+**S8 — Make room in the item repository (pure refactor).** Nothing in
+flight. Follow the plan's S8 steps verbatim.
 
 Notes for it:
 
-- Domain equality convention (enforced by lint + the N14 allowlist): no
-  `==`/`hashCode` overrides and no `package:meta` in `domain/`; value objects
-  expose `sameAs(other)` (see `ItemDetails.sameAs`, `LibraryQuery.sameIntentAs`,
-  `GeoPoint.sameAs`). `Periodical` should follow that.
-- `ItemDetails` lives in `library/domain/value_objects/item_details.dart`
-  (`IssueOf` has `copyWith`, `isBound`, `sameAs`; field errors are
-  `issue.<field>`); `ItemKind` in `item_kind.dart` (`token`, `label`,
-  tolerant `fromToken` that returns null for unknown — never a book).
-- `CatalogueRules.isValidDateOrder(from, until)` exists for the
-  subscription window; `FieldError.userMessage` already labels `issn`,
-  `frequency`, `subscriptionStart`, `subscriptionEnd` and `issue.*`.
-- Failures `DuplicateIssnFailure`, `DuplicateIssueFailure`,
-  `PeriodicalHasIssuesFailure(issueCount)`, `UnsupportedItemKindFailure
-  (kindToken)` are in `core/error/failure.dart`; their sentences live in
-  `library/presentation/catalogue_save_messages.dart`
-  (`catalogueSaveMessage(error, noun:)`), which `AddBookPage` now uses
-  (its `_messageFor` moved there — the book wording is pinned by tests).
-- Gate test: extend it to scan `Periodical(` with
-  `lib/features/periodicals/domain/entities/periodical.dart` as the only
-  allowed site (the plan's S7 step). The scan regex today is
-  `(?<![a-zA-Z])CatalogueItem\(`; add a second regex + allow-list map rather
-  than widening the first.
-- `IssueTitle.compose` month names: const English list; `IssueCadence` must
-  clamp month-end (31 Jan + 1 month = 28/29 Feb) — both have test cases named
-  in the plan (A.5).
+- `drift_catalogue_item_repository.dart` is at **599** lines (ratchet record
+  599 after the S3 bump). Target ≤ 450 after moving `_LanguageResolver`,
+  `_RollbackWith`, `_ftsQuery` and the raw `ORDER BY` builder into
+  `library/infrastructure/drift_catalogue_sql.dart`. Delete the ratchet entry
+  if it lands under 500 (the ratchet test insists on it).
+- Zero-behaviour session: `test/features/library/drift_catalogue_item_repository_test.dart`
+  expectations must not change.
+
+What S7 left for S10–S13 (domain contracts now fixed):
+
+- `lib/features/periodicals/domain/`: `entities/periodical.dart`
+  (`Periodical`, `validate`, `copyWith`, `sameAs`, `isSubscriptionTracked`),
+  `value_objects/issn.dart` (`normalize`, `isValid`, `fromEan13`),
+  `value_objects/periodical_frequency.dart` (token, `days`/`months` step,
+  `label`, `fromToken`), `subscription_status.dart` (`of(periodical, now)`,
+  30-day window, `badgeLabel`), `issue_cadence.dart` (`IssueCadence.next` →
+  `IssuePrefill`, `nextDate`, `addMonthsClamped` in LOCAL calendar time),
+  `issue_title.dart` (`compose`, `months`, `yearOf`), `issue_projection.dart`
+  (`apply` rebuilds the row — allow-listed in the gate test; the issue use
+  cases must validate the projected row), `issue_cover.dart` (`resolve`),
+  `issue_sorter.dart` (`sort`, `compare`: date/volume/number desc NULLS
+  LAST, id desc — the SQL twin in S10 must use `DESC NULLS LAST`),
+  `repositories/periodical_repository.dart` (`PeriodicalSummary(periodical,
+  issueCount, latestIssueDate)`; `listAll` ordered by title then id;
+  `delete` fails closed with `PeriodicalHasIssuesFailure`; `findIssue`
+  takes `volume: int?` — the repository must compare `COALESCE(volume, 0)`).
+- The gate test now has a second census: `Periodical(` with the entity as
+  the only trusted site. S16's periodical form will need an allow-list
+  entry (plan B.5).
 
 Notes from S5 for later sessions:
 
@@ -154,4 +158,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S3 | Done | `34a7045` | 2026-10-21 | `CatalogueItemRepository`, `DriftCatalogueItemRepository`, `CatalogueItemRowMapper`, `Add/Update/DeleteCatalogueItemUseCase`, `catalogueItemRepositoryProvider`, `catalogueItemByIdProvider` (+ use-case providers); 6 lib + 2 test files moved; ratchet re-keyed (597 → 599, see Deviations); ADR 0011 note; full green 2426 |
 | S4 | Done | `29689f8` | 2026-10-21 | A.7 complete: `CatalogueItemPage/Sorter/Row/GridCard`, `ItemCover`, `CatalogueItemDetailPage`, `LendDecision.forItem`, `Loan.itemId`, `PublishItem`, `ImportPayload.items`, `LegacyRows.items`; 6 lib + 7 test files moved; AGENTS §3.3 + ARCHITECTURE §2.1/§3 updated; ratchet re-keyed (677 → 681, see Deviations); `git grep` done-when returns only kept names, UI strings, fixtures and prose; full green 2426 |
 | S5 | Done | `415adfd` | 2026-10-21 | ADR 0013 (F1–F8, D1–D11, O1–O4, recipe, resolved-decisions log), ADR 0014 (W1–W4 with JSON shapes), ADR index, ARCHITECTURE §3 module map (`periodicals/`), §5.4 v5 pending, §5.5 `item_kinds.json`/`periodicals.json` rows + old-build note, new §5.7 Pitaka-JSON v4 / `books.json` (§5.6 numbering kept — code comments cite it), §6 standing decision; AGENTS §3.3 `Periodical.validate`; CHANGELOG `[Unreleased]` Added/Changed with an in-progress note. No Dart changed; analyze + format green |
-| S6 | Done | _(this commit)_ | 2026-10-21 | `ItemKind`, sealed `ItemDetails` (`IssueOf`, `OtherItemOf`), `CatalogueItem.details`/`kind`/`issue`, validate appends `issue.*` errors, `copyWith(details:)`; `CatalogueRules.isValidDateOrder`; 10 new `FieldError` labels; 4 failures + shared `catalogueSaveMessage` (AddBookPage refactored onto it, 640 → 620 lines); `LibraryQuery.kind`/`periodicalUid`; 39 new tests (2465 total), full green |
+| S6 | Done | `0517263` | 2026-10-21 | `ItemKind`, sealed `ItemDetails` (`IssueOf`, `OtherItemOf`), `CatalogueItem.details`/`kind`/`issue`, validate appends `issue.*` errors, `copyWith(details:)`; `CatalogueRules.isValidDateOrder`; 10 new `FieldError` labels; 4 failures + shared `catalogueSaveMessage` (AddBookPage refactored onto it, 640 → 620 lines); `LibraryQuery.kind`/`periodicalUid`; 39 new tests (2465 total), full green |
+| S7 | Done | _(this commit)_ | 2026-10-22 | `features/periodicals/domain/` (10 files, 979 lines): `Periodical` + gate, `Issn`, `PeriodicalFrequency`, `SubscriptionStatus`, `IssueCadence`, `IssueTitle`, `IssueProjection`, `IssueCover`, `IssueSorter`, `PeriodicalRepository`/`PeriodicalSummary`; gate test scans `Periodical(`; `issue_projection.dart` allow-listed for `CatalogueItem(`; 68 new tests (2533 total), full green |
