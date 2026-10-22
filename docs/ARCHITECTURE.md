@@ -290,12 +290,16 @@ bump (enforced by `test/core/database/migration_test.dart`):
 An older build opening a newer database refuses with `SchemaTooNewFailure`
 (forward-compat, fail closed). Migrations are transactional and idempotent.
 
-Pending (ADR 0013, branch `magazines`): **v5** adds `books.kind`
-(`TEXT NOT NULL DEFAULT 'book'`), the `magazine_issues` detail table
-(`item_id → books.id ON DELETE CASCADE`, so `PRAGMA foreign_keys = ON` is
-turned on in `beforeOpen` — no earlier table declares a FK) and the
-`periodicals` table, and rebuilds the FTS index with `notes` added to its
-columns.
+**v5** (ADR 0013) adds `books.kind` (`TEXT NOT NULL DEFAULT 'book'`), the
+`magazine_issues` detail table (`item_id → books.id ON DELETE CASCADE`, so
+`PRAGMA foreign_keys = ON` is set in `beforeOpen` — no earlier table declares
+a FK) and the `periodicals` table, and drops + rebuilds the FTS index with
+`notes` added to its columns (the one-time rebuild is timed in
+`test/core/database/fts_rebuild_timing_test.dart`: 5 000 rows in well under a
+second on a laptop, bound 20 s). The issue identity keys (ADR 0013 D6) are two
+PARTIAL unique indexes on `magazine_issues`; drift cannot express those, so
+they — and the `periodicals` UNIQUE indexes — are raw SQL in
+`_createIndexesAndFts`, covered by the migration test's raw-object census.
 
 ### 5.5 `.pitabak` backup archive (manifest schema 1)
 

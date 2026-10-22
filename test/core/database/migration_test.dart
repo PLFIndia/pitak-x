@@ -10,6 +10,7 @@ import 'generated/schema.dart';
 import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
+import 'generated/schema_v4.dart' as v4;
 
 /// Reads the current `schemaVersion` without leaving a database open.
 Future<int> _currentSchemaVersion() async {
@@ -34,6 +35,13 @@ const _rawSqlObjects = <String, List<String>>{
     'index_books_title_sort',
     'index_books_author_sort',
     'index_wishlist_books_isbn',
+    // Schema v5 (ADR 0013): kind facet, issue identity keys, periodical ids.
+    'index_books_kind',
+    'index_magazine_issues_periodical_uid',
+    'index_magazine_issues_number_key',
+    'index_magazine_issues_bound_key',
+    'index_periodicals_periodical_uid',
+    'index_periodicals_issn',
   ],
   'trigger': ['books_fts_ai', 'books_fts_ad', 'books_fts_au'],
 };
@@ -341,6 +349,188 @@ void main() {
         expect(row.confirmedByMember, isFalse);
 
         await _expectRawSqlObjectsHealthy(db);
+      },
+    );
+
+    // Data-matrix row for the v5 bump (ADR 0013): a populated v4 catalogue
+    // survives with `kind` back-filled to `book`; the FTS index is rebuilt
+    // WITH `notes` (a notes-only word is found; the column list is asserted);
+    // the new tables exist, start empty, and the detail table cascades from
+    // its base row; every kind round-trips through the current schema.
+    test(
+      'v4: books survive as kind=book, FTS gains notes, kinds round-trip',
+      () async {
+        final schema = await verifier.schemaAt(4);
+        final oldDb = v4.DatabaseAtV4(schema.newConnection());
+        await oldDb
+            .into(oldDb.books)
+            .insert(
+              v4.BooksCompanion.insert(
+                bookUid: const Value('uid-v4'),
+                title: 'Pre-upgrade Book',
+                notes: const Value('zebra in the notes only'),
+                addedDate: 1700000006000,
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        // Back-fill: the pre-upgrade row is a book.
+        final book = await db.select(db.books).getSingle();
+        expect(book.title, 'Pre-upgrade Book');
+        expect(book.itemUid, 'uid-v4');
+        expect(book.kind, 'book');
+        expect(await db.select(db.periodicals).get(), isEmpty);
+        expect(await db.select(db.magazineIssues).get(), isEmpty);
+
+        // D10: the rebuilt index covers notes — a word that appears ONLY in
+        // the notes of a pre-upgrade row is found.
+        final ftsColumns = await db
+            .customSelect('PRAGMA table_info(books_fts)')
+            .map((r) => r.read<String>('name'))
+            .get();
+        expect(ftsColumns, [
+          'title',
+          'title_transliteration',
+          'author',
+          'isbn',
+          'location',
+          'genre',
+          'notes',
+        ]);
+        await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'zebra');
+
+        // Every kind round-trips: a periodical, a numbered issue, a bound
+        // volume and an "other" item, written through the current schema.
+        await db
+            .into(db.periodicals)
+            .insert(
+              PeriodicalsCompanion.insert(
+                periodicalUid: 'p-1',
+                title: 'Chandamama',
+                issn: const Value('0317-8471'),
+                frequency: const Value('monthly'),
+                addedDate: 1700000007000,
+              ),
+            );
+        final issueId = await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Chandamama — No 1',
+                addedDate: 1700000008000,
+                kind: const Value('magazine-issue'),
+              ),
+            );
+        await db
+            .into(db.magazineIssues)
+            .insert(
+              MagazineIssuesCompanion.insert(
+                itemId: Value(issueId),
+                periodicalUid: 'p-1',
+                issueNumber: const Value(1),
+              ),
+            );
+        final boundId = await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Chandamama — Jan 2025 – Dec 2025',
+                addedDate: 1700000008001,
+                kind: const Value('magazine-issue'),
+              ),
+            );
+        await db
+            .into(db.magazineIssues)
+            .insert(
+              MagazineIssuesCompanion.insert(
+                itemId: Value(boundId),
+                periodicalUid: 'p-1',
+                issueDate: const Value(1735689600000),
+                boundUntil: const Value(1764547200000),
+              ),
+            );
+        await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Carrom board',
+                addedDate: 1700000008002,
+                kind: const Value('other'),
+              ),
+            );
+        final kinds = await db
+            .customSelect('SELECT kind, COUNT(*) AS n FROM books GROUP BY kind')
+            .map((r) => '${r.read<String>('kind')}=${r.read<int>('n')}')
+            .get();
+        // `Trigger Probe` (inserted by the health check) is a book too.
+        expect(kinds, containsAll(['book=2', 'magazine-issue=2', 'other=1']));
+        final periodical = await db.select(db.periodicals).getSingle();
+        expect(periodical.issn, '0317-8471');
+        expect(periodical.frequency, 'monthly');
+        expect(periodical.removed, isFalse);
+
+        // D6 identity keys: the partial UNIQUE indexes refuse a second
+        // numbered issue with the same key (no volume == volume 0) and a
+        // second bound volume with the same range.
+        await expectLater(
+          db
+              .into(db.magazineIssues)
+              .insert(
+                MagazineIssuesCompanion.insert(
+                  itemId: Value(
+                    await db
+                        .into(db.books)
+                        .insert(
+                          BooksCompanion.insert(
+                            title: 'dup number',
+                            addedDate: 1,
+                            kind: const Value('magazine-issue'),
+                          ),
+                        ),
+                  ),
+                  periodicalUid: 'p-1',
+                  volume: const Value(0),
+                  issueNumber: const Value(1),
+                ),
+              ),
+          throwsA(isA<Object>()),
+          reason: 'UNIQUE (periodical_uid, COALESCE(volume,0), issue_number)',
+        );
+        await expectLater(
+          db
+              .into(db.magazineIssues)
+              .insert(
+                MagazineIssuesCompanion.insert(
+                  itemId: Value(
+                    await db
+                        .into(db.books)
+                        .insert(
+                          BooksCompanion.insert(
+                            title: 'dup bound',
+                            addedDate: 2,
+                            kind: const Value('magazine-issue'),
+                          ),
+                        ),
+                  ),
+                  periodicalUid: 'p-1',
+                  issueDate: const Value(1735689600000),
+                  boundUntil: const Value(1764547200000),
+                ),
+              ),
+          throwsA(isA<Object>()),
+          reason: 'UNIQUE (periodical_uid, issue_date, bound_until)',
+        );
+
+        // F4 cascade: deleting the base row deletes its detail row (proves
+        // `PRAGMA foreign_keys = ON` is live on this connection).
+        await (db.delete(db.books)..where((t) => t.id.equals(issueId))).go();
+        final details = await db.select(db.magazineIssues).get();
+        expect(details.map((d) => d.itemId), [boundId]);
       },
     );
   });

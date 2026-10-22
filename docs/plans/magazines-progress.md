@@ -6,11 +6,12 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S8** (repository SQL helpers extracted)
+- Last completed session: **S9** (schema v5)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S8's commit (S7 was `118bc1f`, S6 `0517263`, S5 `415adfd`,
-  S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S8, 2026-10-22** — 2533 tests, 61 s
+- Last commit: S9's commit (S8 was `d3ee18b`, S7 `118bc1f`, S6 `0517263`,
+  S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`,
+  S0 `8899cc0`)
+- Full suite last green at: **S9, 2026-10-22** — 2536 tests, 71 s
   (`flutter test --exclude-tags golden`)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
@@ -38,25 +39,39 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S9 — Schema v5.** Nothing in flight. Follow the plan's S9 steps verbatim.
+**S10 — Item details seam, mapper, repository.** Nothing in flight. Follow
+the plan's S10 steps verbatim.
 
 Notes for it:
 
-- Line counts after S8: `drift_catalogue_item_repository.dart` **437**
-  (ratchet entry deleted — it is under 500), `drift_catalogue_sql.dart`
-  **194** (`CatalogueSql.orderingTerms/orderSql/ftsQuery/searchRows`,
-  `LanguageResolver`, `RollbackWith`, typedef `OrderingOf`). S10 extends the
-  repository (LEFT JOIN, kind/series predicates, two-table writes) — the
-  FTS statement and ORDER BY twins now live in `CatalogueSql`, so the kind
-  predicate and the `IssueSorter` ORDER BY go there too.
-- Tokens for the v5 `kind` column: `ItemKind.token` (`book`,
-  `magazine-issue`, `other`), default `'book'`. Frequency tokens:
-  `PeriodicalFrequency.token`.
-- Schema tooling: `dart run drift_dev schema dump` / `schema generate` as in
-  `migration_test.dart`'s header; the v1–v4 generated helpers keep the old
-  `bookUid` getter name (version-pinned); v5's helper will say `itemUid`.
-- Pre-commit hook re-runs build_runner and refuses stale generated code;
-  commit the new snapshot + helper together.
+- Drift names from S9: tables `MagazineIssues` (`$MagazineIssuesTable`, row
+  `MagazineIssueRow`, companion `MagazineIssuesCompanion`; columns `itemId`
+  (PK, FK cascade), `periodicalUid`, `volume`, `issueNumber`, `issueDate`,
+  `boundUntil`, `issueLabel`) and `Periodicals` (`PeriodicalRow`,
+  `PeriodicalsCompanion`; `periodicalUid` NOT NULL, `titleSort` shadow like
+  books); `Books.kind` (`TEXT NOT NULL DEFAULT 'book'`).
+- Foreign keys are ON for every connection (`beforeOpen`): deleting a
+  `books` row cascades to `magazine_issues`. `replaceAll` therefore needs
+  no explicit detail delete; `insert`/`update` must write the detail row in
+  the same transaction.
+- The two issue identity keys are partial UNIQUE indexes
+  (`index_magazine_issues_number_key` on `(periodical_uid,
+  COALESCE(volume, 0), issue_number) WHERE issue_number IS NOT NULL AND
+  bound_until IS NULL`; `index_magazine_issues_bound_key` on
+  `(periodical_uid, issue_date, bound_until) WHERE bound_until IS NOT NULL`).
+  A violation surfaces as a `SqliteException` — map it to
+  `DuplicateIssueFailure` the way `_isbnCollision` maps the ISBN index (ask
+  the table after the failed write, never parse exception text).
+- FTS now indexes `notes` (`_ftsColumns`), so "search by notes" works
+  through the existing `CatalogueSql.searchRows`; the kind predicate must be
+  added to BOTH `_listRows` and the FTS statement (`b.kind = ?`), and the
+  series facet (`periodical_uid`) needs the LEFT JOIN on `magazine_issues`
+  with the `IssueSorter` order (`issue_date DESC NULLS LAST, volume DESC
+  NULLS LAST, issue_number DESC NULLS LAST, b.id DESC`).
+- `IssueSorter.compare` is the Dart oracle for that order (test both paths
+  against it like `CatalogueItemSorter`).
+- `drift_catalogue_item_repository.dart` is at 437 lines and no longer in the
+  ratchet; keep it under 500 (put new SQL in `CatalogueSql`).
 
 What S7 left for S10–S13 (domain contracts now fixed):
 
@@ -167,4 +182,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S5 | Done | `415adfd` | 2026-10-21 | ADR 0013 (F1–F8, D1–D11, O1–O4, recipe, resolved-decisions log), ADR 0014 (W1–W4 with JSON shapes), ADR index, ARCHITECTURE §3 module map (`periodicals/`), §5.4 v5 pending, §5.5 `item_kinds.json`/`periodicals.json` rows + old-build note, new §5.7 Pitaka-JSON v4 / `books.json` (§5.6 numbering kept — code comments cite it), §6 standing decision; AGENTS §3.3 `Periodical.validate`; CHANGELOG `[Unreleased]` Added/Changed with an in-progress note. No Dart changed; analyze + format green |
 | S6 | Done | `0517263` | 2026-10-21 | `ItemKind`, sealed `ItemDetails` (`IssueOf`, `OtherItemOf`), `CatalogueItem.details`/`kind`/`issue`, validate appends `issue.*` errors, `copyWith(details:)`; `CatalogueRules.isValidDateOrder`; 10 new `FieldError` labels; 4 failures + shared `catalogueSaveMessage` (AddBookPage refactored onto it, 640 → 620 lines); `LibraryQuery.kind`/`periodicalUid`; 39 new tests (2465 total), full green |
 | S7 | Done | `118bc1f` | 2026-10-22 | `features/periodicals/domain/` (10 files, 979 lines): `Periodical` + gate, `Issn`, `PeriodicalFrequency`, `SubscriptionStatus`, `IssueCadence`, `IssueTitle`, `IssueProjection`, `IssueCover`, `IssueSorter`, `PeriodicalRepository`/`PeriodicalSummary`; gate test scans `Periodical(`; `issue_projection.dart` allow-listed for `CatalogueItem(`; 68 new tests (2533 total), full green |
-| S8 | Done | _(this commit)_ | 2026-10-22 | `drift_catalogue_sql.dart` (194 lines) takes `CatalogueSql` (ORDER BY twins, FTS statement, `ftsQuery`), `LanguageResolver`, `RollbackWith`; repository 599 → 437, ratchet entry deleted; no test expectation changed; full green 2533 |
+| S8 | Done | `d3ee18b` | 2026-10-22 | `drift_catalogue_sql.dart` (194 lines) takes `CatalogueSql` (ORDER BY twins, FTS statement, `ftsQuery`), `LanguageResolver`, `RollbackWith`; repository 599 → 437, ratchet entry deleted; no test expectation changed; full green 2533 |
+| S9 | Done | _(this commit)_ | 2026-10-22 | schema v5: `books.kind`, `magazine_issues` (FK cascade), `periodicals`; `PRAGMA foreign_keys = ON`; FTS dropped + rebuilt with `notes`; 6 raw indexes (2 partial UNIQUE); snapshot v5 + generated helper; matrix row (back-fill, notes FTS, column list, kinds round-trip, unique keys, cascade); `fts_rebuild_timing_test` (5 000 rows: migration 36 ms, rebuild 3 ms on this laptop; bound 20 s); `app_database_test` fixture rebuilt from the real v1 snapshot (26 columns now); ARCHITECTURE §5.4 updated; full green 2536 |
