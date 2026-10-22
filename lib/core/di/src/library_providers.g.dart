@@ -69,7 +69,7 @@ final coverFileCoordinatorProvider = Provider<CoverFileCoordinator>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CoverFileCoordinatorRef = ProviderRef<CoverFileCoordinator>;
-String _$coverFileJanitorHash() => r'a6913be53bfec60139c9f3cd5fbdc6e1a2c8fa6a';
+String _$coverFileJanitorHash() => r'abef82436839e0d512d4e33a049c5ff368c8ffc0';
 
 /// Removes cover files nothing references any more (decision Q12). Used right
 /// after a cover/logo is replaced or a book hard-deleted, and once at startup

@@ -6,16 +6,14 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S10** (details seam, mapper, kind-aware
-  repository)
+- Last completed session: **S11** (periodical repository, DI, janitor W4)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S10's commit (S9 was `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`,
-  S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`,
-  S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S10, 2026-10-22** — 2556 tests, 66 s
+- Last commit: S11's commit (S10 was `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`,
+  S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`,
+  S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S11, 2026-10-22** — 2588 tests, 82 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here on the maintainer's instruction (2026-10-22): the next
-  run starts at S11.
+- Run stopped here (one session per run, B.3): the next run starts at S12.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -42,10 +40,73 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S11 — Periodical repository, DI, janitor.** Nothing in flight. Follow the
-plan's S11 steps verbatim.
+**S12 — Use cases: periodicals and issues.** Nothing in flight. Follow the
+plan's S12 steps verbatim.
 
-Notes for it (what S10 built, and the hooks S11 should reuse):
+Notes for it (what S11 built, and the hooks S12 should reuse):
+
+- **Where the repository binding is:** `periodicalRepositoryProvider` lives
+  in `core/di/src/database_providers.dart` (next to `wishlistRepository`),
+  NOT in a `periodical_providers.dart` — see Deviations. S12 creates
+  `core/di/src/periodical_providers.dart` for the use-case providers (and
+  registers it in `core/di/providers.dart`); that module may import
+  `database_providers.dart` and `library_providers.dart`
+  (`catalogueItemRepositoryProvider`, `coverFileJanitorProvider`) with no
+  cycle, because nothing in `library_providers.dart` will need it.
+- **Repository contract as implemented** (`DriftPeriodicalRepository`,
+  `periodicals/infrastructure/drift_periodical_repository.dart`, 441 lines;
+  `periodical_mapper.dart`, 97):
+  - `insert` / `insertAll` / `replaceAll` mint a uid when it is null OR
+    blank; `update` ALWAYS keeps the STORED uid (an incoming different uid
+    is ignored — issues link to the stored one). `update` with
+    `id == emptyId` or a missing row → `NotFoundFailure`.
+  - ISSN collisions → `DuplicateIssnFailure(existingTitle,
+    existingPeriodicalId)` on `insert` and `update` (re-read after the
+    failed write, no exception-text parsing); inside `insertAll` /
+    `replaceAll` a collision is a plain `StorageFailure` and the whole batch
+    rolls back (same as the item repository).
+  - `findByIssn` normalises its input (`Issn.normalize`) before querying, so
+    the D11 scan route can pass `Issn.fromEan13(...)` or raw text; a
+    structurally invalid ISSN answers null without a query.
+  - `delete` is one transaction: missing id → `right(unit)`; `countIssues >
+    0` → `PeriodicalHasIssuesFailure(count)` (soft-removed issues count);
+    the use case (S12) still pre-checks for a friendlier message but the
+    repository is the last line of defence.
+  - `findIssue` / `findBoundVolume` build an `IssueOf` and query
+    `CatalogueSql.issueIdentityKey(db, issue)` — the SAME predicate the
+    collision lookup uses (moved out of `CatalogueCollisions` in S11), so
+    "already catalogued" means one thing. A bound volume never answers the
+    numbered key; `volume: null` ≡ `0`.
+  - `issuesOf` returns every issue of the series (soft-removed included) in
+    `IssueSorter` order, mapped through the item mapper + `DriftItemDetails`
+    (entities carry `details`). `listAll` is one LEFT JOIN + GROUP BY
+    (`COUNT(item_id)`, `MAX(issue_date)`), ordered `title, id` in BINARY
+    collation.
+  - The repository does NOT snap `Periodical.language` to a stored spelling
+    (`LanguageResolver` is item-specific); the projected issue rows are
+    snapped by the item repository on write. If the series page ever shows
+    the periodical's own language next to its issues', S12's add/update
+    periodical use cases are the place to canonicalise (or generalise the
+    resolver) — not needed by the plan today.
+- **Janitor (W4) done:** `CoverFileJanitor` has a required `periodicals:
+  PeriodicalRepository` and reads `listAll()`; fakes in four test files
+  implement `listAll` only (`_NoPeriodicals` / `_Periodicals`). S12's
+  `delete_periodical_use_case` gets `janitor.releaseReference` exactly like
+  `DeleteCatalogueItemUseCase` does (`library_providers.dart`).
+- **Gate test:** `periodical_mapper.dart` is on the `Periodical(`
+  allow-list ("DB mapper (rows validated on write)"). S12's
+  `add_issue_use_case` constructs `CatalogueItem(details: IssueOf(...))` —
+  it calls `CatalogueItem.validate` on the projected row, so it needs no
+  allow-list entry; a periodical use case that builds a `Periodical(` must
+  reference `Periodical.validate` (B.5).
+- **Transactions:** `update_periodical_use_case` (one transaction;
+  re-projects every issue) should wrap its work in
+  `CatalogueItemRepository.runInTransaction` — Drift transactions are
+  zone-scoped, so the periodical repository's `update` and the item
+  repository's `update` calls inside the callback join it, and a `Left`
+  rolls everything back (`RollbackWith`).
+
+Notes from S10 (the item-repository hooks, still current):
 
 - **Reads:** every repository read starts from `CatalogueSql.joined(db)`
   (`books` LEFT JOIN `magazine_issues`) and maps through
@@ -178,6 +239,26 @@ Rename technique (learned in S1–S4):
   with slack were reflowed first wherever one existed. The bump carries a
   comment in `layer_boundaries_test.dart`; S8 and S14 shrink these files
   anyway.
+- `S11` step 2 — the plan puts `periodicalRepository` in a new
+  `core/di/src/periodical_providers.dart`. It was placed in
+  `core/di/src/database_providers.dart` instead (next to
+  `wishlistRepository`, whose header documents the identical situation):
+  the cover janitor in `library_providers.dart` must watch it (W4), while
+  S12's periodical use cases in `periodical_providers.dart` will need
+  `library_providers.dart` (`catalogueItemRepositoryProvider` for issue
+  writes, `coverFileJanitorProvider` for a deleted series' cover). Keeping
+  the plan's placement would have made `library_providers ⇄
+  periodical_providers` a cycle, which the DI module rule in
+  `core/di/providers.dart` forbids ("a cycle means the binding belongs in a
+  base module"). No `periodical_providers.dart` exists yet; S12 creates it
+  with the use-case providers. AGENTS §0 "one blessed way" over the plan's
+  literal file name.
+- `S11` — `CatalogueSql.issueIdentityKey` was extracted from S10's
+  `CatalogueCollisions.issue` (pure move, no behaviour change, S10's tests
+  unchanged) so the collision lookup and the new `findIssue` /
+  `findBoundVolume` share the one D6 predicate. The `drift_catalogue_sql.dart`
+  header no longer says "nothing outside `library/infrastructure` imports
+  this file": the periodical repository does, on purpose.
 
 ## Open issues / blocked
 
@@ -199,4 +280,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S7 | Done | `118bc1f` | 2026-10-22 | `features/periodicals/domain/` (10 files, 979 lines): `Periodical` + gate, `Issn`, `PeriodicalFrequency`, `SubscriptionStatus`, `IssueCadence`, `IssueTitle`, `IssueProjection`, `IssueCover`, `IssueSorter`, `PeriodicalRepository`/`PeriodicalSummary`; gate test scans `Periodical(`; `issue_projection.dart` allow-listed for `CatalogueItem(`; 68 new tests (2533 total), full green |
 | S8 | Done | `d3ee18b` | 2026-10-22 | `drift_catalogue_sql.dart` (194 lines) takes `CatalogueSql` (ORDER BY twins, FTS statement, `ftsQuery`), `LanguageResolver`, `RollbackWith`; repository 599 → 437, ratchet entry deleted; no test expectation changed; full green 2533 |
 | S9 | Done | `b9109f2` | 2026-10-22 | schema v5: `books.kind`, `magazine_issues` (FK cascade), `periodicals`; `PRAGMA foreign_keys = ON`; FTS dropped + rebuilt with `notes`; 6 raw indexes (2 partial UNIQUE); snapshot v5 + generated helper; matrix row (back-fill, notes FTS, column list, kinds round-trip, unique keys, cascade); `fts_rebuild_timing_test` (5 000 rows: migration 36 ms, rebuild 3 ms on this laptop; bound 20 s); `app_database_test` fixture rebuilt from the real v1 snapshot (26 columns now); ARCHITECTURE §5.4 updated; full green 2536 |
-| S10 | Done | _(this commit)_ | 2026-10-22 | `DriftItemDetails` seam; mapper reads the joined row and writes `kind`; repository: LEFT JOIN reads, kind + series facets in both list and FTS paths, `IssueSorter` order for a series, two-table transactional writes, `UnsupportedItemKindFailure` on write-back, `DuplicateIssueFailure` via `CatalogueCollisions`; `CatalogueSql.joined/facetPredicate/issueOrderingTerms/issueOrderSql`; 20 new tests (2556 total), full green |
+| S10 | Done | `b657c8c` | 2026-10-22 | `DriftItemDetails` seam; mapper reads the joined row and writes `kind`; repository: LEFT JOIN reads, kind + series facets in both list and FTS paths, `IssueSorter` order for a series, two-table transactional writes, `UnsupportedItemKindFailure` on write-back, `DuplicateIssueFailure` via `CatalogueCollisions`; `CatalogueSql.joined/facetPredicate/issueOrderingTerms/issueOrderSql`; 20 new tests (2556 total), full green |
+| S11 | Done | _(this commit)_ | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |

@@ -8,6 +8,8 @@ import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -55,6 +57,24 @@ class _Wishlist implements WishlistRepository {
       throw UnimplementedError('${invocation.memberName} not used here');
 }
 
+/// W4 (ADR 0014): periodicals own series covers in the same directory.
+class _Periodicals implements PeriodicalRepository {
+  const _Periodicals(this.rows, {this.fail = false});
+  final List<Periodical> rows;
+  final bool fail;
+
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async => fail
+      ? left(const StorageFailure('db closed'))
+      : right([
+          for (final p in rows) PeriodicalSummary(periodical: p, issueCount: 0),
+        ]);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
 void main() {
   late Directory tmp;
   late CoverStore store;
@@ -86,6 +106,7 @@ void main() {
         CatalogueItem(title: 'R', coverUrl: 'https://covers.openlibrary.org/x'),
       ]),
       wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([]),
       settings: _Settings(logo: 'covers/$logo'),
       store: store,
       coordinator: CoverFileCoordinator(),
@@ -100,6 +121,7 @@ void main() {
     final janitor = CoverFileJanitor(
       books: const _Books([], fail: true),
       wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([]),
       settings: _Settings(),
       store: store,
       coordinator: CoverFileCoordinator(),
@@ -114,6 +136,7 @@ void main() {
       final janitor = CoverFileJanitor(
         books: const _Books([CatalogueItem(title: 'A', coverUrl: 'covers/$a')]),
         wishlist: const _Wishlist([]),
+        periodicals: const _Periodicals([]),
         settings: _Settings(logo: 'covers/$logo'),
         store: store,
         coordinator: CoverFileCoordinator(),
@@ -145,6 +168,7 @@ void main() {
           coverUrl: 'covers/$orphan',
         ), // ...wishlist does
       ]),
+      periodicals: const _Periodicals([]),
       settings: _Settings(),
       store: store,
       coordinator: CoverFileCoordinator(),
@@ -164,6 +188,7 @@ void main() {
             coverUrl: 'covers/$a',
           ), // ...wishlist still holds it
         ]),
+        periodicals: const _Periodicals([]),
         settings: _Settings(),
         store: store,
         coordinator: CoverFileCoordinator(),
@@ -177,11 +202,60 @@ void main() {
     final janitor = CoverFileJanitor(
       books: const _Books([]),
       wishlist: const _Wishlist([], fail: true),
+      periodicals: const _Periodicals([]),
       settings: _Settings(),
       store: store,
       coordinator: CoverFileCoordinator(),
     );
     expect(await janitor.sweep(), 0);
     expect(leaves(), {a, b, logo, orphan, 'notes.txt'});
+  });
+
+  // W4 (ADR 0014): a periodical's series cover lives in the same directory
+  // and is the fallback cover of every issue without one of its own. The
+  // janitor must count it as a live reference — the M11 bug class again.
+  test('W4: a series cover survives the startup sweep', () async {
+    final janitor = CoverFileJanitor(
+      books: const _Books([]), // no catalogue row references $orphan...
+      wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([
+        Periodical(title: 'Chandamama', coverUrl: 'covers/$orphan'),
+      ]), // ...the series does
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+    await janitor.sweep();
+    expect(File('${tmp.path}/$orphan').existsSync(), isTrue);
+  });
+
+  test('W4: a cover shared with a series survives an item release', () async {
+    final janitor = CoverFileJanitor(
+      books: const _Books([]), // the issue that shared it is already gone...
+      wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([
+        Periodical(title: 'Chandamama', coverUrl: 'covers/$a'),
+      ]), // ...the series still holds it
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+    await janitor.releaseReference('covers/$a');
+    expect(File('${tmp.path}/$a').existsSync(), isTrue);
+  });
+
+  test('W4: an unreadable periodicals store fails closed', () async {
+    final janitor = CoverFileJanitor(
+      books: const _Books([]),
+      wishlist: const _Wishlist([]),
+      periodicals: const _Periodicals([], fail: true),
+      settings: _Settings(),
+      store: store,
+      coordinator: CoverFileCoordinator(),
+    );
+    expect(await janitor.sweep(), 0);
+    expect(leaves(), {a, b, logo, orphan, 'notes.txt'});
+    await janitor.releaseReference('covers/$orphan');
+    expect(File('${tmp.path}/$orphan').existsSync(), isTrue);
   });
 }

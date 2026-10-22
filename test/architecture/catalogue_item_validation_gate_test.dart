@@ -154,6 +154,10 @@ void main() {
       // The entity itself: plain constructor, copyWith and the gate.
       'lib/features/periodicals/domain/entities/periodical.dart':
           'the entity itself',
+      // DB mapper: rows it reads were validated on WRITE by the use cases —
+      // the same reasoning as the catalogue item mapper above.
+      'lib/features/periodicals/infrastructure/periodical_mapper.dart':
+          'DB mapper (rows validated on write)',
     };
     final constructsPeriodical = RegExp(r'(?<![a-zA-Z])Periodical\(');
 
@@ -201,6 +205,7 @@ void main() {
         trustedPeriodicalConstructors.keys,
         unorderedEquals([
           'lib/features/periodicals/domain/entities/periodical.dart',
+          'lib/features/periodicals/infrastructure/periodical_mapper.dart',
         ]),
       );
     });

@@ -1,5 +1,7 @@
 /// SQL building blocks of `DriftCatalogueItemRepository` (infrastructure-
-/// internal; nothing outside `library/infrastructure` imports this file).
+/// internal). The only other importer is `DriftPeriodicalRepository`, whose
+/// series-side issue reads must use the SAME join, identity key and order
+/// as the item repository (ADR 0013 D6, U2) — one definition, two callers.
 ///
 /// Why a separate file (beginner note): the repository is the one place that
 /// talks to the `books` table, and it was growing past the file-size
@@ -14,6 +16,7 @@ import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
@@ -122,6 +125,41 @@ abstract final class CatalogueSql {
   static const String issueOrderSql =
       'ORDER BY m.issue_date DESC NULLS LAST, m.volume DESC NULLS LAST, '
       'm.issue_number DESC NULLS LAST, b.id DESC';
+
+  /// The identity key of [issue] (ADR 0013 D6) as a typed WHERE over the
+  /// joined `magazine_issues` columns — the same tuple the two partial
+  /// UNIQUE indexes enforce — or null when the issue has no key (a
+  /// date-only single issue has no uniqueness guarantee, like a book
+  /// without an ISBN).
+  ///
+  /// - numbered issue: `(periodical_uid, COALESCE(volume, 0), issue_number)`
+  ///   among rows with no `bound_until` (so a bound volume never matches);
+  /// - bound volume: `(periodical_uid, issue_date, bound_until)`.
+  ///
+  /// One definition, two callers: the collision lookup after a failed write
+  /// and `DriftPeriodicalRepository.findIssue` / `findBoundVolume` must agree
+  /// on what "the same issue" means.
+  static Expression<bool>? issueIdentityKey(AppDatabase db, IssueOf issue) {
+    final m = db.magazineIssues;
+    final Expression<bool> key;
+    if (issue.isBound) {
+      final from = issue.issueDate;
+      final until = issue.boundUntil;
+      if (from == null || until == null) return null;
+      key = m.issueDate.equals(from) & m.boundUntil.equals(until);
+    } else {
+      final number = issue.issueNumber;
+      if (number == null) return null;
+      key =
+          coalesce<int>([
+            m.volume,
+            const Constant(0),
+          ]).equals(issue.volume ?? 0) &
+          m.issueNumber.equals(number) &
+          m.boundUntil.isNull();
+    }
+    return m.periodicalUid.equals(issue.periodicalUid) & key;
+  }
 
   /// The typed WHERE for the facets of [query] (language, kind, series), or
   /// null when it has none. Every value is a bound parameter: the language

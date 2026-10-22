@@ -61,11 +61,14 @@ Future<CoverFileJanitor> coverFileJanitor(CoverFileJanitorRef ref) async {
   // M11: wishlist rows reference covers in the same directory; the janitor
   // must count them as live references or startup sweeps delete their art.
   final wishlist = await ref.watch(wishlistRepositoryProvider.future);
+  // W4 (ADR 0014): a periodical's series cover is a live reference too.
+  final periodicals = await ref.watch(periodicalRepositoryProvider.future);
   final settings = await ref.watch(settingsRepositoryProvider.future);
   final store = await ref.watch(coverStoreProvider.future);
   return CoverFileJanitor(
     books: books,
     wishlist: wishlist,
+    periodicals: periodicals,
     settings: settings,
     store: store,
     coordinator: ref.watch(coverFileCoordinatorProvider),

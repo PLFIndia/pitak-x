@@ -10,7 +10,6 @@
 /// falls back to the opaque `StorageFailure` it already had.
 library;
 
-import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -61,28 +60,14 @@ final class CatalogueCollisions {
   /// [excludeId] is the row being updated, which cannot collide with itself.
   Future<DuplicateIssueFailure?> issue(IssueOf? issue, {int? excludeId}) async {
     if (issue == null) return null;
-    final m = _db.magazineIssues;
-    final Expression<bool> key;
-    if (issue.isBound) {
-      final from = issue.issueDate;
-      final until = issue.boundUntil;
-      if (from == null || until == null) return null;
-      key = m.issueDate.equals(from) & m.boundUntil.equals(until);
-    } else {
-      final number = issue.issueNumber;
-      if (number == null) return null;
-      key =
-          coalesce<int>([
-            m.volume,
-            const Constant(0),
-          ]).equals(issue.volume ?? 0) &
-          m.issueNumber.equals(number) &
-          m.boundUntil.isNull();
-    }
+    // The key is defined once, in `CatalogueSql`, so this lookup and the
+    // periodical repository's pre-check reads can never disagree (D6).
+    final key = CatalogueSql.issueIdentityKey(_db, issue);
+    if (key == null) return null;
     try {
       final row =
           await (CatalogueSql.joined(_db)
-                ..where(m.periodicalUid.equals(issue.periodicalUid) & key)
+                ..where(key)
                 ..limit(1))
               .getSingleOrNull();
       if (row == null) return null;

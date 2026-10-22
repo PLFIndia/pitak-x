@@ -91,5 +91,28 @@ final wishlistRepositoryProvider =
 // ignore: unused_element
 typedef WishlistRepositoryRef =
     AutoDisposeFutureProviderRef<WishlistRepository>;
+String _$periodicalRepositoryHash() =>
+    r'bded790eb6aec4a9e3d00ec35616e328cba81074';
+
+/// Periodicals (magazine titles) repository — ADR 0013 D2. Lives here for
+/// the same acyclicity reason as [wishlistRepository] (see the file header).
+///
+/// Copied from [periodicalRepository].
+@ProviderFor(periodicalRepository)
+final periodicalRepositoryProvider =
+    AutoDisposeFutureProvider<PeriodicalRepository>.internal(
+      periodicalRepository,
+      name: r'periodicalRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$periodicalRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PeriodicalRepositoryRef =
+    AutoDisposeFutureProviderRef<PeriodicalRepository>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -10,6 +10,7 @@ import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -49,6 +50,7 @@ void main() {
           (ref) async => CoverFileJanitor(
             books: repo,
             wishlist: _NoWishlist(),
+            periodicals: _NoPeriodicals(),
             settings: _NoSettings(),
             store: store,
             coordinator: ref.watch(coverFileCoordinatorProvider),
@@ -145,6 +147,16 @@ class _OneBookRepo implements CatalogueItemRepository {
 class _NoWishlist implements WishlistRepository {
   @override
   Future<Either<Failure, List<WishlistBook>>> getAll() async => right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
