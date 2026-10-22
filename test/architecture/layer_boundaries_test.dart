@@ -187,15 +187,14 @@ void main() {
       // `CatalogueItemRepository` etc. are longer identifiers, so dart format
       // wrapped signatures and the 80-column lint forced doc-comment reflows:
       // add_book_page +2, merge_library_use_case +2,
-      // drift_catalogue_item_repository +2, catalogue_item_detail_page +5
-      // (its constructor wrapped). No logic was added; S8/S14 shrink these
-      // files.
+      // catalogue_item_detail_page +5 (its constructor wrapped). No logic was
+      // added; S14 shrinks the detail page.
       'lib/features/library/presentation/pages/add_book_page.dart': 640,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,
       'lib/features/publish/infrastructure/http_github_api.dart': 600,
-      'lib/features/library/infrastructure/drift_catalogue_item_repository.dart':
-          599,
+      // drift_catalogue_item_repository.dart left this list on 2026-10-22 (plan
+      // S8): its SQL helpers moved to drift_catalogue_sql.dart (599 → <500).
       'lib/features/backup/infrastructure/restore_backup.dart': 553,
       'lib/features/import_export/application/merge_library_use_case.dart': 545,
       'lib/features/import_export/presentation/pages/merge_page.dart': 538,

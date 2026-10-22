@@ -6,11 +6,11 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S7** (periodicals domain)
+- Last completed session: **S8** (repository SQL helpers extracted)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S7's commit (S6 was `0517263`, S5 `415adfd`, S4 `29689f8`,
-  S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S7, 2026-10-22** — 2533 tests, 64 s
+- Last commit: S8's commit (S7 was `118bc1f`, S6 `0517263`, S5 `415adfd`,
+  S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S8, 2026-10-22** — 2533 tests, 61 s
   (`flutter test --exclude-tags golden`)
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
@@ -38,18 +38,25 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S8 — Make room in the item repository (pure refactor).** Nothing in
-flight. Follow the plan's S8 steps verbatim.
+**S9 — Schema v5.** Nothing in flight. Follow the plan's S9 steps verbatim.
 
 Notes for it:
 
-- `drift_catalogue_item_repository.dart` is at **599** lines (ratchet record
-  599 after the S3 bump). Target ≤ 450 after moving `_LanguageResolver`,
-  `_RollbackWith`, `_ftsQuery` and the raw `ORDER BY` builder into
-  `library/infrastructure/drift_catalogue_sql.dart`. Delete the ratchet entry
-  if it lands under 500 (the ratchet test insists on it).
-- Zero-behaviour session: `test/features/library/drift_catalogue_item_repository_test.dart`
-  expectations must not change.
+- Line counts after S8: `drift_catalogue_item_repository.dart` **437**
+  (ratchet entry deleted — it is under 500), `drift_catalogue_sql.dart`
+  **194** (`CatalogueSql.orderingTerms/orderSql/ftsQuery/searchRows`,
+  `LanguageResolver`, `RollbackWith`, typedef `OrderingOf`). S10 extends the
+  repository (LEFT JOIN, kind/series predicates, two-table writes) — the
+  FTS statement and ORDER BY twins now live in `CatalogueSql`, so the kind
+  predicate and the `IssueSorter` ORDER BY go there too.
+- Tokens for the v5 `kind` column: `ItemKind.token` (`book`,
+  `magazine-issue`, `other`), default `'book'`. Frequency tokens:
+  `PeriodicalFrequency.token`.
+- Schema tooling: `dart run drift_dev schema dump` / `schema generate` as in
+  `migration_test.dart`'s header; the v1–v4 generated helpers keep the old
+  `bookUid` getter name (version-pinned); v5's helper will say `itemUid`.
+- Pre-commit hook re-runs build_runner and refuses stale generated code;
+  commit the new snapshot + helper together.
 
 What S7 left for S10–S13 (domain contracts now fixed):
 
@@ -159,4 +166,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S4 | Done | `29689f8` | 2026-10-21 | A.7 complete: `CatalogueItemPage/Sorter/Row/GridCard`, `ItemCover`, `CatalogueItemDetailPage`, `LendDecision.forItem`, `Loan.itemId`, `PublishItem`, `ImportPayload.items`, `LegacyRows.items`; 6 lib + 7 test files moved; AGENTS §3.3 + ARCHITECTURE §2.1/§3 updated; ratchet re-keyed (677 → 681, see Deviations); `git grep` done-when returns only kept names, UI strings, fixtures and prose; full green 2426 |
 | S5 | Done | `415adfd` | 2026-10-21 | ADR 0013 (F1–F8, D1–D11, O1–O4, recipe, resolved-decisions log), ADR 0014 (W1–W4 with JSON shapes), ADR index, ARCHITECTURE §3 module map (`periodicals/`), §5.4 v5 pending, §5.5 `item_kinds.json`/`periodicals.json` rows + old-build note, new §5.7 Pitaka-JSON v4 / `books.json` (§5.6 numbering kept — code comments cite it), §6 standing decision; AGENTS §3.3 `Periodical.validate`; CHANGELOG `[Unreleased]` Added/Changed with an in-progress note. No Dart changed; analyze + format green |
 | S6 | Done | `0517263` | 2026-10-21 | `ItemKind`, sealed `ItemDetails` (`IssueOf`, `OtherItemOf`), `CatalogueItem.details`/`kind`/`issue`, validate appends `issue.*` errors, `copyWith(details:)`; `CatalogueRules.isValidDateOrder`; 10 new `FieldError` labels; 4 failures + shared `catalogueSaveMessage` (AddBookPage refactored onto it, 640 → 620 lines); `LibraryQuery.kind`/`periodicalUid`; 39 new tests (2465 total), full green |
-| S7 | Done | _(this commit)_ | 2026-10-22 | `features/periodicals/domain/` (10 files, 979 lines): `Periodical` + gate, `Issn`, `PeriodicalFrequency`, `SubscriptionStatus`, `IssueCadence`, `IssueTitle`, `IssueProjection`, `IssueCover`, `IssueSorter`, `PeriodicalRepository`/`PeriodicalSummary`; gate test scans `Periodical(`; `issue_projection.dart` allow-listed for `CatalogueItem(`; 68 new tests (2533 total), full green |
+| S7 | Done | `118bc1f` | 2026-10-22 | `features/periodicals/domain/` (10 files, 979 lines): `Periodical` + gate, `Issn`, `PeriodicalFrequency`, `SubscriptionStatus`, `IssueCadence`, `IssueTitle`, `IssueProjection`, `IssueCover`, `IssueSorter`, `PeriodicalRepository`/`PeriodicalSummary`; gate test scans `Periodical(`; `issue_projection.dart` allow-listed for `CatalogueItem(`; 68 new tests (2533 total), full green |
+| S8 | Done | _(this commit)_ | 2026-10-22 | `drift_catalogue_sql.dart` (194 lines) takes `CatalogueSql` (ORDER BY twins, FTS statement, `ftsQuery`), `LanguageResolver`, `RollbackWith`; repository 599 → 437, ratchet entry deleted; no test expectation changed; full green 2533 |

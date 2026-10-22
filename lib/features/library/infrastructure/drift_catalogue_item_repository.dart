@@ -19,9 +19,10 @@
 /// on every load.
 ///
 /// The ordering rules are the domain's `CatalogueItemSorter` contract (N05).
-/// The SQL here is its twin, and `drift_book_repository_test.dart` proves the
-/// two agree for every sort × filter combination on a seeded fixture, read back
-/// through small pages so every seam is crossed.
+/// The SQL twin lives in `drift_catalogue_sql.dart` (`CatalogueSql`), and
+/// `drift_catalogue_item_repository_test.dart` proves the two agree for every
+/// sort × filter combination on a seeded fixture, read back through small
+/// pages so every seam is crossed.
 ///
 /// `hasMore` is decided here by asking for `limit + 1` rows and dropping the
 /// extra one: one statement, no `COUNT(*)` (which over the FTS join would be
@@ -37,9 +38,8 @@ import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
-import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_sql.dart';
 import 'package:uuid/uuid.dart';
 
 /// Persists books in the Drift [AppDatabase].
@@ -77,7 +77,12 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     try {
       // +1 probe row: if it comes back, another page exists. Dropped below.
       final rows = query.isSearch
-          ? await _searchRows(query, limit: size + 1, offset: skip)
+          ? await CatalogueSql.searchRows(
+              _db,
+              query,
+              limit: size + 1,
+              offset: skip,
+            )
           : await _listRows(query, limit: size + 1, offset: skip);
       final hasMore = rows.length > size;
       final items = (hasMore ? rows.take(size) : rows)
@@ -89,8 +94,8 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     }
   }
 
-  /// Blank search box: typed Drift select, ordered by [_orderingTerms],
-  /// narrowed to the facet, windowed by SQLite.
+  /// Blank search box: typed Drift select, ordered by
+  /// [CatalogueSql.orderingTerms], narrowed to the facet, windowed by SQLite.
   Future<List<BookRow>> _listRows(
     LibraryQuery query, {
     required int limit,
@@ -107,94 +112,12 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       q.where((t) => t.language.equals(lang));
     }
     q
-      ..orderBy(_orderingTerms(query.sort))
+      ..orderBy(CatalogueSql.orderingTerms(query.sort))
       // Drift writes `LIMIT n OFFSET m` from these two ints (verified in
       // drift 2.28.2 `components/limit.dart`); they are clamped ints, never
       // user text.
       ..limit(limit, offset: offset);
     return q.get();
-  }
-
-  /// Age band as an integer rank, in SQL. `AgeGroup.sortRank` (not the token's
-  /// alphabetical order) defines band order; NULL — and any token the domain
-  /// parser would not recognise — falls to `ELSE` and sorts LAST, exactly as
-  /// `AgeGroup.fromToken` → null does on the Dart side. Built from the enum
-  /// so a new band is picked up without touching this file.
-  static Expression<int> _ageRank($BooksTable t) => t.ageGroup.caseMatch<int>(
-    when: {
-      for (final band in AgeGroup.values)
-        Constant<String>(band.token): Constant<int>(band.sortRank),
-    },
-    orElse: const Constant<int>(_unrankedAge),
-  );
-
-  /// Rank for rows with no (recognised) age band: after every real band.
-  static const _unrankedAge = 1 << 30;
-
-  /// 1 when the language is NULL or blank, else 0 — blanks sort LAST.
-  static Expression<int> _languageBlank($BooksTable t) =>
-      CaseWhenExpression<int>(
-        cases: [
-          CaseWhen(
-            t.language.isNull() | t.language.trim().equals(''),
-            then: const Constant(1),
-          ),
-        ],
-        orElse: const Constant(0),
-      );
-
-  /// The language as `CatalogueItemSorter` compares it: `(language ??
-  /// '').trim()`. Without the COALESCE, SQLite would put NULL before `''`
-  /// inside the "blank" bucket, while the domain treats both as the same key.
-  static Expression<String> _languageKey($BooksTable t) =>
-      coalesce<String>([t.language, const Constant('')]).trim();
-
-  /// The typed ORDER BY for [sort]. Every sort ends with the shared
-  /// tie-breaks `added_date DESC, id ASC` so the order is TOTAL: two rows can
-  /// never swap between two runs (or two pages) of the same statement.
-  /// Twin of [_orderSql]; both must match `CatalogueItemSorter` (tested).
-  static List<_OrderingOf> _orderingTerms(LibrarySort sort) {
-    final byKey = switch (sort) {
-      LibrarySort.recentlyAdded => const <_OrderingOf>[],
-      LibrarySort.languageAsc => <_OrderingOf>[
-        (t) => OrderingTerm.asc(_languageBlank(t)),
-        (t) => OrderingTerm.asc(_languageKey(t)),
-      ],
-      LibrarySort.ageGroupAsc => <_OrderingOf>[
-        (t) => OrderingTerm.asc(_ageRank(t)),
-      ],
-    };
-    return [
-      ...byKey,
-      (t) => OrderingTerm.desc(t.addedDate),
-      (t) => OrderingTerm.asc(t.id),
-    ];
-  }
-
-  /// The raw-SQL ORDER BY for [sort], for the FTS statement in [_searchRows]
-  /// (hand-written SQL because `books_fts` is a virtual table Drift does not
-  /// model). `b` is the alias of `books` in that statement. MUST order exactly
-  /// like [_orderingTerms] — `drift_book_repository_test.dart` checks both
-  /// paths against the same oracle. Contains only compile-time constants
-  /// (enum tokens), never user input.
-  static String _orderSql(LibrarySort sort) {
-    final byKey = switch (sort) {
-      LibrarySort.recentlyAdded => '',
-      LibrarySort.languageAsc =>
-        "CASE WHEN b.language IS NULL OR TRIM(b.language) = '' "
-            'THEN 1 ELSE 0 END ASC, '
-            "TRIM(COALESCE(b.language, '')) ASC, ",
-      LibrarySort.ageGroupAsc => '${_ageRankSql('b.age_group')} ASC, ',
-    };
-    return 'ORDER BY ${byKey}b.added_date DESC, b.id ASC';
-  }
-
-  /// Textual twin of [_ageRank] over [column].
-  static String _ageRankSql(String column) {
-    final whens = AgeGroup.values
-        .map((band) => "WHEN '${band.token}' THEN ${band.sortRank}")
-        .join(' ');
-    return 'CASE $column $whens ELSE $_unrankedAge END';
   }
 
   @override
@@ -277,7 +200,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       // cannot interleave with another write, so two concurrent adds of
       // `english` and `English` still end up as one spelling.
       return await _db.transaction(() async {
-        final resolver = _LanguageResolver(await _storedLanguages());
+        final resolver = LanguageResolver(await _storedLanguages());
         final resolved = resolver.resolve(book);
         final withUid = resolved.itemUid == null
             ? resolved.copyWith(itemUid: _uuid.v4())
@@ -319,7 +242,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         // re-typing `english` on the only English book keeps `English`:
         // one spelling per language, consistently. (A library-wide
         // "rename language" is a separate feature, not an edit side-effect.)
-        final resolver = _LanguageResolver(await _storedLanguages());
+        final resolver = LanguageResolver(await _storedLanguages());
         final resolved = resolver.resolve(book);
         final preserved = resolved.itemUid == null
             ? resolved.copyWith(itemUid: existing.itemUid)
@@ -413,7 +336,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       // the whole import is all-or-nothing AND every row is snapped against
       // the same snapshot (plus the spellings accepted earlier in the batch).
       return await _db.transaction(() async {
-        final resolver = _LanguageResolver(await _storedLanguages());
+        final resolver = LanguageResolver(await _storedLanguages());
         var count = 0;
         await _db.batch((b) {
           for (final book in books) {
@@ -442,7 +365,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         await _db.delete(_db.books).go();
         // The table is empty here, so spellings are resolved only against
         // earlier rows of the SAME file: first spelling in the file wins.
-        final resolver = _LanguageResolver(const []);
+        final resolver = LanguageResolver(const []);
         var count = 0;
         for (final book in books) {
           final resolved = resolver.resolve(book);
@@ -501,99 +424,14 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     try {
       return await _db.transaction(() async {
         final result = await action();
-        if (result.isLeft()) throw _RollbackWith(result);
+        if (result.isLeft()) throw RollbackWith(result);
         return result;
       });
-    } on _RollbackWith catch (r) {
+    } on RollbackWith catch (r) {
       // The typed failure that asked for the rollback, unchanged.
       return r.result as Either<Failure, T>;
     } on Object catch (e) {
       return left(StorageFailure('transaction: $e'));
     }
   }
-
-  /// Typed search box: match the FTS5 index, join back to `books` for full
-  /// rows, then narrow, order AND window in the SAME statement so the page
-  /// is final (N10-d). The search text and the facet are bound variables
-  /// (never interpolated); the ORDER BY text is built from enum constants
-  /// only; LIMIT/OFFSET are bound clamped ints.
-  Future<List<BookRow>> _searchRows(
-    LibraryQuery query, {
-    required int limit,
-    required int offset,
-  }) async {
-    final lang = query.language;
-    // Positional binding: ?1 match, ?2/?3 limit+offset when there is no
-    // facet, or ?2 facet then ?3/?4 limit+offset. Built as a list so the
-    // indices in the SQL text and the variables list cannot drift apart.
-    final variables = <Variable<Object>>[
-      Variable<String>(_ftsQuery(query.text)),
-      if (lang != null) Variable<String>(lang),
-      Variable<int>(limit),
-      Variable<int>(offset),
-    ];
-    final limitIndex = lang == null ? 2 : 3;
-    final rows = await _db
-        .customSelect(
-          'SELECT b.* FROM books_fts f '
-          'JOIN books b ON b.id = f.rowid '
-          'WHERE books_fts MATCH ?1 '
-          '${lang == null ? '' : 'AND b.language = ?2 '}'
-          '${_orderSql(query.sort)} '
-          'LIMIT ?$limitIndex OFFSET ?${limitIndex + 1}',
-          variables: variables,
-          readsFrom: {_db.books},
-        )
-        .get();
-    return rows.map((r) => _db.books.map(r.data)).toList(growable: false);
-  }
-
-  /// Turns free text into a safe FTS5 prefix query, quoting each token to
-  /// neutralise FTS5 operators in user input (AGENTS.md §6.5 boundary input).
-  String _ftsQuery(String raw) {
-    final tokens = raw
-        .split(RegExp(r'\s+'))
-        .where((t) => t.isNotEmpty)
-        .map((t) => '"${t.replaceAll('"', '""')}"*');
-    return tokens.join(' ');
-  }
-}
-
-/// One ORDER BY term over the `books` table (Drift's `orderBy` callback shape).
-typedef _OrderingOf = OrderingTerm Function($BooksTable t);
-
-/// Snaps each incoming book's language to the one canonical spelling
-/// (Session 33, `LanguageName`). Seeded with the spellings already stored
-/// and GROWS as it accepts new ones, so within a single batch the first
-/// spelling of a new language wins for every later row of that batch.
-///
-/// Why here and not in `CatalogueItem.validate`: only the repository can see
-/// what is already stored, and every ingress (form, import, merge, restore)
-/// ends in this class, so this is the one place the rule cannot be bypassed.
-final class _LanguageResolver {
-  _LanguageResolver(Iterable<String> stored) : _known = [...stored];
-
-  final List<String> _known;
-
-  /// [book] with its language replaced by the canonical spelling. An absent
-  /// or whitespace-only language is left untouched: `copyWith` cannot null a
-  /// field, and every read already treats NULL and blank as the same "no
-  /// language" (`distinctLanguages` filters `TRIM(language) != ''`, the
-  /// sort buckets both LAST), so a stored blank is inert.
-  CatalogueItem resolve(CatalogueItem book) {
-    final raw = book.language;
-    if (raw == null) return book;
-    final canonical = LanguageName.canonicalise(raw, _known);
-    if (canonical == null) return book;
-    if (!_known.contains(canonical)) _known.add(canonical);
-    return canonical == raw ? book : book.copyWith(language: canonical);
-  }
-}
-
-/// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
-/// [DriftCatalogueItemRepository.runInTransaction]. Never escapes the
-/// repository.
-final class _RollbackWith implements Exception {
-  _RollbackWith(this.result);
-  final Object result;
 }
