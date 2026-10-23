@@ -2,10 +2,10 @@
 /// feature).
 ///
 /// What lives here: the series and issue use cases (ADR 0013) and the
-/// single-series read models ([periodicalById], [periodicalByUid]). The
-/// periodical REPOSITORY binding lives in the database module — see its
-/// header for the cycle-breaking reason (ADR 0014 W4: the library cover
-/// janitor must count series covers).
+/// series read models ([periodicalById], [periodicalByUid],
+/// [periodicalCovers]). The periodical REPOSITORY binding lives in the
+/// database module — see its header for the cycle-breaking reason (ADR 0014
+/// W4: the library cover janitor must count series covers).
 ///
 /// Cross-feature note (beginner): this module imports the library module
 /// one way — the item repository for issue writes, the janitor for a
@@ -127,4 +127,32 @@ Future<Periodical?> periodicalByUid(
     (failure) => throw failure,
     (periodical) => periodical,
   );
+}
+
+/// Series covers keyed by `periodicalUid`, for the issue rows of the library
+/// list (ADR 0014 W4): an issue without its own cover shows its series' cover
+/// (`IssueCover.resolve`), and resolving row-by-row through
+/// [periodicalByUid] would run one query PER VISIBLE ROW. One `listAll` read
+/// covers every issue on screen; the map is small (one entry per series).
+///
+/// Same freshness contract as [periodicalById]: both mutation signals are
+/// watched, so a cover captured on the series page or a re-projecting series
+/// edit reaches the rows. A repository `Left` degrades to an empty map — the
+/// rows then show the issue's own cover or the placeholder, never an error
+/// screen caused by a FALLBACK image.
+@riverpod
+Future<Map<String, String>> periodicalCovers(PeriodicalCoversRef ref) async {
+  ref
+    ..watch(periodicalsControllerProvider)
+    ..watch(libraryControllerProvider);
+  final repo = await ref.watch(periodicalRepositoryProvider.future);
+  final result = await repo.listAll();
+  return result.fold((_) => const {}, (summaries) {
+    return {
+      for (final summary in summaries)
+        if (summary.periodical.periodicalUid case final uid?)
+          if (summary.periodical.coverUrl?.trim().isNotEmpty ?? false)
+            uid: summary.periodical.coverUrl!.trim(),
+    };
+  });
 }

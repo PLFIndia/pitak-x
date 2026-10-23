@@ -58,7 +58,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // --- 1. Add a book -----------------------------------------------------
-    await tester.tap(find.byTooltip('Add book'));
+    // S14: the FAB opens the add sheet; "Add book" is its first entry.
+    await tester.tap(find.byTooltip('Add to library'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add book'));
     await tester.pumpAndSettle();
     await enterInField(tester, 'Title', 'Smoke Test Book');
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));

@@ -24,6 +24,7 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -80,6 +81,12 @@ void main() {
           catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _GoldenBookRepo(list),
           ),
+          // S14: the rows watch the series-cover map (W4) — empty store, and
+          // pin nowTick (PeriodicalsController arms the real 60 s timer).
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
         ],
         child: themedApp(const LibraryPage(), dark: dark),
       );
@@ -268,6 +275,18 @@ void main() {
       );
     });
   });
+}
+
+/// In-memory series store: no series — the row cover-fallback map (S14) only
+/// needs `listAll` to answer.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
 }
 
 /// In-memory book repo returning a fixed list (enough for a rendered frame).

@@ -1,7 +1,8 @@
 /// Library-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the book repository, cover store/coordinator/janitor,
-/// the library read models and the add/update/delete/find use cases.
+/// the library read models and the add/update/delete use cases plus the
+/// post-scan barcode router (ADR 0013 D11).
 ///
 /// Cross-feature note (beginner): the delete use case purges VAULT loans,
 /// but it receives that capability through a narrow port (`VaultLoanPurger`)
@@ -15,7 +16,6 @@ import 'package:pitaka/core/di/src/settings_providers.dart';
 import 'package:pitaka/features/library/application/add_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
-import 'package:pitaka/features/library/application/find_by_isbn_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
 import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
@@ -128,14 +128,6 @@ Future<AddCatalogueItemUseCase> addCatalogueItemUseCase(
 ) async {
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   return AddCatalogueItemUseCase(repo);
-}
-
-/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
-/// already-catalogued scan opens the existing book, not the add form).
-@riverpod
-Future<FindByIsbnUseCase> findByIsbnUseCase(FindByIsbnUseCaseRef ref) async {
-  final repo = await ref.watch(catalogueItemRepositoryProvider.future);
-  return FindByIsbnUseCase(repo);
 }
 
 /// Decides where a scanned barcode takes the user (ADR 0013 D11): a `977`

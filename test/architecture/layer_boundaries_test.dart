@@ -180,15 +180,13 @@ void main() {
       'lib/features/library/domain/merge/library_merge_engine.dart': 721,
       // settings_page.dart left this list on 2026-10-19: the community-library
       // section moved to widgets/community_library_section.dart (631 → <500).
-      'lib/features/library/presentation/pages/catalogue_item_detail_page.dart':
-          681,
       'lib/features/publish/application/github_connection_controller.dart': 670,
       // 2026-10 (plan F7 rename sessions): `CatalogueItem`,
       // `CatalogueItemRepository` etc. are longer identifiers, so dart format
       // wrapped signatures and the 80-column lint forced doc-comment reflows:
-      // add_book_page +2, merge_library_use_case +2,
-      // catalogue_item_detail_page +5 (its constructor wrapped). No logic was
-      // added; S14 shrinks the detail page.
+      // add_book_page +2, merge_library_use_case +2. No logic was added.
+      // catalogue_item_detail_page left this list on 2026-10-23 (plan S14):
+      // its actions moved to widgets/catalogue_item_actions.dart (681 → <500).
       'lib/features/library/presentation/pages/add_book_page.dart': 640,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,

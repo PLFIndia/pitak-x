@@ -510,5 +510,35 @@ class _PeriodicalByUidProviderElement
   String get periodicalUid => (origin as PeriodicalByUidProvider).periodicalUid;
 }
 
+String _$periodicalCoversHash() => r'7df6807d20ce15fa54dbb6338ce3c28a07506f3d';
+
+/// Series covers keyed by `periodicalUid`, for the issue rows of the library
+/// list (ADR 0014 W4): an issue without its own cover shows its series' cover
+/// (`IssueCover.resolve`), and resolving row-by-row through
+/// [periodicalByUid] would run one query PER VISIBLE ROW. One `listAll` read
+/// covers every issue on screen; the map is small (one entry per series).
+///
+/// Same freshness contract as [periodicalById]: both mutation signals are
+/// watched, so a cover captured on the series page or a re-projecting series
+/// edit reaches the rows. A repository `Left` degrades to an empty map — the
+/// rows then show the issue's own cover or the placeholder, never an error
+/// screen caused by a FALLBACK image.
+///
+/// Copied from [periodicalCovers].
+@ProviderFor(periodicalCovers)
+final periodicalCoversProvider =
+    AutoDisposeFutureProvider<Map<String, String>>.internal(
+      periodicalCovers,
+      name: r'periodicalCoversProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$periodicalCoversHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PeriodicalCoversRef = AutoDisposeFutureProviderRef<Map<String, String>>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

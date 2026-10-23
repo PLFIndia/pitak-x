@@ -6,16 +6,16 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S13** (controllers, read providers, scan
-  routing)
+- Last completed session: **S14** (Library screen: splits, kind chips, add
+  sheet, row badges, scan-route switch)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S13's commit (S12 was `02f3f99`, S11 `5ce4ec0`, S10
-  `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
+- Last commit: S14's commit (S13 `bba12b2`, S12 was `02f3f99`, S11 `5ce4ec0`,
+  S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
   `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0
   `8899cc0`)
-- Full suite last green at: **S13, 2026-10-23** — 2695 tests, 77 s
+- Full suite last green at: **S14, 2026-10-23** — 2711 tests, 82 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S14.
+- Run stopped here (one session per run, B.3): the next run starts at S15.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -42,8 +42,53 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S14 — Library screen: make room, kind chips, add sheet, row badges.**
-Nothing in flight. Follow the plan's S14 steps verbatim.
+**S15 — Periodicals list page and series detail page.** Nothing in flight.
+Follow the plan's S15 steps verbatim.
+
+Notes for it (what S14 built, and what S15 replaces):
+
+- **Placeholders to replace:** `periodicals/presentation/pages/
+  placeholder_page.dart` (`PlaceholderPage(pageName:periodical:)`) is pushed
+  from FOUR sites: `add_sheet.dart` ("Add magazine issue", "Add other item",
+  "New magazine title" — "Add other item" is S17's, leave its placeholder)
+  and `library_page.dart`'s `routeScannedBarcode` (`AddIssueOfPeriodical` →
+  "Add magazine issue" with the series carried; `AddPeriodicalByIssn` → "New
+  magazine title"). S15 owns the series form placeholder ONLY via the drawer
+  entry + periodicals page FAB (plan S15); the form itself is S16 — so after
+  S15 the "Add magazine issue"/"New magazine title" placeholders still stand
+  until S16. Delete `placeholder_page.dart` only when its last caller is
+  gone (S16/S17).
+- **Row/cover wiring in place:** rows and grid cards resolve an issue's
+  cover through `periodicalCoversProvider` (`{uid: coverUrl}`, both mutation
+  signals watched, `Left` → empty map) — the series page can reuse the same
+  map for its issue list instead of re-reading per row.
+- **Test pattern settled:** any widget test that renders `CatalogueItemRow`
+  / `CatalogueItemGridCard` (or a page containing them) must override
+  `periodicalRepositoryProvider` AND `nowTickProvider.overrideWith((ref) =>
+  0)` — the cover map watches `PeriodicalsController`, whose build arms the
+  real 60 s timer, which blocks `pumpAndSettle` (see `library_page_test.dart`
+  for the override pair, `catalogue_item_row_test.dart` for the
+  cover-fallback assertions).
+- **Chip taps scroll first:** the kind chips widened `LibraryControlsRow`
+  past the 800 px test surface — `library_controls_row_test.dart`'s
+  `tapChip`/`tapClear` helpers scroll the row's SingleChildScrollView until
+  the chip is visible before tapping.
+- **Goldens:** the Library screen golden now renders the kind chips, the
+  sheet FAB (tooltip changed: "Add to library") and kind badges —
+  `key_screens_test.dart` gained the same two overrides. Regenerate the
+  library PNGs on Linux CI (`update-goldens` workflow) when the series pages
+  land; until then the 7 platform-golden failures stay "verify in CI".
+- **Ratchet:** `catalogue_item_detail_page.dart` left the allow-list (681 →
+  481; actions/lend/delete moved to `widgets/catalogue_item_actions.dart`,
+  272 lines). `library_page.dart` is 397 after the menu-button split
+  (`widgets/library_menu_button.dart`, 49).
+- **Dead code removed:** `FindByIsbnUseCase` + `findByIsbnUseCaseProvider` +
+  `routeScannedIsbn` are gone (D11's `RouteScannedBarcodeUseCase` owns the
+  ISBN path now); `scan_routing_test.dart` drives the REAL use case over
+  fakes instead of a stubbed `findByIsbn` callback — the failed-read
+  fall-through cases live in `route_scanned_barcode_use_case_test.dart`.
+- **Gate test:** unchanged — S14 adds no `CatalogueItem(`/`Periodical(`
+  construction site in `lib/` (the placeholders carry entities through).
 
 Notes for it (what S13 built, and the contracts S14–S16's pages consume):
 
@@ -449,6 +494,20 @@ Rename technique (learned in S1–S4):
   `AsyncError` like `remove`: `PeriodicalHasIssuesFailure` is an expected
   refusal that belongs to the row's action, while the list itself is
   still valid — turning it into a list error would blank a good screen.
+- `S14` — the plan's step 4 says "cover via `IssueCover.resolve` with a
+  `periodicalCoversProvider` map". `IssueCover.resolve` takes a `Periodical?`,
+  but the map (one `listAll` read for the whole list, the point of the map)
+  holds only `{uid: coverUrl}`. The rows therefore apply the same rule
+  directly (own non-blank cover, else the map's series cover) with a comment
+  citing parity; `IssueCover.resolve` remains the single implementation for
+  the callers that DO hold a `Periodical` (issue detail page, publish). No
+  duplicated *policy* beyond the two-line branch — the alternative (a
+  uid→Periodical map) would carry whole entities into every row build.
+- `S14` — the plan does not say where the three placeholder destinations
+  live. They share one `PlaceholderPage(pageName:periodical:)` in
+  `periodicals/presentation/pages/` (the add-issue route already carries the
+  scanned series, so the S16 replacement keeps the call shape). The widget
+  test asserts the pushed page's name, so S15–S17's swaps are test-visible.
 
 ## Open issues / blocked
 
@@ -474,3 +533,4 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S11 | Done | `5ce4ec0` | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |
 | S12 | Done | `02f3f99` | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
 | S13 | Done | `bba12b2` | 2026-10-23 | `LibraryKindFilter` (U1 toggle) watched by `LibraryController` → `LibraryQuery.kind`; `periodicals/application/`: `PeriodicalsController` (`PeriodicalListEntry` = summary + derived `SubscriptionStatus` from `clockProvider`, re-stamped on `nowTick`; `refresh`/`remove`/`restoreRemoved` fail closed; `delete` returns the `Either`), `IssueListController(periodicalUid)` (family; `LibraryWindow` over `page(LibraryQuery(periodicalUid:))`, D2-b depth on the library signal, N05 guard), `AddIssueController`, `PeriodicalFormController` (`AddBookController` shape, N03 re-read, fire both signals); `periodicalById`/`periodicalByUid` read providers (both signals); `RouteScannedBarcodeUseCase` + sealed `ScanRoute` (D11: 977 → `Issn.fromEan13` → `findByIssn`; else the S34 ISBN path) + provider; `library_page.dart` untouched (S14 switches on the route); fakes gained `listAll`/`markRemoved`/`restoreRemoved`/`page`/`FakeSettings`; gate allow-list unchanged; 43 new tests (2695 total), full green 77 s |
+| S14 | Done | `16c8c2b` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |

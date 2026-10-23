@@ -13,6 +13,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
@@ -105,10 +106,30 @@ class _FakeBookRepo implements CatalogueItemRepository {
       right(books.length);
 }
 
+/// Empty series store: the row's cover-fallback map
+/// (`periodicalCoversProvider`, S14) reads `listAll`; these tests use books,
+/// so the map stays empty.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
 Widget _app(CatalogueItemRepository repo) {
   return ProviderScope(
     overrides: [
       catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+      periodicalRepositoryProvider.overrideWith(
+        (ref) async => _NoPeriodicals(),
+      ),
+      // S14: the row's cover map watches PeriodicalsController, whose build
+      // arms the real 60 s nowTick timer — pinned to a constant here so the
+      // widget tests can settle (same override vault page tests use).
+      nowTickProvider.overrideWith((ref) => 0),
     ],
     child: const MaterialApp(home: LibraryPage()),
   );
@@ -319,6 +340,10 @@ void main() {
           catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
           appUpdateServiceProvider.overrideWithValue(updates),
         ],
         child: const MaterialApp(home: LibraryPage()),
@@ -348,6 +373,10 @@ void main() {
           catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
         ],
         // The shipped dark theme (lib/core/theme/app_theme.dart), not a
         // generic ThemeData.dark(): contrast is checked on real colours.
@@ -366,6 +395,10 @@ void main() {
           catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
         ],
         child: MaterialApp(
           builder: (context, child) => MediaQuery(

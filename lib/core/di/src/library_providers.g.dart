@@ -359,27 +359,6 @@ final addCatalogueItemUseCaseProvider =
 // ignore: unused_element
 typedef AddCatalogueItemUseCaseRef =
     AutoDisposeFutureProviderRef<AddCatalogueItemUseCase>;
-String _$findByIsbnUseCaseHash() => r'a08785cfd719c96d8e4f81674981313557faf4d3';
-
-/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
-/// already-catalogued scan opens the existing book, not the add form).
-///
-/// Copied from [findByIsbnUseCase].
-@ProviderFor(findByIsbnUseCase)
-final findByIsbnUseCaseProvider =
-    AutoDisposeFutureProvider<FindByIsbnUseCase>.internal(
-      findByIsbnUseCase,
-      name: r'findByIsbnUseCaseProvider',
-      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-          ? null
-          : _$findByIsbnUseCaseHash,
-      dependencies: null,
-      allTransitiveDependencies: null,
-    );
-
-@Deprecated('Will be removed in 3.0. Use Ref instead')
-// ignore: unused_element
-typedef FindByIsbnUseCaseRef = AutoDisposeFutureProviderRef<FindByIsbnUseCase>;
 String _$routeScannedBarcodeUseCaseHash() =>
     r'a7417c3ee51ee7a06d8e488b64f7a8661a19325b';
 

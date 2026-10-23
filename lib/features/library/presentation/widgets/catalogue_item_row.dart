@@ -4,14 +4,23 @@
 /// status badges — removed (dimmed + badge), needs-metadata, copy-count "×N",
 /// and the vault "Not available" badge (every copy is out on loan, shown only
 /// when the vault is unlocked so availability is known).
+///
+/// S14 (ADR 0013): a non-book row also carries a KIND badge ("Issue" /
+/// "Bound volume" / "Other"), and a magazine issue without its own cover
+/// shows its series' cover (ADR 0014 W4) — resolved through the shared
+/// [periodicalCoversProvider] map, so the whole list costs ONE `listAll`
+/// read no matter how many issue rows are on screen.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 /// One tappable book row.
-class CatalogueItemRow extends StatelessWidget {
+class CatalogueItemRow extends ConsumerWidget {
   /// Creates a row for [book]; [onTap] opens its detail.
   const CatalogueItemRow({
     required this.book,
@@ -30,13 +39,26 @@ class CatalogueItemRow extends StatelessWidget {
   final bool unavailable;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
         : scheme.onSurface;
+
+    // W4 cover fallback (issues only): the series cover stands in when the
+    // issue has none of its own — the same rule `IssueCover.resolve` applies,
+    // here fed from the {uid: coverUrl} map because the row has no Periodical
+    // object. `maybeWhen` + `orElse` keeps the row rendering its own cover
+    // while the map loads or if it failed.
+    final seriesCovers = ref
+        .watch(periodicalCoversProvider)
+        .maybeWhen(data: (map) => map, orElse: () => const <String, String>{});
+    final issue = book.issue;
+    final coverUrl = issue != null && (book.coverUrl?.trim().isEmpty ?? true)
+        ? seriesCovers[issue.periodicalUid]
+        : book.coverUrl;
 
     return InkWell(
       onTap: onTap,
@@ -45,11 +67,7 @@ class CatalogueItemRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
-            ItemCover(
-              title: book.title,
-              coverUrl: book.coverUrl,
-              bookId: book.id,
-            ),
+            ItemCover(title: book.title, coverUrl: coverUrl, bookId: book.id),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -82,6 +100,15 @@ class CatalogueItemRow extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
+                  if (_kindLabel(book) case final label?)
+                    // Kind badges use the surface-variant tones so they read
+                    // as *classifiers*, not alerts — the status badges keep
+                    // the stronger container colours.
+                    _Badge(
+                      label: label,
+                      background: scheme.surfaceContainerHighest,
+                      foreground: scheme.onSurfaceVariant,
+                    ),
                   if (book.removed)
                     _Badge(
                       label: 'Removed',
@@ -114,6 +141,18 @@ class CatalogueItemRow extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// The kind badge text for a non-book row (ADR 0013 U1): "Issue" for a
+  /// single magazine issue, "Bound volume" for a bound range (D4), "Other"
+  /// for an other-kind item. A book — the default kind — shows nothing.
+  static String? _kindLabel(CatalogueItem book) {
+    return switch (book.kind) {
+      ItemKind.book => null,
+      ItemKind.magazineIssue =>
+        book.issue?.isBound ?? false ? 'Bound volume' : 'Issue',
+      ItemKind.other => 'Other',
+    };
   }
 }
 

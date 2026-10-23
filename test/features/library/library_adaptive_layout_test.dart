@@ -11,6 +11,19 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+
+/// Empty series store: the row/card cover-fallback map
+/// (`periodicalCoversProvider`, S14) reads `listAll`; no series seeded here.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
 
 /// Minimal in-memory repo returning a fixed list (mirrors library_page_test).
 class _FakeBookRepo implements CatalogueItemRepository {
@@ -87,6 +100,10 @@ Widget _app() => ProviderScope(
         CatalogueItem(title: 'Dune', author: 'Herbert'),
       ]),
     ),
+    periodicalRepositoryProvider.overrideWith((ref) async => _NoPeriodicals()),
+    // S14: the cover map watches PeriodicalsController → the real 60 s
+    // nowTick timer; pinned so the tests settle.
+    nowTickProvider.overrideWith((ref) => 0),
   ],
   child: const MaterialApp(home: LibraryPage()),
 );

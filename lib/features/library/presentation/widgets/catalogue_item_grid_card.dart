@@ -8,11 +8,14 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 /// One tappable book card for the wide-screen grid.
-class CatalogueItemGridCard extends StatelessWidget {
+class CatalogueItemGridCard extends ConsumerWidget {
   /// Creates a card for [book]; [onTap] opens its detail.
   const CatalogueItemGridCard({
     required this.book,
@@ -31,13 +34,23 @@ class CatalogueItemGridCard extends StatelessWidget {
   final bool unavailable;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     // Removed books are dimmed (visible-but-inert), mirroring Kotlin D39.
     final titleColor = book.removed
         ? scheme.onSurfaceVariant
         : scheme.onSurface;
+
+    // W4 cover fallback, same rule as CatalogueItemRow: an issue without its
+    // own cover shows its series' cover from the shared map.
+    final seriesCovers = ref
+        .watch(periodicalCoversProvider)
+        .maybeWhen(data: (map) => map, orElse: () => const <String, String>{});
+    final issue = book.issue;
+    final coverUrl = issue != null && (book.coverUrl?.trim().isEmpty ?? true)
+        ? seriesCovers[issue.periodicalUid]
+        : book.coverUrl;
 
     return InkWell(
       onTap: onTap,
@@ -59,7 +72,7 @@ class CatalogueItemGridCard extends StatelessWidget {
                         // ItemCover scales to fill the available cell width.
                         child: ItemCover(
                           title: book.title,
-                          coverUrl: book.coverUrl,
+                          coverUrl: coverUrl,
                           bookId: book.id,
                           width: double.infinity,
                           height: double.infinity,
@@ -77,6 +90,13 @@ class CatalogueItemGridCard extends StatelessWidget {
                       spacing: 4,
                       runSpacing: 4,
                       children: [
+                        if (_kindLabel(book) case final kindLabel?)
+                          // Same classifier tone as the row's kind badge.
+                          _Pill(
+                            label: kindLabel,
+                            background: scheme.surfaceContainerHighest,
+                            foreground: scheme.onSurfaceVariant,
+                          ),
                         if (book.removed)
                           _Pill(
                             label: 'Removed',
@@ -127,6 +147,17 @@ class CatalogueItemGridCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// The kind badge text for a non-book card (same rule as the row's,
+  /// ADR 0013 U1); a book shows nothing.
+  static String? _kindLabel(CatalogueItem book) {
+    return switch (book.kind) {
+      ItemKind.book => null,
+      ItemKind.magazineIssue =>
+        book.issue?.isBound ?? false ? 'Bound volume' : 'Issue',
+      ItemKind.other => 'Other',
+    };
   }
 }
 

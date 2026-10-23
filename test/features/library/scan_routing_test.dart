@@ -1,13 +1,19 @@
-/// S34 widget tests for the quick-add scan routing (`routeScannedIsbn` in
-/// `library_page.dart`): a scanned ISBN that is ALREADY catalogued must offer
-/// the existing book instead of an add form the UNIQUE isbn index would only
-/// refuse at save time; a new — or unreadable — ISBN falls through to the
-/// pre-filled add form (the save path and the index still guard duplicates,
-/// so falling through on a read error is safe).
+/// S14 widget tests for the quick-add scan routing (`routeScannedBarcode` in
+/// `library_page.dart`): the page switches on the sealed `ScanRoute` the
+/// use case returned (S34 + ADR 0013 D11) —
+///
+/// - `OpenCataloguedItem` offers the EXISTING item instead of an add form the
+///   UNIQUE isbn index would only refuse at save time;
+/// - `AddBookByIsbn` opens the pre-filled add form (a failed read falls
+///   through here too — the save path and the index still guard duplicates);
+/// - `AddIssueOfPeriodical` / `AddPeriodicalByIssn` push the S14 placeholders
+///   (replaced by the real pages in S15/S16).
 ///
 /// The camera itself is not exercised here: `ScannerPage` is a thin
 /// flutter_zxing wrapper, and the routing under test is what happens AFTER a
-/// scan result comes back.
+/// scan result comes back. The use case's own tests
+/// (`route_scanned_barcode_use_case_test.dart`) cover the barcode→route
+/// mapping; these tests cover the route→navigation mapping only.
 library;
 
 import 'dart:io';
@@ -25,12 +31,15 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
 
-/// In-memory repo fake: enough for the pages pushed by the routing
+/// In-memory item repo fake: enough for the pages pushed by the routing
 /// (CatalogueItemDetailPage reads through `catalogueItemByIdProvider` → this
-/// repo).
-class _MemRepo implements CatalogueItemRepository {
-  _MemRepo(this.books);
+/// repo) and for the use case's ISBN lookup.
+class _MemItems implements CatalogueItemRepository {
+  _MemItems(this.books);
 
   final List<CatalogueItem> books;
 
@@ -90,6 +99,22 @@ class _MemRepo implements CatalogueItemRepository {
       right(b.length);
 }
 
+/// Minimal periodical repo fake: the use case's ISSN lookup is the only
+/// method the scan routing exercises.
+class _MemPeriodicals implements PeriodicalRepository {
+  _MemPeriodicals(this.periodicals);
+
+  final List<Periodical> periodicals;
+
+  @override
+  Future<Either<Failure, Periodical?>> findByIssn(String issn) async =>
+      right(periodicals.where((p) => p.issn == issn).firstOrNull);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
 const _existing = CatalogueItem(
   id: 7,
   itemUid: 'uid-7',
@@ -97,25 +122,38 @@ const _existing = CatalogueItem(
   isbn: '9780441172719',
 );
 
-/// A home route with one button that runs the post-scan routing, the way
-/// `_quickAddByScan` does once the scanner popped an ISBN.
-Widget _host(
-  _MemRepo repo,
-  String coversDir,
-  String isbn,
-  Future<Either<Failure, CatalogueItem?>> Function(String isbn) findByIsbn,
-) => ProviderScope(
+/// 9771 is a real ISSN block prefix; `1234-5679` has a valid check digit.
+const _series = Periodical(id: 3, periodicalUid: 'per-3', title: 'Weekly');
+
+/// A home route with one button that runs the post-scan routing on the REAL
+/// use case (over the fakes), the way `_quickAddByScan` does once the
+/// scanner popped a barcode.
+Widget _host({
+  required _MemItems items,
+  required _MemPeriodicals periodicals,
+  required String coversDir,
+  required String scanned,
+}) => ProviderScope(
   overrides: [
-    catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+    catalogueItemRepositoryProvider.overrideWith((ref) async => items),
+    periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
     coversDirProvider.overrideWith((ref) async => coversDir),
   ],
   child: MaterialApp(
     home: Scaffold(
       body: Builder(
         builder: (context) => Center(
-          child: TextButton(
-            onPressed: () => routeScannedIsbn(context, isbn, findByIsbn),
-            child: const Text('scan'),
+          child: Consumer(
+            builder: (context, ref, _) => TextButton(
+              onPressed: () async {
+                final useCase = await ref.read(
+                  routeScannedBarcodeUseCaseProvider.future,
+                );
+                if (!context.mounted) return;
+                await routeScannedBarcode(context, useCase, scanned);
+              },
+              child: const Text('scan'),
+            ),
           ),
         ),
       ),
@@ -131,12 +169,22 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
+  Widget host(
+    _MemItems items, {
+    required String scanned,
+    List<Periodical> periodicals = const [],
+  }) => _host(
+    items: items,
+    periodicals: _MemPeriodicals(periodicals),
+    coversDir: tmp.path,
+    scanned: scanned,
+  );
+
   testWidgets('a catalogued ISBN offers the EXISTING book, not the add form', (
     tester,
   ) async {
-    final repo = _MemRepo([_existing]);
     await tester.pumpWidget(
-      _host(repo, tmp.path, _existing.isbn!, (isbn) async => right(_existing)),
+      host(_MemItems([_existing]), scanned: _existing.isbn!),
     );
 
     await tester.tap(find.text('scan'));
@@ -157,9 +205,8 @@ void main() {
   });
 
   testWidgets('Cancel closes the dialog without navigating', (tester) async {
-    final repo = _MemRepo([_existing]);
     await tester.pumpWidget(
-      _host(repo, tmp.path, _existing.isbn!, (isbn) async => right(_existing)),
+      host(_MemItems([_existing]), scanned: _existing.isbn!),
     );
 
     await tester.tap(find.text('scan'));
@@ -172,10 +219,7 @@ void main() {
   });
 
   testWidgets('an unknown ISBN opens the add form pre-filled', (tester) async {
-    final repo = _MemRepo([]);
-    await tester.pumpWidget(
-      _host(repo, tmp.path, '9780140449136', (isbn) async => right(null)),
-    );
+    await tester.pumpWidget(host(_MemItems([]), scanned: '9780140449136'));
 
     await tester.tap(find.text('scan'));
     await tester.pumpAndSettle();
@@ -187,24 +231,38 @@ void main() {
     expect(field.controller?.text, '9780140449136');
   });
 
-  testWidgets('a FAILED ISBN read falls through to the add form', (
-    tester,
-  ) async {
-    // Navigation-level fail-through, not a security hole: the add form's save
-    // path re-checks and the UNIQUE index makes a duplicate row impossible.
-    final repo = _MemRepo([_existing]);
+  testWidgets('a magazine barcode of a KNOWN series routes to the add-issue '
+      'placeholder with the series preselected', (tester) async {
+    // The 977 EAN-13 carrying the series' ISSN 1234-5679 (check digit 3).
+    const scanned = '9771234567003';
     await tester.pumpWidget(
-      _host(
-        repo,
-        tmp.path,
-        _existing.isbn!,
-        (isbn) async => left(const StorageFailure('synthetic read failure')),
+      host(
+        _MemItems([]),
+        periodicals: [_series.copyWith(issn: '1234-5679')],
+        scanned: scanned,
       ),
     );
 
     await tester.tap(find.text('scan'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(AddBookPage), findsOneWidget);
+    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
+    expect(page.pageName, 'Add magazine issue');
+    expect(
+      page.periodical?.periodicalUid,
+      'per-3',
+      reason: 'the scanned series travels to the future add-issue form',
+    );
+  });
+
+  testWidgets('a magazine barcode with NO matching series routes to the '
+      'new-title placeholder', (tester) async {
+    await tester.pumpWidget(host(_MemItems([]), scanned: '9771234567003'));
+
+    await tester.tap(find.text('scan'));
+    await tester.pumpAndSettle();
+
+    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
+    expect(page.pageName, 'New magazine title');
   });
 }

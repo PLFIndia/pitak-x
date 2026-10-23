@@ -16,6 +16,10 @@
 /// row, and there is no stale snapshot left to write back. A row that vanished
 /// shows a safe empty state; a repository failure shows a safe message, never
 /// raw text.
+///
+/// S14: the app-bar actions, the lend section and the delete-forever button
+/// live in `widgets/catalogue_item_actions.dart` (the page grew over the
+/// file-size cap; the split makes room for S17's kind-specific sections).
 library;
 
 import 'package:flutter/material.dart';
@@ -26,16 +30,11 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
-import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
-import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
-import 'package:pitaka/features/vault/domain/lending_policy.dart';
-import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
-import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 /// A portrait 2:3 crop preset — the natural shape of a book cover. The plugin's
 /// built-in enum only offers landscape ratios (e.g. 3:2), so we supply this
@@ -184,72 +183,15 @@ class _ItemDetailBody extends ConsumerWidget {
     final textTheme = Theme.of(context).textTheme;
 
     final session = ref.watch(vaultSessionControllerProvider).valueOrNull;
-    final vaultUnlocked = session is VaultUnlocked;
-    // Same rule the lend use case enforces; evaluated here only to render an
-    // honest button state + reason (review 2026-09-03, decision Q4).
-    final lendDecision = session is VaultUnlocked
-        ? LendDecision.forItem(book, session.data.loans)
-        : null;
+    final vaultKnown =
+        session is VaultUnlocked ||
+        session is VaultLocked ||
+        session is VaultUninitialized;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Book'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            tooltip: 'Edit',
-            // The edit form gets the CURRENT row and re-reads it again at
-            // save time. When it pops, this page is already observing the
-            // edited row, so there is nothing stale to escape from.
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => AddBookPage(book: book)),
-            ),
-          ),
-          if (book.removed)
-            IconButton(
-              icon: const Icon(Icons.restore_from_trash),
-              tooltip: 'Restore to library',
-              onPressed: () async {
-                await ref
-                    .read(libraryControllerProvider.notifier)
-                    .restoreRemoved(book.id);
-                if (context.mounted) Navigator.of(context).pop();
-              },
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.delete_outline),
-              tooltip: 'Remove from library',
-              onPressed: () async {
-                final confirmed = await showDialog<bool>(
-                  context: context,
-                  builder: (ctx) => AlertDialog(
-                    title: const Text('Remove from library?'),
-                    content: const Text(
-                      'The book stays in your records but is marked removed. '
-                      'You can restore it later.',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(false),
-                        child: const Text('Cancel'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.of(ctx).pop(true),
-                        child: const Text('Remove'),
-                      ),
-                    ],
-                  ),
-                );
-                if ((confirmed ?? false) && context.mounted) {
-                  await ref
-                      .read(libraryControllerProvider.notifier)
-                      .remove(book.id);
-                  if (context.mounted) Navigator.of(context).pop();
-                }
-              },
-            ),
-        ],
+        actions: [CatalogueItemActions(book: book)],
       ),
       body: ListView(
         padding: const EdgeInsets.all(16),
@@ -276,75 +218,11 @@ class _ItemDetailBody extends ConsumerWidget {
           ],
           // Lend action (S34): rendered whenever the vault state is KNOWN,
           // so a locked vault explains itself instead of silently hiding the
-          // feature (users could not tell lending existed / why it vanished).
-          //  - unlocked → the lending policy decides enabled/disabled+reason;
-          //  - locked / uninitialized → disabled button + a hint that routes
-          //    to the vault screen. This page WATCHES the session, so after
-          //    unlocking and popping back it rebuilds with a live button;
-          //  - still loading / errored (session == null) → nothing, a
-          //    transient state, same as before.
-          if (vaultUnlocked && lendDecision != null) ...[
+          // feature. Still loading / errored (session == null) → nothing, a
+          // transient state, same as before.
+          if (vaultKnown) ...[
             const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: lendDecision is LendAllowed
-                  ? () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => LendBookPage(
-                          bookId: book.id,
-                          bookTitle: book.title,
-                        ),
-                      ),
-                    )
-                  : null,
-              icon: const Icon(Icons.outbox),
-              label: const Text('Lend'),
-            ),
-            if (lendDecision.reason != null) ...[
-              const SizedBox(height: 6),
-              Text(
-                lendDecision.reason!,
-                style: textTheme.bodySmall?.copyWith(
-                  color: scheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ] else if (session is VaultLocked ||
-              session is VaultUninitialized) ...[
-            const SizedBox(height: 16),
-            // Disabled (grayed by the theme): lending needs an unlocked
-            // vault and there is no bypass — the lend use case stays the
-            // enforcing gate (fail closed).
-            FilledButton.icon(
-              onPressed: null,
-              icon: const Icon(Icons.outbox),
-              label: const Text('Lend'),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              session is VaultLocked
-                  ? 'Unlock the borrowers vault to lend this book.'
-                  : 'Set up the borrowers vault to start lending.',
-              style: textTheme.bodySmall?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const VaultPage()),
-                ),
-                icon: Icon(
-                  session is VaultLocked ? Icons.lock_open : Icons.lock_outline,
-                  size: 18,
-                ),
-                label: Text(
-                  session is VaultLocked
-                      ? 'Unlock the vault'
-                      : 'Set up the vault',
-                ),
-              ),
-            ),
+            LendSection(book: book, session: session!),
           ],
           const SizedBox(height: 24),
           // Labeled rows in the exact order of the Kotlin detail screen.
@@ -373,7 +251,7 @@ class _ItemDetailBody extends ConsumerWidget {
             Text(book.notes!, style: textTheme.bodyMedium),
           ],
           const SizedBox(height: 32),
-          _DeleteForeverButton(book: book),
+          DeleteForeverButton(book: book),
         ],
       ),
     );
@@ -598,84 +476,6 @@ class _RemovedBadge extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-/// "Delete permanently" action (#27/D3). A hard delete must purge the book's
-/// vault loans, so it routes through [DeleteCatalogueItemUseCase]: if the vault
-/// is locked it asks the user to unlock first (we never delete while we can't
-/// confirm/purge loans — fail-closed, no vault-state leak).
-class _DeleteForeverButton extends ConsumerStatefulWidget {
-  const _DeleteForeverButton({required this.book});
-
-  final CatalogueItem book;
-
-  @override
-  ConsumerState<_DeleteForeverButton> createState() =>
-      _DeleteForeverButtonState();
-}
-
-class _DeleteForeverButtonState extends ConsumerState<_DeleteForeverButton> {
-  bool _busy = false;
-
-  Future<void> _delete() async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete permanently?'),
-        content: const Text(
-          'This removes the book for good, along with any of its lending '
-          'records in the vault. This cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-
-    setState(() => _busy = true);
-    final useCase = await ref.read(deleteCatalogueItemUseCaseProvider.future);
-    final result = await useCase(widget.book.id);
-    if (!mounted) return;
-    setState(() => _busy = false);
-
-    result.match((_) => _snack('Could not delete this book.'), (outcome) {
-      switch (outcome) {
-        case DeleteBookOutcome.deleted:
-          ref.invalidate(libraryControllerProvider);
-          Navigator.of(context).pop();
-        case DeleteBookOutcome.requiresVaultUnlock:
-          _snack('Unlock the borrowers vault first, then try deleting again.');
-      }
-    });
-  }
-
-  void _snack(String message) => ScaffoldMessenger.of(
-    context,
-  ).showSnackBar(SnackBar(content: Text(message)));
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return TextButton.icon(
-      onPressed: _busy ? null : _delete,
-      icon: _busy
-          ? const SizedBox(
-              height: 18,
-              width: 18,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
-          : Icon(Icons.delete_forever, color: scheme.error),
-      label: Text('Delete permanently', style: TextStyle(color: scheme.error)),
     );
   }
 }

@@ -1,11 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+
+/// Empty series store: the card's cover-fallback map
+/// (`periodicalCoversProvider`, S14) reads `listAll`; the tests below use
+/// books, so the map stays empty.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
 
 void main() {
   Widget host(CatalogueItem book, {bool unavailable = false}) => ProviderScope(
+    overrides: [
+      periodicalRepositoryProvider.overrideWith(
+        (ref) async => _NoPeriodicals(),
+      ),
+    ],
     child: MaterialApp(
       home: Scaffold(
         // A fixed, realistic grid-cell box so overflow would actually throw.
