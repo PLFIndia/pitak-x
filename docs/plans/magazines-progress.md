@@ -6,16 +6,16 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S14** (Library screen: splits, kind chips, add
-  sheet, row badges, scan-route switch)
+- Last completed session: **S15** (Magazines list page + series detail page,
+  drawer entry, subscription badges, typed delete refusal)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S14's commit (S13 `bba12b2`, S12 was `02f3f99`, S11 `5ce4ec0`,
-  S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
-  `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0
-  `8899cc0`)
-- Full suite last green at: **S14, 2026-10-23** — 2711 tests, 82 s
+- Last commit: S15's commit (S14 `526b9da`, S13 `bba12b2`, S12 was `02f3f99`,
+  S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6
+  `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1
+  `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S15, 2026-10-23** — 2728 tests, ~90 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S15.
+- Run stopped here (one session per run, B.3): the next run starts at S16.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -42,10 +42,58 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S15 — Periodicals list page and series detail page.** Nothing in flight.
-Follow the plan's S15 steps verbatim.
+**S16 — Periodical form and add-issue form.** Nothing in flight. Follow the
+plan's S16 steps verbatim.
 
-Notes for it (what S14 built, and what S15 replaces):
+Notes for it (what S15 built, and the surfaces S16 plugs into):
+
+- **Placeholder inventory after S15** (all in
+  `periodicals/presentation/pages/placeholder_page.dart`; delete the file
+  when its last caller is gone — AGENTS §2.4): S16 owns FIVE pushes —
+  `add_sheet.dart` "Add magazine issue" and "New magazine title";
+  `library_page.dart`'s scan routes (`AddIssueOfPeriodical` → "Add magazine
+  issue" with the series carried; `AddPeriodicalByIssn` → "New magazine
+  title"); `periodicals_page.dart`'s FAB + empty-state button ("New magazine
+  title"); `periodical_detail_page.dart`'s Edit ("Edit magazine title") and
+  "Add issue" (both carry the observed series). "Add other item"
+  (`add_sheet.dart`) is S17's — leave it standing.
+- **Save plumbing (S13 contract, still current):** `AddIssueController` /
+  `PeriodicalFormController` fire BOTH mutation signals
+  (`libraryControllerProvider` + `periodicalsControllerProvider`) themselves
+  on success — the form pages must NOT call `refresh()` after a save; pop on
+  `state.hasValue && value != null`. Failures render through
+  `catalogueSaveMessage(error, noun: 'issue')` / `noun: 'magazine title'`.
+  `AddIssueController.save` takes an entity with `details: IssueOf(...)` and
+  a blank title (the projection owns the title).
+- **Removed series stay unreachable in the forms:** S15's detail page hides
+  Edit / "Add issue" on a removed title, so the forms never receive one from
+  the S15 UI; the scan route can still land on a removed series — the form
+  should treat that as an ordinary prefill (the use cases accept it).
+- **Series edit flow:** `periodicalByIdProvider(id)` is the observed-row
+  read the form can preload from (N03);
+  `PeriodicalFormController.saveEdit(id, applyEdits)` re-reads the CURRENT
+  row (N03 again) — do not hand it a form-side snapshot to persist blindly.
+- **Widget-test override set (settled in S15):**
+  `periodicalRepositoryProvider` + `catalogueItemRepositoryProvider`
+  (`FakePeriodicals` / `FakeItems`) + `settingsRepositoryProvider`
+  (`FakeSettings`) + `clockProvider` (pinned) + `nowTickProvider` (`0`), and
+  `deletePeriodicalUseCaseProvider` over the fakes when the janitor would
+  otherwise touch the file system. The series page's tall header needs the
+  big test surface (`tester.view.physicalSize = Size(1080, 2400)`,
+  `devicePixelRatio = 1`) for row assertions — the lazy sliver does not
+  build off-screen rows.
+- **Gate test (B.5):** the two form pages are new entity-construction
+  sites — add allow-list entries with reasons IN THE SAME COMMIT. The scan
+  is textual with a letter look-behind: prose like "a `_addPeriodical(`
+  helper" does not trip it, but never write the literal constructor call in
+  a doc comment.
+- **Ratchet:** S15 split the series page at 592 lines →
+  `periodicals/presentation/widgets/periodical_detail_sections.dart`
+  (subscription card, overflow delete, removed badge; page now 403). Keep
+  each new form page under 500 — split widgets early, `add_book_page.dart`
+  is the idiom.
+
+Notes from S14 (what S14 built, and what S15 consumed):
 
 - **Placeholders to replace:** `periodicals/presentation/pages/
   placeholder_page.dart` (`PlaceholderPage(pageName:periodical:)`) is pushed
@@ -508,6 +556,22 @@ Rename technique (learned in S1–S4):
   `periodicals/presentation/pages/` (the add-issue route already carries the
   scanned series, so the S16 replacement keeps the call shape). The widget
   test asserts the pushed page's name, so S15–S17's swaps are test-visible.
+- `S15` — the plan's step 3 says "replace the S14 placeholders that these
+  pages satisfy"; the two pages S15 builds (the series list and the series
+  detail) satisfy NONE of the four S14 placeholder pushes — those are all
+  form destinations (S16/S17). S15 therefore replaced zero existing
+  placeholders and ADDED its own pushes (the page FAB + empty-state button,
+  the detail page's Edit and "Add issue") that S16 will swap. The Edit push
+  uses the page name "Edit magazine title" (the add route's "New magazine
+  title" would mislabel an edit) and carries the observed series, keeping
+  S16's call shape symmetric with the add-issue route.
+- `S15` — the plan's detail-page outline (hero, subscription card, issues)
+  landed at 592 lines, over the 500-line cap: the subscription card,
+  overflow menu and removed badge moved to
+  `periodicals/presentation/widgets/periodical_detail_sections.dart` (403),
+  the same split S14 made for `catalogue_item_detail_page.dart` (B.5 wants
+  the split BEFORE extending a capped file, so it happened inside the
+  session rather than as a follow-up).
 
 ## Open issues / blocked
 
@@ -533,4 +597,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S11 | Done | `5ce4ec0` | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |
 | S12 | Done | `02f3f99` | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
 | S13 | Done | `bba12b2` | 2026-10-23 | `LibraryKindFilter` (U1 toggle) watched by `LibraryController` → `LibraryQuery.kind`; `periodicals/application/`: `PeriodicalsController` (`PeriodicalListEntry` = summary + derived `SubscriptionStatus` from `clockProvider`, re-stamped on `nowTick`; `refresh`/`remove`/`restoreRemoved` fail closed; `delete` returns the `Either`), `IssueListController(periodicalUid)` (family; `LibraryWindow` over `page(LibraryQuery(periodicalUid:))`, D2-b depth on the library signal, N05 guard), `AddIssueController`, `PeriodicalFormController` (`AddBookController` shape, N03 re-read, fire both signals); `periodicalById`/`periodicalByUid` read providers (both signals); `RouteScannedBarcodeUseCase` + sealed `ScanRoute` (D11: 977 → `Issn.fromEan13` → `findByIssn`; else the S34 ISBN path) + provider; `library_page.dart` untouched (S14 switches on the route); fakes gained `listAll`/`markRemoved`/`restoreRemoved`/`page`/`FakeSettings`; gate allow-list unchanged; 43 new tests (2695 total), full green 77 s |
-| S14 | Done | `16c8c2b` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |
+| S14 | Done | `526b9da` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |
+| S15 | Done | `4da57f9` | 2026-10-23 | `periodicals_page.dart` (281: rows with cover/publisher/"N issues · latest YYYY-MM", `SubscriptionBadge` per status, empty + safe error states, FAB → "New magazine title" placeholder), `periodical_detail_page.dart` (403: observes `periodicalByIdProvider` N03, hero, `SeriesSubscriptionCard` on the injected clock, "Add issue", issues via `IssueListController` paged newest-first in ONE outer scroll view with footer spinner, rows reuse `CatalogueItemRow` → item detail), overflow hard delete with the typed `PeriodicalHasIssuesFailure` refusal shown in place; sections split to `widgets/periodical_detail_sections.dart` (592 → 403, S14 precedent); removed title visible-but-actionless (edit/add hidden, D8); drawer entry "Magazines" between Wishlist and Library network; ZERO S14 placeholders replaced (all four are S16/S17 form destinations — see Deviations), S15 added its own pushes for S16 to swap; gate allow-list unchanged (no construction site); 17 new tests (2728 total), full green ~86 s |
