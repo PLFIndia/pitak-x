@@ -24,6 +24,11 @@
 /// Trust boundary: the encrypted `borrowers.db` + vault key live entirely in
 /// the Rust core (via [VaultRepository]); the plain `books.db`/`wishlist.db`
 /// are read here with `sqlite3` (no secrets). The vault key never reaches Dart.
+///
+/// Neighbours (split out under the file-size ratchet, B8): the archive-entry
+/// readers are `backup_extras_reader.dart`, the legacy-DB read phase is
+/// `restore_legacy_read.dart`, and the ADR 0014 W2 kinds/details join +
+/// write helpers are `restore_item_details.dart`.
 library;
 
 import 'dart:convert';
@@ -33,7 +38,6 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:fpdart/fpdart.dart';
-import 'package:path/path.dart' as p;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
@@ -42,31 +46,24 @@ import 'package:pitaka/features/backup/domain/archive_inspection.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/domain/restore_summary.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_extras_reader.dart';
-import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_covers_builder.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_item_details.dart';
+import 'package:pitaka/features/backup/infrastructure/restore_legacy_read.dart';
 import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_plan.dart';
-import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
-import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/wishlist_mapper.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
-/// ZIP entry names inside a Pitaka backup archive.
-const String _manifestEntry = 'manifest.json';
-const String _booksDbEntry = 'books.db';
-const String _wishlistDbEntry = 'wishlist.db';
+/// ZIP entry names of the archive's encrypted vault pair.
 const String _borrowersDbEntry = 'borrowers.db';
 const String _backupBlobEntry = 'backup_blob';
-
-/// Opens a plain SQLite database file read-only. Injectable for tests.
-typedef LegacyDbOpener = CommonDatabase Function(String path);
 
 /// Opens the app's Drift catalogue at an arbitrary file path (the builder
 /// generation's copy). Injectable so tests can inject faults into it.
@@ -145,7 +142,7 @@ final class RestoreBackup {
     } on BoundedExtractionException catch (e) {
       return left(BackupCorruptFailure(e.message));
     }
-    return _parseManifest(files).map(
+    return parseBackupManifest(files).map(
       (manifest) => ArchiveInspection(
         manifest: manifest,
         identity: readBackupExtras(files, manifest).identity,
@@ -175,7 +172,7 @@ final class RestoreBackup {
     }
 
     // --- Phase 2: manifest, refuse schemaVersion > known ---
-    final parsed = _parseManifest(files);
+    final parsed = parseBackupManifest(files);
     final manifest = parsed.toNullable();
     if (manifest == null) {
       return parsed.map((_) => throw StateError('unreachable'));
@@ -190,29 +187,15 @@ final class RestoreBackup {
     );
   }
 
-  Either<Failure, BackupManifest> _parseManifest(Map<String, Uint8List> files) {
-    final manifestBytes = files[_manifestEntry];
-    if (manifestBytes == null) {
-      return left(const BackupCorruptFailure('Archive missing manifest.json'));
-    }
-    final manifest = BackupManifest.tryParse(_utf8(manifestBytes));
-    if (manifest == null) {
-      return left(const BackupCorruptFailure('Invalid manifest.json'));
-    }
-    if (manifest.schemaVersion > BackupManifest.knownSchemaVersion) {
-      return left(SchemaTooNewFailure(manifest.schemaVersion));
-    }
-    return right(manifest);
-  }
-
   Future<Either<Failure, RestoreSummary>> _restoreValidated(
     Map<String, Uint8List> files,
     BackupManifest manifest,
     SecretBytes? passphrase,
     CatalogueReplacementScope scope,
   ) async {
-    // --- §3.4 extras: parse (never apply) identity + network list up front.
-    // An invalid entry is reported on the summary, never aborts (additive).
+    // --- Additive extras: parse (never apply) identity, network list and
+    // the W2 item-details entries up front. An invalid entry is reported on
+    // the summary, never aborts (additive).
     final extras = readBackupExtras(files, manifest);
     final identity = extras.identity;
     final network = extras.network;
@@ -256,7 +239,11 @@ final class RestoreBackup {
             const BackupCorruptFailure('Archive missing borrowers.db'),
           );
         }
-        final borrowersPath = _stage(work, _borrowersDbEntry, borrowersBytes);
+        final borrowersPath = stageArchiveEntry(
+          work,
+          _borrowersDbEntry,
+          borrowersBytes,
+        );
         final blob = _utf8(blobBytes).trim();
         final unlocked = await vault.unlockAndRead(
           passphrase: passphrase,
@@ -274,12 +261,25 @@ final class RestoreBackup {
       }
 
       // --- Phase 5: read legacy books/wishlist (still no device writes) ---
-      final readResult = _readLegacy(work, files, manifest);
+      final readResult = readLegacyCatalogue(work, files, manifest, _open);
       final legacy = readResult.toNullable();
       if (legacy == null) {
         return readResult.map((_) => throw StateError('unreachable'));
       }
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
+
+      // --- Phase 5b (W2): join kinds + issue details onto the legacy rows
+      // BEFORE the catalogue write, so the write is one straight pass. The
+      // counts ride into the summary. Absent/unreadable entries apply
+      // nothing (the invalid flags below tell the two apart).
+      final applied = applyRestoredItemDetails(
+        books: legacy.books,
+        kinds: extras.itemKinds,
+        periodicals: extras.periodicals,
+      );
+      legacy
+        ..books = applied.books
+        ..periodicals = applied.periodicals;
 
       // --- Phase 6: BUILD the next generation (no live effect) ---
       // Everything below writes only into the builder directory. Any failure
@@ -360,6 +360,18 @@ final class RestoreBackup {
           networkRowsDropped: network?.dropped ?? 0,
           identityInvalid: manifest.hasIdentity && identity == null,
           networkInvalid: manifest.hasNetwork && network == null,
+          // W2: the kinds/details join counts. An entry that was DECLARED but
+          // unreadable is flagged (everything else restores regardless — the
+          // affected rows came back as books, which the counts show).
+          kindsApplied: applied.kindsApplied,
+          periodicalsRestored: legacy.periodicals.length,
+          issuesLinked: applied.issuesLinked,
+          issuesDetached: applied.issuesDetached,
+          rowsSkippedUnknownKind: applied.rowsSkippedUnknownKind,
+          periodicalsDropped: applied.periodicalsDropped,
+          itemKindsInvalid: manifest.hasItemKinds && extras.itemKinds == null,
+          periodicalsInvalid:
+              manifest.hasPeriodicals && extras.periodicals == null,
         ),
       );
     } on _ReplacementRefused catch (e) {
@@ -396,7 +408,7 @@ final class RestoreBackup {
   Future<Either<Failure, Unit>> _buildCatalogue({
     required DataGeneration active,
     required DataGeneration builder,
-    required _LegacyRows legacy,
+    required LegacyCatalogueRows legacy,
     required CatalogueReplacementScope scope,
   }) async {
     // Snapshot through a private read connection so the copy is consistent
@@ -436,16 +448,22 @@ final class RestoreBackup {
         if (!scope.isCurrent) {
           throw const _ReplacementRefused(CatalogueReplacementScope.cancelled);
         }
+        // The books delete cascades to `magazine_issues` (FK, plan A.6); the
+        // periodicals table is cleared inside writeRestoredPeriodicals.
         await db.delete(db.books).go();
         await db.delete(db.wishlistBooks).go();
+        // W2: row-by-row — the assigned ids key the kind detail rows.
+        await insertRestoredItems(db, legacy.books);
         await db.batch((b) {
-          for (final book in legacy.books) {
-            b.insert(db.books, book.toCompanion());
-          }
           for (final w in legacy.wishlist) {
             b.insert(db.wishlistBooks, w.toCompanion());
           }
         });
+        // W2: the periodicals write joins this transaction (Drift
+        // transactions are zone-scoped); a Left rolls EVERYTHING back —
+        // restore never leaves a half-written catalogue.
+        final replaced = await writeRestoredPeriodicals(db, legacy.periodicals);
+        replaced.match((f) => throw _ReplacementRefused(f), (_) {});
         // Rebuild the derived FTS index from the rows just written.
         await db.rebuildFts();
         if (!scope.isCurrent) {
@@ -458,80 +476,6 @@ final class RestoreBackup {
     return right(unit);
   }
 
-  Either<Failure, _LegacyRows> _readLegacy(
-    Directory work,
-    Map<String, Uint8List> files,
-    BackupManifest manifest,
-  ) {
-    final rows = _LegacyRows();
-    if (manifest.hasBooks) {
-      final bytes = files[_booksDbEntry];
-      if (bytes == null) {
-        return left(const BackupCorruptFailure('Archive missing books.db'));
-      }
-      final path = _stage(work, _booksDbEntry, bytes);
-      // M15: the reader validates every row; a Left here is either a typed
-      // ValidationFailure (an invalid row — surfaced verbatim) or a
-      // BackupCorruptFailure from _withDb (the DB could not be opened/read).
-      final readResult = _withDb(path, (db) => LegacyDbReader(db).readBooks());
-      final validated = _flatten(readResult);
-      if (validated.isLeft()) {
-        return left(validated.getLeft().toNullable()!);
-      }
-      final books = validated.getOrElse((_) => throw StateError('x'));
-      rows
-        ..books = books.items
-        ..coversDropped = rows.coversDropped + books.coversDropped;
-    }
-    if (manifest.hasWishlist) {
-      final bytes = files[_wishlistDbEntry];
-      if (bytes == null) {
-        return left(const BackupCorruptFailure('Archive missing wishlist.db'));
-      }
-      final path = _stage(work, _wishlistDbEntry, bytes);
-      final readResult = _withDb(
-        path,
-        (db) => LegacyDbReader(db).readWishlist(),
-      );
-      final validated = _flatten(readResult);
-      if (validated.isLeft()) {
-        return left(validated.getLeft().toNullable()!);
-      }
-      final wishlist = validated.getOrElse((_) => throw StateError('x'));
-      rows
-        ..wishlist = wishlist.items
-        ..coversDropped = rows.coversDropped + wishlist.coversDropped;
-    }
-    return right(rows);
-  }
-
-  /// Flattens `_withDb`'s outer Either (open/read failure) with the reader's
-  /// inner Either (a refused row), preserving the typed failure either way.
-  static Either<Failure, LegacyRows<T>> _flatten<T>(
-    Either<Failure, Either<Failure, LegacyRows<T>>> nested,
-  ) => nested.match(left, (inner) => inner);
-
-  Either<Failure, T> _withDb<T>(
-    String path,
-    T Function(CommonDatabase) action,
-  ) {
-    CommonDatabase? handle;
-    try {
-      handle = _open(path);
-      return right(action(handle));
-    } on Object catch (e) {
-      return left(BackupCorruptFailure('Could not read legacy DB: $e'));
-    } finally {
-      handle?.dispose();
-    }
-  }
-
-  String _stage(Directory work, String name, Uint8List bytes) {
-    final path = p.join(work.path, name);
-    File(path).writeAsBytesSync(bytes);
-    return path;
-  }
-
   static String _utf8(Uint8List bytes) =>
       const Utf8Decoder(allowMalformed: true).convert(bytes);
 }
@@ -540,14 +484,4 @@ final class RestoreBackup {
 final class _ReplacementRefused implements Exception {
   const _ReplacementRefused(this.failure);
   final Failure failure;
-}
-
-/// Internal carrier for rows read out of the legacy DBs.
-class _LegacyRows {
-  List<CatalogueItem> books = const [];
-  List<WishlistBook> wishlist = const [];
-
-  /// Cover references normalised to null by validation (M15), surfaced in
-  /// the [RestoreSummary] so the user knows a link was removed.
-  int coversDropped = 0;
 }

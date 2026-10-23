@@ -8,8 +8,12 @@ import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
+import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -79,6 +83,7 @@ void main() {
     final bytes = await writer.build(
       books: const [],
       wishlist: const [],
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1700000000000,
       identityJson: null,
@@ -108,6 +113,7 @@ void main() {
     final bytes = await writer.build(
       books: const [],
       wishlist: const [],
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
       identityJson: '{"libraryId": "${'a' * 32}", "libraryName": "Meera"}',
@@ -131,6 +137,124 @@ void main() {
     );
   });
 
+  // ADR 0014 W2: the kind entries ride next to the Room-shaped DBs.
+  group('W2 item kinds + periodicals entries', () {
+    const issueRow = CatalogueItem(
+      id: 8,
+      itemUid: 'uid-8',
+      title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+      details: IssueOf(
+        periodicalUid: 'puid-1',
+        volume: 249,
+        issueNumber: 10,
+        issueDate: 1759276800000,
+      ),
+    );
+    const otherRow = CatalogueItem(
+      id: 9,
+      itemUid: 'uid-9',
+      title: 'Carrom board',
+      details: OtherItemOf(),
+    );
+    const bookRow = CatalogueItem(id: 7, itemUid: 'uid-7', title: 'गोदान');
+    const series = Periodical(
+      title: 'Chandamama',
+      periodicalUid: 'puid-1',
+      issn: '0577-6058',
+    );
+
+    test(
+      'a books-only build writes neither entry and flags both false',
+      () async {
+        final bytes = await writer.build(
+          books: const [bookRow],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+        );
+        final archive = unzip(bytes);
+        expect(entry(archive, 'item_kinds.json'), isNull);
+        expect(entry(archive, 'periodicals.json'), isNull);
+        final manifest = BackupManifest.tryParse(
+          utf8.decode(entry(archive, 'manifest.json')!),
+        );
+        expect(manifest!.hasItemKinds, isFalse);
+        expect(manifest.hasPeriodicals, isFalse);
+      },
+    );
+
+    test(
+      'kinds, periodicals and issue entries are written and flagged',
+      () async {
+        final bytes = await writer.build(
+          books: const [bookRow, issueRow, otherRow],
+          wishlist: const [],
+          periodicals: const [series],
+          workDir: '${tmp.path}/work',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+        );
+        final archive = unzip(bytes);
+        final manifest = BackupManifest.tryParse(
+          utf8.decode(entry(archive, 'manifest.json')!),
+        );
+        expect(manifest!.hasItemKinds, isTrue);
+        expect(manifest.hasPeriodicals, isTrue);
+
+        // The entries decode back to exactly what went in (the reader is the
+        // restore path's own codec — the round-trip IS the contract).
+        final kinds = ItemDetailsArchiveCodec.decodeItemKinds(
+          utf8.decode(entry(archive, 'item_kinds.json')!),
+        );
+        expect(kinds!.skipped, 0);
+        expect(kinds.byUid, {
+          'uid-8': ItemKind.magazineIssue,
+          'uid-9': ItemKind.other,
+        });
+
+        final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+          utf8.decode(entry(archive, 'periodicals.json')!),
+        );
+        expect(decoded!.periodicals.single.periodicalUid, 'puid-1');
+        expect(decoded.periodicals.single.issn, '0577-6058');
+        expect(decoded.issuesByBookUid['uid-8']!.issueNumber, 10);
+        expect(decoded.issuesDropped, 0);
+      },
+    );
+
+    test(
+      'issues alone (no titles) still force the periodicals entry',
+      () async {
+        // An issue entry without any periodical row is not reachable through
+        // the app (delete fails closed while issues reference a series), but
+        // the writer must not silently drop detail rows if the state exists.
+        final bytes = await writer.build(
+          books: const [issueRow],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+        );
+        final archive = unzip(bytes);
+        final manifest = BackupManifest.tryParse(
+          utf8.decode(entry(archive, 'manifest.json')!),
+        );
+        expect(manifest!.hasPeriodicals, isTrue);
+        final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+          utf8.decode(entry(archive, 'periodicals.json')!),
+        );
+        expect(decoded!.periodicals, isEmpty);
+        expect(decoded.issuesByBookUid, hasLength(1));
+      },
+    );
+  });
+
   test('books round-trip through our own restore reader', () async {
     final books = [
       const CatalogueItem(
@@ -148,6 +272,7 @@ void main() {
     final bytes = await writer.build(
       books: books,
       wishlist: const [],
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
       identityJson: null,
@@ -180,6 +305,7 @@ void main() {
       final bytes = await writer.build(
         books: const [CatalogueItem(id: 1, title: 'Findable')],
         wishlist: const [],
+        periodicals: const [],
         workDir: '${tmp.path}/work',
         exportedAt: 1,
         identityJson: null,
@@ -217,6 +343,7 @@ void main() {
     final bytes = await writer.build(
       books: const [],
       wishlist: wishlist,
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
       identityJson: null,
@@ -238,6 +365,7 @@ void main() {
     final bytes = await writer.build(
       books: const [],
       wishlist: const [],
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
       identityJson: null,
@@ -263,6 +391,7 @@ void main() {
     final bytes = await w.build(
       books: const [],
       wishlist: const [],
+      periodicals: const [],
       workDir: '${tmp.path}/work',
       exportedAt: 1,
       identityJson: null,
@@ -322,6 +451,7 @@ void main() {
       final work = w.build(
         books: bigBooks(),
         wishlist: const [],
+        periodicals: const [],
         workDir: '${tmp.path}/work',
         exportedAt: 1,
         identityJson: null,
@@ -350,6 +480,7 @@ void main() {
         final bytes = await w.build(
           books: const [CatalogueItem(id: 1, title: 'One')],
           wishlist: const [],
+          periodicals: const [],
           workDir: '${tmp.path}/work',
           exportedAt: 1,
           identityJson: null,
@@ -392,6 +523,7 @@ void main() {
           w.build(
             books: const [CatalogueItem(id: 1, title: 'One')],
             wishlist: const [],
+            periodicals: const [],
             workDir: '${tmp.path}/work_fail',
             exportedAt: 1,
             identityJson: null,

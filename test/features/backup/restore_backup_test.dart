@@ -11,8 +11,12 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/infrastructure/periodical_mapper.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -149,6 +153,8 @@ void main() {
     bool hasBackupBlob = false,
     bool hasIdentity = false,
     bool hasNetwork = false,
+    bool hasItemKinds = false,
+    bool hasPeriodicals = false,
   }) => jsonEncode({
     'schemaVersion': schemaVersion,
     'exportedAt': 123,
@@ -159,10 +165,41 @@ void main() {
     'hasCovers': false,
     if (hasIdentity) 'hasIdentity': true,
     if (hasNetwork) 'hasNetwork': true,
+    if (hasItemKinds) 'hasItemKinds': true,
+    if (hasPeriodicals) 'hasPeriodicals': true,
   });
 
   /// The pre-restore device vault store (inside the active generation).
   VaultStore vaultStore() => gen.store;
+
+  /// Builds a legacy Room books.db with the given (id, uid, title) rows.
+  /// `added_date` is fixed (NOT NULL column); everything else defaults.
+  Uint8List buildBooksDbWith(List<({int id, String uid, String title})> rows) {
+    final path = '${tmp.path}/src_books_${rows.length}_${rows.first.id}.db';
+    final db = sqlite3.open(path)
+      ..execute('''
+      CREATE TABLE books(
+        id INTEGER PRIMARY KEY NOT NULL, book_uid TEXT, title TEXT NOT NULL,
+        title_transliteration TEXT, author TEXT,
+        title_sort TEXT NOT NULL DEFAULT '',
+        author_sort TEXT NOT NULL DEFAULT '', isbn TEXT, publisher TEXT,
+        published_year INTEGER, genre TEXT, cover_url TEXT, page_count INTEGER,
+        language TEXT, notes TEXT, location TEXT, source_type TEXT,
+        source_detail TEXT, age_group TEXT, added_date INTEGER NOT NULL,
+        copy_count INTEGER NOT NULL DEFAULT 1,
+        needs_metadata INTEGER NOT NULL DEFAULT 0,
+        removed INTEGER NOT NULL DEFAULT 0, removed_at INTEGER, added_by TEXT);
+    ''');
+    for (final r in rows) {
+      db.execute(
+        'INSERT INTO books(id, book_uid, title, added_date) '
+        'VALUES (?, ?, ?, 1000)',
+        [r.id, r.uid, r.title],
+      );
+    }
+    db.dispose();
+    return File(path).readAsBytesSync();
+  }
 
   RestoreBackup restorer(
     VaultRepository vault, [
@@ -829,6 +866,234 @@ void main() {
         // Flag true (the page says "unreadable"), identity null.
         expect(inspected.manifest.hasIdentity, isTrue);
         expect(inspected.identity, isNull);
+      },
+    );
+  });
+
+  // ADR 0014 W2: kinds are explicit in item_kinds.json; series + issue
+  // details ride in periodicals.json. Literal JSON pins the wire contract.
+  group('W2 — item kinds + periodicals (ADR 0014)', () {
+    const kindsJson = '''
+      { "schemaVersion": 1,
+        "kinds": [ { "bookUid": "uid-8", "kind": "magazine-issue" },
+                   { "bookUid": "uid-9", "kind": "other" } ] }''';
+    const periodicalsJson = '''
+      { "schemaVersion": 1,
+        "periodicals": [ { "periodicalUid": "puid-1", "title": "Chandamama",
+                           "issn": "0577-6058", "frequency": "monthly" } ],
+        "issues": [ { "bookUid": "uid-8", "periodicalUid": "puid-1",
+                      "volume": 249, "issueNumber": 10,
+                      "issueDate": 1759276800000 } ] }''';
+
+    Uint8List threeRows() => buildBooksDbWith(const [
+      (id: 7, uid: 'uid-7', title: 'गोदान'),
+      (id: 8, uid: 'uid-8', title: 'Chandamama — Vol 249 No 10 (Oct 2026)'),
+      (id: 9, uid: 'uid-9', title: 'Carrom board'),
+    ]);
+
+    test(
+      'kinds, issue details and periodicals land in the new generation',
+      () async {
+        final zip = archive({
+          'manifest.json': utf8.encode(
+            manifest(hasItemKinds: true, hasPeriodicals: true),
+          ),
+          'books.db': threeRows(),
+          'wishlist.db': buildWishlistDb(),
+          'item_kinds.json': utf8.encode(kindsJson),
+          'periodicals.json': utf8.encode(periodicalsJson),
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+          (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
+        );
+        expect(summary.kindsApplied, 2);
+        expect(summary.issuesLinked, 1);
+        expect(summary.issuesDetached, 0);
+        expect(summary.periodicalsRestored, 1);
+        expect(summary.rowsSkippedUnknownKind, 0);
+        expect(summary.itemKindsInvalid, isFalse);
+        expect(summary.periodicalsInvalid, isFalse);
+
+        final active = gen.openActiveCatalogue();
+        addTearDown(active.close);
+        final books = await active.select(active.books).get();
+        expect(
+          {for (final b in books) b.itemUid: b.kind},
+          {'uid-7': 'book', 'uid-8': 'magazine-issue', 'uid-9': 'other'},
+        );
+        final issues = await active.select(active.magazineIssues).get();
+        expect(issues.single.itemId, 8);
+        expect(issues.single.periodicalUid, 'puid-1');
+        expect(issues.single.volume, 249);
+        expect(issues.single.issueNumber, 10);
+        expect(issues.single.issueDate, 1759276800000);
+        final titles = await active.select(active.periodicals).get();
+        expect(titles.single.periodicalUid, 'puid-1');
+        expect(titles.single.title, 'Chandamama');
+        expect(titles.single.issn, '0577-6058');
+      },
+    );
+
+    test('a flag-less archive restores exactly as before — and the kind '
+        'tables do NOT survive it', () async {
+      // Pre-restore device state: a series with one issue (v5 tables).
+      await db
+          .into(db.periodicals)
+          .insert(
+            const Periodical(
+              title: 'Stale title',
+              periodicalUid: 'puid-stale',
+            ).toCompanion(),
+          );
+      final staleId = await db
+          .into(db.books)
+          .insert(
+            const CatalogueItem(
+              title: 'Stale issue',
+              addedDate: 1,
+              itemUid: 'uid-stale',
+            ).toCompanion(),
+          );
+      await DriftItemDetails(db).write(
+        staleId,
+        const IssueOf(periodicalUid: 'puid-stale', issueNumber: 1),
+      );
+
+      final zip = archive({
+        'manifest.json': utf8.encode(manifest()),
+        'books.db': buildBooksDb(),
+        'wishlist.db': buildWishlistDb(),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+        (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
+      );
+      // Books/wishlist behave exactly as before S21…
+      expect(summary.booksRestored, 1);
+      expect(summary.wishlistRestored, 1);
+      expect(summary.kindsApplied, 0);
+      expect(summary.periodicalsRestored, 0);
+      expect(summary.itemKindsInvalid, isFalse);
+      expect(summary.periodicalsInvalid, isFalse);
+
+      // …and the authoritative overwrite covers the v5 tables too: a
+      // flag-less archive carries no kinds, so no stale series/detail rows
+      // may linger next to a catalogue of plain books (M02: no mixed state).
+      final active = gen.openActiveCatalogue();
+      addTearDown(active.close);
+      expect(await active.select(active.periodicals).get(), isEmpty);
+      expect(await active.select(active.magazineIssues).get(), isEmpty);
+      final books = await active.select(active.books).get();
+      expect(books.single.kind, 'book');
+    });
+
+    test('unhonoured links restore as books and are counted (§5.5)', () async {
+      final zip = archive({
+        'manifest.json': utf8.encode(
+          manifest(hasItemKinds: true, hasPeriodicals: true),
+        ),
+        'books.db': threeRows(),
+        'wishlist.db': buildWishlistDb(),
+        'item_kinds.json': utf8.encode('''
+          { "schemaVersion": 1,
+            "kinds": [ { "bookUid": "uid-8", "kind": "magazine-issue" },
+                       { "bookUid": "uid-9", "kind": "hologram" } ] }'''),
+        'periodicals.json': utf8.encode('''
+          { "schemaVersion": 1,
+            "periodicals": [ { "periodicalUid": "puid-1",
+                               "title": "Chandamama" } ],
+            "issues": [ { "bookUid": "uid-gone", "periodicalUid": "puid-1",
+                          "issueNumber": 4 } ] }'''),
+      });
+      final r = restorer(_FakeVault(right(VaultData.empty)));
+      final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+        (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
+      );
+      // uid-8: declared an issue but no issues[] entry → detached.
+      // uid-gone: an issues[] entry for a row books.db does not have →
+      // detached. uid-9: unknown kind token → skipped.
+      expect(summary.issuesDetached, 2);
+      expect(summary.rowsSkippedUnknownKind, 1);
+      expect(summary.kindsApplied, 0);
+      expect(summary.periodicalsRestored, 1);
+
+      final active = gen.openActiveCatalogue();
+      addTearDown(active.close);
+      final books = await active.select(active.books).get();
+      expect(
+        books.map((b) => b.kind).toSet(),
+        {'book'},
+        reason: 'every detached/skipped row restores as a plain book',
+      );
+      expect(await active.select(active.magazineIssues).get(), isEmpty);
+      expect(await active.select(active.periodicals).get(), hasLength(1));
+    });
+
+    test(
+      'flagged-but-missing entries flag invalid; rows restore as books',
+      () async {
+        final zip = archive({
+          'manifest.json': utf8.encode(
+            manifest(hasItemKinds: true, hasPeriodicals: true),
+          ),
+          'books.db': threeRows(),
+          'wishlist.db': buildWishlistDb(),
+          // Both entries ABSENT despite the flags (a truncated archive).
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final summary = (await r.restore(archiveBytes: zip)).getOrElse(
+          (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
+        );
+        expect(summary.itemKindsInvalid, isTrue);
+        expect(summary.periodicalsInvalid, isTrue);
+        expect(summary.kindsApplied, 0);
+        expect(summary.periodicalsRestored, 0);
+
+        final active = gen.openActiveCatalogue();
+        addTearDown(active.close);
+        final books = await active.select(active.books).get();
+        expect(books.map((b) => b.kind).toSet(), {'book'});
+        expect(await active.select(active.periodicals).get(), isEmpty);
+      },
+    );
+
+    test(
+      'duplicate issue identity keys refuse the archive (fail closed)',
+      () async {
+        // Only a crafted file can carry two issues with the same D6 key (the
+        // writer's source table enforces the UNIQUE index): restore refuses
+        // rather than pick one — the M15 authoritative-overwrite rule.
+        final zip = archive({
+          'manifest.json': utf8.encode(
+            manifest(hasItemKinds: true, hasPeriodicals: true),
+          ),
+          'books.db': buildBooksDbWith(const [
+            (id: 8, uid: 'uid-8', title: 'Issue A'),
+            (id: 12, uid: 'uid-12', title: 'Issue A (dup)'),
+          ]),
+          'wishlist.db': buildWishlistDb(),
+          'item_kinds.json': utf8.encode(
+            '''
+          { "schemaVersion": 1,
+            "kinds": [ { "bookUid": "uid-8", "kind": "magazine-issue" },
+                       { "bookUid": "uid-12", "kind": "magazine-issue" } ] }''',
+          ),
+          'periodicals.json': utf8.encode('''
+          { "schemaVersion": 1,
+            "periodicals": [ { "periodicalUid": "puid-1",
+                               "title": "Chandamama" } ],
+            "issues": [ { "bookUid": "uid-8", "periodicalUid": "puid-1",
+                          "volume": 249, "issueNumber": 10 },
+                        { "bookUid": "uid-12", "periodicalUid": "puid-1",
+                          "volume": 249, "issueNumber": 10 } ] }'''),
+        });
+        final r = restorer(_FakeVault(right(VaultData.empty)));
+        final result = await r.restore(archiveBytes: zip);
+        expect(result.getLeft().toNullable(), isA<StorageFailure>());
+        // Nothing switched: the pre-restore device state is byte-identical.
+        expect(gen.switched, isEmpty);
+        expect(await db.select(db.books).get(), isEmpty);
       },
     );
   });

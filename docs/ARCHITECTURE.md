@@ -313,8 +313,8 @@ to false** (the `hasX` forward-compat pattern):
 | borrowers vault + key blob | `hasVault` | the **only encrypted** part |
 | `identity.json` | `hasIdentity` | `{ "libraryId": "<16–64 hex>", "libraryName": "…" }` — **plain** |
 | `network.json` | `hasNetwork` | `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }` — **plain** |
-| `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014, pending) — **plain** |
-| `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014, pending) — **plain** |
+| `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014) — **plain** |
+| `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ <the Pitaka-JSON periodical object> … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014) — **plain** |
 
 - **Honest limit:** books, wishlist, covers, identity and network are plain
   inside the archive; only the vault is encrypted. Whole-archive encryption is

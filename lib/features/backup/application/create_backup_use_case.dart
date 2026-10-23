@@ -24,6 +24,7 @@ import 'package:pitaka/features/backup/domain/create_backup_result.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -33,6 +34,7 @@ class CreateBackupUseCase {
   const CreateBackupUseCase({
     required this.books,
     required this.wishlist,
+    required this.periodicals,
     required this.writer,
     required this.workDir,
     required this.namespace,
@@ -44,6 +46,11 @@ class CreateBackupUseCase {
 
   /// Wishlist source.
   final WishlistRepository wishlist;
+
+  /// Magazine-title source (ADR 0014 W2: `periodicals.json`). Read through
+  /// `listAll` so REMOVED titles travel too — their issues may still exist
+  /// (D8) and must re-link on restore.
+  final PeriodicalRepository periodicals;
 
   /// The archive builder (Room-format DBs + vault copy + covers + manifest).
   final BackupArchiveBuilder writer;
@@ -72,6 +79,15 @@ class CreateBackupUseCase {
     if (allWishlist == null) {
       return left(wishlistResult.getLeft().toNullable()!);
     }
+    // W2: the periodicals read is REQUIRED, not best-effort (S18/S20's rule:
+    // no partial backup). A backup that silently dropped the magazine titles
+    // would restore every issue as a book on a new build — a silent
+    // downgrade, which P1 forbids.
+    final periodicalsResult = await periodicals.listAll();
+    final allPeriodicals = periodicalsResult.toNullable();
+    if (allPeriodicals == null) {
+      return left(periodicalsResult.getLeft().toNullable()!);
+    }
 
     // Best-effort extras (§7 S6). identity via the namespace port: a Left
     // means "no identity travels" — NOT a failed backup. Same for the
@@ -86,6 +102,7 @@ class CreateBackupUseCase {
       final bytes = await writer.build(
         books: allBooks,
         wishlist: allWishlist,
+        periodicals: [for (final s in allPeriodicals) s.periodical],
         workDir: workDir,
         exportedAt: DateTime.now().millisecondsSinceEpoch,
         identityJson: identityJson,

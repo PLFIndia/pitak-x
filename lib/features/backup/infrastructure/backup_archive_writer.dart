@@ -54,7 +54,11 @@ import 'package:archive/archive.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
+import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
@@ -71,6 +75,8 @@ const String _coverEntryPrefix = 'cover_';
 // plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
 const String _identityEntry = 'identity.json';
 const String _networkEntry = 'network.json';
+// ADR 0014 W2: the item-kind entries. Their names live in
+// `item_details_archive_codec.dart`, shared with the restore reader.
 
 /// Room identity contract (from app/schemas) so the Kotlin app accepts our DBs.
 const int _booksDbVersion = 9;
@@ -92,6 +98,7 @@ CommonDatabase _openSqlite(String path) => sqlite3.open(path);
 typedef _BackupJob = ({
   List<CatalogueItem> books,
   List<WishlistBook> wishlist,
+  List<Periodical> periodicals,
   String workDir,
   int exportedAt,
   bool hasVault,
@@ -119,10 +126,10 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Directory holding user cover images (`covers/<leaf>`).
   final String coversDir;
 
-  /// Builds the archive bytes from [books] + [wishlist], including the vault
-  /// and covers when present. [workDir] is a scratch directory for the
-  /// transient Room DB files; it is created fresh and removed afterward.
-  /// [exportedAt] stamps the manifest (epoch millis).
+  /// Builds the archive bytes from [books] + [wishlist] + [periodicals],
+  /// including the vault and covers when present. [workDir] is a scratch
+  /// directory for the transient Room DB files; it is created fresh and
+  /// removed afterward. [exportedAt] stamps the manifest (epoch millis).
   ///
   /// The heavy lifting runs in a worker isolate (see the library doc). The
   /// vault facts are read HERE, on the calling isolate, because
@@ -133,6 +140,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   Future<Uint8List> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
     required String workDir,
     required int exportedAt,
     required String? identityJson,
@@ -143,6 +151,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     final job = (
       books: books,
       wishlist: wishlist,
+      periodicals: periodicals,
       workDir: workDir,
       exportedAt: exportedAt,
       hasVault: hasVault,
@@ -172,6 +181,31 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
 
       final coverFiles = _coverFiles(job.coversDir);
 
+      // ADR 0014 W2: kinds are EXPLICIT because books.db is Room-shaped and
+      // cannot say them. Both entries are omitted (flags false) when there is
+      // nothing to say — a books-only library keeps the archive it always had.
+      final hasKinds = job.books.any(
+        (b) =>
+            b.kind != ItemKind.book &&
+            b.itemUid != null &&
+            b.itemUid!.trim().isNotEmpty,
+      );
+      final hasIssues = job.books.any(
+        (b) =>
+            b.details is IssueOf &&
+            b.itemUid != null &&
+            b.itemUid!.trim().isNotEmpty,
+      );
+      final itemKindsJson = hasKinds
+          ? ItemDetailsArchiveCodec.encodeItemKinds(job.books)
+          : null;
+      final periodicalsJson = job.periodicals.isNotEmpty || hasIssues
+          ? ItemDetailsArchiveCodec.encodePeriodicals(
+              job.periodicals,
+              job.books,
+            )
+          : null;
+
       final manifest = BackupManifest(
         exportedAt: job.exportedAt,
         hasBorrowers: job.hasVault,
@@ -179,6 +213,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         hasCovers: coverFiles.isNotEmpty,
         hasIdentity: job.identityJson != null,
         hasNetwork: job.networkJson != null,
+        hasItemKinds: itemKindsJson != null,
+        hasPeriodicals: periodicalsJson != null,
       );
 
       // Incremental encoding: each addFile deflates ONE entry, appends it to
@@ -214,6 +250,14 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       }
       if (job.networkJson case final networkJson?) {
         encoder.addFile(_entry(_networkEntry, _utf8(networkJson)));
+      }
+      // W2 additions, plain JSON like the §3.4 entries above (same honest
+      // limit of the format).
+      if (itemKindsJson case final itemKindsJson?) {
+        encoder.addFile(_entry(itemKindsEntryName, _utf8(itemKindsJson)));
+      }
+      if (periodicalsJson case final periodicalsJson?) {
+        encoder.addFile(_entry(periodicalsEntryName, _utf8(periodicalsJson)));
       }
       encoder.endEncode();
 

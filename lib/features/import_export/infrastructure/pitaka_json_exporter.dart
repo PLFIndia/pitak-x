@@ -24,6 +24,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/infrastructure/periodical_json_codec.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Serialises library + wishlist rows to a Pitaka JSON export string.
@@ -90,39 +91,15 @@ class PitakaJsonExporter implements LibraryJsonEncoder {
     'addedBy': b.addedBy,
     // An issue nests its kind-specific fields (W1); books and others carry
     // no object (O1: an other's description is the shared `notes`).
-    if (b.details case final IssueOf issue) 'issue': _issue(issue),
+    if (b.details case final IssueOf issue)
+      'issue': PeriodicalJsonCodec.issueToJson(issue),
   });
 
-  Map<String, dynamic> _issue(IssueOf issue) => _compact({
-    'periodicalUid': issue.periodicalUid,
-    'volume': issue.volume,
-    'issueNumber': issue.issueNumber,
-    'issueDate': issue.issueDate,
-    'boundUntil': issue.boundUntil,
-    'label': issue.label,
-  });
-
-  Map<String, dynamic> _periodical(Periodical p) => _compact({
-    'periodicalUid': p.periodicalUid,
-    'title': p.title,
-    'titleTransliteration': p.titleTransliteration,
-    'issn': p.issn,
-    'publisher': p.publisher,
-    'language': p.language,
-    'coverUrl': p.coverUrl,
-    'frequency': p.frequency?.token,
-    'subscriptionStart': p.subscriptionStart,
-    'subscriptionEnd': p.subscriptionEnd,
-    'notes': p.notes,
-    'location': p.location,
-    'sourceType': p.sourceType?.token,
-    'sourceDetail': p.sourceDetail,
-    'ageGroup': p.ageGroup?.token,
-    'addedDate': p.addedDate,
-    'removed': p.removed,
-    'removedAt': p.removedAt,
-    'addedBy': p.addedBy,
-  });
+  // W1/W2: the periodical and issue object shapes live in ONE place
+  // (`PeriodicalJsonCodec`) so the `.pitabak` periodicals.json entry is the
+  // same object by construction.
+  Map<String, dynamic> _periodical(Periodical p) =>
+      PeriodicalJsonCodec.periodicalToJson(p);
 
   Map<String, dynamic> _wishlist(WishlistBook w) => _compact({
     'title': w.title,

@@ -8,6 +8,9 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
@@ -46,13 +49,17 @@ void main() {
   });
   tearDown(() => h.close());
 
-  Future<Uint8List> archive(List<CatalogueItem> incoming) =>
+  Future<Uint8List> archive(
+    List<CatalogueItem> incoming, {
+    List<Periodical> periodicals = const [],
+  }) =>
       BackupArchiveWriter(
         vaultStore: VaultStore(baseDir: '${h.directory.path}/no_source_vault'),
         coversDir: '${h.directory.path}/incoming_covers',
       ).build(
         books: incoming,
         wishlist: [],
+        periodicals: periodicals,
         workDir: '${h.directory.path}/build_archive',
         exportedAt: 1,
         identityJson: null,
@@ -189,6 +196,46 @@ void main() {
       expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
     },
   );
+
+  // ADR 0014 W2 meets M03: a loaned row that comes back as a magazine issue
+  // must keep its local id (the vault's loans.book_id) AND gain its detail
+  // row — the replacement plan re-ids the base row, the detail write follows
+  // the SAME id.
+  test('a loaned row restored as an issue keeps its id and its loan', () async {
+    await existing();
+    final restorer = await h.container.read(restoreBackupProvider.future);
+    const series = Periodical(title: 'Chandamama', periodicalUid: 'puid-1');
+    final bytes = await archive(
+      [
+        _book.copyWith(
+          id: 99,
+          title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+          details: const IssueOf(
+            periodicalUid: 'puid-1',
+            volume: 249,
+            issueNumber: 10,
+            issueDate: 1759276800000,
+          ),
+        ),
+      ],
+      periodicals: const [series],
+    );
+    final result = await restorer.restore(archiveBytes: bytes);
+    expect(result.isRight(), isTrue);
+    final summary = result.toNullable()!;
+    expect(summary.kindsApplied, 1);
+    expect(summary.issuesLinked, 1);
+    expect(summary.periodicalsRestored, 1);
+
+    final books = await h.currentBooks();
+    final row = (await books.getById(7)).toNullable()!;
+    expect(row.kind, ItemKind.magazineIssue);
+    expect(row.issue!.periodicalUid, 'puid-1');
+    expect(row.issue!.issueNumber, 10);
+    // The loan still points at the same row; the vault was never rewritten.
+    expect(h.vault.loans.single.itemId, 7);
+    expect(h.vault.writes, 0);
+  });
 
   test('empty backup cannot erase books referenced by loan history', () async {
     await existing(returned: true);

@@ -198,7 +198,9 @@ void main() {
       'lib/features/publish/infrastructure/http_github_api.dart': 600,
       // drift_catalogue_item_repository.dart left this list on 2026-10-22 (plan
       // S8): its SQL helpers moved to drift_catalogue_sql.dart (599 → <500).
-      'lib/features/backup/infrastructure/restore_backup.dart': 553,
+      // restore_backup.dart left this list on 2026-10-23 (plan S21): the W2
+      // kinds/details apply moved to restore_item_details.dart and the legacy
+      // DB read phase to restore_legacy_read.dart (553 → <500).
       // merge_library_use_case.dart shrank on 2026-10-23 (plan S19): the
       // result/outcome types moved to merge_result.dart; the periodical apply
       // (W1) + re-projection seam (D3) it gained net 545 → 511.

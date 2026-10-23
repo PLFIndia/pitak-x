@@ -42,6 +42,7 @@ Future<CreateBackupUseCase> createBackupUseCase(
   return CreateBackupUseCase(
     books: books,
     wishlist: wishlist,
+    periodicals: await ref.watch(periodicalRepositoryProvider.future),
     writer: writer,
     workDir: p.join(dir.path, 'backup_create_work'),
     // The identity goes through the namespace port (SettingsController, the

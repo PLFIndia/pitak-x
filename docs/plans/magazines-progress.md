@@ -6,17 +6,18 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S20** (Publish: item kinds and periodicals on
-  the published site, W3)
+- Last completed session: **S21** (Backup and restore: item kinds and
+  periodicals in `.pitabak`, W2)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S20's commit (S19 `61f9a04`, S18 `9b9b72d`, S17 `52843fa`,
-  S16 `6c116fa`, S15 `322f3ed`, S14 `526b9da`, S13 `bba12b2`, S12 was
-  `02f3f99`, S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7
-  `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2
-  `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S20, 2026-10-23** — 2842 tests, ~83 s
+- Last commit: S21's commit (S20 `9faab2c`, S19 `61f9a04`, S18 `9b9b72d`,
+  S17 `52843fa`, S16 `6c116fa`, S15 `322f3ed`, S14 `526b9da`, S13 `bba12b2`
+  (+ handoff docs `83cd3b4`), S12 was `02f3f99`, S11 `5ce4ec0`, S10
+  `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
+  `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0
+  `8899cc0`)
+- Full suite last green at: **S21, 2026-10-23** — 2878 tests, ~90 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S21.
+- Run stopped here (one session per run, B.3): the next run starts at S22.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -43,10 +44,62 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S21 — Backup and restore.** Nothing in flight. Follow the plan's S21
-steps verbatim.
+**S22 — Release hygiene and final verification.** Nothing in flight. Follow
+the plan's S22 steps verbatim. When it commits, back-fill the S21 row's hash
+in the session log below (it is `(this commit)` by construction — the log is
+committed with its session).
 
-Notes for it (what S20 built, and the seams S21 plugs into):
+Notes for it (what S21 built, and the seams S22 plugs into):
+
+- **`.pitabak` carries kinds now (W2):** the writer emits `item_kinds.json`
+  (`hasItemKinds`: every non-book row's `{bookUid, kind}`) and
+  `periodicals.json` (`hasPeriodicals`: the W1 periodical objects + `issues[]`
+  keyed by `bookUid`) whenever there is something to say; both flags default
+  false, so a flag-less archive restores exactly as before — except that the
+  restore now also CLEARS the v5 tables (`periodicals`, `magazine_issues`)
+  on any restore: the overwrite is authoritative, and a flag-less archive
+  honestly carries no kinds (see Deviations). The S22 integration smoke (add
+  series → add issue → add other → lend → backup → restore) can assert the
+  round-trip end to end; a loaned row restored as an issue keeps its id and
+  its loan (pinned in `catalogue_replacement_restore_test.dart`).
+- **The periodical/issue JSON object shape has ONE home:**
+  `periodicals/infrastructure/periodical_json_codec.dart`
+  (`PeriodicalJsonCodec`); the W1 exporter delegates to it. The two READERS
+  differ by policy on purpose (documented in the codec header): the
+  Pitaka-JSON importer clamps+reports, the backup codec drops+counts.
+- **RestoreSummary** gained `kindsApplied / periodicalsRestored /
+  issuesLinked / issuesDetached / rowsSkippedUnknownKind /
+  periodicalsDropped` and the invalid flags `itemKindsInvalid /
+  periodicalsInvalid` (see Deviations for why the plan's five counts are not
+  all of it); `hasAdjustments` now also covers the W2 counts, and the
+  restore page has one plain sentence per condition (widget-tested).
+- **`restore_backup.dart` left the ratchet list** (553 → 482): the manifest
+  parse moved to `parseBackupManifest` in `backup_extras_reader.dart`, the
+  legacy-DB read phase to `restore_legacy_read.dart` (`LegacyCatalogueRows`,
+  `LegacyDbOpener`, `stageArchiveEntry`, `readLegacyCatalogue`), and the W2
+  apply + write helpers live in `restore_item_details.dart`
+  (`applyRestoredItemDetails`, `insertRestoredItems`,
+  `writeRestoredPeriodicals`). The ratchet entry was DELETED with a comment
+  in `layer_boundaries_test.dart`.
+- **The restore's periodicals write is `DriftPeriodicalRepository.
+  replaceAll`** — constructed on the BUILDER generation's database inside
+  the outer `db.transaction` (zone-scoped join), NOT the DI repository (that
+  one is bound to the LIVE database; M02 forbids touching it). A Left rolls
+  the whole catalogue write back (`_ReplacementRefused`).
+- **`CreateBackupUseCase` requires a `PeriodicalRepository`** and reads
+  `listAll()` (removed titles included — their issues may still exist, D8);
+  a Left FAILS the backup (S18/S20's no-partial-snapshot rule). DI:
+  `createBackupUseCaseProvider` watches `periodicalRepositoryProvider`; the
+  `.g.dart` hash changed, committed with the session.
+- **Gate test unchanged:** no new `CatalogueItem(`/`Periodical(` site —
+  restore applies details via `copyWith`, the codec's `Periodical(` is
+  gated by its own `Periodical.validate` call (importer pattern), and the
+  writer derives everything from already-persisted entities.
+- **Golden deferral from S17 is still open** (see Open issues) — S22 does
+  not touch it either; the PNG commit can land alongside S22 or separately,
+  per the user's call.
+
+Notes from S20 (what S20 built, and the seams S21 consumed):
 
 - **The publish payload is kind-aware:** `PublishItem.kind` is REQUIRED
   (no default — no mapping can silently default an issue to a book) with a
@@ -905,6 +958,37 @@ Rename technique (learned in S1–S4):
   books-only — F7's spirit), and the stale `viewerVersion: 4` header was
   bumped to 7 (v5/v6 had landed without bumping it; nothing reads the
   number — verified by grep).
+- `S21` — the plan names five summary counts (`kindsApplied` …
+  `rowsSkippedUnknownKind`); the summary carries three more fields. (1)
+  `periodicalsDropped`: ADR 0014 and ARCHITECTURE §5.5 require invalid rows
+  to be "dropped AND counted", and no plan count covers a `periodicals[]`
+  row that fails `Periodical.validate`. (2)+(3) `itemKindsInvalid` /
+  `periodicalsInvalid`: a DECLARED but UNREADABLE entry (corrupt, oversized,
+  too-new schema) cannot be counted honestly — the rows it described are
+  unknown — so the summary mirrors the §5.10 identity/network pattern
+  (`identityInvalid`/`networkInvalid`) and the page says "could not be read".
+- `S21` — W2 does not name the case "issue entry whose `periodicalUid` is in
+  no `periodicals[]` row" (series absent, or dropped as invalid). Ruled like
+  W1's import orphan rule (one blessed way across both formats): the link is
+  detached and counted (`issuesDetached`), the row restores as the book its
+  base row already is. A dangling soft link would be silent corruption.
+- `S21` — "a flag-less fixture restores exactly as before" is honoured for
+  books/wishlist/vault/covers AND interpreted for the v5 tables: restore
+  CLEARS `periodicals` (and the books wipe cascades `magazine_issues`) even
+  when the archive announces nothing. Pre-S21 the snapshot carried stale
+  series rows into the new generation next to a catalogue of plain books —
+  the mixed-state window M02 forbids. The authoritative overwrite now covers
+  the kind tables (pinned by the flag-less test).
+- `S21` — splits beyond the plan's named file (the S12/S19 "one blessed
+  way" idiom; B.5 split-before-capping): `restore_backup.dart` was AT its
+  553 cap, so the manifest parse moved to `backup_extras_reader.dart`
+  (`parseBackupManifest`) and the legacy-DB read phase to
+  `restore_legacy_read.dart`; the file nets 553 → 482 and its ratchet entry
+  was DELETED. The shared periodical/issue JSON shape moved to
+  `periodicals/infrastructure/periodical_json_codec.dart` with the W1
+  exporter delegating — W2's "same object as Pitaka-JSON" is now structural,
+  not by-convention (the importer keeps its own clamp+report reads; the
+  policies differ deliberately, documented in the codec header).
 
 ## Open issues / blocked
 
@@ -937,8 +1021,9 @@ Rename technique (learned in S1–S4):
 | S13 | Done | `bba12b2` | 2026-10-23 | `LibraryKindFilter` (U1 toggle) watched by `LibraryController` → `LibraryQuery.kind`; `periodicals/application/`: `PeriodicalsController` (`PeriodicalListEntry` = summary + derived `SubscriptionStatus` from `clockProvider`, re-stamped on `nowTick`; `refresh`/`remove`/`restoreRemoved` fail closed; `delete` returns the `Either`), `IssueListController(periodicalUid)` (family; `LibraryWindow` over `page(LibraryQuery(periodicalUid:))`, D2-b depth on the library signal, N05 guard), `AddIssueController`, `PeriodicalFormController` (`AddBookController` shape, N03 re-read, fire both signals); `periodicalById`/`periodicalByUid` read providers (both signals); `RouteScannedBarcodeUseCase` + sealed `ScanRoute` (D11: 977 → `Issn.fromEan13` → `findByIssn`; else the S34 ISBN path) + provider; `library_page.dart` untouched (S14 switches on the route); fakes gained `listAll`/`markRemoved`/`restoreRemoved`/`page`/`FakeSettings`; gate allow-list unchanged; 43 new tests (2695 total), full green 77 s |
 | S14 | Done | `526b9da` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |
 | S15 | Done | `322f3ed` | 2026-10-23 | `periodicals_page.dart` (281: rows with cover/publisher/"N issues · latest YYYY-MM", `SubscriptionBadge` per status, empty + safe error states, FAB → "New magazine title" placeholder), `periodical_detail_page.dart` (403: observes `periodicalByIdProvider` N03, hero, `SeriesSubscriptionCard` on the injected clock, "Add issue", issues via `IssueListController` paged newest-first in ONE outer scroll view with footer spinner, rows reuse `CatalogueItemRow` → item detail), overflow hard delete with the typed `PeriodicalHasIssuesFailure` refusal shown in place; sections split to `widgets/periodical_detail_sections.dart` (592 → 403, S14 precedent); removed title visible-but-actionless (edit/add hidden, D8); drawer entry "Magazines" between Wishlist and Library network; ZERO S14 placeholders replaced (all four are S16/S17 form destinations — see Deviations), S15 added its own pushes for S16 to swap; gate allow-list unchanged (no construction site); 17 new tests (2728 total), full green ~86 s |
-| S16 | Done | `2dfae74` | 2026-10-23 | `periodical_form_page.dart` (416: fields per D2, ISSN inline validation, `LanguageField`, `FormCoverField`, frequency dropdown, "Track subscription" switch → start/end pickers, N03 saveEdit); `add_issue_page.dart` (496: `SeriesPickerField`, "Bound volume" switch swapping cover date ↔ from/to (D4), optional volume/number, label, own cover, copies/pages prefilled from the LATEST issue + location from the series — see Deviations, `IssueCadence` number/date prefill into empty fields only, live `IssueTitle` preview, blank title — projected by the use case); `catalogue_item_actions.dart` Edit is kind-aware (issue → AddIssuePage, D8); ALL magazine placeholders replaced (add sheet ×2, scan routes ×2, list FAB, detail Edit/Add issue) — only "Add other item" (S17) keeps `placeholder_page.dart` alive; shared: `LanguageField` (from add_book, 640 → 526 ratchet lowered), `cover_crop.dart` presets (from detail page), `FormCoverController.storeCapture` + `FormCoverField` (form-side cover pipeline, gen run), `form_rows.dart`; gate allow-lists +2 (both forms, "form assembly; gate is Add/UpdateIssueUseCase" / "…PeriodicalUseCase") with the censuses updated; 19 new tests (2747 total), full green ~85 s |
-| S17 | Done | `4bd3ef4` | 2026-10-23 | `other_item_form_page.dart` (329: title/transliteration/language/cover, **Description** = the shared notes column (O1), age group, copies, location, source, date added; `details: const OtherItemOf()` on every save so the kind can never flip, D8; reuses `AddBookController` over the generic use cases (O3) — see Deviations; page fires the library refresh like the book form); Edit routing in `catalogue_item_actions.dart` is now an exhaustive `switch (book.kind)` (an `other` no longer lands on the book form, D8); `ItemDetailsSection` (exhaustive `switch (item.details)`: issue block — series resolved via `periodicalByUidProvider` + "Open series" → `PeriodicalDetailPage` (U2), volume/number/cover date or bound from/to range (D4), label; nothing for books/others (O1)) inserted into the detail page; `DetailRow` extracted to `widgets/detail_row.dart` (page 455 → 429); add sheet's last placeholder push swapped and `placeholder_page.dart` DELETED — no placeholders remain; gate allow-list +1 ("form assembly; gate is Add/UpdateCatalogueItemUseCase"), census comment now 12; golden step deferred to its PNG commit (user decision — see Deviations/Open issues); 11 new tests (2758 total), full green ~92 s |
-| S18 | Done | `f911a8e` | 2026-10-23 | Pitaka-JSON v4 (W1): `kPitakaSchemaVersion = 4`; every row writes `kind`, issues nest `issue{}`, top-level `periodicals[]` (omitted when empty); importer parses periodicals FIRST (orphan rule needs the file's uid set), unknown kind skipped+counted (F6), `magazine-issue` without `issue{}` rejected, orphan issue → book + warning, over-cap periodical fields truncated+reported; `ImportPayload.periodicals` (+isEmpty); both use cases gained a REQUIRED `PeriodicalRepository` (~24 test sites churned); import applies periodicals before items in the same transaction (uid → update, ISSN → skip, else insert; summary counts + conditional import-page lines) and `_mergeIntoExisting` carries `details` (kind wins on re-import); export reads `listAll` for JSON + CSV (a read failure fails the export — no partial backup); CSV gains `Kind`/`Series`/`Volume`/`Issue`/`Issue date`/`Bound until`/`Issue label` appended after the classic columns (OWASP quoting covers the Series cell); export-page copy notes the v4 refusal on older builds; ARCHITECTURE §5.7 un-pended for W1; `FakeItems` gained `findByUid`/`findByIsbn` (one DI test migrated off the noSuchMethod trick); gate censuses unchanged (both importers reference their gates); 16 new tests (2774 total), full green ~71 s |
-| S19 | Done | `51c0768` | 2026-10-23 | Merge understands periodicals + issue identity (D6): engine split — `fuzzy_index.dart`, `merge_fields.dart` (+`MergeField.kind`/`issue`; the six projected base fields compare equal between two issues, D3), `issue_identity.dart` (record-typed D6 keys, SQL-twin parity), `periodical_merge.dart` (uid → ISSN → exact title, add-only, removal-as-conflict, `winners` remap + `matchedLocalSeries`); `planMerge` gained named periodical params (properties test untouched); use case gained required `periodicalRepo` (~34 sites), applies series first → items → re-projects merged series' issues in ONE transaction (new shared `IssueReprojection`, extracted from `UpdatePeriodicalUseCase`); overwrite replaces series too; take-theirs refused across kinds (D8) + keep-both keeps `details`; `MergePlanner`/`planMergeInBackground` 4-arg, isolate round-trip with periodicals pinned; merge page shows series counts + kept-local titles (review widgets split to `widgets/merge_review_section.dart`, ratchet 538 → deleted; engine 721 → deleted; use case 545 → 511); gate allow-list +1 (merge orphan rule), census 13; 48 new tests (2822 total), full green ~90 s |
-| S20 | Done | `313d194` | 2026-10-23 | Publish carries kinds + series (W3): `PublishItem.kind` (required) + nested `PublishIssue`, `PublishPeriodical` (public fields only) + `PublishExport.periodicals[]` (omitted when empty, schema stays 1); `redactPeriodicalForPublish` strips the subscription window/notes/location/source (pinned by the redaction test); cover pipeline extracted to `publish_cover_decider.dart` (typedefs re-exported — use case nets to 500) with `pathForPeriodical` (`'periodical:<uid>'` hash domain + manifest keys); issues publish `IssueCover.resolve` (a series cover is ONE upload, shared by its entry and falling-back issues); a removed series has no entry but its issues publish (D8); use case `call` gained required `periodicals` (22 test sites churned); the controller reads `listAll()` and refuses the publish on a Left; viewer v7: fixed kind facet (Books · Magazines · Others), issues grouped under their series header with Issue/Bound volume/Other badges, unknown kinds plain, meta says "items"; ARCHITECTURE §5.7 un-pended; gate censuses unchanged (no new construction site); 20 new tests (2842 total), full green ~83 s |
+| S16 | Done | `6c116fa` | 2026-10-23 | `periodical_form_page.dart` (416: fields per D2, ISSN inline validation, `LanguageField`, `FormCoverField`, frequency dropdown, "Track subscription" switch → start/end pickers, N03 saveEdit); `add_issue_page.dart` (496: `SeriesPickerField`, "Bound volume" switch swapping cover date ↔ from/to (D4), optional volume/number, label, own cover, copies/pages prefilled from the LATEST issue + location from the series — see Deviations, `IssueCadence` number/date prefill into empty fields only, live `IssueTitle` preview, blank title — projected by the use case); `catalogue_item_actions.dart` Edit is kind-aware (issue → AddIssuePage, D8); ALL magazine placeholders replaced (add sheet ×2, scan routes ×2, list FAB, detail Edit/Add issue) — only "Add other item" (S17) keeps `placeholder_page.dart` alive; shared: `LanguageField` (from add_book, 640 → 526 ratchet lowered), `cover_crop.dart` presets (from detail page), `FormCoverController.storeCapture` + `FormCoverField` (form-side cover pipeline, gen run), `form_rows.dart`; gate allow-lists +2 (both forms, "form assembly; gate is Add/UpdateIssueUseCase" / "…PeriodicalUseCase") with the censuses updated; 19 new tests (2747 total), full green ~85 s |
+| S17 | Done | `52843fa` | 2026-10-23 | `other_item_form_page.dart` (329: title/transliteration/language/cover, **Description** = the shared notes column (O1), age group, copies, location, source, date added; `details: const OtherItemOf()` on every save so the kind can never flip, D8; reuses `AddBookController` over the generic use cases (O3) — see Deviations; page fires the library refresh like the book form); Edit routing in `catalogue_item_actions.dart` is now an exhaustive `switch (book.kind)` (an `other` no longer lands on the book form, D8); `ItemDetailsSection` (exhaustive `switch (item.details)`: issue block — series resolved via `periodicalByUidProvider` + "Open series" → `PeriodicalDetailPage` (U2), volume/number/cover date or bound from/to range (D4), label; nothing for books/others (O1)) inserted into the detail page; `DetailRow` extracted to `widgets/detail_row.dart` (page 455 → 429); add sheet's last placeholder push swapped and `placeholder_page.dart` DELETED — no placeholders remain; gate allow-list +1 ("form assembly; gate is Add/UpdateCatalogueItemUseCase"), census comment now 12; golden step deferred to its PNG commit (user decision — see Deviations/Open issues); 11 new tests (2758 total), full green ~92 s |
+| S18 | Done | `9b9b72d` | 2026-10-23 | Pitaka-JSON v4 (W1): `kPitakaSchemaVersion = 4`; every row writes `kind`, issues nest `issue{}`, top-level `periodicals[]` (omitted when empty); importer parses periodicals FIRST (orphan rule needs the file's uid set), unknown kind skipped+counted (F6), `magazine-issue` without `issue{}` rejected, orphan issue → book + warning, over-cap periodical fields truncated+reported; `ImportPayload.periodicals` (+isEmpty); both use cases gained a REQUIRED `PeriodicalRepository` (~24 test sites churned); import applies periodicals before items in the same transaction (uid → update, ISSN → skip, else insert; summary counts + conditional import-page lines) and `_mergeIntoExisting` carries `details` (kind wins on re-import); export reads `listAll` for JSON + CSV (a read failure fails the export — no partial backup); CSV gains `Kind`/`Series`/`Volume`/`Issue`/`Issue date`/`Bound until`/`Issue label` appended after the classic columns (OWASP quoting covers the Series cell); export-page copy notes the v4 refusal on older builds; ARCHITECTURE §5.7 un-pended for W1; `FakeItems` gained `findByUid`/`findByIsbn` (one DI test migrated off the noSuchMethod trick); gate censuses unchanged (both importers reference their gates); 16 new tests (2774 total), full green ~71 s |
+| S19 | Done | `61f9a04` | 2026-10-23 | Merge understands periodicals + issue identity (D6): engine split — `fuzzy_index.dart`, `merge_fields.dart` (+`MergeField.kind`/`issue`; the six projected base fields compare equal between two issues, D3), `issue_identity.dart` (record-typed D6 keys, SQL-twin parity), `periodical_merge.dart` (uid → ISSN → exact title, add-only, removal-as-conflict, `winners` remap + `matchedLocalSeries`); `planMerge` gained named periodical params (properties test untouched); use case gained required `periodicalRepo` (~34 sites), applies series first → items → re-projects merged series' issues in ONE transaction (new shared `IssueReprojection`, extracted from `UpdatePeriodicalUseCase`); overwrite replaces series too; take-theirs refused across kinds (D8) + keep-both keeps `details`; `MergePlanner`/`planMergeInBackground` 4-arg, isolate round-trip with periodicals pinned; merge page shows series counts + kept-local titles (review widgets split to `widgets/merge_review_section.dart`, ratchet 538 → deleted; engine 721 → deleted; use case 545 → 511); gate allow-list +1 (merge orphan rule), census 13; 48 new tests (2822 total), full green ~90 s |
+| S20 | Done | `9faab2c` | 2026-10-23 | Publish carries kinds + series (W3): `PublishItem.kind` (required) + nested `PublishIssue`, `PublishPeriodical` (public fields only) + `PublishExport.periodicals[]` (omitted when empty, schema stays 1); `redactPeriodicalForPublish` strips the subscription window/notes/location/source (pinned by the redaction test); cover pipeline extracted to `publish_cover_decider.dart` (typedefs re-exported — use case nets to 500) with `pathForPeriodical` (`'periodical:<uid>'` hash domain + manifest keys); issues publish `IssueCover.resolve` (a series cover is ONE upload, shared by its entry and falling-back issues); a removed series has no entry but its issues publish (D8); use case `call` gained required `periodicals` (22 test sites churned); the controller reads `listAll()` and refuses the publish on a Left; viewer v7: fixed kind facet (Books · Magazines · Others), issues grouped under their series header with Issue/Bound volume/Other badges, unknown kinds plain, meta says "items"; ARCHITECTURE §5.7 un-pended; gate censuses unchanged (no new construction site); 20 new tests (2842 total), full green ~83 s |
+| S21 | Done | (this commit) | 2026-10-23 | `.pitabak` carries kinds (W2): writer emits `item_kinds.json` (`hasItemKinds`, every non-book row) + `periodicals.json` (`hasPeriodicals`, W1 periodical objects + `issues[]` by `bookUid`), omitted when empty; `BackupManifest` +2 flags (default false — flag-less archives restore as before AND now clear the v5 kind tables, see Deviations); `ItemDetailsArchiveCodec` (envelopes: 4 MiB cap, row caps via `ImportLimits`, first-wins duplicates, every row re-validated, drops counted); shared `PeriodicalJsonCodec` (W1 exporter delegates — one shape by construction); `applyRestoredItemDetails` joins kinds/details onto legacy rows pre-write (detaches declared-but-undetailed, kind-disagreeing, missing-row and orphan-series links, all counted); restore writes items row-by-row + detail rows + `DriftPeriodicalRepository.replaceAll` on the BUILDER db in the one transaction; duplicate D6 keys refuse the archive (fail closed, pinned); `RestoreSummary` +6 counts +2 invalid flags, page sentences for each; `restore_backup.dart` 553 → 482, ratchet entry DELETED (`parseBackupManifest` → extras reader; `restore_legacy_read.dart` extracted); `CreateBackupUseCase` requires `PeriodicalRepository` (Left ⇒ no backup — no partial snapshot); ARCHITECTURE §5.5 un-pended; gate censuses unchanged; 36 new tests (2878 total), full green ~90 s |

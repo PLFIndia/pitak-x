@@ -9,6 +9,8 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -29,9 +31,11 @@ void main() {
   CreateBackupUseCase useCase({
     LibraryNamespace? namespace,
     NetworkRepository? network,
+    PeriodicalRepository? periodicals,
   }) => CreateBackupUseCase(
     books: _Books(),
     wishlist: _Wishlist(),
+    periodicals: periodicals ?? _Periodicals(),
     writer: writer,
     workDir: 'unused-by-the-fake',
     namespace: namespace ?? _Namespace(right(identity)),
@@ -96,6 +100,7 @@ void main() {
       final failing = CreateBackupUseCase(
         books: _FailingBooks(),
         wishlist: _Wishlist(),
+        periodicals: _Periodicals(),
         writer: writer,
         workDir: 'unused-by-the-fake',
         namespace: _Namespace(right(identity)),
@@ -105,12 +110,34 @@ void main() {
       expect(result.isLeft(), isTrue);
     },
   );
+
+  test(
+    'a periodicals read failure is a Left (no partial backup, W2)',
+    () async {
+      final result = await useCase(periodicals: _FailingPeriodicals())();
+      expect(result.isLeft(), isTrue);
+      // The writer was never reached: half a snapshot is not a backup.
+      expect(writer.calls, isEmpty);
+    },
+  );
+
+  test('the periodicals list reaches the writer (listAll entities)', () async {
+    final result = await useCase()();
+    result.getOrElse((f) => fail('unexpected left: $f'));
+    expect(writer.calls.single.periodicals, hasLength(1));
+    expect(writer.calls.single.periodicals.single.title, 'Chandamama');
+  });
 }
 
 class _Call {
-  _Call({required this.identityJson, required this.networkJson});
+  _Call({
+    required this.identityJson,
+    required this.networkJson,
+    required this.periodicals,
+  });
   final String? identityJson;
   final String? networkJson;
+  final List<Periodical> periodicals;
 }
 
 /// Records the §3.4 entry strings; returns fixed bytes for everything else.
@@ -121,12 +148,19 @@ class _RecordingWriter implements BackupArchiveBuilder {
   Future<Uint8List> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
     required String workDir,
     required int exportedAt,
     required String? identityJson,
     required String? networkJson,
   }) async {
-    calls.add(_Call(identityJson: identityJson, networkJson: networkJson));
+    calls.add(
+      _Call(
+        identityJson: identityJson,
+        networkJson: networkJson,
+        periodicals: periodicals,
+      ),
+    );
     return Uint8List.fromList(const [1, 2, 3]);
   }
 }
@@ -150,6 +184,26 @@ class _FailingBooks implements CatalogueItemRepository {
 class _Wishlist implements WishlistRepository {
   @override
   Future<Either<Failure, List<WishlistBook>>> getAll() async => right(const []);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _Periodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async => right([
+    const PeriodicalSummary(
+      periodical: Periodical(title: 'Chandamama', periodicalUid: 'puid-1'),
+      issueCount: 0,
+    ),
+  ]);
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FailingPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      left(const StorageFailure('db gone'));
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
