@@ -62,6 +62,8 @@ class FakePeriodicals implements PeriodicalRepository {
   Failure? findByUidFailure;
   Failure? findByIssnFailure;
   Failure? insertFailure;
+  Failure? insertAllFailure;
+  Failure? replaceAllFailure;
   Failure? updateFailure;
   Failure? deleteFailure;
   Failure? countIssuesFailure;
@@ -112,6 +114,31 @@ class FakePeriodicals implements PeriodicalRepository {
     calls.add('insert');
     if (insertFailure != null) return left(insertFailure!);
     return right(seed(periodical));
+  }
+
+  /// S19 (merge): bulk insert honouring the repository contract — atomic
+  /// (a failure leaves the store untouched), uids kept when present, minted
+  /// when null, ids assigned in insertion order.
+  @override
+  Future<Either<Failure, List<Periodical>>> insertAll(
+    List<Periodical> periodicals,
+  ) async {
+    calls.add('insertAll');
+    if (insertAllFailure != null) return left(insertAllFailure!);
+    return right([for (final p in periodicals) seed(p)]);
+  }
+
+  /// S19 (merge OVERWRITE / restore): clears every row, then inserts the
+  /// incoming ones keeping their uids; a failure leaves the store untouched.
+  @override
+  Future<Either<Failure, int>> replaceAll(List<Periodical> periodicals) async {
+    calls.add('replaceAll');
+    if (replaceAllFailure != null) return left(replaceAllFailure!);
+    rows.clear();
+    for (final p in periodicals) {
+      seed(p);
+    }
+    return right(periodicals.length);
   }
 
   @override

@@ -18,11 +18,13 @@ import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 import '../../support/a11y.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 
 class _Picker extends FileSelectorPlatform {
   _Picker([Uint8List? bytes]) : _file = null, _bytes = bytes ?? _defaultJson;
@@ -126,6 +128,7 @@ void main() {
             mergeLibraryUseCaseProvider.overrideWith(
               (ref) async => MergeLibraryUseCase(
                 bookRepo: _Books(),
+                periodicalRepo: FakePeriodicals(),
                 namespace: ref.read(settingsControllerProvider.notifier),
                 jsonParser: const PitakaJsonImporter(),
                 replacementGuard: guard,
@@ -174,6 +177,7 @@ void main() {
             await gate.future;
             return MergeLibraryUseCase(
               bookRepo: _Books(),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
@@ -260,6 +264,7 @@ void main() {
           mergeLibraryUseCaseProvider.overrideWith(
             (ref) async => MergeLibraryUseCase(
               bookRepo: _Books(),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
@@ -379,6 +384,74 @@ void main() {
       expect(find.text('Adjustments'), findsNothing);
       expect(find.textContaining('could not take on'), findsNothing);
       expect(find.textContaining('later update'), findsNothing);
+      expect(find.textContaining('Magazine titles'), findsNothing);
+    });
+
+    // Plan S19: the series counts ride the summary alongside the book counts
+    // (ADR 0014 W1) — including the add-only conflicts (kept local, listed).
+    testWidgets('periodical counts and kept-local titles are shown', (
+      tester,
+    ) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 1,
+          identical: 2,
+          conflicts: [],
+          possibleDuplicates: [],
+          periodicalsAdded: 1,
+          periodicalsIdentical: 1,
+          periodicalConflicts: [
+            PeriodicalMergeConflict(
+              local: Periodical(
+                id: 3,
+                periodicalUid: 'p1',
+                title: 'Chandamama',
+              ),
+              incoming: Periodical(
+                periodicalUid: 'p9',
+                title: 'Chandamama Weekly',
+              ),
+              matchedBy: PeriodicalMatchKind.issn,
+            ),
+          ],
+        ),
+      );
+
+      expect(find.text('Books added: 1'), findsOneWidget);
+      expect(find.text('Magazine titles added: 1'), findsOneWidget);
+      expect(find.text('Magazine titles already matched: 1'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Magazine titles kept as they are on this device: 1',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('• Chandamama Weekly'), findsOneWidget);
+      // Series conflicts are informational: no review section for them.
+      expect(find.text('Needs your review'), findsNothing);
+    });
+
+    testWidgets('a replacement reports the series count as "now on this '
+        'device"', (tester) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 12,
+          identical: 0,
+          conflicts: [],
+          possibleDuplicates: [],
+          replaced: true,
+          periodicalsAdded: 2,
+        ),
+      );
+
+      expect(find.text('Library replaced'), findsOneWidget);
+      expect(
+        find.text('Magazine titles now on this device: 2'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Magazine titles added'), findsNothing);
     });
   });
 

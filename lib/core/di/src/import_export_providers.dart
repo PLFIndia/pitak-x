@@ -124,8 +124,10 @@ Future<MergeLibraryUseCase> mergeLibraryUseCase(
   MergeLibraryUseCaseRef ref,
 ) async {
   final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return MergeLibraryUseCase(
     bookRepo: bookRepo,
+    periodicalRepo: periodicalRepo,
     namespace: ref.read(settingsControllerProvider.notifier),
     jsonParser: const PitakaJsonImporter(),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),

@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -14,6 +15,8 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
@@ -23,6 +26,7 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 class _LoanVault with VaultWriteUnsupported implements VaultRepository {
@@ -193,26 +197,22 @@ class _FakeNamespace implements LibraryNamespace {
 }
 
 /// Builds a minimal Pitaka-JSON export string with the given envelope + books.
+/// Passing [periodicals] makes it a schema-v4 document (ADR 0014 W1) — nested
+/// `issue{}` objects in rows ride along via jsonEncode.
 String exportJson({
   required List<Map<String, dynamic>> books,
+  List<Map<String, dynamic>> periodicals = const [],
   String? libraryId,
   String? libraryName,
 }) {
-  final env = <String>[
-    '"schemaVersion": 3',
-    if (libraryId != null) '"libraryId": "$libraryId"',
-    if (libraryName != null) '"libraryName": "$libraryName"',
-  ];
-  final bookJson = books
-      .map((b) {
-        final parts = b.entries.map((e) {
-          final v = e.value;
-          return v is String ? '"${e.key}": "$v"' : '"${e.key}": $v';
-        });
-        return '{${parts.join(',')}}';
-      })
-      .join(',');
-  return '{${env.join(',')}, "books": [$bookJson], "wishlist": []}';
+  return jsonEncode({
+    'schemaVersion': periodicals.isEmpty ? 3 : 4,
+    if (libraryId != null) 'libraryId': libraryId,
+    if (libraryName != null) 'libraryName': libraryName,
+    'books': books,
+    if (periodicals.isNotEmpty) 'periodicals': periodicals,
+    'wishlist': <Object>[],
+  });
 }
 
 void main() {
@@ -237,6 +237,9 @@ void main() {
         vaultStoreProvider.overrideWith((ref) async => store),
         vaultRepositoryProvider.overrideWithValue(_LoanVault()),
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
+        periodicalRepositoryProvider.overrideWith(
+          (ref) async => FakePeriodicals(),
+        ),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
       ],
     );
@@ -268,6 +271,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _FakeBooks([]),
+      periodicalRepo: FakePeriodicals(),
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
       namespace: _FakeNamespace(libraryId: matchingId),
@@ -290,6 +294,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
       namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
@@ -332,19 +337,21 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
-        planner: (local, incoming) async {
-          calls++;
-          seenLocal = local;
-          seenIncoming = incoming;
-          return const MergePlan(
-            toAdd: [],
-            conflicts: [],
-            possibleDuplicates: [],
-            identical: 0,
-          );
-        },
+        planner:
+            (local, incoming, localPeriodicals, incomingPeriodicals) async {
+              calls++;
+              seenLocal = local;
+              seenIncoming = incoming;
+              return const MergePlan(
+                toAdd: [],
+                conflicts: [],
+                possibleDuplicates: [],
+                identical: 0,
+              );
+            },
       );
       final json = exportJson(
         libraryId: matchingId,
@@ -379,6 +386,9 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => FakePeriodicals(),
+          ),
           settingsRepositoryProvider.overrideWith((ref) async => settings),
         ],
       );
@@ -405,6 +415,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
       namespace: _FakeNamespace(libraryId: matchingId, libraryName: 'Mine'),
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
@@ -434,6 +445,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
       namespace: _FakeNamespace(libraryId: matchingId),
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
@@ -457,6 +469,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
       namespace: settings,
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
@@ -498,6 +511,7 @@ void main() {
     final useCase = MergeLibraryUseCase(
       jsonParser: const PitakaJsonImporter(),
       bookRepo: repo,
+      periodicalRepo: FakePeriodicals(),
       namespace: settings,
       replacementGuard: FakeReplacementGuard(),
       planner: planMergeInline,
@@ -530,6 +544,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -574,6 +589,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: settings,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -611,6 +627,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -641,6 +658,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -680,6 +698,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -709,6 +728,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -744,6 +764,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
+          periodicalRepo: FakePeriodicals(),
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -782,6 +803,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
+          periodicalRepo: FakePeriodicals(),
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -827,6 +849,7 @@ void main() {
           final useCase = MergeLibraryUseCase(
             jsonParser: const PitakaJsonImporter(),
             bookRepo: repo,
+            periodicalRepo: FakePeriodicals(),
             namespace: _FakeNamespace(),
             replacementGuard: FakeReplacementGuard(),
             planner: planMergeInline,
@@ -861,6 +884,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
+          periodicalRepo: FakePeriodicals(),
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -897,6 +921,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
+          periodicalRepo: FakePeriodicals(),
           namespace: _FakeNamespace(),
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -950,6 +975,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -974,6 +1000,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -997,6 +1024,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: _FakeBooks([]),
+        periodicalRepo: FakePeriodicals(),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -1017,6 +1045,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: _FakeBooks([]),
+        periodicalRepo: FakePeriodicals(),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -1058,6 +1087,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: repo,
+          periodicalRepo: FakePeriodicals(),
           namespace: namespace,
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -1095,6 +1125,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: namespace,
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -1136,6 +1167,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: _FakeBooks([]),
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(libraryId: matchingId),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -1165,6 +1197,7 @@ void main() {
       final useCase = MergeLibraryUseCase(
         jsonParser: const PitakaJsonImporter(),
         bookRepo: repo,
+        periodicalRepo: FakePeriodicals(),
         namespace: _FakeNamespace(libraryId: otherId),
         replacementGuard: FakeReplacementGuard(),
         planner: planMergeInline,
@@ -1194,6 +1227,7 @@ void main() {
         final useCase = MergeLibraryUseCase(
           jsonParser: const PitakaJsonImporter(),
           bookRepo: _FakeBooks([]),
+          periodicalRepo: FakePeriodicals(),
           namespace: _FakeNamespace(libraryId: matchingId),
           replacementGuard: FakeReplacementGuard(),
           planner: planMergeInline,
@@ -1209,5 +1243,306 @@ void main() {
         expect(res.getLeft().toNullable(), isA<ValidationFailure>());
       },
     );
+  });
+
+  // Plan S19 (ADR 0013 D6 / ADR 0014 W1): a v4 file's `periodicals[]` were
+  // silently DROPPED by the merge before S19. The series union applies first
+  // (add-only; the local row wins every match), then the items, then every
+  // merged series' issues are re-projected — all in one transaction.
+  group('S19 — periodicals in the merge', () {
+    MergeLibraryUseCase useCaseWith(
+      CatalogueItemRepository books,
+      FakePeriodicals periodicals,
+    ) => MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: books,
+      periodicalRepo: periodicals,
+      namespace: _FakeNamespace(libraryId: matchingId),
+      replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
+    );
+
+    Map<String, dynamic> seriesRow({
+      required String uid,
+      required String title,
+      String? issn,
+    }) => {
+      'periodicalUid': uid,
+      'title': title,
+      if (issn != null) 'issn': issn,
+    };
+
+    Map<String, dynamic> issueRow({
+      required String uid,
+      required String title,
+      required String seriesUid,
+      int? issueNumber,
+    }) => {
+      'bookUid': uid,
+      'title': title,
+      'kind': 'magazine-issue',
+      'issue': {
+        'periodicalUid': seriesUid,
+        if (issueNumber != null) 'issueNumber': issueNumber,
+      },
+    };
+
+    test(
+      'a v4 file merges series + issues (the pre-S19 silent drop)',
+      () async {
+        final books = _FakeBooks([]);
+        final periodicals = FakePeriodicals();
+        final useCase = useCaseWith(books, periodicals);
+        final json = exportJson(
+          libraryId: matchingId,
+          periodicals: [seriesRow(uid: 'p9', title: 'National Geographic')],
+          books: [
+            issueRow(
+              uid: 'i9',
+              title: 'National Geographic — No 1',
+              seriesUid: 'p9',
+              issueNumber: 1,
+            ),
+          ],
+        );
+
+        final outcome = (await useCase.call(
+          json,
+        )).getOrElse((f) => fail('merge failed: $f'));
+
+        final result = (outcome as MergeMerged).result;
+        expect(result.periodicalsAdded, 1);
+        expect(result.added, 1);
+        // The series landed (insertAll keeps the file's uid) …
+        expect(periodicals.rows.values.single.periodicalUid, 'p9');
+        expect(periodicals.rows.values.single.title, 'National Geographic');
+        // … and the issue landed anchored to it, with the composed title.
+        final issue = books.books.single;
+        expect(issue.issue?.periodicalUid, 'p9');
+        expect(issue.title, 'National Geographic — No 1');
+      },
+    );
+
+    test('an ISSN-matched series is kept local; its issues re-anchor to the '
+        'local uid', () async {
+      final books = _FakeBooks([]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(
+            periodicalUid: 'p-local',
+            title: 'Chandamama',
+            issn: '0976-3279',
+            addedDate: 1,
+          ),
+        );
+      final useCase = useCaseWith(books, periodicals);
+      final json = exportJson(
+        libraryId: matchingId,
+        periodicals: [
+          seriesRow(uid: 'p-inc', title: 'Chandamama', issn: '0976-3279'),
+        ],
+        books: [
+          issueRow(
+            uid: 'i9',
+            title: 'Chandamama — No 4',
+            seriesUid: 'p-inc',
+            issueNumber: 4,
+          ),
+        ],
+      );
+
+      final outcome = (await useCase.call(
+        json,
+      )).getOrElse((f) => fail('merge failed: $f'));
+
+      final result = (outcome as MergeMerged).result;
+      // Same series, equal content: identical, NOT added.
+      expect(result.periodicalsAdded, 0);
+      expect(result.periodicalsIdentical, 1);
+      expect(periodicals.rows, hasLength(1));
+      // The issue re-anchored to the LOCAL series uid (D6).
+      expect(books.books.single.issue?.periodicalUid, 'p-local');
+    });
+
+    test('the stale-projection seam: a series conflict repairs the stored '
+        'issues (D3)', () async {
+      // This device renamed the series; an S18 import left the stored issue
+      // rows carrying the OLD projected title. The incoming file still has
+      // the old series name. The merge keeps the local series and repairs
+      // the stored issue rows.
+      final books = _FakeBooks([
+        const CatalogueItem(
+          id: 5,
+          itemUid: 'i1',
+          title: 'Old Name — No 1',
+          addedDate: 1,
+          details: IssueOf(periodicalUid: 'p1', issueNumber: 1),
+        ),
+      ]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(
+            periodicalUid: 'p1',
+            title: 'New Name',
+            addedDate: 1,
+          ),
+        );
+      // The issue read behind re-projection answers from the series store.
+      periodicals.issues['p1'] = [
+        const CatalogueItem(
+          id: 5,
+          itemUid: 'i1',
+          title: 'Old Name — No 1',
+          addedDate: 1,
+          details: IssueOf(periodicalUid: 'p1', issueNumber: 1),
+        ),
+      ];
+      final useCase = useCaseWith(books, periodicals);
+      final json = exportJson(
+        libraryId: matchingId,
+        periodicals: [seriesRow(uid: 'p1', title: 'Old Name')],
+        books: [
+          issueRow(
+            uid: 'i1',
+            title: 'Old Name — No 1',
+            seriesUid: 'p1',
+            issueNumber: 1,
+          ),
+        ],
+      );
+
+      final outcome = (await useCase.call(
+        json,
+      )).getOrElse((f) => fail('merge failed: $f'));
+
+      final result = (outcome as MergeMerged).result;
+      // The series rename is a conflict (local kept) — but the ISSUE is not
+      // a per-row conflict storm (risk D.2).
+      expect(result.periodicalConflicts.single.incoming.title, 'Old Name');
+      expect(result.conflicts, isEmpty);
+      expect(result.identical, 1);
+      // … and the STORED issue row was re-projected to the kept series.
+      expect(books.books.single.title, 'New Name — No 1');
+    });
+
+    test(
+      'a failed series insertAll fails the merge and writes nothing',
+      () async {
+        final books = _FakeBooks([]);
+        final periodicals = FakePeriodicals()
+          ..insertAllFailure = const StorageFailure('disk full');
+        final useCase = useCaseWith(books, periodicals);
+        final json = exportJson(
+          libraryId: matchingId,
+          periodicals: [seriesRow(uid: 'p9', title: 'New Series')],
+          books: [
+            {'bookUid': 'b9', 'title': 'New book'},
+          ],
+        );
+
+        final res = await useCase.call(json);
+
+        expect(res.isLeft(), isTrue);
+        expect(books.books, isEmpty, reason: 'the transaction rolled back');
+        expect(periodicals.rows, isEmpty);
+      },
+    );
+
+    test('overwrite replaces the periodicals too', () async {
+      final books = _FakeBooks([
+        const CatalogueItem(id: 1, itemUid: 'old', title: 'Old', addedDate: 1),
+      ]);
+      final periodicals = FakePeriodicals()
+        ..seed(const Periodical(periodicalUid: 'old-p', title: 'Old Series'));
+      final useCase = useCaseWith(books, periodicals);
+      const decision = MergeDiffersDecision(
+        incomingBooks: [
+          CatalogueItem(itemUid: 'new', title: 'New', addedDate: 1),
+        ],
+        incomingPeriodicals: [
+          Periodical(periodicalUid: 'new-p', title: 'New Series'),
+        ],
+        incomingLibraryId: otherId,
+        incomingLibraryName: 'Riverside',
+        localLibraryName: 'Mine',
+        localIsEmpty: false,
+      );
+
+      final result = (await useCase.applyOverwrite(
+        decision,
+      )).getOrElse((f) => fail('overwrite failed: $f'));
+
+      expect(result.replaced, isTrue);
+      expect(result.periodicalsAdded, 1);
+      expect(periodicals.rows.values.single.periodicalUid, 'new-p');
+      expect(periodicals.rows.values.single.title, 'New Series');
+      expect(books.books.single.title, 'New');
+    });
+
+    test('a differ decision carries the series into Join, and a titles-only '
+        'library is not empty', () async {
+      final books = _FakeBooks([]);
+      final periodicals = FakePeriodicals()
+        ..seed(const Periodical(periodicalUid: 'mine-p', title: 'Mine'));
+      final useCase = useCaseWith(books, periodicals);
+      final json = exportJson(
+        libraryId: otherId,
+        periodicals: [seriesRow(uid: 'p9', title: 'Their Series')],
+        books: [
+          {'bookUid': 'b9', 'title': 'Their book'},
+        ],
+      );
+
+      final outcome = (await useCase.call(
+        json,
+      )).getOrElse((f) => fail('failed: $f'));
+
+      // No books locally, but ONE series: "empty" must see the whole
+      // library (overwrite replaces series too).
+      final decision = outcome as MergeDiffersDecision;
+      expect(decision.localIsEmpty, isFalse);
+      expect(decision.incomingPeriodicals.single.periodicalUid, 'p9');
+
+      final joined = (await useCase.applyJoin(
+        decision,
+      )).getOrElse((f) => fail('join failed: $f'));
+      expect(joined.periodicalsAdded, 1);
+      expect(periodicals.rows.values.map((p) => p.title), [
+        'Mine',
+        'Their Series',
+      ]);
+    });
+
+    test('resolutions guard the kind rules (D6/D8)', () async {
+      final books = _FakeBooks([
+        const CatalogueItem(id: 7, itemUid: 'u1', title: 'T', addedDate: 1),
+      ]);
+      final useCase = useCaseWith(books, FakePeriodicals());
+      const incomingIssue = CatalogueItem(
+        itemUid: 'u1',
+        title: 'T',
+        addedDate: 1,
+        details: IssueOf(periodicalUid: 'p1', issueNumber: 3),
+      );
+
+      // take-theirs across kinds would flip the stored row's kind — refused.
+      final flipped = await useCase.applyResolution(
+        local: books.books.single,
+        incoming: incomingIssue,
+        resolution: MergeResolution.takeTheirs,
+      );
+      expect(flipped.isLeft(), isTrue);
+      expect(books.updateCalls, 0);
+
+      // keep-both keeps the KIND: the stored copy is still an issue.
+      final kept = await useCase.applyResolution(
+        local: books.books.single,
+        incoming: incomingIssue,
+        resolution: MergeResolution.keepBoth,
+      );
+      expect(kept.isRight(), isTrue);
+      expect(books.books.last.details, isA<IssueOf>());
+      expect(books.books.last.itemUid, isNot('u1'), reason: 'fresh identity');
+    });
   });
 }

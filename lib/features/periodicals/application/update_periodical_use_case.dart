@@ -13,11 +13,10 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/application/issue_reprojection.dart';
 import 'package:pitaka/features/periodicals/application/periodical_ingress.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
-import 'package:pitaka/features/periodicals/domain/issue_projection.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 
 /// Validates and updates an existing [Periodical], re-projecting its issues.
@@ -29,11 +28,19 @@ class UpdatePeriodicalUseCase {
     required CatalogueItemRepository items,
   }) : _periodicals = periodicals,
        _items = items,
-       _ingress = PeriodicalIngress(periodicals);
+       _ingress = PeriodicalIngress(periodicals),
+       _reprojection = IssueReprojection(
+         periodicals: periodicals,
+         items: items,
+       );
 
   final PeriodicalRepository _periodicals;
   final CatalogueItemRepository _items;
   final PeriodicalIngress _ingress;
+
+  /// The shared re-projection loop (one blessed way, AGENTS §0): the merge
+  /// use case repairs stale series projections through the same code.
+  final IssueReprojection _reprojection;
 
   /// Updates [periodical] (matched by id; the stored uid is preserved by the
   /// repository) and rewrites the projected fields of every issue of the
@@ -65,55 +72,9 @@ class UpdatePeriodicalUseCase {
     Periodical valid,
   ) async {
     final updated = await _periodicals.update(valid);
-    return updated.fold(left, _reprojectIssuesOf);
+    return updated.fold(
+      left,
+      (stored) async => (await _reprojection.call(stored)).map((_) => stored),
+    );
   }
-
-  /// Rewrites every issue of [stored] whose projected fields differ from
-  /// what the series now says. Unchanged rows are skipped: editing a private
-  /// field such as the subscription window must not rewrite (and re-index)
-  /// every issue for nothing.
-  Future<Either<Failure, Periodical>> _reprojectIssuesOf(
-    Periodical stored,
-  ) async {
-    final uid = stored.periodicalUid;
-    if (uid == null || uid.trim().isEmpty) {
-      // Cannot happen — a persisted row always has a uid and the repository
-      // keeps the stored one — but without it the issues cannot be found,
-      // and committing a rename that leaves them behind is exactly the drift
-      // D3 forbids. Fail closed: the `Left` rolls the series edit back.
-      return left(
-        const UnexpectedFailure(
-          'UpdatePeriodicalUseCase: the stored periodical has no uid',
-        ),
-      );
-    }
-    final issues = await _periodicals.issuesOf(uid);
-    return issues.fold(left, (rows) async {
-      for (final row in rows) {
-        final projected = IssueProjection.apply(row, stored);
-        if (_alreadyProjected(row, projected)) continue;
-        // The projected row passes the same gate as any other write
-        // (ADR 0004): a series title at the length cap could compose an
-        // issue title over it, and that must refuse the edit, not store it.
-        final written = await CatalogueItem.validate(projected).fold(
-          (errors) async => left<Failure, CatalogueItem>(
-            ValidationFailure(errors.first.userMessage),
-          ),
-          _items.update,
-        );
-        if (written.isLeft()) return written.map((_) => stored);
-      }
-      return right(stored);
-    });
-  }
-
-  /// True when [row] already carries exactly what [projected] would write.
-  /// These six fields are the only ones `IssueProjection.apply` changes.
-  static bool _alreadyProjected(CatalogueItem row, CatalogueItem projected) =>
-      row.title == projected.title &&
-      row.titleTransliteration == projected.titleTransliteration &&
-      row.publisher == projected.publisher &&
-      row.language == projected.language &&
-      row.publishedYear == projected.publishedYear &&
-      row.ageGroup == projected.ageGroup;
 }

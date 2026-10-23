@@ -222,9 +222,12 @@ final class MergeReviewItem {
   bool get isOpen => status is ReviewPending || status is ReviewFailed;
 
   /// False for an in-file collision: [local] was never persisted, so there
-  /// is no row on this device to overwrite. The page hides the button; the
-  /// use case refuses the call regardless.
-  bool get canTakeTheirs => kind != MergeReviewKind.inFileCollision;
+  /// is no row on this device to overwrite. Also false when the two sides
+  /// are different KINDS (ADR 0013 D6/D8: an item cannot change its kind
+  /// after creation — overwriting in place would flip it). The page hides
+  /// the button; the use case refuses the call regardless.
+  bool get canTakeTheirs =>
+      kind != MergeReviewKind.inFileCollision && local.kind == incoming.kind;
 
   MergeReviewItem _withStatus(MergeReviewStatus next) => MergeReviewItem._(
     kind: kind,

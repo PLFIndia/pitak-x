@@ -72,6 +72,13 @@ void main() {
     // projected row before persisting, so the gate is one hop downstream.
     'lib/features/periodicals/domain/issue_projection.dart':
         'series → issue projection; gate is the issue use cases',
+    // ADR 0013 W1/D8 (plan S19): the merge planner's orphan rule — an
+    // incoming issue no series claims degrades to a plain book (`copyWith`
+    // cannot null `details`, so the base row is rebuilt field by field).
+    // The row was validated at parse time and the merge apply writes through
+    // the repository, whose write path is gated downstream.
+    'lib/features/library/domain/merge/periodical_merge.dart':
+        'merge orphan rule (W1 twin); rows validated at parse, gated on write',
   };
 
   /// Matches a `CatalogueItem(` construction and NOT a longer identifier that
@@ -103,12 +110,13 @@ void main() {
     }
 
     // Sanity: the census must be non-trivial so a renamed regex or a moved
-    // tree cannot silently make this test vacuously green. 12 = the sites
-    // known at S17: 6 trusted (allow-list above) + 6 gated ingress paths
-    // that reference the gate themselves.
+    // tree cannot silently make this test vacuously green. 13 = the sites
+    // known at S19: 7 trusted (allow-list above — S19 added the merge
+    // planner's orphan rule) + 6 gated ingress paths that reference the gate
+    // themselves.
     expect(
       constructing,
-      hasLength(greaterThanOrEqualTo(12)),
+      hasLength(greaterThanOrEqualTo(13)),
       reason:
           'expected the known CatalogueItem construction sites to be scanned',
     );
@@ -239,6 +247,7 @@ void main() {
       trustedConstructors.keys,
       unorderedEquals([
         'lib/features/library/domain/entities/catalogue_item.dart',
+        'lib/features/library/domain/merge/periodical_merge.dart',
         'lib/features/library/infrastructure/catalogue_item_mapper.dart',
         'lib/features/library/presentation/pages/add_book_page.dart',
         'lib/features/library/presentation/pages/other_item_form_page.dart',

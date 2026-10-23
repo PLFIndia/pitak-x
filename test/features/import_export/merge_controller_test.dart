@@ -26,6 +26,7 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 
 /// In-memory book repo: just enough surface for the merge use case (mirrors
 /// merge_library_use_case_test.dart's fake).
@@ -217,6 +218,7 @@ void main() {
           if (useCaseOverride != null) return useCaseOverride();
           return MergeLibraryUseCase(
             bookRepo: books ?? _FakeBooks([]),
+            periodicalRepo: FakePeriodicals(),
             namespace: ref.read(settingsControllerProvider.notifier),
             jsonParser: const PitakaJsonImporter(),
             replacementGuard: guard ?? FakeReplacementGuard(),
@@ -503,6 +505,7 @@ void main() {
             await gate.future;
             return MergeLibraryUseCase(
               bookRepo: _FakeBooks([]),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
@@ -852,6 +855,57 @@ void main() {
       );
     });
 
+    test('a kind-mismatch conflict offers no take-theirs (D6/D8)', () async {
+      // A same-uid row whose KIND differs is a conflict (D6), but taking
+      // theirs would flip the stored row's kind — which D8 forbids. The card
+      // hides the button and the use case refuses the call regardless.
+      final container = makeContainer(
+        books: _FakeBooks([
+          const CatalogueItem(
+            id: 1,
+            itemUid: 'u1',
+            title: 'Chandamama — No 3',
+            addedDate: 1,
+          ),
+        ]),
+      );
+
+      final done = await mergeToDone(
+        container,
+        jsonEncode({
+          'schemaVersion': 4,
+          'libraryId': matchingId,
+          'libraryName': 'Other',
+          'periodicals': [
+            {'periodicalUid': 'p1', 'title': 'Chandamama'},
+          ],
+          'books': [
+            {
+              'bookUid': 'u1',
+              'title': 'Chandamama — No 3',
+              'kind': 'magazine-issue',
+              'issue': {'periodicalUid': 'p1', 'issueNumber': 3},
+            },
+          ],
+          'wishlist': <Object>[],
+        }),
+      );
+
+      final item = done.review.single;
+      expect(item.kind, MergeReviewKind.conflict);
+      expect(item.canTakeTheirs, isFalse);
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      final after = container.read(mergeControllerProvider) as MergeDone;
+      expect(after.review.single.status, isA<ReviewFailed>());
+      expect(
+        (after.review.single.status as ReviewFailed).failure,
+        isA<ValidationFailure>(),
+      );
+    });
+
     test('an in-flight resolution survives the page going away (keep-alive) '
         'and its completion lands in the same MergeDone', () async {
       final books = localWithGodaan();
@@ -863,6 +917,7 @@ void main() {
           mergeLibraryUseCaseProvider.overrideWith(
             (ref) async => MergeLibraryUseCase(
               bookRepo: books,
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),

@@ -160,7 +160,7 @@ final pdfTextRasterizerProvider =
 // ignore: unused_element
 typedef PdfTextRasterizerRef = AutoDisposeProviderRef<PdfTextRasterizer>;
 String _$mergeLibraryUseCaseHash() =>
-    r'c193d5afe28ff1ec313cccf07e663d371d2e976f';
+    r'9862393c894145df21803b5926740f3bb706834f';
 
 /// Multi-maintainer library merge use case (PLAN-merge.md): reconciles an
 /// incoming Pitaka-JSON file with the local catalogue behind the library-ID

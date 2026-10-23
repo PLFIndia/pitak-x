@@ -5,6 +5,7 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporte
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 
 /// Faithful port of Kotlin `LibraryMergeEngineTest` (PLAN-merge.md S3).
 void main() {
@@ -615,6 +616,9 @@ void main() {
         copyCount: 2,
       );
       final variants = <CatalogueItem>[
+        // ADR 0013 D6/D8: a kind flip is exactly ONE difference (kind); the
+        // issue-fields spec defers to it unless BOTH sides are issues.
+        base.copyWith(details: const OtherItemOf()),
         base.copyWith(title: 'X'),
         base.copyWith(titleTransliteration: 'X'),
         base.copyWith(author: 'X'),
@@ -634,13 +638,31 @@ void main() {
         base.copyWith(needsMetadata: true),
         base.copyWith(removed: true),
       ];
-      expect(variants, hasLength(MergeField.values.length));
+      expect(variants, hasLength(MergeField.values.length - 1));
       expect(mergeEquals(base, base), isTrue);
       expect(mergeDifferences(base, base), isEmpty);
       for (final v in variants) {
         expect(mergeEquals(base, v), isFalse);
         expect(mergeDifferences(base, v), hasLength(1));
       }
+
+      // The remaining field (MergeField.issue) only compares two ISSUES —
+      // base is a book, so it gets its own pair: same issue identity,
+      // different label.
+      const issueA = CatalogueItem(
+        id: 1,
+        title: 'T',
+        addedDate: 1,
+        details: IssueOf(periodicalUid: 'p1', issueNumber: 3, label: 'a'),
+      );
+      final issueB = issueA.copyWith(
+        details: const IssueOf(periodicalUid: 'p1', issueNumber: 3, label: 'b'),
+      );
+      expect(mergeEquals(issueA, issueA), isTrue);
+      expect(mergeEquals(issueA, issueB), isFalse);
+      expect(mergeDifferences(issueA, issueB).map((d) => d.field), [
+        MergeField.issue,
+      ]);
     });
   });
 

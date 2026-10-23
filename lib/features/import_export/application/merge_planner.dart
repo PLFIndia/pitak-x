@@ -13,12 +13,19 @@ library;
 
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 
 /// Computes a [MergePlan] for [incoming] against [local], possibly on another
 /// isolate. `MergeLibraryUseCase` depends on this signature only; tests inject
 /// a synchronous or recording planner.
+///
+/// The periodical lists are plain data (schema v4 payloads, ADR 0014 W1):
+/// everything crossing the isolate boundary must stay sendable plain Dart —
+/// no Drift rows, no closures (N10-c).
 typedef MergePlanner =
     Future<MergePlan> Function(
       List<CatalogueItem> local,
       List<CatalogueItem> incoming,
+      List<Periodical> localPeriodicals,
+      List<Periodical> incomingPeriodicals,
     );

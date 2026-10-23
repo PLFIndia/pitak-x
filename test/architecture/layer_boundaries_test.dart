@@ -177,9 +177,11 @@ void main() {
     // same bar as the CatalogueItem.validate allow-list.
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
-      'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      // settings_page.dart left this list on 2026-10-19: the community-library
-      // section moved to widgets/community_library_section.dart (631 → <500).
+      // library_merge_engine.dart left this list on 2026-10-23 (plan S19):
+      // the fuzzy index moved to fuzzy_index.dart and the field specs to
+      // merge_fields.dart (721 → <500). merge_page.dart left it the same day:
+      // the review cards moved to widgets/merge_review_section.dart when the
+      // periodical counts landed (538 → <500).
       'lib/features/publish/application/github_connection_controller.dart': 670,
       // 2026-10 (plan F7 rename sessions): `CatalogueItem`,
       // `CatalogueItemRepository` etc. are longer identifiers, so dart format
@@ -197,8 +199,10 @@ void main() {
       // drift_catalogue_item_repository.dart left this list on 2026-10-22 (plan
       // S8): its SQL helpers moved to drift_catalogue_sql.dart (599 → <500).
       'lib/features/backup/infrastructure/restore_backup.dart': 553,
-      'lib/features/import_export/application/merge_library_use_case.dart': 545,
-      'lib/features/import_export/presentation/pages/merge_page.dart': 538,
+      // merge_library_use_case.dart shrank on 2026-10-23 (plan S19): the
+      // result/outcome types moved to merge_result.dart; the periodical apply
+      // (W1) + re-projection seam (D3) it gained net 545 → 511.
+      'lib/features/import_export/application/merge_library_use_case.dart': 511,
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
     };
 

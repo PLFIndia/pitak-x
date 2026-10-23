@@ -7,6 +7,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
 import 'replacement_harness.dart';
 import 'replacement_test_guard.dart';
 
@@ -57,6 +58,7 @@ void main() {
     await h.initialize();
     useCase = MergeLibraryUseCase(
       bookRepo: books,
+      periodicalRepo: FakePeriodicals(),
       // N07: identity goes through the harness's real SettingsController.
       namespace: h.namespace,
       jsonParser: const PitakaJsonImporter(),
