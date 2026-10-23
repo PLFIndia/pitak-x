@@ -6,14 +6,16 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S12** (use cases: periodicals and issues)
+- Last completed session: **S13** (controllers, read providers, scan
+  routing)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S12's commit (S11 was `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`,
-  S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`,
-  S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S12, 2026-10-22** — 2652 tests, 81 s
+- Last commit: S13's commit (S12 was `02f3f99`, S11 `5ce4ec0`, S10
+  `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
+  `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0
+  `8899cc0`)
+- Full suite last green at: **S13, 2026-10-23** — 2695 tests, 77 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S13.
+- Run stopped here (one session per run, B.3): the next run starts at S14.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -40,10 +42,88 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S13 — Controllers, read providers, scan routing.** Nothing in flight.
-Follow the plan's S13 steps verbatim.
+**S14 — Library screen: make room, kind chips, add sheet, row badges.**
+Nothing in flight. Follow the plan's S14 steps verbatim.
 
-Notes for it (what S12 built, and the contracts S13's controllers call):
+Notes for it (what S13 built, and the contracts S14–S16's pages consume):
+
+- **Kind facet (U1):** `libraryKindFilterProvider` (`LibraryKindFilter`,
+  keepAlive, in `library/application/library_filter_controller.dart` next
+  to the language filter) holds `ItemKind?`; `toggle(kind)` selects or —
+  when `kind` is already selected — clears; `clear()`. There is no `set`
+  (the lint asked for a setter; toggle + clear are all U1 needs). The chip
+  row reads `ref.watch(libraryKindFilterProvider)` for the selected state
+  and calls `toggle` on tap; `LibraryController` already watches it and
+  passes `LibraryQuery.kind`, so S14 adds NO list plumbing — only the
+  chips. The language facet travels alongside, untouched.
+- **Scan routing (D11):** `routeScannedBarcodeUseCaseProvider`
+  (`library_providers.dart`) → `RouteScannedBarcodeUseCase(items:,
+  periodicals:)` in `library/application/route_scanned_barcode_use_case.dart`;
+  `call(raw)` takes the RAW scanner string and returns a sealed `ScanRoute`:
+  `OpenCataloguedItem(item)`, `AddBookByIsbn(isbn)` (normalised),
+  `AddIssueOfPeriodical(periodical)`, `AddPeriodicalByIssn(issn)`
+  (canonical `NNNN-NNNC`). A failed repository read falls through to the
+  "not catalogued" route of that barcode kind; a 977 code with a bad check
+  digit takes the ISBN path unchanged. S14 replaces `routeScannedIsbn` in
+  `library_page.dart` with a `switch` over the route (the existing
+  "Already in your library" dialog = `OpenCataloguedItem`; the two
+  magazine routes push the S14 placeholders until S15/S16 exist) and
+  rewrites `test/features/library/scan_routing_test.dart` accordingly
+  (`FindByIsbnUseCase` / `findByIsbnUseCaseProvider` then have no caller
+  left in `lib/` — delete them in S14, AGENTS §2.4 no dead code).
+- **`PeriodicalsController`** (`periodicals/application/`):
+  `AsyncValue<List<PeriodicalListEntry>>` — `entry.periodical`,
+  `issueCount`, `latestIssueDate`, `status: SubscriptionStatus`
+  (`status.badgeLabel` is the S15 badge text, null = no badge). Rows are
+  in `listAll` order (title, id). `build` watches `nowTickProvider` and
+  reads `clockProvider`, so the list re-reads once a minute while open:
+  **S15 must render with `skipLoadingOnReload: true`** (or `valueOrNull`)
+  or the page flashes a spinner every minute. Methods: `refresh()`,
+  `remove(id)` / `restoreRemoved(id)` (fail closed into `AsyncError`, like
+  `LibraryController`), `delete(id)` → `Future<Either<Failure, Unit>>` —
+  the series page's overflow shows a Left through
+  `catalogueSaveMessage(failure, noun: 'magazine title')` (the
+  `PeriodicalHasIssuesFailure` wording already exists); on Right the
+  controller has refreshed itself, the page just pops.
+- **`IssueListController(periodicalUid)`** (family): `AsyncValue<LibraryWindow>`
+  (`books`, `hasMore`, `isLoadingMore`), `loadMore()`, `refresh()` — the
+  exact shape `library_page.dart` renders, so S15's series page can copy
+  its list/paging idiom (footer spinner while `isLoadingMore`, `loadMore`
+  near the end). It watches `libraryControllerProvider` as its mutation
+  signal, so the `LibraryController` builds too: **widget tests of the
+  series page must override `settingsRepositoryProvider`** (the sort) as
+  well as `catalogueItemRepositoryProvider` — `FakeSettings` in
+  `periodical_fakes.dart` is enough.
+- **`AddIssueController` / `PeriodicalFormController`:** `AddBookController`
+  shape — `save(entity)` (refuses a persisted id), `saveEdit(id,
+  applyEdits)` (re-reads the CURRENT row, N03), state `AsyncValue<T?>`
+  (null = idle). On success they **fire both mutation signals
+  themselves** (`libraryControllerProvider` + `periodicalsControllerProvider`),
+  so S16's pages must NOT call `refresh()` after a save (the book form
+  does; these do not — the page only pops on `state.hasValue && value !=
+  null`). Failures: `catalogueSaveMessage(error, noun: 'issue')` /
+  `noun: 'magazine title'`. The add-issue form's `save` input is a
+  `CatalogueItem` with `details: IssueOf(...)` and a blank title.
+- **Read providers** (`periodical_providers.dart`): `periodicalByIdProvider(id)`
+  and `periodicalByUidProvider(uid)` → `Future<Periodical?>`, watching
+  both signals. The issue detail page's "Open series" and the W4 cover
+  fallback resolve through `periodicalByUid(item.issue!.periodicalUid)`.
+  S14's `periodicalCoversProvider` map (plan step 4) is NOT built yet —
+  add it to `periodical_providers.dart` watching the same two signals
+  (`listAll()` → `{uid: coverUrl}`), or derive it from
+  `periodicalsControllerProvider`.
+- **Test fakes** (`test/features/periodicals/application/periodical_fakes.dart`):
+  `FakePeriodicals` now answers `listAll` (ordered title/id, summary
+  from the `issues` map), `markRemoved`, `restoreRemoved` (+ `…Failure`
+  switches); `FakeItems` answers `page` (series facet → `IssueSorter`
+  order; plain listing by id; search → empty; `pagesSeen` log,
+  `pageFailure`); `FakeSettings` (defaults only). `findByIsbn` is still
+  unimplemented on `FakeItems` — `route_scanned_barcode_use_case_test.dart`
+  subclasses it.
+- **Gate test:** unchanged — no new `CatalogueItem(` / `Periodical(` site
+  (the controllers hand entities through; the route value wraps them).
+
+Notes from S12 (the use-case contracts, still current):
 
 - **Providers (all in `core/di/src/periodical_providers.dart`, exported by
   `core/di/providers.dart`):** `addPeriodicalUseCaseProvider`,
@@ -337,6 +417,38 @@ Rename technique (learned in S1–S4):
   `ReleaseCoverFile` hook type from `delete_catalogue_item_use_case.dart`
   (a `show` import of a sibling feature's application file) instead of
   declaring a third identical typedef.
+- `S13` — the plan says "`LibraryFilterController` gains the kind facet";
+  no class of that name exists (the file `library_filter_controller.dart`
+  holds the `LibraryLanguageFilter` notifier), so a sibling
+  `LibraryKindFilter` notifier was added to that file — one facet per
+  notifier, as the file's header already argued for the language chip.
+- `S13` — the plan does not say where the scan router lives. It is
+  `library/application/route_scanned_barcode_use_case.dart` (sealed
+  `ScanRoute` + `RouteScannedBarcodeUseCase`) with its provider in
+  `library_providers.dart`: the quick-add scan is the Library's entry
+  point and two of the four routes are book routes; the periodicals side
+  is reached through the domain `PeriodicalRepository` (library/application
+  already imports periodicals/domain for the W4 janitor). The use case
+  returns a `ScanRoute`, not an `Either`: a repository Left is
+  deliberately mapped to the "not catalogued yet" route (the S34 rule —
+  navigation, not a gate; the save paths re-check), so there is no
+  expected failure left for the UI to handle twice.
+- `S13` — `AddIssueController` / `PeriodicalFormController` fire the
+  mutation signals (`libraryControllerProvider` AND
+  `periodicalsControllerProvider`) themselves on a successful save, where
+  `AddBookController` leaves the single refresh to `AddBookPage`. Reason:
+  each of these writes invalidates TWO lists (an issue changes the series
+  summary; a series edit re-projects issues, D3) and a page that must
+  remember two invalidations will eventually forget one — the robust
+  place is the controller (AGENTS §0 "never patchwork"). The book
+  controller was left as is (zero-behaviour rule for files S13 does not
+  own); aligning it is a one-line follow-up if a reviewer wants one
+  blessed way across the three forms.
+- `S13` — `PeriodicalsController.delete(id)` returns the use case's
+  `Either` (and refreshes on Right) instead of folding a Left into
+  `AsyncError` like `remove`: `PeriodicalHasIssuesFailure` is an expected
+  refusal that belongs to the row's action, while the list itself is
+  still valid — turning it into a list error would blank a good screen.
 
 ## Open issues / blocked
 
@@ -360,4 +472,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S9 | Done | `b9109f2` | 2026-10-22 | schema v5: `books.kind`, `magazine_issues` (FK cascade), `periodicals`; `PRAGMA foreign_keys = ON`; FTS dropped + rebuilt with `notes`; 6 raw indexes (2 partial UNIQUE); snapshot v5 + generated helper; matrix row (back-fill, notes FTS, column list, kinds round-trip, unique keys, cascade); `fts_rebuild_timing_test` (5 000 rows: migration 36 ms, rebuild 3 ms on this laptop; bound 20 s); `app_database_test` fixture rebuilt from the real v1 snapshot (26 columns now); ARCHITECTURE §5.4 updated; full green 2536 |
 | S10 | Done | `b657c8c` | 2026-10-22 | `DriftItemDetails` seam; mapper reads the joined row and writes `kind`; repository: LEFT JOIN reads, kind + series facets in both list and FTS paths, `IssueSorter` order for a series, two-table transactional writes, `UnsupportedItemKindFailure` on write-back, `DuplicateIssueFailure` via `CatalogueCollisions`; `CatalogueSql.joined/facetPredicate/issueOrderingTerms/issueOrderSql`; 20 new tests (2556 total), full green |
 | S11 | Done | `5ce4ec0` | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |
-| S12 | Done | _(this commit)_ | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
+| S12 | Done | `02f3f99` | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
+| S13 | Done | `bba12b2` | 2026-10-23 | `LibraryKindFilter` (U1 toggle) watched by `LibraryController` → `LibraryQuery.kind`; `periodicals/application/`: `PeriodicalsController` (`PeriodicalListEntry` = summary + derived `SubscriptionStatus` from `clockProvider`, re-stamped on `nowTick`; `refresh`/`remove`/`restoreRemoved` fail closed; `delete` returns the `Either`), `IssueListController(periodicalUid)` (family; `LibraryWindow` over `page(LibraryQuery(periodicalUid:))`, D2-b depth on the library signal, N05 guard), `AddIssueController`, `PeriodicalFormController` (`AddBookController` shape, N03 re-read, fire both signals); `periodicalById`/`periodicalByUid` read providers (both signals); `RouteScannedBarcodeUseCase` + sealed `ScanRoute` (D11: 977 → `Issn.fromEan13` → `findByIssn`; else the S34 ISBN path) + provider; `library_page.dart` untouched (S14 switches on the route); fakes gained `listAll`/`markRemoved`/`restoreRemoved`/`page`/`FakeSettings`; gate allow-list unchanged; 43 new tests (2695 total), full green 77 s |
