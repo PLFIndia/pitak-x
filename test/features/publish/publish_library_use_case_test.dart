@@ -2,6 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -112,21 +115,69 @@ void main() {
     coverUrl: cover,
   );
 
+  /// S20 fixtures (W3): a series with private fields that must NOT leave the
+  /// device, and an issue of it (its projected title is what publishes).
+  Periodical series({
+    String uid = 'uid-1',
+    String? cover,
+    bool removed = false,
+  }) => Periodical(
+    id: 7,
+    periodicalUid: uid,
+    title: 'Chandamama',
+    issn: '0577-6058',
+    publisher: 'Chandamama Publications',
+    language: 'Telugu',
+    coverUrl: cover,
+    frequency: PeriodicalFrequency.monthly,
+    subscriptionStart: 1760000000000,
+    subscriptionEnd: 1790000000000,
+    notes: 'private series note',
+    location: 'private series shelf',
+    sourceDetail: 'private series source',
+    removed: removed,
+  );
+
+  CatalogueItem issue({int id = 2, String? cover, String uid = 'uid-1'}) =>
+      CatalogueItem(
+        id: id,
+        title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+        publisher: 'Chandamama Publications',
+        coverUrl: cover,
+        details: IssueOf(
+          periodicalUid: uid,
+          volume: 249,
+          issueNumber: 10,
+          issueDate: 1759276800000,
+        ),
+      );
+
   List<int> encode(PublishExport e) =>
       utf8.encode(const JsonEncoder().convert(e.toJson()));
+
+  /// Decodes the books.json the api was asked to commit.
+  Map<String, dynamic> committedPayload(_CapturingApi api) =>
+      jsonDecode(
+            utf8.decode(
+              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+            ),
+          )
+          as Map<String, dynamic>;
 
   PublishLibraryUseCase makeUseCase(
     GitHubGitDataApi api,
     PublishManifestGateway manifest, {
     PublishedFileFetcher? fetchPublishedFile,
     PublishCredentialReader? credentials,
+    LocalCoverReader? readLocalCover,
+    RemoteCoverFetcher? fetchRemoteCover,
   }) => PublishLibraryUseCase(
     api: api,
     credentials: credentials ?? _FakeCreds(),
     manifest: manifest,
     coverIds: PublishCoverIds(_FixedSalt()),
-    readLocalCover: (_) async => null,
-    fetchRemoteCover: (_) async => null,
+    readLocalCover: readLocalCover ?? (_) async => null,
+    fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
     buildViewerHtml: () async => utf8.encode('<html></html>'),
     fetchPublishedFile: fetchPublishedFile,
     sleep: (_) async {}, // no real waiting in tests
@@ -153,6 +204,7 @@ void main() {
               },
             ).call(
               books: [book()],
+              periodicals: const [],
               activeLoanCounts: const {},
               encodeBooksJson: encode,
               libraryJson: null,
@@ -181,6 +233,7 @@ void main() {
             },
           ).call(
             books: [book()],
+            periodicals: const [],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
             libraryJson: null,
@@ -197,6 +250,7 @@ void main() {
             fetchPublishedFile: (_) async => null,
           ).call(
             books: [book()],
+            periodicals: const [],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
             libraryJson: null,
@@ -210,6 +264,7 @@ void main() {
     final manifest = _MemManifest();
     final result = await makeUseCase(api, manifest).call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -231,6 +286,7 @@ void main() {
     final manifest = _MemManifest();
     final result = await makeUseCase(api, manifest).call(
       books: const [],
+      periodicals: const [],
       activeLoanCounts: null,
       encodeBooksJson: encode,
       libraryJson: null,
@@ -254,6 +310,7 @@ void main() {
     final api = _CapturingApi();
     await makeUseCase(api, _MemManifest()).call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -270,6 +327,7 @@ void main() {
     const removed = CatalogueItem(id: 9, title: 'Gone', removed: true);
     await makeUseCase(api, _MemManifest()).call(
       books: [book(), removed],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -287,6 +345,7 @@ void main() {
     final m1 = _MemManifest();
     await makeUseCase(api1, m1).call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -296,6 +355,7 @@ void main() {
     final api2 = _CapturingApi();
     await makeUseCase(api2, seeded).call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -308,6 +368,7 @@ void main() {
     final api = _CapturingApi();
     final result = await makeUseCase(api, _MemManifest()).call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: null,
       encodeBooksJson: encode,
       libraryJson: null,
@@ -331,6 +392,7 @@ void main() {
     );
     final r = await uc.call(
       books: [book()],
+      periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
       libraryJson: null,
@@ -354,6 +416,7 @@ void main() {
       );
       await uc.call(
         books: [book(cover: 'covers/abc.jpg')],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: null,
@@ -384,6 +447,7 @@ void main() {
         );
         final result = await makeUseCase(api, _MemManifest()).call(
           books: [book()],
+          periodicals: const [],
           activeLoanCounts: const {},
           encodeBooksJson: encode,
           libraryJson: null,
@@ -399,6 +463,7 @@ void main() {
       final manifest = _MemManifest();
       final result = await makeUseCase(api, manifest).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: null,
@@ -421,6 +486,7 @@ void main() {
         final api = _CapturingApi(pages: site);
         final result = await makeUseCase(api, _MemManifest()).call(
           books: [book()],
+          periodicals: const [],
           activeLoanCounts: const {},
           encodeBooksJson: encode,
           libraryJson: null,
@@ -434,6 +500,7 @@ void main() {
       final api = _CapturingApi(throwOnPagesSite: true);
       final result = await makeUseCase(api, _MemManifest()).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: null,
@@ -457,6 +524,7 @@ void main() {
             },
           ).call(
             books: [book()],
+            periodicals: const [],
             activeLoanCounts: const {},
             encodeBooksJson: encode,
             libraryJson: null,
@@ -474,6 +542,7 @@ void main() {
       final api = _CapturingApi();
       final result = await makeUseCase(api, _MemManifest()).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: descriptor,
@@ -492,6 +561,7 @@ void main() {
       final m1 = _MemManifest();
       await makeUseCase(api1, m1).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: descriptor,
@@ -507,6 +577,7 @@ void main() {
       final api2 = _CapturingApi();
       await makeUseCase(api2, _MemManifest(m1.saved!)).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: descriptor,
@@ -529,6 +600,7 @@ void main() {
         );
         await makeUseCase(api, manifest).call(
           books: [book()],
+          periodicals: const [],
           activeLoanCounts: const {},
           encodeBooksJson: encode,
           libraryJson: null,
@@ -547,11 +619,228 @@ void main() {
       final api = _CapturingApi();
       await makeUseCase(api, _MemManifest()).call(
         books: [book()],
+        periodicals: const [],
         activeLoanCounts: const {},
         encodeBooksJson: encode,
         libraryJson: null,
       );
       expect(api.deleted, isEmpty);
+    });
+  });
+
+  group('W3 — kinds and periodicals in books.json', () {
+    test('every entry carries its kind; an issue nests its issue{}', () async {
+      final api = _CapturingApi();
+      await makeUseCase(api, _MemManifest()).call(
+        books: [
+          book(),
+          issue(),
+          const CatalogueItem(
+            id: 3,
+            title: 'Carrom board',
+            details: OtherItemOf(),
+          ),
+        ],
+        periodicals: [series()],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      final payload = committedPayload(api);
+      final books = (payload['books'] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      expect(books[0]['kind'], 'book');
+      expect(books[0].containsKey('issue'), isFalse);
+      expect(books[1]['kind'], 'magazine-issue');
+      expect(books[1]['issue'], {
+        'periodicalUid': 'uid-1',
+        'volume': 249,
+        'issueNumber': 10,
+        'issueDate': 1759276800000,
+      });
+      expect(books[2]['kind'], 'other');
+    });
+
+    test(
+      'periodicals[] carries public fields only (private ones stripped)',
+      () async {
+        final api = _CapturingApi();
+        await makeUseCase(api, _MemManifest()).call(
+          books: [issue()],
+          periodicals: [series()],
+          activeLoanCounts: const {},
+          encodeBooksJson: encode,
+          libraryJson: null,
+        );
+        final payload = committedPayload(api);
+        final periodicals = (payload['periodicals'] as List<dynamic>)
+            .cast<Map<String, dynamic>>();
+        expect(periodicals, hasLength(1));
+        expect(periodicals.single, {
+          'periodicalUid': 'uid-1',
+          'title': 'Chandamama',
+          'issn': '0577-6058',
+          'publisher': 'Chandamama Publications',
+          'language': 'Telugu',
+          'frequency': 'monthly',
+        });
+        // The serialised payload contains none of the private values (the
+        // redaction test pins the key set; here the whole file is scanned).
+        final json = utf8.decode(
+          api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+        );
+        expect(json, isNot(contains('private series')));
+        expect(json, isNot(contains('subscription')));
+      },
+    );
+
+    test('no magazines ⇒ the additive periodicals key is omitted', () async {
+      final api = _CapturingApi();
+      await makeUseCase(api, _MemManifest()).call(
+        books: [book()],
+        periodicals: const [],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      expect(committedPayload(api).containsKey('periodicals'), isFalse);
+    });
+
+    test(
+      'a removed series publishes no entry; its issue still publishes',
+      () async {
+        final api = _CapturingApi();
+        await makeUseCase(api, _MemManifest()).call(
+          books: [issue()],
+          periodicals: [series(removed: true)],
+          activeLoanCounts: const {},
+          encodeBooksJson: encode,
+          libraryJson: null,
+        );
+        final payload = committedPayload(api);
+        expect(payload.containsKey('periodicals'), isFalse);
+        final books = (payload['books'] as List<dynamic>)
+            .cast<Map<String, dynamic>>();
+        expect(books.single['kind'], 'magazine-issue');
+        expect(books.single['title'], contains('Chandamama'));
+      },
+    );
+
+    test('an issue without its own cover publishes the series cover '
+        '(IssueCover.resolve), uploaded once', () async {
+      final api = _CapturingApi();
+      await makeUseCase(
+        api,
+        _MemManifest(),
+        readLocalCover: (src) async => utf8.encode('SERIES-IMG'),
+      ).call(
+        books: [issue()],
+        periodicals: [series(cover: 'covers/series.jpg')],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      // Exactly ONE cover file in the commit: the series' salted path.
+      final covers = api.committed!
+          .where((f) => f.path.startsWith('covers/'))
+          .toList();
+      expect(covers, hasLength(1));
+      final salt = ascii.encode('salt-1234567890');
+      expect(
+        covers.single.path,
+        'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+      );
+      // Both the series entry and the issue point at it.
+      final payload = committedPayload(api);
+      expect(
+        (payload['periodicals'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single['coverUrl'],
+        covers.single.path,
+      );
+      expect(
+        (payload['books'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single['coverUrl'],
+        covers.single.path,
+      );
+    });
+
+    test('an issue with its own cover publishes its own salted path', () async {
+      final api = _CapturingApi();
+      await makeUseCase(
+        api,
+        _MemManifest(),
+        readLocalCover: (src) async => utf8.encode('IMG:$src'),
+      ).call(
+        books: [issue(cover: 'covers/issue.jpg')],
+        periodicals: [series(cover: 'covers/series.jpg')],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      final salt = ascii.encode('salt-1234567890');
+      final payload = committedPayload(api);
+      expect(
+        (payload['books'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single['coverUrl'],
+        'covers/${PublishCoverIds.shortHashHex(salt, 2)}.jpg',
+      );
+      expect(
+        (payload['periodicals'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single['coverUrl'],
+        'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+      );
+      // Both covers uploaded — two distinct salted paths.
+      expect(
+        api.committed!.where((f) => f.path.startsWith('covers/')),
+        hasLength(2),
+      );
+    });
+
+    test('periodical covers get the remote source-identity skip too', () async {
+      final api = _CapturingApi();
+      final salt = ascii.encode('salt-1234567890');
+      final path =
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg';
+      final manifest = _MemManifest(
+        PublishManifest(
+          repo: 'me/lib',
+          fileShas: {path: 'EXISTING_SHA'},
+          coverUrlByBookId: {
+            'periodical:uid-1': 'https://covers.openlibrary.org/x.jpg',
+          },
+        ),
+      );
+      var fetches = 0;
+      await makeUseCase(
+        api,
+        manifest,
+        fetchRemoteCover: (_) async {
+          fetches++;
+          return utf8.encode('REMOTE-IMG');
+        },
+      ).call(
+        books: [issue()],
+        periodicals: [series(cover: 'https://covers.openlibrary.org/x.jpg')],
+        activeLoanCounts: const {},
+        encodeBooksJson: encode,
+        libraryJson: null,
+      );
+      // URL unchanged + file already in the repo ⇒ no fetch, no upload.
+      expect(fetches, 0);
+      final coverFile = api.committed!.firstWhere(
+        (f) => f.path.startsWith('covers/'),
+      );
+      expect(coverFile.upload, isFalse);
+      expect(coverFile.gitSha, 'EXISTING_SHA');
+      // The manifest remembers the series' source URL for the next run.
+      expect(
+        manifest.saved?.coverUrlByBookId['periodical:uid-1'],
+        'https://covers.openlibrary.org/x.jpg',
+      );
     });
   });
 }

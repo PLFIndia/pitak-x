@@ -15,6 +15,7 @@ import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
@@ -60,11 +61,32 @@ class PublishController extends _$PublishController {
       (_) async => const PublishFailure(
         'Could not read the library. Nothing was published. Please try again.',
       ),
-      _publishBooks,
+      (items) async {
+        // W3: the series ride along in books.json. A failed read is not "no
+        // magazines" — refuse rather than publish issues stripped of their
+        // series (the same fail-closed rule as the catalogue read, and the
+        // rule S18 gave the export: no partial snapshot).
+        final periodicalRepo = await ref.read(
+          periodicalRepositoryProvider.future,
+        );
+        final periodicals = await periodicalRepo.listAll();
+        return periodicals.match<Future<PublishResult>>(
+          (_) async => const PublishFailure(
+            'Could not read the library. Nothing was published. '
+            'Please try again.',
+          ),
+          (summaries) => _publishBooks(items, [
+            for (final summary in summaries) summary.periodical,
+          ]),
+        );
+      },
     );
   }
 
-  Future<PublishResult> _publishBooks(List<CatalogueItem> books) async {
+  Future<PublishResult> _publishBooks(
+    List<CatalogueItem> books,
+    List<Periodical> periodicals,
+  ) async {
     final api = ref.read(gitHubApiProvider);
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
@@ -216,6 +238,7 @@ class PublishController extends _$PublishController {
 
     return useCase.call(
       books: books,
+      periodicals: periodicals,
       activeLoanCounts: counts,
       encodeBooksJson: (e) =>
           utf8.encode(const JsonEncoder.withIndent('  ').convert(e.toJson())),

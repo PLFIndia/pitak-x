@@ -363,8 +363,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
   reported, never imported as a book. CSV export gains `Kind`, `Series`,
   `Volume`, `Issue`, `Issue date`, `Bound until`, `Issue label`.
 - **`books.json`** (published): stays schema **1** — additive `kind` per
-  entry (+ `issue{}`), top-level `periodicals[]` with public fields only.
-  Older viewers ignore the new keys. (Pending — the publish session.)
+  entry (+ `issue{}`), top-level `periodicals[]` with public fields only
+  (shipped in the magazines run, S20). Older viewers ignore the new keys.
+  The v7 viewer adds the kind facet and groups issues under their series.
 
 ---
 

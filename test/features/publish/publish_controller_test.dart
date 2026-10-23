@@ -12,9 +12,12 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -103,6 +106,67 @@ void main() {
     expect(files.map((file) => file.path), contains('index.html'));
     expect(h.manifest.saves, 1);
     expect((result as PublishSuccess).pagesLive, isTrue);
+  });
+
+  testWidgets('W3: a failed periodical read refuses the publish (no commit)', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.periodicals.read = () async => left(const StorageFailure('private'));
+    final result = await h.publish(tester);
+
+    expect((result as PublishFailure).reason, _safeReadFailure);
+    expect(h.api.commits, isEmpty);
+    expect(h.manifest.saves, 0);
+  });
+
+  testWidgets('W3: series + issue wiring lands in books.json', (tester) async {
+    final h = _Harness();
+    h.books.read = () async => right(const [
+      CatalogueItem(
+        id: 2,
+        title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+        details: IssueOf(periodicalUid: 'uid-1', issueNumber: 10),
+      ),
+    ]);
+    h.periodicals.read = () async => right(const [
+      PeriodicalSummary(
+        periodical: Periodical(
+          id: 7,
+          periodicalUid: 'uid-1',
+          title: 'Chandamama',
+          notes: 'private series note',
+        ),
+        issueCount: 1,
+      ),
+    ]);
+    expect(await h.publish(tester), isA<PublishSuccess>());
+    final payload =
+        jsonDecode(
+              utf8.decode(
+                h.api.commits.single
+                    .firstWhere((file) => file.path == 'books.json')
+                    .bytes,
+              ),
+            )
+            as Map<String, dynamic>;
+    final books = (payload['books'] as List<dynamic>)
+        .cast<Map<String, dynamic>>();
+    expect(books.single['kind'], 'magazine-issue');
+    expect(
+      (books.single['issue'] as Map<String, dynamic>)['periodicalUid'],
+      'uid-1',
+    );
+    expect(payload['periodicals'], hasLength(1));
+    // The series' private fields never left the device.
+    expect(
+      utf8.decode(
+        h.api.commits.single
+            .firstWhere((file) => file.path == 'books.json')
+            .bytes,
+      ),
+      isNot(contains('private series note')),
+    );
   });
 
   testWidgets(
@@ -502,6 +566,8 @@ class _Harness {
     container = ProviderContainer(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
+        // W3: the controller also reads the series for books.json.
+        periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         gitHubApiProvider.overrideWithValue(api),
         publishCredentialStoreProvider.overrideWithValue(credentials),
         publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
@@ -568,6 +634,7 @@ class _Harness {
 
   int _clockTicks = 0;
   final books = _Books();
+  final periodicals = _Periodicals();
   final api = _Api();
   final credentials = _Credentials();
   final manifest = _Manifest();
@@ -610,6 +677,24 @@ class _Books implements CatalogueItemRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected book operation');
+}
+
+/// W3: the publish controller reads the series through `listAll`. Only that
+/// method is answered; anything else is a bug in the wiring under test.
+class _Periodicals implements PeriodicalRepository {
+  Future<Either<Failure, List<PeriodicalSummary>>> Function() read = () async =>
+      right(const []);
+  int reads = 0;
+
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() {
+    reads++;
+    return read();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected periodical operation');
 }
 
 class _Settings implements SettingsRepository {

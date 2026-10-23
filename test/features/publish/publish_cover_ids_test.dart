@@ -35,5 +35,25 @@ void main() {
       expect(path, startsWith('covers/'));
       expect(path, endsWith('.jpg'));
     });
+
+    test(
+      'pathForPeriodical is stable and domain-separated from book paths',
+      () async {
+        final salt = ascii.encode('salt-1234567890');
+        final ids = PublishCoverIds(_FixedSalt(salt));
+        // Same uid ⇒ same path (external links keep working across publishes).
+        expect(
+          await ids.pathForPeriodical('uid-1'),
+          await ids.pathForPeriodical('uid-1'),
+        );
+        // A periodical whose uid happens to look like a book id still gets a
+        // different path — the 'periodical:' prefix separates the domains.
+        expect(await ids.pathForPeriodical('42'), isNot(await ids.pathFor(42)));
+        expect(
+          await ids.pathForPeriodical('uid-1'),
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+        );
+      },
+    );
   });
 }
