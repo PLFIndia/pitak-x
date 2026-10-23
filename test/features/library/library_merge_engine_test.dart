@@ -365,6 +365,7 @@ void main() {
       ];
       final json = const PitakaJsonExporter().export(
         books: lib,
+        periodicals: const [],
         wishlist: const [],
         exportedAt: 1234,
       );

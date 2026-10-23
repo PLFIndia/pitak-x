@@ -150,7 +150,10 @@ class _ExportPageState extends ConsumerState<ExportPage> {
           ),
           const SizedBox(height: 8),
           Text(switch (_format) {
-            ExportFormat.json => 'JSON can be re-imported with no data loss.',
+            ExportFormat.json =>
+              'JSON can be re-imported with no data loss. It carries item '
+                  'kinds (magazines, others), so an older Pitak refuses it '
+                  'and asks for an update first.',
             ExportFormat.csv =>
               'CSV exports the library as a flat spreadsheet.',
             ExportFormat.pdf =>

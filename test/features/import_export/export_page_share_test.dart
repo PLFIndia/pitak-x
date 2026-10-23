@@ -24,6 +24,8 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
+
 /// Captures what would be handed to the OS share sheet.
 class _FakeShare implements FileShareService {
   @override
@@ -212,6 +214,7 @@ void main() {
         const CatalogueItem(id: 1, title: 'Godaan', isbn: '111'),
       ]),
       wishlistRepo: _Wishlist(),
+      periodicalRepo: FakePeriodicals(),
     );
 
     await tester.pumpWidget(
@@ -271,6 +274,7 @@ void main() {
         pdfRenderer: const PdfLibraryRenderer(),
         bookRepo: _Books(books),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       await tester.pumpWidget(
         ProviderScope(
@@ -424,6 +428,7 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books([const CatalogueItem(id: 1, title: 'Godaan')]),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       await tester.pumpWidget(
         ProviderScope(
@@ -511,6 +516,7 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books([const CatalogueItem(id: 1, title: 'Godaan')]),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       final navKey = GlobalKey<NavigatorState>();
       await tester.pumpWidget(

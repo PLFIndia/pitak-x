@@ -48,7 +48,7 @@ final bundleCoverFilesProvider =
 // ignore: unused_element
 typedef BundleCoverFilesRef = AutoDisposeFutureProviderRef<BundleCoverFiles>;
 String _$importLibraryUseCaseHash() =>
-    r'214b32504477027b2ce15f04a766703cc38b844a';
+    r'6e37fd19ebd1cc8cad27ee88d6bffc6ba353ad8c';
 
 /// One-shot library/wishlist import use case.
 ///
@@ -92,7 +92,7 @@ final exportLogoReaderProvider =
 typedef ExportLogoReaderRef =
     AutoDisposeFutureProviderRef<Future<Uint8List?> Function(String)>;
 String _$exportLibraryUseCaseHash() =>
-    r'a2494d77f525e18815f625ed878dea3cfa3bf54e';
+    r'07c8a9a02aee0556a80374cade57fda5249954dc';
 
 /// One-shot library/wishlist export use case.
 ///

@@ -25,6 +25,8 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
+
 class _FakeShare implements FileShareService {
   @override
   Future<ShareOutcome> shareText(String text, {Rect? sharePositionOrigin}) =>
@@ -216,6 +218,7 @@ void main() {
             pdfRenderer: pdfRenderer,
             bookRepo: books,
             wishlistRepo: _Wishlist(),
+            periodicalRepo: FakePeriodicals(),
           ),
         ),
         fileShareServiceProvider.overrideWithValue(share),
@@ -487,6 +490,7 @@ void main() {
               pdfRenderer: const PdfLibraryRenderer(),
               bookRepo: _Books(books),
               wishlistRepo: _Wishlist(),
+              periodicalRepo: FakePeriodicals(),
             ),
           ),
           fileShareServiceProvider.overrideWithValue(share),

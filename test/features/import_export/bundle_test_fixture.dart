@@ -17,6 +17,8 @@ import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repo
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
+
 /// Synthetic files + real, shared, in-memory Drift for cross-store assertions.
 final class BundleTestFixture {
   final directory = Directory.systemTemp.createTempSync('bundle_transaction');
@@ -45,6 +47,7 @@ final class BundleTestFixture {
             jsonParser: const PitakaJsonImporter(),
             bookRepo: catalogueItemRepository ?? books,
             wishlistRepo: wishlistRepository ?? wishlist,
+            periodicalRepo: FakePeriodicals(),
           ).importBundle(
             bundle,
             coverFiles: coverFiles ?? files,

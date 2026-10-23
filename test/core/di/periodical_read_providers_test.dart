@@ -163,9 +163,12 @@ void main() {
       final route = await container.read(
         routeScannedBarcodeUseCaseProvider.future,
       );
-      // `FakeItems` does not implement `findByIsbn`: reaching its
-      // `noSuchMethod` proves the module handed the router the item store.
-      await expectLater(route('9780441172719'), throwsUnimplementedError);
+      // `FakeItems` answers findByIsbn from its rows and logs the call (S18)
+      // — reaching it proves the module handed the router the item store.
+      // No row matches, so the route is the not-catalogued ISBN path.
+      final decision = await route('9780441172719');
+      expect(decision, isA<AddBookByIsbn>());
+      expect(items.calls, contains('findByIsbn'));
       expect(periodicals.calls, isEmpty);
     });
   });

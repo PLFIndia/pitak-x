@@ -49,9 +49,12 @@ Future<ImportLibraryUseCase> importLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return ImportLibraryUseCase(
     bookRepo: bookRepo,
     wishlistRepo: wishlistRepo,
+    // ADR 0014 W1: schema v4 payloads carry periodicals.
+    periodicalRepo: periodicalRepo,
     // N14: the concrete JSON codec is infrastructure, wired here at the
     // composition root.
     jsonParser: const PitakaJsonImporter(),
@@ -75,9 +78,12 @@ Future<ExportLibraryUseCase> exportLibraryUseCase(
 ) async {
   final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return ExportLibraryUseCase(
     bookRepo: bookRepo,
     wishlistRepo: wishlistRepo,
+    // ADR 0014 W1: JSON writes periodicals top-level; CSV resolves series.
+    periodicalRepo: periodicalRepo,
     jsonEncoder: const PitakaJsonExporter(),
     pdfRenderer: const PdfLibraryRenderer(),
   );

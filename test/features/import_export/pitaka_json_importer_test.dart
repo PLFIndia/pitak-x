@@ -3,6 +3,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 void main() {
@@ -368,6 +371,206 @@ void main() {
         expect(payload.parseErrors, isEmpty);
         expect(payload.items.single.copyCount, 3);
         expect(payload.wishlist.single.priority, 0);
+      });
+    });
+
+    group('schema v4 (ADR 0014 W1)', () {
+      String v4({
+        List<Map<String, dynamic>> periodicals = const [],
+        List<Map<String, dynamic>> books = const [],
+        List<Map<String, dynamic>> wishlist = const [],
+      }) => jsonEncode({
+        'schemaVersion': 4,
+        'exportedAt': 0,
+        'periodicals': periodicals,
+        'books': books,
+        'wishlist': wishlist,
+      });
+
+      test('reads the periodicals list and all three kinds', () {
+        final payload = importer.parse(
+          v4(
+            periodicals: [
+              {
+                'periodicalUid': 'per-1',
+                'title': 'Frontline',
+                'issn': '1234-5679',
+                'publisher': 'THG',
+                'language': 'English',
+                'frequency': 'monthly',
+                'subscriptionStart': 100,
+                'subscriptionEnd': 200,
+                'location': 'Shelf 1',
+                'sourceType': 'PURCHASED',
+                'ageGroup': 'above-6',
+                'addedDate': 50,
+              },
+            ],
+            books: [
+              {'bookUid': 'b1', 'title': 'Plain book'},
+              {
+                'bookUid': 'o1',
+                'kind': 'other',
+                'title': 'Carrom board',
+                'notes': 'family set',
+              },
+              {
+                'bookUid': 'i1',
+                'kind': 'magazine-issue',
+                'title': 'Frontline — No 5',
+                'issue': {
+                  'periodicalUid': 'per-1',
+                  'issueNumber': 5,
+                  'issueDate': 1000,
+                  'label': 'Festive number',
+                },
+              },
+            ],
+          ),
+        );
+        expect(payload.parseErrors, isEmpty);
+        expect(payload.isEmpty, isFalse);
+
+        final p = payload.periodicals.single;
+        expect(p.periodicalUid, 'per-1');
+        expect(p.title, 'Frontline');
+        expect(p.issn, '1234-5679');
+        expect(p.frequency, PeriodicalFrequency.monthly);
+        expect(p.subscriptionStart, 100);
+        expect(p.subscriptionEnd, 200);
+        expect(p.sourceType, ItemSourceType.purchased);
+        expect(p.ageGroup, AgeGroup.above6);
+
+        final plain = payload.items[0];
+        expect(plain.kind, ItemKind.book, reason: 'kind absent ⇒ book');
+        expect(plain.details, isNull);
+
+        final other = payload.items[1];
+        expect(other.kind, ItemKind.other);
+        expect(other.details, isA<OtherItemOf>());
+        expect(other.notes, 'family set');
+
+        final issue = payload.items[2];
+        expect(issue.kind, ItemKind.magazineIssue);
+        final d = issue.details! as IssueOf;
+        expect(d.periodicalUid, 'per-1');
+        expect(d.issueNumber, 5);
+        expect(d.issueDate, 1000);
+        expect(d.label, 'Festive number');
+      });
+
+      test('an unknown kind token skips the row and counts it (F6)', () {
+        final payload = importer.parse(
+          v4(
+            books: [
+              {'title': 'Mystery', 'kind': 'vinyl-lp'},
+              {'title': 'Kept'},
+            ],
+          ),
+        );
+        expect(payload.items.single.title, 'Kept');
+        expect(payload.items.single.kind, ItemKind.book);
+        expect(payload.parseErrors.single, contains('kind'));
+        expect(payload.parseErrors.single, contains('Mystery'));
+      });
+
+      test('a magazine-issue without its issue object is rejected', () {
+        final payload = importer.parse(
+          v4(
+            books: [
+              {'title': 'No block', 'kind': 'magazine-issue'},
+              {'title': 'Fine'},
+            ],
+          ),
+        );
+        expect(payload.items.single.title, 'Fine');
+        expect(payload.parseErrors.single, contains('issue'));
+        expect(payload.parseErrors.single, contains('No block'));
+      });
+
+      test('an orphan issue is imported as a book with a warning', () {
+        final payload = importer.parse(
+          v4(
+            books: [
+              {
+                'title': 'Orphan issue',
+                'kind': 'magazine-issue',
+                'issue': {'periodicalUid': 'not-in-file', 'issueNumber': 3},
+              },
+            ],
+          ),
+        );
+        expect(payload.parseErrors, isEmpty);
+        final row = payload.items.single;
+        expect(row.kind, ItemKind.book);
+        expect(row.details, isNull);
+        expect(row.title, 'Orphan issue', reason: 'base fields survive');
+        expect(payload.warnings.single, contains('not in the file'));
+        expect(payload.warnings.single, contains('Orphan issue'));
+      });
+
+      test(
+        'a malformed issue block rejects the row naming the issue field',
+        () {
+          final payload = importer.parse(
+            v4(
+              periodicals: [
+                {'periodicalUid': 'per-1', 'title': 'Frontline'},
+              ],
+              books: [
+                {
+                  'title': 'Bad range',
+                  'kind': 'magazine-issue',
+                  'issue': {
+                    'periodicalUid': 'per-1',
+                    'issueDate': 2000,
+                    'boundUntil': 1000, // before the start
+                  },
+                },
+              ],
+            ),
+          );
+          expect(payload.items, isEmpty);
+          expect(payload.parseErrors.single, contains('issue.boundUntil'));
+        },
+      );
+
+      test('a v5 file is refused with the update message', () {
+        final payload = importer.parse(
+          '{"schemaVersion": 5, "books": [], "wishlist": []}',
+        );
+        expect(payload.isEmpty, isTrue);
+        expect(payload.parseErrors.single, contains('newer version'));
+      });
+
+      test('a v3 file carries no periodicals and parses as before', () {
+        final payload = importer.parse(
+          jsonEncode({
+            'schemaVersion': 3,
+            'exportedAt': 0,
+            'books': [
+              {'title': 'A'},
+            ],
+            'wishlist': <dynamic>[],
+          }),
+        );
+        expect(payload.parseErrors, isEmpty);
+        expect(payload.periodicals, isEmpty);
+        expect(payload.items.single.kind, ItemKind.book);
+      });
+
+      test('an over-cap magazine title field is truncated and reported', () {
+        final payload = importer.parse(
+          v4(
+            periodicals: [
+              {'periodicalUid': 'per-1', 'title': 'x' * 9000},
+            ],
+          ),
+        );
+        expect(payload.periodicals.single.title, hasLength(8000));
+        expect(payload.warnings.single, contains('title'));
+        expect(payload.warnings.single, contains('shortened'));
+        expect(payload.parseErrors, isEmpty);
       });
     });
   });

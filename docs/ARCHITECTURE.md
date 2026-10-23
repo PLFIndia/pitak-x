@@ -351,18 +351,20 @@ to false** (the `hasX` forward-compat pattern):
 Refusal reasons are coarse enums that never carry URLs or exception text
 (a URL can contain the user's API key).
 
-### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014, pending)
+### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
 
-- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**.
-  Every row in `books[]` gains `kind` (`book` | `magazine-issue` | `other`;
-  absent ⇒ `book`); an issue row carries a nested `issue{}`; the document
-  gains a top-level `periodicals[]`. The keys `books` and `bookUid` keep
-  their names. Older builds refuse a v4 file with the existing "update the
-  app" message (a silent import would drop kinds, P1). An unknown `kind` is
-  skipped and reported, never imported as a book.
+- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**
+  (shipped in the magazines run, S18). Every row in `books[]` gains `kind`
+  (`book` | `magazine-issue` | `other`; absent ⇒ `book`); an issue row
+  carries a nested `issue{}`; the document gains a top-level
+  `periodicals[]`. The keys `books` and `bookUid` keep their names. Older
+  builds refuse a v4 file with the existing "update the app" message (a
+  silent import would drop kinds, P1). An unknown `kind` is skipped and
+  reported, never imported as a book. CSV export gains `Kind`, `Series`,
+  `Volume`, `Issue`, `Issue date`, `Bound until`, `Issue label`.
 - **`books.json`** (published): stays schema **1** — additive `kind` per
   entry (+ `issue{}`), top-level `periodicals[]` with public fields only.
-  Older viewers ignore the new keys.
+  Older viewers ignore the new keys. (Pending — the publish session.)
 
 ---
 

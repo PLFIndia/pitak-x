@@ -20,6 +20,8 @@ import 'package:pitaka/features/library/domain/repositories/catalogue_item_repos
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
+
 class _MemBookRepo implements CatalogueItemRepository {
   // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
   // match" and a pass-through transaction unless a test overrides them.
@@ -119,6 +121,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
 
     final container = ProviderContainer(
@@ -154,6 +157,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: _MemBookRepo(),
         wishlistRepo: _MemWishlistRepo(),
+        periodicalRepo: FakePeriodicals(),
       );
       final container = ProviderContainer(
         overrides: [
@@ -178,6 +182,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
     final container = ProviderContainer(
       overrides: [
@@ -212,6 +217,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
     // A minimal valid Pitaka bundle: just library.json (no covers).
     final libraryJson = jsonEncode({

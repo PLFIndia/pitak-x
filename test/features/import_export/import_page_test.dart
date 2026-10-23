@@ -25,6 +25,8 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 
 import '../../support/a11y.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
+
 class _MemBookRepo implements CatalogueItemRepository {
   // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
   // match" and a pass-through transaction unless a test overrides them.
@@ -151,6 +153,7 @@ void main() {
     jsonParser: const PitakaJsonImporter(),
     bookRepo: books,
     wishlistRepo: _MemWishlistRepo(),
+    periodicalRepo: FakePeriodicals(),
   );
 
   group('M05: picked files are read under a cap', () {
@@ -229,6 +232,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
 
     await tester.pumpWidget(
@@ -276,6 +280,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: books,
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
     await tester.pumpWidget(
       ProviderScope(

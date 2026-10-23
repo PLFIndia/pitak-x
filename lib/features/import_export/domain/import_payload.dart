@@ -7,6 +7,7 @@
 library;
 
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Parsed, not-yet-persisted catalogue items + wishlist entries from an
@@ -15,14 +16,22 @@ class ImportPayload {
   /// Creates an import payload.
   const ImportPayload({
     this.items = const [],
+    this.periodicals = const [],
     this.wishlist = const [],
     this.parseErrors = const [],
     this.warnings = const [],
   });
 
   /// Catalogue items to import (ids not yet assigned). The Pitaka-JSON key
-  /// that feeds this list stays `books` (wire contract, ADR 0014).
+  /// that feeds this list stays `books` (wire contract, ADR 0014). An item
+  /// may carry `details` (an issue's `IssueOf`, an other's `OtherItemOf`
+  /// marker) — kinds ride the same list (F5).
   final List<CatalogueItem> items;
+
+  /// Magazine titles to import (ids not yet assigned; ADR 0014 W1). A v4
+  /// document carries them top-level as `periodicals[]`; they are applied
+  /// BEFORE [items] so issues meet their series already in place.
+  final List<Periodical> periodicals;
 
   /// Wishlist entries to import (ids not yet assigned).
   final List<WishlistBook> wishlist;
@@ -39,7 +48,7 @@ class ImportPayload {
   final List<String> warnings;
 
   /// True when nothing parseable was found.
-  bool get isEmpty => items.isEmpty && wishlist.isEmpty;
+  bool get isEmpty => items.isEmpty && periodicals.isEmpty && wishlist.isEmpty;
 }
 
 /// Common interface for every import-file reader (Kotlin `Importer`).

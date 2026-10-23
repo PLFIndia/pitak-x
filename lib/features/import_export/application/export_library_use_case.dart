@@ -28,6 +28,9 @@ import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -80,17 +83,22 @@ class ExportLibraryUseCase {
   const ExportLibraryUseCase({
     required CatalogueItemRepository bookRepo,
     required WishlistRepository wishlistRepo,
+    // ADR 0014 W1: JSON writes periodicals top-level and CSV resolves an
+    // issue's Series cell — both come from this repository.
+    required PeriodicalRepository periodicalRepo,
     // N14: the concrete JSON codec and PDF renderer live in infrastructure;
     // the use case depends on the domain ports, injected via DI.
     required LibraryJsonEncoder jsonEncoder,
     required LibraryPdfRenderer pdfRenderer,
   }) : _books = bookRepo,
        _wishlist = wishlistRepo,
+       _periodicals = periodicalRepo,
        _json = jsonEncoder,
        _pdf = pdfRenderer;
 
   final CatalogueItemRepository _books;
   final WishlistRepository _wishlist;
+  final PeriodicalRepository _periodicals;
   final LibraryJsonEncoder _json;
   final LibraryPdfRenderer _pdf;
 
@@ -151,6 +159,23 @@ class ExportLibraryUseCase {
       }
       wishlistList = res.getOrElse((_) => const <WishlistBook>[]);
     }
+    // W1: JSON writes periodicals top-level (a backup missing them would
+    // silently orphan its issues on import, P1) and CSV resolves an issue's
+    // Series cell. PDF never references them. A read failure fails the whole
+    // export — a partial backup must not look complete.
+    var periodicalList = <Periodical>[];
+    final libraryRead =
+        scope != ExportScope.wishlistOnly || format == ExportFormat.pdf;
+    if (libraryRead && format != ExportFormat.pdf) {
+      final res = await _periodicals.listAll();
+      if (res.isLeft()) {
+        return left((res as Left<Failure, List<PeriodicalSummary>>).value);
+      }
+      periodicalList = [
+        for (final s in res.getOrElse((_) => const <PeriodicalSummary>[]))
+          s.periodical,
+      ];
+    }
     final ymd = _ymd(stamp);
 
     switch (format) {
@@ -162,6 +187,7 @@ class ExportLibraryUseCase {
             bytes: _utf8(
               _json.export(
                 books: bookList,
+                periodicals: periodicalList,
                 wishlist: wishlistList,
                 exportedAt: stamp,
                 libraryId: libraryId,
@@ -176,7 +202,15 @@ class ExportLibraryUseCase {
             suggestedFileName:
                 'pitak-library-${sourceFilterFileTag(sourceFilter)}$ymd.csv',
             mimeType: 'text/csv',
-            bytes: _utf8(_libraryCsv(sourceFilter.apply(bookList))),
+            bytes: _utf8(
+              _libraryCsv(
+                sourceFilter.apply(bookList),
+                seriesTitles: {
+                  for (final p in periodicalList)
+                    if (p.periodicalUid case final uid?) uid: p.title,
+                },
+              ),
+            ),
           ),
         );
       case ExportFormat.pdf:
@@ -212,7 +246,16 @@ class ExportLibraryUseCase {
   }
 
   /// Flat library CSV with a header row; values RFC4180-quoted.
-  String _libraryCsv(List<CatalogueItem> books) {
+  ///
+  /// W1 (ADR 0014): the kind columns are appended after the classic set so
+  /// existing column positions do not move. `Series` is the issue's magazine
+  /// title, resolved from [seriesTitles] (uid → title); dates are ISO
+  /// `YYYY-MM-DD`. CSV is export-only, so the cells are written for humans:
+  /// `Kind` is the singular display name, not the storage token.
+  String _libraryCsv(
+    List<CatalogueItem> books, {
+    Map<String, String> seriesTitles = const {},
+  }) {
     const headers = [
       'title',
       'author',
@@ -225,9 +268,17 @@ class ExportLibraryUseCase {
       'location',
       'copyCount',
       'notes',
+      'Kind',
+      'Series',
+      'Volume',
+      'Issue',
+      'Issue date',
+      'Bound until',
+      'Issue label',
     ];
     final buf = StringBuffer()..writeln(headers.map(_csv).join(','));
     for (final b in books) {
+      final issue = b.issue;
       buf.writeln(
         [
           b.title,
@@ -241,10 +292,36 @@ class ExportLibraryUseCase {
           b.location ?? '',
           b.copyCount.toString(),
           b.notes ?? '',
+          _kindLabel(b),
+          if (issue == null) '' else seriesTitles[issue.periodicalUid] ?? '',
+          issue?.volume?.toString() ?? '',
+          issue?.issueNumber?.toString() ?? '',
+          _isoDate(issue?.issueDate),
+          _isoDate(issue?.boundUntil),
+          issue?.label ?? '',
         ].map(_csv).join(','),
       );
     }
     return buf.toString();
+  }
+
+  /// The singular, human-facing kind name for the CSV cell (the plural
+  /// `ItemKind.label` is the chip wording, U1).
+  static String _kindLabel(CatalogueItem b) => switch (b.details) {
+    IssueOf() => 'Magazine issue',
+    OtherItemOf() => 'Other',
+    null => 'Book',
+  };
+
+  /// ISO `YYYY-MM-DD` for a CSV date cell; blank when unset or unrepresentable
+  /// (M15: never throw mid-export).
+  static String _isoDate(int? epochMillis) {
+    if (epochMillis == null) return '';
+    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
+    if (d == null) return '';
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
   }
 
   static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));

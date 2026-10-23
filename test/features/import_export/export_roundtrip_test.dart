@@ -18,8 +18,14 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
+
+import '../periodicals/application/periodical_fakes.dart';
 
 class _Books implements CatalogueItemRepository {
   _Books(this._all);
@@ -179,6 +185,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.both,
@@ -216,6 +223,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -233,6 +241,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -267,6 +276,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(hostile),
       wishlistRepo: _Wishlist(const []),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -295,6 +305,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       // Scope is ignored for PDF (always the library list); pass wishlistOnly
@@ -325,6 +336,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     // Use the bundled app icon as a stand-in library logo (real PNG bytes the
     // renderer can decode). The header should draw it without erroring.
@@ -382,6 +394,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(sourced),
       wishlistRepo: _Wishlist(const []),
+      periodicalRepo: FakePeriodicals(),
     );
 
     test('CSV by type keeps only that type and tags the file name', () async {
@@ -432,6 +445,7 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books(sourced),
         wishlistRepo: _Wishlist(const []),
+        periodicalRepo: FakePeriodicals(),
       );
       final result = await pdfUseCase(
         scope: ExportScope.libraryOnly,
@@ -455,6 +469,7 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books(sourced),
         wishlistRepo: _Wishlist(const []),
+        periodicalRepo: FakePeriodicals(),
       );
       final result = await pdfUseCase(
         scope: ExportScope.libraryOnly,
@@ -482,6 +497,7 @@ void main() {
             ),
           ]),
           wishlistRepo: _Wishlist(const []),
+          periodicalRepo: FakePeriodicals(),
         );
         final result = await pdfUseCase(
           scope: ExportScope.libraryOnly,
@@ -521,11 +537,15 @@ void main() {
     final json = const PitakaJsonExporter().export(
       books: const [CatalogueItem(title: 'Only')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
     );
     expect(json, contains('"title": "Only"'));
     expect(json, isNot(contains('"author"')));
-    expect(json, contains('"schemaVersion": 3'));
+    expect(json, contains('"schemaVersion": 4'));
+    // W1: the kind is written explicitly; an empty periodicals list is omitted.
+    expect(json, contains('"kind": "book"'));
+    expect(json, isNot(contains('"periodicals"')));
   });
 
   test('exporter emits libraryId/libraryName the importer reads back', () {
@@ -533,6 +553,7 @@ void main() {
     final json = exporter.export(
       books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
       libraryId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       libraryName: 'Riverside',
@@ -546,9 +567,164 @@ void main() {
     final json = const PitakaJsonExporter().export(
       books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
     );
     expect(json, isNot(contains('"libraryId"')));
     expect(json, isNot(contains('"libraryName"')));
+  });
+
+  group('schema v4 (ADR 0014 W1)', () {
+    /// A series, one plain book, one other and one of its issues — the full
+    /// kind census of a v4 document.
+    const series = Periodical(
+      id: 1,
+      periodicalUid: 'per-1',
+      title: 'Frontline',
+      issn: '1234-5679',
+      publisher: 'THG',
+      language: 'English',
+      frequency: PeriodicalFrequency.monthly,
+      subscriptionStart: 100,
+      subscriptionEnd: 200,
+      addedDate: 50,
+    );
+    const items = [
+      CatalogueItem(itemUid: 'b1', title: 'Plain', addedDate: 10),
+      CatalogueItem(
+        itemUid: 'o1',
+        title: 'Carrom board',
+        notes: 'family set',
+        addedDate: 20,
+        details: OtherItemOf(),
+      ),
+      CatalogueItem(
+        itemUid: 'i1',
+        title: 'Frontline — No 5',
+        publisher: 'THG',
+        addedDate: 30,
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          issueNumber: 5,
+          issueDate: 1759276800000,
+          label: 'Festive number',
+        ),
+      ),
+    ];
+
+    ExportLibraryUseCase useCaseWith({List<CatalogueItem> rows = items}) =>
+        ExportLibraryUseCase(
+          jsonEncoder: const PitakaJsonExporter(),
+          pdfRenderer: const PdfLibraryRenderer(),
+          bookRepo: _Books(rows),
+          wishlistRepo: _Wishlist(const []),
+          periodicalRepo: FakePeriodicals()..seed(series),
+        );
+
+    test('JSON round-trips all three kinds and the periodicals list', () async {
+      final result = await useCaseWith()(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.json,
+        now: 999,
+      );
+      final export = result.getOrElse((f) => fail('export failed: $f'));
+      final payload = const PitakaJsonImporter().parse(
+        utf8.decode(export.bytes),
+      );
+      expect(payload.parseErrors, isEmpty);
+
+      final p = payload.periodicals.single;
+      expect(p.title, 'Frontline');
+      expect(p.periodicalUid, 'per-1');
+      expect(p.issn, '1234-5679');
+      expect(p.frequency, PeriodicalFrequency.monthly);
+      expect(p.subscriptionEnd, 200);
+
+      expect(payload.items, hasLength(3));
+      final book = payload.items.firstWhere((b) => b.itemUid == 'b1');
+      expect(book.kind, ItemKind.book);
+      expect(book.details, isNull);
+      final other = payload.items.firstWhere((b) => b.itemUid == 'o1');
+      expect(other.kind, ItemKind.other);
+      expect(other.details, isA<OtherItemOf>());
+      expect(other.notes, 'family set');
+      final issue = payload.items.firstWhere((b) => b.itemUid == 'i1');
+      expect(issue.kind, ItemKind.magazineIssue);
+      expect(
+        issue.details,
+        isA<IssueOf>()
+            .having((d) => d.periodicalUid, 'periodicalUid', 'per-1')
+            .having((d) => d.issueNumber, 'issueNumber', 5)
+            .having((d) => d.issueDate, 'issueDate', 1759276800000)
+            .having((d) => d.label, 'label', 'Festive number'),
+      );
+      // The projected base fields ride along as plain columns (D3).
+      expect(issue.title, 'Frontline — No 5');
+      expect(issue.publisher, 'THG');
+    });
+
+    test('CSV gains the kind columns and resolves the series title', () async {
+      final result = await useCaseWith()(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+        now: 999,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      final lines = utf8.decode(export.bytes).trim().split('\n');
+      expect(
+        lines.first,
+        endsWith(
+          ',Kind,Series,Volume,Issue,Issue date,Bound until,Issue label',
+        ),
+        reason: 'the classic columns keep their positions',
+      );
+      expect(lines, hasLength(4)); // header + 3 rows
+
+      final bookRow = lines[1].split(',');
+      expect(
+        bookRow.sublist(11),
+        ['Book', '', '', '', '', '', ''],
+        reason: 'a book row leaves the kind columns blank after Kind',
+      );
+
+      final issueRow = lines[3].split(',');
+      expect(issueRow[11], 'Magazine issue');
+      expect(issueRow[12], 'Frontline', reason: 'series title by uid');
+      expect(issueRow[14], '5');
+      expect(issueRow[15], '2025-10-01');
+      expect(issueRow[16], '', reason: 'not a bound volume');
+      expect(issueRow[17], 'Festive number');
+
+      final otherRow = lines[2].split(',');
+      expect(otherRow[11], 'Other');
+    });
+
+    test('a hostile series title is quote-prefixed in CSV (OWASP)', () async {
+      final hostile = FakePeriodicals()
+        ..seed(const Periodical(title: '=EVIL()', periodicalUid: 'per-1'));
+      final useCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: const PdfLibraryRenderer(),
+        bookRepo: _Books(const [
+          CatalogueItem(
+            title: 'Safe title',
+            details: IssueOf(periodicalUid: 'per-1', issueNumber: 1),
+          ),
+        ]),
+        wishlistRepo: _Wishlist(const []),
+        periodicalRepo: hostile,
+      );
+      final result = await useCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      final row = utf8.decode(export.bytes).trim().split('\n')[1];
+      expect(
+        row.split(',')[12],
+        startsWith("'"),
+        reason: 'the series cell must never open as a formula: $row',
+      );
+    });
   });
 }

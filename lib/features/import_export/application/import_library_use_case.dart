@@ -36,6 +36,8 @@ import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -47,6 +49,9 @@ class ImportSummary {
     this.booksAdded = 0,
     this.booksUpdated = 0,
     this.booksSkipped = 0,
+    this.periodicalsAdded = 0,
+    this.periodicalsUpdated = 0,
+    this.periodicalsSkipped = 0,
     this.wishlistAdded = 0,
     this.wishlistReplaced = 0,
     this.parseErrors = const [],
@@ -64,6 +69,17 @@ class ImportSummary {
 
   /// Library books skipped because their ISBN already existed (no uid match).
   final int booksSkipped;
+
+  /// New magazine titles inserted (schema v4, ADR 0014 W1).
+  final int periodicalsAdded;
+
+  /// Existing magazine titles updated in place (same periodicalUid in the
+  /// file).
+  final int periodicalsUpdated;
+
+  /// Magazine titles skipped because their ISSN already existed (no uid
+  /// match) — the periodical twin of the book ISBN skip.
+  final int periodicalsSkipped;
 
   /// New wishlist entries inserted.
   final int wishlistAdded;
@@ -85,16 +101,21 @@ final class ImportLibraryUseCase {
   const ImportLibraryUseCase({
     required CatalogueItemRepository bookRepo,
     required WishlistRepository wishlistRepo,
+    // ADR 0014 W1: schema v4 payloads carry periodicals, applied before the
+    // item rows so issues meet their series already in place.
+    required PeriodicalRepository periodicalRepo,
     // N14: concrete JSON codec lives in infrastructure; injected via DI.
     required LibraryJsonParser jsonParser,
     GoodreadsCsvImporter goodreadsImporter = const GoodreadsCsvImporter(),
   }) : _bookRepo = bookRepo,
        _wishlistRepo = wishlistRepo,
+       _periodicalRepo = periodicalRepo,
        _json = jsonParser,
        _goodreads = goodreadsImporter;
 
   final CatalogueItemRepository _bookRepo;
   final WishlistRepository _wishlistRepo;
+  final PeriodicalRepository _periodicalRepo;
   final LibraryJsonParser _json;
   final GoodreadsCsvImporter _goodreads;
 
@@ -172,8 +193,69 @@ final class ImportLibraryUseCase {
     var booksAdded = 0;
     var booksUpdated = 0;
     var booksSkipped = 0;
+    var periodicalsAdded = 0;
+    var periodicalsUpdated = 0;
+    var periodicalsSkipped = 0;
     var wishlistAdded = 0;
     var wishlistReplaced = 0;
+
+    // W1: periodicals FIRST, inside the same transaction — an issue row is
+    // only meaningful next to its series, and the item loop below writes
+    // issues as-is (their projected fields arrive in the file, D3).
+    for (final rawPeriodical in payload.periodicals) {
+      // M15 defence in depth, same rule as the book loop: a Left means a
+      // parser bug — fail the whole import (the transaction rolls back).
+      final checked = Periodical.validate(rawPeriodical);
+      if (checked.isLeft()) {
+        final errs = (checked as Left<List<FieldError>, Periodical>).value;
+        return left(
+          ValidationFailure(
+            'A parsed magazine title failed validation: '
+            '${errs.map((e) => '${e.field} ${e.problem}').join('; ')}.',
+          ),
+        );
+      }
+      final periodical = checked.toNullable()!;
+      // 1. Same stable identity already here → update that row in place
+      //    (the repository keeps the stored uid, S11).
+      final uid = periodical.periodicalUid?.trim();
+      if (uid != null && uid.isNotEmpty) {
+        final byUid = await _periodicalRepo.findByUid(uid);
+        if (byUid.isLeft()) {
+          return byUid.map((_) => const ImportSummary(format: null));
+        }
+        final existing = byUid.toNullable();
+        if (existing != null) {
+          final updated = await _periodicalRepo.update(
+            periodical.copyWith(id: existing.id),
+          );
+          if (updated.isLeft()) {
+            return updated.map((_) => const ImportSummary(format: null));
+          }
+          periodicalsUpdated++;
+          continue;
+        }
+      }
+      // 2. Same ISSN (a title you already track under another uid) → skip,
+      //    exactly like the book ISBN skip below.
+      final issn = periodical.issn;
+      if (issn != null && issn.isNotEmpty) {
+        final found = await _periodicalRepo.findByIssn(issn);
+        if (found.isLeft()) {
+          return found.map((_) => const ImportSummary(format: null));
+        }
+        if (found.toNullable() != null) {
+          periodicalsSkipped++;
+          continue;
+        }
+      }
+      // 3. New to this library → insert.
+      final inserted = await _periodicalRepo.insert(periodical);
+      if (inserted.isLeft()) {
+        return inserted.map((_) => const ImportSummary(format: null));
+      }
+      periodicalsAdded++;
+    }
 
     for (final rawBook in payload.items) {
       // M15 defence in depth: parsers already validate each row, but the
@@ -310,6 +392,9 @@ final class ImportLibraryUseCase {
         booksAdded: booksAdded,
         booksUpdated: booksUpdated,
         booksSkipped: booksSkipped,
+        periodicalsAdded: periodicalsAdded,
+        periodicalsUpdated: periodicalsUpdated,
+        periodicalsSkipped: periodicalsSkipped,
         wishlistAdded: wishlistAdded,
         wishlistReplaced: wishlistReplaced,
         parseErrors: payload.parseErrors,
@@ -357,6 +442,11 @@ final class ImportLibraryUseCase {
       removed: incoming.removed,
       removedAt: incoming.removedAt,
       addedBy: incoming.addedBy ?? existing.addedBy,
+      // W1: the incoming row's kind wins on a re-import (the file is the
+      // newer truth about the SAME itemUid). The repository's write path
+      // allows the kind rewrite deliberately (S10: kind-change refusal lives
+      // in the issue use case, D8, not in import).
+      details: incoming.details,
     );
   }
 }

@@ -300,6 +300,22 @@ class FakeItems implements CatalogueItemRepository {
     return right(rows[id]);
   }
 
+  /// S18: the import use case matches incoming rows by uid, then ISBN.
+  @override
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async {
+    calls.add('findByUid');
+    return right(
+      rows.values.where((row) => row.itemUid == itemUid).firstOrNull,
+    );
+  }
+
+  /// S18: same for ISBN (the "already own it" skip).
+  @override
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
+    calls.add('findByIsbn');
+    return right(rows.values.where((row) => row.isbn == isbn).firstOrNull);
+  }
+
   /// A window of the rows, like the real store: a series facet keeps only
   /// that series' issues in `IssueSorter` order (newest first); a plain
   /// listing pages every row in id order; a search answers nothing.
