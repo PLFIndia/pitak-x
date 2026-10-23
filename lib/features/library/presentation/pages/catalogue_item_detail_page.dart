@@ -20,6 +20,9 @@
 /// S14: the app-bar actions, the lend section and the delete-forever button
 /// live in `widgets/catalogue_item_actions.dart` (the page grew over the
 /// file-size cap; the split makes room for S17's kind-specific sections).
+/// S17: the kind-specific block (an issue's series + numbers) lives in
+/// `widgets/item_details_section.dart`, and the label/value row is the shared
+/// `widgets/detail_row.dart`.
 library;
 
 import 'package:flutter/material.dart';
@@ -34,6 +37,8 @@ import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
+import 'package:pitaka/features/library/presentation/widgets/detail_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/item_details_section.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
@@ -190,6 +195,10 @@ class _ItemDetailBody extends ConsumerWidget {
             const SizedBox(height: 12),
             _RemovedBadge(scheme: scheme, textTheme: textTheme),
           ],
+          // Kind-specific block (S17): an issue shows its series + numbers
+          // here; books and others render nothing (O1: the description is
+          // the Notes block below).
+          ItemDetailsSection(item: book),
           // Lend action (S34): rendered whenever the vault state is KNOWN,
           // so a locked vault explains itself instead of silently hiding the
           // feature. Still loading / errored (session == null) → nothing, a
@@ -200,19 +209,19 @@ class _ItemDetailBody extends ConsumerWidget {
           ],
           const SizedBox(height: 24),
           // Labeled rows in the exact order of the Kotlin detail screen.
-          _DetailRow(label: 'ISBN', value: book.isbn),
-          _DetailRow(label: 'Publisher', value: book.publisher),
-          _DetailRow(label: 'Published', value: book.publishedYear?.toString()),
-          _DetailRow(label: 'Genre', value: book.genre),
-          _DetailRow(label: 'Language', value: book.language),
-          _DetailRow(label: 'Pages', value: book.pageCount?.toString()),
-          _DetailRow(label: 'Shelf location', value: book.location),
-          _DetailRow(label: 'Quantity', value: book.copyCount.toString()),
-          _DetailRow(label: 'Source', value: _sourceLabel(book.sourceType)),
-          _DetailRow(label: 'Source detail', value: book.sourceDetail),
-          _DetailRow(label: 'Age group', value: _ageGroupLabel(book.ageGroup)),
-          _DetailRow(label: 'Added', value: _formatDate(book.addedDate)),
-          _DetailRow(label: 'Added by', value: book.addedBy),
+          DetailRow(label: 'ISBN', value: book.isbn),
+          DetailRow(label: 'Publisher', value: book.publisher),
+          DetailRow(label: 'Published', value: book.publishedYear?.toString()),
+          DetailRow(label: 'Genre', value: book.genre),
+          DetailRow(label: 'Language', value: book.language),
+          DetailRow(label: 'Pages', value: book.pageCount?.toString()),
+          DetailRow(label: 'Shelf location', value: book.location),
+          DetailRow(label: 'Quantity', value: book.copyCount.toString()),
+          DetailRow(label: 'Source', value: _sourceLabel(book.sourceType)),
+          DetailRow(label: 'Source detail', value: book.sourceDetail),
+          DetailRow(label: 'Age group', value: _ageGroupLabel(book.ageGroup)),
+          DetailRow(label: 'Added', value: _formatDate(book.addedDate)),
+          DetailRow(label: 'Added by', value: book.addedBy),
           if (_has(book.notes)) ...[
             const SizedBox(height: 16),
             Text(
@@ -388,41 +397,6 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
           label: const Text('Replace cover'),
         ),
       ],
-    );
-  }
-}
-
-/// One label/value row. Renders nothing when [value] is null/blank.
-class _DetailRow extends StatelessWidget {
-  const _DetailRow({required this.label, required this.value});
-
-  final String label;
-  final String? value;
-
-  @override
-  Widget build(BuildContext context) {
-    if (value == null || value!.trim().isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final scheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 120,
-            child: Text(
-              label,
-              style: textTheme.bodyMedium?.copyWith(
-                color: scheme.onSurfaceVariant,
-              ),
-            ),
-          ),
-          Expanded(child: Text(value!, style: textTheme.bodyMedium)),
-        ],
-      ),
     );
   }
 }

@@ -60,6 +60,12 @@ void main() {
     // one-hop reasoning as the book form above.
     'lib/features/periodicals/presentation/pages/add_issue_page.dart':
         'form assembly; gate is Add/UpdateIssueUseCase',
+    // ADR 0013 O3: the Others form assembles its row (details always the
+    // field-less `OtherItemOf` marker) and hands it to the GENERIC
+    // AddCatalogueItemUseCase / UpdateCatalogueItemUseCase — the same gate
+    // the book form uses, one hop downstream.
+    'lib/features/library/presentation/pages/other_item_form_page.dart':
+        'form assembly; gate is Add/UpdateCatalogueItemUseCase',
     // ADR 0013 D3: rebuilds an issue row from an already-validated row and
     // a validated periodical (a pure field copy — `copyWith` cannot null a
     // field, so the row is rebuilt). The issue use cases validate the
@@ -97,11 +103,12 @@ void main() {
     }
 
     // Sanity: the census must be non-trivial so a renamed regex or a moved
-    // tree cannot silently make this test vacuously green. 9 = the 8 gated
-    // / trusted sites known at review time + the add/edit form.
+    // tree cannot silently make this test vacuously green. 12 = the sites
+    // known at S17: 6 trusted (allow-list above) + 6 gated ingress paths
+    // that reference the gate themselves.
     expect(
       constructing,
-      hasLength(greaterThanOrEqualTo(9)),
+      hasLength(greaterThanOrEqualTo(12)),
       reason:
           'expected the known CatalogueItem construction sites to be scanned',
     );
@@ -234,6 +241,7 @@ void main() {
         'lib/features/library/domain/entities/catalogue_item.dart',
         'lib/features/library/infrastructure/catalogue_item_mapper.dart',
         'lib/features/library/presentation/pages/add_book_page.dart',
+        'lib/features/library/presentation/pages/other_item_form_page.dart',
         'lib/features/periodicals/domain/issue_projection.dart',
         'lib/features/periodicals/presentation/pages/add_issue_page.dart',
       ]),

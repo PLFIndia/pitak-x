@@ -15,8 +15,10 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -359,6 +361,155 @@ void main() {
     expect(find.byType(AddIssuePage), findsOneWidget);
     expect(find.text('Edit issue'), findsOneWidget);
     expect(find.text('Edit book'), findsNothing);
+  });
+
+  testWidgets('D8: an other-kind row edits through the OTHERS form, never '
+      'the book form (a book-form save would silently flip its kind)', (
+    tester,
+  ) async {
+    const other = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Chess set',
+      details: OtherItemOf(),
+    );
+    final repo = _MemBookRepo([other]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: other));
+    await _openDetail(tester);
+
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OtherItemFormPage), findsOneWidget);
+    expect(find.text('Edit item'), findsOneWidget);
+    expect(find.text('Edit book'), findsNothing);
+  });
+
+  // S17: the kind-specific block (`ItemDetailsSection`). The tall surface
+  // builds the whole lazy page so every row of the block exists.
+  group('S17: item details section', () {
+    void useBigSurface(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    /// Hosts the detail page for [item] with a seeded periodicals store (the
+    /// section resolves "Open series" through `periodicalByUidProvider`).
+    Widget hostWithSeries(
+      _MemBookRepo repo,
+      CatalogueItem item,
+      FakePeriodicals periodicals,
+    ) => _host(
+      repo,
+      tmp.path,
+      initialBook: item,
+      extraOverrides: [
+        periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+        nowTickProvider.overrideWith((ref) => 0),
+      ],
+    );
+
+    testWidgets('an issue shows the series, numbers, date and label, and '
+        '"Open series" pushes the series page (U2)', (tester) async {
+      useBigSurface(tester);
+      final issue = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Frontline — Vol 2 No 5 (Oct 2026)',
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          volume: 2,
+          issueNumber: 5,
+          issueDate: DateTime(2026, 10).millisecondsSinceEpoch,
+          label: 'Festive number',
+        ),
+      );
+      final repo = _MemBookRepo([issue]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+        );
+      await tester.pumpWidget(hostWithSeries(repo, issue, periodicals));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsOneWidget);
+      expect(find.text('Magazine title'), findsOneWidget);
+      expect(
+        find.text('Frontline'),
+        findsOneWidget,
+        reason: 'the series title resolved by uid',
+      );
+      expect(find.text('Volume'), findsOneWidget);
+      expect(find.text('Issue number'), findsOneWidget);
+      expect(find.text('Cover date'), findsOneWidget);
+      expect(find.text('2026-10-01'), findsOneWidget);
+      expect(find.text('Festive number'), findsOneWidget);
+
+      await tester.tap(find.text('Open series'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PeriodicalDetailPage), findsOneWidget);
+    });
+
+    testWidgets('a bound volume shows the from/to range, not a cover date '
+        '(D4)', (tester) async {
+      useBigSurface(tester);
+      final bound = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Frontline — Jul–Dec 2025',
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          issueDate: DateTime(2025, 7).millisecondsSinceEpoch,
+          boundUntil: DateTime(2025, 12, 31).millisecondsSinceEpoch,
+        ),
+      );
+      final repo = _MemBookRepo([bound]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+        );
+      await tester.pumpWidget(hostWithSeries(repo, bound, periodicals));
+      await _openDetail(tester);
+
+      expect(find.text('Bound volume'), findsOneWidget);
+      expect(find.text('Issues from'), findsOneWidget);
+      expect(find.text('Issues to'), findsOneWidget);
+      expect(find.text('2025-07-01'), findsOneWidget);
+      expect(find.text('2025-12-31'), findsOneWidget);
+      expect(find.text('Cover date'), findsNothing);
+    });
+
+    testWidgets('a book shows no kind block', (tester) async {
+      useBigSurface(tester);
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsNothing);
+      expect(find.text('Bound volume'), findsNothing);
+      expect(find.text('Open series'), findsNothing);
+    });
+
+    testWidgets('an other shows no kind block — its description is the '
+        'shared Notes block (O1)', (tester) async {
+      useBigSurface(tester);
+      const other = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Chess set',
+        notes: 'A wooden chess set.',
+        details: OtherItemOf(),
+      );
+      final repo = _MemBookRepo([other]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: other));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsNothing);
+      expect(find.text('Open series'), findsNothing);
+      expect(find.text('Notes'), findsOneWidget);
+      expect(find.text('A wooden chess set.'), findsOneWidget);
+    });
   });
 
   testWidgets('M15: a pre-M15 row with an out-of-range addedDate renders', (

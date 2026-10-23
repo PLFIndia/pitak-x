@@ -6,9 +6,8 @@
 /// - **Add book** → [AddBookPage];
 /// - **Add magazine issue** → [AddIssuePage] and **New magazine title** →
 ///   [PeriodicalFormPage] (S16);
-/// - **Add other item** → a placeholder scaffold until S17 builds that form
-///   (then this file's last placeholder caller is gone and the placeholder
-///   page is deleted, AGENTS.md §2.4).
+/// - **Add other item** → [OtherItemFormPage] (S17 — the last placeholder
+///   push; the placeholder page was deleted with this swap, AGENTS.md §2.4).
 ///
 /// Why a sheet and not four FABs (beginner note): a screen has one primary
 /// action. "Add something" is that action; WHICH kind is a second question,
@@ -18,9 +17,9 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
 
 /// The FAB that opens the add sheet.
 class AddSheetFab extends StatelessWidget {
@@ -92,11 +91,9 @@ final _entries = [
   _Entry(
     icon: Icons.category_outlined,
     label: 'Add other item',
-    push: (context) => Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const PlaceholderPage(pageName: 'Add other item'),
-      ),
-    ),
+    push: (context) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const OtherItemFormPage())),
   ),
   _Entry(
     icon: Icons.newspaper_outlined,

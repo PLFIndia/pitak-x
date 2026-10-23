@@ -20,7 +20,9 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
@@ -48,15 +50,18 @@ class CatalogueItemActions extends ConsumerWidget {
           // save time. When it pops, the page is already observing the
           // edited row, so there is nothing stale to escape from.
           //
-          // Kind routing (ADR 0013 D8): an issue edits through the ISSUE
+          // Kind routing (ADR 0013 D8): each kind edits through its OWN
           // form — the book form assembles no `details`, so saving an issue
-          // there would silently flip its kind to book, which D8 forbids.
-          // An `other` item keeps the generic form until S17's Others form.
+          // or an other there would silently flip its kind to book, which
+          // D8 forbids. The switch is exhaustive on purpose: a future kind
+          // fails to COMPILE here until it gets its own edit route.
           onPressed: () => Navigator.of(context).push(
             MaterialPageRoute<void>(
-              builder: (_) => book.issue != null
-                  ? AddIssuePage(issue: book)
-                  : AddBookPage(book: book),
+              builder: (_) => switch (book.kind) {
+                ItemKind.magazineIssue => AddIssuePage(issue: book),
+                ItemKind.other => OtherItemFormPage(item: book),
+                ItemKind.book => AddBookPage(book: book),
+              },
             ),
           ),
         ),

@@ -6,16 +6,16 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S16** (series form + add/edit-issue form, cover
-  capture, language field shared, all magazine placeholders replaced)
+- Last completed session: **S17** (Others form, kind-aware edit routing,
+  item details section; the last placeholder page deleted)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S16's commit (S15 `322f3ed`, S14 `526b9da`, S13 `bba12b2`,
-  S12 was `02f3f99`, S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8
-  `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3
-  `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S16, 2026-10-23** — 2747 tests, ~85 s
+- Last commit: S17's commit (S16 `6c116fa`, S15 `322f3ed`, S14 `526b9da`,
+  S13 `bba12b2`, S12 was `02f3f99`, S11 `5ce4ec0`, S10 `b657c8c`, S9
+  `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4
+  `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S17, 2026-10-23** — 2758 tests, ~92 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S17.
+- Run stopped here (one session per run, B.3): the next run starts at S18.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -42,10 +42,57 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S17 — Others form, item details section, goldens.** Nothing in flight.
-Follow the plan's S17 steps verbatim.
+**S18 — Pitaka-JSON v4 and CSV.** Nothing in flight. Follow the plan's S18
+steps verbatim.
 
-Notes for it (what S16 built, and the seams S17 plugs into):
+Notes for it (what S17 built, and the seams S18 plugs into):
+
+- **Others can be created now**, so v3→v4 import/export really will meet
+  `kind: 'other'` rows: no detail table, no nested object (W1), `OtherItemOf`
+  is the field-less marker — the importer constructs it for `kind: 'other'`
+  rows and the exporter writes `kind` from `item.kind` (derived, F5). The
+  repository seam (S10) already round-trips the marker (`DriftItemDetails`
+  is a no-op for kinds without a detail table).
+- **The Others form's save path** is the GENERIC pair
+  (`Add/UpdateCatalogueItemUseCase`, O3) via the existing
+  `AddBookController` — see the S17 deviation below; nothing S18 does
+  changes it. S18's import paths must keep calling `CatalogueItem.validate`
+  (the gate census already covers both import files).
+- **Two exhaustive switches now pin the kinds** (both fail to COMPILE when a
+  future kind arrives): `catalogue_item_actions.dart`'s Edit routing
+  (`switch (book.kind)`) and `item_details_section.dart`'s
+  `switch (item.details)`. S18 adds no kind, but its importer must keep
+  "unknown kind token ⇒ skip + count" (F6) — the tolerant `ItemKind.
+  fromToken` is the reader.
+- **Edit-mode identity:** the Others form passes `details: const
+  OtherItemOf()` on every save, so a same-uid re-import of an `other` row
+  and a local edit can never disagree about kind (D6 conflict rule stays
+  the importer's guard).
+- **No placeholders remain:** `placeholder_page.dart` was deleted with the
+  add sheet's last swap (AGENTS §2.4). Nothing references it.
+- **The deferred golden (user decision, see Deviations):** when the Linux
+  PNGs are regenerated, land the series-row golden in ONE commit (like
+  `628d20d`): a widget golden of the periodicals rows across the badge
+  states (active / expiring soon / lapsed / untracked + a removed title) in
+  `key_screens_test.dart`, its name added to `kGoldenNames`, and the PNG
+  from the `update_goldens` artefact. The widget under test is private
+  (`_PeriodicalRow`), so render `PeriodicalsPage` over a seeded
+  `FakePeriodicals` + pinned `clockProvider`/`nowTickProvider` like
+  `periodicals_page_test.dart` does. S18 does not touch this.
+- **Widget-test lessons (S17, same override set as S15/S16):** the Others
+  form needs only `catalogueItemRepositoryProvider` (FakeItems) +
+  `settingsRepositoryProvider` (FakeSettings) + `libraryLanguagesProvider`
+  (deterministic list) — no periodical providers, no `nowTickProvider`
+  (nothing it builds arms the minute timer). The detail-page section tests
+  pin the big surface (`Size(1080, 2400)`, ratio 1) because the block's
+  rows sit below the fold of the 800x600 default. `formatFormDate`/
+  `pickFormDate` (periodicals' `form_rows.dart`) are the shared date
+  helpers the new form uses for "Date added".
+- **Ratchet:** `catalogue_item_detail_page.dart` 455 → 429 (the S17 section
+  insertion plus the `DetailRow` extraction) — never re-crossed the cap, so
+  no ratchet entry; keep it that way (S18 adds nothing to the page).
+
+Notes from S16 (what S16 built, and the seams S17 consumed):
 
 - **The last placeholder:** `periodicals/presentation/pages/
   placeholder_page.dart` has ONE caller left — `add_sheet.dart`'s "Add other
@@ -645,10 +692,41 @@ Rename technique (learned in S1–S4):
   `formatFormDate`) and `series_picker_field.dart`. Orphaned form covers are
   reclaimed by the startup sweep (Q12) rather than per-form bookkeeping.
 
+- `S17` — the plan's step "goldens for the series row + badge" is DEFERRED
+  to land atomically with its PNG (user decision, 2026-10-23). The conflict:
+  golden PNGs must be rendered by the `update_goldens` workflow on Linux
+  ("never commit a Mac-rendered PNG"), this host is not the reference
+  renderer, and the untagged `golden_files_exist_test.dart` guard fails the
+  normal suite on a listed name without a committed PNG — so no choice
+  inside the session could keep both that rule and the `full`-green Done
+  gate. The repo's one precedent for ADDING a golden (`628d20d`) committed
+  test + name + PNG together after a workflow run; the deferred golden
+  follows that. No behaviour coverage is lost meanwhile: every
+  `SubscriptionStatus` badge is asserted in `periodicals_page_test.dart`
+  and the kind badges in `catalogue_item_row_test.dart`. The exact recipe
+  for the follow-up commit is under *Next session*.
+- `S17` — the plan names no controller for the Others form. The form reuses
+  `AddBookController` (the existing controller over the generic
+  Add/UpdateCatalogueItemUseCase pair that O3 assigns to the kind) instead
+  of duplicating its 85 lines under a new name — AGENTS §0 "one blessed
+  way"; the name is historical (F7 kept it) and the class is generic over
+  `CatalogueItem`. The page fires the library refresh after a save, the
+  same division of labour as the book form (the S13 note about the two
+  signal-firing styles still stands).
+- `S17` — shared extraction beyond the plan's file list (the S14/S16
+  idiom): the detail page's private label/value row moved to
+  `widgets/detail_row.dart` so the page and the new
+  `ItemDetailsSection` share one layout (page 455 → 429 lines).
+
 ## Open issues / blocked
 
-_(None yet. Record the exact failing command and the first lines of its
-output. Platform-golden failures go here tagged "verify in CI".)_
+- **Golden PNGs pending the Linux reference renderer (verify in CI):** the
+  S14 library goldens (chips / sheet FAB / badges) were never regenerated,
+  and S17's series-row golden is deferred (see Deviations). Remediation:
+  Actions → "Update goldens" on branch `magazines` (or a PR touching
+  `test/golden/**`), download the `goldens` artefact, then ONE commit with
+  the series-row golden test + `kGoldenNames` entry + the PNGs. Until then
+  the golden step on Linux CI is expected red; every other gate is green.
 
 ## Session log
 
@@ -672,3 +750,4 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S14 | Done | `526b9da` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |
 | S15 | Done | `322f3ed` | 2026-10-23 | `periodicals_page.dart` (281: rows with cover/publisher/"N issues · latest YYYY-MM", `SubscriptionBadge` per status, empty + safe error states, FAB → "New magazine title" placeholder), `periodical_detail_page.dart` (403: observes `periodicalByIdProvider` N03, hero, `SeriesSubscriptionCard` on the injected clock, "Add issue", issues via `IssueListController` paged newest-first in ONE outer scroll view with footer spinner, rows reuse `CatalogueItemRow` → item detail), overflow hard delete with the typed `PeriodicalHasIssuesFailure` refusal shown in place; sections split to `widgets/periodical_detail_sections.dart` (592 → 403, S14 precedent); removed title visible-but-actionless (edit/add hidden, D8); drawer entry "Magazines" between Wishlist and Library network; ZERO S14 placeholders replaced (all four are S16/S17 form destinations — see Deviations), S15 added its own pushes for S16 to swap; gate allow-list unchanged (no construction site); 17 new tests (2728 total), full green ~86 s |
 | S16 | Done | `2dfae74` | 2026-10-23 | `periodical_form_page.dart` (416: fields per D2, ISSN inline validation, `LanguageField`, `FormCoverField`, frequency dropdown, "Track subscription" switch → start/end pickers, N03 saveEdit); `add_issue_page.dart` (496: `SeriesPickerField`, "Bound volume" switch swapping cover date ↔ from/to (D4), optional volume/number, label, own cover, copies/pages prefilled from the LATEST issue + location from the series — see Deviations, `IssueCadence` number/date prefill into empty fields only, live `IssueTitle` preview, blank title — projected by the use case); `catalogue_item_actions.dart` Edit is kind-aware (issue → AddIssuePage, D8); ALL magazine placeholders replaced (add sheet ×2, scan routes ×2, list FAB, detail Edit/Add issue) — only "Add other item" (S17) keeps `placeholder_page.dart` alive; shared: `LanguageField` (from add_book, 640 → 526 ratchet lowered), `cover_crop.dart` presets (from detail page), `FormCoverController.storeCapture` + `FormCoverField` (form-side cover pipeline, gen run), `form_rows.dart`; gate allow-lists +2 (both forms, "form assembly; gate is Add/UpdateIssueUseCase" / "…PeriodicalUseCase") with the censuses updated; 19 new tests (2747 total), full green ~85 s |
+| S17 | Done | `4bd3ef4` | 2026-10-23 | `other_item_form_page.dart` (329: title/transliteration/language/cover, **Description** = the shared notes column (O1), age group, copies, location, source, date added; `details: const OtherItemOf()` on every save so the kind can never flip, D8; reuses `AddBookController` over the generic use cases (O3) — see Deviations; page fires the library refresh like the book form); Edit routing in `catalogue_item_actions.dart` is now an exhaustive `switch (book.kind)` (an `other` no longer lands on the book form, D8); `ItemDetailsSection` (exhaustive `switch (item.details)`: issue block — series resolved via `periodicalByUidProvider` + "Open series" → `PeriodicalDetailPage` (U2), volume/number/cover date or bound from/to range (D4), label; nothing for books/others (O1)) inserted into the detail page; `DetailRow` extracted to `widgets/detail_row.dart` (page 455 → 429); add sheet's last placeholder push swapped and `placeholder_page.dart` DELETED — no placeholders remain; gate allow-list +1 ("form assembly; gate is Add/UpdateCatalogueItemUseCase"), census comment now 12; golden step deferred to its PNG commit (user decision — see Deviations/Open issues); 11 new tests (2758 total), full green ~92 s |

@@ -1,0 +1,196 @@
+/// Widget tests for the Others form (plan S17; ADR 0013 O1, O3): add saves
+/// through the REAL generic use case over the fakes (gate included) with
+/// `details` always the `OtherItemOf` marker, the Description field maps to
+/// the shared notes column, edit mode saves on top of the CURRENT row (N03)
+/// and can never flip the kind (D8), and a repository failure renders the
+/// shared wording with the 'item' noun.
+library;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
+
+import '../../support/a11y.dart';
+import '../periodicals/application/periodical_fakes.dart';
+
+void main() {
+  late FakeItems items;
+
+  setUp(() {
+    items = FakeItems();
+  });
+
+  /// Hosts the form ABOVE a home route so the pop after a successful save is
+  /// observable.
+  Widget app({CatalogueItem? edit}) {
+    return ProviderScope(
+      overrides: [
+        catalogueItemRepositoryProvider.overrideWith((ref) async => items),
+        settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        // Deterministic language list for the shared field.
+        libraryLanguagesProvider.overrideWith((ref) async => ['English']),
+      ],
+      child: MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: TextButton(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OtherItemFormPage(item: edit),
+                ),
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The forms are taller than the default 800x600 test surface, and a
+  /// sliver-backed ListView only builds children near the viewport — give
+  /// every test a surface tall enough to build the whole form.
+  void useBigSurface(WidgetTester tester) {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
+
+  Future<void> openForm(WidgetTester tester, {CatalogueItem? edit}) async {
+    useBigSurface(tester);
+    await tester.pumpWidget(app(edit: edit));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+  }
+
+  /// Scrolls the lazy form until [finder] is built, then taps it.
+  Future<void> scrollTap(WidgetTester tester, Finder finder) async {
+    await tester.scrollUntilVisible(
+      finder,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.tap(finder);
+    await tester.pumpAndSettle();
+  }
+
+  Future<void> save(WidgetTester tester) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+    await scrollTap(tester, find.byType(FilledButton));
+  }
+
+  testWidgets('add: a valid item is persisted as kind other and the page '
+      'pops (O1, O3)', (tester) async {
+    await openForm(tester);
+    expect(find.text('Add other item'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Title *'),
+      'Chess set',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Description'),
+      'A wooden chess set, pieces complete.',
+    );
+
+    await save(tester);
+
+    expect(find.text('open'), findsOneWidget, reason: 'popped after save');
+    final stored = items.inserted.single;
+    expect(stored.title, 'Chess set');
+    expect(
+      stored.notes,
+      'A wooden chess set, pieces complete.',
+      reason: 'the Description field IS the shared notes column (O1)',
+    );
+    expect(stored.details, isA<OtherItemOf>());
+    expect(stored.kind, ItemKind.other);
+    expect(stored.copyCount, 1, reason: 'default copies');
+  });
+
+  testWidgets('add: a blank title is flagged and nothing is persisted', (
+    tester,
+  ) async {
+    await openForm(tester);
+
+    await save(tester);
+
+    expect(find.text('A title is required.'), findsOneWidget);
+    expect(items.inserted, isEmpty);
+  });
+
+  testWidgets('edit: prefilled, saves on top of the current row and keeps '
+      'the kind (N03, D8)', (tester) async {
+    final existing = items.seed(
+      const CatalogueItem(
+        title: 'Chess set',
+        notes: 'Old description',
+        location: 'Shelf B',
+        addedBy: 'meera',
+        details: OtherItemOf(),
+      ),
+    );
+    await openForm(tester, edit: existing);
+
+    expect(find.text('Edit item'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Chess set'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Old description'), findsOneWidget);
+    expect(find.widgetWithText(TextField, 'Shelf B'), findsOneWidget);
+
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Description'),
+      'A wooden chess set, pieces complete.',
+    );
+    await save(tester);
+
+    expect(find.text('open'), findsOneWidget, reason: 'popped after save');
+    final stored = items.rows[existing.id]!;
+    expect(stored.notes, 'A wooden chess set, pieces complete.');
+    expect(stored.title, 'Chess set', reason: 'untouched fields kept');
+    expect(stored.addedBy, 'meera', reason: 'attribution kept from the row');
+    expect(stored.itemUid, existing.itemUid);
+    expect(
+      stored.details,
+      isA<OtherItemOf>(),
+      reason: 'an edit can never flip the kind (D8)',
+    );
+  });
+
+  testWidgets('a repository failure renders the shared wording (noun: item)', (
+    tester,
+  ) async {
+    items.insertFailure = const StorageFailure('synthetic');
+    await openForm(tester);
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Title *'),
+      'Chess set',
+    );
+
+    await save(tester);
+
+    expect(
+      find.text('Could not save the item. Please try again.'),
+      findsOneWidget,
+    );
+    expect(find.text('open'), findsNothing, reason: 'no pop on failure');
+  });
+
+  testWidgets('the cover field offers capture (plugin steps untestable)', (
+    tester,
+  ) async {
+    await openForm(tester);
+    expect(find.text('Add cover'), findsOneWidget);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await openForm(tester);
+    await expectMeetsA11yGuidelines(tester);
+  });
+}

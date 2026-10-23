@@ -1,7 +1,7 @@
 /// S14 tests for the Library add sheet (`widgets/add_sheet.dart`): the FAB
-/// opens a modal sheet with one entry per add path — Add book, Add magazine
-/// issue and New magazine title push the real forms (S16); Add other item
-/// pushes its named placeholder until S17 builds that form.
+/// opens a modal sheet with one entry per add path — every entry pushes its
+/// real form (books; the magazine forms since S16; the Others form, S17 —
+/// the placeholder page is gone).
 library;
 
 import 'package:flutter/material.dart';
@@ -14,10 +14,10 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/add_sheet.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
 
 import '../periodicals/application/periodical_fakes.dart';
 
@@ -43,6 +43,10 @@ Widget _host() => ProviderScope(
     // picker): repository + the pinned minute tick so the tests settle.
     periodicalRepositoryProvider.overrideWith((ref) async => FakePeriodicals()),
     nowTickProvider.overrideWith((ref) => 0),
+    // The pushed Others form reads settings (maintainer stamp) and the
+    // shared language field's list.
+    settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+    libraryLanguagesProvider.overrideWith((ref) async => ['English']),
   ],
   child: MaterialApp(
     home: Scaffold(
@@ -100,9 +104,7 @@ void main() {
     });
   }
 
-  testWidgets('"Add other item" pushes its placeholder page (until S17)', (
-    tester,
-  ) async {
+  testWidgets('"Add other item" pushes the Others form (S17)', (tester) async {
     await tester.pumpWidget(_host());
     await tester.tap(find.text('add'));
     await tester.pumpAndSettle();
@@ -110,7 +112,7 @@ void main() {
     await tester.tap(find.text('Add other item'));
     await tester.pumpAndSettle();
 
-    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
-    expect(page.pageName, 'Add other item');
+    expect(find.byType(OtherItemFormPage), findsOneWidget);
+    expect(find.text('Add other item'), findsOneWidget);
   });
 }
