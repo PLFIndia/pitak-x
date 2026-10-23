@@ -19,9 +19,8 @@
 /// the dead ends out of reach. The overflow's hard delete is always offered
 /// — its typed refusal ("still has N issues") is the guard.
 ///
-/// The edit and add-issue destinations are the S16 forms; until then they
-/// push the named placeholders (S14) carrying the observed series, so the
-/// swap changes only the destination widget.
+/// Edit opens the series form prefilled with the observed row; "+ Add issue"
+/// opens the issue form with this series preselected (both S16).
 ///
 /// The subscription card, the overflow menu and the removed badge live in
 /// `widgets/periodical_detail_sections.dart` (the page grew over the
@@ -38,7 +37,8 @@ import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/periodicals/application/issue_list_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/periodical_detail_sections.dart';
 
 /// How close to the end (in logical pixels of remaining scroll extent) the
@@ -198,13 +198,11 @@ class _SeriesDetailBody extends ConsumerWidget {
             IconButton(
               icon: const Icon(Icons.edit),
               tooltip: 'Edit',
-              // The S16 series form, pre-filled with the CURRENT row.
+              // The series form, pre-filled with the CURRENT row (N03: the
+              // form re-reads it again at save time).
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
-                  builder: (_) => PlaceholderPage(
-                    pageName: 'Edit magazine title',
-                    periodical: periodical,
-                  ),
+                  builder: (_) => PeriodicalFormPage(periodical: periodical),
                 ),
               ),
             ),
@@ -267,17 +265,13 @@ class _SeriesDetailBody extends ConsumerWidget {
                     if (!periodical.removed) ...[
                       const SizedBox(height: 16),
                       FilledButton.icon(
-                        // The S16 add-issue form, preselected with THIS
-                        // series (the placeholder already carries it, so the
-                        // swap keeps the call shape).
+                        // The add-issue form, preselected with THIS series.
                         onPressed: uid == null
                             ? null
                             : () => Navigator.of(context).push(
                                 MaterialPageRoute<void>(
-                                  builder: (_) => PlaceholderPage(
-                                    pageName: 'Add magazine issue',
-                                    periodical: periodical,
-                                  ),
+                                  builder: (_) =>
+                                      AddIssuePage(periodical: periodical),
                                 ),
                               ),
                         icon: const Icon(Icons.add),

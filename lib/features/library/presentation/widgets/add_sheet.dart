@@ -3,12 +3,12 @@
 ///
 /// One entry point for every way a row is added to the catalogue:
 ///
-/// - **Add book** → [AddBookPage] (the existing form);
-/// - **Add magazine issue** / **Add other item** / **New magazine title** →
-///   placeholder scaffolds until the S15–S17 sessions build those pages; the
-///   sheet's entries and their push sites stay, only the destination widget
-///   is swapped (then this file's placeholders have no caller left and are
-///   deleted, AGENTS.md §2.4).
+/// - **Add book** → [AddBookPage];
+/// - **Add magazine issue** → [AddIssuePage] and **New magazine title** →
+///   [PeriodicalFormPage] (S16);
+/// - **Add other item** → a placeholder scaffold until S17 builds that form
+///   (then this file's last placeholder caller is gone and the placeholder
+///   page is deleted, AGENTS.md §2.4).
 ///
 /// Why a sheet and not four FABs (beginner note): a screen has one primary
 /// action. "Add something" is that action; WHICH kind is a second question,
@@ -18,6 +18,8 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
 
 /// The FAB that opens the add sheet.
@@ -83,11 +85,9 @@ final _entries = [
   _Entry(
     icon: Icons.article_outlined,
     label: 'Add magazine issue',
-    push: (context) => Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const PlaceholderPage(pageName: 'Add magazine issue'),
-      ),
-    ),
+    push: (context) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const AddIssuePage())),
   ),
   _Entry(
     icon: Icons.category_outlined,
@@ -101,10 +101,8 @@ final _entries = [
   _Entry(
     icon: Icons.newspaper_outlined,
     label: 'New magazine title',
-    push: (context) => Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const PlaceholderPage(pageName: 'New magazine title'),
-      ),
-    ),
+    push: (context) => Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const PeriodicalFormPage())),
   ),
 ];

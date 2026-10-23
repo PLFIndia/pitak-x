@@ -12,9 +12,7 @@
 /// reload keeps the previous value, and this page renders through
 /// `valueOrNull` — the list never flashes a spinner once it has loaded.
 ///
-/// The FAB's destination is the S16 series form; until that session exists
-/// it pushes the named placeholder (S14) — only the destination widget is
-/// swapped then, not the sheet of callers.
+/// The FAB and the empty state's button open the series form (S16).
 library;
 
 import 'package:flutter/material.dart';
@@ -23,7 +21,7 @@ import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/subscription_badge.dart';
 
 /// The magazine-titles list screen.
@@ -31,13 +29,11 @@ class PeriodicalsPage extends ConsumerWidget {
   /// Creates the page.
   const PeriodicalsPage({super.key});
 
-  /// Opens the series form's stand-in (S16 swaps in the real form).
+  /// Opens the (empty) series form to add a new magazine title.
   void _addPeriodical(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => const PlaceholderPage(pageName: 'New magazine title'),
-      ),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const PeriodicalFormPage()));
   }
 
   @override

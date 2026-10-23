@@ -6,16 +6,16 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S15** (Magazines list page + series detail page,
-  drawer entry, subscription badges, typed delete refusal)
+- Last completed session: **S16** (series form + add/edit-issue form, cover
+  capture, language field shared, all magazine placeholders replaced)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S15's commit (S14 `526b9da`, S13 `bba12b2`, S12 was `02f3f99`,
-  S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6
-  `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1
-  `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S15, 2026-10-23** — 2728 tests, ~90 s
+- Last commit: S16's commit (S15 `322f3ed`, S14 `526b9da`, S13 `bba12b2`,
+  S12 was `02f3f99`, S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8
+  `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3
+  `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S16, 2026-10-23** — 2747 tests, ~85 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S16.
+- Run stopped here (one session per run, B.3): the next run starts at S17.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -42,10 +42,58 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S16 — Periodical form and add-issue form.** Nothing in flight. Follow the
-plan's S16 steps verbatim.
+**S17 — Others form, item details section, goldens.** Nothing in flight.
+Follow the plan's S17 steps verbatim.
 
-Notes for it (what S15 built, and the surfaces S16 plugs into):
+Notes for it (what S16 built, and the seams S17 plugs into):
+
+- **The last placeholder:** `periodicals/presentation/pages/
+  placeholder_page.dart` has ONE caller left — `add_sheet.dart`'s "Add other
+  item". S17 swaps in the Others form there and DELETES
+  `placeholder_page.dart` (AGENTS §2.4). Its only remaining ctor param in
+  use is `pageName` (`periodical` is now unused — S16's routes all carry the
+  real pages).
+- **Edit routing (D8) is kind-aware since S16:**
+  `catalogue_item_actions.dart`'s Edit pushes `AddIssuePage(issue:)` for an
+  issue row and `AddBookPage` otherwise. An `other`-kind row still lands on
+  the book form — S17 must route it to the Others form (the book form
+  assembles no `details`, so saving an Other there would silently flip its
+  kind to book — the same D8 bug class the issue routing fixed).
+- **The Others form (O1–O3):** no kind-specific fields; `notes` labelled
+  "Description" (same column, searched per D10); saves through the GENERIC
+  `Add/UpdateCatalogueItemUseCase` with `details: const OtherItemOf()` —
+  the gate allow-list needs the new page's entry with that reason (B.5).
+  Reusable parts built in S16: `LanguageField` (the Session-33 dropdown),
+  `FormCoverField` + `FormCoverController.storeCapture` (cover for a
+  not-yet-saved row; orphans swept per Q12), `coverCropPresets` in
+  `core/widgets/cover_crop.dart`.
+- **Detail-page details section:** `catalogue_item_detail_page.dart` is 455
+  lines (S14 moved actions to `widgets/catalogue_item_actions.dart`, 282);
+  S17's kind-specific blocks fit under the cap if kept compact — split to a
+  widgets file before crossing 500. An issue's "Open series" resolves via
+  `periodicalByUidProvider(item.issue!.periodicalUid)` (S13; watches both
+  mutation signals) → push `PeriodicalDetailPage(periodicalId:)` with the
+  resolved id.
+- **Goldens (plan S17 step):** the Library golden already shows chips,
+  badges and the sheet FAB (S14); on this macOS host the 7 platform-golden
+  failures stay "verify in CI". Regenerate the Linux PNGs with the
+  `update-goldens` workflow AFTER S17's detail-section changes land.
+- **Widget-test lessons (S16, add to the S15 override set):** the forms are
+  taller than the 800x600 default surface and their ListView only builds
+  near-viewport children — both form test files pin
+  `tester.view.physicalSize = Size(1080, 2400), devicePixelRatio = 1` in
+  their `openForm` helper. `find.widgetWithText` matches BOTH a field's
+  EditableText content AND a hint `Text` — a field whose hint equals its
+  value double-matches (the ISSN hint was dropped for that reason); prefer
+  label finders. Dropdown menus: tap the field, then `find.text(label).last`
+  (the menu overlay duplicates the closed value's text). The series picker
+  clamps a selected uid that is absent from the list to null (a dropdown
+  value outside its items crashes — fail closed).
+- **Ratchet:** `add_book_page.dart` shrank 640 → 526 (language field moved
+  out) — the ratchet record was lowered to 526 in the same commit; the
+  comment in `layer_boundaries_test.dart` says why.
+
+Notes from S15 (what S15 built, and the surfaces S16 consumed):
 
 - **Placeholder inventory after S15** (all in
   `periodicals/presentation/pages/placeholder_page.dart`; delete the file
@@ -572,6 +620,30 @@ Rename technique (learned in S1–S4):
   the same split S14 made for `catalogue_item_detail_page.dart` (B.5 wants
   the split BEFORE extending a capped file, so it happened inside the
   session rather than as a follow-up).
+- `S16` — the plan's add-issue step says "copies, pages, location prefilled
+  from series", but the series entity carries only `location` among those
+  three — pages/copies are prefilled from the LATEST ISSUE instead (the only
+  honest source; a magazine's page count is a series habit, not a series
+  field). Location comes from the series. All prefills fill EMPTY fields
+  only (the book lookup's "user-entered wins" rule).
+- `S16` — the plan's step list does not mention the item detail page's Edit
+  action, but it pushed EVERY kind to `AddBookPage`, whose assembly carries
+  no `details` — saving an issue there would have silently flipped its kind
+  to book (D8). Edit is now kind-aware: an issue opens `AddIssuePage`;
+  books (and, until S17, `other` rows) keep the generic form.
+- `S16` — shared extractions beyond the plan's file list (AGENTS §0 "one
+  blessed way", all with their prior behaviour pinned by existing tests):
+  the Session-33 language dropdown moved from `add_book_page.dart` to
+  `library/presentation/widgets/language_field.dart` (640 → 526, ratchet
+  record lowered in the same commit); the 2:3 cover-crop presets moved from
+  `catalogue_item_detail_page.dart` to `core/widgets/cover_crop.dart`; the
+  form-side cover pipeline (downscale + store, no row write — forms have no
+  row yet) is `library/application/form_cover_controller.dart` +
+  `library/presentation/widgets/form_cover_field.dart`; the two periodical
+  forms share `periodicals/presentation/widgets/form_rows.dart`
+  (`FormTextRow`, `DatePickerRow`, `pickFormDate` 1900–2100,
+  `formatFormDate`) and `series_picker_field.dart`. Orphaned form covers are
+  reclaimed by the startup sweep (Q12) rather than per-form bookkeeping.
 
 ## Open issues / blocked
 
@@ -598,4 +670,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S12 | Done | `02f3f99` | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
 | S13 | Done | `bba12b2` | 2026-10-23 | `LibraryKindFilter` (U1 toggle) watched by `LibraryController` → `LibraryQuery.kind`; `periodicals/application/`: `PeriodicalsController` (`PeriodicalListEntry` = summary + derived `SubscriptionStatus` from `clockProvider`, re-stamped on `nowTick`; `refresh`/`remove`/`restoreRemoved` fail closed; `delete` returns the `Either`), `IssueListController(periodicalUid)` (family; `LibraryWindow` over `page(LibraryQuery(periodicalUid:))`, D2-b depth on the library signal, N05 guard), `AddIssueController`, `PeriodicalFormController` (`AddBookController` shape, N03 re-read, fire both signals); `periodicalById`/`periodicalByUid` read providers (both signals); `RouteScannedBarcodeUseCase` + sealed `ScanRoute` (D11: 977 → `Issn.fromEan13` → `findByIssn`; else the S34 ISBN path) + provider; `library_page.dart` untouched (S14 switches on the route); fakes gained `listAll`/`markRemoved`/`restoreRemoved`/`page`/`FakeSettings`; gate allow-list unchanged; 43 new tests (2695 total), full green 77 s |
 | S14 | Done | `526b9da` | 2026-10-23 | Splits: detail-page actions/lend/delete → `catalogue_item_actions.dart` (681 → 481, ratchet entry removed), app-bar menu → `library_menu_button.dart`; kind chips from `ItemKind.values` with toggle semantics + search hint "…ISBN, notes…"; add sheet (4 entries, 3 placeholders) replacing the add-book FAB; row + grid-card kind badges (Issue / Bound volume / Other) and W4 series-cover fallback via `periodicalCoversProvider` ({uid: coverUrl}, one `listAll`, both mutation signals); scan routing switches on `ScanRoute`, `FindByIsbnUseCase`/provider/`routeScannedIsbn` deleted; `scan_routing_test.dart` rewritten over the real use case (+ magazine routes), chip/badge/sheet tests added; widget tests rendering rows now override `periodicalRepositoryProvider` + pin `nowTickProvider`; gate allow-list unchanged; 16 new tests (2711 total), full green 82 s |
-| S15 | Done | `4da57f9` | 2026-10-23 | `periodicals_page.dart` (281: rows with cover/publisher/"N issues · latest YYYY-MM", `SubscriptionBadge` per status, empty + safe error states, FAB → "New magazine title" placeholder), `periodical_detail_page.dart` (403: observes `periodicalByIdProvider` N03, hero, `SeriesSubscriptionCard` on the injected clock, "Add issue", issues via `IssueListController` paged newest-first in ONE outer scroll view with footer spinner, rows reuse `CatalogueItemRow` → item detail), overflow hard delete with the typed `PeriodicalHasIssuesFailure` refusal shown in place; sections split to `widgets/periodical_detail_sections.dart` (592 → 403, S14 precedent); removed title visible-but-actionless (edit/add hidden, D8); drawer entry "Magazines" between Wishlist and Library network; ZERO S14 placeholders replaced (all four are S16/S17 form destinations — see Deviations), S15 added its own pushes for S16 to swap; gate allow-list unchanged (no construction site); 17 new tests (2728 total), full green ~86 s |
+| S15 | Done | `322f3ed` | 2026-10-23 | `periodicals_page.dart` (281: rows with cover/publisher/"N issues · latest YYYY-MM", `SubscriptionBadge` per status, empty + safe error states, FAB → "New magazine title" placeholder), `periodical_detail_page.dart` (403: observes `periodicalByIdProvider` N03, hero, `SeriesSubscriptionCard` on the injected clock, "Add issue", issues via `IssueListController` paged newest-first in ONE outer scroll view with footer spinner, rows reuse `CatalogueItemRow` → item detail), overflow hard delete with the typed `PeriodicalHasIssuesFailure` refusal shown in place; sections split to `widgets/periodical_detail_sections.dart` (592 → 403, S14 precedent); removed title visible-but-actionless (edit/add hidden, D8); drawer entry "Magazines" between Wishlist and Library network; ZERO S14 placeholders replaced (all four are S16/S17 form destinations — see Deviations), S15 added its own pushes for S16 to swap; gate allow-list unchanged (no construction site); 17 new tests (2728 total), full green ~86 s |
+| S16 | Done | `2dfae74` | 2026-10-23 | `periodical_form_page.dart` (416: fields per D2, ISSN inline validation, `LanguageField`, `FormCoverField`, frequency dropdown, "Track subscription" switch → start/end pickers, N03 saveEdit); `add_issue_page.dart` (496: `SeriesPickerField`, "Bound volume" switch swapping cover date ↔ from/to (D4), optional volume/number, label, own cover, copies/pages prefilled from the LATEST issue + location from the series — see Deviations, `IssueCadence` number/date prefill into empty fields only, live `IssueTitle` preview, blank title — projected by the use case); `catalogue_item_actions.dart` Edit is kind-aware (issue → AddIssuePage, D8); ALL magazine placeholders replaced (add sheet ×2, scan routes ×2, list FAB, detail Edit/Add issue) — only "Add other item" (S17) keeps `placeholder_page.dart` alive; shared: `LanguageField` (from add_book, 640 → 526 ratchet lowered), `cover_crop.dart` presets (from detail page), `FormCoverController.storeCapture` + `FormCoverField` (form-side cover pipeline, gen run), `form_rows.dart`; gate allow-lists +2 (both forms, "form assembly; gate is Add/UpdateIssueUseCase" / "…PeriodicalUseCase") with the censuses updated; 19 new tests (2747 total), full green ~85 s |

@@ -14,8 +14,8 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
 
 import '../../../../support/a11y.dart';
 import '../../application/periodical_fakes.dart';
@@ -115,19 +115,18 @@ void main() {
     expect(find.textContaining('boom'), findsNothing);
   });
 
-  testWidgets('the FAB pushes the series-form placeholder (S16 swaps the '
-      'destination)', (tester) async {
+  testWidgets('the FAB pushes the (empty) series form (S16)', (tester) async {
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();
 
     await tester.tap(find.byType(FloatingActionButton));
     await tester.pumpAndSettle();
 
-    final placeholder = tester.widget<PlaceholderPage>(
-      find.byType(PlaceholderPage),
+    final form = tester.widget<PeriodicalFormPage>(
+      find.byType(PeriodicalFormPage),
     );
-    expect(placeholder.pageName, 'New magazine title');
-    expect(placeholder.periodical, isNull);
+    expect(form.periodical, isNull);
+    expect(find.text('New magazine title'), findsOneWidget);
   });
 
   testWidgets('tapping a row opens the series detail page observing that '

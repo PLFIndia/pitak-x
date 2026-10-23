@@ -15,8 +15,9 @@ import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/application/delete_periodical_use_case.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 
 import '../../../../support/a11y.dart';
 import '../../application/periodical_fakes.dart';
@@ -169,8 +170,8 @@ void main() {
     expect(find.text('Bound volume'), findsOneWidget);
   });
 
-  testWidgets('"+ Add issue" pushes the add-issue placeholder carrying this '
-      'series (S16 swaps the destination)', (tester) async {
+  testWidgets('"+ Add issue" pushes the add-issue form with this series '
+      'preselected (S16)', (tester) async {
     final periodical = seedSeriesWithIssues(0);
     await tester.pumpWidget(app(periodicalId: periodical.id));
     await openDetail(tester);
@@ -178,15 +179,15 @@ void main() {
     await tester.tap(find.text('Add issue'));
     await tester.pumpAndSettle();
 
-    final placeholder = tester.widget<PlaceholderPage>(
-      find.byType(PlaceholderPage),
-    );
-    expect(placeholder.pageName, 'Add magazine issue');
-    expect(placeholder.periodical?.id, periodical.id);
+    final form = tester.widget<AddIssuePage>(find.byType(AddIssuePage));
+    expect(form.periodical?.id, periodical.id);
+    expect(form.issue, isNull);
+    // The picker settled on the preselected series.
+    expect(find.text('Frontline'), findsWidgets);
   });
 
-  testWidgets('Edit pushes the series-form placeholder carrying the observed '
-      'row (S16 swaps the destination)', (tester) async {
+  testWidgets('Edit pushes the series form prefilled with the observed row '
+      '(S16)', (tester) async {
     final periodical = seedSeriesWithIssues(0);
     await tester.pumpWidget(app(periodicalId: periodical.id));
     await openDetail(tester);
@@ -194,11 +195,13 @@ void main() {
     await tester.tap(find.byTooltip('Edit'));
     await tester.pumpAndSettle();
 
-    final placeholder = tester.widget<PlaceholderPage>(
-      find.byType(PlaceholderPage),
+    final form = tester.widget<PeriodicalFormPage>(
+      find.byType(PeriodicalFormPage),
     );
-    expect(placeholder.pageName, 'Edit magazine title');
-    expect(placeholder.periodical?.id, periodical.id);
+    expect(form.periodical?.id, periodical.id);
+    expect(find.text('Edit magazine title'), findsOneWidget);
+    // Prefilled from the observed row.
+    expect(find.widgetWithText(TextField, 'Frontline'), findsOneWidget);
   });
 
   testWidgets('a removed title hides Edit and "+ Add issue" (visible but '

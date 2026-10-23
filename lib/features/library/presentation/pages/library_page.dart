@@ -37,7 +37,8 @@ import 'package:pitaka/features/library/presentation/widgets/library_controls_ro
 import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
@@ -313,8 +314,9 @@ class _BookList extends ConsumerWidget {
 ///   EXISTING row — filling in a form the UNIQUE isbn index would refuse to
 ///   save is wasted work and a confusing error;
 /// - [AddBookByIsbn] → the add-book form pre-filled;
-/// - [AddIssueOfPeriodical] / [AddPeriodicalByIssn] → placeholders until the
-///   S15/S16 sessions build those pages (plan S14.3).
+/// - [AddIssueOfPeriodical] → the add-issue form with the series preselected;
+/// - [AddPeriodicalByIssn] → the series form with the scanned ISSN pre-filled
+///   (both S16 forms; the ISSN identifies the TITLE, never the issue — D7).
 Future<void> routeScannedBarcode(
   BuildContext context,
   RouteScannedBarcodeUseCase useCase,
@@ -356,16 +358,13 @@ Future<void> routeScannedBarcode(
     case AddIssueOfPeriodical(periodical: final periodical):
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => PlaceholderPage(
-            pageName: 'Add magazine issue',
-            periodical: periodical,
-          ),
+          builder: (_) => AddIssuePage(periodical: periodical),
         ),
       );
-    case AddPeriodicalByIssn():
+    case AddPeriodicalByIssn(issn: final issn):
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => const PlaceholderPage(pageName: 'New magazine title'),
+          builder: (_) => PeriodicalFormPage(initialIssn: issn),
         ),
       );
   }

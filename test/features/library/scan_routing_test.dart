@@ -6,8 +6,9 @@
 ///   UNIQUE isbn index would only refuse at save time;
 /// - `AddBookByIsbn` opens the pre-filled add form (a failed read falls
 ///   through here too — the save path and the index still guard duplicates);
-/// - `AddIssueOfPeriodical` / `AddPeriodicalByIssn` push the S14 placeholders
-///   (replaced by the real pages in S15/S16).
+/// - `AddIssueOfPeriodical` / `AddPeriodicalByIssn` push the S16 forms (the
+///   add-issue form with the scanned series preselected, the series form
+///   with the scanned ISSN pre-filled).
 ///
 /// The camera itself is not exercised here: `ScannerPage` is a thin
 /// flutter_zxing wrapper, and the routing under test is what happens AFTER a
@@ -33,7 +34,8 @@ import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
-import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 
 /// In-memory item repo fake: enough for the pages pushed by the routing
 /// (CatalogueItemDetailPage reads through `catalogueItemByIdProvider` → this
@@ -99,8 +101,9 @@ class _MemItems implements CatalogueItemRepository {
       right(b.length);
 }
 
-/// Minimal periodical repo fake: the use case's ISSN lookup is the only
-/// method the scan routing exercises.
+/// Minimal periodical repo fake: the use case's ISSN lookup is what the scan
+/// routing exercises; `listAll`/`issuesOf` answer for the pushed add-issue
+/// form (its series picker + cadence prefill read them).
 class _MemPeriodicals implements PeriodicalRepository {
   _MemPeriodicals(this.periodicals);
 
@@ -109,6 +112,17 @@ class _MemPeriodicals implements PeriodicalRepository {
   @override
   Future<Either<Failure, Periodical?>> findByIssn(String issn) async =>
       right(periodicals.where((p) => p.issn == issn).firstOrNull);
+
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async => right([
+    for (final p in periodicals)
+      PeriodicalSummary(periodical: p, issueCount: 0),
+  ]);
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> issuesOf(
+    String periodicalUid,
+  ) async => right(const []);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -138,6 +152,9 @@ Widget _host({
     catalogueItemRepositoryProvider.overrideWith((ref) async => items),
     periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
     coversDirProvider.overrideWith((ref) async => coversDir),
+    // The pushed add-issue form builds PeriodicalsController, whose build
+    // arms the real 60 s timer — pinned so the tests settle.
+    nowTickProvider.overrideWith((ref) => 0),
   ],
   child: MaterialApp(
     home: Scaffold(
@@ -232,7 +249,7 @@ void main() {
   });
 
   testWidgets('a magazine barcode of a KNOWN series routes to the add-issue '
-      'placeholder with the series preselected', (tester) async {
+      'form with the series preselected (D11)', (tester) async {
     // The 977 EAN-13 carrying the series' ISSN 1234-5679 (check digit 3).
     const scanned = '9771234567003';
     await tester.pumpWidget(
@@ -246,23 +263,31 @@ void main() {
     await tester.tap(find.text('scan'));
     await tester.pumpAndSettle();
 
-    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
-    expect(page.pageName, 'Add magazine issue');
+    final page = tester.widget<AddIssuePage>(find.byType(AddIssuePage));
     expect(
       page.periodical?.periodicalUid,
       'per-3',
-      reason: 'the scanned series travels to the future add-issue form',
+      reason: 'the scanned series travels to the add-issue form',
     );
+    // The picker settled on the preselected series.
+    expect(find.text('Weekly'), findsWidgets);
   });
 
   testWidgets('a magazine barcode with NO matching series routes to the '
-      'new-title placeholder', (tester) async {
+      'series form with the ISSN pre-filled (D11)', (tester) async {
     await tester.pumpWidget(host(_MemItems([]), scanned: '9771234567003'));
 
     await tester.tap(find.text('scan'));
     await tester.pumpAndSettle();
 
-    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
-    expect(page.pageName, 'New magazine title');
+    final page = tester.widget<PeriodicalFormPage>(
+      find.byType(PeriodicalFormPage),
+    );
+    expect(page.initialIssn, '1234-5679');
+    // And the ISSN field shows the scanned value.
+    final field = tester.widget<TextField>(
+      find.widgetWithText(TextField, '1234-5679'),
+    );
+    expect(field.controller?.text, '1234-5679');
   });
 }

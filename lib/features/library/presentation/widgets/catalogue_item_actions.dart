@@ -21,6 +21,7 @@ import 'package:pitaka/features/library/application/delete_catalogue_item_use_ca
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
 import 'package:pitaka/features/vault/presentation/pages/lend_book_page.dart';
@@ -46,8 +47,17 @@ class CatalogueItemActions extends ConsumerWidget {
           // The edit form gets the CURRENT row and re-reads it again at
           // save time. When it pops, the page is already observing the
           // edited row, so there is nothing stale to escape from.
+          //
+          // Kind routing (ADR 0013 D8): an issue edits through the ISSUE
+          // form — the book form assembles no `details`, so saving an issue
+          // there would silently flip its kind to book, which D8 forbids.
+          // An `other` item keeps the generic form until S17's Others form.
           onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute<void>(builder: (_) => AddBookPage(book: book)),
+            MaterialPageRoute<void>(
+              builder: (_) => book.issue != null
+                  ? AddIssuePage(issue: book)
+                  : AddBookPage(book: book),
+            ),
           ),
         ),
         if (book.removed)

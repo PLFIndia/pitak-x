@@ -187,7 +187,10 @@ void main() {
       // add_book_page +2, merge_library_use_case +2. No logic was added.
       // catalogue_item_detail_page left this list on 2026-10-23 (plan S14):
       // its actions moved to widgets/catalogue_item_actions.dart (681 → <500).
-      'lib/features/library/presentation/pages/add_book_page.dart': 640,
+      // add_book_page shrank on 2026-10-23 (plan S16): the Session-33
+      // language field moved to widgets/language_field.dart (640 → 526) so
+      // the periodical form could share it.
+      'lib/features/library/presentation/pages/add_book_page.dart': 526,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,
       'lib/features/publish/infrastructure/http_github_api.dart': 600,

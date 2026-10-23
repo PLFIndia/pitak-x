@@ -1,11 +1,11 @@
-/// Placeholder for the add-issue form (plan S16) and the series detail page
-/// (plan S15) until those sessions build them.
+/// Placeholder for the "Add other item" form (plan S17) — the LAST remaining
+/// caller (S15 built the series pages, S16 the series and issue forms).
 ///
-/// Why a placeholder at all (beginner note): the S14 add sheet and the scan
-/// router already need a destination to push — a named placeholder keeps the
-/// navigation real (and testable) without pretending the form exists. The
-/// S15/S16 sessions replace the pushes at their call sites; this page then
-/// has no caller left and is deleted (AGENTS.md §2.4, no dead code).
+/// Why a placeholder at all (beginner note): the S14 add sheet needed a
+/// destination to push before the forms existed — a named placeholder keeps
+/// the navigation real (and testable) without pretending the form exists.
+/// S17 replaces the last push at its call site; this page then has no caller
+/// left and is deleted (AGENTS.md §2.4, no dead code).
 library;
 
 import 'package:flutter/material.dart';

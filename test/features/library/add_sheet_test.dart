@@ -1,7 +1,7 @@
 /// S14 tests for the Library add sheet (`widgets/add_sheet.dart`): the FAB
-/// opens a modal sheet with one entry per add path — Add book pushes the real
-/// form; the other three push their named placeholders until S15–S17 build
-/// those pages.
+/// opens a modal sheet with one entry per add path — Add book, Add magazine
+/// issue and New magazine title push the real forms (S16); Add other item
+/// pushes its named placeholder until S17 builds that form.
 library;
 
 import 'package:flutter/material.dart';
@@ -15,7 +15,11 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/add_sheet.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/placeholder_page.dart';
+
+import '../periodicals/application/periodical_fakes.dart';
 
 /// The add form and the sheet need no catalogue data; only the providers the
 /// pushed pages read are overridden.
@@ -35,6 +39,10 @@ class _EmptyItems implements CatalogueItemRepository {
 Widget _host() => ProviderScope(
   overrides: [
     catalogueItemRepositoryProvider.overrideWith((ref) async => _EmptyItems()),
+    // The pushed add-issue form builds PeriodicalsController (its series
+    // picker): repository + the pinned minute tick so the tests settle.
+    periodicalRepositoryProvider.overrideWith((ref) async => FakePeriodicals()),
+    nowTickProvider.overrideWith((ref) => 0),
   ],
   child: MaterialApp(
     home: Scaffold(
@@ -75,15 +83,12 @@ void main() {
     expect(find.text('Add magazine issue'), findsNothing);
   });
 
-  /// Each placeholder entry pushes a PlaceholderPage titled after its page.
-  for (final (label, pageName) in [
-    ('Add magazine issue', 'Add magazine issue'),
-    ('Add other item', 'Add other item'),
-    ('New magazine title', 'New magazine title'),
+  /// The magazine entries push the real S16 forms.
+  for (final (label, type) in [
+    ('Add magazine issue', AddIssuePage),
+    ('New magazine title', PeriodicalFormPage),
   ]) {
-    testWidgets('"$label" pushes its placeholder page (until S15–S17)', (
-      tester,
-    ) async {
+    testWidgets('"$label" pushes its form (S16)', (tester) async {
       await tester.pumpWidget(_host());
       await tester.tap(find.text('add'));
       await tester.pumpAndSettle();
@@ -91,8 +96,21 @@ void main() {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
 
-      final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
-      expect(page.pageName, pageName);
+      expect(find.byType(type), findsOneWidget);
     });
   }
+
+  testWidgets('"Add other item" pushes its placeholder page (until S17)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_host());
+    await tester.tap(find.text('add'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add other item'));
+    await tester.pumpAndSettle();
+
+    final page = tester.widget<PlaceholderPage>(find.byType(PlaceholderPage));
+    expect(page.pageName, 'Add other item');
+  });
 }

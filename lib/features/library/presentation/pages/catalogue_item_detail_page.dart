@@ -27,6 +27,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/cover_crop.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
@@ -35,33 +36,6 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
-
-/// A portrait 2:3 crop preset — the natural shape of a book cover. The plugin's
-/// built-in enum only offers landscape ratios (e.g. 3:2), so we supply this
-/// custom preset; `data` is (ratioX, ratioY) and is passed straight to the
-/// native cropper.
-class _Ratio2x3Preset implements CropAspectRatioPresetData {
-  const _Ratio2x3Preset();
-
-  @override
-  String get name => '2x3';
-
-  @override
-  (int, int)? get data => (2, 3);
-}
-
-/// Crop ratio presets offered for a book cover. Replaces the default landscape
-/// 3:2 with a portrait 2:3 (the realistic cover shape); free-form + square +
-/// original remain available.
-const List<CropAspectRatioPresetData> _coverCropPresets = [
-  CropAspectRatioPreset.original,
-  CropAspectRatioPreset.square,
-  _Ratio2x3Preset(),
-];
-
-/// Initial ratio shown when the cropper opens. Must be one of
-/// [_coverCropPresets]; also required for the custom list to apply on Android.
-const CropAspectRatioPresetData _coverInitPreset = _Ratio2x3Preset();
 
 /// Displays the book with id [bookId], kept current, with Edit and
 /// Remove/Restore actions.
@@ -346,15 +320,15 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
             AndroidUiSettings(
               toolbarTitle: 'Crop cover',
               lockAspectRatio: false,
-              aspectRatioPresets: _coverCropPresets,
+              aspectRatioPresets: coverCropPresets,
               // REQUIRED on Android: uCrop only applies a custom preset list
               // when an initial ratio is also given; without this the list is
               // ignored and the default (landscape) presets show instead.
-              initAspectRatio: _coverInitPreset,
+              initAspectRatio: coverCropInitPreset,
             ),
             IOSUiSettings(
               title: 'Crop cover',
-              aspectRatioPresets: _coverCropPresets,
+              aspectRatioPresets: coverCropPresets,
             ),
           ],
         ),

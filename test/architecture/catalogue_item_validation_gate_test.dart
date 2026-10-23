@@ -53,6 +53,13 @@ void main() {
     // downstream.
     'lib/features/library/presentation/pages/add_book_page.dart':
         'form assembly; gate is Add/UpdateCatalogueItemUseCase',
+    // ADR 0013 D1/D3: the add/edit-issue form assembles the row from its
+    // fields (blank title — the projection composes it) and hands it to
+    // AddIssueUseCase / UpdateIssueUseCase, which ARE the gate (the projected
+    // row passes CatalogueItem.validate before any store access). Same
+    // one-hop reasoning as the book form above.
+    'lib/features/periodicals/presentation/pages/add_issue_page.dart':
+        'form assembly; gate is Add/UpdateIssueUseCase',
     // ADR 0013 D3: rebuilds an issue row from an already-validated row and
     // a validated periodical (a pure field copy — `copyWith` cannot null a
     // field, so the row is rebuilt). The issue use cases validate the
@@ -158,6 +165,12 @@ void main() {
       // the same reasoning as the catalogue item mapper above.
       'lib/features/periodicals/infrastructure/periodical_mapper.dart':
           'DB mapper (rows validated on write)',
+      // The add/edit-series form assembles the entity from its fields and
+      // hands it to AddPeriodicalUseCase / UpdatePeriodicalUseCase, which ARE
+      // the gate (PeriodicalIngress.prepare = Periodical.validate + the ISSN
+      // pre-check). Same one-hop reasoning as the book form.
+      'lib/features/periodicals/presentation/pages/periodical_form_page.dart':
+          'form assembly; gate is Add/UpdatePeriodicalUseCase',
     };
     final constructsPeriodical = RegExp(r'(?<![a-zA-Z])Periodical\(');
 
@@ -206,6 +219,7 @@ void main() {
         unorderedEquals([
           'lib/features/periodicals/domain/entities/periodical.dart',
           'lib/features/periodicals/infrastructure/periodical_mapper.dart',
+          'lib/features/periodicals/presentation/pages/periodical_form_page.dart',
         ]),
       );
     });
@@ -221,6 +235,7 @@ void main() {
         'lib/features/library/infrastructure/catalogue_item_mapper.dart',
         'lib/features/library/presentation/pages/add_book_page.dart',
         'lib/features/periodicals/domain/issue_projection.dart',
+        'lib/features/periodicals/presentation/pages/add_issue_page.dart',
       ]),
     );
   });

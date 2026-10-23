@@ -13,13 +13,17 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
 import '../../support/a11y.dart';
+import '../periodicals/application/periodical_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 
 /// N03 widget tests: the detail page must show the CURRENT row, not the
@@ -318,6 +322,43 @@ void main() {
     expect(find.byTooltip('Edit'), findsNothing);
     expect(find.byTooltip('Remove from library'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('D8: an issue row edits through the ISSUE form, never the '
+      'book form (a book-form save would silently drop its details)', (
+    tester,
+  ) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    // The pushed issue form builds its series picker off these.
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+      );
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AddIssuePage), findsOneWidget);
+    expect(find.text('Edit issue'), findsOneWidget);
+    expect(find.text('Edit book'), findsNothing);
   });
 
   testWidgets('M15: a pre-M15 row with an out-of-range addedDate renders', (
