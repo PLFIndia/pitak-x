@@ -17,6 +17,7 @@ import 'package:pitaka/features/library/application/cover_file_janitor.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/application/find_by_isbn_use_case.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
 import 'package:pitaka/features/library/application/update_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
@@ -135,6 +136,18 @@ Future<AddCatalogueItemUseCase> addCatalogueItemUseCase(
 Future<FindByIsbnUseCase> findByIsbnUseCase(FindByIsbnUseCaseRef ref) async {
   final repo = await ref.watch(catalogueItemRepositoryProvider.future);
   return FindByIsbnUseCase(repo);
+}
+
+/// Decides where a scanned barcode takes the user (ADR 0013 D11): a `977`
+/// magazine code routes by ISSN to the add-issue flow or a new title; any
+/// other code takes the ISBN path (existing item or the add-book form).
+@riverpod
+Future<RouteScannedBarcodeUseCase> routeScannedBarcodeUseCase(
+  RouteScannedBarcodeUseCaseRef ref,
+) async {
+  final items = await ref.watch(catalogueItemRepositoryProvider.future);
+  final periodicals = await ref.watch(periodicalRepositoryProvider.future);
+  return RouteScannedBarcodeUseCase(items: items, periodicals: periodicals);
 }
 
 /// Updates an existing library book (title-required, id-immutable).

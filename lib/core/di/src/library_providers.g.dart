@@ -380,6 +380,30 @@ final findByIsbnUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef FindByIsbnUseCaseRef = AutoDisposeFutureProviderRef<FindByIsbnUseCase>;
+String _$routeScannedBarcodeUseCaseHash() =>
+    r'a7417c3ee51ee7a06d8e488b64f7a8661a19325b';
+
+/// Decides where a scanned barcode takes the user (ADR 0013 D11): a `977`
+/// magazine code routes by ISSN to the add-issue flow or a new title; any
+/// other code takes the ISBN path (existing item or the add-book form).
+///
+/// Copied from [routeScannedBarcodeUseCase].
+@ProviderFor(routeScannedBarcodeUseCase)
+final routeScannedBarcodeUseCaseProvider =
+    AutoDisposeFutureProvider<RouteScannedBarcodeUseCase>.internal(
+      routeScannedBarcodeUseCase,
+      name: r'routeScannedBarcodeUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$routeScannedBarcodeUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef RouteScannedBarcodeUseCaseRef =
+    AutoDisposeFutureProviderRef<RouteScannedBarcodeUseCase>;
 String _$updateCatalogueItemUseCaseHash() =>
     r'de53d18b42aa3ba130cf39406b2ddeeb6b6ef49c';
 

@@ -13,8 +13,13 @@
 /// watches it (so the list re-queries automatically when it changes) and the
 /// chips watch it (so they render the truth). One source, two readers, no
 /// manual `refresh()` calls to keep in sync.
+///
+/// The kind facet (ADR 0013 U1) follows the same rule in [LibraryKindFilter]:
+/// one facet per notifier, so each chip row reads exactly the state it
+/// renders and the list controller watches both.
 library;
 
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'library_filter_controller.g.dart';
@@ -38,5 +43,27 @@ class LibraryLanguageFilter extends _$LibraryLanguageFilter {
   }
 
   /// Clears the filter.
+  void clear() => state = null;
+}
+
+/// The active item-kind facet for the library list (ADR 0013 U1); null =
+/// every kind.
+///
+/// The chips are a fixed row from `ItemKind.values` (Books · Magazines ·
+/// Others) with TOGGLE semantics: tapping the selected chip clears the facet
+/// — there is no "All" chip, "none selected" IS all. [toggle] is that rule
+/// in one place so the chip row never has to compare state itself.
+///
+/// keepAlive for the same reason as [LibraryLanguageFilter]: opening an item
+/// and coming back must not silently reset the facet.
+@Riverpod(keepAlive: true)
+class LibraryKindFilter extends _$LibraryKindFilter {
+  @override
+  ItemKind? build() => null;
+
+  /// Selects [kind], or clears the facet when [kind] is already selected.
+  void toggle(ItemKind kind) => state = state == kind ? null : kind;
+
+  /// Clears the facet.
   void clear() => state = null;
 }

@@ -1,19 +1,40 @@
 /// In-memory fakes shared by the periodical / issue use-case tests (plan
-/// S12). Each fake records the calls it receives and can be told to fail a
-/// given method, so every success and failure path of a use case can be
-/// driven without a database. The fakes honour the repository CONTRACTS the
-/// use cases rely on (uid minted on insert, stored uid kept on update, a
-/// `Left` inside `runInTransaction` rolls the fake's rows back) — the
-/// contracts themselves are proven against Drift in the repository tests.
+/// S12) and the periodicals controller tests (S13). Each fake records the
+/// calls it receives and can be told to fail a given method, so every
+/// success and failure path of a use case or controller can be driven
+/// without a database. The fakes honour the repository CONTRACTS the use
+/// cases rely on (uid minted on insert, stored uid kept on update, a `Left`
+/// inside `runInTransaction` rolls the fake's rows back, `listAll` ordered
+/// by title then id, `page` sliced with the "one row beyond" `hasMore`
+/// rule) — the contracts themselves are proven against Drift in the
+/// repository tests.
 library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/issue_sorter.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
+
+/// Settings store that only answers `load()` with the defaults — enough for
+/// `libraryControllerProvider` (the catalogue mutation signal the S13
+/// controllers watch or fire) to build, since its `build` watches the
+/// persisted sort through the settings controller.
+class FakeSettings implements SettingsRepository {
+  @override
+  Future<AppSettings> load() async => AppSettings.defaults;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
 
 /// Unwraps a `Right` or fails the test naming the failure.
 T ok<T>(Either<Failure, T> e) =>
@@ -47,6 +68,9 @@ class FakePeriodicals implements PeriodicalRepository {
   Failure? issuesOfFailure;
   Failure? findIssueFailure;
   Failure? findBoundVolumeFailure;
+  Failure? listAllFailure;
+  Failure? markRemovedFailure;
+  Failure? restoreRemovedFailure;
 
   int _nextId = 1;
 
@@ -110,6 +134,55 @@ class FakePeriodicals implements PeriodicalRepository {
     if (deleteFailure != null) return left(deleteFailure!);
     rows.remove(id);
     return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> markRemoved(int id, int at) async {
+    calls.add('markRemoved:$id@$at');
+    if (markRemovedFailure != null) return left(markRemovedFailure!);
+    final existing = rows[id];
+    if (existing != null) {
+      rows[id] = existing.copyWith(removed: true, removedAt: at);
+    }
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> restoreRemoved(int id) async {
+    calls.add('restoreRemoved:$id');
+    if (restoreRemovedFailure != null) return left(restoreRemovedFailure!);
+    final existing = rows[id];
+    if (existing != null) {
+      // `copyWith` keeps a null `removedAt`; the real row clears it — the
+      // controller only looks at `removed`, so a stale stamp is harmless.
+      rows[id] = existing.copyWith(removed: false);
+    }
+    return right(unit);
+  }
+
+  /// Every series with its summary, ordered by title then id (the
+  /// repository's contract). The summary counts the seeded [issues] of each
+  /// uid and takes the newest `issueDate` among them.
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async {
+    calls.add('listAll');
+    if (listAllFailure != null) return left(listAllFailure!);
+    final sorted = rows.values.toList()
+      ..sort((a, b) {
+        final byTitle = a.title.compareTo(b.title);
+        return byTitle != 0 ? byTitle : a.id.compareTo(b.id);
+      });
+    return right([
+      for (final periodical in sorted)
+        PeriodicalSummary(
+          periodical: periodical,
+          issueCount: issues[periodical.periodicalUid]?.length ?? 0,
+          latestIssueDate: (issues[periodical.periodicalUid] ?? const [])
+              .map((row) => row.issue?.issueDate)
+              .nonNulls
+              .fold<int?>(null, (max, d) => max == null || d > max ? d : max),
+        ),
+    ]);
   }
 
   @override
@@ -188,6 +261,12 @@ class FakeItems implements CatalogueItemRepository {
   /// Set to make that method answer `Left(failure)`.
   Failure? getByIdFailure;
   Failure? insertFailure;
+  Failure? pageFailure;
+
+  /// Every page read asked for, in order (the full intent plus the window),
+  /// so a controller test can prove it hands the repository the series
+  /// facet and never slices or sorts in Dart.
+  final List<({LibraryQuery query, int limit, int offset})> pagesSeen = [];
 
   /// When set, the Nth `update` call (1-based) answers [updateFailure] —
   /// the "mid-way failure" of a multi-row write.
@@ -219,6 +298,38 @@ class FakeItems implements CatalogueItemRepository {
     calls.add('getById');
     if (getByIdFailure != null) return left(getByIdFailure!);
     return right(rows[id]);
+  }
+
+  /// A window of the rows, like the real store: a series facet keeps only
+  /// that series' issues in `IssueSorter` order (newest first); a plain
+  /// listing pages every row in id order; a search answers nothing.
+  /// `hasMore` is the repository's rule (one row beyond the window exists).
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    calls.add('page');
+    pagesSeen.add((query: query, limit: limit, offset: offset));
+    if (pageFailure != null) return left(pageFailure!);
+    if (query.isSearch) return right(CatalogueItemPage.empty);
+    final List<CatalogueItem> all;
+    if (query.periodicalUid case final uid?) {
+      all = IssueSorter.sort(
+        rows.values.where((row) => row.issue?.periodicalUid == uid).toList(),
+      );
+    } else {
+      all = rows.values.toList()..sort((a, b) => a.id.compareTo(b.id));
+    }
+    final start = offset.clamp(0, all.length);
+    final end = (start + limit).clamp(start, all.length);
+    return right(
+      CatalogueItemPage(
+        items: all.sublist(start, end),
+        hasMore: end < all.length,
+      ),
+    );
   }
 
   @override

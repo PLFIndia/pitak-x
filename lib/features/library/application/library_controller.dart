@@ -2,12 +2,12 @@
 ///
 /// A `@riverpod` AsyncNotifier the Library screen drives. Its state is a
 /// [LibraryWindow]: the rows loaded so far for the current intent (search
-/// text + persisted sort + language chip), whether more exist, and whether
-/// the next page is in flight. Queries are debounced (120ms) to mirror the
-/// Kotlin query flow and avoid hammering SQLite on every keystroke. The
-/// repository returns `Either<Failure, _>`; a left on the FIRST page becomes
-/// `AsyncError(Failure)` so the UI can render a safe message (raw exception
-/// text is never surfaced).
+/// text + persisted sort + language chip + kind chip), whether more exist
+/// and whether the next page is in flight. Queries are debounced (120ms) to
+/// mirror the Kotlin query flow and avoid hammering SQLite on every
+/// keystroke. The repository returns `Either<Failure, _>`; a left on the
+/// FIRST page becomes `AsyncError(Failure)` so the UI can render a safe
+/// message (raw exception text is never surfaced).
 ///
 /// ## Windows, not the catalogue (review finding N10-d part 2, "lists load
 /// the whole catalogue")
@@ -42,6 +42,7 @@ import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -57,6 +58,7 @@ class LibraryController extends _$LibraryController {
   Timer? _debounce;
   String _query = '';
   String? _languageFilter;
+  ItemKind? _kindFilter;
   LibrarySort _sort = LibrarySort.recentlyAdded;
 
   /// The intent the current rows belong to; null before the first build.
@@ -101,6 +103,9 @@ class LibraryController extends _$LibraryController {
     // library_filter_controller.dart), so a chip tap rebuilds this list AND
     // the chips from one source of truth.
     _languageFilter = ref.watch(libraryLanguageFilterProvider);
+    // The kind chips (ADR 0013 U1) are a second facet with the same
+    // contract: provider state, watched here, so a tap is a new intent.
+    _kindFilter = ref.watch(libraryKindFilterProvider);
     return _loadHead(_intent(_query));
   }
 
@@ -212,10 +217,14 @@ class LibraryController extends _$LibraryController {
     );
   }
 
-  /// The whole read intent as one value: [text] plus the sort and facet
+  /// The whole read intent as one value: [text] plus the sort and facets
   /// watched in [build]. Normalised by `LibraryQuery` itself.
-  LibraryQuery _intent(String text) =>
-      LibraryQuery(text: text, sort: _sort, language: _languageFilter);
+  LibraryQuery _intent(String text) => LibraryQuery(
+    text: text,
+    sort: _sort,
+    language: _languageFilter,
+    kind: _kindFilter,
+  );
 
   /// Loads the head of the list for [query]: one page for a new intent, or
   /// the previously loaded depth for the same intent (D2-b). Records the

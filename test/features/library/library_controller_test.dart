@@ -12,6 +12,7 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -418,6 +419,46 @@ void main() {
     final titles = windowOf(container).books.map((x) => x.title).toList();
     expect(titles, ['zulu', 'afrikaans']);
   });
+
+  test(
+    'U1: the kind chip is a facet of the intent — a tap narrows the '
+    'query, tapping the selected kind again clears it (no "All" chip)',
+    () async {
+      final repo = _FakeBookRepo(manyBooks(3));
+      final container = makeContainer(repo)
+        ..listen(libraryControllerProvider, (_, _) {}); // keep alive
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull, reason: 'none = all');
+
+      final chips = container.read(libraryKindFilterProvider.notifier)
+        ..toggle(ItemKind.magazineIssue);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.magazineIssue);
+      expect(repo.pagesSeen.last.offset, 0, reason: 'a new intent');
+
+      // Another kind replaces, not combines.
+      chips.toggle(ItemKind.other);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.other);
+
+      // The selected kind again → cleared.
+      chips.toggle(ItemKind.other);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull);
+      expect(container.read(libraryKindFilterProvider), isNull);
+
+      // The language facet is untouched by kind taps and travels with it.
+      container.read(libraryLanguageFilterProvider.notifier).set('Hindi');
+      chips.toggle(ItemKind.book);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.book);
+      expect(repo.pagesSeen.last.query.language, 'Hindi');
+      chips.clear();
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull);
+      expect(repo.pagesSeen.last.query.language, 'Hindi');
+    },
+  );
 
   // Review finding N10-d part 2 ("lists load the whole catalogue"): the
   // controller reads WINDOWS, not the catalogue.
