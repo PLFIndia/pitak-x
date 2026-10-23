@@ -6,14 +6,14 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S11** (periodical repository, DI, janitor W4)
+- Last completed session: **S12** (use cases: periodicals and issues)
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S11's commit (S10 was `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`,
-  S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`,
-  S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
-- Full suite last green at: **S11, 2026-10-22** — 2588 tests, 82 s
+- Last commit: S12's commit (S11 was `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`,
+  S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5 `415adfd`, S4 `29689f8`,
+  S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S12, 2026-10-22** — 2652 tests, 81 s
   (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S12.
+- Run stopped here (one session per run, B.3): the next run starts at S13.
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -40,19 +40,90 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S12 — Use cases: periodicals and issues.** Nothing in flight. Follow the
-plan's S12 steps verbatim.
+**S13 — Controllers, read providers, scan routing.** Nothing in flight.
+Follow the plan's S13 steps verbatim.
 
-Notes for it (what S11 built, and the hooks S12 should reuse):
+Notes for it (what S12 built, and the contracts S13's controllers call):
+
+- **Providers (all in `core/di/src/periodical_providers.dart`, exported by
+  `core/di/providers.dart`):** `addPeriodicalUseCaseProvider`,
+  `updatePeriodicalUseCaseProvider`, `deletePeriodicalUseCaseProvider`,
+  `addIssueUseCaseProvider`, `updateIssueUseCaseProvider` — every one a
+  `Future<…UseCase>` over `periodicalRepositoryProvider` (+
+  `catalogueItemRepositoryProvider` for the issue/update ones, +
+  `coverFileJanitorProvider` for delete). The module imports
+  `library_providers.dart` one way; nothing imports it back. The
+  `periodicalById`/`periodicalByUid` read providers S13 adds belong in this
+  module too (mirror `catalogueItemById`; the mutation signal to watch is
+  whatever S13's `periodicals_controller.dart` exposes).
+- **Use-case contracts (`periodicals/application/`, 7 files, all < 120
+  lines):**
+  - `AddPeriodicalUseCase(periodicals)(Periodical)` → persisted row (id +
+    minted uid). `UpdatePeriodicalUseCase(periodicals:, items:)(Periodical)`
+    → stored row; `id == emptyId` → `NotFoundFailure` before any store
+    access. Both go through `PeriodicalIngress.prepare` = `Periodical.validate`
+    (title trimmed, ISSN canonical, blank ISSN → null) + ISSN pre-check →
+    `DuplicateIssnFailure(existingTitle, existingPeriodicalId)` (update
+    excludes its own id). A failed pre-check read is propagated (fail closed).
+  - `UpdatePeriodicalUseCase` runs `items.runInTransaction` around
+    `periodicals.update` + re-projection of `issuesOf(uid)`; rows whose six
+    projected fields already match are skipped (editing notes/subscription
+    rewrites nothing). Any `Left` — item write, issue read, or a projected
+    row failing `CatalogueItem.validate` — rolls the series edit back
+    (proven against Drift: a series title at `maxFieldChars` is valid but
+    composes an over-cap issue title → `ValidationFailure`, title unchanged).
+  - `DeletePeriodicalUseCase(periodicals:, releaseCover:)(int id)` → `Unit`;
+    missing id → `right(unit)`; `countIssues > 0` →
+    `PeriodicalHasIssuesFailure(n)` (soft-removed issues count); cover
+    released via the janitor hook only after a successful delete. No vault
+    interaction (F2: loans reference base rows, never the series).
+  - `AddIssueUseCase(periodicals:, items:)(CatalogueItem)` — the input is a
+    `CatalogueItem` whose `details` is an `IssueOf`; its `title` is ignored
+    (projected from the series). Steps = `IssueIngress.prepare` (series
+    `findByUid` → `IssueProjection.apply` → `CatalogueItem.validate`) then
+    `IssueIngress.ensureIdentityIsFree` (numbered key → `findIssue`, bound →
+    `findBoundVolume`, date-only → no lookup) then `items.insert`. Failures:
+    unknown series → `ValidationFailure('The magazine title no longer
+    exists.')` (worded through `FieldError('issue.periodicalUid', …)`);
+    duplicate → `DuplicateIssueFailure(existingTitle, existingItemId)`; a
+    non-issue input → `UnexpectedFailure` (caller bug — books/others use the
+    generic catalogue use cases, O3).
+  - `UpdateIssueUseCase(periodicals:, items:)(CatalogueItem)`: `emptyId` →
+    `NotFoundFailure`; stored row missing → `NotFoundFailure`; stored row
+    not a `magazineIssue` → `ValidationFailure('This item is not a magazine
+    issue. An item cannot change its kind after it is added.')` (D8, checked
+    before any series lookup); then the same ingress as add with
+    `excludeId: id`. Moving an issue to another series is an ordinary edit
+    (re-projected from, and deduplicated within, the new series).
+  - A soft-removed series still accepts issues (the use cases do not look
+    at `Periodical.removed`): the plan makes a removed title "visible but
+    actionless" in the UI, so S15/S16 should hide "Add issue" / the edit
+    entry on a removed title rather than expect a refusal here.
+- **Messages:** every failure above is already worded by
+  `catalogueSaveMessage(error, noun: …)` (S6); use `noun: 'issue'` /
+  `'magazine title'` in the S13 controllers.
+- **Test fakes to reuse:** `test/features/periodicals/application/
+  periodical_fakes.dart` — `FakePeriodicals` (rows by id, `issues` by uid,
+  per-method `…Failure` switches, `calls` log) and `FakeItems` (rows by id,
+  `failUpdateAt`, a `runInTransaction` that restores its rows on `Left`).
+  Both answer `UnimplementedError` for anything else, so a controller test
+  that needs `listAll`/`page` must extend them (add the method, keep the
+  switch style). `test/core/di/periodical_providers_test.dart` shows the
+  override set (`periodicalRepositoryProvider`,
+  `catalogueItemRepositoryProvider`, `coverFileJanitorProvider`).
+- **Gate test:** unchanged — no new file constructs `CatalogueItem(` or
+  `Periodical(` (the projection does, and it was allow-listed in S11), so
+  the plan's "allow-list updated for the use-case construction sites" needed
+  no entry. Mind doc comments in `lib/`: the scan is textual, so never write
+  the literal constructor call in prose.
+
+Notes from S11 (the repository hooks, still current):
 
 - **Where the repository binding is:** `periodicalRepositoryProvider` lives
   in `core/di/src/database_providers.dart` (next to `wishlistRepository`),
-  NOT in a `periodical_providers.dart` — see Deviations. S12 creates
-  `core/di/src/periodical_providers.dart` for the use-case providers (and
-  registers it in `core/di/providers.dart`); that module may import
-  `database_providers.dart` and `library_providers.dart`
-  (`catalogueItemRepositoryProvider`, `coverFileJanitorProvider`) with no
-  cycle, because nothing in `library_providers.dart` will need it.
+  NOT in `periodical_providers.dart` — see Deviations. The use-case module
+  (`core/di/src/periodical_providers.dart`, S12) imports
+  `database_providers.dart` and `library_providers.dart` one way.
 - **Repository contract as implemented** (`DriftPeriodicalRepository`,
   `periodicals/infrastructure/drift_periodical_repository.dart`, 441 lines;
   `periodical_mapper.dart`, 97):
@@ -70,8 +141,8 @@ Notes for it (what S11 built, and the hooks S12 should reuse):
     structurally invalid ISSN answers null without a query.
   - `delete` is one transaction: missing id → `right(unit)`; `countIssues >
     0` → `PeriodicalHasIssuesFailure(count)` (soft-removed issues count);
-    the use case (S12) still pre-checks for a friendlier message but the
-    repository is the last line of defence.
+    the use case (S12) pre-checks the same rule, the repository is the last
+    line of defence.
   - `findIssue` / `findBoundVolume` build an `IssueOf` and query
     `CatalogueSql.issueIdentityKey(db, issue)` — the SAME predicate the
     collision lookup uses (moved out of `CatalogueCollisions` in S11), so
@@ -84,27 +155,20 @@ Notes for it (what S11 built, and the hooks S12 should reuse):
     collation.
   - The repository does NOT snap `Periodical.language` to a stored spelling
     (`LanguageResolver` is item-specific); the projected issue rows are
-    snapped by the item repository on write. If the series page ever shows
-    the periodical's own language next to its issues', S12's add/update
-    periodical use cases are the place to canonicalise (or generalise the
-    resolver) — not needed by the plan today.
+    snapped by the item repository on write. Consequence for S12's
+    skip-unchanged check: a series whose language differs from the stored
+    spelling only by case has its issues rewritten on every series edit (a
+    harmless no-op write). If the series page ever shows the periodical's
+    own language next to its issues', the add/update periodical use cases
+    are the place to canonicalise (or generalise the resolver) — not needed
+    by the plan today.
 - **Janitor (W4) done:** `CoverFileJanitor` has a required `periodicals:
-  PeriodicalRepository` and reads `listAll()`; fakes in four test files
-  implement `listAll` only (`_NoPeriodicals` / `_Periodicals`). S12's
-  `delete_periodical_use_case` gets `janitor.releaseReference` exactly like
-  `DeleteCatalogueItemUseCase` does (`library_providers.dart`).
+  PeriodicalRepository` and reads `listAll()`; fakes in five test files
+  implement `listAll` only. `DeletePeriodicalUseCase` receives
+  `janitor.releaseReference` exactly like `DeleteCatalogueItemUseCase`.
 - **Gate test:** `periodical_mapper.dart` is on the `Periodical(`
-  allow-list ("DB mapper (rows validated on write)"). S12's
-  `add_issue_use_case` constructs `CatalogueItem(details: IssueOf(...))` —
-  it calls `CatalogueItem.validate` on the projected row, so it needs no
-  allow-list entry; a periodical use case that builds a `Periodical(` must
-  reference `Periodical.validate` (B.5).
-- **Transactions:** `update_periodical_use_case` (one transaction;
-  re-projects every issue) should wrap its work in
-  `CatalogueItemRepository.runInTransaction` — Drift transactions are
-  zone-scoped, so the periodical repository's `update` and the item
-  repository's `update` calls inside the callback join it, and a `Left`
-  rolls everything back (`RollbackWith`).
+  allow-list ("DB mapper (rows validated on write)"); S16's periodical form
+  and add-issue form will each need an entry (B.5).
 
 Notes from S10 (the item-repository hooks, still current):
 
@@ -131,8 +195,9 @@ Notes from S10 (the item-repository hooks, still current):
   `insertAll` is now row-by-row (ids are needed for detail rows) but still
   one transaction. `update` refuses a stored unknown kind token with
   `UnsupportedItemKindFailure(token)` and leaves the row untouched; it does
-  NOT (yet) refuse a kind change — the plan puts that in S12's
-  `update_issue_use_case` (D8).
+  NOT refuse a kind change — that rule lives in S12's `UpdateIssueUseCase`
+  (D8), because import (S18) updates re-imported rows by uid through the
+  same repository method and reports a kind mismatch as a conflict (D6).
 - **Collisions:** `CatalogueCollisions(db)` (`drift_catalogue_collisions.dart`)
   holds the best-effort `isbn(...)` and `issue(...)` lookups that turn a
   UNIQUE violation into `DuplicateIsbnFailure` / `DuplicateIssueFailure`
@@ -250,15 +315,28 @@ Rename technique (learned in S1–S4):
   the plan's placement would have made `library_providers ⇄
   periodical_providers` a cycle, which the DI module rule in
   `core/di/providers.dart` forbids ("a cycle means the binding belongs in a
-  base module"). No `periodical_providers.dart` exists yet; S12 creates it
-  with the use-case providers. AGENTS §0 "one blessed way" over the plan's
-  literal file name.
+  base module"). S12 created `periodical_providers.dart` with the use-case
+  providers only. AGENTS §0 "one blessed way" over the plan's literal file
+  name.
 - `S11` — `CatalogueSql.issueIdentityKey` was extracted from S10's
   `CatalogueCollisions.issue` (pure move, no behaviour change, S10's tests
   unchanged) so the collision lookup and the new `findIssue` /
   `findBoundVolume` share the one D6 predicate. The `drift_catalogue_sql.dart`
   header no longer says "nothing outside `library/infrastructure` imports
   this file": the periodical repository does, on purpose.
+- `S12` — the plan names five use-case files; two shared helpers were
+  added beside them: `periodical_ingress.dart` (`Periodical.validate` +
+  ISSN pre-check, used by add AND update) and `issue_ingress.dart` (series
+  lookup → `IssueProjection.apply` → `CatalogueItem.validate` → D6 identity
+  pre-check, used by add AND update). Without them each rule would exist
+  twice (AGENTS §0 "one blessed way"); the use cases themselves stay 36–119
+  lines. The plan's "gate allow-list updated for the use-case construction
+  sites" needed no entry: no use case constructs a `CatalogueItem(` or
+  `Periodical(` — the (already allow-listed) projection does, and the
+  ingress helpers reference the gates. `DeletePeriodicalUseCase` reuses the
+  `ReleaseCoverFile` hook type from `delete_catalogue_item_use_case.dart`
+  (a `show` import of a sibling feature's application file) instead of
+  declaring a third identical typedef.
 
 ## Open issues / blocked
 
@@ -281,4 +359,5 @@ output. Platform-golden failures go here tagged "verify in CI".)_
 | S8 | Done | `d3ee18b` | 2026-10-22 | `drift_catalogue_sql.dart` (194 lines) takes `CatalogueSql` (ORDER BY twins, FTS statement, `ftsQuery`), `LanguageResolver`, `RollbackWith`; repository 599 → 437, ratchet entry deleted; no test expectation changed; full green 2533 |
 | S9 | Done | `b9109f2` | 2026-10-22 | schema v5: `books.kind`, `magazine_issues` (FK cascade), `periodicals`; `PRAGMA foreign_keys = ON`; FTS dropped + rebuilt with `notes`; 6 raw indexes (2 partial UNIQUE); snapshot v5 + generated helper; matrix row (back-fill, notes FTS, column list, kinds round-trip, unique keys, cascade); `fts_rebuild_timing_test` (5 000 rows: migration 36 ms, rebuild 3 ms on this laptop; bound 20 s); `app_database_test` fixture rebuilt from the real v1 snapshot (26 columns now); ARCHITECTURE §5.4 updated; full green 2536 |
 | S10 | Done | `b657c8c` | 2026-10-22 | `DriftItemDetails` seam; mapper reads the joined row and writes `kind`; repository: LEFT JOIN reads, kind + series facets in both list and FTS paths, `IssueSorter` order for a series, two-table transactional writes, `UnsupportedItemKindFailure` on write-back, `DuplicateIssueFailure` via `CatalogueCollisions`; `CatalogueSql.joined/facetPredicate/issueOrderingTerms/issueOrderSql`; 20 new tests (2556 total), full green |
-| S11 | Done | _(this commit)_ | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |
+| S11 | Done | `5ce4ec0` | 2026-10-22 | `periodicals/infrastructure/`: `periodical_mapper.dart` (tolerant read; blank ISSN → NULL; fail-closed `StateError` without a uid), `drift_periodical_repository.dart` (441 lines: every `PeriodicalRepository` method; `listAll` one LEFT JOIN + GROUP BY ordered title/id; uid minted on insert, stored uid wins on update; ISSN race → `DuplicateIssnFailure`; `delete` fails closed in one transaction; `findIssue`/`findBoundVolume` via `CatalogueSql.issueIdentityKey`, `issuesOf` in `IssueSorter` order through the item mapper); `periodicalRepositoryProvider` in `database_providers.dart` (see Deviations); `CoverFileJanitor.periodicals` (W4) + 4 test fakes; gate allow-list + mapper; 32 new tests (2588 total), full green 82 s |
+| S12 | Done | _(this commit)_ | 2026-10-22 | `periodicals/application/` (7 files): `PeriodicalIngress` (gate + ISSN pre-check), `AddPeriodicalUseCase`, `UpdatePeriodicalUseCase` (one `runInTransaction`; re-projects every issue, skips already-projected rows, a `Left` anywhere rolls the series edit back — proven against Drift), `DeletePeriodicalUseCase` (D8 pre-check, janitor release after delete, no vault), `IssueIngress` (series lookup → projection → gate → D6 identity pre-check), `AddIssueUseCase`, `UpdateIssueUseCase` (refuses a kind change, D8); `core/di/src/periodical_providers.dart` (5 providers) + barrel export; shared fakes `periodical_fakes.dart`; gate allow-list unchanged (no new construction site); 64 new tests (2652 total), full green 81 s |
