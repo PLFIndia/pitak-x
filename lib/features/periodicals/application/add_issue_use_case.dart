@@ -36,11 +36,16 @@ class AddIssueUseCase {
   /// uid) or a typed failure: [ValidationFailure] (unknown series, invalid
   /// field), [DuplicateIssueFailure] naming the row that already holds the
   /// identity key, or the repository's failure.
-  Future<Either<Failure, CatalogueItem>> call(CatalogueItem item) async {
-    final prepared = await _ingress.prepare(item);
-    return prepared.fold(left, (valid) async {
-      final free = await _ingress.ensureIdentityIsFree(valid);
-      return free.fold(left, (_) => _items.insert(valid));
+  Future<Either<Failure, CatalogueItem>> call(CatalogueItem item) {
+    // Preparation and the write share one transaction with series renames and
+    // deletes. Otherwise a series could change after projection but before the
+    // insert, leaving an orphaned or stale issue behind.
+    return _items.runInTransaction(() async {
+      final prepared = await _ingress.prepare(item, allowRemovedSeries: false);
+      return prepared.fold(left, (valid) async {
+        final free = await _ingress.ensureIdentityIsFree(valid);
+        return free.fold(left, (_) => _items.insert(valid));
+      });
     });
   }
 }

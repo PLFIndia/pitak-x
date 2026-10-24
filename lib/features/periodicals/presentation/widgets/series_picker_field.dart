@@ -9,8 +9,9 @@
 ///
 /// Removed titles are not offered for a NEW issue (a removed series is
 /// "actionless", D8), except when they are the currently selected one — a
-/// dropdown value outside its items would crash, and the use cases accept
-/// the write anyway (a scanned ISSN can land on a removed title).
+/// dropdown value outside its items would crash, and an existing issue remains
+/// editable for historical maintenance. The use case refuses a NEW write even
+/// if a stale form or another caller reaches it.
 library;
 
 import 'package:flutter/material.dart';

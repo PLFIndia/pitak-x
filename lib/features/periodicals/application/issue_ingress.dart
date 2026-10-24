@@ -29,7 +29,14 @@ class IssueIngress {
   /// longer exists or a field is invalid, [UnexpectedFailure] when [item]
   /// is not an issue at all (a caller bug — the generic catalogue use cases
   /// handle books and others), or the repository's read failure.
-  Future<Either<Failure, CatalogueItem>> prepare(CatalogueItem item) async {
+  ///
+  /// [allowRemovedSeries] is true only for editing an existing issue. A new
+  /// issue under a removed series is refused here, at the application boundary;
+  /// the series picker is only a presentation convenience.
+  Future<Either<Failure, CatalogueItem>> prepare(
+    CatalogueItem item, {
+    required bool allowRemovedSeries,
+  }) async {
     final issue = item.issue;
     if (issue == null) {
       return left(
@@ -47,6 +54,14 @@ class IssueIngress {
               'issue.periodicalUid',
               'no longer exists',
             ).userMessage,
+          ),
+        );
+      }
+      if (periodical.removed && !allowRemovedSeries) {
+        return left(
+          const ValidationFailure(
+            'The magazine title is marked as removed. '
+            'Restore it before adding an issue.',
           ),
         );
       }

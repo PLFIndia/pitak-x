@@ -38,6 +38,7 @@ import 'package:pitaka/features/library/presentation/widgets/library_menu_button
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -315,6 +316,7 @@ class _BookList extends ConsumerWidget {
 ///   save is wasted work and a confusing error;
 /// - [AddBookByIsbn] → the add-book form pre-filled;
 /// - [AddIssueOfPeriodical] → the add-issue form with the series preselected;
+/// - [OpenPeriodical] → the removed series' detail, where it can be restored;
 /// - [AddPeriodicalByIssn] → the series form with the scanned ISSN pre-filled
 ///   (both S16 forms; the ISSN identifies the TITLE, never the issue — D7).
 Future<void> routeScannedBarcode(
@@ -359,6 +361,15 @@ Future<void> routeScannedBarcode(
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (_) => AddIssuePage(periodical: periodical),
+        ),
+      );
+    case OpenPeriodical(periodical: final periodical):
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PeriodicalDetailPage(
+            periodicalId: periodical.id,
+            initialPeriodical: periodical,
+          ),
         ),
       );
     case AddPeriodicalByIssn(issn: final issn):

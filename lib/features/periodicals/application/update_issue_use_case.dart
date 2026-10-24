@@ -37,28 +37,33 @@ class UpdateIssueUseCase {
   /// [ValidationFailure] when the stored row is not an issue (D8), the
   /// series no longer exists or a field is invalid, [DuplicateIssueFailure]
   /// when ANOTHER row holds the identity key, or the repository's failure.
-  Future<Either<Failure, CatalogueItem>> call(CatalogueItem item) async {
+  Future<Either<Failure, CatalogueItem>> call(CatalogueItem item) {
     if (item.id == CatalogueItem.emptyId) {
-      return left(const NotFoundFailure());
+      return Future.value(left(const NotFoundFailure()));
     }
-    final stored = await _items.getById(item.id);
-    return stored.fold(left, (existing) async {
-      if (existing == null) return left(const NotFoundFailure());
-      if (existing.kind != ItemKind.magazineIssue) {
-        return left(
-          const ValidationFailure(
-            'This item is not a magazine issue. An item cannot change its '
-            'kind after it is added.',
-          ),
-        );
-      }
-      final prepared = await _ingress.prepare(item);
-      return prepared.fold(left, (valid) async {
-        final free = await _ingress.ensureIdentityIsFree(
-          valid,
-          excludeId: valid.id,
-        );
-        return free.fold(left, (_) => _items.update(valid));
+    // The stored-row check, series projection, identity pre-check and update
+    // must observe one database revision. A concurrent rename or delete then
+    // happens wholly before or wholly after this edit, never inside it.
+    return _items.runInTransaction(() async {
+      final stored = await _items.getById(item.id);
+      return stored.fold(left, (existing) async {
+        if (existing == null) return left(const NotFoundFailure());
+        if (existing.kind != ItemKind.magazineIssue) {
+          return left(
+            const ValidationFailure(
+              'This item is not a magazine issue. An item cannot change its '
+              'kind after it is added.',
+            ),
+          );
+        }
+        final prepared = await _ingress.prepare(item, allowRemovedSeries: true);
+        return prepared.fold(left, (valid) async {
+          final free = await _ingress.ensureIdentityIsFree(
+            valid,
+            excludeId: valid.id,
+          );
+          return free.fold(left, (_) => _items.update(valid));
+        });
       });
     });
   }

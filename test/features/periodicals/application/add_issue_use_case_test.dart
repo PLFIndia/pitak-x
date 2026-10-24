@@ -77,6 +77,7 @@ void main() {
     expect(saved.issue?.volume, 3);
     expect(periodicals.calls, ['findByUid', 'findIssue']);
     expect(items.calls, ['insert']);
+    expect(items.transactions, 1);
   });
 
   test('a bound volume composes the range title', () async {
@@ -136,6 +137,33 @@ void main() {
     );
     expect(items.calls, isEmpty);
   });
+
+  test(
+    'a new issue under a removed series is refused before any write',
+    () async {
+      final removed = periodicals.seed(
+        periodicalFixture(
+          periodicalUid: null,
+          title: 'Old Weekly',
+          removed: true,
+        ),
+      );
+
+      final failure = failureOf(
+        await useCase(issue(periodicalUid: removed.periodicalUid!, number: 1)),
+      );
+
+      expect(failure, isA<ValidationFailure>());
+      expect(
+        (failure as ValidationFailure).message,
+        'The magazine title is marked as removed. '
+        'Restore it before adding an issue.',
+      );
+      expect(periodicals.calls, ['findByUid'], reason: 'no identity lookup');
+      expect(items.calls, isEmpty);
+      expect(items.inserted, isEmpty);
+    },
+  );
 
   test('a failed series lookup aborts the add (fail closed)', () async {
     periodicals.findByUidFailure = const StorageFailure('db closed');

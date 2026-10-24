@@ -35,6 +35,7 @@ import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 
 /// In-memory item repo fake: enough for the pages pushed by the routing
@@ -115,6 +116,10 @@ class _MemPeriodicals implements PeriodicalRepository {
   @override
   Future<Either<Failure, Periodical?>> findByIssn(String issn) async =>
       right(periodicals.where((p) => p.issn == issn).firstOrNull);
+
+  @override
+  Future<Either<Failure, Periodical?>> getById(int id) async =>
+      right(periodicals.where((p) => p.id == id).firstOrNull);
 
   @override
   Future<Either<Failure, List<PeriodicalSummary>>> listAll() async => right([
@@ -274,6 +279,29 @@ void main() {
     );
     // The picker settled on the preselected series.
     expect(find.text('Weekly'), findsWidgets);
+  });
+
+  testWidgets('a magazine barcode of a REMOVED series routes to its restore '
+      'flow instead of the add-issue form', (tester) async {
+    const scanned = '9771234567003';
+    await tester.pumpWidget(
+      host(
+        _MemItems([]),
+        periodicals: [_series.copyWith(issn: '1234-5679', removed: true)],
+        scanned: scanned,
+      ),
+    );
+
+    await tester.tap(find.text('scan'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PeriodicalDetailPage), findsOneWidget);
+    expect(find.byType(AddIssuePage), findsNothing);
+    expect(find.text('Removed'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Restore to library'), findsOneWidget);
   });
 
   testWidgets('a magazine barcode with NO matching series routes to the '

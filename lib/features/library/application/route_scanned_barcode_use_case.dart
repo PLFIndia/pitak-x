@@ -63,6 +63,16 @@ final class AddIssueOfPeriodical extends ScanRoute {
   final Periodical periodical;
 }
 
+/// The barcode's ISSN belongs to a removed title: open its existing series
+/// detail, where the user can restore it, instead of offering a new issue.
+final class OpenPeriodical extends ScanRoute {
+  /// Creates the route.
+  const OpenPeriodical(this.periodical);
+
+  /// The existing, removed series the barcode identifies.
+  final Periodical periodical;
+}
+
 /// The barcode is a magazine code whose ISSN matches no title yet: offer to
 /// create a new magazine title with [issn] pre-filled.
 final class AddPeriodicalByIssn extends ScanRoute {
@@ -88,8 +98,9 @@ class RouteScannedBarcodeUseCase {
   /// Routes [raw] (the scanner's string, dashes/spaces tolerated).
   ///
   /// A valid `977…` EAN-13 is a magazine barcode: its ISSN is looked up and
-  /// the route is [AddIssueOfPeriodical] or [AddPeriodicalByIssn]. Anything
-  /// else takes the ISBN path exactly as before this use case existed —
+  /// the route is [AddIssueOfPeriodical], [OpenPeriodical] for a removed
+  /// title, or [AddPeriodicalByIssn]. Anything else takes the ISBN path
+  /// exactly as before this use case existed —
   /// normalised, looked up, [OpenCataloguedItem] or [AddBookByIsbn]. A
   /// `977` code with a bad check digit is a misread; it is not an ISBN
   /// either, but it falls through to the ISBN path so the user still sees
@@ -103,8 +114,9 @@ class RouteScannedBarcodeUseCase {
   Future<ScanRoute> _routeIssn(String issn) async {
     final existing = await _periodicals.findByIssn(issn);
     final periodical = existing.getOrElse((_) => null);
-    return periodical == null
-        ? AddPeriodicalByIssn(issn)
+    if (periodical == null) return AddPeriodicalByIssn(issn);
+    return periodical.removed
+        ? OpenPeriodical(periodical)
         : AddIssueOfPeriodical(periodical);
   }
 

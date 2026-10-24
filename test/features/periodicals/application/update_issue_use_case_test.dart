@@ -68,7 +68,8 @@ void main() {
     expect(saved.title, 'Chandamama — No 1 (Oct 2026)');
     expect(saved.publishedYear, 2026);
     expect(saved.notes, 'edited');
-    expect(items.calls, ['getById', 'update']);
+    expect(items.calls, ['getById', 'update(in transaction)']);
+    expect(items.transactions, 1);
     expect(periodicals.calls, ['findByUid', 'findIssue']);
   });
 
@@ -142,6 +143,19 @@ void main() {
     );
     expect(failure, isA<UnexpectedFailure>());
     expect(items.updated, isEmpty);
+  });
+
+  test('an existing issue remains editable under a removed series', () async {
+    await periodicals.markRemoved(series.id, 10);
+    final stored = storedIssue(number: 1);
+
+    final saved = ok(
+      await useCase(stored.copyWith(notes: 'history corrected')),
+    );
+
+    expect(saved.notes, 'history corrected');
+    expect(saved.issue?.periodicalUid, uid);
+    expect(items.updated, hasLength(1));
   });
 
   test('an unknown series is a ValidationFailure', () async {

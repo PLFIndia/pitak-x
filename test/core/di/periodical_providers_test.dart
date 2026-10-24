@@ -177,6 +177,6 @@ void main() {
       ),
     );
     expect(result.isLeft(), isTrue, reason: 'vanished row');
-    expect(items.calls, ['getById']);
+    expect(items.calls, ['runInTransaction', 'getById']);
   });
 }

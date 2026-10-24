@@ -15,9 +15,10 @@
 /// is in flight.
 ///
 /// A REMOVED title is visible but actionless (D8): the edit and "+ Add
-/// issue" entries hide; the use cases would not refuse them, so the UI keeps
-/// the dead ends out of reach. The overflow offers Remove / Restore
-/// (soft, no confirmation needed to restore) and the hard delete, whose typed
+/// issue" entries hide, and the add-issue use case is the authoritative guard
+/// against a new write. Historical issue edits remain allowed. The overflow
+/// offers Remove / Restore (soft, no confirmation needed to restore) and the
+/// hard delete, whose typed
 /// refusal ("still has N issues") is the guard — delete the issues first, or
 /// remove the title instead.
 ///

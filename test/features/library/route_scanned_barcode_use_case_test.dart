@@ -60,6 +60,22 @@ void main() {
     });
 
     test(
+      'a removed ISSN match opens the existing series for restore',
+      () async {
+        final series = periodicals.seed(
+          const Periodical(title: 'Old Weekly', issn: issn, removed: true),
+        );
+
+        final decision = await route(magazineBarcode);
+
+        expect(decision, isA<OpenPeriodical>());
+        expect((decision as OpenPeriodical).periodical.id, series.id);
+        expect(periodicals.calls, ['findByIssn:$issn']);
+        expect(items.isbnLookups, isEmpty);
+      },
+    );
+
+    test(
       'an unknown ISSN offers a new title with the ISSN pre-filled',
       () async {
         final decision = await route(' 977-0317847-001 ');
