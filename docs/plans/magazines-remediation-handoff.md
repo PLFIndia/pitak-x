@@ -1,9 +1,9 @@
-# Magazines remediation — handoff after S4
+# Magazines remediation — handoff after S5
 
 - **Date:** 2026-10-24
 - **Branch:** `magazines`
-- **Status:** S4 complete. S5 has **not** started.
-- **Remediation HEAD:** `df774d5` (this handoff is a documentation-only follow-up)
+- **Status:** S5 complete. S6 has **not** started.
+- **Remediation HEAD:** `29e412d` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
 ## 1. Commits and current state
@@ -16,8 +16,9 @@
 | S2 — calendar-day semantics | `62e79cb` | M10 and M12 fixed with schema v7, dual-timezone regression coverage, and immediate restore/overwrite reprojection. |
 | S3 — atomic writes and removed-series guard | `d8b1bab` | M1 and M9 fixed with one outer issue-write transaction, exact real-Drift race coverage, and removed-series add/scan refusal. |
 | S4 — plain JSON reconciliation | `df774d5` | H1, H2, H3, and M3 fixed with one series-resolution map, cross-kind refusal, D6 skip claims, and a file-level trim-collision refusal. |
+| S5 — v4 bundles, bounded backups, split counters | `29e412d` | H4, M2, and L5 fixed with a lossless bundle, series-cover lifecycle, reader-bound enforcement at creation, and separate entry/row restore counters. |
 
-The working tree was clean immediately after `df774d5`. The database remains at **schema v7** (S4 adds no schema change). No release version bump, tag, or publish step has been performed.
+The working tree was clean immediately after `29e412d`. The database remains at **schema v7** (S5 adds no schema change). No release version bump, tag, or publish step has been performed.
 
 ## 2. Completed work
 
@@ -68,6 +69,16 @@ The working tree was clean immediately after `df774d5`. The database remains at 
 - Trim-created UID collisions are now fatal in the parser (`ImportPayload.fatalErrors`) and re-checked for hand-built payloads by `ImportPayloadGuard`, which the merge use case also honours before any namespace read or repository IO. `ImportBundle.validate` refuses a payload carrying fatal errors.
 - Structure: the reconciliation moved out of the import use case, the file-level refusal to `import_payload_guard.dart` + `domain/periodical_uid_ambiguity.dart`, and the merge's per-row apply to `merge_resolution_applier.dart`. The three grown files are 482/497/416 lines and the `merge_library_use_case` file-size allow-list entry was deleted; `merge_resolution_applier.dart` joins the ingress-gate census.
 
+### S5 — H4, M2, L5
+
+- `ImportBundle.validate` is lossless: `items`, `periodicals`, `wishlist` and `warnings` all survive (unmodifiable), while `parseErrors`/`fatalErrors` still refuse the bundle. Series cover references are validated and count as referenced leaves, so the unreferenced-cover check accepts the bundle's own series art.
+- `LibraryBundleReader` treats `periodicals` as a third valid top-level collection: shape-checked before parsing, on the same footing as books/wishlist. A titles-only v4 document is valid; a malformed or null collection is refused instead of silently becoming an empty series list, and v3 documents behave exactly as before.
+- `BundleImportImages` gained `preparePeriodical`/`recordPeriodical`, and series final references joined `retainFinalReferences`. Staging is keyed by source leaf, so a series, an issue and a wishlist row naming the same leaf share one staged file. A same-UID merge that keeps this device's cover now passes that already-on-device reference through — before, it looked for a bundle leaf that never existed and failed the import (a latent bug for items too).
+- `BackupArchiveBuilder.build` now returns `Either<Failure, Uint8List>`. The worker isolate returns plain data — bytes or a `BackupEntryOverflow` code — and the calling isolate maps it to the new `BackupTooLargeFailure`; no `Failure` object crosses the boundary. The create-backup page shows "This catalogue is too large for this backup format. Nothing was exported."
+- Both W2 entries are encoded and bound-checked BEFORE any file work, against the restore reader's own `maxBytes`/`maxRows`. An oversized catalogue is therefore refused before a scratch directory, a SQLite file, or any bytes exist.
+- `RestoredItemDetails` and `RestoreSummary` report `issueEntriesDropped` (raw `issues[]` entries that produced no link) separately from `issuesDetached` (unique catalogue rows restored as books, deduplicated by `bookUid`). Parse-time drops no longer seed the row counter, `withAdoptionResults` and `hasAdjustments` carry both, and the restore page prints two distinct sentences — the units are never summed.
+- Structure: the bound policy and row counting moved to `backup_entry_bounds.dart`; the writer is 471 lines, so no ratchet entry was needed.
+
 ## 3. Verification evidence
 
 | Gate | Result |
@@ -93,28 +104,34 @@ The working tree was clean immediately after `df774d5`. The database remains at 
 | S4 transformation/architecture gates | Generation wrote no committed diffs; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed** with the `merge_library_use_case` ratchet entry removed. |
 | S4 suites under `TZ=America/New_York` | **60 tests passed** in the reconciliation and merge suites. |
 | S4 `fvm flutter test --exclude-tags golden` | **2,955 tests passed.** |
-| S4 commit checks | Pre-commit generated-code check passed; `git diff --check` clean; working tree clean at `df774d5`. |
+| S5 new regressions | **24 new tests** across the bundle, reader, writer, restore-counter and page suites. The real-bundle block is **5 real-ZIP/real-Drift tests** in `bundle_periodical_roundtrip_test.dart` (shared cover staged once, titles-only bundle, unsafe/missing/unreferenced series covers, cross-kind rollback deleting only new series covers, orphan issue → book). |
+| S5 bundle/reader regressions | Lossless payload preservation and series-cover validation in `import_bundle_test.dart`; `periodicals` as a third collection, malformed-collection refusal and v3 parity in `library_bundle_reader_test.dart`. |
+| S5 writer/backup regressions | Byte-cap and row-cap refusals with no scratch directory created, a fitting v4 archive that still round-trips, the exact-`maxBytes` reader boundary for both entries (`backup_extras_bounds_test.dart`), use-case propagation of `BackupTooLargeFailure`, and the create-page sentence. |
+| S5 restore-counter regressions | Entry-versus-row matrix in `restore_item_details_test.dart` (one malformed entry + one declared row = 1 + 1, never 2 detachments), the real-archive case in `restore_backup_test.dart`, and two separate restore-page sentences. |
+| S5 `fvm flutter test test/features/import_export test/features/backup` | **622 tests passed.** |
+| S5 sufficiency gates | Generation wrote no committed diffs; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**, writer 471 lines with no new ratchet entry. |
+| S5 suites under `TZ=America/New_York` | **19 tests passed** in the round-trip, restore-details and boundary suites. |
+| S5 `fvm flutter test --exclude-tags golden` | **2,979 tests passed.** |
+| S5 commit checks | Pre-commit generated-code check passed; `git diff --check` clean. |
 
 Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed.
 
-## 4. Resume with S5 only
+## 4. Resume with S6 only
 
-Start with `magazineIssues.md` **S5 — Complete v4 bundle and bounded backup round-trips** (H4, M2, L5). Its S4 dependency is complete.
+Start with `magazineIssues.md` **S6 — Keep same-title series with different ISSNs distinct in merge** (H5). Its S1, S2 and S4 dependencies are complete.
 
-1. Confirm `git switch magazines && git status --short` is empty and HEAD is `df774d5` (or the docs commit that follows it).
-2. Read S5 plus the locked import/bundle decisions, especially the writer/reader size parity rule and the distinct `issueEntriesDropped` versus `issuesDetached` units.
-3. Run the S5 baseline, including `full`, before editing; stop on any pre-existing failure.
-4. Add the real-ZIP, series-only, unsafe-cover, rollback, writer-boundary, and restore-counter regressions first.
-5. Make `ImportBundle.validate` lossless for v4 and teach `LibraryBundleReader` that `periodicals` is a third valid collection with a validated shape.
-6. Give series covers the full `BundleImportImages` lifecycle, sharing one staged file across series/items/wishlist references and including series leaves in `retainFinalReferences`.
-7. Change `BackupArchiveBuilder.build` to return `Either<Failure, Uint8List>`, enforce the exact reader limits for `item_kinds.json` and `periodicals.json`, and propagate the typed failure through the writer and `CreateBackupUseCase`.
-8. Split `issueEntriesDropped` from `issuesDetached` through `RestoredItemDetails`, `RestoreSummary`, `withAdoptionResults`, notices, and the restore page copy.
-9. Keep typed `Either` rollback, the S1 interchange reads, S2 calendar-day semantics, and the S3/S4 import guards. Do not start S6 or R1.
+1. Confirm `git switch magazines && git status --short` is empty and HEAD is `29e412d` (or the docs commit that follows it).
+2. Read S6 plus the locked merge decisions, especially the "different valid ISSNs are different series" rule and the review-screen contract that an expected add is not an unresolved conflict.
+3. Run the S6 baseline, including `full`, before editing; stop on any pre-existing failure.
+4. Add the planner and real-Drift regressions first: same title + different valid ISSNs must add the incoming series with its own UID, keep both series after apply, and keep its issues under the incoming series.
+5. In `planPeriodicalMerge`, keep UID-first identity and suppress the exact-title fallback only when BOTH sides carry canonical ISSNs and they differ. Title fallback stays for a side without an ISSN; first-claim and conflict reporting stay as they are.
+6. Confirm `reattachIncomingIssue` resolves the incoming issues to the newly added series, and that the merge review does not present the expected add as a same-series conflict.
+7. Keep typed `Either` rollback, the S1 interchange reads, S2 calendar-day semantics, the S3/S4 import guards and the S5 bundle/backup bounds. Do not start S7 or R1.
 
 ## 5. Handoff notes
 
-- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "handoff after S3" text.
-- S0, S1, S2, S3 and S4 are Done. S5–S11 remain Pending.
-- The original 26-finding release hold is unchanged. Completing S4 does not make the branch release-ready.
-- The repo enforces the 500-line guideline (`test/architecture/layer_boundaries_test.dart`). S4's extraction is the pattern to follow: move a cohesive responsibility into its own application collaborator rather than raising a ratchet record.
-- `ImportPayload.fatalErrors` is now the channel for "this whole file must be refused". Any new reader must populate it for file-level ambiguity rather than reporting a row skip.
+- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S4" text.
+- S0–S5 are Done. S6–S11 remain Pending.
+- The original 26-finding release hold is unchanged. Completing S5 does not make the branch release-ready.
+- Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5 both did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
+- `BackupEntryOverflow` is the writer's mirror of the reader's bounds. If `ItemDetailsArchiveCodec.maxBytes`/`maxRows` ever change, the writer picks the new number up automatically — but the boundary tests in `backup_extras_bounds_test.dart` still pin "equal is readable, one byte more is not".
