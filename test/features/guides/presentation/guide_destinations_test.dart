@@ -6,11 +6,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/presentation/guide_destinations.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 void main() {
+  test('magazines → PeriodicalsPage', () {
+    expect(
+      pageForGuideDestination(GuideDestination.magazines),
+      isA<PeriodicalsPage>(),
+    );
+  });
+
   test('publishConnection → PublishPage on its default (Connection) tab', () {
     final page = pageForGuideDestination(GuideDestination.publishConnection);
     expect(page, isA<PublishPage>());

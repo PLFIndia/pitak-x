@@ -6,18 +6,21 @@ every session; commit it with the session's commit.**
 
 ## State
 
-- Last completed session: **S21** (Backup and restore: item kinds and
-  periodicals in `.pitabak`, W2)
+- Last completed session: **S22** (Release hygiene and final verification)
+  — **the plan is complete**; every session S0–S22 is Done.
 - Branch: `magazines` — working tree clean: **yes**
-- Last commit: S21's commit (S20 `9faab2c`, S19 `61f9a04`, S18 `9b9b72d`,
-  S17 `52843fa`, S16 `6c116fa`, S15 `322f3ed`, S14 `526b9da`, S13 `bba12b2`
-  (+ handoff docs `83cd3b4`), S12 was `02f3f99`, S11 `5ce4ec0`, S10
-  `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`, S6 `0517263`, S5
-  `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1 `e216e6b`, S0
-  `8899cc0`)
-- Full suite last green at: **S21, 2026-10-23** — 2878 tests, ~90 s
-  (`flutter test --exclude-tags golden`)
-- Run stopped here (one session per run, B.3): the next run starts at S22.
+- Last commit: S22's commit (S21 `98508ad`, S20 `9faab2c`, S19 `61f9a04`,
+  S18 `9b9b72d`, S17 `52843fa`, S16 `6c116fa`, S15 `322f3ed`, S14
+  `526b9da`, S13 `bba12b2` (+ handoff docs `83cd3b4`), S12 was `02f3f99`,
+  S11 `5ce4ec0`, S10 `b657c8c`, S9 `b9109f2`, S8 `d3ee18b`, S7 `118bc1f`,
+  S6 `0517263`, S5 `415adfd`, S4 `29689f8`, S3 `34a7045`, S2 `2959034`, S1
+  `e216e6b`, S0 `8899cc0`)
+- Full suite last green at: **S22, 2026-10-24** — 2880 tests, 121 s
+  (`flutter test --exclude-tags golden`; 96 s at the S22 baseline — the
+  spread is machine load, not tests); `gen` no diff; `git diff --stat main
+  -- rust/` empty.
+- Run stopped here: **no next session** — the branch is ready for review
+  and merge (see *Next session* for what the release commit still owes).
 - Baseline numbers (from S0): tests = **2426 passed, 0 failed**
   (goldens excluded), duration = **86 s**, platform-golden failures = **7**
   (all in `test/golden/key_screens_test.dart`, pixel diffs ≤ 2.4 % — the
@@ -44,12 +47,71 @@ every session; commit it with the session's commit.**
 
 ## Next session
 
-**S22 — Release hygiene and final verification.** Nothing in flight. Follow
-the plan's S22 steps verbatim. When it commits, back-fill the S21 row's hash
-in the session log below (it is `(this commit)` by construction — the log is
-committed with its session).
+**None — ready for review/merge.** The plan is complete (S0–S22 Done). What
+the reviewer / the `chore(release): x.y.z+29` commit still owes, in order
+(docs/RELEASING.md §6.1 — none of it is a session):
 
-Notes for it (what S21 built, and the seams S22 plugs into):
+1. **Goldens (Linux reference renderer):** Actions → "Update goldens" on
+   `magazines`, download the artefact, then ONE commit with the S17
+   series-row golden test + its `kGoldenNames` entry + the regenerated PNGs
+   (recipe under *Open issues*). The golden CI step is red until then;
+   every other gate is green.
+2. **On-device smoke (RELEASING §6.1 step 7):** cleared install, then
+   `fvm flutter test integration_test --flavor fdroid -d <device>` — runs
+   BOTH journeys (`vault_smoke_test.dart`, `catalogue_kinds_smoke_test.dart`)
+   over `smoke_support.dart`. Neither has been executed on a device in this
+   run: there is no Android device/emulator on this machine, and the macOS
+   desktop target has no `pitak_crypto.framework` (cargokit is not wired for
+   macOS — `RustLib.init()` fails at launch; the attempt's SwiftPM edits
+   under `macos/` were reverted). Both files compile under the CI analyzer
+   scope. The old vault smoke could not have passed as written (see
+   Deviations) — expect to fix finders on first contact, not logic.
+3. **Release commit:** bump `pubspec.yaml` to `+29` (the fastlane blurbs
+   `29.txt` / `291–293.txt` already exist — 495 chars), move the CHANGELOG
+   `[Unreleased]` block under `## [x.y.z] - 2026-10 (tag x.y.z, versionCode
+   29)`, README status note, purity check (the classpath check was run in
+   S22 — output below; the APK dex scan needs the release build), sentinel
+   for `tool/release_build.sh` — an ASCII string new in this release, e.g.
+   `New magazine title`.
+
+What S22 did (for the reviewer):
+
+- **Guide:** `GuideId.catalogue` ("Books, magazines and other items") is the
+  FIRST card (adding items is the first job) with `GuideDestination.
+  magazines` → `PeriodicalsPage` ("Open Magazines"). Copy record:
+  `docs/mockups/how-pitak-works.md` §3.6 + "facts behind the copy" rows;
+  the backup guide's "what is inside" sentence now names magazine titles
+  and other items (W2). Every pinned invariant holds (49 guide tests); the
+  guide was trimmed twice to fit the 3000 dp render budget of
+  `guide_page_test.dart` (the scan-route bullet was dropped, documented in
+  §3.6). The index order and the destination are the two one-line choices a
+  reviewer may want to flip.
+- **Integration smoke:** `integration_test/catalogue_kinds_smoke_test.dart`
+  (magazine title → issue from the series page → other item → vault →
+  lend the ISSUE → backup → restore → series/issue/other/loan survived) and
+  `smoke_support.dart` (`reveal` scrolls lazy forms, `openVaultUnlocked`
+  creates-or-unlocks, `backupAndRestore` via the providers, `smokeStamp`
+  for unique titles). `vault_smoke_test.dart` was rewritten onto the same
+  helpers (its finders could never have matched — Deviations).
+- **F-Droid purity (RELEASING §2, check 1), 2026-10-24:** `( cd android &&
+  ./gradlew -q :app:dependencies --configuration
+  fdroidReleaseRuntimeClasspath ) | grep -E 'com\.google\.android\.(play|
+  gms)|firebase|mlkit'` → **prints nothing** (703 classpath lines resolved;
+  grep exit 1). Self-test on `playReleaseRuntimeClasspath` matches
+  (`com.google.android.play:app-update:2.1.0`, `play-services-basement`,
+  `play-services-tasks`) — the check works. `pubspec.yaml`/`pubspec.lock`
+  are byte-identical to `main`: no plugin was added by S0–S22. Gradle's
+  only stderr is the known KGP deprecation warning (RELEASING §7).
+- **CHANGELOG `[Unreleased]`** rewritten against what shipped (S1–S22,
+  with Fixed/Removed sections and the two pre-tag obligations in its lead
+  note). **ARCHITECTURE:** §5.4 was already final since S9 (verified, no
+  edit); the stale lines were §3's module map ("in progress" on
+  `periodicals/`), the drawer list (no "Magazines") and the
+  `integration_test/` line — fixed.
+- **Fastlane:** `29.txt` + `291/292/293.txt` (identical, the `28`/`281`
+  convention), 495 chars.
+
+Notes from S21 (what S21 built, and the seams S22 plugged into):
 
 - **`.pitabak` carries kinds now (W2):** the writer emits `item_kinds.json`
   (`hasItemKinds`: every non-book row's `{bookUid, kind}`) and
@@ -95,9 +157,8 @@ Notes for it (what S21 built, and the seams S22 plugs into):
   restore applies details via `copyWith`, the codec's `Periodical(` is
   gated by its own `Periodical.validate` call (importer pattern), and the
   writer derives everything from already-persisted entities.
-- **Golden deferral from S17 is still open** (see Open issues) — S22 does
-  not touch it either; the PNG commit can land alongside S22 or separately,
-  per the user's call.
+- **Golden deferral from S17 is still open** (see Open issues) — S22 did
+  not touch it either; the PNG commit lands separately (step 1 above).
 
 Notes from S20 (what S20 built, and the seams S21 consumed):
 
@@ -989,6 +1050,35 @@ Rename technique (learned in S1–S4):
   exporter delegating — W2's "same object as Pitaka-JSON" is now structural,
   not by-convention (the importer keeps its own clamp+report reads; the
   policies differ deliberately, documented in the codec header).
+- `S22` — the plan's integration-smoke step names one journey; S22 also
+  REWROTE `integration_test/vault_smoke_test.dart`. Its finders could not
+  match the current app (`Title` / `Save` — the book form says `Title *` /
+  `Add book`; after lending it opened the drawer from the item detail page,
+  which has none), so RELEASING §6.1 step 7 had a latent red test. Both
+  journeys now share `smoke_support.dart`: a second file in the directory
+  must coexist with the first in ONE `flutter test integration_test` run
+  (app data persists between files), which needs the create-or-unlock vault
+  step and per-run unique titles anyway — a shared helper rather than two
+  copies (AGENTS §0 "one blessed way"). Behaviour of the vault journey on a
+  cleared install is unchanged. Neither journey was executed (no device;
+  macOS has no Rust framework — see *Next session*).
+- `S22` — "ARCHITECTURE §5.4 history line finalised" needed no edit: S9
+  already replaced the "Pending" paragraph with the final v5 text, and the
+  `schemaVersion` doc comment (where §5.4 says the history lives) has entry
+  5. The stale wording was elsewhere (module map, drawer line,
+  `integration_test/` line) and was fixed instead.
+- `S22` — the plan does not say where the catalogue guide sits or ends. It is
+  the first card (adding items precedes publishing it) and ends on the
+  Magazines page (`GuideDestination.magazines`): the Library is the screen
+  under the drawer the reader came from, and the test pins destinations
+  1:1 with guides, so a new guide needs a new destination. Copy length was
+  cut to the render budget of `guide_page_test.dart` (3000 dp surface) —
+  the guide is now ≈ 2880 dp under the test font, just above the backup
+  guide's ≈ 2800; the test comment says so and calls the budget deliberate.
+- `S22` — beyond the plan's step list: the backup guide's "what is inside"
+  sentence was updated (it claimed "your books"; the archive now carries
+  kinds and magazine titles, W2) and the mockup copy record gained §3.6 +
+  facts rows (the catalog header says "edit both together").
 
 ## Open issues / blocked
 
@@ -999,6 +1089,18 @@ Rename technique (learned in S1–S4):
   `test/golden/**`), download the `goldens` artefact, then ONE commit with
   the series-row golden test + `kGoldenNames` entry + the PNGs. Until then
   the golden step on Linux CI is expected red; every other gate is green.
+- **On-device smoke journeys not executed in this run** (S22): no Android
+  device/emulator here; macOS desktop fails at `RustLib.init()` because
+  the macOS target is not wired for cargokit (`pitak_crypto.framework`
+  missing) — a pre-existing platform gap, not a regression. RELEASING §6.1
+  step 7 runs both files on a cleared Android install before tagging.
+- **Review nit (pre-S22, not fixed — a UI change outside S22's scope):**
+  `catalogueSaveMessage` for `PeriodicalHasIssuesFailure` ends "… or mark
+  the title as removed instead", but the series page's overflow offers
+  only "Delete permanently" — `PeriodicalsController.remove` has no UI
+  caller (S13 wrote the message, S15 the menu). Either add a "Remove"
+  entry to `SeriesOverflowMenu` or drop the clause; the catalogue guide
+  deliberately does not mention it.
 
 ## Session log
 
@@ -1026,4 +1128,5 @@ Rename technique (learned in S1–S4):
 | S18 | Done | `9b9b72d` | 2026-10-23 | Pitaka-JSON v4 (W1): `kPitakaSchemaVersion = 4`; every row writes `kind`, issues nest `issue{}`, top-level `periodicals[]` (omitted when empty); importer parses periodicals FIRST (orphan rule needs the file's uid set), unknown kind skipped+counted (F6), `magazine-issue` without `issue{}` rejected, orphan issue → book + warning, over-cap periodical fields truncated+reported; `ImportPayload.periodicals` (+isEmpty); both use cases gained a REQUIRED `PeriodicalRepository` (~24 test sites churned); import applies periodicals before items in the same transaction (uid → update, ISSN → skip, else insert; summary counts + conditional import-page lines) and `_mergeIntoExisting` carries `details` (kind wins on re-import); export reads `listAll` for JSON + CSV (a read failure fails the export — no partial backup); CSV gains `Kind`/`Series`/`Volume`/`Issue`/`Issue date`/`Bound until`/`Issue label` appended after the classic columns (OWASP quoting covers the Series cell); export-page copy notes the v4 refusal on older builds; ARCHITECTURE §5.7 un-pended for W1; `FakeItems` gained `findByUid`/`findByIsbn` (one DI test migrated off the noSuchMethod trick); gate censuses unchanged (both importers reference their gates); 16 new tests (2774 total), full green ~71 s |
 | S19 | Done | `61f9a04` | 2026-10-23 | Merge understands periodicals + issue identity (D6): engine split — `fuzzy_index.dart`, `merge_fields.dart` (+`MergeField.kind`/`issue`; the six projected base fields compare equal between two issues, D3), `issue_identity.dart` (record-typed D6 keys, SQL-twin parity), `periodical_merge.dart` (uid → ISSN → exact title, add-only, removal-as-conflict, `winners` remap + `matchedLocalSeries`); `planMerge` gained named periodical params (properties test untouched); use case gained required `periodicalRepo` (~34 sites), applies series first → items → re-projects merged series' issues in ONE transaction (new shared `IssueReprojection`, extracted from `UpdatePeriodicalUseCase`); overwrite replaces series too; take-theirs refused across kinds (D8) + keep-both keeps `details`; `MergePlanner`/`planMergeInBackground` 4-arg, isolate round-trip with periodicals pinned; merge page shows series counts + kept-local titles (review widgets split to `widgets/merge_review_section.dart`, ratchet 538 → deleted; engine 721 → deleted; use case 545 → 511); gate allow-list +1 (merge orphan rule), census 13; 48 new tests (2822 total), full green ~90 s |
 | S20 | Done | `9faab2c` | 2026-10-23 | Publish carries kinds + series (W3): `PublishItem.kind` (required) + nested `PublishIssue`, `PublishPeriodical` (public fields only) + `PublishExport.periodicals[]` (omitted when empty, schema stays 1); `redactPeriodicalForPublish` strips the subscription window/notes/location/source (pinned by the redaction test); cover pipeline extracted to `publish_cover_decider.dart` (typedefs re-exported — use case nets to 500) with `pathForPeriodical` (`'periodical:<uid>'` hash domain + manifest keys); issues publish `IssueCover.resolve` (a series cover is ONE upload, shared by its entry and falling-back issues); a removed series has no entry but its issues publish (D8); use case `call` gained required `periodicals` (22 test sites churned); the controller reads `listAll()` and refuses the publish on a Left; viewer v7: fixed kind facet (Books · Magazines · Others), issues grouped under their series header with Issue/Bound volume/Other badges, unknown kinds plain, meta says "items"; ARCHITECTURE §5.7 un-pended; gate censuses unchanged (no new construction site); 20 new tests (2842 total), full green ~83 s |
-| S21 | Done | (this commit) | 2026-10-23 | `.pitabak` carries kinds (W2): writer emits `item_kinds.json` (`hasItemKinds`, every non-book row) + `periodicals.json` (`hasPeriodicals`, W1 periodical objects + `issues[]` by `bookUid`), omitted when empty; `BackupManifest` +2 flags (default false — flag-less archives restore as before AND now clear the v5 kind tables, see Deviations); `ItemDetailsArchiveCodec` (envelopes: 4 MiB cap, row caps via `ImportLimits`, first-wins duplicates, every row re-validated, drops counted); shared `PeriodicalJsonCodec` (W1 exporter delegates — one shape by construction); `applyRestoredItemDetails` joins kinds/details onto legacy rows pre-write (detaches declared-but-undetailed, kind-disagreeing, missing-row and orphan-series links, all counted); restore writes items row-by-row + detail rows + `DriftPeriodicalRepository.replaceAll` on the BUILDER db in the one transaction; duplicate D6 keys refuse the archive (fail closed, pinned); `RestoreSummary` +6 counts +2 invalid flags, page sentences for each; `restore_backup.dart` 553 → 482, ratchet entry DELETED (`parseBackupManifest` → extras reader; `restore_legacy_read.dart` extracted); `CreateBackupUseCase` requires `PeriodicalRepository` (Left ⇒ no backup — no partial snapshot); ARCHITECTURE §5.5 un-pended; gate censuses unchanged; 36 new tests (2878 total), full green ~90 s |
+| S21 | Done | `98508ad` | 2026-10-23 | `.pitabak` carries kinds (W2): writer emits `item_kinds.json` (`hasItemKinds`, every non-book row) + `periodicals.json` (`hasPeriodicals`, W1 periodical objects + `issues[]` by `bookUid`), omitted when empty; `BackupManifest` +2 flags (default false — flag-less archives restore as before AND now clear the v5 kind tables, see Deviations); `ItemDetailsArchiveCodec` (envelopes: 4 MiB cap, row caps via `ImportLimits`, first-wins duplicates, every row re-validated, drops counted); shared `PeriodicalJsonCodec` (W1 exporter delegates — one shape by construction); `applyRestoredItemDetails` joins kinds/details onto legacy rows pre-write (detaches declared-but-undetailed, kind-disagreeing, missing-row and orphan-series links, all counted); restore writes items row-by-row + detail rows + `DriftPeriodicalRepository.replaceAll` on the BUILDER db in the one transaction; duplicate D6 keys refuse the archive (fail closed, pinned); `RestoreSummary` +6 counts +2 invalid flags, page sentences for each; `restore_backup.dart` 553 → 482, ratchet entry DELETED (`parseBackupManifest` → extras reader; `restore_legacy_read.dart` extracted); `CreateBackupUseCase` requires `PeriodicalRepository` (Left ⇒ no backup — no partial snapshot); ARCHITECTURE §5.5 un-pended; gate censuses unchanged; 36 new tests (2878 total), full green ~90 s |
+| S22 | Done | (this commit) | 2026-10-24 | Release hygiene: sixth guide `GuideId.catalogue` ("Books, magazines and other items", first card, → `PeriodicalsPage`; mockup §3.6 + facts rows; backup guide names kinds); `integration_test/catalogue_kinds_smoke_test.dart` (title → issue → other → vault → lend the issue → backup → restore) + shared `smoke_support.dart`, `vault_smoke_test.dart` rewritten onto it (its finders could never match — see Deviations); fastlane `29.txt` + `291/292/293.txt` (495 chars); CHANGELOG `[Unreleased]` reconciled (Added/Changed/Fixed/Removed + pre-tag obligations); ARCHITECTURE module map / drawer / integration lines un-staled (§5.4 already final since S9); F-Droid purity classpath check printed nothing (self-test matches on `play`; pubspec identical to main); neither smoke journey executed (no device; macOS lacks the Rust framework); `gen` no diff, rust diff vs main empty; 2 new tests (2880 total), full green ~95 s |

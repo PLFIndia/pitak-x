@@ -1,10 +1,13 @@
 # Catalogue item kinds, magazines & issues — session-based implementation plan
 
 - **Branch:** `magazines`
-- **Status:** Plan, revision 5 (2026-10-21). Structured as **discrete
-  sessions** (Part C): each one can be executed by an LLM or a human in
-  isolation, ends in a green, committed state, and hands off through
-  `docs/plans/magazines-progress.md` (Part B).
+- **Status:** **Complete (2026-10-24)** — every session S0–S22 is Done
+  (`docs/plans/magazines-progress.md`, session log). What remains is not a
+  session: the Linux golden PNG commit, the on-device smoke run and the
+  `chore(release)` commit (progress file, *Next session*). Plan revision 5
+  (2026-10-21), structured as **discrete sessions** (Part C): each one can
+  be executed by an LLM or a human in isolation, ends in a green, committed
+  state, and hands off through the progress file (Part B).
 - **Promise protected (ARCHITECTURE §1.1):** P1 (every format change is
   versioned, migrated and tested), P5 (one blessed way: one lendable unit,
   one identity, one list, one search index — for every kind of item).
