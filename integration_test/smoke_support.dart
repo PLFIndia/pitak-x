@@ -37,6 +37,26 @@ const String smokePassphrase = 'correct horse battery staple';
 String smokeStamp() =>
     DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
 
+/// Waits until the Library is visible after `app.main()`.
+///
+/// The production gate covers the Navigator with a two-second splash. Unlike
+/// an animation, that `Timer` schedules no frames, so `pumpAndSettle` can
+/// return while the Library FAB is still offstage. Poll with bounded pumps
+/// instead: the test proceeds as soon as the FAB exists and fails clearly if
+/// the launch never reaches the Library.
+Future<void> waitForLibrary(WidgetTester tester) async {
+  final fab = find.byTooltip('Add to library');
+  for (var attempt = 0; attempt < 10 && fab.evaluate().isEmpty; attempt++) {
+    await tester.pump(const Duration(seconds: 1));
+  }
+  expect(
+    fab,
+    findsOneWidget,
+    reason: 'the Library did not appear within 10 seconds of app launch',
+  );
+  await tester.pumpAndSettle();
+}
+
 /// Scrolls the page's outer list until the widget [finder] describes is
 /// built, then brings it fully on screen. A no-op when it is already there.
 ///
@@ -79,7 +99,11 @@ Future<void> tapFilledButton(WidgetTester tester, String label) async {
 Future<void> openDrawerEntry(WidgetTester tester, String label) async {
   await tester.tap(find.byTooltip('Open menu'));
   await tester.pumpAndSettle();
-  await tester.tap(find.text(label));
+  // Scope to the Drawer: the Library behind it has a "Magazines" kind chip
+  // with the same text as the drawer entry.
+  await tester.tap(
+    find.descendant(of: find.byType(Drawer), matching: find.text(label)),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -108,8 +132,9 @@ Future<void> openVaultUnlocked(WidgetTester tester) async {
     await enterInField(tester, 'Passphrase', smokePassphrase);
     await tapFilledButton(tester, 'Unlock');
   }
-  // The contents screen is the proof the vault is open.
-  expect(find.text('Borrowers & loans'), findsOneWidget);
+  // This FAB exists only in the unlocked state of the persistent VaultPage.
+  // "Borrowers & loans" is the title of the SEPARATE archive-unlock page.
+  expect(find.text('Add borrower'), findsOneWidget);
 }
 
 /// On an item's detail page: taps **Lend**, creates [borrowerName] inline and

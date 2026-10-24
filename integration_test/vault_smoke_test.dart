@@ -42,7 +42,7 @@ void main() {
     tester,
   ) async {
     await app.main();
-    await tester.pumpAndSettle();
+    await waitForLibrary(tester);
 
     final stamp = smokeStamp();
     final bookTitle = 'Smoke Test Book $stamp';

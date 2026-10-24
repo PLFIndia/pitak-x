@@ -37,7 +37,7 @@ void main() {
     'kinds smoke: magazine title, issue, other item, lend, backup, restore',
     (tester) async {
       await app.main();
-      await tester.pumpAndSettle();
+      await waitForLibrary(tester);
 
       final stamp = smokeStamp();
       final seriesTitle = 'Smoke Monthly $stamp';
