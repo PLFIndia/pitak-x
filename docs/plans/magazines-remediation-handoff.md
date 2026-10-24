@@ -1,9 +1,9 @@
-# Magazines remediation — handoff after S7
+# Magazines remediation — handoff after S8
 
 - **Date:** 2026-10-24
 - **Branch:** `magazines`
-- **Status:** S7 complete. S8 has **not** started.
-- **Remediation HEAD:** `1aecff0` (this handoff is a documentation-only follow-up)
+- **Status:** S8 complete. S9 has **not** started.
+- **Remediation HEAD:** `8d4aa1f` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
 ## 1. Commits and current state
@@ -19,8 +19,9 @@
 | S5 — v4 bundles, bounded backups, split counters | `29e412d` | H4, M2, and L5 fixed with a lossless bundle, series-cover lifecycle, reader-bound enforcement at creation, and separate entry/row restore counters. |
 | S6 — distinct-ISSN merge identity | `ea3ccf3` | H5 fixed by suppressing exact-title fallback only for different valid ISSNs, with planner/review controls and real-Drift issue-link coverage. |
 | S7 — cover ownership and async forms | `1aecff0` | H7, M7, M8, M11, and L2 fixed with structural owner/URL dedup, fresh-owner materialization, race-safe forms, detail fallback, and generation-guarded prefill. |
+| S8 — publish redaction and total hashing | `8d4aa1f` | M5 and M13 fixed with exact Other redaction, UTF-8 cover keys, canonical link refusal, and real viewer runtime coverage. |
 
-The working tree was clean immediately after `1aecff0`. The database remains at **schema v7** (S7 adds no schema change). No release version bump, tag, or publish step has been performed.
+The working tree was clean immediately after `8d4aa1f`. The database remains at **schema v7** (S8 adds no schema change). No release version bump, tag, or publish step has been performed.
 
 ## 2. Completed work
 
@@ -98,6 +99,14 @@ The working tree was clean immediately after `1aecff0`. The database remains at 
 - Add Issue prefill checks both generation and selected UID after every await, avoids duplicate initial scheduling, and tracks copies dirtiness separately so an explicit `1` is not mistaken for the untouched default. A→B, ABA, and user-input-during-read regressions pin the behavior.
 - Structure: issue number/date/copy/title-preview rows moved to `add_issue_form_sections.dart`, keeping the page at 475 lines with no ratchet entry. Schema v7 and the S1–S6 persistence/interchange/date/transaction/backup contracts are unchanged.
 
+### S8 — M5, M13
+
+- `redactForPublish` now switches exhaustively on item details. An Other emits exactly `title`, `kind: other`, resolved `coverUrl`, `language`, and `ageGroup`; availability, issue data, transliteration, and every book-specific/private field stay out. Book, issue, and periodical public-field behavior is unchanged.
+- `PublishCoverIds.shortHashHexForKey` hashes `salt || UTF-8(key)`. Independently calculated fixtures pin the old ASCII digests and a deterministic Telugu/Devanagari digest, and a real `PublishLibraryUseCase` publish proves a non-ASCII covered series commits with canonical grouping and one shared fallback cover.
+- Pure-Dart `PublishPeriodicalLinks` creates the single series lookup used by publish. Missing, blank, noncanonical, or duplicate series UIDs and noncanonical/unresolved live-issue links return a safe `PublishFailure` before cover IO, viewer construction, JSON encoding, manifest save, or commit. Removed series remain in the lookup for D8 cover fallback but publish no top-level entry.
+- The real inline viewer runs under a dependency-free Node DOM harness in table, card, and grid modes. Checks cover sparse Other fields without null/undefined placeholders, book behavior, series grouping/order, and hostile text/attribute escaping. Node 22 is documented in the README and provisioned in CI through a SHA-pinned `actions/setup-node`; no npm or app dependency was added.
+- Structure: `PublishResult` moved to `publish_result.dart` and is re-exported for existing callers, keeping the use case at 466 lines with no ratchet entry. Schema v7 and all S1–S7 contracts are unchanged.
+
 ## 3. Verification evidence
 
 | Gate | Result |
@@ -145,27 +154,37 @@ The working tree was clean immediately after `1aecff0`. The database remains at 
 | S7 sufficiency gates | Generation updated only the two expected providers; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**; no schema or ratchet change. |
 | S7 `fvm flutter test --exclude-tags golden` | **3,017 tests passed.** |
 | S7 commit checks | Pre-commit generated-code check passed; `git diff --check` clean; working tree clean at `1aecff0`. |
+| S8 pre-edit baseline | Clean `4d0eda4`; analysis/formatting clean and **3,017 non-golden tests** passed before editing. |
+| S8 red-first regressions | **9 behavioral checks failed on unfixed code** for the intended reasons: Other's exact key set, helper and end-to-end Unicode hashing, five malformed-link cases, and viewer rendering of the leaked fields. ASCII compatibility and viewer syntax controls stayed green; all then passed. |
+| S8 focused and feature suites | **49 focused tests passed** across redaction, cover IDs, publish use case, and real viewer runtime; the complete publish suite passed **413 tests** on the remediation commit. |
+| S8 independent review | Review found missing removed-series fallback coverage and a noncanonical-series fixture that did not isolate periodical-side validation. Both tests were corrected; re-review reported no concrete finding. The residual Node prerequisite concern was resolved in CI and the README. |
+| S8 sufficiency gates | Generation left no committed diffs; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**; use case 466 lines with no schema or ratchet change. |
+| S8 `fvm flutter test --exclude-tags golden` | **3,027 tests passed.** |
+| S8 commit checks | Pre-commit generated-code check passed; `git diff --check` clean; working tree clean at `8d4aa1f`. |
 
 Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed.
 
-## 4. Resume with S8 only
+## 4. Resume with S9 only
 
-Start with `magazineIssues.md` **S8 — Enforce publish redaction and total cover hashing** (M5, M13). Its S1, S2, and S7 dependencies are complete.
+Start with `magazineIssues.md` **S9 — Refresh magazine state and finish kind-neutral UI behavior** (L1, L3, L4). Its S8 dependency is complete.
 
-1. Confirm `git switch magazines && git status --short` is empty and HEAD is `1aecff0` (or the docs commit that follows it).
-2. Read S8 and the locked decisions: Other publishing emits only title, kind, resolved cover, language, and age group; cover keys hash as UTF-8; malformed periodical/issue links fail safely before an artifact is committed.
-3. Run the S8 baseline, including `full`, before editing; stop on any pre-existing failure.
-4. Add red-first regressions for Other's exact allowed key set and omitted values, unchanged ASCII hashes, deterministic non-ASCII hashes, a non-ASCII covered-series publish through `PublishLibraryUseCase`, malformed-link refusal, and viewer runtime/escaping behavior.
-5. Make `redactForPublish` switch on item details/kind and ensure the viewer omits missing optional fields without placeholders, while preserving book, issue, and periodical behavior.
-6. Change `PublishCoverIds.shortHashHexForKey` to UTF-8 bytes and validate canonical series/issue linkage before building `books.json`; return a safe `PublishFailure`, never an ungrouped or partially covered artifact.
-7. Preserve the host allow-list, redirect checks, private-field stripping, viewer escaping, and every S1–S7 contract. Do not start S9 or R1.
+1. Confirm `git switch magazines && git status --short` is empty and HEAD is `8d4aa1f` (or the docs commit that follows it).
+2. Read S9 and its three scopes: one shared mutation signal for live magazine summaries, truthful filtered-empty recovery, and kind-neutral wording on generic item flows.
+3. Run the S9 baseline, including `full`, before editing; stop on any pre-existing failure.
+4. Add red-first provider regressions proving import, merge, restore, and issue hard-delete refresh a kept-alive Magazines list without waiting for the minute tick or recreating the route.
+5. Make `PeriodicalsController.build` watch `libraryControllerProvider` in addition to `nowTickProvider`; keep the tick only for time-derived subscription badges and avoid duplicate imperative invalidations.
+6. Add LibraryPage tests for query/facet/combined empty states and recovery. Use a page-owned, disposed search controller; Clear search preserves facets, Clear filters preserves query text, and Add/Import appears only for a genuinely empty unfiltered library.
+7. Change generic detail/actions/lending/missing-row/error copy to Item/item, including `Item #id`, while preserving book-specific screens, wishlist wording, vault persisted names, and Rust/FRB APIs. Update intentional guide/mockup/golden expectations and accessibility tests.
+8. Preserve every S1–S8 contract. Do not start S10 or R1.
 
 ## 5. Handoff notes
 
-- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S6" text.
-- S0–S7 are Done. S8–S11 remain Pending.
-- The original 26-finding release hold is unchanged. Completing S7 does not make the branch release-ready.
-- Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5/S7 did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
+- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S7" text.
+- S0–S8 are Done. S9–S11 remain Pending.
+- The original 26-finding release hold is unchanged. Completing S8 does not make the branch release-ready.
+- Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5/S7/S8 did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
+- Publish linkage uses one validating resolver before any cover or artifact work. Do not replace it with an unchecked map: a missing/ambiguous link must fail closed, while a removed series stays available for its live issues' cover fallback.
+- The viewer syntax/runtime tests require Node 22 or newer on PATH, with no npm install. CI provisions it explicitly; do not skip these tests when Node is missing.
 - For slow background materialization, a fresh read at operation start is not enough: re-read and revalidate immediately before the write, build on that latest row, and clean up the new file on mismatch. S7's gated mid-download item and periodical fixtures are the pattern.
 - `BackupEntryOverflow` is the writer's mirror of the reader's bounds. If `ItemDetailsArchiveCodec.maxBytes`/`maxRows` ever change, the writer picks the new number up automatically — but the boundary tests in `backup_extras_bounds_test.dart` still pin "equal is readable, one byte more is not".
 - For identity-fallback changes, pin both the distinctness rule and the fallback controls, then verify final relationships in real Drift rather than trusting result counts alone. S6's two-series/four-issue fixture is the pattern.
