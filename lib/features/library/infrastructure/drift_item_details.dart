@@ -11,6 +11,7 @@ library;
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/platform/app_log.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -94,7 +95,7 @@ final class DriftItemDetails {
   static MagazineIssuesCompanion companion(int itemId, IssueOf issue) =>
       MagazineIssuesCompanion(
         itemId: Value(itemId),
-        periodicalUid: Value(issue.periodicalUid),
+        periodicalUid: Value(canonicalPeriodicalUid(issue.periodicalUid)),
         volume: Value(issue.volume),
         issueNumber: Value(issue.issueNumber),
         issueDate: Value(issue.issueDate),

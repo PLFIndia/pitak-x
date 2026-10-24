@@ -56,6 +56,9 @@ class _FakeBooks implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_books);
+  @override
   Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
       right(null);
   @override

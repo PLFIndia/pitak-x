@@ -40,6 +40,7 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_collisions.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_interchange.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_sql.dart';
 import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:uuid/uuid.dart';
@@ -72,15 +73,31 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     return row == null ? null : _toDomain(row);
   }
 
+  Future<List<TypedResult>> _allRows() => (CatalogueSql.joined(
+    _db,
+  )..orderBy([OrderingTerm.desc(_db.books.addedDate)])).get();
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async {
     try {
-      final rows = await (CatalogueSql.joined(
-        _db,
-      )..orderBy([OrderingTerm.desc(_db.books.addedDate)])).get();
+      final rows = await _allRows();
       return right(rows.map(_toDomain).toList());
     } on Object catch (e) {
       return left(StorageFailure('getAll: $e'));
+    }
+  }
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    try {
+      final rows = await _allRows();
+      for (final row in rows) {
+        final failure = catalogueInterchangeIntegrityFailure(_db, row);
+        if (failure != null) return left(failure);
+      }
+      return right(rows.map(_toDomain).toList());
+    } on Object catch (e) {
+      return left(StorageFailure('getAllForInterchange: $e'));
     }
   }
 
@@ -249,25 +266,26 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
     }
     try {
       return await _db.transaction(() async {
+        // Read the joined detail state, not just the base row: writing a
+        // fail-soft display fallback back would turn a corrupt/unknown row
+        // into a canonical book and destroy its original kind evidence.
+        final existingRow =
+            await (CatalogueSql.joined(_db)
+                  ..where(_db.books.id.equals(book.id))
+                  ..limit(1))
+                .getSingleOrNull();
+        if (existingRow == null) {
+          return left<Failure, CatalogueItem>(const NotFoundFailure());
+        }
+        final integrity = catalogueInterchangeIntegrityFailure(
+          _db,
+          existingRow,
+        );
+        if (integrity != null) return left<Failure, CatalogueItem>(integrity);
+        final existing = existingRow.readTable(_db.books);
         // Preserve the stable book_uid: an edit must never lose the
         // cross-device merge key. If the incoming book dropped it, recover it
         // from the row.
-        final existing =
-            await (_db.select(_db.books)
-                  ..where((t) => t.id.equals(book.id))
-                  ..limit(1))
-                .getSingleOrNull();
-        if (existing == null) {
-          return left<Failure, CatalogueItem>(const NotFoundFailure());
-        }
-        // ADR 0013 F6: a row whose stored kind this build does not know was
-        // READ as a book (fail-soft); writing it back would silently turn it
-        // into one. Refuse instead — the user updates the app to edit it.
-        if (!DriftItemDetails.isSupported(existing.kind)) {
-          return left<Failure, CatalogueItem>(
-            UnsupportedItemKindFailure(existing.kind),
-          );
-        }
         // The row's own current spelling is part of the stored set, so
         // re-typing `english` on the only English book keeps `English`:
         // one spelling per language, consistently. (A library-wide

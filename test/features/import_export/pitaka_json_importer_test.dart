@@ -535,6 +535,27 @@ void main() {
         },
       );
 
+      test('series and issue UIDs share one canonical trimmed link', () {
+        final payload = importer.parse(
+          v4(
+            periodicals: [
+              {'periodicalUid': '  p1  ', 'title': 'Frontline'},
+            ],
+            books: [
+              {
+                'title': 'Frontline — No 1',
+                'kind': 'magazine-issue',
+                'issue': {'periodicalUid': 'p1', 'issueNumber': 1},
+              },
+            ],
+          ),
+        );
+        expect(payload.parseErrors, isEmpty);
+        expect(payload.periodicals.single.periodicalUid, 'p1');
+        expect(payload.items.single.issue!.periodicalUid, 'p1');
+        expect(payload.warnings, isEmpty);
+      });
+
       test('a v5 file is refused with the update message', () {
         final payload = importer.parse(
           '{"schemaVersion": 5, "books": [], "wishlist": []}',

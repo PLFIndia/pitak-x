@@ -111,7 +111,12 @@ abstract final class PeriodicalJsonCodec {
       boundUntil: _asInt(raw['boundUntil']),
       label: _asString(raw['label']),
     );
-    return candidate.validate().isEmpty ? candidate : null;
+    // Use the catalogue gate, not a second issue-only normalization path:
+    // it validates IssueOf and canonicalizes its periodical UID together.
+    final validated = CatalogueItem.validate(
+      CatalogueItem(title: 'Magazine issue', details: candidate),
+    ).toNullable();
+    return validated?.issue;
   }
 
   /// Drops null values so the JSON stays compact (readers tolerate gaps).

@@ -122,6 +122,25 @@ void main() {
       expect(ok(await repo.findByUid('imported-uid'))!.id, kept.id);
     });
 
+    test(
+      'trims an incoming uid and refuses a trim-equivalent duplicate',
+      () async {
+        final saved = ok(
+          await repo.insert(
+            const Periodical(title: 'A', periodicalUid: '  p1  '),
+          ),
+        );
+        expect(saved.periodicalUid, 'p1');
+        final result = await repo.insert(
+          const Periodical(title: 'B', periodicalUid: 'p1'),
+        );
+        expect(failureOf(result), isA<ValidationFailure>());
+        final stored = await db.select(db.periodicals).get();
+        expect(stored.single.title, 'A');
+        expect(stored.single.periodicalUid, 'p1');
+      },
+    );
+
     test('a blank ISSN is stored as NULL, so two of them coexist', () async {
       ok(await repo.insert(const Periodical(title: 'A', issn: '')));
       ok(await repo.insert(const Periodical(title: 'B', issn: '   ')));
@@ -151,6 +170,31 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  group('canonical soft links', () {
+    test(
+      'lookup, summary, issues, and delete guard share one trimmed key',
+      () async {
+        final saved = ok(
+          await repo.insert(
+            const Periodical(title: 'Frontline', periodicalUid: ' p1 '),
+          ),
+        );
+        await addIssue('p1', number: 1);
+
+        expect(ok(await repo.findByUid(' p1 '))!.id, saved.id);
+        expect(ok(await repo.countIssues(' p1 ')), 1);
+        expect(ok(await repo.issuesOf(' p1 ')), hasLength(1));
+        final summary = ok(await repo.listAll()).single;
+        expect(summary.issueCount, 1);
+        expect(summary.latestIssueDate, isNull);
+        expect(
+          failureOf(await repo.delete(saved.id)),
+          isA<PeriodicalHasIssuesFailure>(),
+        );
+      },
+    );
   });
 
   group('lookups', () {
@@ -589,6 +633,20 @@ void main() {
       expect(listed[1].periodicalUid, isNotNull);
       expect(ok(await repo.findByIssn(issnA))!.title, 'new 1');
     });
+
+    test(
+      'a trim-created collision is refused before deleting old rows',
+      () async {
+        ok(await repo.insert(const Periodical(title: 'old')));
+        final result = await repo.replaceAll(const [
+          Periodical(title: 'A', periodicalUid: 'p1'),
+          Periodical(title: 'B', periodicalUid: ' p1 '),
+        ]);
+        expect(failureOf(result), isA<ValidationFailure>());
+        final stored = ok(await repo.listAll());
+        expect(stored.single.periodical.title, 'old');
+      },
+    );
 
     test('is atomic: a failing batch keeps the old rows', () async {
       ok(await repo.insert(const Periodical(title: 'old')));

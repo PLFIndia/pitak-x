@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_item_details.dart';
@@ -62,6 +64,29 @@ void main() {
     expect(r.issuesLinked, 1);
     expect(r.issuesDetached, 0);
     expect(r.periodicals, const [series]);
+  });
+
+  test('a whitespace-mismatched archive pair restores one canonical link', () {
+    final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+      jsonEncode({
+        'schemaVersion': 1,
+        'periodicals': [
+          {'periodicalUid': ' p1 ', 'title': 'Frontline'},
+        ],
+        'issues': [
+          {'bookUid': 'uid-8', 'periodicalUid': 'p1', 'issueNumber': 1},
+        ],
+      }),
+    );
+    final restored = applyRestoredItemDetails(
+      books: const [issueBase],
+      kinds: kinds(const {'uid-8': ItemKind.magazineIssue}),
+      periodicals: decoded,
+    );
+    expect(restored.periodicals.single.periodicalUid, 'p1');
+    expect(restored.books.single.issue!.periodicalUid, 'p1');
+    expect(restored.issuesLinked, 1);
+    expect(restored.issuesDetached, 0);
   });
 
   test('a declared issue without an issues[] entry detaches to a book', () {

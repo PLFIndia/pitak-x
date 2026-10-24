@@ -11,6 +11,7 @@ import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
 import 'generated/schema_v4.dart' as v4;
+import 'generated/schema_v5.dart' as v5;
 
 /// Reads the current `schemaVersion` without leaving a database open.
 Future<int> _currentSchemaVersion() async {
@@ -533,6 +534,213 @@ void main() {
         expect(details.map((d) => d.itemId), [boundId]);
       },
     );
+
+    Future<int> insertV5IssueBase(v5.DatabaseAtV5 db, String title) {
+      return db
+          .into(db.books)
+          .insert(
+            v5.BooksCompanion.insert(
+              title: title,
+              addedDate: 1700000009000,
+              kind: const Value('magazine-issue'),
+            ),
+          );
+    }
+
+    Future<List<Map<String, dynamic>>> rawRows(
+      v5.DatabaseAtV5 db,
+      String table,
+      String orderBy,
+    ) {
+      return db
+          .customSelect('SELECT * FROM $table ORDER BY $orderBy')
+          .map((row) => Map<String, dynamic>.of(row.data))
+          .get();
+    }
+
+    Future<List<List<Map<String, dynamic>>>> rawSnapshot(
+      v5.DatabaseAtV5 db,
+    ) async => [
+      await rawRows(db, 'books', 'id'),
+      await rawRows(db, 'periodicals', 'id'),
+      await rawRows(db, 'magazine_issues', 'item_id'),
+    ];
+
+    Future<void> expectV5Collision({
+      required Future<void> Function(v5.DatabaseAtV5 db) seed,
+      required String expectedMessage,
+    }) async {
+      final schema = await verifier.schemaAt(5);
+      final oldDb = v5.DatabaseAtV5(schema.newConnection());
+      await seed(oldDb);
+      final before = await rawSnapshot(oldDb);
+      await oldDb.close();
+
+      final current = await _currentSchemaVersion();
+      final db = AppDatabase(schema.newConnection());
+      try {
+        await expectLater(
+          verifier.migrateAndValidate(db, current),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains(expectedMessage),
+            ),
+          ),
+        );
+      } finally {
+        await db.close();
+      }
+      final reopened = v5.DatabaseAtV5(schema.newConnection());
+      addTearDown(reopened.close);
+      expect(await rawSnapshot(reopened), before);
+    }
+
+    test(
+      'v5: whitespace-padded periodical and issue UIDs are repaired',
+      () async {
+        final schema = await verifier.schemaAt(5);
+        final oldDb = v5.DatabaseAtV5(schema.newConnection());
+        await oldDb
+            .into(oldDb.periodicals)
+            .insert(
+              v5.PeriodicalsCompanion.insert(
+                periodicalUid: '  p1  ',
+                title: 'Frontline',
+                addedDate: 1700000009000,
+              ),
+            );
+        final issueId = await insertV5IssueBase(
+          oldDb,
+          'Frontline — Vol 2 No 7',
+        );
+        await oldDb
+            .into(oldDb.magazineIssues)
+            .insert(
+              v5.MagazineIssuesCompanion.insert(
+                itemId: Value(issueId),
+                periodicalUid: '\tp1\n',
+                volume: const Value(2),
+                issueNumber: const Value(7),
+                issueDate: const Value(1000),
+                boundUntil: const Value(2000),
+                issueLabel: const Value('Special'),
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        final periodical = await db.select(db.periodicals).getSingle();
+        final issue = await db.select(db.magazineIssues).getSingle();
+        expect(periodical.periodicalUid, 'p1');
+        expect(periodical.title, 'Frontline');
+        expect(issue.periodicalUid, 'p1');
+        expect(issue.itemId, issueId);
+        expect(issue.volume, 2);
+        expect(issue.issueNumber, 7);
+        expect(issue.issueDate, 1000);
+        expect(issue.boundUntil, 2000);
+        expect(issue.issueLabel, 'Special');
+        expect(
+          (await db.select(db.books).get()).single.title,
+          'Frontline — Vol 2 No 7',
+        );
+        await _expectRawSqlObjectsHealthy(db);
+      },
+    );
+
+    test(
+      'v5: trim-equivalent periodical UIDs abort before any write',
+      () async {
+        await expectV5Collision(
+          seed: (db) async {
+            for (final entry in [
+              (uid: 'p1', title: 'First'),
+              (uid: ' p1 ', title: 'Second'),
+            ]) {
+              await db
+                  .into(db.periodicals)
+                  .insert(
+                    v5.PeriodicalsCompanion.insert(
+                      periodicalUid: entry.uid,
+                      title: entry.title,
+                      addedDate: 1700000009000,
+                    ),
+                  );
+            }
+          },
+          expectedMessage: 'Periodical UID canonicalization collision',
+        );
+      },
+    );
+
+    test('v5: a numbered D6 collision aborts before any write', () async {
+      await expectV5Collision(
+        seed: (db) async {
+          await db
+              .into(db.periodicals)
+              .insert(
+                v5.PeriodicalsCompanion.insert(
+                  periodicalUid: 'p1',
+                  title: 'Frontline',
+                  addedDate: 1700000009000,
+                ),
+              );
+          for (final entry in [
+            (uid: 'p1', volume: const Value<int?>.absent()),
+            (uid: ' p1 ', volume: const Value<int?>(0)),
+          ]) {
+            final itemId = await insertV5IssueBase(db, 'Issue ${entry.uid}');
+            await db
+                .into(db.magazineIssues)
+                .insert(
+                  v5.MagazineIssuesCompanion.insert(
+                    itemId: Value(itemId),
+                    periodicalUid: entry.uid,
+                    volume: entry.volume,
+                    issueNumber: const Value(7),
+                  ),
+                );
+          }
+        },
+        expectedMessage: 'Magazine issue identity collision',
+      );
+    });
+
+    test('v5: a bound-volume D6 collision aborts before any write', () async {
+      await expectV5Collision(
+        seed: (db) async {
+          await db
+              .into(db.periodicals)
+              .insert(
+                v5.PeriodicalsCompanion.insert(
+                  periodicalUid: 'p1',
+                  title: 'Frontline',
+                  addedDate: 1700000009000,
+                ),
+              );
+          for (final uid in ['p1', ' p1 ']) {
+            final itemId = await insertV5IssueBase(db, 'Bound $uid');
+            await db
+                .into(db.magazineIssues)
+                .insert(
+                  v5.MagazineIssuesCompanion.insert(
+                    itemId: Value(itemId),
+                    periodicalUid: uid,
+                    issueDate: const Value(1000),
+                    boundUntil: const Value(2000),
+                  ),
+                );
+          }
+        },
+        expectedMessage: 'Magazine issue identity collision',
+      );
+    });
   });
 
   test('a committed snapshot exists for the current schemaVersion', () async {

@@ -94,6 +94,9 @@ class _ScriptedBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
+  @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,

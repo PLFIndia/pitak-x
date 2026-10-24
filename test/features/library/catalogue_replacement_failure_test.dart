@@ -24,6 +24,14 @@ class _InterceptBooks implements CatalogueItemRepository {
   }
 
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    await afterRead?.call();
+    return readFailure == null
+        ? delegate.getAllForInterchange()
+        : left(readFailure!);
+  }
+
+  @override
   Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     final result = await delegate.replaceAll(books);
     await afterReplace?.call();

@@ -289,6 +289,7 @@ class FakeItems implements CatalogueItemRepository {
   Failure? getByIdFailure;
   Failure? insertFailure;
   Failure? pageFailure;
+  Failure? interchangeFailure;
 
   /// Every page read asked for, in order (the full intent plus the window),
   /// so a controller test can prove it hands the repository the series
@@ -341,6 +342,18 @@ class FakeItems implements CatalogueItemRepository {
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async {
     calls.add('findByIsbn');
     return right(rows.values.where((row) => row.isbn == isbn).firstOrNull);
+  }
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(rows.values.toList(growable: false));
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    final failure = interchangeFailure;
+    return failure == null
+        ? right(rows.values.toList(growable: false))
+        : left(failure);
   }
 
   /// A window of the rows, like the real store: a series facet keeps only

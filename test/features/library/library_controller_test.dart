@@ -51,6 +51,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
 
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
 
   /// Slices [_all] like a real store would: a plain listing pages `_all`
   /// verbatim; a search returns nothing (tests that need search rows use a

@@ -675,6 +675,12 @@ class _Books implements CatalogueItemRepository {
   }
 
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() {
+    reads++;
+    return read();
+  }
+
+  @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected book operation');
 }

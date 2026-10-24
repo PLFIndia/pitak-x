@@ -10,6 +10,7 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/tables.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_merge_plan.dart';
 
 part 'app_database.g.dart';
@@ -43,8 +44,10 @@ class AppDatabase extends _$AppDatabase {
   ///      detail table `magazine_issues` (FK → books, ON DELETE CASCADE) and
   ///      `periodicals`; the FTS5 index is dropped and rebuilt with `notes`
   ///      added to its columns (D10). `PRAGMA foreign_keys = ON` from here on.
+  ///  6 — no shape change; canonicalize periodical/issue soft-link UIDs with
+  ///      Dart trim semantics. Ambiguous trim/D6 collisions abort before writes.
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -89,6 +92,9 @@ class AppDatabase extends _$AppDatabase {
         }
         await customStatement('DROP TABLE IF EXISTS books_fts');
       }
+      // v6: a separate repair step so every older path reaches it after the
+      // v5 tables exist. No table shape changes; only soft-link values move.
+      if (from < 6) await _canonicalizePeriodicalUids();
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a
@@ -111,6 +117,71 @@ class AppDatabase extends _$AppDatabase {
       if (!hadFts) await rebuildFts();
     },
   );
+
+  /// v5 → v6: trim every periodical soft link atomically, or change nothing.
+  ///
+  /// Both tables and every final identity key are checked BEFORE the first
+  /// update. Records give D6 keys structural equality (including the
+  /// volume-null/zero rule), so a collision cannot be hidden by delimiter text
+  /// in an external UID. Throwing asks Drift to abort the migration; because
+  /// validation happens first, the raw rows are still untouched.
+  Future<void> _canonicalizePeriodicalUids() async {
+    await transaction(() async {
+      final periodicalRows = await select(periodicals).get();
+      final issueRows = await select(magazineIssues).get();
+
+      final periodicalUids = <String>{};
+      for (final row in periodicalRows) {
+        if (!periodicalUids.add(canonicalPeriodicalUid(row.periodicalUid))) {
+          throw StateError(
+            'Periodical UID canonicalization collision; '
+            'migration aborted before writes.',
+          );
+        }
+      }
+
+      final numberedKeys = <({String uid, int volume, int number})>{};
+      final boundKeys = <({String uid, int from, int until})>{};
+      for (final row in issueRows) {
+        final uid = canonicalPeriodicalUid(row.periodicalUid);
+        if (row.boundUntil case final until?) {
+          // SQLite UNIQUE treats NULL issue_date values as distinct, exactly
+          // as it did before this repair; there is no new collision to detect.
+          final from = row.issueDate;
+          if (from != null &&
+              !boundKeys.add((uid: uid, from: from, until: until))) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        } else if (row.issueNumber case final number?) {
+          final key = (uid: uid, volume: row.volume ?? 0, number: number);
+          if (!numberedKeys.add(key)) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        }
+      }
+
+      for (final row in periodicalRows) {
+        final canonical = canonicalPeriodicalUid(row.periodicalUid);
+        if (canonical == row.periodicalUid) continue;
+        await (update(periodicals)..where((t) => t.id.equals(row.id))).write(
+          PeriodicalsCompanion(periodicalUid: Value(canonical)),
+        );
+      }
+      for (final row in issueRows) {
+        final canonical = canonicalPeriodicalUid(row.periodicalUid);
+        if (canonical == row.periodicalUid) continue;
+        await (update(magazineIssues)
+              ..where((t) => t.itemId.equals(row.itemId)))
+            .write(MagazineIssuesCompanion(periodicalUid: Value(canonical)));
+      }
+    });
+  }
 
   Future<bool> _hasFtsTable() async {
     final rows = await customSelect(

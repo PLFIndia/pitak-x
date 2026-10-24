@@ -338,6 +338,9 @@ void main() {
       expect(read.kind, ItemKind.book);
       expect(read.details, isNull);
       expect((await all(query())).single.title, 'from the future');
+      expect(ok(await repo.getAll()).single.kind, ItemKind.book);
+      final strict = await repo.getAllForInterchange();
+      expect(strict.getLeft().toNullable(), isA<UnsupportedItemKindFailure>());
 
       final r = await repo.update(read.copyWith(title: 'renamed'));
       final failure = r.getLeft().toNullable();
@@ -362,6 +365,34 @@ void main() {
       );
       final read = ok(await repo.getById(id))!;
       expect(read.kind, ItemKind.book);
+      expect(ok(await repo.getAll()).single.kind, ItemKind.book);
+      final strict = await repo.getAllForInterchange();
+      expect(strict.getLeft().toNullable(), isA<StorageFailure>());
     });
+
+    test(
+      'a detail-less issue refuses write-back and preserves raw evidence',
+      () async {
+        final id = await seedRawCatalogueRow(
+          db,
+          title: 'raw issue title',
+          kind: 'magazine-issue',
+          coverUrl: 'covers/raw.jpg',
+        );
+        final display = ok(await repo.getById(id))!;
+        expect(display.kind, ItemKind.book);
+
+        final result = await repo.update(
+          display.copyWith(title: 'replacement', coverUrl: 'covers/new.jpg'),
+        );
+        expect(result.getLeft().toNullable(), isA<StorageFailure>());
+        final stored = await (db.select(
+          db.books,
+        )..where((t) => t.id.equals(id))).getSingle();
+        expect(stored.kind, 'magazine-issue');
+        expect(stored.title, 'raw issue title');
+        expect(stored.coverUrl, 'covers/raw.jpg');
+      },
+    );
   });
 }

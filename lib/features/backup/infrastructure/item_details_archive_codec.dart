@@ -209,21 +209,36 @@ abstract final class ItemDetailsArchiveCodec {
     if (rawPeriodicals is! List || rawIssues is! List) return null;
 
     final periodicals = <Periodical>[];
-    final seenUids = <String>{};
+    final rawUidByCanonical = <String, String>{};
     var periodicalsDropped = 0;
     for (var i = 0; i < rawPeriodicals.length; i++) {
       if (periodicals.length >= maxRows) {
         periodicalsDropped += rawPeriodicals.length - i;
         break;
       }
-      final parsed = PeriodicalJsonCodec.periodicalFromJson(rawPeriodicals[i]);
+      final rawEntry = rawPeriodicals[i];
+      final rawUid = rawEntry is Map<String, dynamic>
+          ? rawEntry['periodicalUid']
+          : null;
+      final parsed = PeriodicalJsonCodec.periodicalFromJson(rawEntry);
       // The codec rejects uid-less rows: a series without its cross-device
       // identity can never be linked by an issue, so it is dropped here
       // rather than restored unreachable.
-      if (parsed == null || !seenUids.add(parsed.periodicalUid!.trim())) {
+      if (parsed == null) {
         periodicalsDropped++;
         continue;
       }
+      final canonicalUid = parsed.periodicalUid!;
+      final previousRawUid = rawUidByCanonical[canonicalUid];
+      if (previousRawUid != null) {
+        // Exact duplicate rows keep the established first-wins rule. Two
+        // DIFFERENT raw identities that collide only after trimming are
+        // ambiguous, so refuse the envelope instead of merging user data.
+        if (previousRawUid != rawUid) return null;
+        periodicalsDropped++;
+        continue;
+      }
+      rawUidByCanonical[canonicalUid] = rawUid! as String;
       periodicals.add(parsed);
     }
 

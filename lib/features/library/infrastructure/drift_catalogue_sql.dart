@@ -16,6 +16,7 @@ import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
@@ -158,7 +159,8 @@ abstract final class CatalogueSql {
           m.issueNumber.equals(number) &
           m.boundUntil.isNull();
     }
-    return m.periodicalUid.equals(issue.periodicalUid) & key;
+    return m.periodicalUid.equals(canonicalPeriodicalUid(issue.periodicalUid)) &
+        key;
   }
 
   /// The typed WHERE for the facets of [query] (language, kind, series), or
@@ -175,7 +177,7 @@ abstract final class CatalogueSql {
       if (query.language case final lang?) db.books.language.equals(lang),
       if (query.kind case final kind?) db.books.kind.equals(kind.token),
       if (query.periodicalUid case final uid?)
-        db.magazineIssues.periodicalUid.equals(uid),
+        db.magazineIssues.periodicalUid.equals(canonicalPeriodicalUid(uid)),
     ];
     if (parts.isEmpty) return null;
     return parts.reduce((acc, part) => acc & part);
@@ -239,7 +241,7 @@ abstract final class CatalogueSql {
     }
     if (query.periodicalUid case final uid?) {
       where.write(' AND m.periodical_uid = ?');
-      variables.add(Variable<String>(uid));
+      variables.add(Variable<String>(canonicalPeriodicalUid(uid)));
     }
     variables
       ..add(Variable<int>(limit))

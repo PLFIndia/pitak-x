@@ -155,7 +155,7 @@ final class MergeLibraryUseCase {
     final idsMatch =
         incomingLibraryId.isNotEmpty && incomingLibraryId == localLibraryId;
     if (!idsMatch) {
-      final localBooks = await _bookRepo.getAll();
+      final localBooks = await _bookRepo.getAllForInterchange();
       if (localBooks.isLeft()) {
         return localBooks.match(left, (_) => throw StateError('unreachable'));
       }
@@ -249,7 +249,7 @@ final class MergeLibraryUseCase {
           .toList();
       final loanIds = scope.retainedLoanBookIds;
       if (loanIds != null) {
-        final local = await _bookRepo.getAll();
+        final local = await _bookRepo.getAllForInterchange();
         if (local.isLeft()) return local.map((_) => 0);
         final plan = CatalogueReplacementPlan.build(
           local: local.getOrElse((_) => const []),
@@ -446,7 +446,7 @@ final class MergeLibraryUseCase {
     required List<String> skippedRows,
     required List<String> adjustments,
   }) async {
-    final localRes = await _bookRepo.getAll();
+    final localRes = await _bookRepo.getAllForInterchange();
     if (localRes.isLeft()) {
       return localRes.match(left, (_) => throw StateError('unreachable'));
     }

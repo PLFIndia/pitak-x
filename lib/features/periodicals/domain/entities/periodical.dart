@@ -18,6 +18,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/issn.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
@@ -132,13 +133,16 @@ class Periodical {
     final errors = <FieldError>[];
 
     final title = periodical.title.trim();
+    final periodicalUid = periodical.periodicalUid == null
+        ? null
+        : canonicalPeriodicalUid(periodical.periodicalUid!);
     if (title.isEmpty) {
       errors.add(const FieldError('title', 'is required'));
     }
 
     final textFields = <String, String?>{
       'title': title,
-      'periodicalUid': periodical.periodicalUid,
+      'periodicalUid': periodicalUid,
       'titleTransliteration': periodical.titleTransliteration,
       'publisher': periodical.publisher,
       'language': periodical.language,
@@ -215,6 +219,7 @@ class Periodical {
 
     if (errors.isNotEmpty) return left(errors);
     if (title == periodical.title &&
+        periodicalUid == periodical.periodicalUid &&
         safeCover == periodical.coverUrl &&
         canonicalIssn == periodical.issn) {
       return right(periodical);
@@ -222,7 +227,7 @@ class Periodical {
     return right(
       Periodical(
         id: periodical.id,
-        periodicalUid: periodical.periodicalUid,
+        periodicalUid: periodicalUid,
         title: title,
         titleTransliteration: periodical.titleTransliteration,
         issn: canonicalIssn,

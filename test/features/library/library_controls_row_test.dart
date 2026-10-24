@@ -61,6 +61,9 @@ class _Repo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(all);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(all);
+  @override
   Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       right(null);
   @override

@@ -88,6 +88,9 @@ class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 

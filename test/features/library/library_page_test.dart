@@ -41,6 +41,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      failWith != null ? left(failWith!) : right(_all);
 
   /// Every page read the page asked for, as (offset, limit) — N10-d part 2.
   final List<(int, int)> pagesSeen = [];

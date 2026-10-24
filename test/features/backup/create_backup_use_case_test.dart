@@ -108,6 +108,7 @@ void main() {
       );
       final result = await failing();
       expect(result.isLeft(), isTrue);
+      expect(writer.calls, isEmpty);
     },
   );
 
@@ -170,12 +171,18 @@ class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(const []);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(const []);
+  @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _FailingBooks implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      left(const StorageFailure('db gone'));
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
       left(const StorageFailure('db gone'));
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

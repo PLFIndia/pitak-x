@@ -47,6 +47,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
+  @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
@@ -586,6 +589,9 @@ class _FailingBookRepo implements CatalogueItemRepository {
       left(const StorageFailure('boom'));
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
       right(const []);
   @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);

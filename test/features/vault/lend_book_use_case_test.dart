@@ -31,6 +31,9 @@ class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(byId.values.toList());
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(byId.values.toList());
+  @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,

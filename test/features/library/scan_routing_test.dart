@@ -67,6 +67,9 @@ class _MemItems implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(books);
+  @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override

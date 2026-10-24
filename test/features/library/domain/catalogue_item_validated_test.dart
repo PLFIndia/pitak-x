@@ -234,6 +234,41 @@ void main() {
       expect(CatalogueItem.validate(clean).toNullable(), same(clean));
     });
 
+    test(
+      'validate normalises only the issue UID and preserves every field',
+      () {
+        const item = CatalogueItem(
+          id: 4,
+          itemUid: 'item-4',
+          title: 'Issue',
+          coverUrl: 'covers/issue.jpg',
+          copyCount: 2,
+          details: IssueOf(
+            periodicalUid: '  p-1  ',
+            volume: 2,
+            issueNumber: 7,
+            issueDate: 1000,
+            boundUntil: 2000,
+            label: 'Special',
+          ),
+        );
+        final validated = CatalogueItem.validate(item).toNullable()!;
+        expect(validated.issue!.periodicalUid, 'p-1');
+        expect(validated.id, item.id);
+        expect(validated.itemUid, item.itemUid);
+        expect(validated.coverUrl, item.coverUrl);
+        expect(validated.copyCount, item.copyCount);
+        expect(validated.issue!.volume, 2);
+        expect(validated.issue!.issueNumber, 7);
+        expect(validated.issue!.issueDate, 1000);
+        expect(validated.issue!.boundUntil, 2000);
+        expect(validated.issue!.label, 'Special');
+
+        const canonical = CatalogueItem(title: 'Issue', details: issue);
+        expect(CatalogueItem.validate(canonical).toNullable(), same(canonical));
+      },
+    );
+
     test('validate appends the issue rules as issue.* field errors', () {
       final r = CatalogueItem.validate(
         const CatalogueItem(

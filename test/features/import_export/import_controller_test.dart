@@ -45,6 +45,9 @@ class _MemBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
+  @override
   Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, CatalogueItemPage>> page(

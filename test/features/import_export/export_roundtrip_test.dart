@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
@@ -20,11 +22,13 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
+import '../../support/raw_catalogue_rows.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 class _Books implements CatalogueItemRepository {
@@ -42,6 +46,9 @@ class _Books implements CatalogueItemRepository {
   final List<CatalogueItem> _all;
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
@@ -697,6 +704,39 @@ void main() {
 
       final otherRow = lines[2].split(',');
       expect(otherRow[11], 'Other');
+    });
+
+    test('export refuses unknown and detail-less stored kinds', () async {
+      for (final rawKind in ['hologram', 'magazine-issue']) {
+        final db = AppDatabase(NativeDatabase.memory());
+        try {
+          await seedRawCatalogueRow(
+            db,
+            title: 'raw $rawKind',
+            kind: rawKind,
+            coverUrl: 'covers/raw.jpg',
+          );
+          final useCase = ExportLibraryUseCase(
+            jsonEncoder: const PitakaJsonExporter(),
+            pdfRenderer: const PdfLibraryRenderer(),
+            bookRepo: DriftCatalogueItemRepository(db),
+            wishlistRepo: _Wishlist(const []),
+            periodicalRepo: FakePeriodicals(),
+          );
+          final result = await useCase(
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.json,
+          );
+          final failure = result.getLeft().toNullable();
+          if (rawKind == 'hologram') {
+            expect(failure, isA<UnsupportedItemKindFailure>());
+          } else {
+            expect(failure, isA<StorageFailure>());
+          }
+        } finally {
+          await db.close();
+        }
+      }
     });
 
     test('a hostile series title is quote-prefixed in CSV (OWASP)', () async {

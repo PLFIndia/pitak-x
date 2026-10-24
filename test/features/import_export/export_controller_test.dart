@@ -127,6 +127,9 @@ class _Books implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_books);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      failWith != null ? left(failWith!) : right(_books);
+  @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,

@@ -46,6 +46,9 @@ class _FakeBookRepo implements CatalogueItemRepository {
   Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(updated == null ? const [] : [updated!]);
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(updated == null ? const [] : [updated!]);
+  @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -61,6 +62,17 @@ void main() {
       expect(fields(const IssueOf(periodicalUid: '  ', issueNumber: 1)), [
         'issue.periodicalUid',
       ]);
+    });
+
+    test('the catalogue gate trims the link and is idempotent', () {
+      const item = CatalogueItem(
+        title: 'Issue',
+        details: IssueOf(periodicalUid: '  పత్రिक-१  ', issueNumber: 1),
+      );
+      final validated = CatalogueItem.validate(item).toNullable()!;
+      expect(validated.issue!.periodicalUid, item.issue!.periodicalUid.trim());
+      expect(validated.issue!.issueNumber, 1);
+      expect(CatalogueItem.validate(validated).toNullable(), same(validated));
     });
 
     test('over the field cap is rejected', () {

@@ -69,7 +69,7 @@ class CreateBackupUseCase {
   /// identity and network entries never turn the result into a Left — see
   /// the library doc.
   Future<Either<Failure, CreateBackupResult>> call() async {
-    final booksResult = await books.getAll();
+    final booksResult = await books.getAllForInterchange();
     final allBooks = booksResult.toNullable();
     if (allBooks == null) {
       return left(booksResult.getLeft().toNullable()!);

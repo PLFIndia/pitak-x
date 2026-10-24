@@ -11,6 +11,7 @@ library;
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
@@ -66,7 +67,7 @@ extension PeriodicalCompanionMapper on Periodical {
     final rawIssn = issn;
     return PeriodicalsCompanion(
       id: id == Periodical.emptyId ? const Value.absent() : Value(id),
-      periodicalUid: Value(uid),
+      periodicalUid: Value(canonicalPeriodicalUid(uid)),
       title: Value(title),
       titleTransliteration: Value(titleTransliteration),
       titleSort: Value(title.toLowerCase()),

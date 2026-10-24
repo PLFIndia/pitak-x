@@ -145,7 +145,7 @@ class ExportLibraryUseCase {
 
     var bookList = <CatalogueItem>[];
     if (scope != ExportScope.wishlistOnly || format == ExportFormat.pdf) {
-      final res = await _books.getAll();
+      final res = await _books.getAllForInterchange();
       if (res.isLeft()) {
         return left((res as Left<Failure, List<CatalogueItem>>).value);
       }

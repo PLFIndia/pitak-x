@@ -19,6 +19,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_sql.dart';
@@ -26,6 +27,7 @@ import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/issn.dart';
+import 'package:pitaka/features/periodicals/infrastructure/periodical_collisions.dart';
 import 'package:pitaka/features/periodicals/infrastructure/periodical_mapper.dart';
 import 'package:uuid/uuid.dart';
 
@@ -35,10 +37,12 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
   /// Creates the repository over [_db], optionally with a custom [Uuid].
   DriftPeriodicalRepository(this._db, {Uuid? uuid})
     : _uuid = uuid ?? const Uuid(),
-      _details = DriftItemDetails(_db);
+      _details = DriftItemDetails(_db),
+      _collisions = PeriodicalCollisions(_db);
 
   final AppDatabase _db;
   final Uuid _uuid;
+  final PeriodicalCollisions _collisions;
 
   /// Reads an issue's detail row fail-soft, like the item repository does
   /// (an unknown kind token is logged once and read as a book).
@@ -54,7 +58,14 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
   /// second time it was stored.
   Periodical _minted(Periodical periodical) {
     final uid = periodical.periodicalUid;
-    if (uid != null && uid.trim().isNotEmpty) return periodical;
+    if (uid != null) {
+      final canonical = canonicalPeriodicalUid(uid);
+      if (canonical.isNotEmpty) {
+        return canonical == uid
+            ? periodical
+            : periodical.copyWith(periodicalUid: canonical);
+      }
+    }
     return periodical.copyWith(periodicalUid: _uuid.v4());
   }
 
@@ -177,7 +188,7 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
 
   @override
   Future<Either<Failure, Periodical?>> findByUid(String periodicalUid) async {
-    final uid = periodicalUid.trim();
+    final uid = canonicalPeriodicalUid(periodicalUid);
     if (uid.isEmpty) return right(null);
     try {
       final row =
@@ -215,15 +226,26 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
   @override
   Future<Either<Failure, Periodical>> insert(Periodical periodical) async {
     try {
-      final withUid = _minted(periodical);
-      final id = await _db.into(_periodicals).insert(withUid.toCompanion());
-      return right(withUid.copyWith(id: id));
+      return await _db.transaction(() async {
+        final withUid = _minted(periodical);
+        final duplicateUid = await _collisions.uid(withUid.periodicalUid!);
+        if (duplicateUid != null) {
+          return left<Failure, Periodical>(duplicateUid);
+        }
+        final id = await _db.into(_periodicals).insert(withUid.toCompanion());
+        return right<Failure, Periodical>(withUid.copyWith(id: id));
+      });
     } on Object catch (e) {
       // Race net: the UNIQUE issn index may have refused this write (a
       // concurrent add slipped past the use case's pre-check). Ask the table
       // instead of parsing the exception; anything else stays opaque.
       final duplicate = await _issnCollision(periodical.issn);
       if (duplicate != null) return left(duplicate);
+      final rawUid = periodical.periodicalUid;
+      final duplicateUid = rawUid == null
+          ? null
+          : await _collisions.uid(rawUid);
+      if (duplicateUid != null) return left(duplicateUid);
       return left(StorageFailure('insert: $e'));
     }
   }
@@ -247,6 +269,13 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
         final preserved = periodical.copyWith(
           periodicalUid: existing.periodicalUid,
         );
+        final duplicateUid = await _collisions.uid(
+          existing.periodicalUid,
+          excludeId: existing.id,
+        );
+        if (duplicateUid != null) {
+          return left<Failure, Periodical>(duplicateUid);
+        }
         // `update().replace` matches on the primary key and writes every
         // column from the companion.
         await _db.update(_periodicals).replace(preserved.toCompanion());
@@ -315,7 +344,7 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
 
   @override
   Future<Either<Failure, int>> countIssues(String periodicalUid) async {
-    final uid = periodicalUid.trim();
+    final uid = canonicalPeriodicalUid(periodicalUid);
     if (uid.isEmpty) return right(0);
     try {
       return right(await _countIssues(uid));
@@ -370,7 +399,7 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
   Future<Either<Failure, List<CatalogueItem>>> issuesOf(
     String periodicalUid,
   ) async {
-    final uid = periodicalUid.trim();
+    final uid = canonicalPeriodicalUid(periodicalUid);
     if (uid.isEmpty) return right(const []);
     try {
       // The same join and the same ORDER BY as a series page in the item
@@ -401,11 +430,26 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
       // to the caller): every row lands or none does — a UNIQUE violation on
       // a crafted file rolls the whole batch back.
       return await _db.transaction(() async {
+        final withUids = periodicals.map(_minted).toList(growable: false);
+        final seen = <String>{};
+        // Finish every collision check BEFORE the first insert: returning a
+        // Left then has no earlier rows that could accidentally be committed.
+        for (final periodical in withUids) {
+          final uid = periodical.periodicalUid!;
+          final duplicateUid = seen.contains(uid)
+              ? PeriodicalCollisions.duplicateUidFailure
+              : await _collisions.uid(uid);
+          if (duplicateUid != null) {
+            return left<Failure, List<Periodical>>(duplicateUid);
+          }
+          seen.add(uid);
+        }
         final inserted = <Periodical>[];
-        for (final periodical in periodicals) {
-          final withUid = _minted(periodical);
-          final id = await _db.into(_periodicals).insert(withUid.toCompanion());
-          inserted.add(withUid.copyWith(id: id));
+        for (final periodical in withUids) {
+          final id = await _db
+              .into(_periodicals)
+              .insert(periodical.toCompanion());
+          inserted.add(periodical.copyWith(id: id));
         }
         return right<Failure, List<Periodical>>(inserted);
       });
@@ -424,12 +468,19 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
       // transaction (Drift transactions are zone-scoped, so these writes
       // join it).
       return await _db.transaction(() async {
+        final withUids = periodicals.map(_minted).toList(growable: false);
+        final seen = <String>{};
+        for (final periodical in withUids) {
+          if (!seen.add(periodical.periodicalUid!)) {
+            return left<Failure, int>(PeriodicalCollisions.duplicateUidFailure);
+          }
+        }
+        // No delete happens until every incoming identity is known to be
+        // unambiguous, so a collision cannot erase the current catalogue.
         await _db.delete(_periodicals).go();
         var count = 0;
-        for (final periodical in periodicals) {
-          await _db
-              .into(_periodicals)
-              .insert(_minted(periodical).toCompanion());
+        for (final periodical in withUids) {
+          await _db.into(_periodicals).insert(periodical.toCompanion());
           count++;
         }
         return right<Failure, int>(count);

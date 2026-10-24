@@ -59,6 +59,9 @@ class _FakeBooks implements CatalogueItemRepository {
   final List<CatalogueItem> _books;
   int _nextId = 1000;
 
+  /// Independent corruption/failure injection for the authoritative read.
+  Failure? interchangeFailure;
+
   /// Test-only failure injection for [replaceAll].
   Failure? replaceAllFailure;
 
@@ -76,6 +79,12 @@ class _FakeBooks implements CatalogueItemRepository {
 
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    final failure = interchangeFailure;
+    return failure == null ? right(_books) : left(failure);
+  }
 
   @override
   Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
@@ -314,6 +323,40 @@ void main() {
     expect(repo.books.any((b) => b.title == '1984'), isTrue);
     // The added book KEEPS its incoming uid so future merges reconcile.
     expect(repo.books.firstWhere((b) => b.title == '1984').itemUid, 'u2');
+  });
+
+  test('local interchange corruption fails before any merge writes', () async {
+    final repo = _FakeBooks([
+      const CatalogueItem(id: 1, itemUid: 'u1', title: 'Local'),
+    ])..interchangeFailure = const StorageFailure('corrupt stored kind');
+    final periodicals = FakePeriodicals()
+      ..seed(const Periodical(title: 'Local series', periodicalUid: 'p1'));
+    final useCase = MergeLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: repo,
+      periodicalRepo: periodicals,
+      namespace: _FakeNamespace(libraryId: matchingId),
+      replacementGuard: FakeReplacementGuard(),
+      planner: planMergeInline,
+    );
+    final result = await useCase.call(
+      exportJson(
+        libraryId: matchingId,
+        books: [
+          {'bookUid': 'u2', 'title': 'Incoming'},
+        ],
+        periodicals: [
+          {'periodicalUid': 'p2', 'title': 'Incoming series'},
+        ],
+      ),
+    );
+
+    expect(result.getLeft().toNullable(), isA<StorageFailure>());
+    expect(repo.books.single.title, 'Local');
+    expect(repo.insertCalls, 0);
+    expect(repo.updateCalls, 0);
+    expect(periodicals.rows.values.single.title, 'Local series');
+    expect(periodicals.calls, isEmpty, reason: 'planner never starts');
   });
 
   group('N10-c — the plan is computed through the injected planner', () {

@@ -388,6 +388,9 @@ class _DelegatingBookRepo implements CatalogueItemRepository {
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() => inner.getAll();
   @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() =>
+      inner.getAllForInterchange();
+  @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
@@ -460,6 +463,9 @@ class _MemBookRepo implements CatalogueItemRepository {
 
   @override
   Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
   @override
   Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {

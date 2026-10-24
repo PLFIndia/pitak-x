@@ -222,6 +222,38 @@ void main() {
       expect(decoded.issuesByBookUid['uid-8']!.sameAs(issue), isTrue);
     });
 
+    test('a whitespace-mismatched series and issue decode to one link', () {
+      final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+        jsonEncode({
+          'schemaVersion': 1,
+          'periodicals': [
+            {'periodicalUid': '  p1  ', 'title': 'Frontline'},
+          ],
+          'issues': [
+            {'bookUid': 'uid-8', 'periodicalUid': 'p1', 'issueNumber': 1},
+          ],
+        }),
+      );
+      expect(decoded, isNotNull);
+      expect(decoded!.periodicalsDropped, 0);
+      expect(decoded.issuesDropped, 0);
+      expect(decoded.periodicals.single.periodicalUid, 'p1');
+      expect(decoded.issuesByBookUid['uid-8']!.periodicalUid, 'p1');
+    });
+
+    test('a trim-created periodical UID collision refuses the envelope', () {
+      final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+        jsonEncode({
+          'schemaVersion': 1,
+          'periodicals': [
+            {'periodicalUid': ' p1 ', 'title': 'First'},
+            {'periodicalUid': 'p1', 'title': 'Second'},
+          ],
+        }),
+      );
+      expect(decoded, isNull);
+    });
+
     test('invalid or unkeyable periodical rows are dropped and counted', () {
       final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
         jsonEncode({

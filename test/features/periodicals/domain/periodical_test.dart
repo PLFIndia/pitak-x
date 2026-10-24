@@ -22,6 +22,17 @@ void main() {
       expect(r.toNullable(), same(p));
     });
 
+    test('canonicalises the UID by trimming only; non-ASCII is preserved', () {
+      const raw = Periodical(title: 'A', periodicalUid: '  పత్రিক-१  ');
+      final validated = Periodical.validate(raw).toNullable()!;
+      expect(validated.periodicalUid, raw.periodicalUid!.trim());
+      expect(validated.title, raw.title);
+      expect(Periodical.validate(validated).toNullable(), same(validated));
+
+      const canonical = Periodical(title: 'A', periodicalUid: 'పత్రిక-१');
+      expect(Periodical.validate(canonical).toNullable(), same(canonical));
+    });
+
     test('trims the title; blank title is required', () {
       expect(
         Periodical.validate(

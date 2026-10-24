@@ -13,7 +13,17 @@ import 'package:pitaka/features/library/domain/library_query.dart';
 /// Read/write access to the library books store.
 abstract interface class CatalogueItemRepository {
   /// All books (including soft-removed), newest first.
+  ///
+  /// This display-oriented read is fail-soft: an unknown kind or a missing
+  /// issue-detail row maps to a book so the Library remains usable.
   Future<Either<Failure, List<CatalogueItem>>> getAll();
+
+  /// All rows for export, backup, publish, or merge, newest first.
+  ///
+  /// Unlike [getAll], this authoritative read fails on an unknown stored kind
+  /// or a magazine issue whose detail row is missing. A display fallback is
+  /// never serialization truth.
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange();
 
   /// ONE window of the library list for [query] (review finding N10-d: the
   /// list used to load the whole catalogue).

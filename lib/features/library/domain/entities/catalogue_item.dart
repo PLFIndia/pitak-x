@@ -9,6 +9,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -255,6 +256,18 @@ class CatalogueItem {
     final errors = <FieldError>[];
 
     final title = book.title.trim();
+    // Normalize the soft link before validating it. The unchanged branch
+    // keeps the original details object so a canonical row still takes the
+    // same-instance fast path below.
+    final rawDetails = book.details;
+    final details =
+        rawDetails is IssueOf &&
+            rawDetails.periodicalUid !=
+                canonicalPeriodicalUid(rawDetails.periodicalUid)
+        ? rawDetails.copyWith(
+            periodicalUid: canonicalPeriodicalUid(rawDetails.periodicalUid),
+          )
+        : rawDetails;
     if (title.isEmpty) {
       errors.add(const FieldError('title', 'is required'));
     }
@@ -311,7 +324,7 @@ class CatalogueItem {
     }
     // Kind-specific rules live with the kind (ADR 0013 F5): each `details`
     // member validates itself and reports `issue.<field>` style errors.
-    errors.addAll(book.details?.validate() ?? const []);
+    errors.addAll(details?.validate() ?? const []);
     // The cover is NORMALISED, never a rejection (M15): a row already in the
     // database from before this rule could carry a now-disallowed URL, and
     // rejecting would make that book uneditable forever — the edit form
@@ -324,7 +337,11 @@ class CatalogueItem {
         : null;
 
     if (errors.isNotEmpty) return left(errors);
-    if (title == book.title && safeCover == book.coverUrl) return right(book);
+    if (title == book.title &&
+        safeCover == book.coverUrl &&
+        identical(details, book.details)) {
+      return right(book);
+    }
     return right(
       CatalogueItem(
         id: book.id,
@@ -350,7 +367,7 @@ class CatalogueItem {
         removed: book.removed,
         removedAt: book.removedAt,
         addedBy: book.addedBy,
-        details: book.details,
+        details: details,
       ),
     );
   }
