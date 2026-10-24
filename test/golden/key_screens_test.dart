@@ -21,10 +21,13 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -34,6 +37,7 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
+import '../features/periodicals/application/periodical_fakes.dart';
 import '../features/vault/vault_repository_write_stub.dart';
 import 'golden_names.dart';
 
@@ -55,6 +59,20 @@ void main() {
   const books = [
     CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
     CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
+    // ADR 0013 U1: the row badges — an issue ("Issue") and an other item
+    // ("Other"). A plain book carries no badge, so without these rows the
+    // library goldens would never pin the badge rendering S14 added.
+    CatalogueItem(
+      id: 3,
+      title: 'Frontline — Vol 42 No 12 (Sep 2026)',
+      publisher: 'Kasturi & Sons',
+      details: IssueOf(
+        periodicalUid: 'uid-frontline',
+        volume: 42,
+        issueNumber: 12,
+      ),
+    ),
+    CatalogueItem(id: 4, title: 'Catan', details: OtherItemOf()),
   ];
 
   /// Phone profile (≈ Pixel-class, 412×915 dp at 2.625×). Android is the
@@ -239,6 +257,74 @@ void main() {
           ),
         ),
         'network_library_tiles',
+      );
+    });
+  });
+
+  /// The Magazines list in every badge state (ADR 0013 D5): subscribed,
+  /// expiring soon, lapsed, untracked (no badge) and a removed title, plus
+  /// the "N issues · latest YYYY-MM" summary and a publisher line. The
+  /// badges and their exact words are what a regression would break. (S17
+  /// deferred this golden so that test, name and Linux PNG land together.)
+  group('magazine title rows', () {
+    testWidgets('badge states', (tester) async {
+      // Fixed "now" for the derived statuses (D5): subscribed = +60 days,
+      // expiring soon = +10 days, lapsed = −1 day — the periodicals page
+      // test's numbers, so the two suites agree on what each badge means.
+      final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
+      const day = 24 * 60 * 60 * 1000;
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(title: 'Chandamama', publisher: 'Chandamama India'),
+        ) // untracked: no badge, publisher line
+        ..seed(Periodical(title: 'Outlook', subscriptionEnd: t0 + 10 * day))
+        ..seed(Periodical(title: 'Sportstar', subscriptionEnd: t0 - day))
+        ..seed(const Periodical(title: 'Old Weekly', removed: true));
+      final frontline = periodicals.seed(
+        Periodical(title: 'Frontline', subscriptionEnd: t0 + 60 * day),
+      );
+      // Two issues for Frontline, the newest dated 2026-09 → the summary
+      // line reads "2 issues · latest 2026-09".
+      final uid = frontline.periodicalUid!;
+      periodicals.issues[uid] = [
+        CatalogueItem(
+          id: 1,
+          title: 'Frontline — No 1',
+          details: IssueOf(
+            periodicalUid: uid,
+            issueDate: DateTime(2026, 8).millisecondsSinceEpoch,
+          ),
+        ),
+        CatalogueItem(
+          id: 2,
+          title: 'Frontline — No 2',
+          details: IssueOf(
+            periodicalUid: uid,
+            issueDate: DateTime(2026, 9).millisecondsSinceEpoch,
+          ),
+        ),
+      ];
+      await expectGolden(
+        tester,
+        ProviderScope(
+          overrides: [
+            periodicalRepositoryProvider.overrideWith(
+              (ref) async => periodicals,
+            ),
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => FakeItems(),
+            ),
+            settingsRepositoryProvider.overrideWith(
+              (ref) async => FakeSettings(),
+            ),
+            clockProvider.overrideWithValue(() => t0),
+            // The controller's build arms the real 60 s timer — pin it so
+            // pumpAndSettle can settle (the S14 override pair).
+            nowTickProvider.overrideWith((ref) => 0),
+          ],
+          child: themedApp(const PeriodicalsPage()),
+        ),
+        'periodicals_badge_states',
       );
     });
   });
