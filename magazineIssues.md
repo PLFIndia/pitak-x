@@ -1,6 +1,6 @@
 # Magazines branch — actionable findings remediation plan
 
-> **Status:** Paused by maintainer — S0 and S1 complete; S2 next
+> **Status:** S0–S2 complete; S3 next
 > **Review baseline:** `magazines@e2dd25004b0ccd6d1c8b006b11724c019e41abb2`  
 > **Merge base:** `main@84cff872877372c99ca7f52aa13f4487d1a0a699`  
 > **Date:** 2026-10-24  
@@ -739,7 +739,7 @@ State values: **Pending · In progress · Blocked · Done**. A session is Done o
 |---|---|---|---|---|
 | S0 | Done | `68d4d0d` | 2026-10-24 | Baseline `e2dd250`: 2,884 non-golden Flutter tests passed; generated code wrote 0 outputs; scoped analyze/format clean; Rust fmt/clippy/deny/release tests passed (35 passed, 2 environment-gated ignored). Shared raw-row, periodical/issue, and async-gate fixtures added; bundle fixture now uses real `DriftPeriodicalRepository` on the shared DB. 77 focused tests passed. Production unchanged; R1 hold added. |
 | S1 | Done | `c72b0cc` | 2026-10-24 | M4/H6/M6 fixed. Canonical UID gates, codecs, persistence companions, D6 lookups, and typed collision refusals; v6 snapshot/helpers plus v1→v6/v5→v6 repair and all three collision rollback tests. Strict interchange reads wired through export, backup, publish, and merge; detail-less write-back preserves raw evidence. Nine identity/corruption regressions and four migration regressions verified red before fixes. Generation, analyze, format, architecture/migration gates clean; full non-golden suite passed 2,901 tests. |
-| S2 | Pending | — | — | Calendar dates + schema v7 |
+| S2 | Done | `62e79cb` | 2026-10-24 | M10/M12 fixed. Pure-Dart `CalendarDate`; UTC-midnight issue/subscription days across gates, forms, arithmetic, display, D6 and companions; instant fields preserved. Schema v7 preflight migration with rollback, snapshots/helpers/matrix; immediate restore/OVERWRITE reprojection; direct overwrite revalidation. Red-first timezone, form, migration and replacement regressions confirmed. Generation, analyze, format, architecture/migration gates clean; 218 focused tests passed under each of Asia/Calcutta and America/New_York; full non-golden suite passed 2,926 tests. Linux goldens and device journeys remain S11. |
 | S3 | Pending | — | — | Atomic issue writes + removed-series guard |
 | S4 | Pending | — | — | Plain JSON reconciliation |
 | S5 | Pending | — | — | v4 bundles + bounded backups + counters |
