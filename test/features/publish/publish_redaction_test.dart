@@ -118,20 +118,44 @@ void main() {
       );
     });
 
-    test('an Other publishes kind other; its notes stay local (O2)', () {
+    test('an Other emits exactly the O2 key set and no excluded values', () {
       final json = redactForPublish(
         const CatalogueItem(
           id: 9,
+          itemUid: 'EXCLUDED_ITEM_UID',
           title: 'Carrom board',
-          notes: 'private description',
+          titleTransliteration: 'EXCLUDED_TRANSLITERATION',
+          author: 'EXCLUDED_AUTHOR',
+          isbn: 'EXCLUDED_ISBN',
+          publisher: 'EXCLUDED_PUBLISHER',
+          publishedYear: 2020,
+          genre: 'EXCLUDED_GENRE',
+          coverUrl: 'covers/original.jpg',
+          pageCount: 12,
+          language: 'te',
+          notes: 'EXCLUDED_PRIVATE_DESCRIPTION',
+          location: 'EXCLUDED_LOCATION',
+          sourceType: ItemSourceType.gift,
+          sourceDetail: 'EXCLUDED_SOURCE',
+          ageGroup: AgeGroup.above10,
+          addedDate: 1700000000000,
+          copyCount: 4,
+          needsMetadata: true,
+          addedBy: 'EXCLUDED_ADDED_BY',
           details: OtherItemOf(),
         ),
-        resolveCoverUrl: (_) => null,
+        resolveCoverUrl: (_) => 'covers/resolved.jpg',
+        availability: PublishItem.out,
       ).toJson();
-      expect(json['kind'], 'other');
-      expect(json.containsKey('issue'), isFalse);
-      expect(json.containsKey('notes'), isFalse);
-      expect(json.toString(), isNot(contains('private description')));
+
+      expect(json, {
+        'title': 'Carrom board',
+        'kind': 'other',
+        'coverUrl': 'covers/resolved.jpg',
+        'language': 'te',
+        'ageGroup': 'above-10',
+      });
+      expect(json.toString(), isNot(contains('EXCLUDED_')));
     });
   });
 

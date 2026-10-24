@@ -28,6 +28,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
+import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -38,12 +39,15 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
 
 // The cover-IO typedefs live with the decider since S20 (plan magazines);
 // re-exported so existing imports of this file keep resolving (one import
-// per caller, the S19 idiom).
+// per caller, the S19 idiom). Publish results follow the same compatibility
+// rule after their S8 extraction kept this orchestrator below 500 lines.
 export 'publish_cover_decider.dart' show LocalCoverReader, RemoteCoverFetcher;
+export 'publish_result.dart';
 
 /// Coarse publish phases for the UI.
 enum PublishPhase {
@@ -58,45 +62,6 @@ enum PublishPhase {
 
   /// Waiting for the live site to serve the new content (bounded).
   pagesBuilding,
-}
-
-/// Outcome of a publish.
-sealed class PublishResult {
-  const PublishResult();
-}
-
-/// Publish succeeded.
-final class PublishSuccess extends PublishResult {
-  /// Creates a success result.
-  const PublishSuccess({
-    required this.pagesUrl,
-    required this.uploadedPaths,
-    this.availabilityOmitted = false,
-    this.pagesLive,
-  });
-
-  /// The public page URL.
-  final String pagesUrl;
-
-  /// Files whose bytes were uploaded this run.
-  final List<String> uploadedPaths;
-
-  /// True when availability was omitted (vault locked at publish).
-  final bool availabilityOmitted;
-
-  /// True when the live site was VERIFIED serving this publish's bytes
-  /// (read-back, à la Localcart Orange); null when the bounded wait ran out
-  /// before the Pages build landed (it usually finishes moments later).
-  final bool? pagesLive;
-}
-
-/// Publish failed; [reason] is a safe, human-readable message.
-final class PublishFailure extends PublishResult {
-  /// Creates a failure result.
-  const PublishFailure(this.reason);
-
-  /// Why it failed.
-  final String reason;
 }
 
 /// Builds the viewer HTML from the bundled template with placeholders filled.
@@ -230,20 +195,21 @@ final class PublishLibraryUseCase {
 
     final availabilityOmitted = activeLoanCounts == null;
 
-    // The publishable series (W3): non-removed and carrying their stable
-    // uid (an unpersisted row has no uid and can have no issues pointing
-    // at it — the mapper fails closed without one, so this is defensive).
-    final publishedPeriodicals = [
-      for (final p in periodicals)
-        if (!p.removed && (p.periodicalUid?.trim().isNotEmpty ?? false)) p,
-    ];
-    // Issues link by uid — INCLUDING a series the user soft-removed: its
-    // issues are still live library rows (D8) and keep the series-cover
-    // fallback, though the removed series itself publishes no entry.
-    final periodicalByUid = {
-      for (final p in periodicals)
-        if (p.periodicalUid?.trim().isNotEmpty ?? false) p.periodicalUid!: p,
-    };
+    // Resolve every link before cover IO or artifact construction. A malformed
+    // persisted identity must never become an ungrouped/partially covered file.
+    final periodicalByUid = PublishPeriodicalLinks.resolve(
+      books: library,
+      periodicals: periodicals,
+    );
+    if (periodicalByUid == null) {
+      return const PublishFailure(
+        'Some magazine series or issue links are invalid. '
+        'Nothing was published.',
+      );
+    }
+    // Removed series stay in periodicalByUid for issue cover fallback (D8),
+    // but only live series publish a top-level entry.
+    final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
 
     // Decide covers. A series cover is decided ONCE per publish and shared
     // by the series entry and every issue that falls back to it — the W4

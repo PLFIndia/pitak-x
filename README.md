@@ -163,7 +163,8 @@ The layer rules, module map, crypto chain and the cross-device data contracts
 ## Getting started
 
 Prerequisites: Flutter 3.44.2 (pinned in `.fvmrc`) stable, the Android SDK, and a Rust toolchain
-(cargokit compiles the native crate during the Android build).
+(cargokit compiles the native crate during the Android build). Viewer JavaScript
+runtime tests also need Node.js 22 or newer on PATH; no npm packages are required.
 
 **Use the pinned Flutter, not whichever `flutter` is on PATH.** Install
 [FVM](https://fvm.app), run `fvm install` once per clone, then either prefix

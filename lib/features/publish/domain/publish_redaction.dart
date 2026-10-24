@@ -9,9 +9,10 @@
 ///
 /// Stripped from an item (never leaves the device): id, notes, location,
 /// sourceType, sourceDetail, addedDate, addedBy, needsMetadata, copyCount.
-/// Preserved (the viewer reads these): title, kind token, the issue{}
-/// identity of a magazine issue, titleTransliteration, author, publisher,
-/// publishedYear, isbn, genre, language, ageGroup token.
+/// Books/issues preserve title, kind, issue{} identity, titleTransliteration,
+/// author, publisher, publishedYear, isbn, genre, language, ageGroup and the
+/// coarse availability flag. ADR 0013 O2 deliberately narrows an Other to
+/// title, kind, resolved cover, language and ageGroup — nothing else.
 ///
 /// Stripped from a periodical: the subscription window, notes, location,
 /// sourceType/sourceDetail, addedDate/addedBy, removed*, and the per-device
@@ -25,11 +26,13 @@
 library;
 
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 
 /// Maps [book] to a redacted [PublishItem]. [availability] is the coarse,
 /// vault-derived status ([PublishItem.available]/[PublishItem.out]) or null.
+/// It applies only to books and issues; ADR 0013 O2 excludes it from Others.
 PublishItem redactForPublish(
   CatalogueItem book, {
   required String? Function(CatalogueItem) resolveCoverUrl,
@@ -37,30 +40,39 @@ PublishItem redactForPublish(
 }) {
   final coverUrl = resolveCoverUrl(book);
   final issue = book.issue;
-  return PublishItem(
-    title: book.title,
-    kind: book.kind.token,
-    issue: issue == null
-        ? null
-        : PublishIssue(
-            periodicalUid: issue.periodicalUid,
-            volume: issue.volume,
-            issueNumber: issue.issueNumber,
-            issueDate: issue.issueDate,
-            boundUntil: issue.boundUntil,
-            label: issue.label,
-          ),
-    titleTransliteration: book.titleTransliteration,
-    author: book.author,
-    isbn: book.isbn,
-    publisher: book.publisher,
-    publishedYear: book.publishedYear,
-    genre: book.genre,
-    language: book.language,
-    coverUrl: coverUrl,
-    ageGroup: book.ageGroup?.token,
-    availability: availability,
-  );
+  return switch (book.details) {
+    OtherItemOf() => PublishItem(
+      title: book.title,
+      kind: book.kind.token,
+      language: book.language,
+      coverUrl: coverUrl,
+      ageGroup: book.ageGroup?.token,
+    ),
+    IssueOf() || null => PublishItem(
+      title: book.title,
+      kind: book.kind.token,
+      issue: issue == null
+          ? null
+          : PublishIssue(
+              periodicalUid: issue.periodicalUid,
+              volume: issue.volume,
+              issueNumber: issue.issueNumber,
+              issueDate: issue.issueDate,
+              boundUntil: issue.boundUntil,
+              label: issue.label,
+            ),
+      titleTransliteration: book.titleTransliteration,
+      author: book.author,
+      isbn: book.isbn,
+      publisher: book.publisher,
+      publishedYear: book.publishedYear,
+      genre: book.genre,
+      language: book.language,
+      coverUrl: coverUrl,
+      ageGroup: book.ageGroup?.token,
+      availability: availability,
+    ),
+  };
 }
 
 /// Maps [periodical] to a redacted [PublishPeriodical] (ADR 0014 W3). The

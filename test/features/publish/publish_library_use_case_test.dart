@@ -171,6 +171,7 @@ void main() {
     PublishCredentialReader? credentials,
     LocalCoverReader? readLocalCover,
     RemoteCoverFetcher? fetchRemoteCover,
+    ViewerHtmlBuilderFn? buildViewerHtml,
   }) => PublishLibraryUseCase(
     api: api,
     credentials: credentials ?? _FakeCreds(),
@@ -178,7 +179,8 @@ void main() {
     coverIds: PublishCoverIds(_FixedSalt()),
     readLocalCover: readLocalCover ?? (_) async => null,
     fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
-    buildViewerHtml: () async => utf8.encode('<html></html>'),
+    buildViewerHtml:
+        buildViewerHtml ?? () async => utf8.encode('<html></html>'),
     fetchPublishedFile: fetchPublishedFile,
     sleep: (_) async {}, // no real waiting in tests
     clock: () => 1000,
@@ -707,22 +709,39 @@ void main() {
     });
 
     test(
-      'a removed series publishes no entry; its issue still publishes',
+      'a removed series publishes no entry; its issue keeps the cover fallback',
       () async {
         final api = _CapturingApi();
-        await makeUseCase(api, _MemManifest()).call(
-          books: [issue()],
-          periodicals: [series(removed: true)],
-          activeLoanCounts: const {},
-          encodeBooksJson: encode,
-          libraryJson: null,
-        );
+        final result =
+            await makeUseCase(
+              api,
+              _MemManifest(),
+              readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
+            ).call(
+              books: [issue()],
+              periodicals: [series(removed: true, cover: 'covers/series.jpg')],
+              activeLoanCounts: const {},
+              encodeBooksJson: encode,
+              libraryJson: null,
+            );
+
+        expect(result, isA<PublishSuccess>());
         final payload = committedPayload(api);
         expect(payload.containsKey('periodicals'), isFalse);
         final books = (payload['books'] as List<dynamic>)
             .cast<Map<String, dynamic>>();
         expect(books.single['kind'], 'magazine-issue');
         expect(books.single['title'], contains('Chandamama'));
+        final covers = api.committed!
+            .where((file) => file.path.startsWith('covers/'))
+            .toList();
+        expect(covers, hasLength(1));
+        final salt = ascii.encode('salt-1234567890');
+        expect(
+          covers.single.path,
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+        );
+        expect(books.single['coverUrl'], covers.single.path);
       },
     );
 
@@ -840,6 +859,152 @@ void main() {
       expect(
         manifest.saved?.coverUrlByBookId['periodical:uid-1'],
         'https://covers.openlibrary.org/x.jpg',
+      );
+    });
+  });
+
+  group('S8 — Unicode covers and canonical series links', () {
+    test(
+      'a non-ASCII covered series commits with grouping and cover fallback',
+      () async {
+        const uid = 'పత్రిక-१';
+        final api = _CapturingApi();
+        final result =
+            await makeUseCase(
+              api,
+              _MemManifest(),
+              readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
+            ).call(
+              books: [issue(uid: uid)],
+              periodicals: [series(uid: uid, cover: 'covers/series.jpg')],
+              activeLoanCounts: const {},
+              encodeBooksJson: encode,
+              libraryJson: null,
+            );
+
+        expect(result, isA<PublishSuccess>());
+        final covers = api.committed!
+            .where((file) => file.path.startsWith('covers/'))
+            .toList();
+        expect(covers, hasLength(1));
+        expect(covers.single.path, 'covers/d6558de0d7c76239.jpg');
+        final payload = committedPayload(api);
+        final publishedIssue = (payload['books'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single;
+        expect(publishedIssue['issue'], {
+          'periodicalUid': uid,
+          'volume': 249,
+          'issueNumber': 10,
+          'issueDate': 1759276800000,
+        });
+        expect(publishedIssue['coverUrl'], covers.single.path);
+        final publishedSeries = (payload['periodicals'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()
+            .single;
+        expect(publishedSeries['periodicalUid'], uid);
+        expect(publishedSeries['coverUrl'], covers.single.path);
+      },
+    );
+
+    Future<void> expectLinkRefusal({
+      required List<CatalogueItem> books,
+      required List<Periodical> periodicals,
+      required String privateDiagnostic,
+    }) async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      var coverReads = 0;
+      var viewerBuilds = 0;
+      var encodeCalls = 0;
+      final result =
+          await makeUseCase(
+            api,
+            manifest,
+            readLocalCover: (_) async {
+              coverReads++;
+              return utf8.encode('IMG');
+            },
+            buildViewerHtml: () async {
+              viewerBuilds++;
+              return utf8.encode('<html></html>');
+            },
+          ).call(
+            books: books,
+            periodicals: periodicals,
+            activeLoanCounts: const {},
+            encodeBooksJson: (export) {
+              encodeCalls++;
+              return encode(export);
+            },
+            libraryJson: null,
+          );
+
+      expect(result, isA<PublishFailure>());
+      final reason = (result as PublishFailure).reason;
+      expect(
+        reason,
+        'Some magazine series or issue links are invalid. '
+        'Nothing was published.',
+      );
+      expect(reason, isNot(contains(privateDiagnostic)));
+      expect(coverReads, 0, reason: 'refuse before cover processing');
+      expect(viewerBuilds, 0, reason: 'refuse before building an artifact');
+      expect(encodeCalls, 0, reason: 'refuse before building books.json');
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    }
+
+    test('an issue pointing to a missing series is refused', () async {
+      await expectLinkRefusal(
+        books: [issue(uid: 'missing-private-uid')],
+        periodicals: const [],
+        privateDiagnostic: 'missing-private-uid',
+      );
+    });
+
+    test('a noncanonical issue UID is refused', () async {
+      await expectLinkRefusal(
+        books: [issue(uid: ' series-private-uid ')],
+        periodicals: [
+          series(uid: 'series-private-uid', cover: 'covers/series.jpg'),
+        ],
+        privateDiagnostic: 'series-private-uid',
+      );
+    });
+
+    test('a noncanonical periodical UID is refused before cover IO', () async {
+      await expectLinkRefusal(
+        books: const [],
+        periodicals: [
+          series(uid: ' series-private-uid ', cover: 'covers/series.jpg'),
+        ],
+        privateDiagnostic: 'series-private-uid',
+      );
+    });
+
+    test('a persisted series without its UID is refused', () async {
+      await expectLinkRefusal(
+        books: const [],
+        periodicals: const [
+          Periodical(
+            id: 7,
+            title: 'private-series-diagnostic',
+            coverUrl: 'covers/series.jpg',
+          ),
+        ],
+        privateDiagnostic: 'private-series-diagnostic',
+      );
+    });
+
+    test('duplicate series UIDs are refused instead of choosing one', () async {
+      await expectLinkRefusal(
+        books: [issue(uid: 'duplicate-private-uid')],
+        periodicals: [
+          series(uid: 'duplicate-private-uid', cover: 'covers/one.jpg'),
+          series(uid: 'duplicate-private-uid', cover: 'covers/two.jpg'),
+        ],
+        privateDiagnostic: 'duplicate-private-uid',
       );
     });
   });
