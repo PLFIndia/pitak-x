@@ -44,6 +44,7 @@ void main() {
     expect(r.kindsApplied, 0);
     expect(r.issuesLinked, 0);
     expect(r.issuesDetached, 0);
+    expect(r.issueEntriesDropped, 0);
     expect(r.rowsSkippedUnknownKind, 0);
     expect(r.periodicalsDropped, 0);
   });
@@ -100,7 +101,8 @@ void main() {
     expect(r.issuesDetached, 1);
   });
 
-  test('an issues[] entry for a uid absent from books.db is detached', () {
+  test('an issues[] entry for a uid absent from books.db is an ENTRY drop '
+      '(S5)', () {
     final r = applyRestoredItemDetails(
       books: const [book],
       kinds: kinds(const {}),
@@ -108,21 +110,26 @@ void main() {
     );
     expect(r.books.single.details, isNull);
     expect(r.issuesLinked, 0);
-    expect(r.issuesDetached, 1);
+    // No catalogue row was affected — the entry names a row that does not
+    // exist, so it belongs to the ENTRY unit, not the row unit (S5).
+    expect(r.issuesDetached, 0);
+    expect(r.issueEntriesDropped, 1);
   });
 
-  test('an issues[] entry whose uid declared another kind is dropped (W2)', () {
+  test('an issues[] entry whose uid declared another kind is an ENTRY drop '
+      '(W2, S5)', () {
     final r = applyRestoredItemDetails(
       books: const [otherBase],
       kinds: kinds(const {'uid-9': ItemKind.other}),
       periodicals: periodicals(issues: const {'uid-9': issue}),
     );
     // The row is an "other"; the contradicting issue entry is dropped and
-    // counted.
+    // counted as an ENTRY (the row itself kept its kind, so no detach).
     expect(r.books.single.details, isA<OtherItemOf>());
     expect(r.kindsApplied, 1);
     expect(r.issuesLinked, 0);
-    expect(r.issuesDetached, 1);
+    expect(r.issuesDetached, 0);
+    expect(r.issueEntriesDropped, 1);
   });
 
   test('an issue whose series is not in the archive detaches (W1 orphan '
@@ -137,7 +144,7 @@ void main() {
     expect(r.issuesDetached, 1);
   });
 
-  test('parse-time drops flow into the counts unchanged', () {
+  test('parse-time drops are ENTRY drops, never seeded detaches (S5)', () {
     final r = applyRestoredItemDetails(
       books: const [book],
       kinds: kinds(const {}, skipped: 3),
@@ -149,7 +156,42 @@ void main() {
     );
     expect(r.rowsSkippedUnknownKind, 3);
     expect(r.periodicalsDropped, 2);
-    expect(r.issuesDetached, 4);
+    // S5 (M2): a malformed raw entry is ONE entry, not a detached row.
+    expect(r.issueEntriesDropped, 4);
+    expect(r.issuesDetached, 0);
+  });
+
+  // S5 (M2) regression: the two units must never be summed or swapped.
+  test('one malformed entry detaches one row — never two detachments', () {
+    final r = applyRestoredItemDetails(
+      books: const [issueBase],
+      kinds: kinds(const {'uid-8': ItemKind.magazineIssue}),
+      periodicals: periodicals(
+        issues: const {}, // the declared row has no usable entry
+        issuesDropped: 1, // one raw entry was malformed at decode time
+      ),
+    );
+    expect(r.issueEntriesDropped, 1);
+    expect(r.issuesDetached, 1); // the ROW, once
+    expect(r.books.single.details, isNull);
+  });
+
+  test('a second distinct orphan row adds exactly one more detachment', () {
+    const secondIssueBase = CatalogueItem(
+      id: 12,
+      itemUid: 'uid-12',
+      title: 'Second issue row',
+    );
+    final r = applyRestoredItemDetails(
+      books: const [issueBase, secondIssueBase],
+      kinds: kinds(const {
+        'uid-8': ItemKind.magazineIssue,
+        'uid-12': ItemKind.magazineIssue,
+      }),
+      periodicals: periodicals(issues: const {}, issuesDropped: 1),
+    );
+    expect(r.issuesDetached, 2);
+    expect(r.issueEntriesDropped, 1);
   });
 
   test('a row without a uid can never be keyed — it stays a book', () {

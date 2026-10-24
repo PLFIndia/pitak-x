@@ -147,6 +147,24 @@ final class SchemaTooNewFailure extends Failure {
   final int schemaVersion;
 }
 
+/// The catalogue is too large for the `.pitabak` format the app also READS
+/// (magazine remediation S5, finding L5).
+///
+/// Why this exists (beginner note): the restore reader bounds each JSON entry
+/// (4 MiB) and each collection (row cap). A writer that ignored those bounds
+/// would happily produce an archive that its own reader then downgrades —
+/// every `other` row back to a book, every issue link detached — i.e. a backup
+/// that looks fine and silently loses data on restore. This failure is
+/// returned INSTEAD of such an archive, before anything is written out.
+final class BackupTooLargeFailure extends Failure {
+  /// Creates a too-large failure. [detail] is a short diagnostic, never shown
+  /// verbatim (the UI maps this type to one plain sentence).
+  const BackupTooLargeFailure([this.detail = '']);
+
+  /// Short diagnostic for logs/tests.
+  final String detail;
+}
+
 /// A cryptographic operation failed (KDF, AEAD, or SQLCipher open).
 final class CryptoFailure extends Failure {
   /// Creates a crypto failure with a short diagnostic [reason].

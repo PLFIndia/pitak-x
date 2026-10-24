@@ -9,14 +9,15 @@
 /// The join rules are W2's, fail-closed on disagreement (P1):
 ///  - a uid listed nowhere in `item_kinds.json` ⇒ the row is a book;
 ///  - an `issues[]` entry whose uid's kind is not `magazine-issue`, or whose
-///    uid is not in `books.db` at all ⇒ the entry is dropped and counted
-///    (`issuesDetached`);
+///    uid is not in `books.db` at all ⇒ the ENTRY is dropped and counted
+///    (`issueEntriesDropped`);
 ///  - a row DECLARED `magazine-issue` but without a usable `issues[]` entry
-///    ⇒ the link is detached (counted) and the row restores as a book —
-///    restoring an issue without its details is impossible (the kind is
-///    derived from the details, ADR 0013 F5), and guessing is never allowed;
+///    ⇒ the link is detached (counted once per ROW, `issuesDetached`) and the
+///    row restores as a book — restoring an issue without its details is
+///    impossible (the kind is derived from the details, ADR 0013 F5), and
+///    guessing is never allowed;
 ///  - an issue whose `periodicalUid` matches no periodical in the archive ⇒
-///    detached and counted, the row becomes a book. This mirrors the W1
+///    detached and counted per row, the row becomes a book. This mirrors the W1
 ///    import orphan rule (one blessed way across both formats): a dangling
 ///    series link would be silent data corruption, while the base row keeps
 ///    its (projected, human-readable) title as a book.
@@ -50,6 +51,7 @@ final class RestoredItemDetails {
     required this.kindsApplied,
     required this.issuesLinked,
     required this.issuesDetached,
+    required this.issueEntriesDropped,
     required this.rowsSkippedUnknownKind,
     required this.periodicalsDropped,
   });
@@ -68,10 +70,18 @@ final class RestoredItemDetails {
   /// `issues[]` entries successfully joined to a restored row.
   final int issuesLinked;
 
-  /// Issue links NOT honoured: entries dropped at parse time, entries for a
-  /// uid absent from `books.db`, entries whose row's declared kind disagrees,
-  /// declared issues with no entry, and issues whose series is absent.
+  /// CATALOGUE ROWS restored as books because no usable issue link could be
+  /// applied — deduplicated by `bookUid`, counted once per affected row
+  /// (S5, M2). This is a ROW count: raw `issues[]` entries that never
+  /// produced a row are counted in [issueEntriesDropped] instead, so the two
+  /// numbers are never added together (they measure different things).
   final int issuesDetached;
+
+  /// RAW `issues[]` ENTRIES whose link was not applied (S5, M2): malformed,
+  /// duplicate, or over-cap at decode time, keyed to a uid absent from
+  /// `books.db`, or keyed to a row whose declared kind is not an issue.
+  /// An ENTRY count — see [issuesDetached] for the row-side twin.
+  final int issueEntriesDropped;
 
   /// `kinds[]` rows skipped at parse time (malformed or unknown kind token,
   /// F6). Affected rows restore as books.
@@ -99,8 +109,12 @@ RestoredItemDetails applyRestoredItemDetails({
 
   var kindsApplied = 0;
   var issuesLinked = 0;
-  // Parse-time drops of issue entries count as detached links up front.
-  var issuesDetached = periodicals?.issuesDropped ?? 0;
+  // S5 (M2): the two units are kept apart. Parse-time drops are RAW ENTRIES,
+  // never catalogue rows, so they no longer seed the detach count.
+  var issueEntriesDropped = periodicals?.issuesDropped ?? 0;
+  // Rows already counted as detached, so one row can never count twice.
+  final detachedUids = <String>{};
+  var issuesDetached = 0;
   // Entries CONSULTED by the loop below (linked or deliberately detached),
   // so the trailing sweep counts each entry exactly once.
   final accountedIssues = <String>{};
@@ -123,13 +137,13 @@ RestoredItemDetails applyRestoredItemDetails({
         final issue = issuesByUid[uid];
         if (issue == null) {
           // Declared but undetailed: no entry exists to sweep — count the
-          // detach here.
-          issuesDetached++;
+          // detach here (row unit).
+          if (detachedUids.add(uid)) issuesDetached++;
           out.add(book);
         } else if (!seriesUids.contains(issue.periodicalUid.trim())) {
           // Orphaned from its series (absent, or dropped as invalid at parse
           // time): detach and restore the row as the book its base row is.
-          issuesDetached++;
+          if (detachedUids.add(uid)) issuesDetached++;
           accountedIssues.add(uid);
           out.add(book);
         } else {
@@ -141,11 +155,12 @@ RestoredItemDetails applyRestoredItemDetails({
     }
   }
 
-  // Every issues[] entry the loop never consulted is a dropped link: its uid
+  // Every issues[] entry the loop never consulted produced no link: its uid
   // is not in books.db, or its row's declared kind is not magazine-issue
   // (W2: "a detail entry whose uid's kind disagrees ⇒ dropped and counted").
+  // S5 (M2): these are ENTRIES, not rows — count them in the entry unit.
   for (final uid in issuesByUid.keys) {
-    if (!accountedIssues.contains(uid)) issuesDetached++;
+    if (!accountedIssues.contains(uid)) issueEntriesDropped++;
   }
 
   return RestoredItemDetails(
@@ -154,6 +169,7 @@ RestoredItemDetails applyRestoredItemDetails({
     kindsApplied: kindsApplied,
     issuesLinked: issuesLinked,
     issuesDetached: issuesDetached,
+    issueEntriesDropped: issueEntriesDropped,
     rowsSkippedUnknownKind: kinds?.skipped ?? 0,
     periodicalsDropped: periodicals?.periodicalsDropped ?? 0,
   );

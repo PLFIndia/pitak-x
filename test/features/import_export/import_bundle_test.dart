@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 void main() {
@@ -74,6 +75,70 @@ void main() {
     );
     expect(result.isRight(), isTrue);
   });
+  // S5 (H4): validate() used to rebuild the payload with items + wishlist
+  // only, so a v4 bundle silently lost every magazine title and its issues
+  // restored as books.
+  test('preserves magazine titles and warnings losslessly (S5)', () {
+    final result = ImportBundle.validate(
+      const ImportPayload(
+        items: [CatalogueItem(title: 'A')],
+        periodicals: [Periodical(title: 'Frontline', periodicalUid: 'p1')],
+        wishlist: [WishlistBook(title: 'W')],
+        warnings: ['Something was shortened.'],
+      ),
+      {},
+    );
+    final payload = result.toNullable()!.payload;
+    expect(payload.periodicals.single.periodicalUid, 'p1');
+    expect(payload.items.single.title, 'A');
+    expect(payload.wishlist.single.title, 'W');
+    expect(payload.warnings, ['Something was shortened.']);
+    // The bundle is immutable all the way down (the pre-existing contract).
+    expect(payload.periodicals.clear, throwsUnsupportedError);
+    expect(payload.warnings.clear, throwsUnsupportedError);
+  });
+
+  test('a series cover is validated and counts as a referenced leaf (S5)', () {
+    const seriesRow = Periodical(
+      title: 'Frontline',
+      periodicalUid: 'p1',
+      coverUrl: 'covers/series.jpg',
+    );
+    // Present in the archive: accepted, and the leaf is referenced.
+    expect(
+      ImportBundle.validate(const ImportPayload(periodicals: [seriesRow]), {
+        'series.jpg': Uint8List.fromList([1]),
+      }).isRight(),
+      isTrue,
+    );
+    // Absent from the archive: refused before any write.
+    expect(
+      ImportBundle.validate(
+        const ImportPayload(periodicals: [seriesRow]),
+        {},
+      ).isLeft(),
+      isTrue,
+    );
+    // Unsafe reference: refused, exactly like an item's.
+    expect(
+      ImportBundle.validate(
+        const ImportPayload(
+          periodicals: [
+            Periodical(
+              title: 'Frontline',
+              periodicalUid: 'p1',
+              coverUrl: 'covers/../series.jpg',
+            ),
+          ],
+        ),
+        {
+          'series.jpg': Uint8List.fromList([1]),
+        },
+      ).isLeft(),
+      isTrue,
+    );
+  });
+
   test('rejects parser omissions and unreferenced images', () {
     expect(
       ImportBundle.validate(

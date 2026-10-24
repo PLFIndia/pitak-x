@@ -16,6 +16,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/application/bundle_import_images.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/cover_precedence.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -91,6 +92,12 @@ final class ImportSeriesReconciler {
   /// `periodicals[]` section: an issue row may point at a series this device
   /// already has, and a same-ISSN/different-UID file must still re-anchor it.
   ///
+  /// [images] is the bundle's cover stager. A bundle carries series cover
+  /// bytes exactly like it carries item bytes (S5, H4), so every series row
+  /// that will actually be written is prepared first and its final reference
+  /// recorded after the write; a null [images] means a plain text import,
+  /// whose local references were already dropped by the parser.
+  ///
   /// Rules, in order, per incoming row:
   ///  1. a UID already resolved by an earlier row of THIS file → skip (first
   ///     valid row wins; later conflicting rows are counted, never merged);
@@ -103,6 +110,7 @@ final class ImportSeriesReconciler {
   Future<Either<Failure, ImportSeriesResolution>> resolve({
     required List<Periodical> rawSeries,
     required bool itemsCarryIssues,
+    BundleImportImages? images,
   }) async {
     final incoming = <Periodical>[];
     for (final raw in rawSeries) {
@@ -157,13 +165,22 @@ final class ImportSeriesReconciler {
         }
         final existing = byUid.toNullable();
         if (existing != null) {
-          final written = await _periodicals.update(
-            mergeImportedPeriodical(existing: existing, incoming: periodical),
+          final merged = mergeImportedPeriodical(
+            existing: existing,
+            incoming: periodical,
           );
+          final prepared = images == null
+              ? right<Failure, Periodical>(merged)
+              : await images.preparePeriodical(merged);
+          if (prepared.isLeft()) {
+            return prepared.map((_) => ImportSeriesResolution.empty);
+          }
+          final written = await _periodicals.update(prepared.toNullable()!);
           if (written.isLeft()) {
             return written.map((_) => ImportSeriesResolution.empty);
           }
           final row = written.toNullable()!;
+          images?.recordPeriodical(row);
           final storedUid = row.periodicalUid?.trim() ?? '';
           if (storedUid.isEmpty) {
             return left(
@@ -205,13 +222,21 @@ final class ImportSeriesReconciler {
         }
       }
 
-      // 3. Genuinely new → insert and keep the row the repository RETURNED,
-      //    including a minted UID, so later issues never anchor to a draft.
-      final inserted = await _periodicals.insert(periodical);
+      // 3. Genuinely new → stage its cover, insert, and keep the row the
+      //    repository RETURNED, including a minted UID, so later issues never
+      //    anchor to a draft.
+      final prepared = images == null
+          ? right<Failure, Periodical>(periodical)
+          : await images.preparePeriodical(periodical);
+      if (prepared.isLeft()) {
+        return prepared.map((_) => ImportSeriesResolution.empty);
+      }
+      final inserted = await _periodicals.insert(prepared.toNullable()!);
       if (inserted.isLeft()) {
         return inserted.map((_) => ImportSeriesResolution.empty);
       }
       final row = inserted.toNullable()!;
+      images?.recordPeriodical(row);
       final storedUid = row.periodicalUid?.trim() ?? '';
       if (storedUid.isEmpty) {
         return left(

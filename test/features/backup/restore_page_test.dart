@@ -105,6 +105,20 @@ class _ItemKindsRestoreController extends RestoreController {
   );
 }
 
+/// S5 fixture (M2): detached ROWS and dropped ENTRIES are different units and
+/// must appear as two separate sentences.
+class _SplitIssueCountsController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 3,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    issuesDetached: 2,
+    issueEntriesDropped: 3,
+  );
+}
+
 /// W2 failure fixture: both item-details entries declared but unreadable.
 class _UnreadableItemDetailsController extends RestoreController {
   @override
@@ -632,6 +646,36 @@ void main() {
         find.text(
           '1 item-kind row(s) in the backup could not be read; the affected '
           'items were restored as books.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('S5: detached rows and dropped entries are separate '
+        'sentences', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _SplitIssueCountsController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          '2 issue link(s) could not be honoured; the affected items were '
+          'restored as books.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          '3 issue detail(s) in the backup could not be used and were '
+          'ignored.',
         ),
         findsOneWidget,
       );

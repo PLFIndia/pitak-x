@@ -27,6 +27,7 @@ class RestoreSummary {
     this.periodicalsRestored = 0,
     this.issuesLinked = 0,
     this.issuesDetached = 0,
+    this.issueEntriesDropped = 0,
     this.rowsSkippedUnknownKind = 0,
     this.periodicalsDropped = 0,
     this.itemKindsInvalid = false,
@@ -119,11 +120,18 @@ class RestoreSummary {
   /// W2: `periodicals.json` `issues[]` entries joined to a restored row.
   final int issuesLinked;
 
-  /// W2: issue links NOT honoured — malformed entries, entries for a row
-  /// absent from `books.db`, entries whose row's declared kind disagrees,
-  /// declared issues without an entry, and issues whose series is absent
-  /// (the W1 orphan rule's backup twin). Those rows restored as books.
+  /// W2/S5: CATALOGUE ROWS restored as books because no usable issue link
+  /// could be applied — declared issues without an entry, and issues whose
+  /// series is absent (the W1 orphan rule's backup twin). Deduplicated by
+  /// `bookUid`, so one row counts once. A ROW unit: the raw-entry twin is
+  /// [issueEntriesDropped], and the two are never summed.
   final int issuesDetached;
+
+  /// W2/S5: RAW `issues[]` ENTRIES whose link was not applied — malformed,
+  /// duplicate, or over-cap at decode time, keyed to a row absent from
+  /// `books.db`, or keyed to a row whose declared kind is not an issue.
+  /// An ENTRY unit; see [issuesDetached].
+  final int issueEntriesDropped;
 
   /// W2: `item_kinds.json` rows skipped at parse (malformed or an unknown
   /// kind token — F6, never guessed). Affected rows restored as books.
@@ -170,6 +178,7 @@ class RestoreSummary {
       periodicalsRestored: periodicalsRestored,
       issuesLinked: issuesLinked,
       issuesDetached: issuesDetached,
+      issueEntriesDropped: issueEntriesDropped,
       rowsSkippedUnknownKind: rowsSkippedUnknownKind,
       periodicalsDropped: periodicalsDropped,
       itemKindsInvalid: itemKindsInvalid,
@@ -183,6 +192,7 @@ class RestoreSummary {
   bool get hasAdjustments =>
       coversDropped > 0 ||
       issuesDetached > 0 ||
+      issueEntriesDropped > 0 ||
       rowsSkippedUnknownKind > 0 ||
       periodicalsDropped > 0;
 

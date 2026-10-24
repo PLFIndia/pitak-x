@@ -7,6 +7,8 @@ library;
 
 import 'dart:typed_data';
 
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -31,11 +33,16 @@ abstract interface class BackupArchiveBuilder {
   /// "not included" (the manifest flag stays false); a caller that could not
   /// gather them must pass null rather than block the whole backup.
   ///
+  /// Returns [BackupTooLargeFailure] (S5, L5) INSTEAD of an archive whose
+  /// `item_kinds.json` / `periodicals.json` would exceed the restore reader's
+  /// 4 MiB / row bounds — the writer must never emit a file its own reader
+  /// downgrades. No partial archive is returned in that case.
+  ///
   /// Asynchronous on purpose (N10-c): building a backup means writing two
   /// SQLite files, reading every cover and deflating the lot — seconds of
   /// work for a large library. Implementations are expected to do that off
   /// the calling isolate so the UI keeps painting.
-  Future<Uint8List> build({
+  Future<Either<Failure, Uint8List>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,

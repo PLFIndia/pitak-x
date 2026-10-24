@@ -112,6 +112,25 @@ void main() {
     },
   );
 
+  // S5 (L5): a catalogue too large for the format is an EXPECTED refusal. It
+  // must reach the caller as the typed failure (the page has specific copy),
+  // never be re-wrapped as a generic StorageFailure.
+  test('a too-large refusal is propagated, never masked', () async {
+    final tooLarge = _TooLargeWriter();
+    final failing = CreateBackupUseCase(
+      books: _Books(),
+      wishlist: _Wishlist(),
+      periodicals: _Periodicals(),
+      writer: tooLarge,
+      workDir: 'unused-by-the-fake',
+      namespace: _Namespace(right(identity)),
+      network: _Network([row]),
+    );
+    final result = await failing();
+    expect(result.getLeft().toNullable(), isA<BackupTooLargeFailure>());
+    expect(tooLarge.calls, 1);
+  });
+
   test(
     'a periodicals read failure is a Left (no partial backup, W2)',
     () async {
@@ -146,7 +165,7 @@ class _RecordingWriter implements BackupArchiveBuilder {
   final List<_Call> calls = [];
 
   @override
-  Future<Uint8List> build({
+  Future<Either<Failure, Uint8List>> build({
     required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
     required List<Periodical> periodicals,
@@ -162,7 +181,25 @@ class _RecordingWriter implements BackupArchiveBuilder {
         periodicals: periodicals,
       ),
     );
-    return Uint8List.fromList(const [1, 2, 3]);
+    return right(Uint8List.fromList(const [1, 2, 3]));
+  }
+}
+
+class _TooLargeWriter implements BackupArchiveBuilder {
+  int calls = 0;
+
+  @override
+  Future<Either<Failure, Uint8List>> build({
+    required List<CatalogueItem> books,
+    required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
+    required String workDir,
+    required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
+  }) async {
+    calls++;
+    return left(const BackupTooLargeFailure('itemKindsTooLarge'));
   }
 }
 

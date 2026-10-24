@@ -112,6 +112,11 @@ class _CreateBackupPageState extends ConsumerState<CreateBackupPage> {
 
   static String _messageFor(Failure f) => switch (f) {
     StorageFailure() => 'Could not build the backup. Please try again.',
+    // S5 (L5): the catalogue is bigger than the format the app can read back.
+    // Say exactly that — nothing was exported, and retrying will not help.
+    BackupTooLargeFailure() =>
+      'This catalogue is too large for this backup format. '
+          'Nothing was exported.',
     _ => 'Something went wrong creating the backup.',
   };
 

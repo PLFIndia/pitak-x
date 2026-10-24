@@ -54,17 +54,21 @@ void main() {
     List<Periodical> periodicals = const [],
   }) =>
       BackupArchiveWriter(
-        vaultStore: VaultStore(baseDir: '${h.directory.path}/no_source_vault'),
-        coversDir: '${h.directory.path}/incoming_covers',
-      ).build(
-        books: incoming,
-        wishlist: [],
-        periodicals: periodicals,
-        workDir: '${h.directory.path}/build_archive',
-        exportedAt: 1,
-        identityJson: null,
-        networkJson: null,
-      );
+            vaultStore: VaultStore(
+              baseDir: '${h.directory.path}/no_source_vault',
+            ),
+            coversDir: '${h.directory.path}/incoming_covers',
+          )
+          .build(
+            books: incoming,
+            wishlist: [],
+            periodicals: periodicals,
+            workDir: '${h.directory.path}/build_archive',
+            exportedAt: 1,
+            identityJson: null,
+            networkJson: null,
+          )
+          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
 
   Future<void> existing({bool returned = false}) async {
     await h.books.insert(_book);

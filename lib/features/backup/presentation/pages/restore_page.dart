@@ -439,6 +439,14 @@ class _RestoreOutcome extends StatelessWidget {
                   'honoured; the affected items were restored as books.',
                   style: textTheme.bodySmall,
                 ),
+              // S5 (M2): entry drops are a DIFFERENT unit from detached rows —
+              // say so separately, never summed into the sentence above.
+              if (summary.issueEntriesDropped > 0)
+                Text(
+                  '${summary.issueEntriesDropped} issue detail(s) in the '
+                  'backup could not be used and were ignored.',
+                  style: textTheme.bodySmall,
+                ),
               if (summary.rowsSkippedUnknownKind > 0)
                 Text(
                   '${summary.rowsSkippedUnknownKind} item-kind row(s) in the '

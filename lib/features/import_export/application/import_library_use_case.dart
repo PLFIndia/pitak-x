@@ -219,6 +219,7 @@ final class ImportLibraryUseCase {
     final resolved = await _series.resolve(
       rawSeries: payload.periodicals,
       itemsCarryIssues: payload.items.any((item) => item.issue != null),
+      images: images,
     );
     if (resolved.isLeft()) {
       return resolved.map((_) => const ImportSummary(format: null));

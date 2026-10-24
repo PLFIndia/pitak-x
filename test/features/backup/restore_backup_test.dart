@@ -1089,10 +1089,12 @@ void main() {
       final summary = (await r.restore(archiveBytes: zip)).getOrElse(
         (f) => fail('unexpected: ${f is StorageFailure ? f.reason : f}'),
       );
-      // uid-8: declared an issue but no issues[] entry → detached.
-      // uid-gone: an issues[] entry for a row books.db does not have →
-      // detached. uid-9: unknown kind token → skipped.
-      expect(summary.issuesDetached, 2);
+      // uid-8: declared an issue but no issues[] entry → one detached ROW.
+      // uid-gone: an issues[] entry for a row books.db does not have → one
+      // dropped ENTRY (S5: a different unit, never summed with rows).
+      // uid-9: unknown kind token → skipped.
+      expect(summary.issuesDetached, 1);
+      expect(summary.issueEntriesDropped, 1);
       expect(summary.rowsSkippedUnknownKind, 1);
       expect(summary.kindsApplied, 0);
       expect(summary.periodicalsRestored, 1);

@@ -6,10 +6,12 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
 import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
+import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
@@ -79,8 +81,32 @@ void main() {
         (r) => r.items,
       );
 
+  // S5: build() now returns Either<Failure, Uint8List> — a too-large catalogue
+  // is an expected refusal, not an exception. These tests exercise archives
+  // that FIT the reader's bounds, so a Left is a test failure here.
+  Future<Uint8List> buildOk({
+    required List<CatalogueItem> books,
+    required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
+    required String workDir,
+    required int exportedAt,
+    required String? identityJson,
+    required String? networkJson,
+  }) async {
+    final result = await writer.build(
+      books: books,
+      wishlist: wishlist,
+      periodicals: periodicals,
+      workDir: workDir,
+      exportedAt: exportedAt,
+      identityJson: identityJson,
+      networkJson: networkJson,
+    );
+    return result.getOrElse((f) => fail('build refused a fitting archive: $f'));
+  }
+
   test('writes a manifest reflecting no vault when none exists', () async {
-    final bytes = await writer.build(
+    final bytes = await buildOk(
       books: const [],
       wishlist: const [],
       periodicals: const [],
@@ -110,7 +136,7 @@ void main() {
   });
 
   test('identity.json + network.json are written and flagged (§3.4)', () async {
-    final bytes = await writer.build(
+    final bytes = await buildOk(
       books: const [],
       wishlist: const [],
       periodicals: const [],
@@ -166,7 +192,7 @@ void main() {
     test(
       'a books-only build writes neither entry and flags both false',
       () async {
-        final bytes = await writer.build(
+        final bytes = await buildOk(
           books: const [bookRow],
           wishlist: const [],
           periodicals: const [],
@@ -189,7 +215,7 @@ void main() {
     test(
       'kinds, periodicals and issue entries are written and flagged',
       () async {
-        final bytes = await writer.build(
+        final bytes = await buildOk(
           books: const [bookRow, issueRow, otherRow],
           wishlist: const [],
           periodicals: const [series],
@@ -232,7 +258,7 @@ void main() {
         // An issue entry without any periodical row is not reachable through
         // the app (delete fails closed while issues reference a series), but
         // the writer must not silently drop detail rows if the state exists.
-        final bytes = await writer.build(
+        final bytes = await buildOk(
           books: const [issueRow],
           wishlist: const [],
           periodicals: const [],
@@ -269,7 +295,7 @@ void main() {
       ),
       const CatalogueItem(id: 2, title: 'Plain Book'),
     ];
-    final bytes = await writer.build(
+    final bytes = await buildOk(
       books: books,
       wishlist: const [],
       periodicals: const [],
@@ -302,7 +328,7 @@ void main() {
       // (sqlite3_flutter_libs) ships FTS5 only, so emitting a `USING FTS4`
       // virtual table threw `no such module: fts4` and aborted every backup.
       // The writer must NOT create that table; books must still be readable.
-      final bytes = await writer.build(
+      final bytes = await buildOk(
         books: const [CatalogueItem(id: 1, title: 'Findable')],
         wishlist: const [],
         periodicals: const [],
@@ -340,7 +366,7 @@ void main() {
         priceEstimate: 12.5,
       ),
     ];
-    final bytes = await writer.build(
+    final bytes = await buildOk(
       books: const [],
       wishlist: wishlist,
       periodicals: const [],
@@ -362,7 +388,7 @@ void main() {
   test('bundles covers and reflects them in the manifest', () async {
     Directory('${tmp.path}/covers').createSync(recursive: true);
     File('${tmp.path}/covers/abc.jpg').writeAsBytesSync([1, 2, 3]);
-    final bytes = await writer.build(
+    final bytes = await buildOk(
       books: const [],
       wishlist: const [],
       periodicals: const [],
@@ -388,15 +414,17 @@ void main() {
       vaultStore: store,
       coversDir: '${tmp.path}/covers',
     );
-    final bytes = await w.build(
-      books: const [],
-      wishlist: const [],
-      periodicals: const [],
-      workDir: '${tmp.path}/work',
-      exportedAt: 1,
-      identityJson: null,
-      networkJson: null,
-    );
+    final bytes = await w
+        .build(
+          books: const [],
+          wishlist: const [],
+          periodicals: const [],
+          workDir: '${tmp.path}/work',
+          exportedAt: 1,
+          identityJson: null,
+          networkJson: null,
+        )
+        .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
     final archive = unzip(bytes);
     expect(entry(archive, 'borrowers.db'), Uint8List.fromList([9, 9, 9]));
     expect(utf8.decode(entry(archive, 'backup_blob')!), 'salt.iv.ct');
@@ -458,7 +486,7 @@ void main() {
         networkJson: null,
       );
       final firedAt = await fired.future;
-      final bytes = await work;
+      final bytes = (await work).getOrElse((f) => fail('unexpected left: $f'));
       final total = sw.elapsedMilliseconds;
       expect(bytes, isNotEmpty);
       expect(
@@ -477,15 +505,17 @@ void main() {
         // buffered into an Archive first; the archive must still hold each
         // one intact and in the same sorted order as before.
         final w = await bigFixture();
-        final bytes = await w.build(
-          books: const [CatalogueItem(id: 1, title: 'One')],
-          wishlist: const [],
-          periodicals: const [],
-          workDir: '${tmp.path}/work',
-          exportedAt: 1,
-          identityJson: null,
-          networkJson: null,
-        );
+        final bytes = await w
+            .build(
+              books: const [CatalogueItem(id: 1, title: 'One')],
+              wishlist: const [],
+              periodicals: const [],
+              workDir: '${tmp.path}/work',
+              exportedAt: 1,
+              identityJson: null,
+              networkJson: null,
+            )
+            .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
         final archive = unzip(bytes);
         final coverNames = [
           for (final f in archive.files)
@@ -534,5 +564,98 @@ void main() {
         expect(Directory('${tmp.path}/work_fail').existsSync(), isFalse);
       },
     );
+  });
+
+  // S5 (L5): the writer must never emit an archive its own READER refuses or
+  // downgrades. Overflow is an expected, typed failure — not an exception and
+  // never a partial archive.
+  group('S5 — reader-bound enforcement', () {
+    test('an oversized item_kinds entry is refused before encoding', () async {
+      // 600 rows with 7,500-char uids = ~4.5 MB of JSON, past the reader's
+      // 4 MiB entry cap. (Fat rows keep the test fast: the bound is about
+      // bytes, not row count.)
+      final books = [
+        for (var i = 0; i < 600; i++)
+          CatalogueItem(
+            id: i + 1,
+            itemUid: 'u$i${'x' * 7500}',
+            title: 'Other $i',
+            details: const OtherItemOf(),
+          ),
+      ];
+      final result = await writer.build(
+        books: books,
+        wishlist: const [],
+        periodicals: const [],
+        workDir: '${tmp.path}/work_big_kinds',
+        exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
+      );
+      final failure = result.getLeft().toNullable();
+      expect(failure, isA<BackupTooLargeFailure>());
+      expect((failure! as BackupTooLargeFailure).detail, 'itemKindsTooLarge');
+      // Nothing was written out: no archive bytes exist to share.
+      expect(result.toNullable(), isNull);
+      expect(Directory('${tmp.path}/work_big_kinds').existsSync(), isFalse);
+    });
+
+    test('too many kind rows is refused (row cap, not bytes)', () async {
+      // The reader keeps at most maxRows rows per collection. 100,001 tiny
+      // `other` rows encode to ~3.6 MB — under the 4 MiB entry cap — so this
+      // is the ROW branch. The bound check runs before any file work, which
+      // keeps this fast despite the row count.
+      final count = ImportLimits.defaults.maxRows + 1;
+      final books = [
+        for (var i = 0; i < count; i++)
+          CatalogueItem(
+            id: i + 1,
+            itemUid: 'u$i',
+            title: 'Other $i',
+            details: const OtherItemOf(),
+          ),
+      ];
+      final result = await writer.build(
+        books: books,
+        wishlist: const [],
+        periodicals: const [],
+        workDir: '${tmp.path}/work_many_kinds',
+        exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
+      );
+      final failure = result.getLeft().toNullable();
+      expect(failure, isA<BackupTooLargeFailure>());
+      expect(
+        (failure! as BackupTooLargeFailure).detail,
+        'itemKindsTooManyRows',
+      );
+      // Refused before any file work: no scratch directory was created.
+      expect(Directory('${tmp.path}/work_many_kinds').existsSync(), isFalse);
+    });
+
+    test('a fitting v4 library still builds and reads back', () async {
+      final books = [
+        const CatalogueItem(
+          id: 1,
+          itemUid: 'issue-1',
+          title: 'Row',
+          details: IssueOf(periodicalUid: 'p1', issueNumber: 2),
+        ),
+      ];
+      const series = Periodical(title: 'Frontline', periodicalUid: 'p1');
+      final bytes = await buildOk(
+        books: books,
+        wishlist: const [],
+        periodicals: const [series],
+        workDir: '${tmp.path}/work_fits',
+        exportedAt: 1,
+        identityJson: null,
+        networkJson: null,
+      );
+      final archive = unzip(bytes);
+      expect(entry(archive, 'item_kinds.json'), isNotNull);
+      expect(entry(archive, 'periodicals.json'), isNotNull);
+    });
   });
 }

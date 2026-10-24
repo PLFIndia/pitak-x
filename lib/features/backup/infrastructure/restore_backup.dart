@@ -367,6 +367,7 @@ final class RestoreBackup {
           periodicalsRestored: legacy.periodicals.length,
           issuesLinked: applied.issuesLinked,
           issuesDetached: applied.issuesDetached,
+          issueEntriesDropped: applied.issueEntriesDropped,
           rowsSkippedUnknownKind: applied.rowsSkippedUnknownKind,
           periodicalsDropped: applied.periodicalsDropped,
           itemKindsInvalid: manifest.hasItemKinds && extras.itemKinds == null,

@@ -16,6 +16,12 @@ final class ImportBundle {
   final Map<String, Uint8List> covers;
 
   /// Validates references before any persistence, including wishlist covers.
+  ///
+  /// The result is LOSSLESS (S5, H4): every collection the parser produced —
+  /// items, magazine titles and wishlist rows — plus the parser's warnings
+  /// travels on to the importer. Dropping `periodicals` here (the pre-S5 bug)
+  /// turned a v4 bundle into a books-and-wishlist import, so every issue lost
+  /// its series and restored as a book.
   static Either<Failure, ImportBundle> validate(
     ImportPayload payload,
     Map<String, Uint8List> covers,
@@ -26,6 +32,10 @@ final class ImportBundle {
     final referenced = <String>{};
     for (final ref in [
       ...payload.items.map((b) => b.coverUrl),
+      // A series cover is an image reference like any other: it must be
+      // backed by bundled bytes and it counts as a referenced leaf, or the
+      // unreferenced-cover check below would reject the bundle's own art.
+      ...payload.periodicals.map((p) => p.coverUrl),
       ...payload.wishlist.map((b) => b.coverUrl),
     ]) {
       if (!CoverPaths.isLocal(ref)) continue;
@@ -50,7 +60,12 @@ final class ImportBundle {
       ImportBundle._(
         ImportPayload(
           items: List.unmodifiable(payload.items),
+          periodicals: List.unmodifiable(payload.periodicals),
           wishlist: List.unmodifiable(payload.wishlist),
+          // `parseErrors` stays empty: a payload carrying any is refused
+          // above. Warnings are adjustments already applied to kept rows —
+          // the summary must keep reporting them.
+          warnings: List.unmodifiable(payload.warnings),
         ),
         Map.unmodifiable(
           covers.map(

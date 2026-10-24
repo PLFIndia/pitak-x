@@ -99,7 +99,12 @@ class CreateBackupUseCase {
       // N10-c: the builder runs on a worker isolate; awaiting here keeps the
       // UI isolate free while the archive is assembled. The two JSON strings
       // cross the isolate boundary trivially.
-      final bytes = await writer.build(
+      //
+      // S5 (L5): the builder can now refuse — `BackupTooLargeFailure` when the
+      // catalogue does not fit the format the RESTORE reader accepts. That is
+      // an expected failure, so it travels as a Left instead of an exception,
+      // and no archive is produced.
+      final built = await writer.build(
         books: allBooks,
         wishlist: allWishlist,
         periodicals: [for (final s in allPeriodicals) s.periodical],
@@ -108,8 +113,8 @@ class CreateBackupUseCase {
         identityJson: identityJson,
         networkJson: networkJson,
       );
-      return right(
-        CreateBackupResult(
+      return built.map(
+        (bytes) => CreateBackupResult(
           bytes: bytes,
           includesIdentity: identityJson != null,
           includesNetwork: networkJson != null,
