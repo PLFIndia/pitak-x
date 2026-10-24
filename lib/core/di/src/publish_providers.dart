@@ -103,12 +103,12 @@ RemoteCoverFetcher remoteCoverFetcher(RemoteCoverFetcherRef ref) {
   };
 }
 
-/// Materialises a book's allow-listed remote cover as a local file (M09),
-/// through the same bounded download publishing uses and the same cover store
-/// / janitor a photo replace uses.
+/// Materialises an item or periodical's allow-listed remote cover as a local
+/// file, through the same bounded download publishing uses and the same cover
+/// store / janitor a photo replace uses.
 ///
 /// N11 D4-b: a refused download is reported here as ONE debug-build log line
-/// carrying the book id and the coarse [CoverRefusal] — never the URL or host
+/// carrying the typed owner and coarse [CoverRefusal] — never the URL or host
 /// (AGENTS.md §6.2). `kDebugMode` makes it a no-op in release builds; no
 /// telemetry (§3.4). The composition root owns the Flutter import so the
 /// application layer stays framework-free.
@@ -117,15 +117,20 @@ Future<MaterializeRemoteCoverUseCase> materializeRemoteCoverUseCase(
   MaterializeRemoteCoverUseCaseRef ref,
 ) async {
   final books = await ref.watch(catalogueItemRepositoryProvider.future);
+  final periodicals = await ref.watch(periodicalRepositoryProvider.future);
   final files = await ref.watch(coverStoreProvider.future);
   final janitor = await ref.watch(coverFileJanitorProvider.future);
   return MaterializeRemoteCoverUseCase(
     books: books,
+    periodicals: periodicals,
     files: files,
     download: ref.watch(boundedCoverDownloadProvider),
     releaseReference: janitor.releaseReference,
-    onRefused: (bookId, reason) {
-      appLog('remote cover: book $bookId refused (${reason.name})');
+    onRefused: (owner, reason) {
+      appLog(
+        'remote cover: ${owner.kind.name} ${owner.id} refused '
+        '(${reason.name})',
+      );
     },
   );
 }

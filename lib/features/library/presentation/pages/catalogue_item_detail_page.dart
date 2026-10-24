@@ -35,10 +35,12 @@ import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/features/library/application/book_cover_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_actions.dart';
 import 'package:pitaka/features/library/presentation/widgets/detail_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/item_details_section.dart';
+import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
@@ -316,10 +318,7 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
           imageQuality: 90,
         ),
       );
-      if (shot == null) {
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
+      if (!mounted || shot == null) return;
       // Free-crop step: let the user frame the cover. A null result means the
       // user cancelled the crop — abort the whole capture (nothing is saved).
       final cropped = await suppressor.guard(
@@ -342,11 +341,9 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
           ],
         ),
       );
-      if (cropped == null) {
-        if (mounted) setState(() => _busy = false);
-        return;
-      }
+      if (!mounted || cropped == null) return;
       final raw = await cropped.readAsBytes();
+      if (!mounted) return;
       // The testable pipeline (downscale → store → persist → refresh) lives
       // in the application layer (§7 "no business logic in widgets"); the
       // widget only owns the plugin calls above and renders the outcome.
@@ -368,19 +365,41 @@ class _EditableCoverState extends ConsumerState<_EditableCover> {
     }
   }
 
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  void _snack(String m) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final issue = widget.book.issue;
+    final periodical = issue == null
+        ? null
+        : ref.watch(periodicalByUidProvider(issue.periodicalUid)).valueOrNull;
+    final coverUrl = IssueCover.resolve(widget.book, periodical);
+    final hasOwnCover = widget.book.coverUrl?.trim().isNotEmpty ?? false;
+    final hasInheritedCover =
+        !hasOwnCover && (periodical?.coverUrl?.trim().isNotEmpty ?? false);
+    final CoverOwner? coverOwner;
+    if (hasInheritedCover) {
+      final uid = periodical?.periodicalUid;
+      // A broken owner-less series must never cause an inherited cover to be
+      // written onto the issue. It remains local display only.
+      coverOwner = uid == null ? null : CoverOwners.periodical(uid);
+    } else {
+      // Own-cover-wins, and Replace cover below ALWAYS stays attached to the
+      // issue even while the preview is using its series fallback.
+      coverOwner = CoverOwners.item(widget.book.id);
+    }
+
     return Column(
       children: [
         ItemCover(
-          // Key on the cover ref so a new capture forces an image reload.
-          key: ValueKey(widget.book.coverUrl),
+          // Key on the resolved ref so a new capture forces an image reload.
+          key: ValueKey(coverUrl),
           title: widget.book.title,
-          coverUrl: widget.book.coverUrl,
-          bookId: widget.book.id,
+          coverUrl: coverUrl,
+          owner: coverOwner,
           width: 120,
           height: 168,
         ),

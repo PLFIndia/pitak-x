@@ -10,6 +10,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -91,6 +93,21 @@ void main() {
     // Summary line: count + newest issue month.
     expect(find.text('2 issues · latest 2026-09'), findsOneWidget);
     expect(find.text('0 issues'), findsNWidgets(3));
+  });
+
+  testWidgets('a remote series row schedules against the periodical owner', (
+    tester,
+  ) async {
+    const remote = 'https://covers.openlibrary.org/b/id/1-L.jpg';
+    final series = periodicals.seed(
+      const Periodical(title: 'Frontline', coverUrl: remote),
+    );
+    await tester.pumpWidget(app());
+    await tester.pumpAndSettle();
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, remote);
+    expect(cover.owner, CoverOwners.periodical(series.periodicalUid!));
   });
 
   testWidgets('shows the empty state when there are no titles', (tester) async {

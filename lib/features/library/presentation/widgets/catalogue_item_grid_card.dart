@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -48,9 +49,16 @@ class CatalogueItemGridCard extends ConsumerWidget {
         .watch(periodicalCoversProvider)
         .maybeWhen(data: (map) => map, orElse: () => const <String, String>{});
     final issue = book.issue;
-    final coverUrl = issue != null && (book.coverUrl?.trim().isEmpty ?? true)
-        ? seriesCovers[issue.periodicalUid]
+    final hasOwnCover = book.coverUrl?.trim().isNotEmpty ?? false;
+    final inheritedUid = issue != null && !hasOwnCover
+        ? issue.periodicalUid
+        : null;
+    final coverUrl = inheritedUid != null
+        ? seriesCovers[inheritedUid]
         : book.coverUrl;
+    final coverOwner = inheritedUid != null
+        ? CoverOwners.periodical(inheritedUid)
+        : CoverOwners.item(book.id);
 
     return InkWell(
       onTap: onTap,
@@ -73,7 +81,7 @@ class CatalogueItemGridCard extends ConsumerWidget {
                         child: ItemCover(
                           title: book.title,
                           coverUrl: coverUrl,
-                          bookId: book.id,
+                          owner: coverOwner,
                           width: double.infinity,
                           height: double.infinity,
                         ),

@@ -7,6 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/cover_file_janitor.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/cover_store.dart';
@@ -20,7 +21,7 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 /// N08 / N11 D4-b: the composition root wires the refused-cover diagnostic.
 /// This exercises the REAL `materializeRemoteCoverUseCaseProvider` with only
 /// the network port replaced, and captures `debugPrint` to prove the line
-/// carries the book id + reason and NOT the URL (AGENTS.md §6.2).
+/// carries the typed owner + reason and NOT the URL (AGENTS.md §6.2).
 void main() {
   const url = 'https://covers.openlibrary.org/b/id/424242-L.jpg';
   late Directory tmp;
@@ -45,6 +46,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+        periodicalRepositoryProvider.overrideWith(
+          (ref) async => _NoPeriodicals(),
+        ),
         coverStoreProvider.overrideWith((ref) async => store),
         coverFileJanitorProvider.overrideWith(
           (ref) async => CoverFileJanitor(
@@ -63,28 +67,23 @@ void main() {
     return container;
   }
 
-  test(
-    'a refused download logs the book id and reason, never the URL',
-    () async {
-      final repo = _OneBookRepo(
-        const CatalogueItem(id: 42, title: 'Dune', coverUrl: url),
-      );
-      final c = make(repo, const CoverRefused(CoverRefusal.redirectRefused));
+  test('a refusal logs the item owner and reason, never the URL', () async {
+    final repo = _OneBookRepo(
+      const CatalogueItem(id: 42, title: 'Dune', coverUrl: url),
+    );
+    final c = make(repo, const CoverRefused(CoverRefusal.redirectRefused));
 
-      final useCase = await c.read(
-        materializeRemoteCoverUseCaseProvider.future,
-      );
-      final result = await useCase(42);
+    final useCase = await c.read(materializeRemoteCoverUseCaseProvider.future);
+    final result = await useCase(CoverOwners.item(42), url);
 
-      expect(result.isLeft(), isTrue);
-      expect(printed, hasLength(1));
-      expect(printed.single, contains('42'));
-      expect(printed.single, contains('redirectRefused'));
-      expect(printed.single, isNot(contains('openlibrary')));
-      expect(printed.single, isNot(contains('424242')));
-      expect(printed.single, isNot(contains('https')));
-    },
-  );
+    expect(result.isLeft(), isTrue);
+    expect(printed, hasLength(1));
+    expect(printed.single, contains('42'));
+    expect(printed.single, contains('redirectRefused'));
+    expect(printed.single, isNot(contains('openlibrary')));
+    expect(printed.single, isNot(contains('424242')));
+    expect(printed.single, isNot(contains('https')));
+  });
 
   test('a successful download logs nothing', () async {
     final repo = _OneBookRepo(
@@ -93,7 +92,7 @@ void main() {
     final c = make(repo, const CoverFetched([1, 2, 3]));
 
     final useCase = await c.read(materializeRemoteCoverUseCaseProvider.future);
-    final result = await useCase(42);
+    final result = await useCase(CoverOwners.item(42), url);
 
     expect(result.isRight(), isTrue);
     expect(printed, isEmpty);

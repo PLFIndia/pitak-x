@@ -31,6 +31,7 @@ class FormCoverField extends ConsumerStatefulWidget {
     required this.title,
     required this.coverRef,
     required this.onChanged,
+    required this.onBusyChanged,
     super.key,
   });
 
@@ -44,6 +45,10 @@ class FormCoverField extends ConsumerStatefulWidget {
   /// user removes the cover. The parent form stores it in its state.
   final ValueChanged<String?> onChanged;
 
+  /// Reports the whole capture/crop/store pending interval so the parent can
+  /// keep Save disabled until the selected reference actually exists.
+  final ValueChanged<bool> onBusyChanged;
+
   @override
   ConsumerState<FormCoverField> createState() => _FormCoverFieldState();
 }
@@ -52,7 +57,7 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
   bool _busy = false;
 
   Future<void> _capture() async {
-    setState(() => _busy = true);
+    _setBusy(true);
     try {
       // Suppress the app lock for the camera + crop activities: each launches
       // a separate OS activity that backgrounds us, which would otherwise
@@ -65,7 +70,7 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
           imageQuality: 90,
         ),
       );
-      if (shot == null) return;
+      if (!mounted || shot == null) return;
       // Free-crop step: let the user frame the cover. A null result means the
       // user cancelled the crop — abort the whole capture (nothing is saved).
       final cropped = await suppressor.guard(
@@ -88,8 +93,9 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
           ],
         ),
       );
-      if (cropped == null) return;
+      if (!mounted || cropped == null) return;
       final raw = await cropped.readAsBytes();
+      if (!mounted) return;
       final result = await ref
           .read(formCoverControllerProvider.notifier)
           .storeCapture(raw);
@@ -105,8 +111,16 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
       // Plugin (camera/crop) failure only — pipeline errors are typed above.
       _snack('Could not capture a photo.');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      _setBusy(false);
     }
+  }
+
+  /// Keeps the child progress indicator and parent Save gate in sync. A late
+  /// async completion after route disposal must not call either State object.
+  void _setBusy(bool value) {
+    if (!mounted || _busy == value) return;
+    setState(() => _busy = value);
+    widget.onBusyChanged(value);
   }
 
   void _snack(String message) {
@@ -122,7 +136,7 @@ class _FormCoverFieldState extends ConsumerState<FormCoverField> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // No bookId: a form cover is always a LOCAL stored reference (or
+        // No owner: a form cover is always a LOCAL stored reference (or
         // none), so the remote-materialisation path never applies.
         ItemCover(
           // Key on the ref so a new capture forces an image reload.

@@ -11,12 +11,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
 
 import '../../support/a11y.dart';
+import '../../support/cover_capture_fakes.dart';
 import '../periodicals/application/periodical_fakes.dart';
 
 void main() {
@@ -28,11 +32,14 @@ void main() {
 
   /// Hosts the form ABOVE a home route so the pop after a successful save is
   /// observable.
-  Widget app({CatalogueItem? edit}) {
+  Widget app({CatalogueItem? edit, CoverCaptureFakes? coverFakes}) {
     return ProviderScope(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => items),
         settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        coversDirProvider.overrideWith((ref) async => '.'),
+        if (coverFakes != null)
+          formCoverControllerProvider.overrideWith(() => coverFakes.controller),
         // Deterministic language list for the shared field.
         libraryLanguagesProvider.overrideWith((ref) async => ['English']),
       ],
@@ -62,9 +69,13 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  Future<void> openForm(WidgetTester tester, {CatalogueItem? edit}) async {
+  Future<void> openForm(
+    WidgetTester tester, {
+    CatalogueItem? edit,
+    CoverCaptureFakes? coverFakes,
+  }) async {
     useBigSurface(tester);
-    await tester.pumpWidget(app(edit: edit));
+    await tester.pumpWidget(app(edit: edit, coverFakes: coverFakes));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -163,6 +174,61 @@ void main() {
     );
   });
 
+  testWidgets('edit: an untouched cover follows a background replacement and '
+      'Save preserves the new reference', (tester) async {
+    final existing = items.seed(
+      const CatalogueItem(
+        title: 'Chess set',
+        coverUrl: 'covers/old.jpg',
+        details: OtherItemOf(),
+      ),
+    );
+    await openForm(tester, edit: existing);
+
+    items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
+    ProviderScope.containerOf(
+      tester.element(find.byType(OtherItemFormPage)),
+    ).invalidate(libraryControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,
+      'covers/new.jpg',
+      reason: 'an untouched form shows the current row cover',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Description'),
+      'Edited while the cover completed',
+    );
+    await save(tester);
+
+    expect(items.rows[existing.id]!.coverUrl, 'covers/new.jpg');
+  });
+
+  testWidgets('edit: a deliberate cover removal is not overwritten by a '
+      'background replacement', (tester) async {
+    final existing = items.seed(
+      const CatalogueItem(
+        title: 'Chess set',
+        coverUrl: 'covers/old.jpg',
+        details: OtherItemOf(),
+      ),
+    );
+    await openForm(tester, edit: existing);
+    await tester.tap(find.text('Remove cover'));
+    await tester.pump();
+
+    items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
+    ProviderScope.containerOf(
+      tester.element(find.byType(OtherItemFormPage)),
+    ).invalidate(libraryControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl, isNull);
+    await save(tester);
+    expect(items.rows[existing.id]!.coverUrl, isNull);
+  });
+
   testWidgets('a repository failure renders the shared wording (noun: item)', (
     tester,
   ) async {
@@ -187,6 +253,52 @@ void main() {
   ) async {
     await openForm(tester);
     expect(find.text('Add cover'), findsOneWidget);
+  });
+
+  testWidgets('edit: Save stays gated through picker, crop, and cover '
+      'storage, then saves the selected reference', (tester) async {
+    final coverFakes = installCoverCaptureFakes();
+    final existing = items.seed(
+      const CatalogueItem(
+        title: 'Chess set',
+        coverUrl: 'covers/old.jpg',
+        details: OtherItemOf(),
+      ),
+    );
+    await openForm(tester, edit: existing, coverFakes: coverFakes);
+    final saveButton = find.byType(FilledButton);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+
+    await tester.tap(find.text('Replace cover'));
+    await tester.pump();
+    await coverFakes.pickerGate.entered;
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishPicker();
+    await tester.pump();
+    await coverFakes.cropperGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishCropper();
+    await tester.pump();
+    await coverFakes.storeGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+    await tester.tap(saveButton);
+    await tester.pump();
+    expect(items.updated, isEmpty);
+    expect(find.byType(OtherItemFormPage), findsOneWidget);
+
+    coverFakes.finishStore('covers/selected.jpg');
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await save(tester);
+
+    expect(items.rows[existing.id]!.coverUrl, 'covers/selected.jpg');
+    expect(coverFakes.picker.calls, 1);
+    expect(coverFakes.cropper.calls, 1);
+    expect(coverFakes.controller.calls, 1);
   });
 
   testWidgets('Date added keeps instant picker semantics', (tester) async {

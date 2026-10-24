@@ -10,6 +10,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -29,10 +30,11 @@ final _onePxPng = Uint8List.fromList([
 /// does IO (fetch + file write + DB update); the widget's only contract is
 /// "ask once for a fetchable cover", which is what these tests pin.
 class _RecordingMaterializer extends RemoteCoverMaterializer {
-  final List<int> requested = [];
+  final List<({CoverOwner owner, String coverUrl})> requested = [];
 
   @override
-  void request(int bookId) => requested.add(bookId);
+  void request(CoverOwner owner, String coverUrl) =>
+      requested.add((owner: owner, coverUrl: coverUrl));
 }
 
 /// Settings repo for the consent-flip tests: loads a fixed snapshot and
@@ -62,11 +64,14 @@ class _SettingsRepo implements SettingsRepository {
 const _allowListed = 'https://covers.openlibrary.org/b/id/1-L.jpg';
 const _attacker = 'https://example.com/c.jpg';
 
+({CoverOwner owner, String coverUrl}) _request(int bookId) =>
+    (owner: CoverOwners.item(bookId), coverUrl: _allowListed);
+
 Widget _host(
   String coversDir, {
   required String? coverUrl,
   required _RecordingMaterializer materializer,
-  int? bookId,
+  CoverOwner? owner,
   _SettingsRepo? settings,
 }) {
   return ProviderScope(
@@ -78,7 +83,7 @@ Widget _host(
     ],
     child: MaterialApp(
       home: Scaffold(
-        body: ItemCover(title: 'Hobbit', coverUrl: coverUrl, bookId: bookId),
+        body: ItemCover(title: 'Hobbit', coverUrl: coverUrl, owner: owner),
       ),
     ),
   );
@@ -117,7 +122,7 @@ void main() {
       _host(
         tmp.path,
         coverUrl: _allowListed,
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
       ),
     );
@@ -132,7 +137,7 @@ void main() {
       _host(
         tmp.path,
         coverUrl: _allowListed,
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
       ),
     );
@@ -141,7 +146,25 @@ void main() {
     // widget should not spam it on every frame).
     await tester.pump();
     await tester.pump();
-    expect(materializer.requested, [7]);
+    expect(materializer.requested, [_request(7)]);
+  });
+
+  testWidgets('a periodical owner and its URL reach the scheduler together', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        tmp.path,
+        coverUrl: _allowListed,
+        owner: CoverOwners.periodical('per-1'),
+        materializer: materializer,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(materializer.requested, [
+      (owner: CoverOwners.periodical('per-1'), coverUrl: _allowListed),
+    ]);
   });
 
   testWidgets('D-2 (device-found, Session 13): a row already on screen asks '
@@ -153,14 +176,14 @@ void main() {
       _host(
         tmp.path,
         coverUrl: _allowListed,
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
         settings: settings,
       ),
     );
     await tester.pumpAndSettle();
     // First display asked (the scheduler drops it: consent is off).
-    expect(materializer.requested, [7]);
+    expect(materializer.requested, [_request(7)]);
 
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ItemCover)),
@@ -171,21 +194,30 @@ void main() {
     // The user flips the switch: the row must ask once more.
     await controller.setLoadRemoteCovers(enabled: true);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 7], reason: 'OFF→ON re-asks');
+    expect(materializer.requested, [
+      _request(7),
+      _request(7),
+    ], reason: 'OFF→ON re-asks');
 
     // Unrelated settings writes republish the whole snapshot but must not
     // re-ask (select narrows the listener to the consent bit).
     await controller.setThemeMode(AppThemeMode.dark);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 7], reason: 'theme change is silent');
+    expect(materializer.requested, [
+      _request(7),
+      _request(7),
+    ], reason: 'theme change is silent');
 
     // OFF has nothing new to show; ON again is a fresh edge.
     await controller.setLoadRemoteCovers(enabled: false);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 7], reason: 'ON→OFF is silent');
+    expect(materializer.requested, [
+      _request(7),
+      _request(7),
+    ], reason: 'ON→OFF is silent');
     await controller.setLoadRemoteCovers(enabled: true);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 7, 7]);
+    expect(materializer.requested, [_request(7), _request(7), _request(7)]);
   });
 
   testWidgets('D-2: a recycled row follows its CURRENT book — after it '
@@ -194,16 +226,19 @@ void main() {
     tester,
   ) async {
     final settings = _SettingsRepo(loadRemoteCovers: false);
-    Widget host({required String? coverUrl, required int bookId}) => _host(
-      tmp.path,
-      coverUrl: coverUrl,
-      bookId: bookId,
-      materializer: materializer,
-      settings: settings,
+    Widget host({required String? coverUrl, required CoverOwner owner}) =>
+        _host(
+          tmp.path,
+          coverUrl: coverUrl,
+          owner: owner,
+          materializer: materializer,
+          settings: settings,
+        );
+    await tester.pumpWidget(
+      host(coverUrl: _allowListed, owner: CoverOwners.item(7)),
     );
-    await tester.pumpWidget(host(coverUrl: _allowListed, bookId: 7));
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7]);
+    expect(materializer.requested, [_request(7)]);
     final container = ProviderScope.containerOf(
       tester.element(find.byType(ItemCover)),
     );
@@ -211,31 +246,37 @@ void main() {
     final controller = container.read(settingsControllerProvider.notifier);
 
     // Same State, recycled for a book with a LOCAL cover: nothing pending.
-    await tester.pumpWidget(host(coverUrl: 'covers/x.jpg', bookId: 8));
+    await tester.pumpWidget(
+      host(coverUrl: 'covers/x.jpg', owner: CoverOwners.item(8)),
+    );
     await tester.pumpAndSettle();
     await controller.setLoadRemoteCovers(enabled: true);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7], reason: 'local cover: flip ignored');
+    expect(materializer.requested, [
+      _request(7),
+    ], reason: 'local cover: flip ignored');
 
     // Recycled again for a fetchable book while consent is ON: asks on the
     // recycle itself, and a later OFF→ON edge asks for THAT id, not 7.
-    await tester.pumpWidget(host(coverUrl: _allowListed, bookId: 9));
+    await tester.pumpWidget(
+      host(coverUrl: _allowListed, owner: CoverOwners.item(9)),
+    );
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 9]);
+    expect(materializer.requested, [_request(7), _request(9)]);
     await controller.setLoadRemoteCovers(enabled: false);
     await controller.setLoadRemoteCovers(enabled: true);
     await tester.pumpAndSettle();
-    expect(materializer.requested, [7, 9, 9]);
+    expect(materializer.requested, [_request(7), _request(9), _request(9)]);
   });
 
   testWidgets('D-2: a row whose cover is NOT fetchable ignores the consent '
-      'flip (attacker host / no bookId stay silent)', (tester) async {
+      'flip (attacker host / no owner stay silent)', (tester) async {
     final settings = _SettingsRepo(loadRemoteCovers: false);
     await tester.pumpWidget(
       _host(
         tmp.path,
         coverUrl: _attacker,
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
         settings: settings,
       ),
@@ -261,7 +302,7 @@ void main() {
       _host(
         tmp.path,
         coverUrl: _attacker,
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
       ),
     );
@@ -275,7 +316,7 @@ void main() {
       _host(
         tmp.path,
         coverUrl: 'http://covers.openlibrary.org/b/id/1-L.jpg',
-        bookId: 7,
+        owner: CoverOwners.item(7),
         materializer: materializer,
       ),
     );
@@ -284,7 +325,7 @@ void main() {
     expect(materializer.requested, isEmpty);
   });
 
-  testWidgets('remote cover without a bookId cannot be materialised and just '
+  testWidgets('remote cover without an owner cannot be materialised and just '
       'shows the placeholder', (tester) async {
     await tester.pumpWidget(
       _host(tmp.path, coverUrl: _allowListed, materializer: materializer),

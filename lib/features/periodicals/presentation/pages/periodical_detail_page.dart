@@ -35,6 +35,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
@@ -229,6 +230,9 @@ class _SeriesDetailBody extends ConsumerWidget {
                         key: ValueKey(periodical.coverUrl),
                         title: periodical.title,
                         coverUrl: periodical.coverUrl,
+                        owner: periodical.periodicalUid == null
+                            ? null
+                            : CoverOwners.periodical(periodical.periodicalUid!),
                         width: 120,
                         height: 168,
                       ),

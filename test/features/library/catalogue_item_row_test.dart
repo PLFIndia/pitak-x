@@ -5,6 +5,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
@@ -186,6 +187,7 @@ void main() {
       await tester.pumpAndSettle();
       // The rendered cover widget was given the issue's OWN reference.
       expect(rowCover(tester).coverUrl, 'covers/own.jpg');
+      expect(rowCover(tester).owner, CoverOwners.item(0));
     });
 
     testWidgets('an issue with NO cover falls back to the series cover', (
@@ -210,6 +212,11 @@ void main() {
       await tester.pumpAndSettle();
       // W4 fallback: the series cover stands in for the issue.
       expect(rowCover(tester).coverUrl, 'covers/series.jpg');
+      expect(
+        rowCover(tester).owner,
+        CoverOwners.periodical('per-1'),
+        reason: 'an inherited cover remains periodical-owned',
+      );
     });
   });
 }

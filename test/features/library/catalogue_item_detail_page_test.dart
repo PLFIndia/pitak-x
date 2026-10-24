@@ -8,8 +8,10 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
@@ -327,6 +329,126 @@ void main() {
     expect(find.byTooltip('Edit'), findsNothing);
     expect(find.byTooltip('Remove from library'), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('L2: issue detail renders the local series cover when the '
+      'issue has none', (tester) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: 'covers/series.png',
+        ),
+      );
+    File('${tmp.path}/series.png').writeAsBytesSync(_onePxPng);
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, 'covers/series.png');
+    expect(cover.owner, CoverOwners.periodical('per-1'));
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('issue detail keeps an inherited REMOTE cover periodical-owned', (
+    tester,
+  ) async {
+    const remote = 'https://covers.openlibrary.org/b/id/1-L.jpg';
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: remote,
+        ),
+      );
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => FakeSettings(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, remote);
+    expect(cover.owner, CoverOwners.periodical('per-1'));
+    expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('issue detail keeps its own cover ahead of the series cover', (
+    tester,
+  ) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      coverUrl: 'covers/own.png',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: 'covers/series.png',
+        ),
+      );
+    File('${tmp.path}/own.png').writeAsBytesSync(_onePxPng);
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, 'covers/own.png');
+    expect(cover.owner, CoverOwners.item(7));
+    expect(find.byType(Image), findsOneWidget);
   });
 
   testWidgets('D8: an issue row edits through the ISSUE form, never the '

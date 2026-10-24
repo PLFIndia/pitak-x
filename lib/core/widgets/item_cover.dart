@@ -7,13 +7,13 @@
 /// **Display is local-only (M09).** A remote `https://` cover reference is a
 /// *pending download*, never an image this widget streams from the network.
 /// When such a reference is on an allow-listed host (`CoverUrlAllowList`) and
-/// the caller supplied the book's id, the widget asks the session-wide
+/// the caller supplied the persisted owner, the widget asks the session-wide
 /// `RemoteCoverMaterializer` — once, after the frame — to download it. That
 /// scheduler holds the consent gate (the Settings "Load cover images from the
-/// internet" switch, default off), the once-per-book rule and the bounded
-/// fetch; on success the book's row is rewritten to a local file and the list
-/// refreshes, so this widget then renders it like any photo cover. Anything
-/// not allow-listed (any other host, `http://`) shows the placeholder and is
+/// internet" switch, default off), the once-per-(owner, URL) rule and the
+/// bounded fetch; on success the owner's row is rewritten to a local file and
+/// the affected lists refresh, so this widget then renders it like any photo
+/// cover. Anything not allow-listed (any other host, `http://`) shows the placeholder and is
 /// never requested.
 ///
 /// **Consent turning on re-asks (Session 13, device-found).** The request is
@@ -23,8 +23,8 @@
 /// neither re-created nor given a different book — so nothing asked again and
 /// the switch looked broken until a book was opened or the app restarted.
 /// Each cover therefore also listens to the consent bit and asks once more on
-/// the OFF→ON edge; the scheduler's once-per-book rule keeps that at a single
-/// download.
+/// the OFF→ON edge; the scheduler's once-per-(owner, URL) rule keeps that at
+/// a single download.
 ///
 /// Cover classification + safe leaf extraction reuse [CoverPaths] (the single
 /// source of truth, with zip-slip / traversal defence), so this widget does no
@@ -39,6 +39,7 @@ import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/application/remote_cover_materializer.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
@@ -46,12 +47,12 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 class ItemCover extends ConsumerStatefulWidget {
   /// Creates a cover for [title], rendering [coverUrl] when it is a local file.
   ///
-  /// [bookId] lets an allow-listed remote cover be materialised for that row;
-  /// without it a remote reference simply shows the placeholder.
+  /// [owner] lets an allow-listed remote cover be materialised for that
+  /// persisted row; without it a remote reference simply shows the placeholder.
   const ItemCover({
     required this.title,
     required this.coverUrl,
-    this.bookId,
+    this.owner,
     this.width = 40,
     this.height = 56,
     super.key,
@@ -63,9 +64,9 @@ class ItemCover extends ConsumerStatefulWidget {
   /// Cover reference (`covers/<uuid>.jpg`, `file://…`, `https://…`, or null).
   final String? coverUrl;
 
-  /// Persisted id of the book this cover belongs to (null when unknown, e.g.
-  /// a not-yet-saved form preview).
-  final int? bookId;
+  /// Persisted item or periodical that owns this cover. Null for local-only
+  /// display, such as a not-yet-saved form preview.
+  final CoverOwner? owner;
 
   /// Thumbnail width.
   final double width;
@@ -93,19 +94,21 @@ class _ItemCoverState extends ConsumerState<ItemCover> {
   @override
   void didUpdateWidget(ItemCover old) {
     super.didUpdateWidget(old);
-    // A list row is recycled for a different book: ask again for the new one.
-    if (old.coverUrl != widget.coverUrl || old.bookId != widget.bookId) {
+    // A list row is recycled for a different owner or URL: ask again for the
+    // new pair. Structural owner equality keeps an ordinary rebuild silent.
+    if (old.coverUrl != widget.coverUrl || old.owner != widget.owner) {
       _syncPendingDownload();
     }
   }
 
-  /// The book id whose cover is a fetchable remote reference, or null when
-  /// there is nothing to download (blank, local file, unsafe host, no id).
-  int? get _pendingBookId {
-    final id = widget.bookId;
-    if (id == null) return null;
-    if (CoverUrlAllowList.remoteHttpsOf(widget.coverUrl) == null) return null;
-    return id;
+  /// The owner and allow-listed URL awaiting download, or null when there is
+  /// nothing to fetch (blank, local file, unsafe host, or local-only display).
+  ({CoverOwner owner, String coverUrl})? get _pendingRequest {
+    final owner = widget.owner;
+    if (owner == null) return null;
+    final url = CoverUrlAllowList.remoteHttpsOf(widget.coverUrl);
+    if (url == null) return null;
+    return (owner: owner, coverUrl: url);
   }
 
   /// Asks the scheduler for a fetchable cover and keeps (or drops) the
@@ -113,23 +116,23 @@ class _ItemCoverState extends ConsumerState<ItemCover> {
   /// all, so a plain local/blank cover can render without a ProviderScope
   /// and the ordinary row pays nothing for this.
   void _syncPendingDownload() {
-    final id = _pendingBookId;
-    if (id == null) {
+    final pending = _pendingRequest;
+    if (pending == null) {
       _consentSubscription?.close();
       _consentSubscription = null;
       return;
     }
-    _requestMaterialization(id);
+    _requestMaterialization(pending);
     // `listenManual` is the initState-safe listener. Narrowed with `select` so
     // unrelated settings writes (theme, sort, …) never reach this callback;
     // `null` = settings unknown/loading, so only a real false→true flip
     // re-asks. One subscription per State — re-syncs for a recycled row
-    // reuse it; the callback reads the CURRENT widget's pending id.
+    // reuse it; the callback reads the CURRENT widget's pending request.
     _consentSubscription ??= ref.listenManual(
       settingsControllerProvider.select((s) => s.valueOrNull?.loadRemoteCovers),
       (previous, next) {
         if ((previous, next) case (false, true)) {
-          final current = _pendingBookId;
+          final current = _pendingRequest;
           if (current != null) _requestMaterialization(current);
         }
       },
@@ -137,12 +140,16 @@ class _ItemCoverState extends ConsumerState<ItemCover> {
   }
 
   /// Side effects stay out of `build` (§7): the request is scheduled once per
-  /// (bookId, coverUrl) from a lifecycle hook, after the frame, so a rebuild
+  /// (owner, coverUrl) from a lifecycle hook, after the frame, so a rebuild
   /// storm cannot turn into a request storm. The scheduler dedups as well.
-  void _requestMaterialization(int id) {
+  void _requestMaterialization(({CoverOwner owner, String coverUrl}) request) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(remoteCoverMaterializerProvider.notifier).request(id);
+      // A post-frame callback can outlive the row it was created for. Do not
+      // send an old URL after the widget has already moved to another cover.
+      if (!mounted || _pendingRequest != request) return;
+      ref
+          .read(remoteCoverMaterializerProvider.notifier)
+          .request(request.owner, request.coverUrl);
     });
   }
 

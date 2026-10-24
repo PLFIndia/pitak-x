@@ -18,6 +18,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
@@ -122,10 +123,15 @@ class _PeriodicalRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
-            // No remote materialisation for a series cover (there is no
-            // item row to rewrite); a non-local reference renders the
-            // placeholder — cover capture lands with the S16 form.
-            ItemCover(title: periodical.title, coverUrl: periodical.coverUrl),
+            // A remote series cover is materialised against the periodical
+            // itself; issues may inherit it without becoming its owner.
+            ItemCover(
+              title: periodical.title,
+              coverUrl: periodical.coverUrl,
+              owner: periodical.periodicalUid == null
+                  ? null
+                  : CoverOwners.periodical(periodical.periodicalUid!),
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

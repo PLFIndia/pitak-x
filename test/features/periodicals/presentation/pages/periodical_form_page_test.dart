@@ -9,11 +9,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 
 import '../../../../support/a11y.dart';
+import '../../../../support/cover_capture_fakes.dart';
 import '../../application/periodical_fakes.dart';
 
 void main() {
@@ -27,12 +31,19 @@ void main() {
 
   /// Hosts the form ABOVE a home route so the pop after a successful save is
   /// observable.
-  Widget app({Periodical? edit, String? initialIssn}) {
+  Widget app({
+    Periodical? edit,
+    String? initialIssn,
+    CoverCaptureFakes? coverFakes,
+  }) {
     return ProviderScope(
       overrides: [
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         catalogueItemRepositoryProvider.overrideWith((ref) async => items),
         settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        coversDirProvider.overrideWith((ref) async => '.'),
+        if (coverFakes != null)
+          formCoverControllerProvider.overrideWith(() => coverFakes.controller),
         // Deterministic language list for the shared field.
         libraryLanguagesProvider.overrideWith((ref) async => ['English']),
         nowTickProvider.overrideWith((ref) => 0),
@@ -66,9 +77,13 @@ void main() {
     addTearDown(tester.view.reset);
   }
 
-  Future<void> openForm(WidgetTester tester, {Periodical? edit}) async {
+  Future<void> openForm(
+    WidgetTester tester, {
+    Periodical? edit,
+    CoverCaptureFakes? coverFakes,
+  }) async {
     useBigSurface(tester);
-    await tester.pumpWidget(app(edit: edit));
+    await tester.pumpWidget(app(edit: edit, coverFakes: coverFakes));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -220,6 +235,57 @@ void main() {
     );
   });
 
+  testWidgets('edit: an untouched cover follows a background replacement and '
+      'Save preserves the new reference', (tester) async {
+    final existing = periodicals.seed(
+      const Periodical(title: 'Frontline', coverUrl: 'covers/old.jpg'),
+    );
+    await openForm(tester, edit: existing);
+
+    periodicals.rows[existing.id] = existing.copyWith(
+      coverUrl: 'covers/new.jpg',
+    );
+    ProviderScope.containerOf(
+      tester.element(find.byType(PeriodicalFormPage)),
+    ).invalidate(periodicalsControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,
+      'covers/new.jpg',
+      reason: 'an untouched form shows the current series cover',
+    );
+    await tester.enterText(
+      find.widgetWithText(TextField, 'Publisher'),
+      'THG Publishing',
+    );
+    await save(tester);
+
+    expect(periodicals.rows[existing.id]!.coverUrl, 'covers/new.jpg');
+  });
+
+  testWidgets('edit: a deliberate cover removal is not overwritten by a '
+      'background replacement', (tester) async {
+    final existing = periodicals.seed(
+      const Periodical(title: 'Frontline', coverUrl: 'covers/old.jpg'),
+    );
+    await openForm(tester, edit: existing);
+    await tester.tap(find.text('Remove cover'));
+    await tester.pump();
+
+    periodicals.rows[existing.id] = existing.copyWith(
+      coverUrl: 'covers/new.jpg',
+    );
+    ProviderScope.containerOf(
+      tester.element(find.byType(PeriodicalFormPage)),
+    ).invalidate(periodicalsControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl, isNull);
+    await save(tester);
+    expect(periodicals.rows[existing.id]!.coverUrl, isNull);
+  });
+
   testWidgets('the scanned-ISSN route pre-fills the ISSN field (D11)', (
     tester,
   ) async {
@@ -249,6 +315,48 @@ void main() {
   ) async {
     await openForm(tester);
     expect(find.text('Add cover'), findsOneWidget);
+  });
+
+  testWidgets('edit: Save stays gated through picker, crop, and cover '
+      'storage, then saves the selected reference', (tester) async {
+    final coverFakes = installCoverCaptureFakes();
+    final existing = periodicals.seed(
+      const Periodical(title: 'Frontline', coverUrl: 'covers/old.jpg'),
+    );
+    await openForm(tester, edit: existing, coverFakes: coverFakes);
+    final saveButton = find.byType(FilledButton);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+
+    await tester.tap(find.text('Replace cover'));
+    await tester.pump();
+    await coverFakes.pickerGate.entered;
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishPicker();
+    await tester.pump();
+    await coverFakes.cropperGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishCropper();
+    await tester.pump();
+    await coverFakes.storeGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+    await tester.tap(saveButton);
+    await tester.pump();
+    expect(periodicals.rows[existing.id]!.coverUrl, 'covers/old.jpg');
+    expect(find.byType(PeriodicalFormPage), findsOneWidget);
+
+    coverFakes.finishStore('covers/selected.jpg');
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await save(tester);
+
+    expect(periodicals.rows[existing.id]!.coverUrl, 'covers/selected.jpg');
+    expect(coverFakes.picker.calls, 1);
+    expect(coverFakes.cropper.calls, 1);
+    expect(coverFakes.controller.calls, 1);
   });
 
   testWidgets('subscription date pick/display round-trip stays on one day', (

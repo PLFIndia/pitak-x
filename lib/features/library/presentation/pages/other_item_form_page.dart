@@ -24,6 +24,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -66,6 +67,13 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
   /// `covers/<uuid>.jpg` from the form-cover pipeline, or the item's existing
   /// cover in edit mode). Null = no cover.
   String? _coverRef;
+
+  /// Only a deliberate capture/remove makes the form's cover authoritative.
+  /// Until then the observed current row owns the value, including null.
+  bool _coverDirty = false;
+
+  /// True through picker, crop, downscale, and storage; Save must wait.
+  bool _coverPending = false;
 
   bool get _isEdit => widget.item != null;
 
@@ -137,7 +145,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
       publishedYear: base?.publishedYear,
       genre: base?.genre,
       pageCount: base?.pageCount,
-      coverUrl: _coverRef,
+      coverUrl: _coverDirty ? _coverRef : base?.coverUrl,
       language: _trimToNull(_language),
       notes: _trimToNull(_description),
       location: _trimToNull(_location),
@@ -159,6 +167,9 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
   }
 
   Future<void> _save() async {
+    // Defence in depth: the button is disabled too, but a programmatic call
+    // must never save before the selected cover has finished storing.
+    if (_coverPending) return;
     if (_title.text.trim().isEmpty) {
       setState(() => _titleError = true);
       return;
@@ -176,8 +187,8 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
         (current) => _buildItem(current, maintainerStamp: stamp),
       );
     }
-    final state = ref.read(addBookControllerProvider);
     if (!mounted) return;
+    final state = ref.read(addBookControllerProvider);
     if (state.hasValue && state.value != null) {
       await ref.read(libraryControllerProvider.notifier).refresh();
       if (mounted) Navigator.of(context).pop();
@@ -188,6 +199,14 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(addBookControllerProvider);
     final saving = state.isLoading;
+    final observed = _isEdit
+        ? ref.watch(catalogueItemByIdProvider(widget.item!.id))
+        : null;
+    final current = observed?.valueOrNull;
+    final displayedCover =
+        !_coverDirty && (observed?.hasValue ?? false) && current != null
+        ? current.coverUrl
+        : _coverRef;
 
     return Scaffold(
       appBar: AppBar(title: Text(_isEdit ? 'Edit item' : 'Add other item')),
@@ -217,8 +236,13 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
             padding: const EdgeInsets.only(bottom: 12),
             child: FormCoverField(
               title: _title.text,
-              coverRef: _coverRef,
-              onChanged: (ref) => setState(() => _coverRef = ref),
+              coverRef: displayedCover,
+              onChanged: (ref) => setState(() {
+                _coverRef = ref;
+                _coverDirty = true;
+              }),
+              onBusyChanged: (pending) =>
+                  setState(() => _coverPending = pending),
             ),
           ),
           // O1: what the item IS goes here — the shared notes column,
@@ -281,6 +305,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
                       current: _addedDate,
                       helpText: 'Date added',
                     );
+                    if (!mounted) return;
                     if (picked != null) setState(() => _addedDate = picked);
                   },
                   child: const Text('Change'),
@@ -290,7 +315,7 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
           ),
           const SizedBox(height: 24),
           FilledButton(
-            onPressed: saving ? null : _save,
+            onPressed: saving || _coverPending ? null : _save,
             child: saving
                 ? const SizedBox(
                     height: 20,

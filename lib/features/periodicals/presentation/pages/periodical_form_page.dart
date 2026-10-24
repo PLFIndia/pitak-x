@@ -20,6 +20,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
@@ -69,6 +70,11 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
   /// `covers/<uuid>.jpg` from the form-cover pipeline, or the series'
   /// existing cover in edit mode). Null = no cover.
   String? _coverRef;
+
+  /// A background replacement updates an untouched form; a deliberate user
+  /// capture/remove wins instead. Save never runs while capture is pending.
+  bool _coverDirty = false;
+  bool _coverPending = false;
 
   /// D5: a subscription is "tracked" exactly when it has an end date. The
   /// switch drives that: on = both dates are picked and saved; off = the
@@ -156,7 +162,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
       issn: _trimToNull(_issn),
       publisher: _trimToNull(_publisher),
       language: _trimToNull(_language),
-      coverUrl: _coverRef,
+      coverUrl: _coverDirty ? _coverRef : base?.coverUrl,
       frequency: _frequency,
       subscriptionStart: _trackSubscription ? _subscriptionStart : null,
       subscriptionEnd: _trackSubscription ? _subscriptionEnd : null,
@@ -175,6 +181,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
   }
 
   Future<void> _save() async {
+    if (_coverPending) return;
     if (_title.text.trim().isEmpty) {
       setState(() => _titleError = true);
       return;
@@ -193,8 +200,8 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
         (current) => _buildPeriodical(current, maintainerStamp: stamp),
       );
     }
-    final state = ref.read(periodicalFormControllerProvider);
     if (!mounted) return;
+    final state = ref.read(periodicalFormControllerProvider);
     // The controller fired both mutation signals itself — only pop.
     if (state.hasValue && state.value != null) {
       Navigator.of(context).pop();
@@ -212,6 +219,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
       current: current,
       helpText: helpText,
     );
+    if (!mounted) return;
     if (picked != null) onPicked(picked);
   }
 
@@ -219,6 +227,14 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
   Widget build(BuildContext context) {
     final state = ref.watch(periodicalFormControllerProvider);
     final saving = state.isLoading;
+    final observed = _isEdit
+        ? ref.watch(periodicalByIdProvider(widget.periodical!.id))
+        : null;
+    final current = observed?.valueOrNull;
+    final displayedCover =
+        !_coverDirty && (observed?.hasValue ?? false) && current != null
+        ? current.coverUrl
+        : _coverRef;
 
     return Scaffold(
       appBar: AppBar(
@@ -263,8 +279,13 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
             padding: const EdgeInsets.only(bottom: 12),
             child: FormCoverField(
               title: _title.text,
-              coverRef: _coverRef,
-              onChanged: (ref) => setState(() => _coverRef = ref),
+              coverRef: displayedCover,
+              onChanged: (ref) => setState(() {
+                _coverRef = ref;
+                _coverDirty = true;
+              }),
+              onBusyChanged: (pending) =>
+                  setState(() => _coverPending = pending),
             ),
           ),
           DropdownButtonFormField<PeriodicalFrequency?>(
@@ -367,6 +388,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
                       current: _addedDate,
                       helpText: 'Date added',
                     );
+                    if (!mounted) return;
                     if (picked != null) setState(() => _addedDate = picked);
                   },
                   child: const Text('Change'),
@@ -378,7 +400,7 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
           FormTextRow(controller: _notes, label: 'Notes', maxLines: 4),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: saving ? null : _save,
+            onPressed: saving || _coverPending ? null : _save,
             child: saving
                 ? const SizedBox(
                     height: 20,

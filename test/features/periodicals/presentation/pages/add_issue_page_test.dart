@@ -9,7 +9,12 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -17,15 +22,30 @@ import 'package:pitaka/features/periodicals/domain/value_objects/periodical_freq
 import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
 
 import '../../../../support/a11y.dart';
+import '../../../../support/async_value_gate.dart';
+import '../../../../support/cover_capture_fakes.dart';
 import '../../application/periodical_fakes.dart';
 
+/// Lets a test choose the completion order of each series' prefill read.
+class _GatedPeriodicals extends FakePeriodicals {
+  final Map<String, List<AsyncValueGate<Either<Failure, List<CatalogueItem>>>>>
+  prefillGates = {};
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> issuesOf(String periodicalUid) {
+    final queued = prefillGates[periodicalUid];
+    if (queued != null && queued.isNotEmpty) return queued.removeAt(0).wait();
+    return super.issuesOf(periodicalUid);
+  }
+}
+
 void main() {
-  late FakePeriodicals periodicals;
+  late _GatedPeriodicals periodicals;
   late FakeItems items;
   late Periodical frontline;
 
   setUp(() {
-    periodicals = FakePeriodicals();
+    periodicals = _GatedPeriodicals();
     items = FakeItems();
     frontline = periodicals.seed(
       const Periodical(
@@ -40,12 +60,19 @@ void main() {
 
   /// Hosts the form ABOVE a home route so the pop after a successful save is
   /// observable.
-  Widget app({Periodical? preselected, CatalogueItem? edit}) {
+  Widget app({
+    Periodical? preselected,
+    CatalogueItem? edit,
+    CoverCaptureFakes? coverFakes,
+  }) {
     return ProviderScope(
       overrides: [
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         catalogueItemRepositoryProvider.overrideWith((ref) async => items),
         settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        coversDirProvider.overrideWith((ref) async => '.'),
+        if (coverFakes != null)
+          formCoverControllerProvider.overrideWith(() => coverFakes.controller),
         nowTickProvider.overrideWith((ref) => 0),
       ],
       child: MaterialApp(
@@ -79,9 +106,12 @@ void main() {
     WidgetTester tester, {
     Periodical? preselected,
     CatalogueItem? edit,
+    CoverCaptureFakes? coverFakes,
   }) async {
     useBigSurface(tester);
-    await tester.pumpWidget(app(preselected: preselected, edit: edit));
+    await tester.pumpWidget(
+      app(preselected: preselected, edit: edit, coverFakes: coverFakes),
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -111,6 +141,14 @@ void main() {
     await tester.pump();
     await scrollTap(tester, find.byType(FilledButton));
   }
+
+  String fieldText(WidgetTester tester, String label) => tester
+      .widget<TextField>(find.widgetWithText(TextField, label))
+      .controller!
+      .text;
+
+  AsyncValueGate<Either<Failure, List<CatalogueItem>>> prefillGate() =>
+      AsyncValueGate();
 
   testWidgets('saving without a series is refused inline', (tester) async {
     await openForm(tester);
@@ -152,6 +190,115 @@ void main() {
     );
     expect(find.widgetWithText(TextField, 'Reading room'), findsOneWidget);
     expect(find.widgetWithText(TextField, '64'), findsOneWidget);
+  });
+
+  testWidgets('A to B prefill: a late A response cannot populate B', (
+    tester,
+  ) async {
+    final alpha = periodicals.seed(const Periodical(title: 'Alpha'));
+    final outlook = periodicals.seed(
+      const Periodical(title: 'Outlook', location: 'B shelf'),
+    );
+    final aUid = alpha.periodicalUid!;
+    final bUid = outlook.periodicalUid!;
+    final a = prefillGate();
+    final b = prefillGate();
+    periodicals.prefillGates
+      ..[aUid] = [a]
+      ..[bUid] = [b];
+
+    await openForm(tester);
+    await pickSeries(tester, 'Alpha');
+    await a.entered;
+    await pickSeries(tester, 'Outlook');
+    await b.entered;
+
+    b.succeed(right(const []));
+    await tester.pumpAndSettle();
+    expect(fieldText(tester, 'Shelf location'), 'B shelf');
+
+    a.succeed(
+      right([
+        CatalogueItem(
+          title: 'Alpha — No 3',
+          pageCount: 64,
+          copyCount: 4,
+          details: IssueOf(periodicalUid: aUid, issueNumber: 3),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(fieldText(tester, 'Issue number'), isEmpty);
+    expect(fieldText(tester, 'Pages'), isEmpty);
+    expect(fieldText(tester, 'Copies'), '1');
+    expect(fieldText(tester, 'Shelf location'), 'B shelf');
+  });
+
+  testWidgets('ABA prefill: the first A response stays stale even when A is '
+      'selected again', (tester) async {
+    final outlook = periodicals.seed(const Periodical(title: 'Outlook'));
+    final aUid = frontline.periodicalUid!;
+    final bUid = outlook.periodicalUid!;
+    final firstA = prefillGate();
+    final b = prefillGate();
+    final secondA = prefillGate();
+    periodicals.prefillGates
+      ..[aUid] = [firstA, secondA]
+      ..[bUid] = [b];
+
+    await openForm(tester);
+    await pickSeries(tester, 'Frontline');
+    await firstA.entered;
+    await pickSeries(tester, 'Outlook');
+    await b.entered;
+    await pickSeries(tester, 'Frontline');
+    await secondA.entered;
+
+    b.succeed(right(const []));
+    await tester.pumpAndSettle();
+    secondA.succeed(right(const []));
+    await tester.pumpAndSettle();
+    firstA.succeed(
+      right([
+        CatalogueItem(
+          title: 'Frontline — No 3',
+          details: IssueOf(periodicalUid: aUid, issueNumber: 3),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(fieldText(tester, 'Issue number'), isEmpty);
+  });
+
+  testWidgets('an explicitly entered copies value of 1 survives prefill', (
+    tester,
+  ) async {
+    final uid = frontline.periodicalUid!;
+    final gate = prefillGate();
+    periodicals.prefillGates[uid] = [gate];
+    await openForm(tester);
+    await pickSeries(tester, 'Frontline');
+    await gate.entered;
+
+    // Clear and retype the same default so this is a real user edit, not a
+    // no-op controller write that never emits onChanged.
+    await tester.enterText(find.widgetWithText(TextField, 'Copies'), '');
+    await tester.enterText(find.widgetWithText(TextField, 'Copies'), '1');
+    await tester.pump();
+    gate.succeed(
+      right([
+        CatalogueItem(
+          title: 'Frontline — No 3',
+          copyCount: 5,
+          details: IssueOf(periodicalUid: uid, issueNumber: 3),
+        ),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(fieldText(tester, 'Copies'), '1');
   });
 
   testWidgets('a single issue needs a number or a date (D6)', (tester) async {
@@ -271,6 +418,110 @@ void main() {
     expect(stored.issue?.issueNumber, 5, reason: 'untouched fields kept');
     expect(stored.kind.name, 'magazineIssue', reason: 'kind never changes');
     expect(stored.itemUid, existing.itemUid);
+  });
+
+  testWidgets('edit: Save stays gated through picker, crop, and cover '
+      'storage, then saves the selected reference', (tester) async {
+    final coverFakes = installCoverCaptureFakes();
+    final uid = frontline.periodicalUid!;
+    final existing = items.seed(
+      CatalogueItem(
+        title: 'Frontline — No 5',
+        coverUrl: 'covers/old.jpg',
+        details: IssueOf(periodicalUid: uid, issueNumber: 5),
+      ),
+    );
+    periodicals.issues[uid] = [existing];
+    await openForm(tester, edit: existing, coverFakes: coverFakes);
+    final saveButton = find.byType(FilledButton);
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+
+    await tester.tap(find.text('Replace cover'));
+    await tester.pump();
+    await coverFakes.pickerGate.entered;
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishPicker();
+    await tester.pump();
+    await coverFakes.cropperGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+
+    coverFakes.finishCropper();
+    await tester.pump();
+    await coverFakes.storeGate.entered;
+    await tester.pump();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNull);
+    await tester.tap(saveButton);
+    await tester.pump();
+    expect(items.updated, isEmpty);
+    expect(find.byType(AddIssuePage), findsOneWidget);
+
+    coverFakes.finishStore('covers/selected.jpg');
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(saveButton).onPressed, isNotNull);
+    await save(tester);
+
+    expect(items.rows[existing.id]!.coverUrl, 'covers/selected.jpg');
+    expect(coverFakes.picker.calls, 1);
+    expect(coverFakes.cropper.calls, 1);
+    expect(coverFakes.controller.calls, 1);
+  });
+
+  testWidgets('edit: an untouched cover follows a background replacement and '
+      'Save preserves the new reference', (tester) async {
+    final uid = frontline.periodicalUid!;
+    final existing = items.seed(
+      CatalogueItem(
+        title: 'Frontline — No 5',
+        coverUrl: 'covers/old.jpg',
+        details: IssueOf(periodicalUid: uid, issueNumber: 5),
+      ),
+    );
+    periodicals.issues[uid] = [existing];
+    await openForm(tester, edit: existing);
+
+    items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
+    ProviderScope.containerOf(
+      tester.element(find.byType(AddIssuePage)),
+    ).invalidate(libraryControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(
+      tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl,
+      'covers/new.jpg',
+      reason: 'an untouched form shows the current issue cover',
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Notes'), 'Re-read');
+    await save(tester);
+
+    expect(items.rows[existing.id]!.coverUrl, 'covers/new.jpg');
+  });
+
+  testWidgets('edit: a deliberate cover removal is not overwritten by a '
+      'background replacement', (tester) async {
+    final uid = frontline.periodicalUid!;
+    final existing = items.seed(
+      CatalogueItem(
+        title: 'Frontline — No 5',
+        coverUrl: 'covers/old.jpg',
+        details: IssueOf(periodicalUid: uid, issueNumber: 5),
+      ),
+    );
+    periodicals.issues[uid] = [existing];
+    await openForm(tester, edit: existing);
+    await tester.tap(find.text('Remove cover'));
+    await tester.pump();
+
+    items.rows[existing.id] = existing.copyWith(coverUrl: 'covers/new.jpg');
+    ProviderScope.containerOf(
+      tester.element(find.byType(AddIssuePage)),
+    ).invalidate(libraryControllerProvider);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<ItemCover>(find.byType(ItemCover)).coverUrl, isNull);
+    await save(tester);
+    expect(items.rows[existing.id]!.coverUrl, isNull);
   });
 
   testWidgets('issue date pick/display round-trip stays on one day', (

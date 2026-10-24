@@ -4,17 +4,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 
-/// Empty series store: the card's cover-fallback map
-/// (`periodicalCoversProvider`, S14) reads `listAll`; the tests below use
-/// books, so the map stays empty.
-class _NoPeriodicals implements PeriodicalRepository {
+/// In-memory series store for the card's cover-fallback map
+/// (`periodicalCoversProvider`, S14). Empty for the book-only tests.
+class _MemPeriodicals implements PeriodicalRepository {
+  _MemPeriodicals(this.periodicals);
+
+  final List<Periodical> periodicals;
+
   @override
-  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
-      right(const []);
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async => right([
+    for (final periodical in periodicals)
+      PeriodicalSummary(periodical: periodical, issueCount: 0),
+  ]);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -22,11 +31,16 @@ class _NoPeriodicals implements PeriodicalRepository {
 }
 
 void main() {
-  Widget host(CatalogueItem book, {bool unavailable = false}) => ProviderScope(
+  Widget host(
+    CatalogueItem book, {
+    bool unavailable = false,
+    List<Periodical> periodicals = const [],
+  }) => ProviderScope(
     overrides: [
       periodicalRepositoryProvider.overrideWith(
-        (ref) async => _NoPeriodicals(),
+        (ref) async => _MemPeriodicals(periodicals),
       ),
+      coversDirProvider.overrideWith((ref) async => '.'),
     ],
     child: MaterialApp(
       home: Scaffold(
@@ -75,6 +89,33 @@ void main() {
     await tester.pump();
     expect(find.text('Removed'), findsOneWidget);
     expect(find.text('Not available'), findsNothing);
+  });
+
+  testWidgets('an inherited grid cover remains periodical-owned', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        const CatalogueItem(
+          id: 7,
+          title: 'Weekly — No 1',
+          details: IssueOf(periodicalUid: 'per-1', issueNumber: 1),
+        ),
+        periodicals: const [
+          Periodical(
+            id: 1,
+            periodicalUid: 'per-1',
+            title: 'Weekly',
+            coverUrl: 'covers/series.jpg',
+          ),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, 'covers/series.jpg');
+    expect(cover.owner, CoverOwners.periodical('per-1'));
   });
 
   testWidgets('every status pill at once does not overflow the cell', (

@@ -10,7 +10,7 @@
 /// CURRENT row). The issue's title/publisher/language/age group are never
 /// typed here — they are PROJECTED from the series by the use case (D3), and
 /// the live "title preview" shows exactly what will be composed
-/// ([IssueTitle]), so the user sees the result before saving.
+/// ([IssueTitlePreview]), so the user sees the result before saving.
 ///
 /// Prefill (add mode, on picking a series): the next number/date come from
 /// [IssueCadence] over the latest issue, shelf location from the series,
@@ -30,7 +30,7 @@ import 'package:pitaka/features/periodicals/application/add_issue_controller.dar
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/issue_cadence.dart';
-import 'package:pitaka/features/periodicals/domain/issue_title.dart';
+import 'package:pitaka/features/periodicals/presentation/widgets/add_issue_form_sections.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/form_rows.dart';
 import 'package:pitaka/features/periodicals/presentation/widgets/series_picker_field.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -75,6 +75,11 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
   /// cover stands in — W4; the row simply stores no cover of its own).
   String? _coverRef;
 
+  /// Cover intent is explicit: background row updates win only while the user
+  /// has not captured/removed a cover, and Save waits for pending storage.
+  bool _coverDirty = false;
+  bool _coverPending = false;
+
   /// Inline form-level error shown above the save button (mirrors the book
   /// form's title-error pattern, one message at a time).
   String? _formError;
@@ -82,6 +87,13 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
   /// The prefill for the selected series has been applied (once per
   /// selection; a user pick re-arms it).
   bool _prefillArmed = false;
+
+  /// Incremented on every selection. A response must match BOTH this
+  /// generation and the currently selected UID before touching any field.
+  int _prefillGeneration = 0;
+
+  /// The default "1" is prefilled only until the user actually edits Copies.
+  bool _copiesDirty = false;
 
   bool get _isEdit => widget.issue != null;
 
@@ -153,9 +165,11 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
   Future<void> _prefillFor(Periodical periodical) async {
     final uid = periodical.periodicalUid;
     if (uid == null) return;
+    final generation = _prefillGeneration;
     final repo = await ref.read(periodicalRepositoryProvider.future);
+    if (!_isCurrentPrefill(generation, uid)) return;
     final result = await repo.issuesOf(uid);
-    if (!mounted) return;
+    if (!_isCurrentPrefill(generation, uid)) return;
     final latest = result
         .getOrElse((_) => const <CatalogueItem>[])
         .firstOrNull; // issuesOf is newest-first (IssueSorter)
@@ -179,13 +193,18 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
         _pages.text = latest!.pageCount.toString();
       }
       final lastCopies = latest?.copyCount;
-      if ((_copies.text.trim().isEmpty || _copies.text.trim() == '1') &&
+      if (!_copiesDirty &&
+          (_copies.text.trim().isEmpty || _copies.text.trim() == '1') &&
           lastCopies != null &&
           lastCopies > 1) {
         _copies.text = lastCopies.toString();
       }
     });
   }
+
+  /// A late response is valid only for the exact selection that requested it.
+  bool _isCurrentPrefill(int generation, String uid) =>
+      mounted && generation == _prefillGeneration && uid == _selectedUid;
 
   /// Assembles the item to persist. The title is left BLANK on purpose: the
   /// use case projects it from the series (D3). [base] is null in add mode,
@@ -200,7 +219,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       author: base?.author,
       isbn: base?.isbn,
       genre: base?.genre,
-      coverUrl: _coverRef,
+      coverUrl: _coverDirty ? _coverRef : base?.coverUrl,
       pageCount: _parseCount(_pages),
       notes: _trimToNull(_notes),
       location: _trimToNull(_location),
@@ -247,6 +266,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
   }
 
   Future<void> _save() async {
+    if (_coverPending) return;
     final error = _validationError();
     if (error != null) {
       setState(() => _formError = error);
@@ -263,8 +283,8 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
         (current) => _buildIssue(current, maintainerStamp: stamp),
       );
     }
-    final state = ref.read(addIssueControllerProvider);
     if (!mounted) return;
+    final state = ref.read(addIssueControllerProvider);
     // The controller fired both mutation signals itself — only pop.
     if (state.hasValue && state.value != null) {
       Navigator.of(context).pop();
@@ -282,6 +302,7 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
       current: current,
       helpText: helpText,
     );
+    if (!mounted) return;
     if (picked != null) onPicked(picked);
   }
 
@@ -289,6 +310,14 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
   Widget build(BuildContext context) {
     final state = ref.watch(addIssueControllerProvider);
     final saving = state.isLoading;
+    final observed = _isEdit
+        ? ref.watch(catalogueItemByIdProvider(widget.issue!.id))
+        : null;
+    final current = observed?.valueOrNull;
+    final displayedCover =
+        !_coverDirty && (observed?.hasValue ?? false) && current != null
+        ? current.coverUrl
+        : _coverRef;
     final entriesAsync = ref.watch(periodicalsControllerProvider);
     final entries = entriesAsync.valueOrNull;
 
@@ -322,6 +351,10 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
             onChanged: (uid) {
               setState(() {
                 _selectedUid = uid;
+                _prefillGeneration++;
+                // This pick starts its own read below; do not also schedule
+                // the one-time initial-prefill path from the next build.
+                _prefillArmed = true;
                 _formError = null;
               });
               // Add mode: prefill from the newly picked series (empty
@@ -347,59 +380,26 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
             value: _bound,
             onChanged: (v) => setState(() => _bound = v),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: FormTextRow(
-                  controller: _volume,
-                  label: 'Volume',
-                  keyboardType: TextInputType.number,
-                  digitsOnly: true,
-                  onChanged: _onFieldChanged,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FormTextRow(
-                  controller: _issueNumber,
-                  label: 'Issue number',
-                  keyboardType: TextInputType.number,
-                  digitsOnly: true,
-                  onChanged: _onFieldChanged,
-                ),
-              ),
-            ],
+          IssueNumberFields(
+            volume: _volume,
+            issueNumber: _issueNumber,
+            onChanged: _onFieldChanged,
           ),
-          if (_bound) ...[
-            DatePickerRow(
-              label: 'Issues from',
-              valueText: formatFormDate(_issueDate) ?? '—',
-              onPick: () => _pickDate(
-                current: _issueDate,
-                helpText: 'First issue in the volume',
-                onPicked: (d) => setState(() => _issueDate = d),
-              ),
+          IssueDateFields(
+            bound: _bound,
+            issueDate: _issueDate,
+            boundUntil: _boundUntil,
+            onPickIssueDate: () => _pickDate(
+              current: _issueDate,
+              helpText: _bound ? 'First issue in the volume' : 'Cover date',
+              onPicked: (d) => setState(() => _issueDate = d),
             ),
-            DatePickerRow(
-              label: 'Issues to',
-              valueText: formatFormDate(_boundUntil) ?? '—',
-              onPick: () => _pickDate(
-                current: _boundUntil,
-                helpText: 'Last issue in the volume',
-                onPicked: (d) => setState(() => _boundUntil = d),
-              ),
+            onPickBoundUntil: () => _pickDate(
+              current: _boundUntil,
+              helpText: 'Last issue in the volume',
+              onPicked: (d) => setState(() => _boundUntil = d),
             ),
-          ] else
-            DatePickerRow(
-              label: 'Cover date',
-              valueText: formatFormDate(_issueDate) ?? '—',
-              onPick: () => _pickDate(
-                current: _issueDate,
-                helpText: 'Cover date',
-                onPicked: (d) => setState(() => _issueDate = d),
-              ),
-            ),
+          ),
           FormTextRow(
             controller: _label,
             label: 'Label (e.g. Annual number)',
@@ -409,56 +409,35 @@ class _AddIssuePageState extends ConsumerState<AddIssuePage> {
             padding: const EdgeInsets.only(bottom: 12),
             child: FormCoverField(
               title: selected?.title ?? '',
-              coverRef: _coverRef,
-              onChanged: (ref) => setState(() => _coverRef = ref),
+              coverRef: displayedCover,
+              onChanged: (ref) => setState(() {
+                _coverRef = ref;
+                _coverDirty = true;
+              }),
+              onBusyChanged: (pending) =>
+                  setState(() => _coverPending = pending),
             ),
           ),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: FormTextRow(
-                  controller: _copies,
-                  label: 'Copies',
-                  keyboardType: TextInputType.number,
-                  digitsOnly: true,
-                  onChanged: _onFieldChanged,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FormTextRow(
-                  controller: _pages,
-                  label: 'Pages',
-                  keyboardType: TextInputType.number,
-                  digitsOnly: true,
-                  onChanged: _onFieldChanged,
-                ),
-              ),
-            ],
+          IssueCopyFields(
+            copies: _copies,
+            pages: _pages,
+            onChanged: _onFieldChanged,
+            onCopiesChanged: (value) {
+              _copiesDirty = true;
+              _onFieldChanged(value);
+            },
           ),
           FormTextRow(controller: _location, label: 'Shelf location'),
           FormTextRow(controller: _notes, label: 'Notes', maxLines: 4),
           if (selected != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Title preview',
-                  border: OutlineInputBorder(),
-                ),
-                // What the use case will compose (D3) — never typed.
-                child: Text(
-                  IssueTitle.compose(
-                    selected.title,
-                    _currentDetails ?? const IssueOf(periodicalUid: ''),
-                  ),
-                ),
-              ),
+            // What the use case will compose (D3) — never typed.
+            IssueTitlePreview(
+              title: selected.title,
+              details: _currentDetails ?? const IssueOf(periodicalUid: ''),
             ),
           const SizedBox(height: 12),
           FilledButton(
-            onPressed: saving ? null : _save,
+            onPressed: saving || _coverPending ? null : _save,
             child: saving
                 ? const SizedBox(
                     height: 20,
