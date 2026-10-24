@@ -1,9 +1,9 @@
-# Magazines remediation — handoff after S2
+# Magazines remediation — handoff after S3
 
 - **Date:** 2026-10-24
 - **Branch:** `magazines`
-- **Status:** S2 complete. S3 has **not** started.
-- **Remediation HEAD:** `62e79cb` (this handoff is a documentation-only follow-up)
+- **Status:** S3 complete. S4 has **not** started.
+- **Remediation HEAD:** `d8b1bab` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
 ## 1. Commits and current state
@@ -14,8 +14,9 @@
 | S0 — baseline, fixtures, release hold | `68d4d0d` | Baseline recorded, shared fixtures added, R1 explicitly gated on remediation. |
 | S1 — canonical identity and kind integrity | `c72b0cc` | M4, H6, and M6 fixed with schema v6 and regression coverage. |
 | S2 — calendar-day semantics | `62e79cb` | M10 and M12 fixed with schema v7, dual-timezone regression coverage, and immediate restore/overwrite reprojection. |
+| S3 — atomic writes and removed-series guard | `d8b1bab` | M1 and M9 fixed with one outer issue-write transaction, exact real-Drift race coverage, and removed-series add/scan refusal. |
 
-The working tree was clean immediately after `62e79cb`. The database is now at **schema v7**. No release version bump, tag, or publish step has been performed.
+The working tree was clean immediately after `d8b1bab`. The database remains at **schema v7**. No release version bump, tag, or publish step has been performed.
 
 ## 2. Completed work
 
@@ -48,6 +49,13 @@ The working tree was clean immediately after `62e79cb`. The database is now at *
 - Added schema v7 with precomputed conversions and D6 collision refusal before writes. Same-device projections and FTS are preserved; generated v7 snapshots/helpers and migration rows are included.
 - `.pitabak` restore and merge OVERWRITE reproject every stored series before commit. Direct overwrite also revalidates both incoming collections.
 
+### S3 — M1, M9
+
+- Wrapped the whole add/update issue operation in `_items.runInTransaction`: stored-row lookup, series lookup and projection, domain validation, D6 pre-check and the final write. Typed `Either` rollback is preserved.
+- Extended `IssueIngress.prepare` with `allowRemovedSeries`: false for add, true for update. New issues under a removed series fail before any write; historical issue edits remain allowed.
+- Added the `OpenPeriodical` scan destination. A removed ISSN match now opens its existing series detail/restore flow instead of the add-issue form.
+- Added controlled real-Drift delete/rename relays. The final harness proves exactly one outer transaction across stored-row, series, D6 and write stages, and checks the committed series and complete issue projection afterward.
+
 ## 3. Verification evidence
 
 | Gate | Result |
@@ -63,23 +71,29 @@ The working tree was clean immediately after `62e79cb`. The database is now at *
 | S2 generation, analysis, formatting, architecture and migration gates | Clean; v7 snapshot/helpers included and v1→v7 paths passed. |
 | S2 focused suites under `TZ=Asia/Calcutta` and `TZ=America/New_York` | **218 tests passed in each timezone**, including forms, migration, merge and restore. |
 | S2 `fvm flutter test --exclude-tags golden` | **2,926 tests passed.** |
+| S3 red-first removed-series/scan regressions | **3 failed on unfixed code** for the intended reasons, then passed; the historical-issue edit control remained green. |
+| S3 red-first real-Drift interleavings | **4 failed on clean unfixed HEAD**, then passed. The final suite also rejects partial or multiple transaction boundaries. |
+| S3 focused and DI suites | **50 focused tests passed**; the **5 DI provider tests** also passed after recording the new transaction call. |
+| S3 analysis, formatting, architecture and migration gates | Clean; **30 architecture/migration tests passed**. |
+| S3 `fvm flutter test --exclude-tags golden` | **2,934 tests passed.** |
+| S3 generated-code and diff checks | Pre-commit generated-code check passed; `git diff --check` clean. |
 
 Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed.
 
-## 4. Resume with S3 only
+## 4. Resume with S4 only
 
-Start with `magazineIssues.md` **S3 — Atomic issue writes and removed-series guard** (M1, M9). Its S2 dependency is complete.
+Start with `magazineIssues.md` **S4 — Reconcile periodicals and issue identity in plain JSON import** (H1, H2, H3, M3). Its S1, S2 and S3 dependencies are complete.
 
 1. Confirm `git switch magazines && git status --short` is empty.
-2. Read S3 and the locked decisions, especially the rule that editing an existing issue remains allowed while creating one under a removed series is refused.
-3. Run the S3 baseline before editing; stop on any pre-existing failure.
-4. Add controlled real-Drift interleaving regressions first for delete/rename races, then removed-series use-case and scan-routing tests.
-5. Wrap the whole add/update issue operation in `_items.runInTransaction`: stored-row lookup, series lookup, projection, validation, D6 pre-check and write.
-6. Extend `IssueIngress.prepare` with `allowRemovedSeries`: false for add, true for update. Route removed ISSN scans to the existing-series/restore flow.
-7. Preserve typed `Either` rollback behavior and keep all v7 calendar-day semantics intact. Do not start S4 or R1.
+2. Read S4 and the locked import decisions, especially same-UID cross-kind rollback and same-ISSN/different-UID reconciliation to the stored series.
+3. Run the S4 baseline, including `full`, before editing; stop on any pre-existing failure.
+4. Add the real-Drift link, cover/metadata, cross-kind, D6 and rollback regressions first.
+5. Build one incoming-canonical-UID → stored-winning-periodical map inside the existing `_bookRepo.runInTransaction`; handle same-UID, same-ISSN/different-UID, new and duplicate series deterministically.
+6. Re-anchor and reproject issues before deduplication or writes, refuse cross-kind updates, reproject every updated stored series before commit, and keep summary counts truthful after rollback.
+7. Preserve typed `Either` rollback, v7 calendar-day semantics and the S3 atomic-write/removed-series guards. Do not start S5 or R1.
 
 ## 5. Handoff notes
 
 - `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary.
-- S0, S1 and S2 are Done. S3–S11 remain Pending.
-- The original 26-finding release hold is unchanged. Completing S1 does not make the branch release-ready.
+- S0, S1, S2 and S3 are Done. S4–S11 remain Pending.
+- The original 26-finding release hold is unchanged. Completing S3 does not make the branch release-ready.
