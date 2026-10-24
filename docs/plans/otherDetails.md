@@ -949,7 +949,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 |---------|-------|--------|------|-------|
 | — | — | — | 2026-10-24 | plan written after S22 (`efa5d06`); no sessions run |
 | G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core red from a NEW upstream tokio advisory (see Open issues — pre-existing on `main`, outside this plan's scope) |
-| N1 | — | — | — | |
+| N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | — | — | — | |
 | N3 | — | — | — | |
 | R1 | — | — | — | |

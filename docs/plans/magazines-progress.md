@@ -1093,13 +1093,8 @@ Rename technique (learned in S1–S4):
   the macOS target is not wired for cargokit (`pitak_crypto.framework`
   missing) — a pre-existing platform gap, not a regression. RELEASING §6.1
   step 7 runs both files on a cleared Android install before tagging.
-- **Review nit (pre-S22, not fixed — a UI change outside S22's scope):**
-  `catalogueSaveMessage` for `PeriodicalHasIssuesFailure` ends "… or mark
-  the title as removed instead", but the series page's overflow offers
-  only "Delete permanently" — `PeriodicalsController.remove` has no UI
-  caller (S13 wrote the message, S15 the menu). Either add a "Remove"
-  entry to `SeriesOverflowMenu` or drop the clause; the catalogue guide
-  deliberately does not mention it.
+- **Review nit (pre-S22, series overflow had no Remove/Restore):** Closed
+  by N1 of `docs/plans/otherDetails.md` (commit `fd40c4e`).
 
 ## Session log
 
