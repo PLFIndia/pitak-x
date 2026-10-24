@@ -94,6 +94,36 @@ void main() {
       expect(plan.winners['their-uid']?.id, 1);
     });
 
+    test('same title with different valid ISSNs is a distinct series', () {
+      final l = local(uid: 'local-uid', issn: '0976-3279');
+      final inc = incoming(uid: 'their-uid', issn: '0027-9358');
+
+      final plan = planPeriodicalMerge([l], [inc]);
+
+      expect(plan.toAdd.single, same(inc));
+      expect(plan.conflicts, isEmpty);
+      expect(plan.identical, 0);
+      expect(plan.winners['their-uid'], same(inc));
+      expect(plan.matchedLocalSeries, isEmpty);
+    });
+
+    test('exact title still matches when only one side has an ISSN', () {
+      final localMissing = planPeriodicalMerge(
+        [local(uid: 'local-uid')],
+        [incoming(uid: 'their-uid', issn: '0027-9358')],
+      );
+      final incomingMissing = planPeriodicalMerge(
+        [local(uid: 'local-uid', issn: '0976-3279')],
+        [incoming(uid: 'their-uid')],
+      );
+
+      for (final plan in [localMissing, incomingMissing]) {
+        expect(plan.toAdd, isEmpty);
+        expect(plan.conflicts.single.matchedBy, PeriodicalMatchKind.title);
+        expect(plan.winners['their-uid']?.periodicalUid, 'local-uid');
+      }
+    });
+
     test('a different-cased title is NOT a match (exact means exact)', () {
       final l = local();
       final inc = incoming(title: 'chandamama');
@@ -197,6 +227,17 @@ void main() {
       expect(plan.toAdd, hasLength(1));
       expect(plan.conflicts.single.matchedBy, PeriodicalMatchKind.issn);
       expect(plan.winners['u2']?.periodicalUid, 'u1');
+    });
+
+    test('same-title rows within one file remain separate adds', () {
+      final a = incoming(uid: null);
+      final b = incoming(uid: null);
+
+      final plan = planPeriodicalMerge(const [], [a, b]);
+
+      expect(plan.toAdd, [same(a), same(b)]);
+      expect(plan.conflicts, isEmpty);
+      expect(plan.winners, isEmpty);
     });
 
     test('a blank uid is ignored by the uid index but still title-matches', () {

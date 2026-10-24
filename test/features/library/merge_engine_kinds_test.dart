@@ -334,6 +334,37 @@ void main() {
       expect(plan.toAdd, isEmpty);
     });
 
+    test('different ISSNs keep same-title series and issues out of review', () {
+      const theirSeries = Periodical(
+        periodicalUid: 'their-uid',
+        title: 'Chandamama',
+        issn: '0027-9358',
+        addedDate: 2,
+      );
+      final localIssue = issue(id: 5, uid: 'mine', number: 3);
+      final incomingIssue = issue(
+        uid: 'theirs',
+        seriesUid: 'their-uid',
+        number: 3,
+      );
+
+      final plan = planMerge(
+        [localIssue],
+        [incomingIssue],
+        localPeriodicals: const [series],
+        incomingPeriodicals: const [theirSeries],
+      );
+
+      expect(plan.periodicalsToAdd.single, same(theirSeries));
+      expect(plan.periodicalConflicts, isEmpty);
+      expect(plan.matchedLocalSeries, isEmpty);
+      expect(plan.toAdd.single.itemUid, 'theirs');
+      expect(plan.toAdd.single.issue?.periodicalUid, 'their-uid');
+      expect(plan.conflicts, isEmpty);
+      expect(plan.possibleDuplicates, isEmpty);
+      expect(plan.hasReviewItems, isFalse);
+    });
+
     test('a renamed series does not storm per-issue title conflicts', () {
       // This device renamed the series (issues re-projected to the NEW name
       // at edit time); the other device still exports the OLD name and its

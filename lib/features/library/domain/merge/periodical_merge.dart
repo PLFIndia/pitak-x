@@ -36,8 +36,9 @@ enum PeriodicalMatchKind {
   /// reconciles here, D7).
   issn,
 
-  /// Matched by the exact (trimmed) title — the last resort for a series
-  /// with neither uid nor ISSN on one side.
+  /// Matched by the exact (trimmed) title — the last resort when at least
+  /// one side lacks a canonical ISSN. Different canonical ISSNs never match
+  /// here: they identify different series even when their titles are equal.
   title,
 }
 
@@ -116,7 +117,9 @@ class PeriodicalMergePlan {
 /// Plans the periodical merge of [incoming] into [local]. Pure: no IO, no
 /// mutation. Identity, in order (D6 mirrors uid → ISBN → title for series):
 /// `periodicalUid` → canonical ISSN → exact title. First-claim wins: a local
-/// row is matched by at most one incoming row (no fan-in).
+/// row is matched by at most one incoming row (no fan-in). Title fallback is
+/// suppressed when both rows have canonical ISSNs and those ISSNs differ:
+/// an ISSN identifies the series, so equal display titles cannot override it.
 ///
 /// A second incoming row whose uid/ISSN is already spoken for (by a claimed
 /// local row or an earlier row of the SAME file) can never insert — the DB
@@ -162,10 +165,17 @@ PeriodicalMergePlan planPeriodicalMerge(
     final issn = Issn.normalize(inc.issn);
 
     // 1) uid match, 2) ISSN match, 3) exact-title match — the first
-    //    UNCLAIMED local row wins.
+    //    UNCLAIMED local row wins. Two different valid ISSNs identify two
+    //    series, so their equal titles must not trigger the last fallback.
+    //    If either side lacks a valid ISSN, title matching stays unchanged.
     final byUid = hasUid ? localByUid[uid] : null;
     final byIssn = issn != null ? localByIssn[issn] : null;
-    final byTitle = localByTitle[inc.title.trim()];
+    final titleCandidate = localByTitle[inc.title.trim()];
+    final titleCandidateIssn = Issn.normalize(titleCandidate?.issn);
+    final byTitle =
+        issn != null && titleCandidateIssn != null && issn != titleCandidateIssn
+        ? null
+        : titleCandidate;
     final match = switch ((byUid, byIssn, byTitle)) {
       (final p?, _, _) when !claimedLocalIds.contains(p.id) => (
         p,
