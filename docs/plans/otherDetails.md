@@ -951,7 +951,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core were initially red from the tokio advisory, later resolved by `372ad3b` |
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
-| N3 | Blocked | — | 2026-10-24 | no Android device/emulator yet; maintainer will attach a phone. Analyze and all off-device preparation green (see Open issues); stays the next session |
+| N3 | Done | `95163d8` | 2026-10-24 | Pixel 8a, Android 17 (API 37), arm64-v8a; both journeys passed twice from a cleared install (155 s and 159 s), catalogue kinds first and vault second each time. Test-only fixes: bounded launch wait for the 2 s splash Timer, Drawer-scoped entry finder, `Add borrower` as the persistent vault page's unlocked proof. Analyze/format clean. Debug-only Drift multiple-database warning appeared in the existing restore path; no journey failed |
 | R1 | — | — | — | pre-run 2026-10-24: PR #18 every check green at `372ad3b`; fdroid arm64 release APK built and its dex purity scan found 0 forbidden hits (pre-check only — repeat step 4 on the release commit) |
 
 ## Deviations from plan
@@ -968,15 +968,4 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 
 ## Open issues / blocked
 
-- **N3 blocked until the maintainer attaches an Android phone**
-  (2026-10-24). The baseline gate `flutter devices` printed only
-  `Satyen's iPad (wireless) • ios • iOS 26.5.2` — no Android entry;
-  `flutter emulators` → only `apple_ios_simulator`. `adb` is not on PATH
-  but exists at `~/Library/Android/sdk/platform-tools/adb`; no emulator
-  system image is installed, which is irrelevant once a physical phone is
-  attached. Off-device preparation is complete: `flutter analyze lib test
-  integration_test` is clean; every label/tooltip used by both journeys
-  still exists in `lib/`; JDK 21 is pinned in `~/.gradle/gradle.properties`;
-  NDK 28.2.13676358 and all four Rust Android targets are installed; the
-  fdroid arm64 release build succeeds. When the phone is attached, confirm
-  `flutter devices` and `adb devices`, then resume N3 at step 1.
+(none — the N3 device block was cleared on 2026-10-24; see its log row)

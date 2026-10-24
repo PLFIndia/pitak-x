@@ -1088,11 +1088,10 @@ Rename technique (learned in S1–S4):
 - **Golden PNGs pending the Linux reference renderer (verify in CI):**
   Closed by G1 of `docs/plans/otherDetails.md` (commit `e629686`, run
   `40061299190`; PR #18's Linux golden step green).
-- **On-device smoke journeys not executed in this run** (S22): no Android
-  device/emulator here; macOS desktop fails at `RustLib.init()` because
-  the macOS target is not wired for cargokit (`pitak_crypto.framework`
-  missing) — a pre-existing platform gap, not a regression. RELEASING §6.1
-  step 7 runs both files on a cleared Android install before tagging.
+- **On-device smoke journeys (S22):** Executed by N3 of
+  `docs/plans/otherDetails.md` (commit `95163d8`) on a Pixel 8a running
+  Android 17 (API 37, arm64-v8a). Both journeys passed twice from a cleared
+  install (155 s and 159 s), with the vault journey second each time.
 - **Review nit (pre-S22, series overflow had no Remove/Restore):** Closed
   by N1 of `docs/plans/otherDetails.md` (commit `fd40c4e`).
 
