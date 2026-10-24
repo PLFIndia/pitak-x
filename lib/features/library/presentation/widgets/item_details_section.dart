@@ -20,8 +20,8 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/widgets/detail_row.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
@@ -51,17 +51,10 @@ class _IssueSection extends ConsumerWidget {
 
   final IssueOf issue;
 
-  /// Formats epoch millis as a plain `YYYY-MM-DD` (parity with the detail
-  /// page's Added row): an unset or unrepresentable value (M15) renders as
-  /// no row instead of throwing.
-  static String? _formatDate(int? epochMillis) {
-    if (epochMillis == null) return null;
-    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-    if (d == null) return null;
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  /// Formats a canonical UTC calendar day as `YYYY-MM-DD`; an unset or
+  /// unrepresentable value renders as no row instead of throwing.
+  static String? _formatDate(int? epochMillis) =>
+      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

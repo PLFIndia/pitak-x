@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/application/delete_periodical_use_case.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
@@ -20,6 +21,8 @@ import 'periodical_fakes.dart';
 
 void main() {
   final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
+  final today = CalendarDate.fromPickerDate(DateTime(2026, 10, 23, 12));
+  int dayFromToday(int offset) => today.addDays(offset).epochMillis;
   const day = 24 * 60 * 60 * 1000;
 
   late FakePeriodicals periodicals;
@@ -60,13 +63,13 @@ void main() {
       'status derived from the clock (D5)', () async {
     final untracked = periodicals.seed(const Periodical(title: 'Chandamama'));
     final active = periodicals.seed(
-      Periodical(title: 'Frontline', subscriptionEnd: t0 + 60 * day),
+      Periodical(title: 'Frontline', subscriptionEnd: dayFromToday(60)),
     );
     final expiring = periodicals.seed(
-      Periodical(title: 'Outlook', subscriptionEnd: t0 + 10 * day),
+      Periodical(title: 'Outlook', subscriptionEnd: dayFromToday(10)),
     );
     final lapsed = periodicals.seed(
-      Periodical(title: 'Sportstar', subscriptionEnd: t0 - day),
+      Periodical(title: 'Sportstar', subscriptionEnd: dayFromToday(-1)),
     );
     periodicals.issues[active.periodicalUid!] = [
       CatalogueItem(
@@ -75,7 +78,7 @@ void main() {
         details: IssueOf(
           periodicalUid: active.periodicalUid!,
           issueNumber: 1,
-          issueDate: t0 - 30 * day,
+          issueDate: dayFromToday(-30),
         ),
       ),
       CatalogueItem(
@@ -84,7 +87,7 @@ void main() {
         details: IssueOf(
           periodicalUid: active.periodicalUid!,
           issueNumber: 2,
-          issueDate: t0 - 2 * day,
+          issueDate: dayFromToday(-2),
         ),
       ),
     ];
@@ -104,7 +107,7 @@ void main() {
       SubscriptionStatus.lapsed,
     ]);
     expect(entries[1].issueCount, 2);
-    expect(entries[1].latestIssueDate, t0 - 2 * day);
+    expect(entries[1].latestIssueDate, dayFromToday(-2));
     expect(entries[0].issueCount, 0);
     expect(entries[0].latestIssueDate, isNull);
     expect(() => entries.add(entries.first), throwsUnsupportedError);
@@ -114,7 +117,7 @@ void main() {
     'N04: the status rolls over when the tick fires after the end date',
     () async {
       periodicals.seed(
-        Periodical(title: 'Outlook', subscriptionEnd: t0 + 10 * day),
+        Periodical(title: 'Outlook', subscriptionEnd: dayFromToday(10)),
       );
       final container = makeContainer();
       final before = await load(container);

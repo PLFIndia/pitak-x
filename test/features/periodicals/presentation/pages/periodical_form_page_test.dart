@@ -251,6 +251,70 @@ void main() {
     expect(find.text('Add cover'), findsOneWidget);
   });
 
+  testWidgets('subscription date pick/display round-trip stays on one day', (
+    tester,
+  ) async {
+    final existing = periodicals.seed(
+      Periodical(
+        title: 'Frontline',
+        subscriptionStart: DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        subscriptionEnd: DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+      ),
+    );
+    await openForm(tester, edit: existing);
+
+    expect(
+      find.textContaining('Subscription start: 2026-01-15'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Subscription end: 2026-02-15'), findsOneWidget);
+
+    await scrollTap(tester, find.text('Change').first);
+    await tester.tap(find.text('20').last);
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('Subscription start: 2026-01-20'),
+      findsOneWidget,
+    );
+
+    await save(tester);
+
+    final stored = periodicals.rows[existing.id]!;
+    expect(
+      stored.subscriptionStart,
+      DateTime.utc(2026, 1, 20).millisecondsSinceEpoch,
+    );
+    expect(
+      stored.subscriptionEnd,
+      DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+    );
+  });
+
+  testWidgets('Date added keeps instant picker semantics', (tester) async {
+    final existing = periodicals.seed(
+      Periodical(
+        title: 'Frontline',
+        addedDate: DateTime(2026, 1, 15, 12, 34).millisecondsSinceEpoch,
+      ),
+    );
+    await openForm(tester, edit: existing);
+
+    await scrollTap(tester, find.text('Change'));
+    await tester.tap(find.text('20').last);
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await save(tester);
+
+    expect(
+      periodicals.rows[existing.id]!.addedDate,
+      DateTime(2026, 1, 20).millisecondsSinceEpoch,
+      reason: 'addedDate is an instant, not a UTC calendar-day field',
+    );
+  });
+
   testWidgets('meets accessibility guidelines', (tester) async {
     await openForm(tester);
     await expectMeetsA11yGuidelines(tester);

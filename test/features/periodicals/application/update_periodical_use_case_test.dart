@@ -21,7 +21,7 @@ void main() {
   // Valid ISSNs (mod-11 check digit): 0317-8471, 1234-5679.
   const issnA = '0317-8471';
   const issnB = '1234-5679';
-  final oct2026 = DateTime(2026, 10).millisecondsSinceEpoch;
+  final oct2026 = DateTime.utc(2026, 10).millisecondsSinceEpoch;
 
   group('with fakes', () {
     late FakePeriodicals periodicals;

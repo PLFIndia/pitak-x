@@ -1,13 +1,17 @@
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
 /// Builds a series with explicit identity, ISSN, cover and calendar inputs.
 ///
-/// Tests pass `null` as [periodicalUid] when they want the repository to mint
-/// an identity. Date-only fields stay integer milliseconds at the current
-/// persistence boundary; S2 will centralize their UTC calendar-day conversion.
+/// Tests pass `null` as `periodicalUid` when they want the repository to mint
+/// an identity. Date-only DateTime inputs contribute calendar FIELDS and are
+/// stored at UTC midnight; addedDate/removedAt remain raw instants. Tests of
+/// legacy conversion deliberately construct noncanonical values themselves.
+int? _calendarDayMillis(DateTime? value) =>
+    value == null ? null : CalendarDate.fromPickerDate(value).epochMillis;
 Periodical periodicalFixture({
   int id = Periodical.emptyId,
   String? periodicalUid = 'periodical-1',
@@ -37,8 +41,8 @@ Periodical periodicalFixture({
     language: language,
     coverUrl: coverUrl,
     frequency: frequency,
-    subscriptionStart: subscriptionStart?.millisecondsSinceEpoch,
-    subscriptionEnd: subscriptionEnd?.millisecondsSinceEpoch,
+    subscriptionStart: _calendarDayMillis(subscriptionStart),
+    subscriptionEnd: _calendarDayMillis(subscriptionEnd),
     location: location,
     ageGroup: ageGroup,
     addedDate: addedDate,
@@ -82,8 +86,8 @@ CatalogueItem issueFixture({
       periodicalUid: periodicalUid,
       volume: volume,
       issueNumber: number,
-      issueDate: date?.millisecondsSinceEpoch,
-      boundUntil: until?.millisecondsSinceEpoch,
+      issueDate: _calendarDayMillis(date),
+      boundUntil: _calendarDayMillis(until),
       label: label,
     ),
   );

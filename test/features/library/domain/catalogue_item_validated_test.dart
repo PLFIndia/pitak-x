@@ -247,8 +247,8 @@ void main() {
             periodicalUid: '  p-1  ',
             volume: 2,
             issueNumber: 7,
-            issueDate: 1000,
-            boundUntil: 2000,
+            issueDate: 1735689600000,
+            boundUntil: 1735776000000,
             label: 'Special',
           ),
         );
@@ -260,12 +260,43 @@ void main() {
         expect(validated.copyCount, item.copyCount);
         expect(validated.issue!.volume, 2);
         expect(validated.issue!.issueNumber, 7);
-        expect(validated.issue!.issueDate, 1000);
-        expect(validated.issue!.boundUntil, 2000);
+        expect(validated.issue!.issueDate, 1735689600000);
+        expect(validated.issue!.boundUntil, 1735776000000);
         expect(validated.issue!.label, 'Special');
 
         const canonical = CatalogueItem(title: 'Issue', details: issue);
         expect(CatalogueItem.validate(canonical).toNullable(), same(canonical));
+      },
+    );
+
+    test(
+      'validate normalizes issue and bound dates but preserves instants',
+      () {
+        final addedDate = DateTime(2026, 1, 10, 12, 34).millisecondsSinceEpoch;
+        final removedAt = DateTime(2026, 1, 11, 13, 35).millisecondsSinceEpoch;
+        final item = CatalogueItem(
+          title: 'Issue',
+          addedDate: addedDate,
+          removedAt: removedAt,
+          details: IssueOf(
+            periodicalUid: 'p-1',
+            issueDate: DateTime(2026, 1, 15).millisecondsSinceEpoch,
+            boundUntil: DateTime(2026, 2, 15).millisecondsSinceEpoch,
+          ),
+        );
+
+        final validated = CatalogueItem.validate(item).toNullable()!;
+        expect(
+          validated.issue!.issueDate,
+          DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        );
+        expect(
+          validated.issue!.boundUntil,
+          DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+        );
+        expect(validated.addedDate, addedDate);
+        expect(validated.removedAt, removedAt);
+        expect(CatalogueItem.validate(validated).toNullable(), same(validated));
       },
     );
 

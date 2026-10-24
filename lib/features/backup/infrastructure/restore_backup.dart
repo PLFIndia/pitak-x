@@ -464,6 +464,8 @@ final class RestoreBackup {
         // restore never leaves a half-written catalogue.
         final replaced = await writeRestoredPeriodicals(db, legacy.periodicals);
         replaced.match((f) => throw _ReplacementRefused(f), (_) {});
+        final reprojected = await reprojectRestoredIssues(db);
+        reprojected.match((f) => throw _ReplacementRefused(f), (_) {});
         // Rebuild the derived FTS index from the rows just written.
         await db.rebuildFts();
         if (!scope.isCurrent) {

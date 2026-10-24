@@ -10,6 +10,7 @@
 /// identity and search expectations).
 library;
 
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 
 /// Composes issue titles.
@@ -73,15 +74,15 @@ abstract final class IssueTitle {
     if (issue.issueNumber != null) 'No ${issue.issueNumber}',
   ].join(' ');
 
-  /// `Oct 2026` for an epoch-millis date (local calendar), or null.
+  /// `Oct 2026` for a canonical epoch-millis calendar day, or null.
   static String? _monthYear(int? millis) {
     if (millis == null) return null;
-    final d = DateTime.fromMillisecondsSinceEpoch(millis);
-    return '${months[d.month]} ${d.year}';
+    final date = CalendarDate.fromEpochMillis(millis);
+    return '${months[date.month]} ${date.year}';
   }
 
-  /// The calendar year of an epoch-millis date (local calendar), or null —
-  /// the issue's projected `publishedYear`.
+  /// The UTC calendar year of an epoch-millis day — the projected
+  /// `publishedYear`. It never depends on the device timezone.
   static int? yearOf(int? millis) =>
-      millis == null ? null : DateTime.fromMillisecondsSinceEpoch(millis).year;
+      millis == null ? null : CalendarDate.fromEpochMillis(millis).year;
 }

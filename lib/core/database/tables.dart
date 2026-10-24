@@ -291,10 +291,12 @@ class MagazineIssues extends Table {
   /// Issue number, when known.
   IntColumn get issueNumber => integer().named('issue_number').nullable()();
 
-  /// Cover date (epoch millis); first issue of a bound volume.
+  /// Cover calendar day at 00:00 UTC (epoch millis); first issue of a bound
+  /// volume. This is a date-only value, not a local-midnight instant.
   IntColumn get issueDate => integer().named('issue_date').nullable()();
 
-  /// Last issue of a bound volume (epoch millis); NULL for a single issue.
+  /// Last issue calendar day at 00:00 UTC (epoch millis); NULL for a single
+  /// issue. Range arithmetic and display use UTC calendar fields.
   IntColumn get boundUntil => integer().named('bound_until').nullable()();
 
   /// Free-text label ("Dasara special"). Not in the FTS index (D10).
@@ -347,11 +349,13 @@ class Periodicals extends Table {
   /// `PeriodicalFrequency` token.
   TextColumn get frequency => text().nullable()();
 
-  /// Subscription start (epoch millis), private.
+  /// Subscription start calendar day at 00:00 UTC (epoch millis), private.
+  /// Date-only value; addedDate/removedAt remain instants.
   IntColumn get subscriptionStart =>
       integer().named('subscription_start').nullable()();
 
-  /// Subscription end (epoch millis), private; NULL = untracked (D5).
+  /// Subscription end calendar day at 00:00 UTC (epoch millis), private;
+  /// NULL = untracked (D5). The entire local end date remains in-window.
   IntColumn get subscriptionEnd =>
       integer().named('subscription_end').nullable()();
 

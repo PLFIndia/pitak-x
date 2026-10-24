@@ -21,6 +21,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 import '../library/replacement_test_guard.dart';
@@ -174,7 +175,10 @@ void main() {
 
   /// Builds a legacy Room books.db with the given (id, uid, title) rows.
   /// `added_date` is fixed (NOT NULL column); everything else defaults.
-  Uint8List buildBooksDbWith(List<({int id, String uid, String title})> rows) {
+  Uint8List buildBooksDbWith(
+    List<({int id, String uid, String title})> rows, {
+    void Function(CommonDatabase db)? customize,
+  }) {
     final path = '${tmp.path}/src_books_${rows.length}_${rows.first.id}.db';
     final db = sqlite3.open(path)
       ..execute('''
@@ -197,6 +201,7 @@ void main() {
         [r.id, r.uid, r.title],
       );
     }
+    customize?.call(db);
     db.dispose();
     return File(path).readAsBytesSync();
   }
@@ -932,6 +937,80 @@ void main() {
         expect(titles.single.periodicalUid, 'puid-1');
         expect(titles.single.title, 'Chandamama');
         expect(titles.single.issn, '0577-6058');
+      },
+    );
+
+    test(
+      'S2: a legacy archive is reprojected immediately after restore',
+      () async {
+        // This was 2026-01-01 00:00 at UTC+14. In both S2 test zones its
+        // local calendar date is 2025-12-31. The base row deliberately carries
+        // the source device's January projection and sort/year shadows.
+        final legacyInstant = DateTime.utc(2025, 12, 31, 10);
+        final zip = archive({
+          'manifest.json': utf8.encode(
+            manifest(hasItemKinds: true, hasPeriodicals: true),
+          ),
+          'books.db': buildBooksDbWith(
+            const [(id: 8, uid: 'uid-legacy', title: 'Chandamama — Jan 2026')],
+            customize: (db) {
+              db.execute(
+                'UPDATE books SET title_transliteration = ?, title_sort = ?, '
+                'published_year = ? WHERE id = 8',
+                ['Chandamama Roman — Jan 2026', 'chandamama — jan 2026', 2026],
+              );
+            },
+          ),
+          'wishlist.db': buildWishlistDb(),
+          'item_kinds.json': utf8.encode(
+            jsonEncode({
+              'schemaVersion': 1,
+              'kinds': [
+                {'bookUid': 'uid-legacy', 'kind': 'magazine-issue'},
+              ],
+            }),
+          ),
+          'periodicals.json': utf8.encode(
+            jsonEncode({
+              'schemaVersion': 1,
+              'periodicals': [
+                {
+                  'periodicalUid': 'p-legacy',
+                  'title': 'Chandamama',
+                  'titleTransliteration': 'Chandamama Roman',
+                },
+              ],
+              'issues': [
+                {
+                  'bookUid': 'uid-legacy',
+                  'periodicalUid': 'p-legacy',
+                  'issueDate': legacyInstant.millisecondsSinceEpoch,
+                },
+              ],
+            }),
+          ),
+        });
+
+        final summary =
+            (await restorer(_FakeVault(right(VaultData.empty))).restore(
+              archiveBytes: zip,
+            )).getOrElse((f) => fail('restore failed: $f'));
+        expect(summary.issuesLinked, 1);
+
+        // Read the active builder immediately. No follow-up edit or repair
+        // may make these assertions pass.
+        final active = gen.openActiveCatalogue();
+        addTearDown(active.close);
+        final book = await active.select(active.books).getSingle();
+        expect(book.title, 'Chandamama — Dec 2025');
+        expect(book.titleTransliteration, 'Chandamama Roman — Dec 2025');
+        expect(book.titleSort, 'chandamama — dec 2025');
+        expect(book.publishedYear, 2025);
+        final issue = await active.select(active.magazineIssues).getSingle();
+        expect(
+          issue.issueDate,
+          DateTime.utc(2025, 12, 31).millisecondsSinceEpoch,
+        );
       },
     );
 

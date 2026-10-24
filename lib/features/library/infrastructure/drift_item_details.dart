@@ -11,7 +11,6 @@ library;
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/platform/app_log.dart';
-import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -92,16 +91,18 @@ final class DriftItemDetails {
   }
 
   /// The Drift companion for [issue] as the detail row of [itemId].
-  static MagazineIssuesCompanion companion(int itemId, IssueOf issue) =>
-      MagazineIssuesCompanion(
-        itemId: Value(itemId),
-        periodicalUid: Value(canonicalPeriodicalUid(issue.periodicalUid)),
-        volume: Value(issue.volume),
-        issueNumber: Value(issue.issueNumber),
-        issueDate: Value(issue.issueDate),
-        boundUntil: Value(issue.boundUntil),
-        issueLabel: Value(issue.label),
-      );
+  static MagazineIssuesCompanion companion(int itemId, IssueOf issue) {
+    final normalized = issue.normalized();
+    return MagazineIssuesCompanion(
+      itemId: Value(itemId),
+      periodicalUid: Value(normalized.periodicalUid),
+      volume: Value(normalized.volume),
+      issueNumber: Value(normalized.issueNumber),
+      issueDate: Value(normalized.issueDate),
+      boundUntil: Value(normalized.boundUntil),
+      issueLabel: Value(normalized.label),
+    );
+  }
 
   void _reportOnce(String kindToken, String why) {
     if (_reportedTokens.add(kindToken)) {

@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
@@ -24,7 +25,8 @@ void main() {
   // A fixed "now" for the subscription windows (D5): active = +60 days,
   // expiring = +10 days, lapsed = -1 day.
   final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
-  const day = 24 * 60 * 60 * 1000;
+  final today = CalendarDate.fromPickerDate(DateTime(2026, 10, 23, 12));
+  int dayFromToday(int offset) => today.addDays(offset).epochMillis;
 
   late FakePeriodicals periodicals;
   late FakeItems items;
@@ -53,10 +55,10 @@ void main() {
       'summary and subscription badge', (tester) async {
     periodicals
       ..seed(const Periodical(title: 'Chandamama')) // untracked
-      ..seed(Periodical(title: 'Outlook', subscriptionEnd: t0 + 10 * day))
-      ..seed(Periodical(title: 'Sportstar', subscriptionEnd: t0 - day));
+      ..seed(Periodical(title: 'Outlook', subscriptionEnd: dayFromToday(10)))
+      ..seed(Periodical(title: 'Sportstar', subscriptionEnd: dayFromToday(-1)));
     final active = periodicals.seed(
-      Periodical(title: 'Frontline', subscriptionEnd: t0 + 60 * day),
+      Periodical(title: 'Frontline', subscriptionEnd: dayFromToday(60)),
     );
     // Two issues for Frontline, the newest dated 2026-09-01.
     final uid = active.periodicalUid!;
@@ -64,12 +66,12 @@ void main() {
       CatalogueItem(
         id: 1,
         title: 'Frontline — No 1',
-        details: _issue(uid, DateTime(2026, 8).millisecondsSinceEpoch),
+        details: _issue(uid, DateTime.utc(2026, 8).millisecondsSinceEpoch),
       ),
       CatalogueItem(
         id: 2,
         title: 'Frontline — No 2',
-        details: _issue(uid, DateTime(2026, 9).millisecondsSinceEpoch),
+        details: _issue(uid, DateTime.utc(2026, 9).millisecondsSinceEpoch),
       ),
     ];
 
@@ -161,7 +163,7 @@ void main() {
 
   testWidgets('meets accessibility guidelines', (tester) async {
     periodicals.seed(
-      Periodical(title: 'Frontline', subscriptionEnd: t0 + 10 * day),
+      Periodical(title: 'Frontline', subscriptionEnd: dayFromToday(10)),
     );
     await tester.pumpWidget(app());
     await tester.pumpAndSettle();

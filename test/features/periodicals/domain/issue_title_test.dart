@@ -5,10 +5,10 @@ import 'package:pitaka/features/periodicals/domain/issue_title.dart';
 // Every omission combination of (volume, number, date) for a single issue
 // and (volume, from, until) for a bound volume (ADR 0013 D3).
 void main() {
-  int local(int y, int m, int d) => DateTime(y, m, d).millisecondsSinceEpoch;
-  final oct2026 = local(2026, 10, 1);
-  final jul2025 = local(2025, 7, 1);
-  final jun2026 = local(2026, 6, 1);
+  int utc(int y, int m, int d) => DateTime.utc(y, m, d).millisecondsSinceEpoch;
+  final oct2026 = utc(2026, 10, 1);
+  final jul2025 = utc(2025, 7, 1);
+  final jun2026 = utc(2026, 6, 1);
 
   group('IssueTitle.compose — single issue', () {
     test('volume, number and date', () {
@@ -85,7 +85,7 @@ void main() {
       for (var m = 1; m <= 12; m++) {
         final t = IssueTitle.compose(
           'S',
-          IssueOf(periodicalUid: 'u', issueDate: local(2026, m, 15)),
+          IssueOf(periodicalUid: 'u', issueDate: utc(2026, m, 15)),
         );
         expect(t, 'S — ${IssueTitle.months[m]} 2026');
       }
@@ -160,4 +160,15 @@ void main() {
     expect(IssueTitle.yearOf(null), isNull);
     expect(IssueTitle.yearOf(oct2026), 2026);
   });
+
+  test(
+    'a canonical UTC day has the same title and year in every host zone',
+    () {
+      final january = DateTime.utc(2026).millisecondsSinceEpoch;
+      final issue = IssueOf(periodicalUid: 'u', issueDate: january);
+
+      expect(IssueTitle.compose('Chandamama', issue), 'Chandamama — Jan 2026');
+      expect(IssueTitle.yearOf(january), 2026);
+    },
+  );
 }

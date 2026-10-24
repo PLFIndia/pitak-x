@@ -398,8 +398,8 @@ void main() {
                 'publisher': 'THG',
                 'language': 'English',
                 'frequency': 'monthly',
-                'subscriptionStart': 100,
-                'subscriptionEnd': 200,
+                'subscriptionStart': 1735689600000,
+                'subscriptionEnd': 1735776000000,
                 'location': 'Shelf 1',
                 'sourceType': 'PURCHASED',
                 'ageGroup': 'above-6',
@@ -421,7 +421,7 @@ void main() {
                 'issue': {
                   'periodicalUid': 'per-1',
                   'issueNumber': 5,
-                  'issueDate': 1000,
+                  'issueDate': 1735862400000,
                   'label': 'Festive number',
                 },
               },
@@ -436,8 +436,8 @@ void main() {
         expect(p.title, 'Frontline');
         expect(p.issn, '1234-5679');
         expect(p.frequency, PeriodicalFrequency.monthly);
-        expect(p.subscriptionStart, 100);
-        expect(p.subscriptionEnd, 200);
+        expect(p.subscriptionStart, 1735689600000);
+        expect(p.subscriptionEnd, 1735776000000);
         expect(p.sourceType, ItemSourceType.purchased);
         expect(p.ageGroup, AgeGroup.above6);
 
@@ -455,8 +455,55 @@ void main() {
         final d = issue.details! as IssueOf;
         expect(d.periodicalUid, 'per-1');
         expect(d.issueNumber, 5);
-        expect(d.issueDate, 1000);
+        expect(d.issueDate, 1735862400000);
         expect(d.label, 'Festive number');
+      });
+
+      test('legacy calendar values normalize and instant fields survive', () {
+        final payload = importer.parse(
+          v4(
+            periodicals: [
+              {
+                'periodicalUid': 'per-1',
+                'title': 'Frontline',
+                'subscriptionStart': DateTime(
+                  2026,
+                  1,
+                  15,
+                ).millisecondsSinceEpoch,
+                'subscriptionEnd': DateTime(2026, 2, 15).millisecondsSinceEpoch,
+                'addedDate': 50,
+                'removedAt': 60,
+              },
+            ],
+            books: [
+              {
+                'bookUid': 'i1',
+                'kind': 'magazine-issue',
+                'title': 'Frontline — Jan 2026',
+                'addedDate': 70,
+                'removedAt': 80,
+                'issue': {
+                  'periodicalUid': 'per-1',
+                  'issueDate': DateTime(2026, 1, 15).millisecondsSinceEpoch,
+                  'boundUntil': DateTime(2026, 2, 15).millisecondsSinceEpoch,
+                },
+              },
+            ],
+          ),
+        );
+
+        expect(payload.parseErrors, isEmpty);
+        final periodical = payload.periodicals.single;
+        expect(periodical.subscriptionStart, 1768435200000);
+        expect(periodical.subscriptionEnd, 1771113600000);
+        expect(periodical.addedDate, 50);
+        expect(periodical.removedAt, 60);
+        final issue = payload.items.single;
+        expect(issue.issue?.issueDate, 1768435200000);
+        expect(issue.issue?.boundUntil, 1771113600000);
+        expect(issue.addedDate, 70);
+        expect(issue.removedAt, 80);
       });
 
       test('an unknown kind token skips the row and counts it (F6)', () {
@@ -523,8 +570,8 @@ void main() {
                   'kind': 'magazine-issue',
                   'issue': {
                     'periodicalUid': 'per-1',
-                    'issueDate': 2000,
-                    'boundUntil': 1000, // before the start
+                    'issueDate': 1735776000000,
+                    'boundUntil': 1735689600000, // before the start
                   },
                 },
               ],

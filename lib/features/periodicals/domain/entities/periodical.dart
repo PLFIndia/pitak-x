@@ -19,6 +19,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/periodical_identity.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/issn.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
@@ -82,12 +83,13 @@ class Periodical {
   /// Publication cadence, when known.
   final PeriodicalFrequency? frequency;
 
-  /// Epoch millis the subscription started, when tracked (private).
+  /// Subscription start calendar day at 00:00 UTC (epoch millis), private.
+  /// This is date-only, unlike the addedDate/removedAt instants.
   final int? subscriptionStart;
 
-  /// Epoch millis the subscription ends, when tracked (private). Null means
-  /// the subscription is not tracked — `SubscriptionStatus` derives
-  /// everything else from this date (D5).
+  /// Subscription end calendar day at 00:00 UTC (epoch millis), private.
+  /// Null means untracked — `SubscriptionStatus` derives everything else
+  /// from this day, and the whole local end date stays in-window (D5).
   final int? subscriptionEnd;
 
   /// Free-form notes (private; stripped at publish).
@@ -121,6 +123,30 @@ class Periodical {
 
   /// True when the subscription window is tracked (D5).
   bool get isSubscriptionTracked => subscriptionEnd != null;
+
+  /// Returns this entity with canonical UTC-midnight subscription days.
+  ///
+  /// Invalid integers remain for [validate] to reject. No instant field is
+  /// changed. The same method backs the ingress gate and persistence mapper,
+  /// so a returned entity and its stored companion always agree.
+  Periodical normalizedSubscriptionDates() {
+    final normalizedStart =
+        CatalogueRules.isValidOptionalDateMillis(subscriptionStart)
+        ? CalendarDate.normalizeOptionalStoredMillis(subscriptionStart)
+        : subscriptionStart;
+    final normalizedEnd =
+        CatalogueRules.isValidOptionalDateMillis(subscriptionEnd)
+        ? CalendarDate.normalizeOptionalStoredMillis(subscriptionEnd)
+        : subscriptionEnd;
+    if (normalizedStart == subscriptionStart &&
+        normalizedEnd == subscriptionEnd) {
+      return this;
+    }
+    return copyWith(
+      subscriptionStart: normalizedStart,
+      subscriptionEnd: normalizedEnd,
+    );
+  }
 
   /// Validates [periodical] against the shared `CatalogueRules` and the
   /// periodical's own rules, returning a normalised copy (title trimmed,
@@ -198,12 +224,14 @@ class Periodical {
         const FieldError('subscriptionEnd', 'is not a representable date'),
       );
     }
+    // Subscription bounds are calendar days, not instants. Normalize valid
+    // values before checking their order; addedDate/removedAt stay untouched.
+    final normalizedDates = periodical.normalizedSubscriptionDates();
+    final subscriptionStart = normalizedDates.subscriptionStart;
+    final subscriptionEnd = normalizedDates.subscriptionEnd;
     if (startOk &&
         endOk &&
-        !CatalogueRules.isValidDateOrder(
-          periodical.subscriptionStart,
-          periodical.subscriptionEnd,
-        )) {
+        !CatalogueRules.isValidDateOrder(subscriptionStart, subscriptionEnd)) {
       errors.add(
         const FieldError(
           'subscriptionEnd',
@@ -221,7 +249,9 @@ class Periodical {
     if (title == periodical.title &&
         periodicalUid == periodical.periodicalUid &&
         safeCover == periodical.coverUrl &&
-        canonicalIssn == periodical.issn) {
+        canonicalIssn == periodical.issn &&
+        subscriptionStart == periodical.subscriptionStart &&
+        subscriptionEnd == periodical.subscriptionEnd) {
       return right(periodical);
     }
     return right(
@@ -235,8 +265,8 @@ class Periodical {
         language: periodical.language,
         coverUrl: safeCover,
         frequency: periodical.frequency,
-        subscriptionStart: periodical.subscriptionStart,
-        subscriptionEnd: periodical.subscriptionEnd,
+        subscriptionStart: subscriptionStart,
+        subscriptionEnd: subscriptionEnd,
         notes: periodical.notes,
         location: periodical.location,
         sourceType: periodical.sourceType,

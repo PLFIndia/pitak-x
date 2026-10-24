@@ -19,6 +19,12 @@ import 'package:pitaka/features/periodicals/infrastructure/drift_periodical_repo
 /// order, and the series-side issue reads that must agree with the item
 /// repository's identity key and `IssueSorter`.
 void main() {
+  const day1 = 1735689600000; // 2025-01-01T00:00:00Z
+  const day2 = 1735776000000; // 2025-01-02T00:00:00Z
+  const day3 = 1735862400000; // 2025-01-03T00:00:00Z
+  const day4 = 1735948800000; // 2025-01-04T00:00:00Z
+  const day5 = 1736035200000; // 2025-01-05T00:00:00Z
+
   late AppDatabase db;
   late DriftPeriodicalRepository repo;
   late DriftCatalogueItemRepository items;
@@ -51,8 +57,8 @@ void main() {
     language: 'Telugu',
     coverUrl: 'covers/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.jpg',
     frequency: PeriodicalFrequency.monthly,
-    subscriptionStart: 1_000,
-    subscriptionEnd: 2_000,
+    subscriptionStart: day1,
+    subscriptionEnd: day2,
     notes: 'private note',
     location: 'Shelf 3',
     sourceType: ItemSourceType.purchased,
@@ -382,7 +388,7 @@ void main() {
     test('counts the rows of that series only; blank → 0', () async {
       await addIssue('p-1', number: 1);
       await addIssue('p-1', number: 2);
-      await addIssue('p-1', date: 10, until: 20);
+      await addIssue('p-1', date: day1, until: day2);
       await addIssue('p-2', number: 1);
       expect(ok(await repo.countIssues('p-1')), 3);
       expect(ok(await repo.countIssues('p-2')), 1);
@@ -416,10 +422,10 @@ void main() {
       final undated = ok(await repo.insert(const Periodical(title: 'Undated')));
       final empty = ok(await repo.insert(const Periodical(title: 'Zero')));
 
-      await addIssue(uid, number: 1, date: 100);
-      final newest = await addIssue(uid, number: 2, date: 300);
-      await addIssue(uid, number: 3, date: 200);
-      await addIssue(uid, date: 50, until: 60);
+      await addIssue(uid, number: 1, date: day1);
+      final newest = await addIssue(uid, number: 2, date: day4);
+      await addIssue(uid, number: 3, date: day2);
+      await addIssue(uid, date: day1, until: day2);
       ok(await items.markRemoved(newest.id, 7));
       await addIssue(undated.periodicalUid!, number: 1);
 
@@ -428,7 +434,7 @@ void main() {
       };
       expect(byId, hasLength(3));
       expect(byId[series.id]!.issueCount, 4);
-      expect(byId[series.id]!.latestIssueDate, 300, reason: 'removed counts');
+      expect(byId[series.id]!.latestIssueDate, day4, reason: 'removed counts');
       expect(byId[series.id]!.periodical.sameAs(series), isTrue);
       expect(byId[undated.id]!.issueCount, 1);
       expect(byId[undated.id]!.latestIssueDate, isNull);
@@ -477,7 +483,7 @@ void main() {
     });
 
     test('excludes bound volumes, other series and other numbers', () async {
-      await addIssue('p-1', number: 4, date: 10, until: 20); // bound, No 4
+      await addIssue('p-1', number: 4, date: day1, until: day2); // bound, No 4
       await addIssue('p-2', number: 4);
       expect(
         ok(
@@ -515,15 +521,20 @@ void main() {
 
   group('findBoundVolume (D6 bound key: series, first date, last date)', () {
     test('finds the exact range only', () async {
-      final bound = await addIssue('p-1', title: 'bound', date: 10, until: 20);
-      await addIssue('p-1', title: 'single', date: 10); // same first date
-      await addIssue('p-2', date: 10, until: 20); // other series
+      final bound = await addIssue(
+        'p-1',
+        title: 'bound',
+        date: day1,
+        until: day2,
+      );
+      await addIssue('p-1', title: 'single', date: day1); // same first date
+      await addIssue('p-2', date: day1, until: day2); // other series
 
       final found = ok(
         await repo.findBoundVolume(
           periodicalUid: 'p-1',
-          issueDate: 10,
-          boundUntil: 20,
+          issueDate: day1,
+          boundUntil: day2,
         ),
       )!;
       expect(found.id, bound.id);
@@ -532,8 +543,8 @@ void main() {
         ok(
           await repo.findBoundVolume(
             periodicalUid: 'p-1',
-            issueDate: 10,
-            boundUntil: 21,
+            issueDate: day1,
+            boundUntil: day3,
           ),
         ),
         isNull,
@@ -542,8 +553,8 @@ void main() {
         ok(
           await repo.findBoundVolume(
             periodicalUid: 'p-3',
-            issueDate: 10,
-            boundUntil: 20,
+            issueDate: day1,
+            boundUntil: day2,
           ),
         ),
         isNull,
@@ -553,15 +564,15 @@ void main() {
 
   group('issuesOf', () {
     test('every issue of the series in IssueSorter order', () async {
-      await addIssue('p-1', title: 'a', date: 100, volume: 1, number: 2);
-      await addIssue('p-1', title: 'b', date: 300);
-      await addIssue('p-1', title: 'c', date: 100, volume: 2, number: 1);
+      await addIssue('p-1', title: 'a', date: day1, volume: 1, number: 2);
+      await addIssue('p-1', title: 'b', date: day4);
+      await addIssue('p-1', title: 'c', date: day1, volume: 2, number: 1);
       final d = await addIssue('p-1', title: 'd');
-      await addIssue('p-1', title: 'e', date: 100, volume: 1, number: 3);
-      await addIssue('p-1', title: 'f', date: 100, volume: 1);
-      await addIssue('p-1', title: 'g', date: 200, until: 250);
-      await addIssue('p-1', title: 'h', date: 100, number: 9);
-      await addIssue('p-2', title: 'other series', date: 999, number: 1);
+      await addIssue('p-1', title: 'e', date: day1, volume: 1, number: 3);
+      await addIssue('p-1', title: 'f', date: day1, volume: 1);
+      await addIssue('p-1', title: 'g', date: day2, until: day3);
+      await addIssue('p-1', title: 'h', date: day1, number: 9);
+      await addIssue('p-2', title: 'other series', date: day5, number: 1);
       await addIssue('p-1', title: 'j');
       ok(await items.markRemoved(d.id, 3)); // still an issue of p-1
 

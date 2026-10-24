@@ -131,7 +131,7 @@ void main() {
         details: IssueOf(
           periodicalUid: uid,
           issueNumber: 3,
-          issueDate: DateTime(2026, 8, 15).millisecondsSinceEpoch,
+          issueDate: DateTime.utc(2026, 8, 15).millisecondsSinceEpoch,
         ),
       ),
     );
@@ -271,6 +271,39 @@ void main() {
     expect(stored.issue?.issueNumber, 5, reason: 'untouched fields kept');
     expect(stored.kind.name, 'magazineIssue', reason: 'kind never changes');
     expect(stored.itemUid, existing.itemUid);
+  });
+
+  testWidgets('issue date pick/display round-trip stays on one day', (
+    tester,
+  ) async {
+    final uid = frontline.periodicalUid!;
+    final existing = items.seed(
+      CatalogueItem(
+        title: 'Frontline — Jan 2026',
+        details: IssueOf(
+          periodicalUid: uid,
+          issueDate: DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        ),
+      ),
+    );
+    periodicals.issues[uid] = [existing];
+    await openForm(tester, edit: existing);
+
+    expect(find.textContaining('Cover date: 2026-01-15'), findsOneWidget);
+
+    await scrollTap(tester, find.text('Change'));
+    await tester.tap(find.text('20').last);
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Cover date: 2026-01-20'), findsOneWidget);
+
+    await save(tester);
+
+    expect(
+      items.rows[existing.id]!.issue!.issueDate,
+      DateTime.utc(2026, 1, 20).millisecondsSinceEpoch,
+    );
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {

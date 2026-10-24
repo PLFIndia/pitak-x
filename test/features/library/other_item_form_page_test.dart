@@ -189,6 +189,30 @@ void main() {
     expect(find.text('Add cover'), findsOneWidget);
   });
 
+  testWidgets('Date added keeps instant picker semantics', (tester) async {
+    final existing = items.seed(
+      CatalogueItem(
+        title: 'Chess set',
+        addedDate: DateTime(2026, 1, 15, 12, 34).millisecondsSinceEpoch,
+        details: const OtherItemOf(),
+      ),
+    );
+    await openForm(tester, edit: existing);
+
+    await scrollTap(tester, find.text('Change'));
+    await tester.tap(find.text('20').last);
+    await tester.pump();
+    await tester.tap(find.text('OK'));
+    await tester.pumpAndSettle();
+    await save(tester);
+
+    expect(
+      items.rows[existing.id]!.addedDate,
+      DateTime(2026, 1, 20).millisecondsSinceEpoch,
+      reason: 'addedDate is an instant, not a UTC calendar-day field',
+    );
+  });
+
   testWidgets('meets accessibility guidelines', (tester) async {
     await openForm(tester);
     await expectMeetsA11yGuidelines(tester);

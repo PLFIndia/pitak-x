@@ -21,6 +21,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
 import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
 import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
@@ -293,11 +294,9 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
               if (v) {
                 // Sensible defaults the user then corrects: starting today,
                 // ending one year from today.
-                final now = DateTime.now().millisecondsSinceEpoch;
-                _subscriptionStart ??= now;
-                _subscriptionEnd ??= DateTime.now()
-                    .add(const Duration(days: 365))
-                    .millisecondsSinceEpoch;
+                final today = CalendarDate.fromPickerDate(DateTime.now());
+                _subscriptionStart ??= today.epochMillis;
+                _subscriptionEnd ??= today.addMonthsClamped(12).epochMillis;
               }
             }),
           ),
@@ -360,13 +359,16 @@ class _PeriodicalFormPageState extends ConsumerState<PeriodicalFormPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(formatFormDate(_addedDate) ?? ''),
+                Text(formatInstantFormDate(_addedDate) ?? ''),
                 TextButton(
-                  onPressed: () => _pickDate(
-                    current: _addedDate,
-                    helpText: 'Date added',
-                    onPicked: (d) => setState(() => _addedDate = d),
-                  ),
+                  onPressed: () async {
+                    final picked = await pickInstantFormDate(
+                      context,
+                      current: _addedDate,
+                      helpText: 'Date added',
+                    );
+                    if (picked != null) setState(() => _addedDate = picked);
+                  },
                   child: const Text('Change'),
                 ),
               ],

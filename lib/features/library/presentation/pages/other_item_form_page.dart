@@ -273,10 +273,10 @@ class _OtherItemFormPageState extends ConsumerState<OtherItemFormPage> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(formatFormDate(_addedDate) ?? ''),
+                Text(formatInstantFormDate(_addedDate) ?? ''),
                 TextButton(
                   onPressed: () async {
-                    final picked = await pickFormDate(
+                    final picked = await pickInstantFormDate(
                       context,
                       current: _addedDate,
                       helpText: 'Date added',

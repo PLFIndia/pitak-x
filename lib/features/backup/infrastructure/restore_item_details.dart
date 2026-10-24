@@ -35,7 +35,9 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
+import 'package:pitaka/features/periodicals/application/issue_reprojection.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/infrastructure/drift_periodical_repository.dart';
 
@@ -189,4 +191,14 @@ Future<Either<Failure, int>> writeRestoredPeriodicals(
   List<Periodical> periodicals,
 ) {
   return DriftPeriodicalRepository(db).replaceAll(periodicals);
+}
+
+/// Reprojects every restored series over the BUILDER database. Must run after
+/// both the item details and series have been written, inside the same
+/// transaction; a failure therefore discards the whole candidate generation.
+Future<Either<Failure, Unit>> reprojectRestoredIssues(AppDatabase db) {
+  return IssueReprojection(
+    periodicals: DriftPeriodicalRepository(db),
+    items: DriftCatalogueItemRepository(db),
+  ).callAllStored();
 }

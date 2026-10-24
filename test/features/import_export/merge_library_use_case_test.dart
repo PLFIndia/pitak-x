@@ -28,6 +28,7 @@ import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
+import 'bundle_test_fixture.dart';
 
 class _LoanVault with VaultWriteUnsupported implements VaultRepository {
   @override
@@ -1521,6 +1522,135 @@ void main() {
       expect(periodicals.rows.values.single.title, 'New Series');
       expect(books.books.single.title, 'New');
     });
+
+    test(
+      'S2: legacy OVERWRITE reprojects normalized dates immediately',
+      () async {
+        final fixture = BundleTestFixture();
+        addTearDown(fixture.dispose);
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: fixture.books,
+          periodicalRepo: fixture.periodicals,
+          namespace: _FakeNamespace(libraryId: matchingId),
+          replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
+        );
+        // This was 2026-01-01 00:00 at UTC+14. In both S2 test zones its
+        // local calendar date is 2025-12-31, which must be canonicalized to
+        // UTC midnight and projected immediately during the same overwrite.
+        final legacyInstant = DateTime.utc(2025, 12, 31, 10);
+        final json = exportJson(
+          libraryId: otherId,
+          periodicals: [
+            {
+              'periodicalUid': 'p-legacy',
+              'title': 'Frontline',
+              'titleTransliteration': 'Frontline Roman',
+            },
+          ],
+          books: [
+            {
+              'bookUid': 'issue-legacy',
+              'title': 'Frontline — Jan 2026',
+              'titleTransliteration': 'Frontline Roman — Jan 2026',
+              'publishedYear': 2026,
+              'addedDate': 1,
+              'kind': 'magazine-issue',
+              'issue': {
+                'periodicalUid': 'p-legacy',
+                'issueDate': legacyInstant.millisecondsSinceEpoch,
+              },
+            },
+          ],
+        );
+
+        final outcome = (await useCase.call(
+          json,
+        )).getOrElse((f) => fail('merge planning failed: $f'));
+        final result = (await useCase.applyOverwrite(
+          outcome as MergeDiffersDecision,
+        )).getOrElse((f) => fail('overwrite failed: $f'));
+        expect(result.replaced, isTrue);
+
+        // No follow-up edit or second merge: the committed rows must already
+        // agree with the normalized details.
+        final item = ok(await fixture.books.findByUid('issue-legacy'))!;
+        expect(item.title, 'Frontline — Dec 2025');
+        expect(item.titleTransliteration, 'Frontline Roman — Dec 2025');
+        expect(item.publishedYear, 2025);
+        final raw = await fixture.database
+            .select(fixture.database.books)
+            .getSingle();
+        expect(raw.titleSort, 'frontline — dec 2025');
+        expect(
+          item.issue?.issueDate,
+          DateTime.utc(2025, 12, 31).millisecondsSinceEpoch,
+        );
+      },
+    );
+
+    test(
+      'S2: direct OVERWRITE revalidates days without changing instants',
+      () async {
+        final fixture = BundleTestFixture();
+        addTearDown(fixture.dispose);
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: fixture.books,
+          periodicalRepo: fixture.periodicals,
+          namespace: _FakeNamespace(libraryId: matchingId),
+          replacementGuard: FakeReplacementGuard(),
+          planner: planMergeInline,
+        );
+        final addedDate = DateTime(2026, 1, 10, 12, 34).millisecondsSinceEpoch;
+        final removedAt = DateTime(2026, 1, 11, 13, 35).millisecondsSinceEpoch;
+        final legacyDay = DateTime(2026, 1, 15).millisecondsSinceEpoch;
+        final decision = MergeDiffersDecision(
+          incomingBooks: [
+            CatalogueItem(
+              itemUid: 'issue-direct',
+              title: 'Frontline — Jan 2026',
+              addedDate: addedDate,
+              removedAt: removedAt,
+              details: IssueOf(periodicalUid: 'p-direct', issueDate: legacyDay),
+            ),
+          ],
+          incomingPeriodicals: [
+            Periodical(
+              periodicalUid: 'p-direct',
+              title: '  Frontline  ',
+              subscriptionStart: legacyDay,
+              addedDate: addedDate,
+              removedAt: removedAt,
+            ),
+          ],
+          incomingLibraryId: otherId,
+          incomingLibraryName: 'Incoming',
+          localLibraryName: 'Local',
+          localIsEmpty: true,
+        );
+
+        final result = await useCase.applyOverwrite(decision);
+
+        expect(result.isRight(), isTrue);
+        final series = ok(await fixture.periodicals.findByUid('p-direct'))!;
+        expect(series.title, 'Frontline', reason: 'the domain gate ran');
+        expect(
+          series.subscriptionStart,
+          DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        );
+        expect(series.addedDate, addedDate);
+        expect(series.removedAt, removedAt);
+        final item = ok(await fixture.books.findByUid('issue-direct'))!;
+        expect(
+          item.issue?.issueDate,
+          DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+        );
+        expect(item.addedDate, addedDate);
+        expect(item.removedAt, removedAt);
+      },
+    );
 
     test('a differ decision carries the series into Join, and a titles-only '
         'library is not empty', () async {

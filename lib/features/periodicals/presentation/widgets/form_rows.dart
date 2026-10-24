@@ -9,14 +9,48 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 
-/// Opens the date picker for a form date field and returns the picked day as
-/// epoch millis (null when cancelled). Range 1900–2100: a subscription end
-/// or a cover date legitimately lies in the FUTURE, unlike the book form's
-/// "date added".
+/// Opens the picker for an issue/subscription CALENDAR DAY and returns its
+/// canonical 00:00-UTC representation (null when cancelled).
 ///
-/// Shared by both periodical forms so the range rule lives in one place.
+/// Canonical values become local picker FIELDS only; they are never treated
+/// as instants to convert through the device zone. Range 1900–2100: cover and
+/// subscription dates may legitimately be in the future.
 Future<int?> pickFormDate(
+  BuildContext context, {
+  required int? current,
+  required String helpText,
+}) async {
+  final now = DateTime.now();
+  final stored = CalendarDate.fromEpochMillisOrNull(current)?.toPickerDate();
+  final initial =
+      (stored == null ||
+          stored.isBefore(DateTime(1900)) ||
+          stored.isAfter(DateTime(2100)))
+      ? now
+      : stored;
+  final picked = await showDatePicker(
+    context: context,
+    initialDate: initial,
+    firstDate: DateTime(1900),
+    lastDate: DateTime(2100),
+    helpText: helpText,
+  );
+  return picked == null
+      ? null
+      : CalendarDate.fromPickerDate(picked).epochMillis;
+}
+
+/// Formats a canonical calendar day as `YYYY-MM-DD`, or null when unset or
+/// unrepresentable. UTC fields keep the displayed day stable across zones.
+String? formatFormDate(int? epochMillis) =>
+    CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
+
+/// Opens the same picker for an `addedDate` INSTANT, preserving the legacy
+/// behavior of storing the chosen local midnight. This deliberately separate
+/// name prevents calendar-day normalization from changing timestamp fields.
+Future<int?> pickInstantFormDate(
   BuildContext context, {
   required int? current,
   required String helpText,
@@ -41,10 +75,9 @@ Future<int?> pickFormDate(
   return picked?.millisecondsSinceEpoch;
 }
 
-/// Formats epoch millis as a plain `YYYY-MM-DD`, or null when unset or out
-/// of range (M15: a legacy out-of-range value renders as no date instead of
-/// throwing).
-String? formatFormDate(int? epochMillis) {
+/// Formats an `addedDate` instant in the local zone, leaving instant semantics
+/// unchanged. Use [formatFormDate] for issue/subscription calendar days.
+String? formatInstantFormDate(int? epochMillis) {
   if (epochMillis == null) return null;
   final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
   if (d == null) return null;

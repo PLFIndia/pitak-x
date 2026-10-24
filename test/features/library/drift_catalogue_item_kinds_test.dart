@@ -20,6 +20,12 @@ import '../../support/raw_catalogue_rows.dart';
 /// `IssueSorter`, identity-key races surface as typed failures, and a row
 /// from a newer build is read as a book but never written back.
 void main() {
+  const day1 = 1735689600000; // 2025-01-01T00:00:00Z
+  const day2 = 1735776000000; // 2025-01-02T00:00:00Z
+  const day3 = 1735862400000; // 2025-01-03T00:00:00Z
+  const day4 = 1735948800000; // 2025-01-04T00:00:00Z
+  const day5 = 1736035200000; // 2025-01-05T00:00:00Z
+
   late AppDatabase db;
   late DriftCatalogueItemRepository repo;
 
@@ -80,7 +86,7 @@ void main() {
             'Chandamama — Vol 2 No 7 (Oct 2026)',
             volume: 2,
             number: 7,
-            date: 1000,
+            date: day1,
             label: 'Dasara',
           ),
         ),
@@ -240,17 +246,17 @@ void main() {
   group('series order == IssueSorter (both reads, across page seams)', () {
     test('date desc, volume desc, number desc, id desc; nulls last', () async {
       final rows = <CatalogueItem>[
-        issue('probe a', date: 100, volume: 1, number: 2),
-        issue('probe b', date: 300),
-        issue('probe c', date: 100, volume: 2, number: 1),
+        issue('probe a', date: day1, volume: 1, number: 2),
+        issue('probe b', date: day4),
+        issue('probe c', date: day1, volume: 2, number: 1),
         issue('probe d'),
-        issue('probe e', date: 100, volume: 1, number: 3),
+        issue('probe e', date: day1, volume: 1, number: 3),
         // Same date and volume, no number: sorts after e and a (nulls last).
-        issue('probe f', date: 100, volume: 1),
-        issue('probe g', date: 200, until: 250),
+        issue('probe f', date: day1, volume: 1),
+        issue('probe g', date: day2, until: day3),
         // No volume: after every volume at date 100.
-        issue('probe h', date: 100, number: 9),
-        issue('probe i', series: 'p-2', date: 999, number: 1),
+        issue('probe h', date: day1, number: 9),
+        issue('probe i', series: 'p-2', date: day5, number: 1),
         // Ties with d on every key: id desc puts this later row first.
         issue('probe j'),
       ];
@@ -304,16 +310,18 @@ void main() {
       'the same bound range twice; an update onto another row too',
       () async {
         final first = ok(
-          await repo.insert(issue('bound', date: 10, until: 20)),
+          await repo.insert(issue('bound', date: day1, until: day2)),
         );
-        final r = await repo.insert(issue('bound again', date: 10, until: 20));
+        final r = await repo.insert(
+          issue('bound again', date: day1, until: day2),
+        );
         expect(r.getLeft().toNullable(), isA<DuplicateIssueFailure>());
         final other = ok(
-          await repo.insert(issue('bound 2', date: 30, until: 40)),
+          await repo.insert(issue('bound 2', date: day3, until: day4)),
         );
         final moved = await repo.update(
           other.copyWith(
-            details: other.issue!.copyWith(issueDate: 10, boundUntil: 20),
+            details: other.issue!.copyWith(issueDate: day1, boundUntil: day2),
           ),
         );
         final dup = moved.getLeft().toNullable()! as DuplicateIssueFailure;

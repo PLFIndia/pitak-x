@@ -1,18 +1,16 @@
-/// Re-project the issues of a stored series (periodicals application layer,
-/// AGENTS.md §3/§4; ADR 0013 D3) — the single shared loop behind a series
-/// edit and the merge.
+/// Re-project the issues of stored series (periodicals application layer,
+/// AGENTS.md §3/§4; ADR 0013 D3) — the single shared loop behind series edits,
+/// merges, and authoritative catalogue replacement.
 ///
 /// D3 (beginner note): an issue's title, transliteration, publisher,
 /// language, publication year and age group are PROJECTED from its series
 /// onto the issue's own base row, so every existing consumer — list, search,
 /// publish, backup, merge — reads plain columns. The price: whenever the
-/// series' stored row and its issues could disagree, every issue is
-/// rewritten from the series. Two callers need that (AGENTS §0 "one blessed
-/// way", so it lives here exactly once):
-///  - `UpdatePeriodicalUseCase` — the series was just edited;
-///  - `MergeLibraryUseCase` — a merged series' stored issues may be stale
-///    (import updates the series row without re-projecting, S18) and the
-///    merge is the seam that repairs them.
+/// series' stored row and its issues could disagree, every issue is rewritten
+/// from the series. Series edits, ordinary merge, merge OVERWRITE, and
+/// `.pitabak` restore all share this implementation (AGENTS §0 "one blessed
+/// way"). Restore supplies repositories over its builder database, never the
+/// live generation.
 ///
 /// Call INSIDE a transaction (the item repository's `runInTransaction`
 /// covers both stores — they share the database): a `Left` here must roll
@@ -77,6 +75,27 @@ class IssueReprojection {
         if (written.isLeft()) return written.map((_) => unit);
       }
       return right(unit);
+    });
+  }
+
+  /// Reprojects every issue of each series in [stored], stopping at the first
+  /// failure so the caller's transaction can roll back every earlier write.
+  Future<Either<Failure, Unit>> callAll(Iterable<Periodical> stored) async {
+    for (final series in stored) {
+      final reprojected = await call(series);
+      if (reprojected.isLeft()) return reprojected;
+    }
+    return right(unit);
+  }
+
+  /// Reprojects every issue of every series currently in the repository.
+  /// Reading the stored rows (rather than incoming objects) also observes any
+  /// identity assigned while they were persisted. An unresolved issue link is
+  /// left alone: this method never manufactures a series for it.
+  Future<Either<Failure, Unit>> callAllStored() async {
+    final stored = await _periodicals.listAll();
+    return stored.fold(left, (summaries) async {
+      return callAll(summaries.map((summary) => summary.periodical));
     });
   }
 

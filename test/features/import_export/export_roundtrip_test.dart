@@ -592,8 +592,8 @@ void main() {
       publisher: 'THG',
       language: 'English',
       frequency: PeriodicalFrequency.monthly,
-      subscriptionStart: 100,
-      subscriptionEnd: 200,
+      subscriptionStart: 1735689600000,
+      subscriptionEnd: 1735776000000,
       addedDate: 50,
     );
     const items = [
@@ -645,7 +645,7 @@ void main() {
       expect(p.periodicalUid, 'per-1');
       expect(p.issn, '1234-5679');
       expect(p.frequency, PeriodicalFrequency.monthly);
-      expect(p.subscriptionEnd, 200);
+      expect(p.subscriptionEnd, 1735776000000);
 
       expect(payload.items, hasLength(3));
       final book = payload.items.firstWhere((b) => b.itemUid == 'b1');

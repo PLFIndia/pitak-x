@@ -51,7 +51,7 @@ final class PeriodicalListEntry {
   /// Number of catalogued issues (soft-removed included).
   int get issueCount => summary.issueCount;
 
-  /// Newest `issueDate` among the issues (epoch millis), or null.
+  /// Newest `issueDate` (UTC-midnight calendar-day epoch millis), or null.
   int? get latestIssueDate => summary.latestIssueDate;
 
   @override

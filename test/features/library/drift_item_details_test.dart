@@ -54,6 +54,27 @@ void main() {
     });
   });
 
+  test('companion normalizes issue days and the soft link', () {
+    final companion = DriftItemDetails.companion(
+      7,
+      IssueOf(
+        periodicalUid: '  p  ',
+        issueDate: DateTime(2026, 1, 15).millisecondsSinceEpoch,
+        boundUntil: DateTime(2026, 2, 15).millisecondsSinceEpoch,
+      ),
+    );
+
+    expect(companion.periodicalUid.value, 'p');
+    expect(
+      companion.issueDate.value,
+      DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+    );
+    expect(
+      companion.boundUntil.value,
+      DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+    );
+  });
+
   group('write / delete', () {
     Future<int> base(String title) => db
         .into(db.books)

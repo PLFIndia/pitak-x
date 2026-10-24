@@ -9,7 +9,6 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/periodical_identity.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
@@ -256,17 +255,12 @@ class CatalogueItem {
     final errors = <FieldError>[];
 
     final title = book.title.trim();
-    // Normalize the soft link before validating it. The unchanged branch
-    // keeps the original details object so a canonical row still takes the
-    // same-instance fast path below.
+    // Normalize the soft link and date-only fields BEFORE validating their
+    // order or projecting a title. Instant fields are not touched. A fully
+    // canonical details object preserves the same-instance fast path below.
     final rawDetails = book.details;
-    final details =
-        rawDetails is IssueOf &&
-            rawDetails.periodicalUid !=
-                canonicalPeriodicalUid(rawDetails.periodicalUid)
-        ? rawDetails.copyWith(
-            periodicalUid: canonicalPeriodicalUid(rawDetails.periodicalUid),
-          )
+    final details = rawDetails is IssueOf
+        ? rawDetails.normalized()
         : rawDetails;
     if (title.isEmpty) {
       errors.add(const FieldError('title', 'is required'));

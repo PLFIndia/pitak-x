@@ -3624,10 +3624,12 @@ class MagazineIssueRow extends DataClass
   /// Issue number, when known.
   final int? issueNumber;
 
-  /// Cover date (epoch millis); first issue of a bound volume.
+  /// Cover calendar day at 00:00 UTC (epoch millis); first issue of a bound
+  /// volume. This is a date-only value, not a local-midnight instant.
   final int? issueDate;
 
-  /// Last issue of a bound volume (epoch millis); NULL for a single issue.
+  /// Last issue calendar day at 00:00 UTC (epoch millis); NULL for a single
+  /// issue. Range arithmetic and display use UTC calendar fields.
   final int? boundUntil;
 
   /// Free-text label ("Dasara special"). Not in the FTS index (D10).
@@ -4449,10 +4451,12 @@ class PeriodicalRow extends DataClass implements Insertable<PeriodicalRow> {
   /// `PeriodicalFrequency` token.
   final String? frequency;
 
-  /// Subscription start (epoch millis), private.
+  /// Subscription start calendar day at 00:00 UTC (epoch millis), private.
+  /// Date-only value; addedDate/removedAt remain instants.
   final int? subscriptionStart;
 
-  /// Subscription end (epoch millis), private; NULL = untracked (D5).
+  /// Subscription end calendar day at 00:00 UTC (epoch millis), private;
+  /// NULL = untracked (D5). The entire local end date remains in-window.
   final int? subscriptionEnd;
 
   /// Private notes.

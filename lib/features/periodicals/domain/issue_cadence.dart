@@ -8,6 +8,7 @@
 /// form shows it as editable values; nothing is persisted from here.
 library;
 
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
@@ -25,9 +26,8 @@ final class IssuePrefill {
   /// Suggested issue number (the latest issue's number plus one).
   final int? issueNumber;
 
-  /// Suggested cover date, epoch millis (latest date plus one cadence
-  /// step), or null when the cadence is unknown/irregular or the latest
-  /// issue has no date.
+  /// Suggested cover calendar day at 00:00 UTC (latest day plus one cadence
+  /// step), or null when the cadence is unknown/irregular or undated.
   final int? issueDate;
 
   /// True when at least one part is suggested.
@@ -66,46 +66,16 @@ abstract final class IssueCadence {
   /// [from] (epoch millis) plus one [frequency] step, or null for an
   /// irregular cadence.
   ///
-  /// Calendar arithmetic is done in LOCAL time because the date picker stores
-  /// a cover date as the instant of local midnight: "31 January + 1 month" is
-  /// 28/29 February at local midnight, not a UTC instant that lands on the
-  /// wrong local day. Day-based steps are exact multiples of 24 h.
+  /// Calendar arithmetic uses UTC year/month/day fields. Canonical values
+  /// stay fixed; a legacy local-midnight input is normalized by the one
+  /// shared rule first. Thus weekly steps remain on the same calendar day
+  /// across DST, and month-based steps clamp without a timezone conversion.
   static int? nextDate(int from, PeriodicalFrequency frequency) {
+    final start = CalendarDate.fromStoredMillis(from);
     final days = frequency.days;
-    if (days != null) {
-      return from + Duration(days: days).inMilliseconds;
-    }
+    if (days != null) return start.addDays(days).epochMillis;
     final months = frequency.months;
     if (months == null) return null;
-    final start = DateTime.fromMillisecondsSinceEpoch(from);
-    return addMonthsClamped(start, months).millisecondsSinceEpoch;
-  }
-
-  /// [date] moved forward [months] calendar months, keeping the day of
-  /// month but clamping it to the target month's length (31 Jan + 1 → 28 or
-  /// 29 Feb). Time of day is preserved.
-  static DateTime addMonthsClamped(DateTime date, int months) {
-    final totalMonths = date.month - 1 + months;
-    final year = date.year + totalMonths ~/ 12;
-    final month = totalMonths % 12 + 1;
-    final lastDay = _daysInMonth(year, month);
-    final day = date.day > lastDay ? lastDay : date.day;
-    return DateTime(
-      year,
-      month,
-      day,
-      date.hour,
-      date.minute,
-      date.second,
-      date.millisecond,
-      date.microsecond,
-    );
-  }
-
-  /// Number of days in [month] of [year] (Gregorian, leap years included).
-  static int _daysInMonth(int year, int month) {
-    // Day 0 of the NEXT month is the last day of this one.
-    final next = month == 12 ? DateTime(year + 1) : DateTime(year, month + 1);
-    return next.subtract(const Duration(days: 1)).day;
+    return start.addMonthsClamped(months).epochMillis;
   }
 }

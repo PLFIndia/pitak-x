@@ -424,7 +424,7 @@ void main() {
           periodicalUid: 'per-1',
           volume: 2,
           issueNumber: 5,
-          issueDate: DateTime(2026, 10).millisecondsSinceEpoch,
+          issueDate: DateTime.utc(2026, 10).millisecondsSinceEpoch,
           label: 'Festive number',
         ),
       );
@@ -463,8 +463,8 @@ void main() {
         title: 'Frontline — Jul–Dec 2025',
         details: IssueOf(
           periodicalUid: 'per-1',
-          issueDate: DateTime(2025, 7).millisecondsSinceEpoch,
-          boundUntil: DateTime(2025, 12, 31).millisecondsSinceEpoch,
+          issueDate: DateTime.utc(2025, 7).millisecondsSinceEpoch,
+          boundUntil: DateTime.utc(2025, 12, 31).millisecondsSinceEpoch,
         ),
       );
       final repo = _MemBookRepo([bound]);

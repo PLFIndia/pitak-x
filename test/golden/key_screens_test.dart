@@ -21,6 +21,7 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -272,16 +273,19 @@ void main() {
       // expiring soon = +10 days, lapsed = −1 day — the periodicals page
       // test's numbers, so the two suites agree on what each badge means.
       final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
-      const day = 24 * 60 * 60 * 1000;
+      final today = CalendarDate.fromPickerDate(DateTime(2026, 10, 23, 12));
+      int dayFromToday(int offset) => today.addDays(offset).epochMillis;
       final periodicals = FakePeriodicals()
         ..seed(
           const Periodical(title: 'Chandamama', publisher: 'Chandamama India'),
         ) // untracked: no badge, publisher line
-        ..seed(Periodical(title: 'Outlook', subscriptionEnd: t0 + 10 * day))
-        ..seed(Periodical(title: 'Sportstar', subscriptionEnd: t0 - day))
+        ..seed(Periodical(title: 'Outlook', subscriptionEnd: dayFromToday(10)))
+        ..seed(
+          Periodical(title: 'Sportstar', subscriptionEnd: dayFromToday(-1)),
+        )
         ..seed(const Periodical(title: 'Old Weekly', removed: true));
       final frontline = periodicals.seed(
-        Periodical(title: 'Frontline', subscriptionEnd: t0 + 60 * day),
+        Periodical(title: 'Frontline', subscriptionEnd: dayFromToday(60)),
       );
       // Two issues for Frontline, the newest dated 2026-09 → the summary
       // line reads "2 issues · latest 2026-09".
@@ -292,7 +296,7 @@ void main() {
           title: 'Frontline — No 1',
           details: IssueOf(
             periodicalUid: uid,
-            issueDate: DateTime(2026, 8).millisecondsSinceEpoch,
+            issueDate: DateTime.utc(2026, 8).millisecondsSinceEpoch,
           ),
         ),
         CatalogueItem(
@@ -300,7 +304,7 @@ void main() {
           title: 'Frontline — No 2',
           details: IssueOf(
             periodicalUid: uid,
-            issueDate: DateTime(2026, 9).millisecondsSinceEpoch,
+            issueDate: DateTime.utc(2026, 9).millisecondsSinceEpoch,
           ),
         ),
       ];

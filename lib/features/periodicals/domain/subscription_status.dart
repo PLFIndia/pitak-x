@@ -7,6 +7,7 @@
 /// no notification plumbing, and is trivially testable at its boundaries.
 library;
 
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 
 /// Where a periodical's subscription stands at a given moment.
@@ -29,16 +30,19 @@ enum SubscriptionStatus {
 
   /// The status of [periodical] at [now].
   ///
-  /// Boundaries: an end date earlier than [now] is [lapsed]; an end date
-  /// exactly 30 days away is still [expiringSoon]; one millisecond beyond
-  /// that is [active]. A tracked subscription whose START is still in the
-  /// future is simply [active] — the app has no "not started yet" state.
+  /// Boundaries use the current LOCAL calendar day and the subscription's
+  /// canonical calendar days. The entire end date is [expiringSoon]; it is
+  /// [lapsed] only when that day is yesterday or earlier. Exactly 30 calendar
+  /// days away is still [expiringSoon]. A tracked subscription whose START is
+  /// in the future is simply [active] — there is no "not started yet" state.
   static SubscriptionStatus of(Periodical periodical, DateTime now) {
     final end = periodical.subscriptionEnd;
     if (end == null) return SubscriptionStatus.untracked;
-    final remaining = end - now.millisecondsSinceEpoch;
-    if (remaining < 0) return SubscriptionStatus.lapsed;
-    if (remaining <= expiringSoonWindow.inMilliseconds) {
+    final endDate = CalendarDate.fromEpochMillis(end);
+    final today = CalendarDate.fromPickerDate(now);
+    if (endDate.compareTo(today) < 0) return SubscriptionStatus.lapsed;
+    final lastExpiringDay = today.addDays(expiringSoonWindow.inDays);
+    if (endDate.compareTo(lastExpiringDay) <= 0) {
       return SubscriptionStatus.expiringSoon;
     }
     return SubscriptionStatus.active;

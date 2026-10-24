@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/application/delete_periodical_use_case.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -25,7 +26,8 @@ import '../../application/periodical_fakes.dart';
 
 void main() {
   final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
-  const day = 24 * 60 * 60 * 1000;
+  final today = CalendarDate.fromPickerDate(DateTime(2026, 10, 23, 12));
+  int dayFromToday(int offset) => today.addDays(offset).epochMillis;
 
   late FakePeriodicals periodicals;
   late FakeItems items;
@@ -99,8 +101,8 @@ void main() {
         publisher: 'The Hindu Group',
         issn: '0970-1710',
         frequency: PeriodicalFrequency.monthly,
-        subscriptionStart: t0 - 200 * day,
-        subscriptionEnd: t0 + 60 * day,
+        subscriptionStart: dayFromToday(-200),
+        subscriptionEnd: dayFromToday(60),
       ),
     );
     final uid = periodical.periodicalUid!;
@@ -111,7 +113,7 @@ void main() {
           details: IssueOf(
             periodicalUid: uid,
             issueNumber: i,
-            issueDate: t0 - (count - i) * 30 * day,
+            issueDate: dayFromToday(-(count - i) * 30),
           ),
         ),
       );
@@ -158,8 +160,8 @@ void main() {
         title: 'Frontline — 2024 bound',
         details: IssueOf(
           periodicalUid: uid,
-          issueDate: t0 - 300 * day,
-          boundUntil: t0 - 100 * day,
+          issueDate: dayFromToday(-300),
+          boundUntil: dayFromToday(-100),
         ),
       ),
     );

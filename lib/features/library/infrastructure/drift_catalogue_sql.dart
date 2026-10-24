@@ -141,26 +141,26 @@ abstract final class CatalogueSql {
   /// and `DriftPeriodicalRepository.findIssue` / `findBoundVolume` must agree
   /// on what "the same issue" means.
   static Expression<bool>? issueIdentityKey(AppDatabase db, IssueOf issue) {
+    final normalized = issue.normalized();
     final m = db.magazineIssues;
     final Expression<bool> key;
-    if (issue.isBound) {
-      final from = issue.issueDate;
-      final until = issue.boundUntil;
+    if (normalized.isBound) {
+      final from = normalized.issueDate;
+      final until = normalized.boundUntil;
       if (from == null || until == null) return null;
       key = m.issueDate.equals(from) & m.boundUntil.equals(until);
     } else {
-      final number = issue.issueNumber;
+      final number = normalized.issueNumber;
       if (number == null) return null;
       key =
           coalesce<int>([
             m.volume,
             const Constant(0),
-          ]).equals(issue.volume ?? 0) &
+          ]).equals(normalized.volume ?? 0) &
           m.issueNumber.equals(number) &
           m.boundUntil.isNull();
     }
-    return m.periodicalUid.equals(canonicalPeriodicalUid(issue.periodicalUid)) &
-        key;
+    return m.periodicalUid.equals(normalized.periodicalUid) & key;
   }
 
   /// The typed WHERE for the facets of [query] (language, kind, series), or

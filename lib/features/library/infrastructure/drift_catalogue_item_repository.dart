@@ -63,6 +63,13 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
   CatalogueItem _toDomain(TypedResult row) =>
       row.toCatalogueItem(_db, _details);
 
+  /// Keeps the returned entity, D6 lookup and stored companion on the same
+  /// canonical issue dates, even for a direct repository caller.
+  CatalogueItem _normalizedDates(CatalogueItem book) {
+    final issue = book.issue;
+    return issue == null ? book : book.copyWith(details: issue.normalized());
+  }
+
   /// One row by base-row [id] with its details, or null.
   Future<CatalogueItem?> _getById(int id) async {
     final row =
@@ -234,7 +241,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
       // `english` and `English` still end up as one spelling.
       return await _db.transaction(() async {
         final resolver = LanguageResolver(await _storedLanguages());
-        final resolved = resolver.resolve(book);
+        final resolved = resolver.resolve(_normalizedDates(book));
         final withUid = resolved.itemUid == null
             ? resolved.copyWith(itemUid: _uuid.v4())
             : resolved;
@@ -291,7 +298,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         // one spelling per language, consistently. (A library-wide
         // "rename language" is a separate feature, not an edit side-effect.)
         final resolver = LanguageResolver(await _storedLanguages());
-        final resolved = resolver.resolve(book);
+        final resolved = resolver.resolve(_normalizedDates(book));
         final preserved = resolved.itemUid == null
             ? resolved.copyWith(itemUid: existing.itemUid)
             : resolved;
@@ -363,7 +370,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         // base-row insert assigns. Still one transaction, so the cost is one
         // statement per row inside a single commit.
         for (final book in books) {
-          final resolved = resolver.resolve(book);
+          final resolved = resolver.resolve(_normalizedDates(book));
           final withUid = resolved.itemUid == null
               ? resolved.copyWith(itemUid: _uuid.v4())
               : resolved;
@@ -393,7 +400,7 @@ class DriftCatalogueItemRepository implements CatalogueItemRepository {
         final resolver = LanguageResolver(const []);
         var count = 0;
         for (final book in books) {
-          final resolved = resolver.resolve(book);
+          final resolved = resolver.resolve(_normalizedDates(book));
           final withUid = resolved.itemUid == null
               ? resolved.copyWith(itemUid: _uuid.v4())
               : resolved;

@@ -65,6 +65,7 @@ extension PeriodicalCompanionMapper on Periodical {
       throw StateError('Periodical.periodicalUid must be minted first');
     }
     final rawIssn = issn;
+    final normalized = normalizedSubscriptionDates();
     return PeriodicalsCompanion(
       id: id == Periodical.emptyId ? const Value.absent() : Value(id),
       periodicalUid: Value(canonicalPeriodicalUid(uid)),
@@ -82,8 +83,8 @@ extension PeriodicalCompanionMapper on Periodical {
       language: Value(language),
       coverUrl: Value(coverUrl),
       frequency: Value(frequency?.token),
-      subscriptionStart: Value(subscriptionStart),
-      subscriptionEnd: Value(subscriptionEnd),
+      subscriptionStart: Value(normalized.subscriptionStart),
+      subscriptionEnd: Value(normalized.subscriptionEnd),
       notes: Value(notes),
       location: Value(location),
       sourceType: Value(sourceType?.token),

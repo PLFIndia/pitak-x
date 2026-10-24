@@ -10,6 +10,8 @@
 library;
 
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 /// The kind-specific part of a catalogue item. Members are immutable value
@@ -65,12 +67,12 @@ final class IssueOf extends ItemDetails {
   /// Issue number within the volume (or absolute), when known (≥ 1).
   final int? issueNumber;
 
-  /// Cover date of the issue (epoch millis); for a bound volume, the date of
-  /// the FIRST issue in the range.
+  /// Cover calendar day at 00:00 UTC (epoch millis); for a bound volume, the
+  /// FIRST day in the range. Not a local-midnight instant.
   final int? issueDate;
 
-  /// For a bound volume only: the date of the LAST issue in the range
-  /// (epoch millis, ≥ [issueDate]). Null for a single issue.
+  /// For a bound volume only: the LAST calendar day in the range at 00:00
+  /// UTC (epoch millis, ≥ [issueDate]). Null for a single issue.
   final int? boundUntil;
 
   /// Free-text label ("Dasara special", "Annual number"), optional.
@@ -82,6 +84,32 @@ final class IssueOf extends ItemDetails {
 
   @override
   ItemKind get kind => ItemKind.magazineIssue;
+
+  /// Returns the canonical ingress/persistence form of these details.
+  ///
+  /// Valid date-only values become UTC-midnight [CalendarDate]s and the soft
+  /// link is trimmed. Invalid integers are left for [validate] to report, not
+  /// coerced or thrown away. This method is shared by the entity gate, D6
+  /// lookups, and Drift companions so they can never disagree on a key.
+  IssueOf normalized() {
+    final uid = canonicalPeriodicalUid(periodicalUid);
+    final normalizedDate = CatalogueRules.isValidOptionalDateMillis(issueDate)
+        ? CalendarDate.normalizeOptionalStoredMillis(issueDate)
+        : issueDate;
+    final normalizedUntil = CatalogueRules.isValidOptionalDateMillis(boundUntil)
+        ? CalendarDate.normalizeOptionalStoredMillis(boundUntil)
+        : boundUntil;
+    if (uid == periodicalUid &&
+        normalizedDate == issueDate &&
+        normalizedUntil == boundUntil) {
+      return this;
+    }
+    return copyWith(
+      periodicalUid: uid,
+      issueDate: normalizedDate,
+      boundUntil: normalizedUntil,
+    );
+  }
 
   @override
   List<FieldError> validate() {

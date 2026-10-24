@@ -222,6 +222,42 @@ void main() {
       expect(decoded.issuesByBookUid['uid-8']!.sameAs(issue), isTrue);
     });
 
+    test('legacy calendar values normalize and instant fields survive', () {
+      final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
+        jsonEncode({
+          'schemaVersion': 1,
+          'periodicals': [
+            {
+              'periodicalUid': 'p1',
+              'title': 'Frontline',
+              'subscriptionStart': DateTime(2026, 1, 15).millisecondsSinceEpoch,
+              'subscriptionEnd': DateTime(2026, 2, 15).millisecondsSinceEpoch,
+              'addedDate': 50,
+              'removedAt': 60,
+            },
+          ],
+          'issues': [
+            {
+              'bookUid': 'uid-8',
+              'periodicalUid': 'p1',
+              'issueDate': DateTime(2026, 1, 15).millisecondsSinceEpoch,
+              'boundUntil': DateTime(2026, 2, 15).millisecondsSinceEpoch,
+            },
+          ],
+        }),
+      );
+
+      expect(decoded, isNotNull);
+      final periodical = decoded!.periodicals.single;
+      expect(periodical.subscriptionStart, 1768435200000);
+      expect(periodical.subscriptionEnd, 1771113600000);
+      expect(periodical.addedDate, 50);
+      expect(periodical.removedAt, 60);
+      final issue = decoded.issuesByBookUid['uid-8']!;
+      expect(issue.issueDate, 1768435200000);
+      expect(issue.boundUntil, 1771113600000);
+    });
+
     test('a whitespace-mismatched series and issue decode to one link', () {
       final decoded = ItemDetailsArchiveCodec.decodePeriodicals(
         jsonEncode({
@@ -287,8 +323,8 @@ void main() {
               'bookUid': 'uid-8',
               'periodicalUid': 'puid-1',
               // Bound range backwards — IssueOf.validate refuses it.
-              'issueDate': 2000,
-              'boundUntil': 1000,
+              'issueDate': 1735776000000,
+              'boundUntil': 1735689600000,
             },
             {'bookUid': 'uid-8', 'periodicalUid': 'puid-1', 'issueNumber': 3},
             {

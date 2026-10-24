@@ -57,16 +57,17 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
   /// could never be referenced and would collide on the UNIQUE index the
   /// second time it was stored.
   Periodical _minted(Periodical periodical) {
-    final uid = periodical.periodicalUid;
+    final normalized = periodical.normalizedSubscriptionDates();
+    final uid = normalized.periodicalUid;
     if (uid != null) {
       final canonical = canonicalPeriodicalUid(uid);
       if (canonical.isNotEmpty) {
         return canonical == uid
-            ? periodical
-            : periodical.copyWith(periodicalUid: canonical);
+            ? normalized
+            : normalized.copyWith(periodicalUid: canonical);
       }
     }
-    return periodical.copyWith(periodicalUid: _uuid.v4());
+    return normalized.copyWith(periodicalUid: _uuid.v4());
   }
 
   Future<PeriodicalRow?> _rowById(int id) =>
@@ -266,7 +267,7 @@ class DriftPeriodicalRepository implements PeriodicalRepository {
         // edit — or an import carrying a different uid — rewrite it would
         // orphan the whole series. `copyWith` with a non-null value
         // overwrites, which is exactly what is wanted here.
-        final preserved = periodical.copyWith(
+        final preserved = periodical.normalizedSubscriptionDates().copyWith(
           periodicalUid: existing.periodicalUid,
         );
         final duplicateUid = await _collisions.uid(

@@ -50,4 +50,28 @@ void main() {
     expect(companion.id.present, isFalse);
     expect(companion.issn, const Value<String?>('0317-8471'));
   });
+
+  test('companion normalizes subscription days and preserves instants', () {
+    final addedDate = DateTime(2026, 1, 10, 12, 34).millisecondsSinceEpoch;
+    final removedAt = DateTime(2026, 1, 11, 13, 35).millisecondsSinceEpoch;
+    final companion = Periodical(
+      title: 'A',
+      periodicalUid: 'u',
+      subscriptionStart: DateTime(2026, 1, 15).millisecondsSinceEpoch,
+      subscriptionEnd: DateTime(2026, 2, 15).millisecondsSinceEpoch,
+      addedDate: addedDate,
+      removedAt: removedAt,
+    ).toCompanion();
+
+    expect(
+      companion.subscriptionStart.value,
+      DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+    );
+    expect(
+      companion.subscriptionEnd.value,
+      DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+    );
+    expect(companion.addedDate.value, addedDate);
+    expect(companion.removedAt.value, removedAt);
+  });
 }

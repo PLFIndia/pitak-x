@@ -17,7 +17,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -42,16 +42,10 @@ class SeriesSubscriptionCard extends StatelessWidget {
   /// The "now" the status is derived at.
   final DateTime now;
 
-  /// Formats epoch millis as a plain `YYYY-MM-DD`, or null when unset or
-  /// out of range (same rule as the book detail page's "Added" row).
-  static String? _formatDate(int? epochMillis) {
-    if (epochMillis == null) return null;
-    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-    if (d == null) return null;
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  /// Formats a canonical UTC calendar day as `YYYY-MM-DD`, or null when unset
+  /// or out of range. This is not the Added row's local-instant conversion.
+  static String? _formatDate(int? epochMillis) =>
+      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString();
 
   @override
   Widget build(BuildContext context) {

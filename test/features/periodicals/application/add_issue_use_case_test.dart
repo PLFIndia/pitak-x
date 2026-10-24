@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/periodicals/application/add_issue_use_case.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
@@ -91,6 +92,29 @@ void main() {
     expect(periodicals.calls, ['findByUid']);
     expect(items.inserted, hasLength(1));
   });
+
+  test(
+    'normalizes a legacy day before projecting its title and year',
+    () async {
+      final legacyJanuary = DateTime(2026, 1, 15);
+      final legacyInput = issue().copyWith(
+        details: IssueOf(
+          periodicalUid: uid,
+          issueDate: legacyJanuary.millisecondsSinceEpoch,
+        ),
+      );
+
+      final saved = ok(await useCase(legacyInput));
+
+      expect(saved.title, 'Chandamama — Jan 2026');
+      expect(saved.titleTransliteration, 'Chandamama — Jan 2026');
+      expect(saved.publishedYear, 2026);
+      expect(
+        saved.issue!.issueDate,
+        DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+      );
+    },
+  );
 
   test('a non-issue item is a caller bug: UnexpectedFailure', () async {
     final failure = failureOf(

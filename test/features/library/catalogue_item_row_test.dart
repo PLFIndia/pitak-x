@@ -144,7 +144,7 @@ void main() {
             title: 'Weekly 2026 H2',
             details: IssueOf(
               periodicalUid: 'per-1',
-              issueDate: 1751326800000, // 2025-07-01
+              issueDate: 1751328000000, // 2025-07-01T00:00:00Z
               boundUntil: 1767225600000, // 2026-01-01
             ),
           ),

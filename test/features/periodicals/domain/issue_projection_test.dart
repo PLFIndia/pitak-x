@@ -7,7 +7,7 @@ import 'package:pitaka/features/periodicals/domain/issue_projection.dart';
 // ADR 0013 D3: derived fields are written onto the issue row from the
 // periodical; applying the projection twice changes nothing.
 void main() {
-  int local(int y, int m, int d) => DateTime(y, m, d).millisecondsSinceEpoch;
+  int utc(int y, int m, int d) => DateTime.utc(y, m, d).millisecondsSinceEpoch;
   const series = Periodical(
     title: 'Chandamama',
     titleTransliteration: 'Chandamaama',
@@ -32,7 +32,7 @@ void main() {
           periodicalUid: 'p',
           volume: 249,
           issueNumber: 10,
-          issueDate: local(2026, 10, 1),
+          issueDate: utc(2026, 10, 1),
         ),
       );
       final out = IssueProjection.apply(row, series);
@@ -79,7 +79,7 @@ void main() {
         details: IssueOf(
           periodicalUid: 'p',
           issueNumber: 3,
-          issueDate: local(2026, 1, 1),
+          issueDate: utc(2026, 1, 1),
         ),
       );
       final once = IssueProjection.apply(row, series);

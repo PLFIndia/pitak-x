@@ -44,15 +44,14 @@
 ///     [LibraryNamespace] port (implemented by `SettingsController`), never
 ///     the settings repository directly, so the in-memory settings every
 ///     screen watches update with the disk.
-///  3. **Nothing is silently dropped.** Rows the parser rejected (M15) and
-///     the adjustments it made ride along in [MergeResult.skippedRows] /
-///     [MergeResult.adjustments]; an identity adoption that failed after the
-///     data landed is reported in [MergeResult.namespace] instead of turning
-///     a successful merge into an error.
+///  3. **Nothing is silently dropped.** Rejected rows and adjustments ride
+///     along in the result; a post-write identity failure is reported through
+///     [MergeResult.namespace], not hidden or turned into a data failure.
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/import_export/application/merge_overwrite_validator.dart';
 import 'package:pitaka/features/import_export/application/merge_planner.dart';
 import 'package:pitaka/features/import_export/application/merge_result.dart';
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
@@ -231,20 +230,22 @@ final class MergeLibraryUseCase {
   Future<Either<Failure, MergeResult>> applyOverwrite(
     MergeDiffersDecision decision,
   ) => _replacementGuard.protectReplacement((scope) async {
-    // The snapshot and replacement share a transaction, while the guard
-    // prevents a vault write from changing the loan set between them (M03).
     final replaced = await _bookRepo.runInTransaction<int>(() async {
-      // W1: periodicals first — the incoming issues point at the incoming
-      // series uids, so the series rows must land in the same transaction.
+      final valid = validateMergeOverwrite(
+        decision.incomingBooks,
+        decision.incomingPeriodicals,
+      );
+      if (valid.isLeft()) return valid.map((_) => 0);
+      final input = valid.toNullable()!;
       final series = await _periodicalRepo.replaceAll(
-        decision.incomingPeriodicals
+        input.periodicals
             .map((p) => p.copyWith(id: Periodical.emptyId))
             .toList(),
       );
       if (series.isLeft()) {
         return series.match(left, (_) => throw StateError('unreachable'));
       }
-      var incoming = decision.incomingBooks
+      var incoming = input.items
           .map((b) => b.copyWith(id: CatalogueItem.emptyId))
           .toList();
       final loanIds = scope.retainedLoanBookIds;
@@ -260,9 +261,10 @@ final class MergeLibraryUseCase {
         incoming = plan.getOrElse((_) => const []);
       }
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
-      // The repository reports how many rows it actually inserted — that is
-      // the number the summary shows, not the file's row count.
       final result = await _bookRepo.replaceAll(incoming);
+      if (result.isLeft()) return result;
+      final reproj = await _reprojection.callAllStored();
+      if (reproj.isLeft()) return reproj.map((_) => 0);
       if (!scope.isCurrent) return left(CatalogueReplacementScope.cancelled);
       return result;
     });
@@ -485,10 +487,8 @@ final class MergeLibraryUseCase {
       }
       // D3: issues of merged series are re-projected from the stored series
       // (skip-unchanged inside, so up-to-date rows are not rewritten).
-      for (final series in plan.matchedLocalSeries) {
-        final reproj = await _reprojection.call(series);
-        if (reproj.isLeft()) return reproj.map((_) => 0);
-      }
+      final reproj = await _reprojection.callAll(plan.matchedLocalSeries);
+      if (reproj.isLeft()) return reproj.map((_) => 0);
       return right(plan.toAdd.length);
     });
     if (applied.isLeft()) {

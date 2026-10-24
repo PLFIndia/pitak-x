@@ -98,12 +98,14 @@ void main() {
     });
 
     test('the subscription window may not run backwards (same day ok)', () {
+      final start = DateTime(2025, 1, 2).millisecondsSinceEpoch;
+      final end = DateTime(2025).millisecondsSinceEpoch;
       expect(
         fields(
-          const Periodical(
+          Periodical(
             title: 'A',
-            subscriptionStart: jan1,
-            subscriptionEnd: jan1 - 1,
+            subscriptionStart: start,
+            subscriptionEnd: end,
           ),
         ),
         ['subscriptionEnd'],
@@ -131,6 +133,31 @@ void main() {
         ).isRight(),
         isTrue,
       );
+    });
+
+    test('subscription days normalize without changing instant fields', () {
+      final addedDate = DateTime(2026, 1, 10, 12, 34).millisecondsSinceEpoch;
+      final removedAt = DateTime(2026, 1, 11, 13, 35).millisecondsSinceEpoch;
+      final periodical = Periodical(
+        title: 'A',
+        subscriptionStart: DateTime(2026, 1, 15).millisecondsSinceEpoch,
+        subscriptionEnd: DateTime(2026, 2, 15).millisecondsSinceEpoch,
+        addedDate: addedDate,
+        removedAt: removedAt,
+      );
+
+      final validated = Periodical.validate(periodical).toNullable()!;
+      expect(
+        validated.subscriptionStart,
+        DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+      );
+      expect(
+        validated.subscriptionEnd,
+        DateTime.utc(2026, 2, 15).millisecondsSinceEpoch,
+      );
+      expect(validated.addedDate, addedDate);
+      expect(validated.removedAt, removedAt);
+      expect(Periodical.validate(validated).toNullable(), same(validated));
     });
 
     test('an unrepresentable end date reports one error, not two', () {
@@ -187,7 +214,7 @@ void main() {
         coverUrl: 'covers/a.jpg',
         frequency: PeriodicalFrequency.monthly,
         subscriptionStart: jan1,
-        subscriptionEnd: jan1 + 1,
+        subscriptionEnd: jan1 + 86400000,
         notes: 'n',
         location: 'shelf',
         sourceType: ItemSourceType.gift,

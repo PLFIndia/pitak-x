@@ -18,7 +18,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/item_cover.dart';
-import 'package:pitaka/features/library/domain/catalogue_rules.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
@@ -200,7 +200,7 @@ class _PeriodicalRow extends StatelessWidget {
     final issues = count == 1 ? '1 issue' : '$count issues';
     final latest = entry.latestIssueDate;
     if (latest == null) return issues;
-    final date = CatalogueRules.dateFromMillisOrNull(latest)?.toLocal();
+    final date = CalendarDate.fromEpochMillisOrNull(latest);
     if (date == null) return issues;
     final mm = date.month.toString().padLeft(2, '0');
     return '$issues · latest ${date.year}-$mm';

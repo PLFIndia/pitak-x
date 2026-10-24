@@ -32,8 +32,8 @@ final class PeriodicalSummary {
   /// (soft-removed issues included — they still exist).
   final int issueCount;
 
-  /// The newest `issueDate` among those issues (epoch millis), or null when
-  /// no issue has a date.
+  /// The newest `issueDate` among those issues (canonical UTC-midnight
+  /// calendar-day epoch millis), or null when no issue has a date.
   final int? latestIssueDate;
 
   @override
@@ -100,7 +100,7 @@ abstract interface class PeriodicalRepository {
   });
 
   /// The bound volume (`periodicalUid`, `issueDate`, `boundUntil`) already
-  /// catalogued, or null (D6 identity key).
+  /// catalogued, or null (D6 identity key over canonical UTC calendar days).
   Future<Either<Failure, CatalogueItem?>> findBoundVolume({
     required String periodicalUid,
     required int issueDate,

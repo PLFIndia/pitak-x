@@ -11,6 +11,7 @@ library;
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/tables.dart';
 import 'package:pitaka/features/library/domain/periodical_identity.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_merge_plan.dart';
 
 part 'app_database.g.dart';
@@ -46,8 +47,10 @@ class AppDatabase extends _$AppDatabase {
   ///      added to its columns (D10). `PRAGMA foreign_keys = ON` from here on.
   ///  6 — no shape change; canonicalize periodical/issue soft-link UIDs with
   ///      Dart trim semantics. Ambiguous trim/D6 collisions abort before writes.
+  ///  7 — no shape change; issue/subscription values become UTC-midnight
+  ///      calendar days. Conversion-created D6 collisions abort before writes.
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -95,6 +98,10 @@ class AppDatabase extends _$AppDatabase {
       // v6: a separate repair step so every older path reaches it after the
       // v5 tables exist. No table shape changes; only soft-link values move.
       if (from < 6) await _canonicalizePeriodicalUids();
+      // v7: normalize ONLY the four date-only columns. Base projections and
+      // FTS stay byte-identical on a same-device upgrade; restore/overwrite
+      // has its own reprojection step for artifacts from another timezone.
+      if (from < 7) await _normalizeCalendarDates();
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a
@@ -179,6 +186,104 @@ class AppDatabase extends _$AppDatabase {
         await (update(magazineIssues)
               ..where((t) => t.itemId.equals(row.itemId)))
             .write(MagazineIssuesCompanion(periodicalUid: Value(canonical)));
+      }
+    });
+  }
+
+  /// v6 → v7: convert issue/subscription values to UTC-midnight calendar days.
+  ///
+  /// Every conversion and final D6 key is computed BEFORE the first update.
+  /// Thus a legacy value that cannot be represented, or two bound ranges that
+  /// normalize onto one identity, aborts with every raw row still untouched.
+  /// Only changed detail/periodical rows are written; base rows and FTS are
+  /// deliberately not migration targets (their same-device local day did not
+  /// change, so their existing projection remains valid).
+  Future<void> _normalizeCalendarDates() async {
+    await transaction(() async {
+      final periodicalRows = await select(periodicals).get();
+      final issueRows = await select(magazineIssues).get();
+
+      final subscriptionDates = <int, ({int? start, int? end})>{
+        for (final row in periodicalRows)
+          row.id: (
+            start: CalendarDate.normalizeOptionalStoredMillis(
+              row.subscriptionStart,
+            ),
+            end: CalendarDate.normalizeOptionalStoredMillis(
+              row.subscriptionEnd,
+            ),
+          ),
+      };
+      final issueDates = <int, ({int? from, int? until})>{
+        for (final row in issueRows)
+          row.itemId: (
+            from: CalendarDate.normalizeOptionalStoredMillis(row.issueDate),
+            until: CalendarDate.normalizeOptionalStoredMillis(row.boundUntil),
+          ),
+      };
+
+      final numberedKeys = <({String uid, int volume, int number})>{};
+      final boundKeys = <({String uid, int from, int until})>{};
+      for (final row in issueRows) {
+        final dates = issueDates[row.itemId]!;
+        final until = dates.until;
+        if (until != null) {
+          // As in SQLite UNIQUE, a NULL start has no identity collision.
+          final from = dates.from;
+          if (from != null &&
+              !boundKeys.add((
+                uid: row.periodicalUid,
+                from: from,
+                until: until,
+              ))) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        } else if (row.issueNumber case final number?) {
+          final key = (
+            uid: row.periodicalUid,
+            volume: row.volume ?? 0,
+            number: number,
+          );
+          if (!numberedKeys.add(key)) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        }
+      }
+
+      for (final row in issueRows) {
+        final dates = issueDates[row.itemId]!;
+        if (dates.from == row.issueDate && dates.until == row.boundUntil) {
+          continue;
+        }
+        await (update(
+          magazineIssues,
+        )..where((table) => table.itemId.equals(row.itemId))).write(
+          MagazineIssuesCompanion(
+            issueDate: Value(dates.from),
+            boundUntil: Value(dates.until),
+          ),
+        );
+      }
+      for (final row in periodicalRows) {
+        final dates = subscriptionDates[row.id]!;
+        if (dates.start == row.subscriptionStart &&
+            dates.end == row.subscriptionEnd) {
+          continue;
+        }
+        await (update(
+          periodicals,
+        )..where((table) => table.id.equals(row.id))).write(
+          PeriodicalsCompanion(
+            subscriptionStart: Value(dates.start),
+            subscriptionEnd: Value(dates.end),
+          ),
+        );
       }
     });
   }

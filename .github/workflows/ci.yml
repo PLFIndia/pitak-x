@@ -96,6 +96,10 @@ jobs:
       # a logic failure (and never hides one).
       - name: Test (with coverage)
         run: flutter test --coverage --exclude-tags golden
+      - name: Calendar-day regressions (two host timezones)
+        run: |
+          TZ=Asia/Calcutta flutter test test/features/library/domain/value_objects/calendar_date_test.dart test/features/library/domain/catalogue_item_validated_test.dart test/features/periodicals/domain test/features/periodicals/application/add_issue_use_case_test.dart
+          TZ=America/New_York flutter test test/features/library/domain/value_objects/calendar_date_test.dart test/features/library/domain/catalogue_item_validated_test.dart test/features/periodicals/domain test/features/periodicals/application/add_issue_use_case_test.dart
       # N14: coverage RATCHET — total line coverage must not regress below
       # the floor. The repo target is >=90% for domain/application
       # (AGENTS.md §10); this whole-suite floor is the enforceable minimum

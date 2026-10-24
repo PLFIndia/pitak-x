@@ -10,6 +10,7 @@ library;
 
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
@@ -157,18 +158,12 @@ String _kindText(ItemKind kind) => switch (kind) {
 };
 
 /// One side of an issue-fields diff: `Vol 249 No 10 · 2026-10-05 · label`,
-/// null when the row is not an issue. Dates render ISO `YYYY-MM-DD` in the
-/// local calendar (the same convention `IssueTitle` pins for issue dates),
-/// with the exact day — a diff card needs more precision than the
-/// month bucket a composed title carries.
+/// null when the row is not an issue. Dates render ISO `YYYY-MM-DD` from
+/// canonical UTC calendar fields, with the exact day — a diff card needs more
+/// precision than the month bucket a composed title carries.
 String? _issueText(IssueOf? issue) {
   if (issue == null) return null;
-  String ymd(int millis) {
-    final d = DateTime.fromMillisecondsSinceEpoch(millis);
-    return '${d.year}-'
-        '${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
-  }
+  String ymd(int millis) => CalendarDate.fromEpochMillis(millis).toString();
 
   return [
     if (issue.volume != null) 'Vol ${issue.volume}',

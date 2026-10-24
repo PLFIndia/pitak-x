@@ -50,7 +50,13 @@ class IssueIngress {
           ),
         );
       }
-      final projected = IssueProjection.apply(item, periodical);
+      // Normalize the issue's own fields BEFORE projection. Otherwise a
+      // legacy local-midnight date could compose the previous UTC month/year,
+      // then a later gate would normalize only the details and leave the base
+      // title stale. Do not validate the base row yet: add-mode deliberately
+      // has a blank title until the series projection supplies it below.
+      final normalized = item.copyWith(details: issue.normalized());
+      final projected = IssueProjection.apply(normalized, periodical);
       return CatalogueItem.validate(projected).fold(
         (errors) => left(ValidationFailure(errors.first.userMessage)),
         right,

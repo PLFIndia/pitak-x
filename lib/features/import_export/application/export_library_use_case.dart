@@ -28,6 +28,7 @@ import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
@@ -315,14 +316,8 @@ class ExportLibraryUseCase {
 
   /// ISO `YYYY-MM-DD` for a CSV date cell; blank when unset or unrepresentable
   /// (M15: never throw mid-export).
-  static String _isoDate(int? epochMillis) {
-    if (epochMillis == null) return '';
-    final d = CatalogueRules.dateFromMillisOrNull(epochMillis)?.toLocal();
-    if (d == null) return '';
-    final mm = d.month.toString().padLeft(2, '0');
-    final dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
-  }
+  static String _isoDate(int? epochMillis) =>
+      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString() ?? '';
 
   static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 

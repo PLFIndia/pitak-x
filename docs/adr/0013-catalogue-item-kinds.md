@@ -120,6 +120,38 @@ for a public description: a library asks for one on its site). The generic
 add/update use cases validate any `details`; merge identity is
 `itemUid` → fuzzy title.
 
+## Amendment 2026-10-24 — UTC calendar-day semantics (S2)
+
+D1, D4 and D5 now distinguish a **calendar day** from an **instant**:
+
+- `IssueOf.issueDate`, `boundUntil`, `Periodical.subscriptionStart` and
+  `subscriptionEnd` retain their integer columns and wire keys, but represent
+  calendar days at **00:00 UTC**. The pure-Dart `CalendarDate` in library
+  domain is the single validation, conversion and arithmetic rule. Domain
+  gates, JSON/archive ingress, direct overwrite, forms, D6 lookups and
+  persistence companions all use it.
+- Issue titles, projected years, cadence, merge diffs, CSV cells and detail
+  displays read UTC calendar fields. Weekly/fortnightly cadence uses calendar
+  days; monthly/annual cadence uses clamped calendar months, never local
+  24-hour durations. Pickers convert canonical days to local fields and back.
+- A subscription is `expiringSoon` throughout its local end date and becomes
+  `lapsed` on the following local day. The 30-day warning threshold counts
+  calendar days, not milliseconds.
+- `addedDate`, `removedAt`, loan dates and `exportedAt` remain instants and
+  are not converted. Date-added forms retain their local-instant behavior.
+- Schema **v7** normalizes only the four date-only columns. It precomputes
+  every conversion and final D6 key before the first write, aborting safely
+  on a normalization-created collision. Same-device base projections and FTS
+  are not mass-rebuilt: preserving the old local year/month/day leaves them
+  valid. Restore and merge OVERWRITE instead reproject every stored series
+  before commit, so a cross-timezone legacy artifact is consistent immediately.
+
+Legacy conversion is idempotent: exact UTC-midnight values are canonical;
+other values contribute their year/month/day in the current device zone once.
+If a value already moved from another timezone, its original zone cannot be
+recovered. The conversion preserves the day visible in the zone performing
+the migration/ingress; it does not claim to reconstruct the original day.
+
 ## Consequences
 
 - **Easier:** every list, facet, export, viewer and backup is kind-aware

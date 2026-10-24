@@ -162,11 +162,12 @@ final class PublishIssue {
   /// Issue number within the volume (or absolute), when known.
   final int? issueNumber;
 
-  /// Cover date (epoch millis); for a bound volume, the FIRST issue's date.
+  /// Cover calendar day at 00:00 UTC (epoch millis); for a bound volume,
+  /// the FIRST issue's day. The wire integer is emitted pass-through.
   final int? issueDate;
 
-  /// Bound volumes only: the LAST issue's date (epoch millis). Non-null is
-  /// exactly what makes the viewer render the "Bound volume" badge.
+  /// Bound volumes only: the LAST issue's calendar day at 00:00 UTC. Non-null
+  /// is exactly what makes the viewer render the "Bound volume" badge.
   final int? boundUntil;
 
   /// Free-text label ("Dasara special"), optional.

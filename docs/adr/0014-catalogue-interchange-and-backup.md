@@ -50,7 +50,7 @@ tools — no new container formats.
       { "periodicalUid": "…", "title": "Chandamama", "issn": "0577-6058",
         "publisher": "…", "language": "Telugu", "coverUrl": "…",
         "frequency": "monthly",
-        "subscriptionStart": 1760000000000, "subscriptionEnd": 1790000000000,
+        "subscriptionStart": 1767225600000, "subscriptionEnd": 1798761600000,
         "notes": "…", "location": "…", "sourceType": "PURCHASED",
         "sourceDetail": "…", "ageGroup": "above-6",
         "addedDate": 1760000000000, "removed": false, "removedAt": null,
@@ -60,7 +60,7 @@ tools — no new container formats.
       { "bookUid": "…", "kind": "book", "title": "…", "isbn": "…", "…": "…" },
       { "bookUid": "…", "kind": "magazine-issue", "title": "Chandamama — Vol 249 No 10 (Oct 2026)",
         "issue": { "periodicalUid": "…", "volume": 249, "issueNumber": 10,
-                   "issueDate": 1759276800000, "boundUntil": null,
+                   "issueDate": 1790812800000, "boundUntil": null,
                    "label": "Dasara special" } },
       { "bookUid": "…", "kind": "other", "title": "Carrom board", "notes": "…" }
     ],
@@ -112,6 +112,29 @@ tools — no new container formats.
   the list, the detail page and the published site. Periodical covers go
   through the same cover-id + allow-list pipeline as book covers, and the
   startup cover janitor counts them as live references.
+
+## Amendment 2026-10-24 — calendar days on existing wire keys (S2)
+
+W1, W2 and W3 keep their existing versions, keys and integer values, but
+`issueDate`, `boundUntil`, `subscriptionStart` and `subscriptionEnd` are now
+**calendar days at 00:00 UTC**, not local-midnight instants. Readers normalize
+legacy values through the same `CalendarDate` rule as the database; writers
+emit the canonical integers pass-through. Issue CSV/display fields use UTC
+calendar fields. `addedDate`, `removedAt` and `exportedAt` remain instants.
+
+The maintainer confirmed on 2026-10-24 that the unreleased v4/W2/W3 artifacts
+from this branch existed only on test devices and had no external circulation.
+Their date semantics may therefore be finalized before R1 without adding a
+parallel format version. Any future externally circulated artifact must keep
+this documented meaning; a different meaning requires an explicit versioned
+contract.
+
+A legacy value already at UTC midnight is unchanged. Otherwise its local
+calendar fields in the reading device zone are written at UTC midnight. The
+original timezone of a value that crossed devices cannot be recovered. To
+keep serialized projections consistent with normalized details, `.pitabak`
+restore and merge OVERWRITE run shared issue reprojection after series and
+details are written and before commit; unresolved links never invent a series.
 
 ## Consequences
 
