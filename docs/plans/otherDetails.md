@@ -951,7 +951,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core red from a NEW upstream tokio advisory (see Open issues — pre-existing on `main`, outside this plan's scope) |
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
-| N3 | — | — | — | |
+| N3 | Blocked | — | 2026-10-24 | no Android device/emulator (see Open issues); analyze baseline green — journeys compile; stays the next session |
 | R1 | — | — | — | |
 
 ## Deviations from plan
@@ -960,6 +960,17 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 
 ## Open issues / blocked
 
+- **N3 blocked: no Android device or emulator on this machine**
+  (2026-10-24). The baseline gate `flutter devices` printed only
+  `Satyen's iPad (wireless) • ios • iOS 26.5.2` — no android entry;
+  `which adb` → not on PATH; `flutter emulators` → only
+  `apple_ios_simulator`. New facts for the maintainer: an Android SDK
+  DOES exist at `~/Library/Android/sdk` (platform-tools/adb present,
+  `emulator` and `cmdline-tools` installed) but `system-images/` is
+  EMPTY — so N3 step 1 needs the human to install a Google-APIs-free
+  system image (`sdkmanager`), create the AVD and launch it, then re-run
+  this session. What was still verified: `flutter analyze lib test
+  integration_test` → No issues found (both journeys compile).
 - **CI red on `magazines` from a NEW upstream Rust advisory — blocks R1's
   "every check green" baseline.** On PR #18 (run `40061732456`,
   2026-10-24) two jobs fail on the same cause, RUSTSEC-2026-0386 against
