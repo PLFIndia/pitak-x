@@ -150,7 +150,9 @@ void main() {
   test('the known ingress gates are present (spot-check census)', () {
     const gated = [
       'lib/features/import_export/application/import_library_use_case.dart',
-      'lib/features/import_export/application/merge_library_use_case.dart',
+      // Moved here on 2026-10-24 (magazine remediation S4) when the per-row
+      // resolution apply left the merge use case for its own file.
+      'lib/features/import_export/application/merge_resolution_applier.dart',
       'lib/features/import_export/domain/goodreads_csv_importer.dart',
       'lib/features/import_export/infrastructure/pitaka_json_importer.dart',
       'lib/features/backup/infrastructure/legacy_db_reader.dart',

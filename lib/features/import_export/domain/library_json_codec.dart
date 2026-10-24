@@ -16,7 +16,9 @@ import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 /// Parses Pitaka-JSON library files (up to schema v4) without throwing.
 abstract interface class LibraryJsonParser {
   /// Parses [text] into an [ImportPayload]; malformed rows are collected as
-  /// [ImportPayload.parseErrors] rather than thrown.
+  /// [ImportPayload.parseErrors], while file-level ambiguities that forbid a
+  /// partial import are collected as [ImportPayload.fatalErrors]. Neither case
+  /// is thrown across the boundary.
   ImportPayload parse(String text);
 
   /// Reads only the merge-namespace envelope fields (library id/name)

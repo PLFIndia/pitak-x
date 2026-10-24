@@ -32,6 +32,7 @@ import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
+import 'package:pitaka/features/import_export/domain/periodical_uid_ambiguity.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -98,6 +99,12 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     // W1: periodicals FIRST — the orphan check on issues needs the set of
     // uids the file carries, regardless of key order inside the document.
     final filePeriodicalUids = <String>{};
+    // Validation canonicalises UIDs, so the normalised rows cannot show that a
+    // file spelled one identity two ways. The scan keeps the raw spellings
+    // long enough to tell an exact duplicate (first row wins) from the fatal
+    // trim-created collision.
+    final uidScan = PeriodicalUidAmbiguityScan();
+    var hasTrimCreatedUidCollision = false;
     final rawPeriodicals = decoded['periodicals'];
     if (rawPeriodicals is List) {
       for (var i = 0; i < rawPeriodicals.length; i++) {
@@ -112,9 +119,12 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
           }
           final r = _RowReader('Magazine title', item, i + 1, limits, warnings);
           _periodical(r).match((errs) => errors.add(r.rowError(errs)), (p) {
-            periodicals.add(p);
             final uid = p.periodicalUid?.trim();
             if (uid != null && uid.isNotEmpty) filePeriodicalUids.add(uid);
+            if (uidScan.isAmbiguous(_asString(item['periodicalUid']))) {
+              hasTrimCreatedUidCollision = true;
+            }
+            periodicals.add(p);
           });
         }
       }
@@ -169,6 +179,9 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       periodicals: periodicals,
       wishlist: wishlist,
       parseErrors: errors,
+      fatalErrors: [
+        if (hasTrimCreatedUidCollision) kPeriodicalUidTrimCollisionMessage,
+      ],
       warnings: warnings,
     );
   }

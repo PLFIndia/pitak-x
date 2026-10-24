@@ -20,7 +20,7 @@ final class ImportBundle {
     ImportPayload payload,
     Map<String, Uint8List> covers,
   ) {
-    if (payload.parseErrors.isNotEmpty) {
+    if (payload.parseErrors.isNotEmpty || payload.fatalErrors.isNotEmpty) {
       return left(const BackupCorruptFailure('Invalid bundle catalogue.'));
     }
     final referenced = <String>{};

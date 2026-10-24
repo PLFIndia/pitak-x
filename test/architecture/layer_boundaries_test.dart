@@ -201,10 +201,9 @@ void main() {
       // restore_backup.dart left this list on 2026-10-23 (plan S21): the W2
       // kinds/details apply moved to restore_item_details.dart and the legacy
       // DB read phase to restore_legacy_read.dart (553 → <500).
-      // merge_library_use_case.dart shrank on 2026-10-23 (plan S19): the
-      // result/outcome types moved to merge_result.dart; the periodical apply
-      // (W1) + re-projection seam (D3) it gained net 545 → 511.
-      'lib/features/import_export/application/merge_library_use_case.dart': 511,
+      // merge_library_use_case.dart left this list on 2026-10-24 (magazine
+      // remediation S4): the per-row resolution apply moved to
+      // merge_resolution_applier.dart (516 → <500).
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
     };
 

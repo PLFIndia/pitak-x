@@ -19,6 +19,7 @@ class ImportPayload {
     this.periodicals = const [],
     this.wishlist = const [],
     this.parseErrors = const [],
+    this.fatalErrors = const [],
     this.warnings = const [],
   });
 
@@ -39,6 +40,15 @@ class ImportPayload {
   /// Per-row / file-level parse errors, safe to surface to the user. A row
   /// named here was SKIPPED (M15: invalid values are rejected, not coerced).
   final List<String> parseErrors;
+
+  /// File-level validation failures that make a partial import ambiguous.
+  ///
+  /// Unlike [parseErrors], these are not recoverable row skips. The import use
+  /// case must return a typed failure before writing anything. Raw periodical
+  /// UID spellings are checked by the parser because its normalised rows alone
+  /// cannot distinguish an exact duplicate from two identities that collide
+  /// only after trimming.
+  final List<String> fatalErrors;
 
   /// Non-fatal adjustments applied to KEPT rows (M15, D2 = truncate + report):
   /// an over-long text field was shortened, or a disallowed cover link was

@@ -1332,6 +1332,34 @@ void main() {
     };
 
     test(
+      'trim-created series UID collision fails before any merge IO',
+      () async {
+        final books = _FakeBooks([]);
+        final periodicals = FakePeriodicals();
+        final useCase = useCaseWith(books, periodicals);
+        final json = exportJson(
+          libraryId: matchingId,
+          periodicals: [
+            seriesRow(uid: ' p-collision ', title: 'First spelling'),
+            seriesRow(uid: 'p-collision', title: 'Second spelling'),
+          ],
+          books: [
+            {'bookUid': 'must-not-land', 'title': 'Must not land'},
+          ],
+        );
+
+        final result = await useCase.call(json);
+
+        expect(result.getLeft().toNullable(), isA<ValidationFailure>());
+        expect(books.insertCalls, 0);
+        expect(books.updateCalls, 0);
+        expect(books.books, isEmpty);
+        expect(periodicals.rows, isEmpty);
+        expect(periodicals.calls, isEmpty);
+      },
+    );
+
+    test(
       'a v4 file merges series + issues (the pre-S19 silent drop)',
       () async {
         final books = _FakeBooks([]);
