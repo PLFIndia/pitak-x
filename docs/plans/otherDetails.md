@@ -834,7 +834,9 @@ record it (Part D) rather than improvising.
   v5, Pitaka-JSON v4 (`versionCode` 29 is fixed: the fastlane blurbs
   `29.txt`/`291–293.txt` already exist, and 29 > every code Play has seen).
 - **Depends on:** G1, N1, N2, N3 Done (N3 may be waived by the maintainer
-  only in writing in Part D — it is the RELEASING §6.1 step 7 gate).
+  only in writing in Part D — it is the RELEASING §6.1 step 7 gate), and every
+  session S1–S11 in `magazineIssues.md` Done with its regression-test evidence.
+  R1 remains blocked while any remediation session or finding is incomplete.
 - **Read first:** `docs/RELEASING.md` (all of it — it is the procedure;
   the steps below only pin values), `tool/release_build.sh` header
   (lines 1–60), `CHANGELOG.md` `[Unreleased]` and the `[1.5.2]` heading

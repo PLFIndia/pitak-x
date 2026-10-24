@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/periodicals/application/add_issue_use_case.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 
+import '../periodical_test_data.dart';
 import 'periodical_fakes.dart';
 
 /// `AddIssueUseCase` (plan S12; ADR 0013 D1, D3, D4, D6): series lookup,
@@ -18,15 +18,16 @@ void main() {
   late Periodical series;
   late String uid;
 
-  final oct2026 = DateTime(2026, 10).millisecondsSinceEpoch;
-  final sep2027 = DateTime(2027, 9).millisecondsSinceEpoch;
+  final oct2026 = DateTime(2026, 10);
+  final sep2027 = DateTime(2027, 9);
 
   setUp(() {
     periodicals = FakePeriodicals();
     items = FakeItems();
     useCase = AddIssueUseCase(periodicals: periodicals, items: items);
     series = periodicals.seed(
-      const Periodical(
+      periodicalFixture(
+        periodicalUid: null,
         title: 'Chandamama',
         titleTransliteration: 'Chandamama',
         publisher: 'House',
@@ -43,22 +44,19 @@ void main() {
     String periodicalUid = '',
     int? volume,
     int? number,
-    int? date,
-    int? until,
+    DateTime? date,
+    DateTime? until,
     String? label,
-  }) => CatalogueItem(
+  }) => issueFixture(
     title: '',
+    periodicalUid: periodicalUid.isEmpty ? uid : periodicalUid,
+    volume: volume,
+    number: number,
+    date: date,
+    until: until,
+    label: label,
     copyCount: 2,
     notes: 'own notes',
-    addedDate: 1,
-    details: IssueOf(
-      periodicalUid: periodicalUid.isEmpty ? uid : periodicalUid,
-      volume: volume,
-      issueNumber: number,
-      issueDate: date,
-      boundUntil: until,
-      label: label,
-    ),
   );
 
   test('projects the series onto the row, validates, inserts', () async {
@@ -158,9 +156,11 @@ void main() {
 
   test('a numbered duplicate is refused, naming the existing row', () async {
     final existing = items.seed(
-      CatalogueItem(
+      issueFixture(
         title: 'Chandamama — Vol 3 No 1',
-        details: IssueOf(periodicalUid: uid, volume: 3, issueNumber: 1),
+        periodicalUid: uid,
+        volume: 3,
+        number: 1,
       ),
     );
     periodicals.issues[uid] = [existing];
@@ -174,12 +174,7 @@ void main() {
 
   test('a null volume and volume 0 are the same key (D6)', () async {
     periodicals.issues[uid] = [
-      items.seed(
-        CatalogueItem(
-          title: 'No 5',
-          details: IssueOf(periodicalUid: uid, issueNumber: 5),
-        ),
-      ),
+      items.seed(issueFixture(title: 'No 5', periodicalUid: uid, number: 5)),
     ];
     // Same number, no volume on either side → duplicate; another number
     // or another volume → a new issue.
@@ -194,13 +189,11 @@ void main() {
   test('a bound duplicate is refused on its date range', () async {
     periodicals.issues[uid] = [
       items.seed(
-        CatalogueItem(
+        issueFixture(
           title: 'bound',
-          details: IssueOf(
-            periodicalUid: uid,
-            issueDate: oct2026,
-            boundUntil: sep2027,
-          ),
+          periodicalUid: uid,
+          date: oct2026,
+          until: sep2027,
         ),
       ),
     ];

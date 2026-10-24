@@ -17,11 +17,13 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
+import '../../support/async_value_gate.dart';
+
 /// Scripted use case: records the order of ids, lets the test hold each run
 /// open (to prove serialisation) and choose its outcome.
 class _ScriptedUseCase {
   final List<int> started = [];
-  final Map<int, Completer<Either<Failure, Unit>>> gates = {};
+  final Map<int, AsyncValueGate<Either<Failure, Unit>>> gates = {};
   bool holdRuns = false;
 
   MaterializeRemoteCoverUseCase build() => MaterializeRemoteCoverUseCase(
@@ -43,8 +45,8 @@ class _CountingBooks implements CatalogueItemRepository {
   Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     script.started.add(id);
     if (!script.holdRuns) return right(null); // → right(unit): "nothing to do"
-    final gate = script.gates.putIfAbsent(id, Completer.new);
-    final outcome = await gate.future;
+    final gate = script.gates.putIfAbsent(id, AsyncValueGate.new);
+    final outcome = await gate.wait();
     // Map the scripted outcome onto the repo read the use case performs.
     return outcome.fold(left, (_) => right(null));
   }
@@ -165,7 +167,7 @@ void main() {
         ..request(7)
         ..request(7);
       await Future<void>.delayed(Duration.zero);
-      script.gates[7]!.complete(left(const NetworkFailure()));
+      script.gates[7]!.succeed(left(const NetworkFailure()));
       await n.idle;
       n.request(7); // after the failure
       await n.idle;
@@ -184,17 +186,17 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(script.started, [1], reason: '2 and 3 wait for 1');
 
-    script.gates[1]!.complete(right(unit));
+    script.gates[1]!.succeed(right(unit));
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
     expect(script.started, [1, 2]);
 
-    script.gates[2]!.complete(right(unit));
+    script.gates[2]!.succeed(right(unit));
     await Future<void>.delayed(Duration.zero);
     await Future<void>.delayed(Duration.zero);
     expect(script.started, [1, 2, 3]);
 
-    script.gates[3]!.complete(right(unit));
+    script.gates[3]!.succeed(right(unit));
     await n.idle;
   });
 
@@ -213,7 +215,7 @@ void main() {
     script.holdRuns = true;
     n.request(2);
     await Future<void>.delayed(Duration.zero);
-    script.gates[2]!.complete(left(const StorageFailure('x')));
+    script.gates[2]!.succeed(left(const StorageFailure('x')));
     await n.idle;
     await Future<void>.delayed(Duration.zero);
     expect(_LibraryRebuilds.count, before + 1, reason: 'no refresh on failure');

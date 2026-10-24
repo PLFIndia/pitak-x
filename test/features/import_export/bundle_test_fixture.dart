@@ -14,10 +14,10 @@ import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importe
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/infrastructure/drift_periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
-
-import '../periodicals/application/periodical_fakes.dart';
 
 /// Synthetic files + real, shared, in-memory Drift for cross-store assertions.
 final class BundleTestFixture {
@@ -26,6 +26,7 @@ final class BundleTestFixture {
   final coordinator = CoverFileCoordinator();
   late final books = DriftCatalogueItemRepository(database);
   late final wishlist = DriftWishlistRepository(database);
+  late final periodicals = DriftPeriodicalRepository(database);
   late final files = FileBundleCoverStore(coversDir: directory.path);
 
   File cover(String reference) =>
@@ -38,6 +39,7 @@ final class BundleTestFixture {
     BundleCoverFiles? coverFiles,
     CatalogueItemRepository? catalogueItemRepository,
     WishlistRepository? wishlistRepository,
+    PeriodicalRepository? periodicalRepository,
   }) async {
     final validated = ImportBundle.validate(payload, images);
     return validated.match(
@@ -47,7 +49,7 @@ final class BundleTestFixture {
             jsonParser: const PitakaJsonImporter(),
             bookRepo: catalogueItemRepository ?? books,
             wishlistRepo: wishlistRepository ?? wishlist,
-            periodicalRepo: FakePeriodicals(),
+            periodicalRepo: periodicalRepository ?? periodicals,
           ).importBundle(
             bundle,
             coverFiles: coverFiles ?? files,

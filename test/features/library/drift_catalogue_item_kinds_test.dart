@@ -1,4 +1,3 @@
-import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
@@ -12,6 +11,8 @@ import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/periodicals/domain/issue_sorter.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+
+import '../../support/raw_catalogue_rows.dart';
 
 /// Item kinds through the repository (ADR 0013 F4/F6, D6; plan S10): the
 /// detail row lives and dies with its base row, the kind and series facets
@@ -328,15 +329,11 @@ void main() {
 
   group('unknown kind token (F6)', () {
     test('reads as a book, is refused on write-back, deletes fine', () async {
-      final id = await db
-          .into(db.books)
-          .insert(
-            BooksCompanion.insert(
-              title: 'from the future',
-              addedDate: 1,
-              kind: const Value('hologram'),
-            ),
-          );
+      final id = await seedRawCatalogueRow(
+        db,
+        title: 'from the future',
+        kind: 'hologram',
+      );
       final read = ok(await repo.getById(id))!;
       expect(read.kind, ItemKind.book);
       expect(read.details, isNull);
@@ -358,11 +355,12 @@ void main() {
     });
 
     test('an issue row that lost its detail row reads as a book', () async {
-      final saved = ok(await repo.insert(issue('orphan', number: 1)));
-      await (db.delete(
-        db.magazineIssues,
-      )..where((t) => t.itemId.equals(saved.id))).go();
-      final read = ok(await repo.getById(saved.id))!;
+      final id = await seedRawCatalogueRow(
+        db,
+        title: 'orphan',
+        kind: 'magazine-issue',
+      );
+      final read = ok(await repo.getById(id))!;
       expect(read.kind, ItemKind.book);
     });
   });
