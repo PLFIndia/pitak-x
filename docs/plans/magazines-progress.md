@@ -1085,13 +1085,9 @@ Rename technique (learned in S1–S4):
 
 ## Open issues / blocked
 
-- **Golden PNGs pending the Linux reference renderer (verify in CI):** the
-  S14 library goldens (chips / sheet FAB / badges) were never regenerated,
-  and S17's series-row golden is deferred (see Deviations). Remediation:
-  Actions → "Update goldens" on branch `magazines` (or a PR touching
-  `test/golden/**`), download the `goldens` artefact, then ONE commit with
-  the series-row golden test + `kGoldenNames` entry + the PNGs. Until then
-  the golden step on Linux CI is expected red; every other gate is green.
+- **Golden PNGs pending the Linux reference renderer (verify in CI):**
+  Closed by G1 of `docs/plans/otherDetails.md` (commit `e629686`, run
+  `40061299190`; PR #18's Linux golden step green).
 - **On-device smoke journeys not executed in this run** (S22): no Android
   device/emulator here; macOS desktop fails at `RustLib.init()` because
   the macOS target is not wired for cargokit (`pitak_crypto.framework`

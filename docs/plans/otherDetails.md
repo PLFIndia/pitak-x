@@ -948,7 +948,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | Session | State | Commit | Date | Notes |
 |---------|-------|--------|------|-------|
 | — | — | — | 2026-10-24 | plan written after S22 (`efa5d06`); no sessions run |
-| G1 | — | — | — | |
+| G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core red from a NEW upstream tokio advisory (see Open issues — pre-existing on `main`, outside this plan's scope) |
 | N1 | — | — | — | |
 | N2 | — | — | — | |
 | N3 | — | — | — | |
@@ -960,4 +960,23 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 
 ## Open issues / blocked
 
-(none yet — append the exact failing command and its output)
+- **CI red on `magazines` from a NEW upstream Rust advisory — blocks R1's
+  "every check green" baseline.** On PR #18 (run `40061732456`,
+  2026-10-24) two jobs fail on the same cause, RUSTSEC-2026-0386 against
+  `tokio 1.52.3` (via `flutter_rust_bridge 2.12.0`) in `rust/Cargo.lock`:
+  - `Rust core (pitak_crypto)` → `cargo deny check`:
+    `advisories FAILED, bans ok, licenses ok, sources ok` — "Solution:
+    Upgrade to >=1.51.6, <1.52.0 OR >=1.53.3 (try `cargo update -p tokio`)";
+  - `OSV scan (pubspec.lock + Cargo.lock)` → "Total 1 package affected by
+    1 known vulnerability … | https://osv.dev/RUSTSEC-2026-0386 | tokio |
+    1.52.3 | 1.53.3 | rust/Cargo.lock |".
+  Pre-existing on `main` (`git diff origin/main...magazines -- rust/
+  rust/Cargo.lock pubspec.lock` is empty; `main`'s lockfile pins the same
+  tokio 1.52.3) — the advisory was published after S22's green run. A.4
+  forbids touching `rust/` from this plan, so no session here fixes it.
+  Resolution is a maintainer decision ahead of R1: `cargo update -p tokio`
+  in `rust/` plus the Rust gates (`cargo fmt --check`, `cargo clippy
+  --all-targets -- -D warnings`, `cargo deny check`, `cargo test
+  --release`), or a `deny.toml` ignore with a recorded rationale. Every
+  other PR #18 check is green (Flutter incl. the Linux golden step, F-Droid
+  purity, the update_goldens regeneration).
