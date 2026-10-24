@@ -1,9 +1,9 @@
-# Magazines remediation — handoff after S5
+# Magazines remediation — handoff after S6
 
 - **Date:** 2026-10-24
 - **Branch:** `magazines`
-- **Status:** S5 complete. S6 has **not** started.
-- **Remediation HEAD:** `29e412d` (this handoff is a documentation-only follow-up)
+- **Status:** S6 complete. S7 has **not** started.
+- **Remediation HEAD:** `ea3ccf3` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
 ## 1. Commits and current state
@@ -17,8 +17,9 @@
 | S3 — atomic writes and removed-series guard | `d8b1bab` | M1 and M9 fixed with one outer issue-write transaction, exact real-Drift race coverage, and removed-series add/scan refusal. |
 | S4 — plain JSON reconciliation | `df774d5` | H1, H2, H3, and M3 fixed with one series-resolution map, cross-kind refusal, D6 skip claims, and a file-level trim-collision refusal. |
 | S5 — v4 bundles, bounded backups, split counters | `29e412d` | H4, M2, and L5 fixed with a lossless bundle, series-cover lifecycle, reader-bound enforcement at creation, and separate entry/row restore counters. |
+| S6 — distinct-ISSN merge identity | `ea3ccf3` | H5 fixed by suppressing exact-title fallback only for different valid ISSNs, with planner/review controls and real-Drift issue-link coverage. |
 
-The working tree was clean immediately after `29e412d`. The database remains at **schema v7** (S5 adds no schema change). No release version bump, tag, or publish step has been performed.
+The working tree was clean immediately after `ea3ccf3`. The database remains at **schema v7** (S6 adds no schema change). No release version bump, tag, or publish step has been performed.
 
 ## 2. Completed work
 
@@ -79,6 +80,14 @@ The working tree was clean immediately after `29e412d`. The database remains at 
 - `RestoredItemDetails` and `RestoreSummary` report `issueEntriesDropped` (raw `issues[]` entries that produced no link) separately from `issuesDetached` (unique catalogue rows restored as books, deduplicated by `bookUid`). Parse-time drops no longer seed the row counter, `withAdoptionResults` and `hasAdjustments` carry both, and the restore page prints two distinct sentences — the units are never summed.
 - Structure: the bound policy and row counting moved to `backup_entry_bounds.dart`; the writer is 471 lines, so no ratchet entry was needed.
 
+### S6 — H5
+
+- `planPeriodicalMerge` preserves UID-first and canonical-ISSN identity, but an exact-title candidate is ignored when both sides normalize to valid, different ISSNs. The incoming series is therefore added under its own UID instead of becoming a same-series conflict.
+- Title fallback remains when either side lacks a valid ISSN. Same-ISSN/different-UID reconciliation, same-UID/changed-ISSN conflicts, first-claim behavior, and separate in-file same-title adds are unchanged.
+- The existing `winners` mapping and `reattachIncomingIssue` now keep the distinct incoming issues under the incoming series; no reattachment rewrite was needed. The composed plan and applied `MergeResult` have no periodical conflict, item conflict, possible duplicate, or review item for this expected add.
+- A real shared-Drift regression starts with two local issues and merges two incoming issues with the same numbers under a same-title/different-ISSN series. It verifies two stored series and all four issues with their correct series links after apply.
+- The change is confined to the pure-Domain fallback decision, its contract comments, and regression tests. Schema v7 and all S1–S5 persistence/interchange guards are unchanged.
+
 ## 3. Verification evidence
 
 | Gate | Result |
@@ -113,25 +122,34 @@ The working tree was clean immediately after `29e412d`. The database remains at 
 | S5 suites under `TZ=America/New_York` | **19 tests passed** in the round-trip, restore-details and boundary suites. |
 | S5 `fvm flutter test --exclude-tags golden` | **2,979 tests passed.** |
 | S5 commit checks | Pre-commit generated-code check passed; `git diff --check` clean. |
+| S6 pre-edit baseline | Clean `47a4e26`; analysis/formatting clean, **421 import/export tests**, **30 architecture/migration tests**, and **2,979 non-golden tests** passed before editing. |
+| S6 red-first regressions | The direct planner, composed plan/review, and real-Drift cases **failed on unfixed code** for the intended reasons, then passed. **34 focused tests** passed after the fix, including missing-ISSN fallback and in-file same-title controls. |
+| S6 feature suites | `fvm flutter test test/features/library test/features/import_export`: **932 tests passed.** |
+| S6 sufficiency gates | Generation left no committed diffs; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**; no schema or ratchet change. |
+| S6 `fvm flutter test --exclude-tags golden` | **2,984 tests passed.** |
+| S6 commit checks | Pre-commit generated-code check passed; `git diff --check` clean; working tree clean at `ea3ccf3`. |
 
 Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed.
 
-## 4. Resume with S6 only
+## 4. Resume with S7 only
 
-Start with `magazineIssues.md` **S6 — Keep same-title series with different ISSNs distinct in merge** (H5). Its S1, S2 and S4 dependencies are complete.
+Start with `magazineIssues.md` **S7 — Correct cover ownership, form races, and async prefill** (H7, M7, M8, M11, L2). Its S4 dependency is complete.
 
-1. Confirm `git switch magazines && git status --short` is empty and HEAD is `29e412d` (or the docs commit that follows it).
-2. Read S6 plus the locked merge decisions, especially the "different valid ISSNs are different series" rule and the review-screen contract that an expected add is not an unresolved conflict.
-3. Run the S6 baseline, including `full`, before editing; stop on any pre-existing failure.
-4. Add the planner and real-Drift regressions first: same title + different valid ISSNs must add the incoming series with its own UID, keep both series after apply, and keep its issues under the incoming series.
-5. In `planPeriodicalMerge`, keep UID-first identity and suppress the exact-title fallback only when BOTH sides carry canonical ISSNs and they differ. Title fallback stays for a side without an ISSN; first-claim and conflict reporting stay as they are.
-6. Confirm `reattachIncomingIssue` resolves the incoming issues to the newly added series, and that the merge review does not present the expected add as a same-series conflict.
-7. Keep typed `Either` rollback, the S1 interchange reads, S2 calendar-day semantics, the S3/S4 import guards and the S5 bundle/backup bounds. Do not start S7 or R1.
+1. Confirm `git switch magazines && git status --short` is empty and HEAD is `ea3ccf3` (or the docs commit that follows it).
+2. Read S7 and the locked cover decision: downloads and persistence target the actual owner, an inherited series cover never becomes issue-owned, and diagnostic paths do not log cover URLs.
+3. Run the S7 baseline, including `full`, before editing; stop on any pre-existing failure.
+4. Add the gated form/materialization, structural-owner dedup, issue-detail fallback, and A→B/ABA prefill regressions first. Cover issue, other-item, and periodical forms independently.
+5. Introduce the pure-Dart structural `CoverOwner` record and thread it through `ItemCover`, scheduling, materialization, refusal reporting, provider wiring, and diagnostics without adding a parallel identity pattern.
+6. Materialize remote series covers on the periodical, invalidate both library and periodical signals on success, and leave coverless issues coverless. Preserve own-cover-wins behavior everywhere.
+7. Make all three edit forms race-safe with explicit cover dirty/pending state, current-row observation, Save gating (or awaiting the exact operation), and `mounted` checks after async gaps.
+8. Resolve issue-detail fallback through `IssueCover.resolve` with the inherited periodical owner, and guard every Add Issue prefill await with both its generation and selected UID. Track copies dirtiness separately.
+9. Preserve typed failures, the S1–S6 identity/interchange/date/transaction/backup contracts, and the existing blessed Riverpod patterns. Do not start S8 or R1.
 
 ## 5. Handoff notes
 
-- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S4" text.
-- S0–S5 are Done. S6–S11 remain Pending.
-- The original 26-finding release hold is unchanged. Completing S5 does not make the branch release-ready.
+- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S5" text.
+- S0–S6 are Done. S7–S11 remain Pending.
+- The original 26-finding release hold is unchanged. Completing S6 does not make the branch release-ready.
 - Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5 both did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
 - `BackupEntryOverflow` is the writer's mirror of the reader's bounds. If `ItemDetailsArchiveCodec.maxBytes`/`maxRows` ever change, the writer picks the new number up automatically — but the boundary tests in `backup_extras_bounds_test.dart` still pin "equal is readable, one byte more is not".
+- For identity-fallback changes, pin both the distinctness rule and the fallback controls, then verify final relationships in real Drift rather than trusting result counts alone. S6's two-series/four-issue fixture is the pattern.
