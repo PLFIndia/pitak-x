@@ -948,46 +948,35 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | Session | State | Commit | Date | Notes |
 |---------|-------|--------|------|-------|
 | — | — | — | 2026-10-24 | plan written after S22 (`efa5d06`); no sessions run |
-| G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core red from a NEW upstream tokio advisory (see Open issues — pre-existing on `main`, outside this plan's scope) |
+| G1 | Done | `e629686` | 2026-10-24 | run `40061299190`; PNGs changed: `periodicals_badge_states.png` (new), `library_populated_{light,dark}.png` (kind rows), `library_empty_light.png` (runner re-rasterisation); byte-identical: `network_library_tiles`, `publish_connection`, `restore_initial`, `vault_unlock`; PR #18 created — Flutter job incl. the Linux golden step, F-Droid purity and the PR's update_goldens run all green; OSV scan + Rust core were initially red from the tokio advisory, later resolved by `372ad3b` |
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
-| N3 | Blocked | — | 2026-10-24 | no Android device/emulator (see Open issues); analyze baseline green — journeys compile; stays the next session |
-| R1 | — | — | — | |
+| N3 | Blocked | — | 2026-10-24 | no Android device/emulator yet; maintainer will attach a phone. Analyze and all off-device preparation green (see Open issues); stays the next session |
+| R1 | — | — | — | pre-run 2026-10-24: PR #18 every check green at `372ad3b`; fdroid arm64 release APK built and its dex purity scan found 0 forbidden hits (pre-check only — repeat step 4 on the release commit) |
 
 ## Deviations from plan
 
-(none yet — append `- \`<session>\` — <what differed and why>`)
+- `User-directed follow-up (outside G1–R1)` — while N3 awaited a phone,
+  the maintainer asked to finish everything else possible. Upgraded tokio
+  1.52.3 → 1.54.1 in `rust/Cargo.lock` (`372ad3b`) for RUSTSEC-2026-0386;
+  no Rust source changed. `cargo fmt --check`, `cargo clippy --all-targets
+  -- -D warnings`, `cargo deny check` (advisories ok) and `cargo test
+  --release` all passed locally. Every PR #18 check then passed in run
+  `40064347677`, including OSV and Rust core; the golden regeneration run
+  `40064347421` also passed. This resolved the advisory previously recorded
+  under Open issues.
 
 ## Open issues / blocked
 
-- **N3 blocked: no Android device or emulator on this machine**
+- **N3 blocked until the maintainer attaches an Android phone**
   (2026-10-24). The baseline gate `flutter devices` printed only
-  `Satyen's iPad (wireless) • ios • iOS 26.5.2` — no android entry;
-  `which adb` → not on PATH; `flutter emulators` → only
-  `apple_ios_simulator`. New facts for the maintainer: an Android SDK
-  DOES exist at `~/Library/Android/sdk` (platform-tools/adb present,
-  `emulator` and `cmdline-tools` installed) but `system-images/` is
-  EMPTY — so N3 step 1 needs the human to install a Google-APIs-free
-  system image (`sdkmanager`), create the AVD and launch it, then re-run
-  this session. What was still verified: `flutter analyze lib test
-  integration_test` → No issues found (both journeys compile).
-- **CI red on `magazines` from a NEW upstream Rust advisory — blocks R1's
-  "every check green" baseline.** On PR #18 (run `40061732456`,
-  2026-10-24) two jobs fail on the same cause, RUSTSEC-2026-0386 against
-  `tokio 1.52.3` (via `flutter_rust_bridge 2.12.0`) in `rust/Cargo.lock`:
-  - `Rust core (pitak_crypto)` → `cargo deny check`:
-    `advisories FAILED, bans ok, licenses ok, sources ok` — "Solution:
-    Upgrade to >=1.51.6, <1.52.0 OR >=1.53.3 (try `cargo update -p tokio`)";
-  - `OSV scan (pubspec.lock + Cargo.lock)` → "Total 1 package affected by
-    1 known vulnerability … | https://osv.dev/RUSTSEC-2026-0386 | tokio |
-    1.52.3 | 1.53.3 | rust/Cargo.lock |".
-  Pre-existing on `main` (`git diff origin/main...magazines -- rust/
-  rust/Cargo.lock pubspec.lock` is empty; `main`'s lockfile pins the same
-  tokio 1.52.3) — the advisory was published after S22's green run. A.4
-  forbids touching `rust/` from this plan, so no session here fixes it.
-  Resolution is a maintainer decision ahead of R1: `cargo update -p tokio`
-  in `rust/` plus the Rust gates (`cargo fmt --check`, `cargo clippy
-  --all-targets -- -D warnings`, `cargo deny check`, `cargo test
-  --release`), or a `deny.toml` ignore with a recorded rationale. Every
-  other PR #18 check is green (Flutter incl. the Linux golden step, F-Droid
-  purity, the update_goldens regeneration).
+  `Satyen's iPad (wireless) • ios • iOS 26.5.2` — no Android entry;
+  `flutter emulators` → only `apple_ios_simulator`. `adb` is not on PATH
+  but exists at `~/Library/Android/sdk/platform-tools/adb`; no emulator
+  system image is installed, which is irrelevant once a physical phone is
+  attached. Off-device preparation is complete: `flutter analyze lib test
+  integration_test` is clean; every label/tooltip used by both journeys
+  still exists in `lib/`; JDK 21 is pinned in `~/.gradle/gradle.properties`;
+  NDK 28.2.13676358 and all four Rust Android targets are installed; the
+  fdroid arm64 release build succeeds. When the phone is attached, confirm
+  `flutter devices` and `adb devices`, then resume N3 at step 1.
