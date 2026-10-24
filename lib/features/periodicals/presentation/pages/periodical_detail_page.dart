@@ -16,8 +16,10 @@
 ///
 /// A REMOVED title is visible but actionless (D8): the edit and "+ Add
 /// issue" entries hide; the use cases would not refuse them, so the UI keeps
-/// the dead ends out of reach. The overflow's hard delete is always offered
-/// — its typed refusal ("still has N issues") is the guard.
+/// the dead ends out of reach. The overflow offers Remove / Restore
+/// (soft, no confirmation needed to restore) and the hard delete, whose typed
+/// refusal ("still has N issues") is the guard — delete the issues first, or
+/// remove the title instead.
 ///
 /// Edit opens the series form prefilled with the observed row; "+ Add issue"
 /// opens the issue form with this series preselected (both S16).

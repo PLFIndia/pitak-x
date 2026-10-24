@@ -81,7 +81,7 @@ void main() {
     test('a periodical with issues cannot be deleted: counts are worded', () {
       expect(
         catalogueSaveMessage(const PeriodicalHasIssuesFailure(1)),
-        'This magazine title still has 1 issue. Remove them first, or mark '
+        'This magazine title still has 1 issue. Delete them first, or mark '
         'the title as removed instead.',
       );
       expect(

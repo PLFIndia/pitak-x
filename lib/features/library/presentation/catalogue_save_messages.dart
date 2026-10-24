@@ -48,7 +48,7 @@ String catalogueSaveMessage(Object error, {String noun = 'book'}) {
   if (error is PeriodicalHasIssuesFailure) {
     final n = error.issueCount;
     final issues = n == 1 ? '1 issue' : '$n issues';
-    return 'This magazine title still has $issues. Remove them first, or '
+    return 'This magazine title still has $issues. Delete them first, or '
         'mark the title as removed instead.';
   }
   if (error is UnsupportedItemKindFailure) {

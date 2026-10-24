@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/periodicals/application/delete_periodical_use_case.dart';
@@ -274,5 +275,70 @@ void main() {
     await tester.pumpWidget(app(periodicalId: periodical.id));
     await openDetail(tester);
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('the overflow removes an active title: the page re-renders '
+      'removed and actionless, its issues untouched (D8)', (tester) async {
+    final periodical = seedSeriesWithIssues(1);
+    await tester.pumpWidget(app(periodicalId: periodical.id));
+    await openDetail(tester);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Restore to library'), findsNothing);
+    await tester.tap(find.text('Remove from library'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove')); // the dialog's confirm button
+    await tester.pumpAndSettle();
+
+    expect(periodicals.rows[periodical.id]!.removed, isTrue);
+    expect(find.text('Removed'), findsOneWidget);
+    expect(find.byTooltip('Edit'), findsNothing);
+    expect(find.text('Add issue'), findsNothing);
+    expect(periodicals.issues[periodical.periodicalUid]!.length, 1);
+  });
+
+  testWidgets('the overflow restores a removed title without a dialog', (
+    tester,
+  ) async {
+    final periodical = periodicals.seed(
+      const Periodical(title: 'Old Weekly', removed: true),
+    );
+    await tester.pumpWidget(app(periodicalId: periodical.id));
+    await openDetail(tester);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Remove from library'), findsNothing);
+    await tester.tap(find.text('Restore to library'));
+    await tester.pumpAndSettle();
+
+    expect(periodicals.rows[periodical.id]!.removed, isFalse);
+    expect(find.text('Removed'), findsNothing);
+    expect(find.byTooltip('Edit'), findsOneWidget);
+  });
+
+  testWidgets('a failed remove keeps the row and reports safely', (
+    tester,
+  ) async {
+    periodicals.markRemovedFailure = const StorageFailure('disk full');
+    final periodical = seedSeriesWithIssues(0);
+    await tester.pumpWidget(app(periodicalId: periodical.id));
+    await openDetail(tester);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove from library'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Remove'));
+    await tester.pumpAndSettle();
+
+    expect(periodicals.rows[periodical.id]!.removed, isFalse);
+    expect(find.text('Removed'), findsNothing);
+    expect(
+      find.text('Could not save the magazine title. Please try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('disk full'), findsNothing);
   });
 }

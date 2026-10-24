@@ -460,5 +460,5 @@ the scan simply does the right thing.
 | Kind chips Books · Magazines · Others, toggle semantics; search covers notes | `LibraryControlsRow`; `ItemKind.label` (U1); FTS `notes` column (D10) |
 | Backups, exports, merges, publish carry kinds | ADR 0014 W1–W3; `.pitabak` `item_kinds.json` / `periodicals.json` |
 | Kind cannot change after creation; "Delete permanently" exists on the item page | `UpdateIssueUseCase` (D8); `catalogue_item_actions.dart` |
-| A title with issues cannot be deleted | `PeriodicalHasIssuesFailure` (D8); series overflow menu |
+| A title with issues cannot be deleted | `PeriodicalHasIssuesFailure` (D8); series overflow menu offers Remove / Restore and Delete permanently |
 | Other item's Description is private; publish shows title/cover/language/age group | ADR 0013 O2; `PublishItem` redaction |

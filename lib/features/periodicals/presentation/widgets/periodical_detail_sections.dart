@@ -10,8 +10,8 @@
 /// What lives here:
 /// - [SeriesSubscriptionCard]: the derived subscription status (D5) with the
 ///   tracked dates and the publication cadence;
-/// - [SeriesOverflowMenu]: the app-bar overflow — the hard delete with its
-///   typed refusal (D8);
+/// - [SeriesOverflowMenu]: the app-bar overflow — soft remove/restore and
+///   the hard delete with its typed refusal (D8);
 /// - [SeriesRemovedBadge]: the "Removed" marker for a soft-deleted title.
 library;
 
@@ -129,21 +129,77 @@ class _CardRow extends StatelessWidget {
   }
 }
 
-/// The series page's app-bar overflow: the hard delete with its typed
-/// refusal (D8).
+/// What the overflow can do. An enum, not strings: `onSelected` switches
+/// over it exhaustively, so a new entry fails to COMPILE until handled.
+enum _SeriesAction { remove, restore, delete }
+
+/// The series page's app-bar overflow: soft remove / restore (D8: a
+/// removed title stays visible but actionless; its issues are untouched)
+/// and the hard delete with its typed refusal.
 ///
 /// The refusal path is the point (beginner note): a series that still has
 /// issues cannot be deleted — the use case answers a typed
 /// `PeriodicalHasIssuesFailure`, and the page shows its wording in a
 /// snackbar next to the action instead of blanking a perfectly good list
-/// with an error state. On success the controller has already refreshed the
-/// list and the page just pops.
+/// with an error state. "Remove from library" is the way out that
+/// wording offers. After a remove or restore the page STAYS: it observes
+/// the row (N03) and re-renders with or without the Removed badge. On a
+/// successful delete the controller has already refreshed the list and
+/// the page just pops.
 class SeriesOverflowMenu extends ConsumerWidget {
   /// Creates the overflow for the CURRENT [periodical] (the observed row).
   const SeriesOverflowMenu({required this.periodical, super.key});
 
-  /// The observed series the delete acts on.
+  /// The observed series the actions act on.
   final Periodical periodical;
+
+  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove from library?'),
+        content: const Text(
+          'The magazine title stays in your records but is marked '
+          'removed; its issues are not changed. You can restore it later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await ref
+        .read(periodicalsControllerProvider.notifier)
+        .remove(periodical.id);
+    if (context.mounted) _reportListError(context, ref);
+  }
+
+  Future<void> _restore(BuildContext context, WidgetRef ref) async {
+    await ref
+        .read(periodicalsControllerProvider.notifier)
+        .restoreRemoved(periodical.id);
+    if (context.mounted) _reportListError(context, ref);
+  }
+
+  /// `remove` / `restoreRemoved` fold a failed write into the LIST's error
+  /// state (fail closed, S13). Say it here as well, next to the action the
+  /// user just took — a blanked list behind this page is not feedback.
+  void _reportListError(BuildContext context, WidgetRef ref) {
+    final error = ref.read(periodicalsControllerProvider).error;
+    if (error == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(catalogueSaveMessage(error, noun: 'magazine title')),
+      ),
+    );
+  }
 
   Future<void> _delete(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -185,12 +241,26 @@ class SeriesOverflowMenu extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return PopupMenuButton<String>(
+    return PopupMenuButton<_SeriesAction>(
       tooltip: 'More actions',
-      onSelected: (_) => _delete(context, ref),
+      onSelected: (action) => switch (action) {
+        _SeriesAction.remove => _remove(context, ref),
+        _SeriesAction.restore => _restore(context, ref),
+        _SeriesAction.delete => _delete(context, ref),
+      },
       itemBuilder: (context) => [
-        const PopupMenuItem<String>(
-          value: 'delete',
+        if (periodical.removed)
+          const PopupMenuItem(
+            value: _SeriesAction.restore,
+            child: Text('Restore to library'),
+          )
+        else
+          const PopupMenuItem(
+            value: _SeriesAction.remove,
+            child: Text('Remove from library'),
+          ),
+        const PopupMenuItem(
+          value: _SeriesAction.delete,
           child: Text('Delete permanently'),
         ),
       ],
