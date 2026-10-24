@@ -48,8 +48,11 @@ every session; commit it with the session's commit.**
 ## Next session
 
 **None — ready for review/merge.** The plan is complete (S0–S22 Done). What
-the reviewer / the `chore(release): x.y.z+29` commit still owes, in order
-(docs/RELEASING.md §6.1 — none of it is a session):
+the reviewer / the `chore(release): x.y.z+29` commit still owes is listed
+below and is now PLANNED as executable sessions in
+`docs/plans/otherDetails.md` (G1 goldens, N1 series remove/restore nit, N2
+README, N3 on-device smoke, R1 release — run those from that file's Part D
+log, not from here). In order (docs/RELEASING.md §6.1):
 
 1. **Goldens (Linux reference renderer):** Actions → "Update goldens" on
    `magazines`, download the artefact, then ONE commit with the S17
