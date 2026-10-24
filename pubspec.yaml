@@ -51,17 +51,17 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  flutter_riverpod: ^2.6.1
-  riverpod_annotation: ^2.6.1
+  flutter_riverpod: ^3.4.3
+  riverpod_annotation: ^4.0.7
   fpdart: ^1.1.0
-  freezed_annotation: ^2.4.4
-  json_annotation: ^4.9.0
+  freezed_annotation: ^3.1.0
+  json_annotation: ^4.12.0
   flutter_secure_storage: ^9.2.4
-  drift: ^2.20.0
-  sqlite3_flutter_libs: ^0.5.27
+  drift: ^2.35.3
+  sqlite3_flutter_libs: ^0.6.0+eol
   path_provider: ^2.1.6
   path: ^1.9.1
-  archive: ^3.6.1
+  archive: ^4.5.2
   # EXACT pin, mirroring rust/Cargo.toml (`flutter_rust_bridge = "=2.12.0"`).
   # Why: the generated bindings record the codegen version (2.12.0) and
   # `RustLib.init()` refuses to start if the Dart runtime package disagrees
@@ -71,16 +71,16 @@ dependencies:
   # with `flutter_rust_bridge_codegen`; Dependabot ignores this package on
   # both sides (.github/dependabot.yml).
   flutter_rust_bridge: 2.12.0
-  uuid: ^4.5.3
+  uuid: ^4.6.0
   # Reads the legacy Room books.db / wishlist.db (plain, no secrets) during
   # backup restore — exhaustive row/column migration into Drift (Step 7).
-  sqlite3: ^2.9.4
+  sqlite3: ^3.5.2
   # Official flutter/packages file picker (lighter native footprint than
   # file_picker). Used by the Restore screen to choose a .pitabak archive.
   file_selector: ^1.0.3
   # Non-secret key-value preferences (theme, library name, maintainer name,
   # sort/filter). Secrets stay in flutter_secure_storage — never here.
-  shared_preferences: ^2.3.2
+  shared_preferences: ^2.5.6
   # Git blob SHA-1 + salted cover ids for #32 Publish (sha1/sha256). The
   # canonical Dart hashing package; already present transitively.
   crypto: ^3.0.3
@@ -102,16 +102,16 @@ dependencies:
   qr: ^3.0.2
   # Cover capture (camera only) - official flutter/packages plugin. Used on the
   # book-detail "replace cover" action; image is downscaled before save.
-  image_picker: ^1.1.2
+  image_picker: ^1.2.4
   # Pure-Dart image decode/resize/JPEG-encode for cover downscaling (400x600
   # q80, the Kotlin ImagePipeline contract) and the publish cover pipeline.
-  image: ^4.2.0
+  image: ^4.12.0
   # PDF book-list export (Kotlin PdfLibraryRenderer parity): paginated A4,
   # header logo + library name, attribution footer, user-selectable weighted
   # columns. The canonical pure-Dart PDF generation package (no native deps,
   # works on every platform). Rendering only; the column/layout logic is a pure
   # port kept separately so it stays unit-testable without the pdf lib.
-  pdf: ^3.11.1
+  pdf: ^3.13.1
   # Biometric / device-credential gate for the optional vault unlock (#34 B2,
   # default OFF). The official flutter/packages plugin. It ONLY gates release of
   # the hardware-stored secret S; the vault key (MK) never passes through it and
@@ -134,7 +134,7 @@ dependencies:
   # https links the app already validated against the GitHub/Cloudflare Pages
   # host allow-list; no in-app webview (untrusted third-party pages stay out of
   # the app's process).
-  url_launcher: ^6.3.2
+  url_launcher: ^6.3.3
   # Free-crop step after capturing a book cover photo (book-detail screen). The
   # canonical Flutter crop plugin; uses the platform-native crop UI (uCrop on
   # Android, registered in AndroidManifest). Crop runs locally on-device before
@@ -152,7 +152,7 @@ dependencies:
   # Latitude/longitude value type used by flutter_map's API. Already
   # transitive via flutter_map; pinned direct so the map code can name
   # `LatLng` without depending on a transitive version drifting.
-  latlong2: ^0.9.1
+  latlong2: ^0.10.1
   # NOTE (S36): the Play in-app update flow is our OWN flavor-split Kotlin
   # (android/app/src/play/kotlin/.../AppUpdateChannel.kt). Do not re-add the
   # `in_app_update` plugin: a plugin links Google's proprietary Play Core
@@ -175,11 +175,11 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   very_good_analysis: ^6.0.0
-  build_runner: ^2.4.13
-  riverpod_generator: ^2.6.1
-  freezed: ^2.5.7
-  json_serializable: ^6.8.0
-  drift_dev: ^2.20.0
+  build_runner: ^2.15.1
+  riverpod_generator: ^4.0.9
+  freezed: ^4.0.0-dev.3
+  json_serializable: ^6.15.2
+  drift_dev: ^2.35.2
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
