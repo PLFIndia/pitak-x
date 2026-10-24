@@ -71,7 +71,7 @@ void main() {
       final data = result.getOrElse((_) => throw StateError('expected right'));
       expect(data.borrowers.single.name, 'Asha');
       expect(data.borrowers.single.id, 1);
-      expect(data.loans.single.bookId, 2);
+      expect(data.loans.single.itemId, 2);
       expect(data.loans.single.lentDate, 1000);
       expect(data.loans.single.isReturned, isFalse);
     });
@@ -354,7 +354,7 @@ void main() {
         passphrase: p,
         blob: 'b',
         dbPath: 'x.db',
-        loan: const Loan(bookId: 2, borrowerId: 1, lentDate: 1000),
+        loan: const Loan(itemId: 2, borrowerId: 1, lentDate: 1000),
       );
       p.dispose();
       expect(sentBookId, 2);

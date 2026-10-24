@@ -17,7 +17,7 @@
 /// library books, so it is trivially unit-testable.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 /// Default window (days) for the "due soon" bucket (Kotlin default = 3).
@@ -39,7 +39,7 @@ class PendingSnapshot {
   final List<Loan> dueSoon;
 
   /// Library books flagged as needing metadata.
-  final List<Book> staleMetadataBooks;
+  final List<CatalogueItem> staleMetadataBooks;
 
   /// True when there is nothing to act on.
   bool get isEmpty =>
@@ -57,7 +57,7 @@ class PendingSnapshot {
 /// first). Stale-metadata = non-removed books with `needsMetadata`.
 PendingSnapshot buildPendingSnapshot({
   required List<Loan> loans,
-  required List<Book> books,
+  required List<CatalogueItem> books,
   required int now,
   int dueSoonWithinDays = kDueSoonWithinDays,
 }) {

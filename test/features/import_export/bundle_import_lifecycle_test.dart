@@ -13,7 +13,7 @@ import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
@@ -97,7 +97,9 @@ void main() {
         };
         if (failFirst) files.failures.add('stage');
         const payload = ImportPayload(
-          books: [Book(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg')],
+          items: [
+            CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
+          ],
         );
         final images = {
           'a.jpg': Uint8List.fromList([1]),

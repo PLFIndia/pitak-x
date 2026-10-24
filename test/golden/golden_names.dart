@@ -22,4 +22,5 @@ const kGoldenNames = <String>[
   'restore_initial',
   'vault_unlock',
   'network_library_tiles',
+  'periodicals_badge_states',
 ];

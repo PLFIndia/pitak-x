@@ -4,7 +4,7 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 void main() {
   Loan loan(int bookId, {int? returnedDate}) => Loan(
-    bookId: bookId,
+    itemId: bookId,
     borrowerId: 1,
     lentDate: 1000,
     returnedDate: returnedDate,

@@ -1,7 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
 
 import '../../support/fuzz.dart';
@@ -16,13 +16,13 @@ void main() {
 
   /// A random book. ISBNs/uids are drawn from a SMALL pool so collisions
   /// (the interesting cases) actually happen.
-  Book randomBook(Fuzz fuzz, {required int id}) {
+  CatalogueItem randomBook(Fuzz fuzz, {required int id}) {
     final hasIsbn = fuzz.nextInt(2) == 0;
-    return Book(
+    return CatalogueItem(
       id: id,
       title: 'Title ${fuzz.nextInt(20)}',
       author: 'Author ${fuzz.nextInt(10)}',
-      bookUid: fuzz.nextInt(3) == 0 ? 'uid-${fuzz.nextInt(8)}' : null,
+      itemUid: fuzz.nextInt(3) == 0 ? 'uid-${fuzz.nextInt(8)}' : null,
       isbn: hasIsbn ? 'isbn-${fuzz.nextInt(8)}' : null,
       publisher: fuzz.nextInt(2) == 0 ? 'Pub ${fuzz.nextInt(4)}' : null,
       pageCount: fuzz.nextInt(3) == 0 ? 100 + fuzz.nextInt(400) : null,
@@ -34,11 +34,12 @@ void main() {
   }
 
   /// Every incoming book must land in EXACTLY ONE bucket of the plan.
-  /// Identifies each bucket's membership by identity of the incoming Book
-  /// objects (planMerge never copies books into the plan — the same
+  /// Identifies each bucket's membership by identity of the incoming
+  /// CatalogueItem objects (planMerge never copies books into the plan — the
+  /// same
   /// instances appear in toAdd/conflicts/possibleDuplicates).
-  void expectPartition(MergePlan plan, List<Book> incoming) {
-    final bucketed = <Book>[
+  void expectPartition(MergePlan plan, List<CatalogueItem> incoming) {
+    final bucketed = <CatalogueItem>[
       ...plan.toAdd,
       ...plan.conflicts.map((c) => c.incoming),
       ...plan.possibleDuplicates.map((d) => d.incoming),
@@ -122,22 +123,23 @@ void main() {
         // Distinct keys per row: unique isbn/uid drawn from the case index.
         final incoming = [
           for (var j = 0; j < fuzz.nextInt(10); j++)
-            Book(
+            CatalogueItem(
               title: 'Title ${fuzz.nextInt(20)}',
               author: 'Author ${fuzz.nextInt(10)}',
-              bookUid: 'case-$i-uid-$j',
+              itemUid: 'case-$i-uid-$j',
               isbn: 'case-$i-isbn-$j',
               addedDate: fuzz.nextInt(1000000),
             ),
         ];
-        final shuffled = List<Book>.of(incoming)..shuffle(fuzzRandom(fuzz));
+        final shuffled = List<CatalogueItem>.of(incoming)
+          ..shuffle(fuzzRandom(fuzz));
 
         final a = planMerge(local, incoming);
         final b = planMerge(local, shuffled);
 
         String signature(MergePlan p) {
-          String sig(Book book) =>
-              '${book.title}|${book.author}|${book.isbn}|${book.bookUid}';
+          String sig(CatalogueItem book) =>
+              '${book.title}|${book.author}|${book.isbn}|${book.itemUid}';
           final toAdd = p.toAdd.map(sig).toList()..sort();
           final conflicts =
               p.conflicts
@@ -171,7 +173,11 @@ void main() {
         final fuzz = Fuzz.forCase(i);
         final incoming = [
           for (var j = 0; j < 2 + fuzz.nextInt(4); j++)
-            Book(title: 'Shared $j', isbn: 'same-isbn-$i', addedDate: j),
+            CatalogueItem(
+              title: 'Shared $j',
+              isbn: 'same-isbn-$i',
+              addedDate: j,
+            ),
         ];
         final plan = planMerge(const [], incoming);
         expect(

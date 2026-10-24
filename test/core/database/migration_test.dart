@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value, Variable;
+import 'package:drift/drift.dart' show GeneratedDatabase, Value, Variable;
 import 'package:drift/native.dart';
 import 'package:drift_dev/api/migrations_native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +10,9 @@ import 'generated/schema.dart';
 import 'generated/schema_v1.dart' as v1;
 import 'generated/schema_v2.dart' as v2;
 import 'generated/schema_v3.dart' as v3;
+import 'generated/schema_v4.dart' as v4;
+import 'generated/schema_v5.dart' as v5;
+import 'generated/schema_v6.dart' as v6;
 
 /// Reads the current `schemaVersion` without leaving a database open.
 Future<int> _currentSchemaVersion() async {
@@ -34,6 +37,13 @@ const _rawSqlObjects = <String, List<String>>{
     'index_books_title_sort',
     'index_books_author_sort',
     'index_wishlist_books_isbn',
+    // Schema v5 (ADR 0013): kind facet, issue identity keys, periodical ids.
+    'index_books_kind',
+    'index_magazine_issues_periodical_uid',
+    'index_magazine_issues_number_key',
+    'index_magazine_issues_bound_key',
+    'index_periodicals_periodical_uid',
+    'index_periodicals_issn',
   ],
   'trigger': ['books_fts_ai', 'books_fts_ad', 'books_fts_au'],
 };
@@ -131,6 +141,9 @@ void main() {
           .into(oldDb.books)
           .insert(
             v1.BooksCompanion.insert(
+              // The v1 helper is generated from the v1 snapshot and keeps the
+              // getter name of that era (`bookUid`); only the live schema's
+              // getter was renamed `itemUid` (plan F7).
               bookUid: const Value('uid-1'),
               title: 'The Migration Book',
               titleTransliteration: const Value('Migration Book'),
@@ -185,7 +198,7 @@ void main() {
       await verifier.migrateAndValidate(db, current);
 
       final book = await db.select(db.books).getSingle();
-      expect(book.bookUid, 'uid-1');
+      expect(book.itemUid, 'uid-1');
       expect(book.title, 'The Migration Book');
       expect(book.titleTransliteration, 'Migration Book');
       expect(book.author, 'A. Writer');
@@ -340,6 +353,612 @@ void main() {
         await _expectRawSqlObjectsHealthy(db);
       },
     );
+
+    // Data-matrix row for the v5 bump (ADR 0013): a populated v4 catalogue
+    // survives with `kind` back-filled to `book`; the FTS index is rebuilt
+    // WITH `notes` (a notes-only word is found; the column list is asserted);
+    // the new tables exist, start empty, and the detail table cascades from
+    // its base row; every kind round-trips through the current schema.
+    test(
+      'v4: books survive as kind=book, FTS gains notes, kinds round-trip',
+      () async {
+        final schema = await verifier.schemaAt(4);
+        final oldDb = v4.DatabaseAtV4(schema.newConnection());
+        await oldDb
+            .into(oldDb.books)
+            .insert(
+              v4.BooksCompanion.insert(
+                bookUid: const Value('uid-v4'),
+                title: 'Pre-upgrade Book',
+                notes: const Value('zebra in the notes only'),
+                addedDate: 1700000006000,
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        // Back-fill: the pre-upgrade row is a book.
+        final book = await db.select(db.books).getSingle();
+        expect(book.title, 'Pre-upgrade Book');
+        expect(book.itemUid, 'uid-v4');
+        expect(book.kind, 'book');
+        expect(await db.select(db.periodicals).get(), isEmpty);
+        expect(await db.select(db.magazineIssues).get(), isEmpty);
+
+        // D10: the rebuilt index covers notes — a word that appears ONLY in
+        // the notes of a pre-upgrade row is found.
+        final ftsColumns = await db
+            .customSelect('PRAGMA table_info(books_fts)')
+            .map((r) => r.read<String>('name'))
+            .get();
+        expect(ftsColumns, [
+          'title',
+          'title_transliteration',
+          'author',
+          'isbn',
+          'location',
+          'genre',
+          'notes',
+        ]);
+        await _expectRawSqlObjectsHealthy(db, migratedTitleWord: 'zebra');
+
+        // Every kind round-trips: a periodical, a numbered issue, a bound
+        // volume and an "other" item, written through the current schema.
+        await db
+            .into(db.periodicals)
+            .insert(
+              PeriodicalsCompanion.insert(
+                periodicalUid: 'p-1',
+                title: 'Chandamama',
+                issn: const Value('0317-8471'),
+                frequency: const Value('monthly'),
+                addedDate: 1700000007000,
+              ),
+            );
+        final issueId = await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Chandamama — No 1',
+                addedDate: 1700000008000,
+                kind: const Value('magazine-issue'),
+              ),
+            );
+        await db
+            .into(db.magazineIssues)
+            .insert(
+              MagazineIssuesCompanion.insert(
+                itemId: Value(issueId),
+                periodicalUid: 'p-1',
+                issueNumber: const Value(1),
+              ),
+            );
+        final boundId = await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Chandamama — Jan 2025 – Dec 2025',
+                addedDate: 1700000008001,
+                kind: const Value('magazine-issue'),
+              ),
+            );
+        await db
+            .into(db.magazineIssues)
+            .insert(
+              MagazineIssuesCompanion.insert(
+                itemId: Value(boundId),
+                periodicalUid: 'p-1',
+                issueDate: const Value(1735689600000),
+                boundUntil: const Value(1764547200000),
+              ),
+            );
+        await db
+            .into(db.books)
+            .insert(
+              BooksCompanion.insert(
+                title: 'Carrom board',
+                addedDate: 1700000008002,
+                kind: const Value('other'),
+              ),
+            );
+        final kinds = await db
+            .customSelect('SELECT kind, COUNT(*) AS n FROM books GROUP BY kind')
+            .map((r) => '${r.read<String>('kind')}=${r.read<int>('n')}')
+            .get();
+        // `Trigger Probe` (inserted by the health check) is a book too.
+        expect(kinds, containsAll(['book=2', 'magazine-issue=2', 'other=1']));
+        final periodical = await db.select(db.periodicals).getSingle();
+        expect(periodical.issn, '0317-8471');
+        expect(periodical.frequency, 'monthly');
+        expect(periodical.removed, isFalse);
+
+        // D6 identity keys: the partial UNIQUE indexes refuse a second
+        // numbered issue with the same key (no volume == volume 0) and a
+        // second bound volume with the same range.
+        await expectLater(
+          db
+              .into(db.magazineIssues)
+              .insert(
+                MagazineIssuesCompanion.insert(
+                  itemId: Value(
+                    await db
+                        .into(db.books)
+                        .insert(
+                          BooksCompanion.insert(
+                            title: 'dup number',
+                            addedDate: 1,
+                            kind: const Value('magazine-issue'),
+                          ),
+                        ),
+                  ),
+                  periodicalUid: 'p-1',
+                  volume: const Value(0),
+                  issueNumber: const Value(1),
+                ),
+              ),
+          throwsA(isA<Object>()),
+          reason: 'UNIQUE (periodical_uid, COALESCE(volume,0), issue_number)',
+        );
+        await expectLater(
+          db
+              .into(db.magazineIssues)
+              .insert(
+                MagazineIssuesCompanion.insert(
+                  itemId: Value(
+                    await db
+                        .into(db.books)
+                        .insert(
+                          BooksCompanion.insert(
+                            title: 'dup bound',
+                            addedDate: 2,
+                            kind: const Value('magazine-issue'),
+                          ),
+                        ),
+                  ),
+                  periodicalUid: 'p-1',
+                  issueDate: const Value(1735689600000),
+                  boundUntil: const Value(1764547200000),
+                ),
+              ),
+          throwsA(isA<Object>()),
+          reason: 'UNIQUE (periodical_uid, issue_date, bound_until)',
+        );
+
+        // F4 cascade: deleting the base row deletes its detail row (proves
+        // `PRAGMA foreign_keys = ON` is live on this connection).
+        await (db.delete(db.books)..where((t) => t.id.equals(issueId))).go();
+        final details = await db.select(db.magazineIssues).get();
+        expect(details.map((d) => d.itemId), [boundId]);
+      },
+    );
+
+    Future<int> insertV5IssueBase(v5.DatabaseAtV5 db, String title) {
+      return db
+          .into(db.books)
+          .insert(
+            v5.BooksCompanion.insert(
+              title: title,
+              addedDate: 1700000009000,
+              kind: const Value('magazine-issue'),
+            ),
+          );
+    }
+
+    Future<List<Map<String, dynamic>>> rawRows(
+      GeneratedDatabase db,
+      String table,
+      String orderBy,
+    ) {
+      return db
+          .customSelect('SELECT * FROM $table ORDER BY $orderBy')
+          .map((row) => Map<String, dynamic>.of(row.data))
+          .get();
+    }
+
+    Future<List<List<Map<String, dynamic>>>> rawSnapshot(
+      GeneratedDatabase db,
+    ) async => [
+      await rawRows(db, 'books', 'id'),
+      await rawRows(db, 'periodicals', 'id'),
+      await rawRows(db, 'magazine_issues', 'item_id'),
+    ];
+
+    Future<void> expectV5Collision({
+      required Future<void> Function(v5.DatabaseAtV5 db) seed,
+      required String expectedMessage,
+    }) async {
+      final schema = await verifier.schemaAt(5);
+      final oldDb = v5.DatabaseAtV5(schema.newConnection());
+      await seed(oldDb);
+      final before = await rawSnapshot(oldDb);
+      await oldDb.close();
+
+      final current = await _currentSchemaVersion();
+      final db = AppDatabase(schema.newConnection());
+      try {
+        await expectLater(
+          verifier.migrateAndValidate(db, current),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains(expectedMessage),
+            ),
+          ),
+        );
+      } finally {
+        await db.close();
+      }
+      final reopened = v5.DatabaseAtV5(schema.newConnection());
+      addTearDown(reopened.close);
+      expect(await rawSnapshot(reopened), before);
+    }
+
+    test(
+      'v5: whitespace-padded periodical and issue UIDs are repaired',
+      () async {
+        final schema = await verifier.schemaAt(5);
+        final oldDb = v5.DatabaseAtV5(schema.newConnection());
+        await oldDb
+            .into(oldDb.periodicals)
+            .insert(
+              v5.PeriodicalsCompanion.insert(
+                periodicalUid: '  p1  ',
+                title: 'Frontline',
+                addedDate: 1700000009000,
+              ),
+            );
+        final issueId = await insertV5IssueBase(
+          oldDb,
+          'Frontline — Vol 2 No 7',
+        );
+        await oldDb
+            .into(oldDb.magazineIssues)
+            .insert(
+              v5.MagazineIssuesCompanion.insert(
+                itemId: Value(issueId),
+                periodicalUid: '\tp1\n',
+                volume: const Value(2),
+                issueNumber: const Value(7),
+                issueDate: const Value(1735689600000),
+                boundUntil: const Value(1735776000000),
+                issueLabel: const Value('Special'),
+              ),
+            );
+        await oldDb.close();
+
+        final current = await _currentSchemaVersion();
+        final db = AppDatabase(schema.newConnection());
+        addTearDown(db.close);
+        await verifier.migrateAndValidate(db, current);
+
+        final periodical = await db.select(db.periodicals).getSingle();
+        final issue = await db.select(db.magazineIssues).getSingle();
+        expect(periodical.periodicalUid, 'p1');
+        expect(periodical.title, 'Frontline');
+        expect(issue.periodicalUid, 'p1');
+        expect(issue.itemId, issueId);
+        expect(issue.volume, 2);
+        expect(issue.issueNumber, 7);
+        expect(issue.issueDate, 1735689600000);
+        expect(issue.boundUntil, 1735776000000);
+        expect(issue.issueLabel, 'Special');
+        expect(
+          (await db.select(db.books).get()).single.title,
+          'Frontline — Vol 2 No 7',
+        );
+        await _expectRawSqlObjectsHealthy(db);
+      },
+    );
+
+    test(
+      'v5: trim-equivalent periodical UIDs abort before any write',
+      () async {
+        await expectV5Collision(
+          seed: (db) async {
+            for (final entry in [
+              (uid: 'p1', title: 'First'),
+              (uid: ' p1 ', title: 'Second'),
+            ]) {
+              await db
+                  .into(db.periodicals)
+                  .insert(
+                    v5.PeriodicalsCompanion.insert(
+                      periodicalUid: entry.uid,
+                      title: entry.title,
+                      addedDate: 1700000009000,
+                    ),
+                  );
+            }
+          },
+          expectedMessage: 'Periodical UID canonicalization collision',
+        );
+      },
+    );
+
+    test('v5: a numbered D6 collision aborts before any write', () async {
+      await expectV5Collision(
+        seed: (db) async {
+          await db
+              .into(db.periodicals)
+              .insert(
+                v5.PeriodicalsCompanion.insert(
+                  periodicalUid: 'p1',
+                  title: 'Frontline',
+                  addedDate: 1700000009000,
+                ),
+              );
+          for (final entry in [
+            (uid: 'p1', volume: const Value<int?>.absent()),
+            (uid: ' p1 ', volume: const Value<int?>(0)),
+          ]) {
+            final itemId = await insertV5IssueBase(db, 'Issue ${entry.uid}');
+            await db
+                .into(db.magazineIssues)
+                .insert(
+                  v5.MagazineIssuesCompanion.insert(
+                    itemId: Value(itemId),
+                    periodicalUid: entry.uid,
+                    volume: entry.volume,
+                    issueNumber: const Value(7),
+                  ),
+                );
+          }
+        },
+        expectedMessage: 'Magazine issue identity collision',
+      );
+    });
+
+    test('v5: a bound-volume D6 collision aborts before any write', () async {
+      await expectV5Collision(
+        seed: (db) async {
+          await db
+              .into(db.periodicals)
+              .insert(
+                v5.PeriodicalsCompanion.insert(
+                  periodicalUid: 'p1',
+                  title: 'Frontline',
+                  addedDate: 1700000009000,
+                ),
+              );
+          for (final uid in ['p1', ' p1 ']) {
+            final itemId = await insertV5IssueBase(db, 'Bound $uid');
+            await db
+                .into(db.magazineIssues)
+                .insert(
+                  v5.MagazineIssuesCompanion.insert(
+                    itemId: Value(itemId),
+                    periodicalUid: uid,
+                    issueDate: const Value(1000),
+                    boundUntil: const Value(2000),
+                  ),
+                );
+          }
+        },
+        expectedMessage: 'Magazine issue identity collision',
+      );
+    });
+
+    Future<int> insertV6IssueBase(
+      v6.DatabaseAtV6 db,
+      String title, {
+      Value<String?> titleTransliteration = const Value.absent(),
+      Value<String> titleSort = const Value.absent(),
+      Value<int?> publishedYear = const Value.absent(),
+      int addedDate = 1700000009000,
+      Value<int?> removedAt = const Value.absent(),
+    }) {
+      return db
+          .into(db.books)
+          .insert(
+            v6.BooksCompanion.insert(
+              title: title,
+              titleTransliteration: titleTransliteration,
+              titleSort: titleSort,
+              publishedYear: publishedYear,
+              addedDate: addedDate,
+              removedAt: removedAt,
+              kind: const Value('magazine-issue'),
+            ),
+          );
+    }
+
+    Future<void> expectV6Collision({
+      required Future<void> Function(v6.DatabaseAtV6 db) seed,
+      required String expectedMessage,
+    }) async {
+      final schema = await verifier.schemaAt(6);
+      final oldDb = v6.DatabaseAtV6(schema.newConnection());
+      await seed(oldDb);
+      final before = await rawSnapshot(oldDb);
+      await oldDb.close();
+
+      final current = await _currentSchemaVersion();
+      final db = AppDatabase(schema.newConnection());
+      try {
+        await expectLater(
+          verifier.migrateAndValidate(db, current),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              contains(expectedMessage),
+            ),
+          ),
+        );
+      } finally {
+        await db.close();
+      }
+      final reopened = v6.DatabaseAtV6(schema.newConnection());
+      addTearDown(reopened.close);
+      expect(await rawSnapshot(reopened), before);
+    }
+
+    test('v6: calendar days normalize once while projections and instants stay '
+        'unchanged', () async {
+      final schema = await verifier.schemaAt(6);
+      final oldDb = v6.DatabaseAtV6(schema.newConnection());
+      final legacyDay = DateTime(2026, 1, 15).millisecondsSinceEpoch;
+      final canonicalUntil = DateTime.utc(2026, 2, 15).millisecondsSinceEpoch;
+      final addedDate = DateTime(2026, 1, 10, 12, 34).millisecondsSinceEpoch;
+      final removedAt = DateTime(2026, 1, 11, 13, 35).millisecondsSinceEpoch;
+      await oldDb
+          .into(oldDb.periodicals)
+          .insert(
+            v6.PeriodicalsCompanion.insert(
+              periodicalUid: 'p1',
+              title: 'Frontline',
+              titleTransliteration: const Value('Frontline Roman'),
+              titleSort: const Value('frontline'),
+              subscriptionStart: Value(legacyDay),
+              subscriptionEnd: Value(canonicalUntil),
+              addedDate: addedDate,
+              removedAt: Value(removedAt),
+            ),
+          );
+      await oldDb
+          .into(oldDb.periodicals)
+          .insert(
+            v6.PeriodicalsCompanion.insert(
+              periodicalUid: 'p2',
+              title: 'Null dates',
+              addedDate: addedDate,
+            ),
+          );
+      final boundId = await insertV6IssueBase(
+        oldDb,
+        'Frontline — Jan 2026 – Feb 2026',
+        titleTransliteration: const Value(
+          'Frontline Roman — Jan 2026 – Feb 2026',
+        ),
+        titleSort: const Value('frontline — jan 2026 – feb 2026'),
+        publishedYear: const Value(2026),
+        addedDate: addedDate,
+        removedAt: Value(removedAt),
+      );
+      await oldDb
+          .into(oldDb.magazineIssues)
+          .insert(
+            v6.MagazineIssuesCompanion.insert(
+              itemId: Value(boundId),
+              periodicalUid: 'p1',
+              issueDate: Value(legacyDay),
+              boundUntil: Value(canonicalUntil),
+            ),
+          );
+      final numberedId = await insertV6IssueBase(
+        oldDb,
+        'Frontline — No 2',
+        addedDate: addedDate,
+      );
+      await oldDb
+          .into(oldDb.magazineIssues)
+          .insert(
+            v6.MagazineIssuesCompanion.insert(
+              itemId: Value(numberedId),
+              periodicalUid: 'p1',
+              issueNumber: const Value(2),
+            ),
+          );
+      await oldDb.close();
+
+      final current = await _currentSchemaVersion();
+      final db = AppDatabase(schema.newConnection());
+      await verifier.migrateAndValidate(db, current);
+
+      final periodical = await (db.select(
+        db.periodicals,
+      )..where((row) => row.periodicalUid.equals('p1'))).getSingle();
+      expect(
+        periodical.subscriptionStart,
+        DateTime.utc(2026, 1, 15).millisecondsSinceEpoch,
+      );
+      expect(periodical.subscriptionEnd, canonicalUntil);
+      expect(periodical.addedDate, addedDate);
+      expect(periodical.removedAt, removedAt);
+      final nullDates = await (db.select(
+        db.periodicals,
+      )..where((row) => row.periodicalUid.equals('p2'))).getSingle();
+      expect(nullDates.subscriptionStart, isNull);
+      expect(nullDates.subscriptionEnd, isNull);
+
+      final bound = await (db.select(
+        db.magazineIssues,
+      )..where((row) => row.itemId.equals(boundId))).getSingle();
+      expect(bound.issueDate, DateTime.utc(2026, 1, 15).millisecondsSinceEpoch);
+      expect(bound.boundUntil, canonicalUntil);
+      final numbered = await (db.select(
+        db.magazineIssues,
+      )..where((row) => row.itemId.equals(numberedId))).getSingle();
+      expect(numbered.issueDate, isNull);
+      expect(numbered.boundUntil, isNull);
+
+      final base = await (db.select(
+        db.books,
+      )..where((row) => row.id.equals(boundId))).getSingle();
+      expect(base.title, 'Frontline — Jan 2026 – Feb 2026');
+      expect(
+        base.titleTransliteration,
+        'Frontline Roman — Jan 2026 – Feb 2026',
+      );
+      expect(base.titleSort, 'frontline — jan 2026 – feb 2026');
+      expect(base.publishedYear, 2026);
+      expect(base.addedDate, addedDate);
+      expect(base.removedAt, removedAt);
+
+      final normalized = await rawSnapshot(db);
+      await db.close();
+      final reopened = AppDatabase(schema.newConnection());
+      addTearDown(reopened.close);
+      expect(
+        await rawSnapshot(reopened),
+        normalized,
+        reason: 'reopening v7 must not reinterpret canonical UTC days',
+      );
+      await _expectRawSqlObjectsHealthy(
+        reopened,
+        migratedTitleWord: 'Frontline',
+      );
+    });
+
+    test('v6: distinct legacy bound ranges that normalize to one D6 key abort '
+        'before any write', () async {
+      await expectV6Collision(
+        seed: (db) async {
+          await db
+              .into(db.periodicals)
+              .insert(
+                v6.PeriodicalsCompanion.insert(
+                  periodicalUid: 'p1',
+                  title: 'Frontline',
+                  addedDate: 1700000009000,
+                ),
+              );
+          for (final hour in [0, 1]) {
+            final itemId = await insertV6IssueBase(db, 'Bound $hour');
+            await db
+                .into(db.magazineIssues)
+                .insert(
+                  v6.MagazineIssuesCompanion.insert(
+                    itemId: Value(itemId),
+                    periodicalUid: 'p1',
+                    issueDate: Value(
+                      DateTime(2026, 1, 15, hour).millisecondsSinceEpoch,
+                    ),
+                    boundUntil: Value(
+                      DateTime(2026, 2, 15, hour).millisecondsSinceEpoch,
+                    ),
+                  ),
+                );
+          }
+        },
+        expectedMessage: 'Magazine issue identity collision',
+      );
+    });
   });
 
   test('a committed snapshot exists for the current schemaVersion', () async {

@@ -3,27 +3,36 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
+import '../periodicals/application/periodical_fakes.dart';
 import 'replacement_harness.dart';
 import 'replacement_test_guard.dart';
 
-class _InterceptBooks implements BookRepository {
+class _InterceptBooks implements CatalogueItemRepository {
   _InterceptBooks(this.delegate);
-  final BookRepository delegate;
+  final CatalogueItemRepository delegate;
   Failure? readFailure;
   Future<void> Function()? afterRead;
   Future<void> Function()? afterReplace;
   @override
-  Future<Either<Failure, List<Book>>> getAll() async {
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async {
     await afterRead?.call();
     return readFailure == null ? delegate.getAll() : left(readFailure!);
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    await afterRead?.call();
+    return readFailure == null
+        ? delegate.getAllForInterchange()
+        : left(readFailure!);
+  }
+
+  @override
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     final result = await delegate.replaceAll(books);
     await afterReplace?.call();
     return result;
@@ -37,9 +46,9 @@ class _InterceptBooks implements BookRepository {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Original');
+const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Original');
 const _decision = MergeDiffersDecision(
-  incomingBooks: [Book(id: 99, bookUid: 'stable', title: 'Updated')],
+  incomingBooks: [CatalogueItem(id: 99, itemUid: 'stable', title: 'Updated')],
   incomingLibraryId: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
   incomingLibraryName: 'Incoming',
   localLibraryName: 'Local',
@@ -57,6 +66,7 @@ void main() {
     await h.initialize();
     useCase = MergeLibraryUseCase(
       bookRepo: books,
+      periodicalRepo: FakePeriodicals(),
       // N07: identity goes through the harness's real SettingsController.
       namespace: h.namespace,
       jsonParser: const PitakaJsonImporter(),
@@ -94,7 +104,7 @@ void main() {
   test(
     'changed lending availability is enforced inside the vault FIFO',
     () async {
-      const loan = Loan(bookId: 7, borrowerId: 1, lentDate: 1);
+      const loan = Loan(itemId: 7, borrowerId: 1, lentDate: 1);
       expect((await h.session.addLoan(loan)).isRight(), isTrue);
       expect(
         (await h.session.addLoan(loan)).getLeft().toNullable(),

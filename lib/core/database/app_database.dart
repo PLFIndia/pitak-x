@@ -1,4 +1,5 @@
-/// Drift database for the non-secret stores (books + wishlist + network).
+/// Drift database for the non-secret stores (books + wishlist + network +
+/// periodicals).
 ///
 /// The encrypted borrowers vault is NOT here — it is owned by the Rust core
 /// (decision: secrets never live in Dart-side storage). FTS5 mirrors the
@@ -9,16 +10,24 @@ library;
 
 import 'package:drift/drift.dart';
 import 'package:pitaka/core/database/tables.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/language_merge_plan.dart';
 
 part 'app_database.g.dart';
 
-/// Columns mirrored into the FTS5 index (matches Kotlin `books_fts`).
+/// Columns mirrored into the FTS5 index: the Kotlin `books_fts` five plus
+/// `notes` since schema v5 (ADR 0013 D10 — an "other" item is described in
+/// its notes, so the description must be searchable; search is on-device,
+/// so indexing private notes leaks nothing).
 const _ftsColumns =
-    'title, title_transliteration, author, isbn, location, genre';
+    'title, title_transliteration, author, isbn, location, genre, notes';
 
-/// The non-secret application database (books + wishlist + network).
-@DriftDatabase(tables: [Books, WishlistBooks, NetworkLibraries])
+/// The non-secret application database (books + wishlist + network +
+/// periodicals).
+@DriftDatabase(
+  tables: [Books, WishlistBooks, NetworkLibraries, MagazineIssues, Periodicals],
+)
 class AppDatabase extends _$AppDatabase {
   /// Opens the database over the given [executor].
   AppDatabase(super.executor);
@@ -32,8 +41,16 @@ class AppDatabase extends _$AppDatabase {
   ///  4 — `network_libraries.confirmed_by_member` added (design 2026-10-18):
   ///      reciprocal member→hub consent (`memberOf` link-back) for the
   ///      "Confirmed by member" badge.
+  ///  5 — catalogue item kinds (ADR 0013): `books.kind` (default `'book'`),
+  ///      detail table `magazine_issues` (FK → books, ON DELETE CASCADE) and
+  ///      `periodicals`; the FTS5 index is dropped and rebuilt with `notes`
+  ///      added to its columns (D10). `PRAGMA foreign_keys = ON` from here on.
+  ///  6 — no shape change; canonicalize periodical/issue soft-link UIDs with
+  ///      Dart trim semantics. Ambiguous trim/D6 collisions abort before writes.
+  ///  7 — no shape change; issue/subscription values become UTC-midnight
+  ///      calendar days. Conversion-created D6 collisions abort before writes.
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -55,6 +72,36 @@ class AppDatabase extends _$AppDatabase {
         // "not confirmed" until the next refresh re-evaluates the link-back.
         await m.addColumn(networkLibraries, networkLibraries.confirmedByMember);
       }
+      // v5 (ADR 0013): a SEPARATE `if` — every older version, including one
+      // that just took the `createTable(networkLibraries)` branch above, must
+      // also get the item-kind objects. Two new tables and one additive
+      // column with a default (`books.kind`): existing rows read as books.
+      if (from < 5) {
+        await m.createTable(periodicals);
+        await m.createTable(magazineIssues);
+        await m.addColumn(books, books.kind);
+        // D10: the FTS index gains `notes`. An FTS5 virtual table cannot
+        // add a column, and it is a DERIVED index (rebuilt, not migrated), so
+        // it is dropped here — with its triggers, which name the old column
+        // list — and `beforeOpen` recreates both with the new list and
+        // rebuilds the index from `books` (one-time cost, timed in the
+        // migration test).
+        for (final trigger in [
+          'books_fts_ai',
+          'books_fts_ad',
+          'books_fts_au',
+        ]) {
+          await customStatement('DROP TRIGGER IF EXISTS $trigger');
+        }
+        await customStatement('DROP TABLE IF EXISTS books_fts');
+      }
+      // v6: a separate repair step so every older path reaches it after the
+      // v5 tables exist. No table shape changes; only soft-link values move.
+      if (from < 6) await _canonicalizePeriodicalUids();
+      // v7: normalize ONLY the four date-only columns. Base projections and
+      // FTS stay byte-identical on a same-device upgrade; restore/overwrite
+      // has its own reprojection step for artifacts from another timezone.
+      if (from < 7) await _normalizeCalendarDates();
     },
     // Runs on EVERY open, after onCreate/onUpgrade: the raw-SQL objects
     // (unique indexes, FTS5 table, sync triggers) are an invariant, not a
@@ -66,11 +113,180 @@ class AppDatabase extends _$AppDatabase {
     // it is rebuilt from `books` (triggers only index future writes). The
     // migration tests prove search works after every historical upgrade path.
     beforeOpen: (details) async {
+      // Schema v5 adds the first real foreign key (`magazine_issues.item_id`
+      // → `books.id` ON DELETE CASCADE). SQLite enforces foreign keys only
+      // while this pragma is on, and it is per-connection, so it is set on
+      // every open. Safe for existing data: no earlier table declares a FK,
+      // so nothing that was legal before becomes a violation now.
+      await customStatement('PRAGMA foreign_keys = ON');
       final hadFts = await _hasFtsTable();
       await _createIndexesAndFts();
       if (!hadFts) await rebuildFts();
     },
   );
+
+  /// v5 → v6: trim every periodical soft link atomically, or change nothing.
+  ///
+  /// Both tables and every final identity key are checked BEFORE the first
+  /// update. Records give D6 keys structural equality (including the
+  /// volume-null/zero rule), so a collision cannot be hidden by delimiter text
+  /// in an external UID. Throwing asks Drift to abort the migration; because
+  /// validation happens first, the raw rows are still untouched.
+  Future<void> _canonicalizePeriodicalUids() async {
+    await transaction(() async {
+      final periodicalRows = await select(periodicals).get();
+      final issueRows = await select(magazineIssues).get();
+
+      final periodicalUids = <String>{};
+      for (final row in periodicalRows) {
+        if (!periodicalUids.add(canonicalPeriodicalUid(row.periodicalUid))) {
+          throw StateError(
+            'Periodical UID canonicalization collision; '
+            'migration aborted before writes.',
+          );
+        }
+      }
+
+      final numberedKeys = <({String uid, int volume, int number})>{};
+      final boundKeys = <({String uid, int from, int until})>{};
+      for (final row in issueRows) {
+        final uid = canonicalPeriodicalUid(row.periodicalUid);
+        if (row.boundUntil case final until?) {
+          // SQLite UNIQUE treats NULL issue_date values as distinct, exactly
+          // as it did before this repair; there is no new collision to detect.
+          final from = row.issueDate;
+          if (from != null &&
+              !boundKeys.add((uid: uid, from: from, until: until))) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        } else if (row.issueNumber case final number?) {
+          final key = (uid: uid, volume: row.volume ?? 0, number: number);
+          if (!numberedKeys.add(key)) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        }
+      }
+
+      for (final row in periodicalRows) {
+        final canonical = canonicalPeriodicalUid(row.periodicalUid);
+        if (canonical == row.periodicalUid) continue;
+        await (update(periodicals)..where((t) => t.id.equals(row.id))).write(
+          PeriodicalsCompanion(periodicalUid: Value(canonical)),
+        );
+      }
+      for (final row in issueRows) {
+        final canonical = canonicalPeriodicalUid(row.periodicalUid);
+        if (canonical == row.periodicalUid) continue;
+        await (update(magazineIssues)
+              ..where((t) => t.itemId.equals(row.itemId)))
+            .write(MagazineIssuesCompanion(periodicalUid: Value(canonical)));
+      }
+    });
+  }
+
+  /// v6 → v7: convert issue/subscription values to UTC-midnight calendar days.
+  ///
+  /// Every conversion and final D6 key is computed BEFORE the first update.
+  /// Thus a legacy value that cannot be represented, or two bound ranges that
+  /// normalize onto one identity, aborts with every raw row still untouched.
+  /// Only changed detail/periodical rows are written; base rows and FTS are
+  /// deliberately not migration targets (their same-device local day did not
+  /// change, so their existing projection remains valid).
+  Future<void> _normalizeCalendarDates() async {
+    await transaction(() async {
+      final periodicalRows = await select(periodicals).get();
+      final issueRows = await select(magazineIssues).get();
+
+      final subscriptionDates = <int, ({int? start, int? end})>{
+        for (final row in periodicalRows)
+          row.id: (
+            start: CalendarDate.normalizeOptionalStoredMillis(
+              row.subscriptionStart,
+            ),
+            end: CalendarDate.normalizeOptionalStoredMillis(
+              row.subscriptionEnd,
+            ),
+          ),
+      };
+      final issueDates = <int, ({int? from, int? until})>{
+        for (final row in issueRows)
+          row.itemId: (
+            from: CalendarDate.normalizeOptionalStoredMillis(row.issueDate),
+            until: CalendarDate.normalizeOptionalStoredMillis(row.boundUntil),
+          ),
+      };
+
+      final numberedKeys = <({String uid, int volume, int number})>{};
+      final boundKeys = <({String uid, int from, int until})>{};
+      for (final row in issueRows) {
+        final dates = issueDates[row.itemId]!;
+        final until = dates.until;
+        if (until != null) {
+          // As in SQLite UNIQUE, a NULL start has no identity collision.
+          final from = dates.from;
+          if (from != null &&
+              !boundKeys.add((
+                uid: row.periodicalUid,
+                from: from,
+                until: until,
+              ))) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        } else if (row.issueNumber case final number?) {
+          final key = (
+            uid: row.periodicalUid,
+            volume: row.volume ?? 0,
+            number: number,
+          );
+          if (!numberedKeys.add(key)) {
+            throw StateError(
+              'Magazine issue identity collision; '
+              'migration aborted before writes.',
+            );
+          }
+        }
+      }
+
+      for (final row in issueRows) {
+        final dates = issueDates[row.itemId]!;
+        if (dates.from == row.issueDate && dates.until == row.boundUntil) {
+          continue;
+        }
+        await (update(
+          magazineIssues,
+        )..where((table) => table.itemId.equals(row.itemId))).write(
+          MagazineIssuesCompanion(
+            issueDate: Value(dates.from),
+            boundUntil: Value(dates.until),
+          ),
+        );
+      }
+      for (final row in periodicalRows) {
+        final dates = subscriptionDates[row.id]!;
+        if (dates.start == row.subscriptionStart &&
+            dates.end == row.subscriptionEnd) {
+          continue;
+        }
+        await (update(
+          periodicals,
+        )..where((table) => table.id.equals(row.id))).write(
+          PeriodicalsCompanion(
+            subscriptionStart: Value(dates.start),
+            subscriptionEnd: Value(dates.end),
+          ),
+        );
+      }
+    });
+  }
 
   Future<bool> _hasFtsTable() async {
     final rows = await customSelect(
@@ -132,6 +348,40 @@ class AppDatabase extends _$AppDatabase {
       'ON wishlist_books (isbn)',
     );
 
+    // Schema v5 (ADR 0013): kind facet, issue identity keys (D6) and the
+    // periodical identities (D2, D7). The two issue keys are PARTIAL unique
+    // indexes: a numbered single issue is unique per (series, volume-or-0,
+    // number); a bound volume is unique per (series, first date, last date).
+    // `COALESCE(volume, 0)` makes "no volume" one bucket instead of SQLite's
+    // NULL-is-always-distinct rule. Raw SQL because drift cannot express a
+    // partial or expression index; `index_periodicals_*` sit here with them
+    // so the migration test's raw-object census covers all six.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS index_books_kind ON books (kind)',
+    );
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS index_magazine_issues_periodical_uid '
+      'ON magazine_issues (periodical_uid)',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS index_magazine_issues_number_key '
+      'ON magazine_issues (periodical_uid, COALESCE(volume, 0), issue_number) '
+      'WHERE issue_number IS NOT NULL AND bound_until IS NULL',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS index_magazine_issues_bound_key '
+      'ON magazine_issues (periodical_uid, issue_date, bound_until) '
+      'WHERE bound_until IS NOT NULL',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS index_periodicals_periodical_uid '
+      'ON periodicals (periodical_uid)',
+    );
+    await customStatement(
+      'CREATE UNIQUE INDEX IF NOT EXISTS index_periodicals_issn '
+      'ON periodicals (issn)',
+    );
+
     // FTS5 contentless-external index over books (rebuilt, not migrated).
     await customStatement(
       'CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5('
@@ -142,22 +392,22 @@ class AppDatabase extends _$AppDatabase {
       CREATE TRIGGER IF NOT EXISTS books_fts_ai AFTER INSERT ON books BEGIN
         INSERT INTO books_fts(rowid, $_ftsColumns)
         VALUES (new.id, new.title, new.title_transliteration, new.author,
-                new.isbn, new.location, new.genre);
+                new.isbn, new.location, new.genre, new.notes);
       END;''');
     await customStatement('''
       CREATE TRIGGER IF NOT EXISTS books_fts_ad AFTER DELETE ON books BEGIN
         INSERT INTO books_fts(books_fts, rowid, $_ftsColumns)
         VALUES ('delete', old.id, old.title, old.title_transliteration,
-                old.author, old.isbn, old.location, old.genre);
+                old.author, old.isbn, old.location, old.genre, old.notes);
       END;''');
     await customStatement('''
       CREATE TRIGGER IF NOT EXISTS books_fts_au AFTER UPDATE ON books BEGIN
         INSERT INTO books_fts(books_fts, rowid, $_ftsColumns)
         VALUES ('delete', old.id, old.title, old.title_transliteration,
-                old.author, old.isbn, old.location, old.genre);
+                old.author, old.isbn, old.location, old.genre, old.notes);
         INSERT INTO books_fts(rowid, $_ftsColumns)
         VALUES (new.id, new.title, new.title_transliteration, new.author,
-                new.isbn, new.location, new.genre);
+                new.isbn, new.location, new.genre, new.notes);
       END;''');
   }
 

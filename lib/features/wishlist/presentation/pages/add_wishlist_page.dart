@@ -137,7 +137,8 @@ class _AddWishlistPageState extends ConsumerState<AddWishlistPage> {
   }
 
   /// Fills only empty fields from [m] (user-entered values win). The wishlist
-  /// form has a subset of Book's fields; lookup-only extras are ignored.
+  /// form has a subset of `CatalogueItem`'s fields; lookup-only extras are
+  /// ignored.
   ///
   /// N02: keeps the lookup's cover URL when it passes [CoverUrlAllowList]
   /// (https + fixed host set — a poisoned lookup cannot plant a beacon

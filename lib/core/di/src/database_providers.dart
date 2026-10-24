@@ -6,11 +6,16 @@
 /// storage base every repository module builds on.
 ///
 /// Why `wishlistRepository` sits here and not in the wishlist module: the
-/// library cover janitor needs it (M11 — wishlist rows keep cover files
-/// alive) AND the wishlist module's mark-purchased use case needs the
-/// library module's bookRepository. Housing this pure Drift binding with
-/// the database breaks that would-be import cycle between feature modules
-/// (the plan's cycle rule: the binding moves to a shared base module).
+/// library cover janitor needs it (M11 — wishlist rows keep cover files alive)
+/// AND the wishlist module's mark-purchased use case needs the library module's
+/// catalogueItemRepository. Housing this pure Drift binding with the database
+/// breaks that would-be import cycle between feature modules (the plan's cycle
+/// rule: the binding moves to a shared base module).
+///
+/// `periodicalRepository` sits here for the same reason (ADR 0014 W4): the
+/// cover janitor counts series covers as live references, while the
+/// periodicals module's use cases need the library module (the item
+/// repository for issues, the janitor for a deleted series' cover).
 library;
 
 import 'dart:io';
@@ -18,6 +23,8 @@ import 'dart:io';
 import 'package:drift/native.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/storage/active_data_generation.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/infrastructure/drift_periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -58,4 +65,14 @@ Future<SharedPreferences> sharedPreferences(SharedPreferencesRef ref) =>
 Future<WishlistRepository> wishlistRepository(WishlistRepositoryRef ref) async {
   final db = await ref.watch(appDatabaseProvider.future);
   return DriftWishlistRepository(db);
+}
+
+/// Periodicals (magazine titles) repository — ADR 0013 D2. Lives here for
+/// the same acyclicity reason as [wishlistRepository] (see the file header).
+@riverpod
+Future<PeriodicalRepository> periodicalRepository(
+  PeriodicalRepositoryRef ref,
+) async {
+  final db = await ref.watch(appDatabaseProvider.future);
+  return DriftPeriodicalRepository(db);
 }

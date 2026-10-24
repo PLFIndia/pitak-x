@@ -8,12 +8,16 @@
 /// that IS Flutter (icons, pages) is mapped in presentation from [GuideId]
 /// and [GuideDestination]; it is never stored here.
 ///
-/// Every type in this file is immutable. The five concrete guides are built
+/// Every type in this file is immutable. The six concrete guides are built
 /// once, in `guide_catalog.dart`.
 library;
 
 /// Which guide. Presentation maps this to an icon; tests address guides by it.
 enum GuideId {
+  /// "Books, magazines and other items" (the catalogue's item kinds,
+  /// ADR 0013).
+  catalogue,
+
   /// "Put your catalogue online" (GitHub Pages publishing).
   publish,
 
@@ -33,6 +37,9 @@ enum GuideId {
 /// Where a guide's bottom button goes. Presentation maps each value to a
 /// page, so this enum is the only coupling between the copy and navigation.
 enum GuideDestination {
+  /// The Magazines screen (magazine titles and their issues, ADR 0013 U2).
+  magazines,
+
   /// Publish hub, Connection tab (its default tab).
   publishConnection,
 

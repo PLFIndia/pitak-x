@@ -73,7 +73,7 @@ final deleteWishlistBookUseCaseProvider =
 typedef DeleteWishlistBookUseCaseRef =
     AutoDisposeFutureProviderRef<DeleteWishlistBookUseCase>;
 String _$markWishlistPurchasedUseCaseHash() =>
-    r'0fc8961c3fc625da58d602a889db0342859af14f';
+    r'0e238b50c72129488bfd958d81ea016fa413bddb';
 
 /// Marks a wishlist entry purchased, with optional move-to-library (D2 check).
 ///
@@ -118,7 +118,7 @@ class _SystemHash {
 }
 
 /// One wishlist entry, observed by id, for its detail screen (N03).
-/// Same shape and rationale as [bookById]; the freshness signal is
+/// Same shape and rationale as [catalogueItemById]; the freshness signal is
 /// [wishlistControllerProvider], which every wishlist mutation refreshes.
 ///
 /// Copied from [wishlistBookById].
@@ -126,20 +126,20 @@ class _SystemHash {
 const wishlistBookByIdProvider = WishlistBookByIdFamily();
 
 /// One wishlist entry, observed by id, for its detail screen (N03).
-/// Same shape and rationale as [bookById]; the freshness signal is
+/// Same shape and rationale as [catalogueItemById]; the freshness signal is
 /// [wishlistControllerProvider], which every wishlist mutation refreshes.
 ///
 /// Copied from [wishlistBookById].
 class WishlistBookByIdFamily extends Family<AsyncValue<WishlistBook?>> {
   /// One wishlist entry, observed by id, for its detail screen (N03).
-  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// Same shape and rationale as [catalogueItemById]; the freshness signal is
   /// [wishlistControllerProvider], which every wishlist mutation refreshes.
   ///
   /// Copied from [wishlistBookById].
   const WishlistBookByIdFamily();
 
   /// One wishlist entry, observed by id, for its detail screen (N03).
-  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// Same shape and rationale as [catalogueItemById]; the freshness signal is
   /// [wishlistControllerProvider], which every wishlist mutation refreshes.
   ///
   /// Copied from [wishlistBookById].
@@ -170,14 +170,14 @@ class WishlistBookByIdFamily extends Family<AsyncValue<WishlistBook?>> {
 }
 
 /// One wishlist entry, observed by id, for its detail screen (N03).
-/// Same shape and rationale as [bookById]; the freshness signal is
+/// Same shape and rationale as [catalogueItemById]; the freshness signal is
 /// [wishlistControllerProvider], which every wishlist mutation refreshes.
 ///
 /// Copied from [wishlistBookById].
 class WishlistBookByIdProvider
     extends AutoDisposeFutureProvider<WishlistBook?> {
   /// One wishlist entry, observed by id, for its detail screen (N03).
-  /// Same shape and rationale as [bookById]; the freshness signal is
+  /// Same shape and rationale as [catalogueItemById]; the freshness signal is
   /// [wishlistControllerProvider], which every wishlist mutation refreshes.
   ///
   /// Copied from [wishlistBookById].

@@ -97,6 +97,30 @@ void main() {
     expect(find.text('Sharing is unavailable on this device.'), findsOneWidget);
   });
 
+  // S5 (L5): a catalogue too large for the format gets its OWN sentence —
+  // retrying cannot help, so "please try again" would be a lie.
+  testWidgets('S5: a too-large catalogue says nothing was exported', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      page(
+        useCase: _FakeCreateBackup(
+          left(const BackupTooLargeFailure('itemKindsTooLarge')),
+        ),
+      ),
+    );
+    await tester.tap(find.widgetWithText(FilledButton, 'Create backup'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'This catalogue is too large for this backup format. '
+        'Nothing was exported.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Backup saved.'), findsNothing);
+  });
+
   testWidgets('N11: a throwing share plugin shows a safe error and frees the '
       'button', (tester) async {
     await tester.pumpWidget(

@@ -101,7 +101,7 @@ These fail the build; change them deliberately, never to "make it pass".
 |------|----------|
 | `test/architecture/domain_purity_test.dart` | domain imports only the allow-list (pure Dart, `fpdart`, `crypto`, `archive` — ADR 0009); `application/` performs no platform IO (`dart:io`, `dart:isolate`, `path`, `http`, `drift`, prefs, secure storage) |
 | `test/architecture/layer_boundaries_test.dart` | no `presentation → infrastructure` imports; no `flutter/material` in `application`; no `print`/`debugPrint` outside `lib/core/platform/app_log.dart`; no `flutter_map` under `core/di` or `application/`; **file-size ratchet** (a file may not grow past its recorded line budget without an explicit allow-list entry — split it instead) |
-| `test/architecture/book_validation_gate_test.dart` | every `Book` construction site goes through `Book.validate` (ADR 0004) |
+| `test/architecture/catalogue_item_validation_gate_test.dart` | every `CatalogueItem` construction site goes through `CatalogueItem.validate` (ADR 0004; the entity was `Book` until 2026-10) |
 | `test/core/database/migration_test.dart` | a drift schema snapshot exists for the current `schemaVersion`; every past version migrates forward with data intact (§5.4) |
 
 ---
@@ -130,7 +130,14 @@ lib/
     platform/             screen_security.dart (FLAG_SECURE), app_log.dart
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
-    library/              books; paged SQL reads (BookRepository.page); merge engine
+    library/              catalogue items (`CatalogueItem`, the base row of every
+                          kind: books, magazine issues, others — ADR 0013);
+                          paged SQL reads (CatalogueItemRepository.page);
+                          merge engine
+    periodicals/          magazine titles (`Periodical`, ISSN, frequency,
+                          derived subscription status) and their issues'
+                          kind-specific rules: projection, identity keys,
+                          cadence, cover fallback (ADR 0013)
     vault/                encrypted borrowers + loans; passphrase + biometric unlock
     wishlist/
     lookup/               barcode scan (flutter_zxing) + ISBN lookup chain
@@ -153,7 +160,8 @@ assets/
 test/                     mirrors lib/; architecture/ = fitness functions;
                           fixtures/vault/ = synthetic hermetic vault
                           (passphrase `test-pass-not-secret`)
-integration_test/         on-device smoke test (run by hand before a release)
+integration_test/         on-device smoke journeys (vault; catalogue kinds) over
+                          shared helpers — run by hand before a release
 drift_schemas/            drift schema snapshots, one per schemaVersion
 fastlane/                 store listing + per-versionCode changelogs
 fdroid/metadata/          verbatim mirror of the fdroiddata recipe
@@ -161,15 +169,16 @@ tool/                     release_build.sh (the only way to build a Play .aab)
 ```
 
 **Navigation:** `main.dart` → `AppGate` (splash → app-lock if enabled →
-Library). Drawer: Borrowers vault · Publish · Wishlist · Library network ·
-Share · How Pitak works · Settings.
+Library). Drawer: Borrowers vault · Publish · Wishlist · Magazines · Library
+network · Share · How Pitak works · Settings. The Library FAB opens an add
+sheet with one entry per item kind (ADR 0013 U1).
 
-**Guides (`features/guides/`).** The copy lives in `domain/guide_catalog.dart`
-as a typed, immutable model (`Guide` → sealed `GuideSection`), so the
-domain-purity gate keeps it free of Flutter and `guide_catalog_test.dart` can
-pin its invariants (order, 2–7 steps, ≤ 3 "Good to know", lossless
-`**bold**`/`` `code` `` markup, one "spokes", 1:1 destinations, exact item
-counts) without pumping a widget. Icons and target pages are mapped in
+**Guides (`features/guides/`).** The copy of the six guides lives in
+`domain/guide_catalog.dart` as a typed, immutable model (`Guide` → sealed
+`GuideSection`), so the domain-purity gate keeps it free of Flutter and
+`guide_catalog_test.dart` can pin its invariants (order, 2–7 steps, ≤ 3
+"Good to know", lossless `**bold**`/`` `code` `` markup, one "spokes", 1:1
+destinations, exact item counts) without pumping a widget. Icons and target pages are mapped in
 presentation from `GuideId` / `GuideDestination`; `GuidePage` takes its
 opener as a parameter so tests record the destination instead of pushing
 provider-backed pages. Copy record: `docs/mockups/how-pitak-works.md`.
@@ -284,6 +293,17 @@ bump (enforced by `test/core/database/migration_test.dart`):
 An older build opening a newer database refuses with `SchemaTooNewFailure`
 (forward-compat, fail closed). Migrations are transactional and idempotent.
 
+**v5** (ADR 0013) adds `books.kind` (`TEXT NOT NULL DEFAULT 'book'`), the
+`magazine_issues` detail table (`item_id → books.id ON DELETE CASCADE`, so
+`PRAGMA foreign_keys = ON` is set in `beforeOpen` — no earlier table declares
+a FK) and the `periodicals` table, and drops + rebuilds the FTS index with
+`notes` added to its columns (the one-time rebuild is timed in
+`test/core/database/fts_rebuild_timing_test.dart`: 5 000 rows in well under a
+second on a laptop, bound 20 s). The issue identity keys (ADR 0013 D6) are two
+PARTIAL unique indexes on `magazine_issues`; drift cannot express those, so
+they — and the `periodicals` UNIQUE indexes — are raw SQL in
+`_createIndexesAndFts`, covered by the migration test's raw-object census.
+
 ### 5.5 `.pitabak` backup archive (manifest schema 1)
 
 A ZIP with Room-shaped SQLite databases (the Kotlin-era format — the writer
@@ -296,6 +316,8 @@ to false** (the `hasX` forward-compat pattern):
 | borrowers vault + key blob | `hasVault` | the **only encrypted** part |
 | `identity.json` | `hasIdentity` | `{ "libraryId": "<16–64 hex>", "libraryName": "…" }` — **plain** |
 | `network.json` | `hasNetwork` | `{ "schemaVersion": 1, "libraries": [ <NetworkLibrary JSON> … ] }` — **plain** |
+| `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014) — **plain** |
+| `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ <the Pitaka-JSON periodical object> … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014) — **plain** |
 
 - **Honest limit:** books, wishlist, covers, identity and network are plain
   inside the archive; only the vault is encrypted. Whole-archive encryption is
@@ -304,7 +326,10 @@ to false** (the `hasX` forward-compat pattern):
   and the app switches to it in one step; a failed restore leaves current data
   untouched.
 - Compatibility is **one-way**: Pitak restores Kotlin-era archives; the Kotlin
-  app is not a restore target.
+  app is not a restore target. `books.db` holds the base rows of **every**
+  item kind in the Room shape, so a build older than ADR 0013 restores
+  magazine issues and other items as plain books (it ignores the two
+  kind entries above); a flag-less archive restores exactly as before.
 - Hostile-input bounds on read: bounded ZIP extraction (ADR 0009), 4 MiB per
   JSON entry, 5000 network rows, every row re-validated, invalid rows dropped
   and counted in the restore summary.
@@ -329,6 +354,22 @@ to false** (the `hasX` forward-compat pattern):
 Refusal reasons are coarse enums that never carry URLs or exception text
 (a URL can contain the user's API key).
 
+### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
+
+- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**
+  (shipped in the magazines run, S18). Every row in `books[]` gains `kind`
+  (`book` | `magazine-issue` | `other`; absent ⇒ `book`); an issue row
+  carries a nested `issue{}`; the document gains a top-level
+  `periodicals[]`. The keys `books` and `bookUid` keep their names. Older
+  builds refuse a v4 file with the existing "update the app" message (a
+  silent import would drop kinds, P1). An unknown `kind` is skipped and
+  reported, never imported as a book. CSV export gains `Kind`, `Series`,
+  `Volume`, `Issue`, `Issue date`, `Bound until`, `Issue label`.
+- **`books.json`** (published): stays schema **1** — additive `kind` per
+  entry (+ `issue{}`), top-level `periodicals[]` with public fields only
+  (shipped in the magazines run, S20). Older viewers ignore the new keys.
+  The v7 viewer adds the kind facet and groups issues under their series.
+
 ---
 
 ## 6. Standing design decisions (short form; details in `docs/adr/`)
@@ -340,8 +381,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
   saved row) are marked with a badge, never auto-merged.
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
-- **Library list reads are paged in SQL** (`BookRepository.page`, 60 rows,
-  OFFSET/LIMIT); `BookSorter` (domain) is the oracle the SQL is tested against.
+- **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,
+  60 rows, OFFSET/LIMIT); `CatalogueItemSorter` (domain) is the oracle the SQL
+  is tested against.
   Language facet matches the stored string exactly (SQLite `lower()` is
   ASCII-only).
 - **Merge** is add-only, removal-as-conflict, identity order uid → ISBN →
@@ -354,3 +396,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
 - **Lookup order:** Open Library → Google Books → in-memory cache; ISBN-10↔13
   retry on double not-found.
 - **Hard delete stays vault-gated**; lending on removed books is refused.
+- **One base row per catalogue item of any kind** (`books` table,
+  `CatalogueItem`, `kind` column + sealed `ItemDetails`); kind-specific data
+  in a per-kind detail table; **the base row is the lendable unit** and **a
+  new kind never touches the vault** (`loans.book_id`). Kinds are
+  app-defined. Periodicals are a specific concept, not generic collections
+  (ADR 0013; interchange/backup shapes in ADR 0014).

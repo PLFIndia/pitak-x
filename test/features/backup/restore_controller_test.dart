@@ -59,7 +59,7 @@ class _LogoSettingsRepo implements SettingsRepository {
   }
 
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async =>
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) async =>
       right(unit);
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>

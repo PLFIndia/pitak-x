@@ -1,32 +1,20 @@
-/// Turns a book's remote `https://` cover into a LOCAL cover file (M09).
+/// Turns a remote `https://` cover into a LOCAL cover file owned by the
+/// correct persisted entity (M09 + magazine remediation S7).
 ///
-/// Why this exists: before M09 the list widget streamed any `https://` cover
-/// straight from the network on every cold scroll, through a third-party disk
-/// cache with no host check, no redirect check and no byte cap. `PRIVACY.md`
-/// promised a fixed allow-list of cover hosts; only the publish path kept it.
+/// A remote cover ref is a *pending download*, not an image. With the user's
+/// consent, the scheduler fetches an allow-listed URL through the bounded
+/// publish fetcher, downscales it (EXIF/GPS stripped), and stores it through
+/// [CoverFiles]. The owning item OR periodical row is then rewritten to that
+/// local reference. An issue displaying its series cover never becomes the
+/// owner of that cover.
 ///
-/// Design (user decisions, 2026-09-09): a remote cover ref is a *pending
-/// download*, not an image. With the user's consent (the Settings switch),
-/// the app fetches an allow-listed URL **once** through the same bounded
-/// fetcher publishing uses (allow-list on the URL and on every redirect hop,
-/// 8 MiB streamed cap, deadline), downscales it (EXIF/GPS stripped), and
-/// stores it exactly like a photo the user took: `covers/<uuid>.jpg` written
-/// via [CoverFiles], the row's `coverUrl` rewritten to that local reference.
-/// From then on the book is indistinguishable from a photo-covered one —
-/// backups, bundles, the janitor and display all treat it as local, and no
-/// packet is ever sent for it again.
+/// Pipeline borrowed from `BookCoverController.replaceCover`: save file →
+/// update the owner (delete the new file if that fails) → release the previous
+/// reference. Every expected failure is a typed `Either`.
 ///
-/// Pipeline borrowed from `BookCoverController.replaceCover` (this repo):
-/// save file → update row (delete the new file if that fails) → release the
-/// previous reference → refresh the list. Every failure is a typed `Either`.
-///
-/// N08 / N11 D4-b: a refused download used to disappear without trace (S13
-/// note: a cover-host naming change would silently re-break covers). The
-/// download port now returns a typed [CoverFetchResult]; on a refusal this
-/// use case — the one place that knows BOTH the book id and the reason —
-/// reports the pair through the optional [ReportCoverRefusal] port. The
-/// composition root decides what to do with it (a debug-only log line); no
-/// URL ever travels with it.
+/// Refusals carry the structural [CoverOwner] and coarse reason through
+/// [ReportCoverRefusal]. The composition root may log those identities for
+/// debugging; no URL or host crosses that diagnostic port.
 library;
 
 import 'dart:typed_data';
@@ -34,67 +22,77 @@ import 'dart:typed_data';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 
 /// Fetches an allow-listed remote cover: [CoverFetched] with publish-ready
-/// JPEG bytes, or [CoverRefused] naming why (URL refused, host failed, body
-/// over the cap, deadline exceeded, not an image). Wired by DI to the SAME
-/// bounded fetcher the publish path uses, so the display path can never
-/// fetch anything publish would refuse.
+/// JPEG bytes, or [CoverRefused] naming why. Wired by DI to the SAME bounded
+/// fetcher the publish path uses.
 typedef BoundedCoverDownload = Future<CoverFetchResult> Function(String url);
 
 /// Releases a cover reference that no row points at any more (janitor).
 typedef ReleaseCoverReference = Future<void> Function(String? coverRef);
 
-/// Receives (book id, refusal reason) for a download that did not produce a
-/// cover. Diagnostic only — the user-facing outcome is unchanged.
-typedef ReportCoverRefusal = void Function(int bookId, CoverRefusal reason);
+/// Receives (owner, refusal reason) for diagnostic reporting. No URL is
+/// included, so an item-only diagnostic cannot mislabel a periodical failure.
+typedef ReportCoverRefusal =
+    void Function(CoverOwner owner, CoverRefusal reason);
 
-/// Materialises one book's remote cover as a local file.
+/// Materialises one item or periodical's remote cover as a local file.
 final class MaterializeRemoteCoverUseCase {
   /// Creates the use case over its collaborators.
   const MaterializeRemoteCoverUseCase({
-    required BookRepository books,
+    required CatalogueItemRepository books,
+    required PeriodicalRepository periodicals,
     required CoverFiles files,
     required BoundedCoverDownload download,
     required ReleaseCoverReference releaseReference,
     ReportCoverRefusal? onRefused,
   }) : _books = books,
+       _periodicals = periodicals,
        _files = files,
        _download = download,
        _release = releaseReference,
        _onRefused = onRefused;
 
-  final BookRepository _books;
+  final CatalogueItemRepository _books;
+  final PeriodicalRepository _periodicals;
   final CoverFiles _files;
   final BoundedCoverDownload _download;
   final ReleaseCoverReference _release;
   final ReportCoverRefusal? _onRefused;
 
-  /// Fetches and stores the cover of book [bookId].
+  /// Fetches and stores the cover for [owner] when [requestedUrl] is still its
+  /// current remote reference.
   ///
-  /// Reads the row FRESH (never a stale UI snapshot): if the book is gone, or
-  /// its cover is already local, blank, or not an allow-listed https URL,
-  /// nothing is sent and `right(unit)` is returned — there is nothing to do.
-  /// A refused/failed download → [NetworkFailure] with the row untouched (the
-  /// URL stays, so a later session may retry). Store/repo errors surface as
-  /// their own [Failure]; a failed row update deletes the new file so no
-  /// orphan is left behind.
-  Future<Either<Failure, Unit>> call(int bookId) async {
-    final lookup = await _books.getById(bookId);
-    return lookup.fold(left, (book) async {
-      if (book == null) return right(unit);
-      final url = CoverUrlAllowList.remoteHttpsOf(book.coverUrl);
-      if (url == null) return right(unit);
+  /// The owner is read FRESH, never from a UI snapshot. A missing owner, a
+  /// local/blank cover, a non-allow-listed URL, or a URL changed since the
+  /// request is a no-op. In particular, a late no-op for an old URL cannot
+  /// overwrite or suppress a newer cover. Store/repository errors surface as
+  /// typed failures; a failed owner update deletes the new file. The owner is
+  /// read again after storage so a mid-download user edit also wins.
+  Future<Either<Failure, Unit>> call(
+    CoverOwner owner,
+    String requestedUrl,
+  ) async {
+    final requested = CoverUrlAllowList.remoteHttpsOf(requestedUrl);
+    if (requested == null) return right(unit);
+
+    final fresh = await _readFresh(owner);
+    return fresh.fold(left, (target) async {
+      if (target == null) return right(unit);
+      final currentUrl = CoverUrlAllowList.remoteHttpsOf(target.coverUrl);
+      if (currentUrl == null || currentUrl != requested) return right(unit);
 
       final List<int> jpeg;
-      switch (await _download(url)) {
+      switch (await _download(currentUrl)) {
         case CoverFetched(:final bytes):
           jpeg = bytes;
         case CoverRefused(:final reason):
-          _onRefused?.call(book.id, reason);
+          _onRefused?.call(owner, reason);
           return left(const NetworkFailure());
       }
 
@@ -105,16 +103,92 @@ final class MaterializeRemoteCoverUseCase {
         return left(const StorageFailure('could not write the cover file'));
       }
 
-      final updated = await _books.update(book.copyWith(coverUrl: localRef));
-      if (updated.isLeft()) {
-        await _files.deleteFile(localRef);
-        return updated.map((_) => unit);
-      }
-      // The previous ref was a remote URL (no file) — the janitor treats that
-      // as a no-op, but calling it keeps the pipeline identical to a photo
-      // replace should the precondition ever change.
-      await _release(book.coverUrl);
-      return right(unit);
+      // The first fresh read can be stale by the time a slow download and
+      // file write finish. Re-read immediately before updating: a newer user
+      // cover wins, and unrelated edits are preserved by building on the
+      // latest row rather than the snapshot captured before the download.
+      final latest = await _readFresh(owner);
+      return latest.fold(
+        (failure) async {
+          await _files.deleteFile(localRef);
+          return left(failure);
+        },
+        (current) async {
+          final latestUrl = CoverUrlAllowList.remoteHttpsOf(current?.coverUrl);
+          if (current == null || latestUrl != requested) {
+            await _files.deleteFile(localRef);
+            return right(unit);
+          }
+
+          final updated = await current.update(localRef);
+          if (updated.isLeft()) {
+            await _files.deleteFile(localRef);
+            return updated;
+          }
+          // The previous ref was the same remote URL validated above (no
+          // file), but releasing it keeps the replacement pipeline consistent.
+          await _release(current.coverUrl);
+          return right(unit);
+        },
+      );
     });
   }
+
+  /// Resolves the fresh row and its owner-specific write into one small
+  /// private target, keeping the download/store/rollback pipeline shared.
+  Future<Either<Failure, _FreshCover?>> _readFresh(CoverOwner owner) async {
+    switch (owner.kind) {
+      case CoverOwnerKind.catalogueItem:
+        final id = int.tryParse(owner.id);
+        if (id == null) {
+          return left(const ValidationFailure('invalid catalogue cover owner'));
+        }
+        final lookup = await _books.getById(id);
+        return lookup.fold(left, (book) {
+          if (book == null) return right(null);
+          return right(
+            _FreshCover(
+              coverUrl: book.coverUrl,
+              update: (localRef) async {
+                final result = await _books.update(
+                  book.copyWith(coverUrl: localRef),
+                );
+                return result.map((_) => unit);
+              },
+            ),
+          );
+        });
+      case CoverOwnerKind.periodical:
+        if (owner.id.trim().isEmpty) {
+          return left(
+            const ValidationFailure('invalid periodical cover owner'),
+          );
+        }
+        final lookup = await _periodicals.findByUid(owner.id);
+        return lookup.fold(left, (periodical) {
+          if (periodical == null) return right(null);
+          return right(
+            _FreshCover(
+              coverUrl: periodical.coverUrl,
+              update: (localRef) async {
+                final result = await _periodicals.update(
+                  periodical.copyWith(coverUrl: localRef),
+                );
+                return result.map((_) => unit);
+              },
+            ),
+          );
+        });
+    }
+  }
+}
+
+/// A fresh owner's previous reference and owner-specific update operation.
+/// Keeping this private avoids a public parallel entity just to share a few
+/// lines of the materialization pipeline.
+final class _FreshCover {
+  const _FreshCover({required this.coverUrl, required this.update});
+
+  final String? coverUrl;
+  final Future<Either<Failure, Unit>> Function(String localRef) update;
 }

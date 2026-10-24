@@ -1,16 +1,15 @@
 /// Add / edit book form (presentation layer, AGENTS.md §3.1).
 ///
-/// One screen for both modes: passed no book → "Add", passed a [Book] →
-/// "Edit" (prefilled). The form owns only view state (text controllers,
+/// One screen for both modes: passed no book → "Add", passed a [CatalogueItem]
+/// → "Edit" (prefilled). The form owns only view state (text controllers,
 /// dropdown selections); all persistence + validation goes through
-/// [AddBookController]. On a successful save it refreshes the library and
-/// pops.
+/// [AddBookController]. On a successful save it refreshes the library and pops.
 ///
-/// N03: in edit mode the [Book] passed in only PREFILLS the form. At save
-/// time the controller re-reads the row and this form builds the new value on
-/// top of that fresh row — fields the form does not edit (cover, removed
-/// flag, attribution, uid) come from the database as it is now, never from
-/// the snapshot the screen was opened with.
+/// N03: in edit mode the [CatalogueItem] passed in only PREFILLS the form. At
+/// save time the controller re-reads the row and this form builds the new value
+/// on top of that fresh row — fields the form does not edit (cover, removed
+/// flag, attribution, uid) come from the database as it is now, never from the
+/// snapshot the screen was opened with.
 ///
 /// ISBN entry supports a barcode scan (#29) and a metadata lookup (#30):
 /// Open Library → Google Books, chained over a cache. A successful lookup
@@ -21,12 +20,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/add_book_controller.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/presentation/catalogue_save_messages.dart';
+import 'package:pitaka/features/library/presentation/widgets/language_field.dart';
 import 'package:pitaka/features/lookup/domain/entities/book_metadata.dart';
 import 'package:pitaka/features/lookup/domain/isbn_format.dart';
 import 'package:pitaka/features/lookup/domain/lookup_result.dart';
@@ -42,7 +41,7 @@ class AddBookPage extends ConsumerStatefulWidget {
   const AddBookPage({this.book, this.initialIsbn, super.key});
 
   /// The book to edit, or null to add a new one.
-  final Book? book;
+  final CatalogueItem? book;
 
   /// Optional ISBN to pre-fill in add mode (from a barcode scan).
   final String? initialIsbn;
@@ -66,22 +65,10 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
   late final TextEditingController _quantity;
   late final TextEditingController _sourceDetail;
 
-  BookSourceType? _sourceType;
+  ItemSourceType? _sourceType;
   AgeGroup? _ageGroup;
   late int _addedDate;
   bool _titleError = false;
-
-  /// Session 33: the Language field is a dropdown of the library's own
-  /// languages plus "Other…". True only after the user PICKS "Other…" (or
-  /// types in its box). The box is ALSO shown, without this flag, whenever
-  /// the current value is not in the list — e.g. editing a book from an old
-  /// backup — so a language is never hidden; see [_languageField].
-  bool _languageIsOther = false;
-
-  /// Dropdown value meaning "Other… — type a language below". A const object
-  /// compared by identity, so it can never collide with a real language
-  /// name the way a magic string could.
-  static const Object _otherLanguage = Object();
 
   /// N02: the cover URL a successful lookup returned, kept ONLY when it
   /// passes the publish allow-list (https + fixed host set). Null until a
@@ -222,16 +209,19 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  /// Assembles the [Book] to persist from the form fields, taking every
-  /// field the form does not edit from [base]: null in add mode, the FRESH
-  /// row in edit mode (N03). [maintainerStamp] attributes a new book that has
-  /// no `addedBy` yet; it is read before any await so this stays pure.
-  Book _buildBook(Book? base, {required String? maintainerStamp}) {
+  /// Assembles the [CatalogueItem] to persist from the form fields, taking
+  /// every field the form does not edit from [base]: null in add mode, the
+  /// FRESH row in edit mode (N03). [maintainerStamp] attributes a new book that
+  /// has no `addedBy` yet; it is read before any await so this stays pure.
+  CatalogueItem _buildBook(
+    CatalogueItem? base, {
+    required String? maintainerStamp,
+  }) {
     final qty = int.tryParse(_quantity.text.trim()) ?? 1;
-    return Book(
+    return CatalogueItem(
       // Preserve identity in edit mode; add mode uses the sentinel.
-      id: base?.id ?? Book.emptyId,
-      bookUid: base?.bookUid,
+      id: base?.id ?? CatalogueItem.emptyId,
+      itemUid: base?.itemUid,
       title: _title.text.trim(),
       titleTransliteration: _trimToNull(_transliteration),
       author: _trimToNull(_author),
@@ -388,7 +378,9 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             digitsOnly: true,
           ),
           _field(_genre, 'Genre'),
-          _languageField(),
+          // Session 33 dropdown-of-known-languages + "Other…" (shared with
+          // the periodical form since S16).
+          LanguageField(controller: _language),
           _field(
             _pages,
             'Pages',
@@ -403,7 +395,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             digitsOnly: true,
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<BookSourceType?>(
+          DropdownButtonFormField<ItemSourceType?>(
             initialValue: _sourceType,
             decoration: const InputDecoration(
               labelText: 'Source',
@@ -411,7 +403,7 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
             ),
             items: [
               const DropdownMenuItem(child: Text('Not set')),
-              for (final t in BookSourceType.values)
+              for (final t in ItemSourceType.values)
                 DropdownMenuItem(value: t, child: Text(_sourceLabel(t))),
             ],
             onChanged: (v) => setState(() => _sourceType = v),
@@ -472,96 +464,13 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
           if (state.hasError) ...[
             const SizedBox(height: 12),
             Text(
-              _messageFor(state.error!),
+              catalogueSaveMessage(state.error!),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ],
         ],
       ),
     );
-  }
-
-  /// The Language input (Session 33): a dropdown of the languages already in
-  /// this library — seeded with [LanguageName.defaults] while the library is
-  /// empty — plus "Not set" and "Other…". Choosing "Other…" reveals a text
-  /// box; whatever is typed there becomes a dropdown entry for every later
-  /// book once saved (the list is live, no restart needed).
-  ///
-  /// [_language] stays the single source of truth for the VALUE (the save
-  /// path reads it unchanged); the dropdown is a view over it. The repository
-  /// still snaps the value to the library's one spelling per language, so
-  /// this widget is a convenience, not the rule.
-  Widget _languageField() {
-    // `asData` is null while loading OR on error: both fall back to the
-    // defaults so the user can always pick "Other…" and type (fail-open on a
-    // read-only facet is safe; the value is validated on save regardless).
-    final loaded = ref.watch(libraryLanguagesProvider).asData?.value;
-    final current = _language.text.trim();
-    final options = _languageOptions(loaded, current);
-    // "Other…" is shown when the user picked it, or when the current value
-    // (a prefilled edit, or a lookup result) is simply not in the list.
-    final showOther =
-        _languageIsOther || (current.isNotEmpty && !options.contains(current));
-    final selected = showOther
-        ? _otherLanguage
-        : (current.isEmpty ? null : current);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: DropdownButtonFormField<Object?>(
-            key: const ValueKey('language-dropdown'),
-            initialValue: selected,
-            decoration: const InputDecoration(
-              labelText: 'Language',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              const DropdownMenuItem(child: Text('Not set')),
-              for (final lang in options)
-                DropdownMenuItem(value: lang, child: Text(lang)),
-              const DropdownMenuItem(
-                value: _otherLanguage,
-                child: Text('Other…'),
-              ),
-            ],
-            onChanged: (v) => setState(() {
-              if (identical(v, _otherLanguage)) {
-                _languageIsOther = true;
-                // Coming FROM a list pick, start with an empty box; coming
-                // from an already-"other" value (old backup), keep it.
-                if (options.contains(_language.text.trim())) _language.clear();
-              } else {
-                _languageIsOther = false;
-                _language.text = (v as String?) ?? '';
-              }
-            }),
-          ),
-        ),
-        if (showOther)
-          _field(
-            _language,
-            'Other language',
-            // Typing here confirms "Other…" mode even when it was inferred
-            // from an unlisted value, so clearing the box cannot make it
-            // vanish on the next rebuild.
-            onChanged: (_) => _languageIsOther = true,
-          ),
-      ],
-    );
-  }
-
-  /// The dropdown's language entries. While the list is still loading,
-  /// offer the book's current language (so an edit shows its language at
-  /// once, no flash to "Other…"); once loaded, the library's languages, or
-  /// [LanguageName.defaults] when the library has none yet.
-  static List<String> _languageOptions(List<String>? loaded, String current) {
-    if (loaded == null) {
-      return current.isEmpty ? LanguageName.defaults : [current];
-    }
-    return loaded.isEmpty ? LanguageName.defaults : loaded;
   }
 
   Widget _field(
@@ -590,12 +499,12 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     );
   }
 
-  static String _sourceLabel(BookSourceType t) => switch (t) {
-    BookSourceType.purchased => 'Purchased',
-    BookSourceType.gift => 'Gift',
-    BookSourceType.donated => 'Donated',
-    BookSourceType.inherited => 'Inherited',
-    BookSourceType.other => 'Other',
+  static String _sourceLabel(ItemSourceType t) => switch (t) {
+    ItemSourceType.purchased => 'Purchased',
+    ItemSourceType.gift => 'Gift',
+    ItemSourceType.donated => 'Donated',
+    ItemSourceType.inherited => 'Inherited',
+    ItemSourceType.other => 'Other',
   };
 
   static String _ageGroupLabel(AgeGroup g) => switch (g) {
@@ -613,26 +522,5 @@ class _AddBookPageState extends ConsumerState<AddBookPage> {
     final mm = d.month.toString().padLeft(2, '0');
     final dd = d.day.toString().padLeft(2, '0');
     return '${d.year}-$mm-$dd';
-  }
-
-  static String _messageFor(Object error) {
-    if (error is ValidationFailure) return error.message;
-    // S34: a duplicate ISBN is an expected outcome, not a broken save — say
-    // plainly that the book is already catalogued, naming the existing row
-    // when the title is known.
-    if (error is DuplicateIsbnFailure) {
-      final title = error.existingTitle?.trim() ?? '';
-      final base = title.isEmpty
-          ? 'This book is already in your library.'
-          : "'$title' is already in your library.";
-      return error.existingIsRemoved
-          ? '$base It is marked as removed — open it from the library list '
-                'to restore it.'
-          : base;
-    }
-    if (error is NotFoundFailure) {
-      return 'This book no longer exists and could not be saved.';
-    }
-    return 'Could not save the book. Please try again.';
   }
 }

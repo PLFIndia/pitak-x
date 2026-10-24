@@ -10,9 +10,12 @@
 ///     live from the Pages configuration, never assumed to be the default
 ///     branch; Pages off or re-pointed → typed failure before any write).
 ///  2. Load (or rebuild) the incremental manifest.
-///  3. Redact every non-removed book (F-01) + coarse availability (gated).
-///  4. Decide covers: local read / remote fetch, salted paths, sha-diff vs
-///     manifest to skip unchanged.
+///  3. Redact every non-removed item (F-01) + coarse availability (gated),
+///     and every non-removed series (ADR 0014 W3 — `periodicals[]`).
+///  4. Decide covers (`PublishCoverDecider`): local read / remote fetch,
+///     salted paths, sha-diff vs manifest to skip unchanged. A series cover
+///     is decided ONCE and shared by its entry and every issue that falls
+///     back to it (W4's `IssueCover.resolve` rule, applied at publish).
 ///  5. Build books.json + index.html (name/logo/contact substituted).
 ///  6. Commit the changed file set; persist the new manifest; poll Pages.
 ///
@@ -21,7 +24,11 @@
 /// only upload size. Flagged as a follow-up.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
+import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
+import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -32,7 +39,15 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
+
+// The cover-IO typedefs live with the decider since S20 (plan magazines);
+// re-exported so existing imports of this file keep resolving (one import
+// per caller, the S19 idiom). Publish results follow the same compatibility
+// rule after their S8 extraction kept this orchestrator below 500 lines.
+export 'publish_cover_decider.dart' show LocalCoverReader, RemoteCoverFetcher;
+export 'publish_result.dart';
 
 /// Coarse publish phases for the UI.
 enum PublishPhase {
@@ -48,51 +63,6 @@ enum PublishPhase {
   /// Waiting for the live site to serve the new content (bounded).
   pagesBuilding,
 }
-
-/// Outcome of a publish.
-sealed class PublishResult {
-  const PublishResult();
-}
-
-/// Publish succeeded.
-final class PublishSuccess extends PublishResult {
-  /// Creates a success result.
-  const PublishSuccess({
-    required this.pagesUrl,
-    required this.uploadedPaths,
-    this.availabilityOmitted = false,
-    this.pagesLive,
-  });
-
-  /// The public page URL.
-  final String pagesUrl;
-
-  /// Files whose bytes were uploaded this run.
-  final List<String> uploadedPaths;
-
-  /// True when availability was omitted (vault locked at publish).
-  final bool availabilityOmitted;
-
-  /// True when the live site was VERIFIED serving this publish's bytes
-  /// (read-back, à la Localcart Orange); null when the bounded wait ran out
-  /// before the Pages build landed (it usually finishes moments later).
-  final bool? pagesLive;
-}
-
-/// Publish failed; [reason] is a safe, human-readable message.
-final class PublishFailure extends PublishResult {
-  /// Creates a failure result.
-  const PublishFailure(this.reason);
-
-  /// Why it failed.
-  final String reason;
-}
-
-/// Reads a local cover's bytes for [coverUrl], or null when unavailable.
-typedef LocalCoverReader = Future<List<int>?> Function(String coverUrl);
-
-/// Fetches a remote cover's bytes from [url], or null on any failure.
-typedef RemoteCoverFetcher = Future<List<int>?> Function(String url);
 
 /// Builds the viewer HTML from the bundled template with placeholders filled.
 typedef ViewerHtmlBuilderFn = Future<List<int>> Function();
@@ -118,9 +88,11 @@ final class PublishLibraryUseCase {
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
-       _coverIds = coverIds,
-       _readLocalCover = readLocalCover,
-       _fetchRemoteCover = fetchRemoteCover,
+       _covers = PublishCoverDecider(
+         coverIds: coverIds,
+         readLocalCover: readLocalCover,
+         fetchRemoteCover: fetchRemoteCover,
+       ),
        _buildViewerHtml = buildViewerHtml,
        _fetchPublishedFile = fetchPublishedFile,
        _sleep = sleep ?? Future<void>.delayed,
@@ -129,9 +101,7 @@ final class PublishLibraryUseCase {
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
-  final PublishCoverIds _coverIds;
-  final LocalCoverReader _readLocalCover;
-  final RemoteCoverFetcher _fetchRemoteCover;
+  final PublishCoverDecider _covers;
   final ViewerHtmlBuilderFn _buildViewerHtml;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
@@ -151,8 +121,12 @@ final class PublishLibraryUseCase {
   /// constant so the write, the sha-diff skip and the delete path agree.
   static const String libraryJsonPath = 'library.json';
 
-  /// Runs the publish. [books] are all library books (removed ones are filtered
-  /// here). `activeLoanCounts` is the active-loan count per book id, or null
+  /// Runs the publish. [books] are all library items of any kind (removed
+  /// ones are filtered here). [periodicals] are all magazine titles
+  /// (ADR 0014 W3): the non-removed ones publish as `periodicals[]`; a
+  /// removed series gets no entry, but its issues are still live library
+  /// rows (D8) and publish with the series-cover fallback.
+  /// `activeLoanCounts` is the active-loan count per item id, or null
   /// when the vault is locked (availability then omitted). `encodeBooksJson`
   /// serialises the payload (injected so the JSON encoder stays in one place).
   ///
@@ -161,7 +135,8 @@ final class PublishLibraryUseCase {
   /// previously published descriptor in the same commit (M14 `deletePaths`),
   /// so a stale location never outlives the user's opt-out.
   Future<PublishResult> call({
-    required List<Book> books,
+    required List<CatalogueItem> books,
+    required List<Periodical> periodicals,
     required Map<int, int>? activeLoanCounts,
     required List<int> Function(PublishExport) encodeBooksJson,
     required List<int>? libraryJson,
@@ -220,26 +195,95 @@ final class PublishLibraryUseCase {
 
     final availabilityOmitted = activeLoanCounts == null;
 
-    // Decide covers per book.
-    final coverDecisions = <int, _CoverDecision>{};
-    for (final book in library) {
-      coverDecisions[book.id] = await _decideCover(book, manifest);
+    // Resolve every link before cover IO or artifact construction. A malformed
+    // persisted identity must never become an ungrouped/partially covered file.
+    final periodicalByUid = PublishPeriodicalLinks.resolve(
+      books: library,
+      periodicals: periodicals,
+    );
+    if (periodicalByUid == null) {
+      return const PublishFailure(
+        'Some magazine series or issue links are invalid. '
+        'Nothing was published.',
+      );
+    }
+    // Removed series stay in periodicalByUid for issue cover fallback (D8),
+    // but only live series publish a top-level entry.
+    final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
+
+    // Decide covers. A series cover is decided ONCE per publish and shared
+    // by the series entry and every issue that falls back to it — the W4
+    // rule (`IssueCover.resolve`) decides WHICH source an entry shows, the
+    // decider decides where that source's bytes live in the repo.
+    final coverDecisions = <int, CoverDecision>{};
+    final periodicalCoverDecisions = <String, CoverDecision>{};
+    Future<CoverDecision> decidePeriodicalCover(Periodical series) async {
+      final uid = series.periodicalUid!;
+      final cached = periodicalCoverDecisions[uid];
+      if (cached != null) return cached;
+      final decision = await _covers.forPeriodical(
+        series.coverUrl,
+        periodicalUid: uid,
+        manifest: manifest,
+      );
+      return periodicalCoverDecisions[uid] = decision;
     }
 
-    // books.json from redacted books + coarse availability.
+    for (final book in library) {
+      final series = periodicalByUid[book.issue?.periodicalUid];
+      final resolved = IssueCover.resolve(book, series);
+      if (resolved == null) continue;
+      if (_isOwnCover(book, resolved)) {
+        coverDecisions[book.id] = await _covers.forItem(
+          book.coverUrl,
+          itemId: book.id,
+          manifest: manifest,
+        );
+      } else if (series != null) {
+        await decidePeriodicalCover(series);
+      }
+    }
+    // A published series with a cover of its own gets its decision even
+    // when no issue falls back to it (the series entry shows it).
+    for (final series in publishedPeriodicals) {
+      if ((series.coverUrl?.trim() ?? '').isNotEmpty) {
+        await decidePeriodicalCover(series);
+      }
+    }
+
+    // books.json from redacted items + series + coarse availability.
     final publishBooks = [
       for (final book in library)
         redactForPublish(
           book,
           availability: _availabilityFor(book, activeLoanCounts),
           resolveCoverUrl: (b) {
-            final d = coverDecisions[b.id]!;
-            return d.publishedCoverUrl ??
-                CoverUrlAllowList.sanitize(b.coverUrl);
+            final series = periodicalByUid[b.issue?.periodicalUid];
+            final resolved = IssueCover.resolve(b, series);
+            if (resolved == null) return null;
+            if (_isOwnCover(b, resolved)) {
+              return coverDecisions[b.id]?.publishedCoverUrl ??
+                  CoverUrlAllowList.sanitize(resolved);
+            }
+            return periodicalCoverDecisions[series!.periodicalUid]
+                    ?.publishedCoverUrl ??
+                CoverUrlAllowList.sanitize(resolved);
           },
         ),
     ];
-    final export = PublishExport(exportedAt: now, books: publishBooks);
+    final export = PublishExport(
+      exportedAt: now,
+      books: publishBooks,
+      periodicals: [
+        for (final series in publishedPeriodicals)
+          redactPeriodicalForPublish(
+            series,
+            resolveCoverUrl: (p) =>
+                periodicalCoverDecisions[p.periodicalUid]?.publishedCoverUrl ??
+                CoverUrlAllowList.sanitize(p.coverUrl),
+          ),
+      ],
+    );
     final booksJson = encodeBooksJson(export);
     final viewerHtml = await _buildViewerHtml();
 
@@ -254,7 +298,10 @@ final class PublishLibraryUseCase {
         _desiredFile(libraryJsonPath, libraryJson, manifest),
       _desiredFile('index.html', viewerHtml, manifest),
     ];
-    for (final d in coverDecisions.values) {
+    for (final d in [
+      ...coverDecisions.values,
+      ...periodicalCoverDecisions.values,
+    ]) {
       if (d.bytes != null && d.publishPath != null && d.gitSha != null) {
         desired.add(
           DesiredFile(
@@ -321,6 +368,13 @@ final class PublishLibraryUseCase {
               for (final b in library)
                 if (b.coverUrl != null && b.coverUrl!.isNotEmpty)
                   '${b.id}': b.coverUrl!,
+              // Series covers ride under the decider's 'periodical:' urlKey
+              // so the remote source-identity skip works for them without
+              // sharing the book id key space. Stored TRIMMED to match the
+              // trimmed value the decider compares against.
+              for (final p in periodicalByUid.values)
+                if ((p.coverUrl?.trim() ?? '').isNotEmpty)
+                  'periodical:${p.periodicalUid}': p.coverUrl!.trim(),
             },
           ),
         );
@@ -372,10 +426,10 @@ final class PublishLibraryUseCase {
     return true;
   }
 
-  String? _availabilityFor(Book book, Map<int, int>? counts) {
+  String? _availabilityFor(CatalogueItem book, Map<int, int>? counts) {
     if (counts == null) return null;
     final active = counts[book.id] ?? 0;
-    return active >= book.copyCount ? PublishBook.out : PublishBook.available;
+    return active >= book.copyCount ? PublishItem.out : PublishItem.available;
   }
 
   DesiredFile _desiredFile(
@@ -392,84 +446,14 @@ final class PublishLibraryUseCase {
     );
   }
 
-  Future<_CoverDecision> _decideCover(
-    Book book,
-    PublishManifest manifest,
-  ) async {
-    final src = book.coverUrl?.trim() ?? '';
-    if (src.isEmpty) return const _CoverDecision();
-    final publishPath = await _coverIds.pathFor(book.id);
-    final repoSha = manifest.shaFor(publishPath);
-
-    // LOCAL cover: read bytes, sha them (detects user edits).
-    if (_isLocal(src)) {
-      final bytes = await _readLocalCover(src);
-      if (bytes != null) {
-        return _CoverDecision(
-          publishPath: publishPath,
-          bytes: bytes,
-          gitSha: GitBlobSha.of(bytes),
-          publishedCoverUrl: publishPath,
-        );
-      }
-      if (repoSha != null) {
-        return _CoverDecision(
-          publishPath: publishPath,
-          reuseSha: repoSha,
-          publishedCoverUrl: publishPath,
-        );
-      }
-      return const _CoverDecision();
-    }
-
-    // REMOTE cover: source-identity skip when URL unchanged + already in repo.
-    final urlUnchanged = manifest.coverUrlByBookId['${book.id}'] == src;
-    if (urlUnchanged && repoSha != null) {
-      return _CoverDecision(
-        publishPath: publishPath,
-        reuseSha: repoSha,
-        publishedCoverUrl: publishPath,
-      );
-    }
-    final bytes = await _fetchRemoteCover(src);
-    if (bytes != null) {
-      return _CoverDecision(
-        publishPath: publishPath,
-        bytes: bytes,
-        gitSha: GitBlobSha.of(bytes),
-        publishedCoverUrl: publishPath,
-      );
-    }
-    if (repoSha != null) {
-      return _CoverDecision(
-        publishPath: publishPath,
-        reuseSha: repoSha,
-        publishedCoverUrl: publishPath,
-      );
-    }
-    // No usable cover bytes: fall back to a sanitized remote URL or drop.
-    return _CoverDecision(publishedCoverUrl: CoverUrlAllowList.sanitize(src));
+  /// True when [resolved] (the output of `IssueCover.resolve`) is [book]'s
+  /// OWN cover rather than its series' — resolve()'s rule is "non-blank own
+  /// cover, else the series cover", so the same branch decides whose salted
+  /// path (item id vs `periodical:` uid) owns the upload.
+  static bool _isOwnCover(CatalogueItem book, String resolved) {
+    final own = book.coverUrl?.trim() ?? '';
+    return own.isNotEmpty && own == resolved;
   }
-
-  static bool _isLocal(String s) =>
-      s.startsWith('covers/') || s.startsWith('file://');
-}
-
-/// Per-book cover decision (internal).
-final class _CoverDecision {
-  const _CoverDecision({
-    this.publishPath,
-    this.bytes,
-    this.gitSha,
-    this.reuseSha,
-    this.publishedCoverUrl,
-  });
-
-  final String? publishPath;
-  final List<int>? bytes;
-  final String? gitSha;
-  final String? reuseSha;
-  final String? publishedCoverUrl;
 }
 
 /// Load/save view of the manifest the orchestrator needs.

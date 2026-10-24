@@ -6,26 +6,28 @@ part of 'library_providers.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$bookRepositoryHash() => r'35fe70150a31083fe5f708941458de399870901e';
+String _$catalogueItemRepositoryHash() =>
+    r'675618adc3ede927788dcf037d7f51f739305674';
 
 /// Library books repository.
 ///
-/// Copied from [bookRepository].
-@ProviderFor(bookRepository)
-final bookRepositoryProvider =
-    AutoDisposeFutureProvider<BookRepository>.internal(
-      bookRepository,
-      name: r'bookRepositoryProvider',
+/// Copied from [catalogueItemRepository].
+@ProviderFor(catalogueItemRepository)
+final catalogueItemRepositoryProvider =
+    AutoDisposeFutureProvider<CatalogueItemRepository>.internal(
+      catalogueItemRepository,
+      name: r'catalogueItemRepositoryProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$bookRepositoryHash,
+          : _$catalogueItemRepositoryHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef BookRepositoryRef = AutoDisposeFutureProviderRef<BookRepository>;
+typedef CatalogueItemRepositoryRef =
+    AutoDisposeFutureProviderRef<CatalogueItemRepository>;
 String _$coverStoreHash() => r'3e37265513e4d8f8ebe1cb6156feada810867fe2';
 
 /// Local cover-file store (`<docs>/covers/<uuid>.jpg`) for captured covers,
@@ -67,7 +69,7 @@ final coverFileCoordinatorProvider = Provider<CoverFileCoordinator>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef CoverFileCoordinatorRef = ProviderRef<CoverFileCoordinator>;
-String _$coverFileJanitorHash() => r'84e84acfff56b9566de8f56654ed51b13214ef4f';
+String _$coverFileJanitorHash() => r'abef82436839e0d512d4e33a049c5ff368c8ffc0';
 
 /// Removes cover files nothing references any more (decision Q12). Used right
 /// after a cover/logo is replaced or a book hard-deleted, and once at startup
@@ -114,13 +116,13 @@ final orphanCoverSweepProvider = FutureProvider<int>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef OrphanCoverSweepRef = FutureProviderRef<int>;
-String _$libraryLanguagesHash() => r'2a364532644d3ec8e92827900f72634de41b9c0b';
+String _$libraryLanguagesHash() => r'ef1ac5008e41ad2b566663470107b12e399e8ae1';
 
 /// Distinct non-blank languages present in the library (filter-chip facets).
 ///
 /// N04: watches [libraryControllerProvider] as the mutation signal (same
-/// pattern as [bookById]) — watching only the repository OBJECT never fires,
-/// so without this an add/edit/import/restore left the chips stale.
+/// pattern as [catalogueItemById]) — watching only the repository OBJECT never
+/// fires, so without this an add/edit/import/restore left the chips stale.
 ///
 /// Copied from [libraryLanguages].
 @ProviderFor(libraryLanguages)
@@ -139,7 +141,7 @@ final libraryLanguagesProvider =
 // ignore: unused_element
 typedef LibraryLanguagesRef = AutoDisposeFutureProviderRef<List<String>>;
 String _$librarySourceDetailsHash() =>
-    r'e2bca095a816bbbda506ded7090368e05b1b2459';
+    r'd4e84d00665b366a84943f25a2d2c4a5c3ca1195';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -163,7 +165,7 @@ class _SystemHash {
 }
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -176,7 +178,7 @@ class _SystemHash {
 const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -187,7 +189,7 @@ const librarySourceDetailsProvider = LibrarySourceDetailsFamily();
 /// Copied from [librarySourceDetails].
 class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -199,7 +201,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   const LibrarySourceDetailsFamily();
 
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -208,7 +210,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
   /// itself still runs; nothing here is worth blocking the screen for.
   ///
   /// Copied from [librarySourceDetails].
-  LibrarySourceDetailsProvider call(BookSourceType type) {
+  LibrarySourceDetailsProvider call(ItemSourceType type) {
     return LibrarySourceDetailsProvider(type);
   }
 
@@ -235,7 +237,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
 }
 
 /// Distinct non-blank source details (donor / seller names…) recorded under
-/// one [BookSourceType] — the Export screen's "source detail" picker values.
+/// one [ItemSourceType] — the Export screen's "source detail" picker values.
 ///
 /// Same freshness rule as [libraryLanguages]: watches
 /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -247,7 +249,7 @@ class LibrarySourceDetailsFamily extends Family<AsyncValue<List<String>>> {
 class LibrarySourceDetailsProvider
     extends AutoDisposeFutureProvider<List<String>> {
   /// Distinct non-blank source details (donor / seller names…) recorded under
-  /// one [BookSourceType] — the Export screen's "source detail" picker values.
+  /// one [ItemSourceType] — the Export screen's "source detail" picker values.
   ///
   /// Same freshness rule as [libraryLanguages]: watches
   /// [libraryControllerProvider] as the mutation signal so an edit that renames
@@ -256,7 +258,7 @@ class LibrarySourceDetailsProvider
   /// itself still runs; nothing here is worth blocking the screen for.
   ///
   /// Copied from [librarySourceDetails].
-  LibrarySourceDetailsProvider(BookSourceType type)
+  LibrarySourceDetailsProvider(ItemSourceType type)
     : this._internal(
         (ref) => librarySourceDetails(ref as LibrarySourceDetailsRef, type),
         from: librarySourceDetailsProvider,
@@ -280,7 +282,7 @@ class LibrarySourceDetailsProvider
     required this.type,
   }) : super.internal();
 
-  final BookSourceType type;
+  final ItemSourceType type;
 
   @override
   Override overrideWith(
@@ -323,7 +325,7 @@ class LibrarySourceDetailsProvider
 // ignore: unused_element
 mixin LibrarySourceDetailsRef on AutoDisposeFutureProviderRef<List<String>> {
   /// The parameter `type` of this provider.
-  BookSourceType get type;
+  ItemSourceType get type;
 }
 
 class _LibrarySourceDetailsProviderElement
@@ -332,102 +334,112 @@ class _LibrarySourceDetailsProviderElement
   _LibrarySourceDetailsProviderElement(super.provider);
 
   @override
-  BookSourceType get type => (origin as LibrarySourceDetailsProvider).type;
+  ItemSourceType get type => (origin as LibrarySourceDetailsProvider).type;
 }
 
-String _$addBookUseCaseHash() => r'5634f963c49d02ac7f830fcbfcc674d4abb5a929';
+String _$addCatalogueItemUseCaseHash() =>
+    r'dbea5042e28c5c9e919fc304633f082c1236d60c';
 
 /// Adds a new book to the library (title-required validation + persist).
 ///
-/// Copied from [addBookUseCase].
-@ProviderFor(addBookUseCase)
-final addBookUseCaseProvider =
-    AutoDisposeFutureProvider<AddBookUseCase>.internal(
-      addBookUseCase,
-      name: r'addBookUseCaseProvider',
+/// Copied from [addCatalogueItemUseCase].
+@ProviderFor(addCatalogueItemUseCase)
+final addCatalogueItemUseCaseProvider =
+    AutoDisposeFutureProvider<AddCatalogueItemUseCase>.internal(
+      addCatalogueItemUseCase,
+      name: r'addCatalogueItemUseCaseProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$addBookUseCaseHash,
+          : _$addCatalogueItemUseCaseHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef AddBookUseCaseRef = AutoDisposeFutureProviderRef<AddBookUseCase>;
-String _$findByIsbnUseCaseHash() => r'07df33f26a0552cc6ca88844a7ff312a7537e3d1';
+typedef AddCatalogueItemUseCaseRef =
+    AutoDisposeFutureProviderRef<AddCatalogueItemUseCase>;
+String _$routeScannedBarcodeUseCaseHash() =>
+    r'a7417c3ee51ee7a06d8e488b64f7a8661a19325b';
 
-/// Finds a library book by exact ISBN (S34: quick-add scan routing — an
-/// already-catalogued scan opens the existing book, not the add form).
+/// Decides where a scanned barcode takes the user (ADR 0013 D11): a `977`
+/// magazine code routes by ISSN to the add-issue flow or a new title; any
+/// other code takes the ISBN path (existing item or the add-book form).
 ///
-/// Copied from [findByIsbnUseCase].
-@ProviderFor(findByIsbnUseCase)
-final findByIsbnUseCaseProvider =
-    AutoDisposeFutureProvider<FindByIsbnUseCase>.internal(
-      findByIsbnUseCase,
-      name: r'findByIsbnUseCaseProvider',
+/// Copied from [routeScannedBarcodeUseCase].
+@ProviderFor(routeScannedBarcodeUseCase)
+final routeScannedBarcodeUseCaseProvider =
+    AutoDisposeFutureProvider<RouteScannedBarcodeUseCase>.internal(
+      routeScannedBarcodeUseCase,
+      name: r'routeScannedBarcodeUseCaseProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$findByIsbnUseCaseHash,
+          : _$routeScannedBarcodeUseCaseHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef FindByIsbnUseCaseRef = AutoDisposeFutureProviderRef<FindByIsbnUseCase>;
-String _$updateBookUseCaseHash() => r'e92678950b1d2074408647f0f4d0ee91c165c658';
+typedef RouteScannedBarcodeUseCaseRef =
+    AutoDisposeFutureProviderRef<RouteScannedBarcodeUseCase>;
+String _$updateCatalogueItemUseCaseHash() =>
+    r'de53d18b42aa3ba130cf39406b2ddeeb6b6ef49c';
 
 /// Updates an existing library book (title-required, id-immutable).
 ///
-/// Copied from [updateBookUseCase].
-@ProviderFor(updateBookUseCase)
-final updateBookUseCaseProvider =
-    AutoDisposeFutureProvider<UpdateBookUseCase>.internal(
-      updateBookUseCase,
-      name: r'updateBookUseCaseProvider',
+/// Copied from [updateCatalogueItemUseCase].
+@ProviderFor(updateCatalogueItemUseCase)
+final updateCatalogueItemUseCaseProvider =
+    AutoDisposeFutureProvider<UpdateCatalogueItemUseCase>.internal(
+      updateCatalogueItemUseCase,
+      name: r'updateCatalogueItemUseCaseProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$updateBookUseCaseHash,
+          : _$updateCatalogueItemUseCaseHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef UpdateBookUseCaseRef = AutoDisposeFutureProviderRef<UpdateBookUseCase>;
-String _$deleteBookUseCaseHash() => r'8bd4c759d1381fe6667a5baa01a7ff658f3301a0';
+typedef UpdateCatalogueItemUseCaseRef =
+    AutoDisposeFutureProviderRef<UpdateCatalogueItemUseCase>;
+String _$deleteCatalogueItemUseCaseHash() =>
+    r'bfa700b1756c6170f7bd9776f4700a603525713c';
 
 /// Hard-deletes a library book, purging its vault loans when unlocked (#27/D3).
 /// The vault side is the session controller (it satisfies [VaultLoanPurger]).
 ///
-/// Copied from [deleteBookUseCase].
-@ProviderFor(deleteBookUseCase)
-final deleteBookUseCaseProvider =
-    AutoDisposeFutureProvider<DeleteBookUseCase>.internal(
-      deleteBookUseCase,
-      name: r'deleteBookUseCaseProvider',
+/// Copied from [deleteCatalogueItemUseCase].
+@ProviderFor(deleteCatalogueItemUseCase)
+final deleteCatalogueItemUseCaseProvider =
+    AutoDisposeFutureProvider<DeleteCatalogueItemUseCase>.internal(
+      deleteCatalogueItemUseCase,
+      name: r'deleteCatalogueItemUseCaseProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$deleteBookUseCaseHash,
+          : _$deleteCatalogueItemUseCaseHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef DeleteBookUseCaseRef = AutoDisposeFutureProviderRef<DeleteBookUseCase>;
-String _$bookByIdHash() => r'f7ac65edbecd807956445160bedf1cfac802390d';
+typedef DeleteCatalogueItemUseCaseRef =
+    AutoDisposeFutureProviderRef<DeleteCatalogueItemUseCase>;
+String _$catalogueItemByIdHash() => r'a4ac06de8855a15aecf641a58fbbd1f5f057bb4f';
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -439,19 +451,20 @@ String _$bookByIdHash() => r'f7ac65edbecd807956445160bedf1cfac802390d';
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 ///
-/// Copied from [bookById].
-@ProviderFor(bookById)
-const bookByIdProvider = BookByIdFamily();
+/// Copied from [catalogueItemById].
+@ProviderFor(catalogueItemById)
+const catalogueItemByIdProvider = CatalogueItemByIdFamily();
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -463,17 +476,18 @@ const bookByIdProvider = BookByIdFamily();
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 ///
-/// Copied from [bookById].
-class BookByIdFamily extends Family<AsyncValue<Book?>> {
+/// Copied from [catalogueItemById].
+class CatalogueItemByIdFamily extends Family<AsyncValue<CatalogueItem?>> {
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -485,18 +499,19 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
   ///
-  /// Copied from [bookById].
-  const BookByIdFamily();
+  /// Copied from [catalogueItemById].
+  const CatalogueItemByIdFamily();
 
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -508,13 +523,15 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
   ///
-  /// Copied from [bookById].
-  BookByIdProvider call(int bookId) {
-    return BookByIdProvider(bookId);
+  /// Copied from [catalogueItemById].
+  CatalogueItemByIdProvider call(int bookId) {
+    return CatalogueItemByIdProvider(bookId);
   }
 
   @override
-  BookByIdProvider getProviderOverride(covariant BookByIdProvider provider) {
+  CatalogueItemByIdProvider getProviderOverride(
+    covariant CatalogueItemByIdProvider provider,
+  ) {
     return call(provider.bookId);
   }
 
@@ -530,18 +547,19 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
       _allTransitiveDependencies;
 
   @override
-  String? get name => r'bookByIdProvider';
+  String? get name => r'catalogueItemByIdProvider';
 }
 
 /// One library book, observed by id, for a detail screen (N03).
 ///
-/// Why a provider and not the `Book` the list row was tapped with: a detail
-/// page can stay open while the row changes underneath it — a cover captured
-/// on that very page rewrites `coverUrl`, the remote-cover materializer may
-/// swap an `https://` reference for a local file, an edit saves new fields.
-/// A snapshot handed in at push time never learns any of this, and passing it
-/// on to the edit form wrote stale values back over the fresh row (a cover
-/// file the janitor had already deleted came back as the row's cover).
+/// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+/// detail page can stay open while the row changes underneath it — a cover
+/// captured on that very page rewrites `coverUrl`, the remote-cover
+/// materializer may swap an `https://` reference for a local file, an edit
+/// saves new fields. A snapshot handed in at push time never learns any of
+/// this, and passing it on to the edit form wrote stale values back over the
+/// fresh row (a cover file the janitor had already deleted came back as the
+/// row's cover).
 ///
 /// Freshness signal: every mutation path in the app already invalidates or
 /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -553,17 +571,19 @@ class BookByIdFamily extends Family<AsyncValue<Book?>> {
 /// `null` = the row no longer exists. A repository `Left` is thrown so the
 /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
 ///
-/// Copied from [bookById].
-class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
+/// Copied from [catalogueItemById].
+class CatalogueItemByIdProvider
+    extends AutoDisposeFutureProvider<CatalogueItem?> {
   /// One library book, observed by id, for a detail screen (N03).
   ///
-  /// Why a provider and not the `Book` the list row was tapped with: a detail
-  /// page can stay open while the row changes underneath it — a cover captured
-  /// on that very page rewrites `coverUrl`, the remote-cover materializer may
-  /// swap an `https://` reference for a local file, an edit saves new fields.
-  /// A snapshot handed in at push time never learns any of this, and passing it
-  /// on to the edit form wrote stale values back over the fresh row (a cover
-  /// file the janitor had already deleted came back as the row's cover).
+  /// Why a provider and not the `CatalogueItem` the list row was tapped with: a
+  /// detail page can stay open while the row changes underneath it — a cover
+  /// captured on that very page rewrites `coverUrl`, the remote-cover
+  /// materializer may swap an `https://` reference for a local file, an edit
+  /// saves new fields. A snapshot handed in at push time never learns any of
+  /// this, and passing it on to the edit form wrote stale values back over the
+  /// fresh row (a cover file the janitor had already deleted came back as the
+  /// row's cover).
   ///
   /// Freshness signal: every mutation path in the app already invalidates or
   /// refreshes [libraryControllerProvider] (cover replace, materializer, edit
@@ -575,21 +595,22 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
   /// `null` = the row no longer exists. A repository `Left` is thrown so the
   /// screen sees `AsyncError` (same idiom as `LibraryController._load`).
   ///
-  /// Copied from [bookById].
-  BookByIdProvider(int bookId)
+  /// Copied from [catalogueItemById].
+  CatalogueItemByIdProvider(int bookId)
     : this._internal(
-        (ref) => bookById(ref as BookByIdRef, bookId),
-        from: bookByIdProvider,
-        name: r'bookByIdProvider',
+        (ref) => catalogueItemById(ref as CatalogueItemByIdRef, bookId),
+        from: catalogueItemByIdProvider,
+        name: r'catalogueItemByIdProvider',
         debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
             ? null
-            : _$bookByIdHash,
-        dependencies: BookByIdFamily._dependencies,
-        allTransitiveDependencies: BookByIdFamily._allTransitiveDependencies,
+            : _$catalogueItemByIdHash,
+        dependencies: CatalogueItemByIdFamily._dependencies,
+        allTransitiveDependencies:
+            CatalogueItemByIdFamily._allTransitiveDependencies,
         bookId: bookId,
       );
 
-  BookByIdProvider._internal(
+  CatalogueItemByIdProvider._internal(
     super._createNotifier, {
     required super.name,
     required super.dependencies,
@@ -602,11 +623,13 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
   final int bookId;
 
   @override
-  Override overrideWith(FutureOr<Book?> Function(BookByIdRef provider) create) {
+  Override overrideWith(
+    FutureOr<CatalogueItem?> Function(CatalogueItemByIdRef provider) create,
+  ) {
     return ProviderOverride(
       origin: this,
-      override: BookByIdProvider._internal(
-        (ref) => create(ref as BookByIdRef),
+      override: CatalogueItemByIdProvider._internal(
+        (ref) => create(ref as CatalogueItemByIdRef),
         from: from,
         name: null,
         dependencies: null,
@@ -618,13 +641,13 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
   }
 
   @override
-  AutoDisposeFutureProviderElement<Book?> createElement() {
-    return _BookByIdProviderElement(this);
+  AutoDisposeFutureProviderElement<CatalogueItem?> createElement() {
+    return _CatalogueItemByIdProviderElement(this);
   }
 
   @override
   bool operator ==(Object other) {
-    return other is BookByIdProvider && other.bookId == bookId;
+    return other is CatalogueItemByIdProvider && other.bookId == bookId;
   }
 
   @override
@@ -638,17 +661,18 @@ class BookByIdProvider extends AutoDisposeFutureProvider<Book?> {
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-mixin BookByIdRef on AutoDisposeFutureProviderRef<Book?> {
+mixin CatalogueItemByIdRef on AutoDisposeFutureProviderRef<CatalogueItem?> {
   /// The parameter `bookId` of this provider.
   int get bookId;
 }
 
-class _BookByIdProviderElement extends AutoDisposeFutureProviderElement<Book?>
-    with BookByIdRef {
-  _BookByIdProviderElement(super.provider);
+class _CatalogueItemByIdProviderElement
+    extends AutoDisposeFutureProviderElement<CatalogueItem?>
+    with CatalogueItemByIdRef {
+  _CatalogueItemByIdProviderElement(super.provider);
 
   @override
-  int get bookId => (origin as BookByIdProvider).bookId;
+  int get bookId => (origin as CatalogueItemByIdProvider).bookId;
 }
 
 // ignore_for_file: type=lint

@@ -48,12 +48,12 @@ Future<MarkWishlistPurchasedUseCase> markWishlistPurchasedUseCase(
   MarkWishlistPurchasedUseCaseRef ref,
 ) async {
   final repo = await ref.watch(wishlistRepositoryProvider.future);
-  final books = await ref.watch(bookRepositoryProvider.future);
+  final books = await ref.watch(catalogueItemRepositoryProvider.future);
   return MarkWishlistPurchasedUseCase(repo, books: books);
 }
 
 /// One wishlist entry, observed by id, for its detail screen (N03).
-/// Same shape and rationale as [bookById]; the freshness signal is
+/// Same shape and rationale as [catalogueItemById]; the freshness signal is
 /// [wishlistControllerProvider], which every wishlist mutation refreshes.
 @riverpod
 Future<WishlistBook?> wishlistBookById(

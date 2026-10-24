@@ -6,15 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/core/database/app_database.dart';
 
-/// The v1 database exactly as shipped: same tables, indexes and FTS, but
-/// pinned to `schemaVersion 1` so a file it creates triggers `onUpgrade`
-/// when the real [AppDatabase] opens it.
-class _V1Database extends AppDatabase {
-  _V1Database(super.executor);
-
-  @override
-  int get schemaVersion => 1;
-}
+import 'generated/schema_v1.dart' as v1;
 
 void main() {
   late AppDatabase db;
@@ -60,9 +52,11 @@ void main() {
         'removed',
         'removed_at',
         'added_by',
+        // Schema v5 (ADR 0013): the one column added to the Room shape.
+        'kind',
       ]),
     );
-    expect(cols.length, 25);
+    expect(cols.length, 26);
   });
 
   test('creates wishlist_books with all 16 Room columns', () async {
@@ -126,20 +120,25 @@ void main() {
 
       tearDown(() => tmp.delete(recursive: true));
 
+      // A GENUINE v1 file, built from the committed v1 snapshot (the same
+      // generated helper the migration matrix uses). An `AppDatabase`
+      // subclass pinned to `schemaVersion => 1` would create the CURRENT
+      // tables under a v1 stamp, and the v5 `addColumn(books.kind)` would
+      // then fail on a column that already exists.
       Future<void> seedV1(List<(String title, String? language)> rows) async {
-        final v1 = _V1Database(NativeDatabase(dbFile));
+        final old = v1.DatabaseAtV1(NativeDatabase(dbFile));
         for (final (title, language) in rows) {
-          await v1
-              .into(v1.books)
+          await old
+              .into(old.books)
               .insert(
-                BooksCompanion.insert(
+                v1.BooksCompanion.insert(
                   title: title,
                   language: Value(language),
                   addedDate: 1,
                 ),
               );
         }
-        await v1.close();
+        await old.close();
       }
 
       Future<Map<String, int>> usage(AppDatabase db) async {

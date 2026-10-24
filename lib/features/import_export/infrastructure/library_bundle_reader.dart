@@ -53,11 +53,18 @@ final class LibraryBundleReader implements BundleReader {
     }
     // Tolerant text imports may skip malformed collections/rows. A bundle
     // must not install images for rows that silently disappeared while parsing.
+    // S5 (H4): `periodicals` is a valid third collection — a v4 bundle that
+    // carries ONLY magazine titles is a real (if unusual) backup, and the
+    // pre-S5 reader rejected it as "invalid collections".
+    const collections = ['books', 'wishlist', 'periodicals'];
     if (decoded is! Map<String, dynamic> ||
-        !['books', 'wishlist'].any(decoded.containsKey)) {
+        !collections.any(decoded.containsKey)) {
       return left(const BackupCorruptFailure('Invalid bundle collections.'));
     }
-    for (final key in ['books', 'wishlist']) {
+    // Shape-check every present collection BEFORE parsing: a malformed
+    // `periodicals` must never degrade into an empty series list, because the
+    // import would then restore its issues as books.
+    for (final key in collections) {
       if (!decoded.containsKey(key)) continue;
       final rows = decoded[key];
       if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {

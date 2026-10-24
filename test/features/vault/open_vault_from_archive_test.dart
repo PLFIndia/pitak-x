@@ -67,7 +67,7 @@ void main() {
   test('unlocks and returns vault data on a valid archive', () async {
     const data = VaultData(
       borrowers: [Borrower(id: 1, name: 'Asha')],
-      loans: [Loan(id: 1, bookId: 5, borrowerId: 1, lentDate: 100)],
+      loans: [Loan(id: 1, itemId: 5, borrowerId: 1, lentDate: 100)],
     );
     final vault = _FakeVault(right(data));
     final zip = archive({

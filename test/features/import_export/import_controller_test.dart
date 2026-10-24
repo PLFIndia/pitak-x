@@ -13,48 +13,58 @@ import 'package:pitaka/features/import_export/application/import_library_use_cas
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
-class _MemBookRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+import '../periodicals/application/periodical_fakes.dart';
+
+class _MemBookRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> stored = [];
+  final List<CatalogueItem> stored = [];
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     stored.add(book);
     return right(book);
   }
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(stored);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -63,7 +73,7 @@ class _MemBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -74,11 +84,13 @@ class _MemBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -112,6 +124,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
 
     final container = ProviderContainer(
@@ -147,6 +160,7 @@ void main() {
         jsonParser: const PitakaJsonImporter(),
         bookRepo: _MemBookRepo(),
         wishlistRepo: _MemWishlistRepo(),
+        periodicalRepo: FakePeriodicals(),
       );
       final container = ProviderContainer(
         overrides: [
@@ -171,6 +185,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
     final container = ProviderContainer(
       overrides: [
@@ -205,6 +220,7 @@ void main() {
       jsonParser: const PitakaJsonImporter(),
       bookRepo: _MemBookRepo(),
       wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: FakePeriodicals(),
     );
     // A minimal valid Pitaka bundle: just library.json (no covers).
     final libraryJson = jsonEncode({

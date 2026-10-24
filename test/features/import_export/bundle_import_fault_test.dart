@@ -4,8 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
@@ -27,7 +27,11 @@ void main() {
         addTearDown(fixture.dispose);
         fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
         await fixture.books.insert(
-          const Book(title: 'Old', bookUid: 'u', coverUrl: 'covers/old.jpg'),
+          const CatalogueItem(
+            title: 'Old',
+            itemUid: 'u',
+            coverUrl: 'covers/old.jpg',
+          ),
         );
         await fixture.wishlist.insert(
           const WishlistBook(
@@ -39,11 +43,11 @@ void main() {
         final files = ControlledBundleFiles(fixture.files)..failures.add(fault);
         if (fault == 'rollback') files.failures.add('retain');
         final payload = ImportPayload(
-          books: row.endsWith('book')
+          items: row.endsWith('book')
               ? [
-                  Book(
+                  CatalogueItem(
                     title: 'New',
-                    bookUid: row == 'existing book' ? 'u' : null,
+                    itemUid: row == 'existing book' ? 'u' : null,
                     coverUrl: 'covers/a.jpg',
                   ),
                 ]
@@ -106,9 +110,9 @@ void main() {
       addTearDown(fixture.dispose);
       fixture.cover('covers/old.jpg').writeAsBytesSync([9]);
       await fixture.books.insert(
-        const Book(
+        const CatalogueItem(
           title: 'Old',
-          bookUid: 'old',
+          itemUid: 'old',
           isbn: 'seed',
           coverUrl: 'covers/old.jpg',
         ),
@@ -123,16 +127,16 @@ void main() {
       final books = _BookFaults(fixture, fault);
       final result = await fixture.apply(
         const ImportPayload(
-          books: [
-            Book(
+          items: [
+            CatalogueItem(
               title: 'New',
-              bookUid: 'new',
+              itemUid: 'new',
               isbn: 'new',
               coverUrl: 'covers/a.jpg',
             ),
-            Book(
+            CatalogueItem(
               title: 'Updated',
-              bookUid: 'old',
+              itemUid: 'old',
               isbn: 'seed',
               coverUrl: 'covers/b.jpg',
             ),
@@ -154,7 +158,7 @@ void main() {
           'a.jpg': Uint8List.fromList([1]),
           'b.jpg': Uint8List.fromList([2]),
         },
-        bookRepository: books,
+        catalogueItemRepository: books,
         wishlistRepository: _WishFaults(fixture, fault),
       );
       expect(result.isLeft(), isTrue);
@@ -170,21 +174,21 @@ void main() {
   }
 }
 
-class _BookFaults extends DriftBookRepository {
+class _BookFaults extends DriftCatalogueItemRepository {
   _BookFaults(BundleTestFixture fixture, this.fault) : super(fixture.database);
   final String fault;
   bool bodySucceeded = false;
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async =>
-      fault == 'uid' ? left(_failure) : super.findByUid(bookUid);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      fault == 'uid' ? left(_failure) : super.findByUid(itemUid);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       fault == 'isbn' ? left(_failure) : super.findByIsbn(isbn);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
       fault == 'insert' ? left(_failure) : super.insert(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async =>
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
       fault == 'update' ? left(_failure) : super.update(book);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(

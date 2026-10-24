@@ -14,7 +14,7 @@ Map<int, int> activeLoanCountsByBook(Iterable<Loan> loans) {
   final counts = <int, int>{};
   for (final loan in loans) {
     if (loan.isReturned) continue;
-    counts.update(loan.bookId, (n) => n + 1, ifAbsent: () => 1);
+    counts.update(loan.itemId, (n) => n + 1, ifAbsent: () => 1);
   }
   return counts;
 }

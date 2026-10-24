@@ -5,14 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
 import 'replacement_harness.dart';
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Loaned');
-const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
+const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Loaned');
+const _loan = Loan(id: 1, itemId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
   late ReplacementHarness h;
@@ -23,24 +23,29 @@ void main() {
     'real merge preserves loan IDs and never recycles historical IDs',
     () async {
       await h.books.insert(_book);
-      await h.books.insert(const Book(id: 500, title: 'Deleted long ago'));
+      await h.books.insert(
+        const CatalogueItem(id: 500, title: 'Deleted long ago'),
+      );
       await h.books.delete(500);
       h.vault.loans.add(_loan);
       await h.initialize();
       final result = await h.overwrite([
-        const Book(id: 7, title: 'New'), // ordered before the preserved row
+        const CatalogueItem(
+          id: 7,
+          title: 'New',
+        ), // ordered before the preserved row
         _book.copyWith(id: 99, title: 'Updated'),
       ]);
       expect(result.isRight(), isTrue);
       final books = (await h.books.getAll()).toNullable()!;
-      expect(books.singleWhere((b) => b.bookUid == 'stable').id, 7);
+      expect(books.singleWhere((b) => b.itemUid == 'stable').id, 7);
       expect(books.singleWhere((b) => b.title == 'New').id, greaterThan(500));
-      expect(h.vault.loans.single.bookId, 7);
+      expect(h.vault.loans.single.itemId, 7);
       expect(h.vault.writes, 0);
       expect(File(h.store.dbPath).readAsBytesSync(), [1, 2, 3]);
       expect(h.store.readBlob(), 'synthetic.blob.only');
       expect((await h.overwrite([_book.copyWith(id: 99)])).isRight(), isTrue);
-      expect((await h.books.getById(7)).toNullable()!.bookUid, 'stable');
+      expect((await h.books.getById(7)).toNullable()!.itemUid, 'stable');
     },
   );
 
@@ -52,10 +57,10 @@ void main() {
         h.vault.loans.add(returned ? _loan.copyWith(returnedDate: 2) : _loan);
         await h.initialize();
         final result = await h.overwrite([
-          const Book(id: 7, bookUid: 'other', title: 'Substitution'),
+          const CatalogueItem(id: 7, itemUid: 'other', title: 'Substitution'),
         ]);
         expect(result.getLeft().toNullable(), isA<ValidationFailure>());
-        expect((await h.books.getAll()).toNullable()!.single.bookUid, 'stable');
+        expect((await h.books.getAll()).toNullable()!.single.itemUid, 'stable');
         expect(h.settings.id, 'local');
         expect(h.vault.writes, 0);
       },
@@ -245,7 +250,7 @@ void main() {
       expect(
         (await h.overwrite([
           _book,
-          const Book(title: 'Rejected'),
+          const CatalogueItem(title: 'Rejected'),
         ])).getLeft().toNullable(),
         isA<StorageFailure>(),
       );

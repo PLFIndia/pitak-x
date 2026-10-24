@@ -17,13 +17,15 @@ import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../periodicals/application/periodical_fakes.dart';
 
 class _FakeShare implements FileShareService {
   @override
@@ -74,7 +76,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
   @override
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,
@@ -106,36 +108,43 @@ class _GatedRenderer implements LibraryPdfRenderer {
   }
 }
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   _Books(this._books, {this.failWith});
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _books;
+  final List<CatalogueItem> _books;
   final Failure? failWith;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       failWith != null ? left(failWith!) : right(_books);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      failWith != null ? left(failWith!) : right(_books);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -144,14 +153,16 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -160,11 +171,13 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String i) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String i) async =>
+      right(null);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -196,7 +209,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   ProviderContainer makeContainer({
-    required BookRepository books,
+    required CatalogueItemRepository books,
     required _FakeShare share,
     LibraryPdfRenderer pdfRenderer = const PdfLibraryRenderer(),
   }) {
@@ -208,6 +221,7 @@ void main() {
             pdfRenderer: pdfRenderer,
             bookRepo: books,
             wishlistRepo: _Wishlist(),
+            periodicalRepo: FakePeriodicals(),
           ),
         ),
         fileShareServiceProvider.overrideWithValue(share),
@@ -231,7 +245,7 @@ void main() {
   test('JSON export shares bytes and mints a library ID', () async {
     final share = _FakeShare();
     final container = makeContainer(
-      books: _Books([const Book(id: 1, title: 'Godaan')]),
+      books: _Books([const CatalogueItem(id: 1, title: 'Godaan')]),
       share: share,
     );
 
@@ -281,7 +295,7 @@ void main() {
       final share = _FakeShare();
       final renderer = _GatedRenderer(rows: 60);
       final container = makeContainer(
-        books: _Books([const Book(id: 1, title: 'A')]),
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
         share: share,
         pdfRenderer: renderer,
       );
@@ -333,7 +347,7 @@ void main() {
       final share = _FakeShare();
       final renderer = _GatedRenderer();
       final container = makeContainer(
-        books: _Books([const Book(id: 1, title: 'A')]),
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
         share: share,
         pdfRenderer: renderer,
       );
@@ -366,7 +380,7 @@ void main() {
       final share = _FakeShare();
       final renderer = _GatedRenderer(rows: 10);
       final container = makeContainer(
-        books: _Books([const Book(id: 1, title: 'A')]),
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
         share: share,
         pdfRenderer: renderer,
       );
@@ -389,7 +403,7 @@ void main() {
       final share = _FakeShare();
       final renderer = _GatedRenderer(rows: 3);
       final container = makeContainer(
-        books: _Books([const Book(id: 1, title: 'A')]),
+        books: _Books([const CatalogueItem(id: 1, title: 'A')]),
         share: share,
         pdfRenderer: renderer,
       );
@@ -432,7 +446,7 @@ void main() {
         final share = _FakeShare();
         final renderer = _GatedRenderer(rows: 2);
         final container = makeContainer(
-          books: _Books([const Book(id: 1, title: 'A')]),
+          books: _Books([const CatalogueItem(id: 1, title: 'A')]),
           share: share,
           pdfRenderer: renderer,
         );
@@ -468,7 +482,7 @@ void main() {
       final share = _FakeShare();
       final books = List.generate(
         400,
-        (i) => Book(id: i + 1, title: 'Row $i', author: 'A $i'),
+        (i) => CatalogueItem(id: i + 1, title: 'Row $i', author: 'A $i'),
       );
       late ExportController notifier;
       final container = ProviderContainer(
@@ -479,6 +493,7 @@ void main() {
               pdfRenderer: const PdfLibraryRenderer(),
               bookRepo: _Books(books),
               wishlistRepo: _Wishlist(),
+              periodicalRepo: FakePeriodicals(),
             ),
           ),
           fileShareServiceProvider.overrideWithValue(share),

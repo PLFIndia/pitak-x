@@ -1,0 +1,101 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+
+void main() {
+  group('AgeGroup.fromToken (tolerant, mirrors Kotlin)', () {
+    test('current tokens round-trip', () {
+      for (final v in AgeGroup.values) {
+        expect(AgeGroup.fromToken(v.token), v);
+      }
+    });
+
+    // N10-d: the repository renders each token into a raw-SQL `CASE … WHEN
+    // '<token>'` for the FTS search ORDER BY. That is only safe while tokens
+    // stay in this charset (no quotes, no whitespace). Ranks must also be
+    // distinct or two bands would tie in SQL and break the equivalence with
+    // CatalogueItemSorter.
+    test('tokens are SQL-literal-safe and ranks are distinct', () {
+      final safe = RegExp(r'^[a-z0-9-]+$');
+      for (final v in AgeGroup.values) {
+        expect(safe.hasMatch(v.token), isTrue, reason: v.token);
+      }
+      final ranks = AgeGroup.values.map((v) => v.sortRank).toSet();
+      expect(ranks, hasLength(AgeGroup.values.length));
+    });
+
+    test('current enum names (above_3 …) parse', () {
+      expect(AgeGroup.fromToken('above_3'), AgeGroup.above3);
+      expect(AgeGroup.fromToken('above_6'), AgeGroup.above6);
+      expect(AgeGroup.fromToken('above_10'), AgeGroup.above10);
+      expect(AgeGroup.fromToken('above_15'), AgeGroup.above15);
+      expect(AgeGroup.fromToken('advanced'), AgeGroup.advanced);
+    });
+
+    test('LEGACY pre-"above N" names map per MIGRATION_9_10', () {
+      expect(AgeGroup.fromToken('age_0_5'), AgeGroup.above3);
+      expect(AgeGroup.fromToken('age_6_10'), AgeGroup.above6);
+      expect(AgeGroup.fromToken('age_11_16'), AgeGroup.above10);
+      expect(AgeGroup.fromToken('advance'), AgeGroup.advanced);
+    });
+
+    test('case-insensitive and whitespace-tolerant', () {
+      expect(AgeGroup.fromToken('  ABOVE-3 '), AgeGroup.above3);
+      expect(AgeGroup.fromToken('Age_11_16'), AgeGroup.above10);
+    });
+
+    test('unknown / blank / null → null (never throws)', () {
+      expect(AgeGroup.fromToken(null), isNull);
+      expect(AgeGroup.fromToken(''), isNull);
+      expect(AgeGroup.fromToken('   '), isNull);
+      expect(AgeGroup.fromToken('nonsense'), isNull);
+      // above-15 has no legacy source — only its own token/name resolve.
+      expect(AgeGroup.fromToken('age_17_plus'), isNull);
+    });
+
+    test('sortRank defines band order (not alphabetical)', () {
+      final sorted = AgeGroup.values.toList()
+        ..sort((a, b) => a.sortRank.compareTo(b.sortRank));
+      expect(sorted, [
+        AgeGroup.above3,
+        AgeGroup.above6,
+        AgeGroup.above10,
+        AgeGroup.above15,
+        AgeGroup.advanced,
+      ]);
+    });
+  });
+
+  group('ItemSourceType.fromToken', () {
+    test('round-trips and is tolerant', () {
+      for (final v in ItemSourceType.values) {
+        expect(ItemSourceTypeX.fromToken(v.token), v);
+        expect(ItemSourceTypeX.fromToken(v.name), v);
+      }
+      expect(
+        ItemSourceTypeX.fromToken('  purchased '),
+        ItemSourceType.purchased,
+      );
+      expect(ItemSourceTypeX.fromToken(null), isNull);
+      expect(ItemSourceTypeX.fromToken('bogus'), isNull);
+    });
+  });
+
+  group('CatalogueItem', () {
+    test('copyWith replaces only given fields', () {
+      const book = CatalogueItem(title: 'A', author: 'X');
+      final updated = book.copyWith(author: 'Y', copyCount: 2);
+      expect(updated.title, 'A');
+      expect(updated.author, 'Y');
+      expect(updated.copyCount, 2);
+    });
+
+    test('defaults match Kotlin', () {
+      const book = CatalogueItem(title: 'T');
+      expect(book.id, CatalogueItem.emptyId);
+      expect(book.copyCount, 1);
+      expect(book.needsMetadata, isFalse);
+      expect(book.removed, isFalse);
+      expect(book.itemUid, isNull);
+    });
+  });
+}

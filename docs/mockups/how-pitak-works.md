@@ -15,6 +15,14 @@
 > carry one-line subtitles taken from their intros; the decisions in §4 were
 > all taken as proposed (label "How Pitak works", cards → pages, deep-link
 > buttons, fifth card included).
+>
+> **Amendment 2026-10-23 (catalogue item kinds, ADR 0013):** a sixth guide,
+> §3.6 "Books, magazines and other items", is the FIRST card (adding items
+> is the first job; the other guides assume a catalogue exists). The backup
+> guide's "what is inside" paragraph now says "your whole catalogue — books,
+> magazine titles and issues, other items" (the `.pitabak` carries kinds and
+> magazine titles since ADR 0014 W2). Everything else in §3.1–§3.5 is
+> unchanged.
 
 Goal: a librarian who has never used GitHub, never heard of "JSON" and does
 not want to read a manual can follow each guide top-to-bottom in under a
@@ -337,6 +345,68 @@ have no books of its own.
 
 ---
 
+### 3.6 Books, magazines and other items (first card, added 2026-10-23)
+
+Card subtitle: *Three kinds of item, one library — which form to use*.
+
+**Intro.** Your library holds three kinds of item: **books**, **magazine
+issues** (grouped under their magazine title) and **other items** — a DVD, a
+board game, a map. One list, one search, one way of lending; the kind only
+decides which form you fill in.
+
+| I want to… | Use |
+|---|---|
+| Add a book | **+** → **Add book**, or **Scan to add** its barcode |
+| Add a magazine | **+** → **New magazine title** once, then **Add magazine issue** per issue |
+| Add something else | **+** → **Add other item**; describe it in **Description** |
+
+**Catalogue a magazine**
+
+1. On the Library screen tap **+**, then **New magazine title**.
+2. Type the title (ISSN, publisher and frequency are optional) and tap
+   **Add magazine title**.
+3. Open **☰ → Magazines**, tap the magazine, then **Add issue**.
+4. Type the **Issue number** or pick a **Cover date**; **Title preview**
+   shows the name the issue will get.
+5. Tap **Add issue**. The issue is listed under its magazine and in the
+   Library.
+
+**How magazines behave**
+
+- An issue takes its title, publisher and language from its magazine title;
+  edit the title once and every issue follows.
+- **Bound volume** (a switch on the issue form): several issues bound as one
+  physical item, identified by its first and last issue dates. One item, one
+  loan.
+- **Track subscription** on a magazine title makes the **Magazines** list
+  warn **Expiring soon** 30 days before the end date, then **Lapsed**.
+
+**The same for every kind**
+
+- Lend any item — a book, an issue, a board game — with **Lend** on its page.
+- The chips **Books**, **Magazines**, **Others** show one kind; tap again for
+  everything. Search reads notes too, so a **Description** is searchable.
+- Backups, exports, merges and your published page carry every kind.
+
+**Good to know**
+
+- An item keeps its kind — a book cannot later become a magazine issue.
+  **Delete permanently**, then add it again with the right form.
+- A magazine title cannot be deleted while it still has issues; delete those
+  first.
+- An other item's **Description** stays on this phone; the published page
+  shows only its title, cover, language and age group.
+
+`[ Open Magazines → ]`
+
+Left out on purpose (the guide must stay within the backup guide's length
+budget — `guide_page_test.dart` renders every guide on a 3000 dp surface):
+the magazine-barcode scan route (a `977…` barcode opens the issue form, or the
+title form with the ISSN filled in — ADR 0013 D11). It needs no instruction;
+the scan simply does the right thing.
+
+---
+
 ## 4. Things to decide
 
 1. **Drawer label:** "How Pitak works" vs "Help & guides" vs "Information".
@@ -381,3 +451,14 @@ have no books of its own.
 | Lend: existing/new borrower, optional due date; Return on borrower Edit page; Pending = overdue/due soon/missing metadata | `lend_book_page.dart`, `borrower_edit_page.dart`, `pending_page.dart` |
 | Call / WhatsApp / Email buttons from phone/email fields | `borrower_profile_page.dart` |
 | Card = site URL + public fingerprint, never the ID; Add member is in-person | `network_page.dart` My card tab; ADR 0012 |
+| Three kinds, app-defined; one list / search / lendable unit for every kind | `ItemKind` (ADR 0013 F1–F3); `LendDecision.forItem`; FTS over the base table |
+| "+" sheet entries: Add book · Add magazine issue · Add other item · New magazine title; "Scan to add" | `add_sheet.dart`; `library_page.dart` app-bar tooltip |
+| Issue needs an issue number or a cover date; title is projected ("Title preview") | `add_issue_page.dart` `_validationError`; `IssueTitle.compose` (ADR 0013 D3, D6) |
+| Series edit re-projects every issue | `UpdatePeriodicalUseCase` / `IssueReprojection` (D3) |
+| Bound volume = one row with a date range; one loan | `AddIssuePage` "Bound volume" switch; ADR 0013 D4 |
+| Expiring soon = 30 days before the end date, then Lapsed; only when tracked | `SubscriptionStatus.of` (D5); `SubscriptionBadge` |
+| Kind chips Books · Magazines · Others, toggle semantics; search covers notes | `LibraryControlsRow`; `ItemKind.label` (U1); FTS `notes` column (D10) |
+| Backups, exports, merges, publish carry kinds | ADR 0014 W1–W3; `.pitabak` `item_kinds.json` / `periodicals.json` |
+| Kind cannot change after creation; "Delete permanently" exists on the item page | `UpdateIssueUseCase` (D8); `catalogue_item_actions.dart` |
+| A title with issues cannot be deleted | `PeriodicalHasIssuesFailure` (D8); series overflow menu offers Remove / Restore and Delete permanently |
+| Other item's Description is private; publish shows title/cover/language/age group | ADR 0013 O2; `PublishItem` redaction |

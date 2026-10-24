@@ -17,22 +17,23 @@ import 'package:pitaka/features/import_export/application/merge_controller.dart'
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 
 /// In-memory book repo: just enough surface for the merge use case (mirrors
 /// merge_library_use_case_test.dart's fake).
-class _FakeBooks implements BookRepository {
+class _FakeBooks implements CatalogueItemRepository {
   _FakeBooks(this._books);
 
-  final List<Book> _books;
+  final List<CatalogueItem> _books;
   int _nextId = 1000;
 
   /// Test-only failure injection for [insertAll].
@@ -50,28 +51,32 @@ class _FakeBooks implements BookRepository {
   /// How many times [update] was called.
   int updateCalls = 0;
 
-  List<Book> get books => _books;
+  List<CatalogueItem> get books => _books;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_books);
+  @override
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     final stored = book.copyWith(
-      id: book.id == Book.emptyId ? _nextId++ : book.id,
-      bookUid: book.bookUid ?? 'minted-$_nextId',
+      id: book.id == CatalogueItem.emptyId ? _nextId++ : book.id,
+      itemUid: book.itemUid ?? 'minted-$_nextId',
     );
     _books.add(stored);
     return right(stored);
   }
 
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async {
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async {
     final failure = insertAllFailure;
     if (failure != null) return left(failure);
     for (final b in books) {
@@ -81,7 +86,7 @@ class _FakeBooks implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async {
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async {
     _books.clear();
     for (final b in books) {
       await insert(b);
@@ -90,7 +95,7 @@ class _FakeBooks implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book>> update(Book book) async {
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
     updateCalls++;
     if (updateThrows) throw StateError('db exploded');
     final gate = updateGate;
@@ -107,22 +112,26 @@ class _FakeBooks implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -131,7 +140,7 @@ class _FakeBooks implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -212,6 +221,7 @@ void main() {
           if (useCaseOverride != null) return useCaseOverride();
           return MergeLibraryUseCase(
             bookRepo: books ?? _FakeBooks([]),
+            periodicalRepo: FakePeriodicals(),
             namespace: ref.read(settingsControllerProvider.notifier),
             jsonParser: const PitakaJsonImporter(),
             replacementGuard: guard ?? FakeReplacementGuard(),
@@ -220,7 +230,9 @@ void main() {
         }),
         // The library controller (invalidated on a successful merge) needs a
         // repo + settings to build.
-        bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+        catalogueItemRepositoryProvider.overrideWith(
+          (ref) async => _FakeBooks([]),
+        ),
         settingsRepositoryProvider.overrideWith((ref) async => repo),
       ],
     );
@@ -368,7 +380,12 @@ void main() {
     test('an overwrite finishes in MergeDone as a REPLACEMENT with the real '
         'count', () async {
       final books = _FakeBooks([
-        const Book(id: 1, bookUid: 'old', title: 'OldBook', addedDate: 1),
+        const CatalogueItem(
+          id: 1,
+          itemUid: 'old',
+          title: 'OldBook',
+          addedDate: 1,
+        ),
       ]);
       final container = makeContainer(books: books);
 
@@ -491,13 +508,16 @@ void main() {
             await gate.future;
             return MergeLibraryUseCase(
               bookRepo: _FakeBooks([]),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
               planner: planMergeInline,
             );
           }),
-          bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBooks([]),
+          ),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _FakeSettings(libraryId: matchingId),
           ),
@@ -540,9 +560,9 @@ void main() {
     );
 
     _FakeBooks localWithGodaan() => _FakeBooks([
-      const Book(
+      const CatalogueItem(
         id: 1,
-        bookUid: 'u1',
+        itemUid: 'u1',
         title: 'Godaan',
         genre: 'Fiction',
         addedDate: 1,
@@ -685,16 +705,16 @@ void main() {
     test('only one resolution runs at a time; a second call on another item '
         'is refused while the first is in flight', () async {
       final books = _FakeBooks([
-        const Book(
+        const CatalogueItem(
           id: 1,
-          bookUid: 'u1',
+          itemUid: 'u1',
           title: 'Godaan',
           genre: 'Fiction',
           addedDate: 1,
         ),
-        const Book(
+        const CatalogueItem(
           id: 2,
-          bookUid: 'u2',
+          itemUid: 'u2',
           title: 'Nirmala',
           genre: 'Fiction',
           addedDate: 1,
@@ -838,6 +858,57 @@ void main() {
       );
     });
 
+    test('a kind-mismatch conflict offers no take-theirs (D6/D8)', () async {
+      // A same-uid row whose KIND differs is a conflict (D6), but taking
+      // theirs would flip the stored row's kind — which D8 forbids. The card
+      // hides the button and the use case refuses the call regardless.
+      final container = makeContainer(
+        books: _FakeBooks([
+          const CatalogueItem(
+            id: 1,
+            itemUid: 'u1',
+            title: 'Chandamama — No 3',
+            addedDate: 1,
+          ),
+        ]),
+      );
+
+      final done = await mergeToDone(
+        container,
+        jsonEncode({
+          'schemaVersion': 4,
+          'libraryId': matchingId,
+          'libraryName': 'Other',
+          'periodicals': [
+            {'periodicalUid': 'p1', 'title': 'Chandamama'},
+          ],
+          'books': [
+            {
+              'bookUid': 'u1',
+              'title': 'Chandamama — No 3',
+              'kind': 'magazine-issue',
+              'issue': {'periodicalUid': 'p1', 'issueNumber': 3},
+            },
+          ],
+          'wishlist': <Object>[],
+        }),
+      );
+
+      final item = done.review.single;
+      expect(item.kind, MergeReviewKind.conflict);
+      expect(item.canTakeTheirs, isFalse);
+
+      await container
+          .read(mergeControllerProvider.notifier)
+          .resolve(0, MergeResolution.takeTheirs);
+      final after = container.read(mergeControllerProvider) as MergeDone;
+      expect(after.review.single.status, isA<ReviewFailed>());
+      expect(
+        (after.review.single.status as ReviewFailed).failure,
+        isA<ValidationFailure>(),
+      );
+    });
+
     test('an in-flight resolution survives the page going away (keep-alive) '
         'and its completion lands in the same MergeDone', () async {
       final books = localWithGodaan();
@@ -849,13 +920,16 @@ void main() {
           mergeLibraryUseCaseProvider.overrideWith(
             (ref) async => MergeLibraryUseCase(
               bookRepo: books,
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
               planner: planMergeInline,
             ),
           ),
-          bookRepositoryProvider.overrideWith((ref) async => _FakeBooks([])),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _FakeBooks([]),
+          ),
           settingsRepositoryProvider.overrideWith(
             (ref) async => _FakeSettings(libraryId: matchingId),
           ),

@@ -7,9 +7,12 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../features/periodicals/application/periodical_fakes.dart';
 
 class _FakeShare implements FileShareService {
   String? sharedText;
@@ -82,6 +85,42 @@ void main() {
     // ADR 0012: the bookmarks destination became the library network.
     expect(find.text('Library network'), findsOneWidget);
     expect(find.text('Bookmarks'), findsNothing);
+  });
+
+  testWidgets('Magazines sits between Wishlist and Library network and opens '
+      'the series list (ADR 0013 U2)', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          publishedSiteUrlProvider.overrideWith((ref) async => null),
+          // The pushed page builds PeriodicalsController: its repository and
+          // the pinned minute tick (the real 60 s timer would never settle).
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => FakePeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(drawer: AppDrawer(), body: SizedBox()),
+        ),
+      ),
+    );
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    final magazinesY = tester.getTopLeft(find.text('Magazines')).dy;
+    expect(tester.getTopLeft(find.text('Wishlist')).dy, lessThan(magazinesY));
+    expect(
+      tester.getTopLeft(find.text('Library network')).dy,
+      greaterThan(magazinesY),
+    );
+
+    await tester.tap(find.text('Magazines'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(PeriodicalsPage), findsOneWidget);
+    expect(find.text('No magazine titles yet'), findsOneWidget);
   });
 
   testWidgets('"Share Library Website" is hidden before the first publish', (

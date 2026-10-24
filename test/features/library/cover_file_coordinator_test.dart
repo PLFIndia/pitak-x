@@ -1,18 +1,18 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
+
+import '../../support/async_value_gate.dart';
 
 void main() {
   test(
     'FIFO releases the next operation even when the current one throws',
     () async {
       final coordinator = CoverFileCoordinator();
-      final release = Completer<void>();
+      final release = AsyncValueGate<void>();
       final events = <String>[];
       final first = coordinator.run<void>(() async {
         events.add('first');
-        await release.future;
+        await release.wait();
         throw StateError('synthetic');
       });
       final failure = expectLater(first, throwsStateError);
@@ -20,7 +20,7 @@ void main() {
       final third = coordinator.run(() async => events.add('third'));
       await Future<void>.delayed(Duration.zero);
       expect(events, ['first']);
-      release.complete();
+      release.succeed(null);
       await failure;
       await second;
       await third;

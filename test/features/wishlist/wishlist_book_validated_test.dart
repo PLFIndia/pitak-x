@@ -96,7 +96,8 @@ void main() {
     });
 
     test('normalises a non-allow-listed remote cover URL to null', () {
-      // Same rationale as Book.validate: never trap a pre-existing row.
+      // Same rationale as CatalogueItem.validate: never trap a pre-existing
+      // row.
       final r = WishlistBook.validate(
         const WishlistBook(title: 'A', coverUrl: 'https://evil.example/c.jpg'),
       );

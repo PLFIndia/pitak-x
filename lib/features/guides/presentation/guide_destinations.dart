@@ -13,6 +13,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
@@ -21,6 +22,10 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 /// destination fails to compile until it is mapped.
 Widget pageForGuideDestination(GuideDestination destination) =>
     switch (destination) {
+      // The catalogue guide ends on the Magazines list: the Library itself is
+      // the screen under the drawer the reader came from, and the magazine
+      // titles page is the one screen the guide introduces.
+      GuideDestination.magazines => const PeriodicalsPage(),
       // `initialTab` defaults to the Connection tab.
       GuideDestination.publishConnection => const PublishPage(),
       GuideDestination.publishBasicInfo => const PublishPage(

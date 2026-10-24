@@ -44,7 +44,7 @@ class PendingPage extends ConsumerWidget {
                   children: [
                     for (final loan in snapshot.overdue)
                       _LoanTile(
-                        bookId: loan.bookId,
+                        bookId: loan.itemId,
                         dueDate: loan.dueDate,
                         emphasize: true,
                       ),
@@ -55,7 +55,7 @@ class PendingPage extends ConsumerWidget {
                   title: 'Due soon',
                   children: [
                     for (final loan in snapshot.dueSoon)
-                      _LoanTile(bookId: loan.bookId, dueDate: loan.dueDate),
+                      _LoanTile(bookId: loan.itemId, dueDate: loan.dueDate),
                   ],
                 ),
               if (snapshot.staleMetadataBooks.isNotEmpty)

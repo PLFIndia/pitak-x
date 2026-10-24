@@ -11,8 +11,10 @@ import '../../../support/a11y.dart';
 void main() {
   /// Pumps [guide] with a recording opener. Phone width (360 dp) so wrapping
   /// is realistic; 3000 dp tall so the lazy ListView builds every child —
-  /// the longest guide (backup) ends ≈ 2760 dp down under the test font —
-  /// and the a11y checks see every node, bottom button included.
+  /// the longest guides (catalogue ≈ 2880 dp, backup ≈ 2800 dp) end inside
+  /// that under the test font — and the a11y checks see every node, bottom
+  /// button included. A guide that outgrows the surface fails the "every
+  /// guide renders" test below: that is the copy-length budget, on purpose.
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
@@ -162,6 +164,13 @@ void main() {
     tester,
   ) async {
     await pumpGuide(tester, guideById(GuideId.publish));
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('meets accessibility guidelines (catalogue, table + bullets)', (
+    tester,
+  ) async {
+    await pumpGuide(tester, guideById(GuideId.catalogue));
     await expectMeetsA11yGuidelines(tester);
   });
 }

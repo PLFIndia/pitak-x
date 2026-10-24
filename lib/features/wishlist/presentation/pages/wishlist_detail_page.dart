@@ -141,7 +141,7 @@ class _WishlistDetailBodyState extends ConsumerState<_WishlistDetailBody> {
   /// True while a purchase is being written. Owned by this State so the two
   /// purchase buttons share one guard (a `ConsumerWidget` has nowhere to keep
   /// it). Pattern borrowed from `_DeleteForeverButtonState` in
-  /// `book_detail_page.dart`.
+  /// `catalogue_item_detail_page.dart`.
   bool _purchasing = false;
 
   WishlistBook get book => widget.book;

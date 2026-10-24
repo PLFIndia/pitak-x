@@ -144,7 +144,7 @@ void main() {
     final db = await restored();
     final b = (await db.select(db.books).get()).single;
     expect(b.id, 42);
-    expect(b.bookUid, 'uid-42');
+    expect(b.itemUid, 'uid-42');
     expect(b.title, 'गोदान');
     expect(b.titleTransliteration, 'Godaan');
     expect(b.author, 'Premchand');

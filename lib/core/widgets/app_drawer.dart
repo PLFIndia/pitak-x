@@ -1,9 +1,9 @@
 /// App navigation drawer (presentation, AGENTS.md §3.1).
 ///
 /// Layout: the library header (logo + name) is pinned at the top, the primary
-/// destinations (Vault, Publish, Wishlist, Library network, Share once a site
-/// exists, How Pitak works) scroll in the middle, and Settings is pinned to
-/// the bottom edge. Data operations (import/export/backup/restore) live under
+/// destinations (Vault, Publish, Wishlist, Magazines, Library network, Share
+/// once a site exists, How Pitak works) scroll in the middle, and Settings is
+/// pinned to the bottom edge. Data operations (import/export/backup/restore) live under
 /// Settings → Data, so the drawer stays a short, stable list of top-level
 /// places. Each tile closes the drawer and pushes the page.
 library;
@@ -14,6 +14,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -86,6 +87,13 @@ class AppDrawer extends ConsumerWidget {
                     leading: const Icon(Icons.bookmark_border),
                     title: const Text('Wishlist'),
                     onTap: () => _go(context, const WishlistPage()),
+                  ),
+                  // Magazines (ADR 0013 U2): the series list. Between the
+                  // catalogue-adjacent destinations and the network.
+                  ListTile(
+                    leading: const Icon(Icons.newspaper_outlined),
+                    title: const Text('Magazines'),
+                    onTap: () => _go(context, const PeriodicalsPage()),
                   ),
                   ListTile(
                     leading: const Icon(Icons.hub_outlined),

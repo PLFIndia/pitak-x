@@ -17,13 +17,18 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -33,6 +38,7 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
+import '../features/periodicals/application/periodical_fakes.dart';
 import '../features/vault/vault_repository_write_stub.dart';
 import 'golden_names.dart';
 
@@ -52,8 +58,22 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const books = [
-    Book(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
-    Book(id: 2, title: 'Dune', author: 'Herbert'),
+    CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
+    // ADR 0013 U1: the row badges — an issue ("Issue") and an other item
+    // ("Other"). A plain book carries no badge, so without these rows the
+    // library goldens would never pin the badge rendering S14 added.
+    CatalogueItem(
+      id: 3,
+      title: 'Frontline — Vol 42 No 12 (Sep 2026)',
+      publisher: 'Kasturi & Sons',
+      details: IssueOf(
+        periodicalUid: 'uid-frontline',
+        volume: 42,
+        issueNumber: 12,
+      ),
+    ),
+    CatalogueItem(id: 4, title: 'Catan', details: OtherItemOf()),
   ];
 
   /// Phone profile (≈ Pixel-class, 412×915 dp at 2.625×). Android is the
@@ -74,12 +94,21 @@ void main() {
     home: home,
   );
 
-  Widget libraryApp(List<Book> list, {bool dark = false}) => ProviderScope(
-    overrides: [
-      bookRepositoryProvider.overrideWith((ref) async => _GoldenBookRepo(list)),
-    ],
-    child: themedApp(const LibraryPage(), dark: dark),
-  );
+  Widget libraryApp(List<CatalogueItem> list, {bool dark = false}) =>
+      ProviderScope(
+        overrides: [
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _GoldenBookRepo(list),
+          ),
+          // S14: the rows watch the series-cover map (W4) — empty store, and
+          // pin nowTick (PeriodicalsController arms the real 60 s timer).
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+        child: themedApp(const LibraryPage(), dark: dark),
+      );
 
   Future<void> expectGolden(
     WidgetTester tester,
@@ -233,6 +262,77 @@ void main() {
     });
   });
 
+  /// The Magazines list in every badge state (ADR 0013 D5): subscribed,
+  /// expiring soon, lapsed, untracked (no badge) and a removed title, plus
+  /// the "N issues · latest YYYY-MM" summary and a publisher line. The
+  /// badges and their exact words are what a regression would break. (S17
+  /// deferred this golden so that test, name and Linux PNG land together.)
+  group('magazine title rows', () {
+    testWidgets('badge states', (tester) async {
+      // Fixed "now" for the derived statuses (D5): subscribed = +60 days,
+      // expiring soon = +10 days, lapsed = −1 day — the periodicals page
+      // test's numbers, so the two suites agree on what each badge means.
+      final t0 = DateTime(2026, 10, 23, 12).millisecondsSinceEpoch;
+      final today = CalendarDate.fromPickerDate(DateTime(2026, 10, 23, 12));
+      int dayFromToday(int offset) => today.addDays(offset).epochMillis;
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(title: 'Chandamama', publisher: 'Chandamama India'),
+        ) // untracked: no badge, publisher line
+        ..seed(Periodical(title: 'Outlook', subscriptionEnd: dayFromToday(10)))
+        ..seed(
+          Periodical(title: 'Sportstar', subscriptionEnd: dayFromToday(-1)),
+        )
+        ..seed(const Periodical(title: 'Old Weekly', removed: true));
+      final frontline = periodicals.seed(
+        Periodical(title: 'Frontline', subscriptionEnd: dayFromToday(60)),
+      );
+      // Two issues for Frontline, the newest dated 2026-09 → the summary
+      // line reads "2 issues · latest 2026-09".
+      final uid = frontline.periodicalUid!;
+      periodicals.issues[uid] = [
+        CatalogueItem(
+          id: 1,
+          title: 'Frontline — No 1',
+          details: IssueOf(
+            periodicalUid: uid,
+            issueDate: DateTime.utc(2026, 8).millisecondsSinceEpoch,
+          ),
+        ),
+        CatalogueItem(
+          id: 2,
+          title: 'Frontline — No 2',
+          details: IssueOf(
+            periodicalUid: uid,
+            issueDate: DateTime.utc(2026, 9).millisecondsSinceEpoch,
+          ),
+        ),
+      ];
+      await expectGolden(
+        tester,
+        ProviderScope(
+          overrides: [
+            periodicalRepositoryProvider.overrideWith(
+              (ref) async => periodicals,
+            ),
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => FakeItems(),
+            ),
+            settingsRepositoryProvider.overrideWith(
+              (ref) async => FakeSettings(),
+            ),
+            clockProvider.overrideWithValue(() => t0),
+            // The controller's build arms the real 60 s timer — pin it so
+            // pumpAndSettle can settle (the S14 override pair).
+            nowTickProvider.overrideWith((ref) => 0),
+          ],
+          child: themedApp(const PeriodicalsPage()),
+        ),
+        'periodicals_badge_states',
+      );
+    });
+  });
+
   group('restore page', () {
     late Directory tmp;
     late GenerationFixture gen;
@@ -267,15 +367,30 @@ void main() {
   });
 }
 
-/// In-memory book repo returning a fixed list (enough for a rendered frame).
-class _GoldenBookRepo implements BookRepository {
-  _GoldenBookRepo(this._all);
-  final List<Book> _all;
+/// In-memory series store: no series — the row cover-fallback map (S14) only
+/// needs `listAll` to answer.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
+/// In-memory book repo returning a fixed list (enough for a rendered frame).
+class _GoldenBookRepo implements CatalogueItemRepository {
+  _GoldenBookRepo(this._all);
+  final List<CatalogueItem> _all;
+
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -283,23 +398,28 @@ class _GoldenBookRepo implements BookRepository {
     final end = (offset + limit).clamp(0, _all.length);
     final start = offset.clamp(0, end);
     return right(
-      BookPage(items: _all.sublist(start, end), hasMore: end < _all.length),
+      CatalogueItemPage(
+        items: _all.sublist(start, end),
+        hasMore: end < _all.length,
+      ),
     );
   }
 
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(_all.where((b) => b.id == id).firstOrNull);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -309,18 +429,20 @@ class _GoldenBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 

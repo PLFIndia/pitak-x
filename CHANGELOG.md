@@ -14,6 +14,131 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+_Branch `magazines` — ADR 0013/0014, planned as sessions S0–S22 in
+`docs/plans/magazines.md` and logged in `docs/plans/magazines-progress.md`.
+Reconciled against what shipped (S22). Before tagging: regenerate the
+Linux-pinned golden PNGs on CI (`update-goldens`) — the Library screen
+golden changed in S14 and the series-row golden is still to be added — and
+run both on-device smoke journeys (`integration_test/`)._
+
+### Added
+- **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —
+  `book`, `magazine-issue` or `other` — defined by the app, never by users.
+  One base row per physical thing, one lendable unit (the vault is
+  untouched — F2), one list, one search index for every kind; kind-specific
+  data lives in a per-kind detail table. Domain: `ItemKind`, sealed
+  `ItemDetails` (`IssueOf`, `OtherItemOf`), `CatalogueItem.details`/`kind`
+  (kind is derived, so the two cannot disagree); the kind cannot change
+  after creation (`UpdateIssueUseCase`, D8).
+- **Magazines** (`features/periodicals/`): magazine titles (`Periodical`:
+  ISSN with mod-11 check digit, frequency, optional subscription window with
+  a derived status — untracked / active / expiring within 30 days / lapsed,
+  re-stamped once a minute while a list is open), issues as base rows with a
+  `magazine_issues` detail row, grouped under their title and lent
+  individually; bound volumes as one row with a date range (D4). Title,
+  transliteration, publisher, language, year and age group of an issue are
+  PROJECTED from the series (`IssueProjection`); editing the series
+  re-projects every issue in one transaction. Issue identity for dedup and
+  merge: uid → numbered key / bound key → fuzzy title (D6; two partial
+  unique indexes). Hard-deleting a title with issues fails closed
+  (`PeriodicalHasIssuesFailure`).
+- Screens: a **Magazines** page from the drawer (issue count, latest issue,
+  subscription badge), a series detail page (subscription card, paged
+  issues newest-first, "Add issue", hard delete), the magazine-title form
+  and the add-issue form (series picker, bound-volume switch, cadence
+  prefill from the latest issue, live title preview), an issue block on the
+  item detail page with "Open series". A magazine barcode (`977…`, D11)
+  routes to the add-issue form — or to the title form with the ISSN filled
+  in — via `RouteScannedBarcodeUseCase` (sealed `ScanRoute`).
+- **Others:** a built-in catch-all kind (a DVD, a board game, a map) with a
+  Description field — the existing notes column, which is now searchable
+  (FTS gains `notes`, D10). No kind-specific fields or table (O1); saved
+  through the generic catalogue use cases (O3).
+- Library screen: kind chips (Books · Magazines · Others; tap again clears),
+  a "+" sheet with one entry per kind, row and grid-card badges for issues,
+  bound volumes and others; issues without a cover show the series cover
+  (W4; the cover janitor counts series covers as live references).
+- **Merge** understands v4 files: periodicals are merged first (uid → ISSN →
+  exact title, add-only; a series kept locally is reported, not resolved),
+  incoming issues are re-anchored to the winning series, issue identity (D6)
+  drives matching, and merged series' issues are re-projected after the
+  apply. Take-theirs is refused across kinds (D8); keep-both keeps the
+  row's kind; overwrite replaces series too.
+- **Guides:** a sixth "How Pitak works" guide, *Books, magazines and other
+  items*, first in the index, ending on the Magazines screen.
+- `integration_test/catalogue_kinds_smoke_test.dart` (magazine title →
+  issue → other item → lend the issue → backup → restore) beside the vault
+  smoke, over shared `integration_test/smoke_support.dart`.
+- `docs/adr/0013-catalogue-item-kinds.md`,
+  `docs/adr/0014-catalogue-interchange-and-backup.md`; ARCHITECTURE §3,
+  §5.4, §5.5, §5.7 and §6 describe the kinds, the v5 schema and the three
+  formats.
+
+### Changed
+- **Schema v5** (`lib/core/database/app_database.dart`): `books.kind`
+  (default `'book'`), new `magazine_issues` (FK cascade to `books`;
+  `PRAGMA foreign_keys = ON` — the first real FK in the schema) and
+  `periodicals` tables; raw-SQL partial UNIQUE indexes for the issue keys;
+  the FTS index is dropped on upgrade and rebuilt once in `beforeOpen` with
+  `notes` added to its columns (timed: 5 000 rows well under a second).
+- **Pitaka-JSON schema 3 → 4** (W1): per-row `kind` + nested `issue{}`,
+  top-level `periodicals[]` (omitted when empty). Older builds refuse a v4
+  file ("update the app"); v3 files still import. Unknown kinds are skipped
+  and counted; an issue whose series is not in the file imports as a book
+  with a warning; same-uid series update in place, same-ISSN series skip.
+  Export and import require the periodical repository — a read failure
+  fails the export (no partial file).
+- **`books.json`** (publish, W3) stays schema 1 and gains additive `kind` /
+  `issue{}` per entry and `periodicals[]` with public fields only (the
+  subscription window, notes, location and source never leave the device);
+  the bundled viewer (v7) gets a kind facet and groups issues under their
+  title. Series covers upload once under `periodical:<uid>`-keyed paths; a
+  publish is refused when the periodicals cannot be read (no partial site).
+- **`.pitabak`** (W2): `books.db` keeps its Room shape and holds every kind;
+  two new plain entries, `item_kinds.json` (`hasItemKinds`) and
+  `periodicals.json` (`hasPeriodicals`), announced by manifest flags that
+  default to false. Flag-less archives restore exactly as before for books,
+  wishlist, covers, identity and network — and the restore now also clears
+  the kind tables, so a flag-less archive honestly restores plain books.
+  `RestoreSummary` reports kinds applied, periodicals restored, issues
+  linked / detached, rows skipped for an unknown kind, periodicals dropped,
+  and unreadable kind entries. A backup fails when the periodicals cannot
+  be read (no partial snapshot).
+- CSV export gains `Kind`, `Series`, `Volume`, `Issue`, `Issue date`,
+  `Bound until`, `Issue label` columns after the classic ones.
+- `CatalogueItem.validate` and `Periodical.validate` are the two ingress
+  gates; `test/architecture/catalogue_item_validation_gate_test.dart` scans
+  every construction site of both (AGENTS §3.3).
+- **Rename (no behaviour change):** `Book` → `CatalogueItem`, `bookUid` →
+  `itemUid`, `BookSourceType` → `ItemSourceType`, `BookSort` → `LibrarySort`,
+  `BookRepository` → `CatalogueItemRepository` (+ Drift impl, mapper, use
+  cases, providers), `BookPage`/`BookSorter`/`BookRow` widget/`BookGridCard`/
+  `BookCover`/`BookDetailPage` → `CatalogueItem…` / `ItemCover`,
+  `LendDecision.forBook` → `forItem`, `Loan.bookId` → `itemId`,
+  `PublishBook` → `PublishItem`, `ImportPayload.books` → `items`. Every
+  persisted and wire name (`books`, `book_uid`, `bookUid`, `book_id`,
+  `books.db`, `books.json`) is unchanged.
+- File-size ratchet: `drift_catalogue_item_repository.dart`,
+  `catalogue_item_detail_page.dart`, `library_merge_engine.dart`,
+  `merge_page.dart` and `restore_backup.dart` were split under the 500-line
+  cap and left the allow-list (`layer_boundaries_test.dart`).
+
+### Fixed
+- `integration_test/vault_smoke_test.dart` could not pass as written: it
+  looked for a `Title` field and a `Save` button the book form does not have
+  (`Title *` / `Add book`), and opened the drawer from the item detail page,
+  which has none. Rewritten over the shared helpers, which also scroll to
+  below-the-fold buttons (a form's lazy list does not build them) and
+  tolerate a vault created by a sibling smoke file in the same run.
+
+### Removed
+- `FindByIsbnUseCase`, `findByIsbnUseCaseProvider` and the library page's
+  `routeScannedIsbn` — superseded by `RouteScannedBarcodeUseCase`.
+
+## [1.5.2] - 2026-10 (tag `1.5.2`, versionCode 28)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `How Pitak works`.
+
 ### Added
 - **How Pitak works** — five short in-app guides (publish, map,
   backup/restore/export/import, vault & lending, hubs & members) from the

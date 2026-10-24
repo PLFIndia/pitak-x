@@ -209,7 +209,26 @@ class _Summary extends StatelessWidget {
         if (summary.format != null) Text('Format: $formatName'),
         Text('Books added: ${summary.booksAdded}'),
         Text('Books updated (same identity): ${summary.booksUpdated}'),
-        Text('Books skipped (same ISBN): ${summary.booksSkipped}'),
+        Text(
+          'Books skipped (same ISBN or issue identity): '
+          '${summary.booksSkipped}',
+        ),
+        // W1: only a schema-v4 file can carry periodicals — show the counts
+        // only when one did, so a v3/CSV summary reads exactly as before.
+        if (summary.periodicalsAdded +
+                summary.periodicalsUpdated +
+                summary.periodicalsSkipped >
+            0) ...[
+          Text('Magazine titles added: ${summary.periodicalsAdded}'),
+          Text(
+            'Magazine titles updated (same identity): '
+            '${summary.periodicalsUpdated}',
+          ),
+          Text(
+            'Magazine titles skipped (same ISSN or duplicate key): '
+            '${summary.periodicalsSkipped}',
+          ),
+        ],
         Text('Wishlist added: ${summary.wishlistAdded}'),
         Text('Wishlist replaced: ${summary.wishlistReplaced}'),
         if (summary.parseErrors.isNotEmpty) ...[

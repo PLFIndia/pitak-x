@@ -58,6 +58,63 @@ final class DuplicateIsbnFailure extends Failure {
   final bool existingIsRemoved;
 }
 
+/// A periodical with the same ISSN is ALREADY catalogued (ADR 0013 D7).
+///
+/// Same shape and rationale as [DuplicateIsbnFailure]: `periodicals.issn` is
+/// UNIQUE among non-null values, so the form can say which magazine title
+/// already carries the ISSN instead of a generic "could not save".
+final class DuplicateIssnFailure extends Failure {
+  /// Creates a duplicate-ISSN failure naming the existing periodical when
+  /// known (the race-path mapping in the repository is best-effort).
+  const DuplicateIssnFailure({this.existingTitle, this.existingPeriodicalId});
+
+  /// Title of the periodical that already has this ISSN, when known.
+  final String? existingTitle;
+
+  /// Id of the periodical that already has this ISSN, when known.
+  final int? existingPeriodicalId;
+}
+
+/// A magazine issue with the same identity key is ALREADY catalogued under
+/// the same periodical (ADR 0013 D6): the same (volume, issue number) for a
+/// numbered issue, or the same (first date, last date) for a bound volume.
+/// The two partial UNIQUE indexes on `magazine_issues` enforce this; the
+/// repository maps their violation here.
+final class DuplicateIssueFailure extends Failure {
+  /// Creates a duplicate-issue failure naming the existing row when known.
+  const DuplicateIssueFailure({this.existingTitle, this.existingItemId});
+
+  /// Projected title of the issue that already holds this key, when known.
+  final String? existingTitle;
+
+  /// Id of the catalogue row that already holds this key, when known.
+  final int? existingItemId;
+}
+
+/// A periodical cannot be hard-deleted while issues still reference it
+/// (ADR 0013 D8, fail closed). The caller offers soft-remove instead, or
+/// deletes the issues first.
+final class PeriodicalHasIssuesFailure extends Failure {
+  /// Creates the failure with the number of issues still linked.
+  const PeriodicalHasIssuesFailure(this.issueCount);
+
+  /// How many issues reference the periodical.
+  final int issueCount;
+}
+
+/// A catalogue row carries a `kind` token this build does not understand
+/// (written by a newer version). Reads map such a row to a plain book so the
+/// list stays usable; a WRITE to it is refused with this failure so the app
+/// never silently rewrites a kind it cannot interpret (ADR 0013 F6).
+final class UnsupportedItemKindFailure extends Failure {
+  /// Creates the failure for the stored [kindToken].
+  const UnsupportedItemKindFailure(this.kindToken);
+
+  /// The unknown token as stored (safe to show: it is a short enum-like
+  /// string, never free text from the user).
+  final String kindToken;
+}
+
 /// The supplied backup passphrase did not unwrap the vault blob.
 ///
 /// Mirrors Kotlin `BackupRestore.Result.WrongPassphrase` — kept distinct from
@@ -88,6 +145,24 @@ final class SchemaTooNewFailure extends Failure {
 
   /// The archive's declared schema version, newer than this build supports.
   final int schemaVersion;
+}
+
+/// The catalogue is too large for the `.pitabak` format the app also READS
+/// (magazine remediation S5, finding L5).
+///
+/// Why this exists (beginner note): the restore reader bounds each JSON entry
+/// (4 MiB) and each collection (row cap). A writer that ignored those bounds
+/// would happily produce an archive that its own reader then downgrades —
+/// every `other` row back to a book, every issue link detached — i.e. a backup
+/// that looks fine and silently loses data on restore. This failure is
+/// returned INSTEAD of such an archive, before anything is written out.
+final class BackupTooLargeFailure extends Failure {
+  /// Creates a too-large failure. [detail] is a short diagnostic, never shown
+  /// verbatim (the UI maps this type to one plain sentence).
+  const BackupTooLargeFailure([this.detail = '']);
+
+  /// Short diagnostic for logs/tests.
+  final String detail;
 }
 
 /// A cryptographic operation failed (KDF, AEAD, or SQLCipher open).

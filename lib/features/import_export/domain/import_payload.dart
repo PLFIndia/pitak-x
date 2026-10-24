@@ -6,21 +6,33 @@
 /// ingested (Kotlin D26: no terminal dead-ends).
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
-/// Parsed, not-yet-persisted books + wishlist entries from an import file.
+/// Parsed, not-yet-persisted catalogue items + wishlist entries from an
+/// import file.
 class ImportPayload {
   /// Creates an import payload.
   const ImportPayload({
-    this.books = const [],
+    this.items = const [],
+    this.periodicals = const [],
     this.wishlist = const [],
     this.parseErrors = const [],
+    this.fatalErrors = const [],
     this.warnings = const [],
   });
 
-  /// Books to import (ids not yet assigned).
-  final List<Book> books;
+  /// Catalogue items to import (ids not yet assigned). The Pitaka-JSON key
+  /// that feeds this list stays `books` (wire contract, ADR 0014). An item
+  /// may carry `details` (an issue's `IssueOf`, an other's `OtherItemOf`
+  /// marker) — kinds ride the same list (F5).
+  final List<CatalogueItem> items;
+
+  /// Magazine titles to import (ids not yet assigned; ADR 0014 W1). A v4
+  /// document carries them top-level as `periodicals[]`; they are applied
+  /// BEFORE [items] so issues meet their series already in place.
+  final List<Periodical> periodicals;
 
   /// Wishlist entries to import (ids not yet assigned).
   final List<WishlistBook> wishlist;
@@ -28,6 +40,15 @@ class ImportPayload {
   /// Per-row / file-level parse errors, safe to surface to the user. A row
   /// named here was SKIPPED (M15: invalid values are rejected, not coerced).
   final List<String> parseErrors;
+
+  /// File-level validation failures that make a partial import ambiguous.
+  ///
+  /// Unlike [parseErrors], these are not recoverable row skips. The import use
+  /// case must return a typed failure before writing anything. Raw periodical
+  /// UID spellings are checked by the parser because its normalised rows alone
+  /// cannot distinguish an exact duplicate from two identities that collide
+  /// only after trimming.
+  final List<String> fatalErrors;
 
   /// Non-fatal adjustments applied to KEPT rows (M15, D2 = truncate + report):
   /// an over-long text field was shortened, or a disallowed cover link was
@@ -37,7 +58,7 @@ class ImportPayload {
   final List<String> warnings;
 
   /// True when nothing parseable was found.
-  bool get isEmpty => books.isEmpty && wishlist.isEmpty;
+  bool get isEmpty => items.isEmpty && periodicals.isEmpty && wishlist.isEmpty;
 }
 
 /// Common interface for every import-file reader (Kotlin `Importer`).

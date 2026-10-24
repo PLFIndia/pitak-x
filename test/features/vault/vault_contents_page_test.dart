@@ -11,8 +11,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_contents_page.dart';
@@ -21,7 +21,7 @@ import '../../support/a11y.dart';
 
 /// Minimal book repo serving titles for the read model (same fake shape as
 /// the N06 borrower-profile tests).
-class _TitleBooks implements BookRepository {
+class _TitleBooks implements CatalogueItemRepository {
   _TitleBooks(this.byId, {this.failure});
 
   final Map<int, String> byId;
@@ -30,10 +30,12 @@ class _TitleBooks implements BookRepository {
   final Failure? failure;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async {
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
     final f = failure;
     if (f != null) return left(f);
-    return right(byId.containsKey(id) ? Book(id: id, title: byId[id]!) : null);
+    return right(
+      byId.containsKey(id) ? CatalogueItem(id: id, title: byId[id]!) : null,
+    );
   }
 
   @override
@@ -43,15 +45,18 @@ class _TitleBooks implements BookRepository {
 
 void main() {
   const borrower = Borrower(id: 1, name: 'Asha');
-  const loan = Loan(id: 10, bookId: 7, borrowerId: 1, lentDate: 1000);
+  const loan = Loan(id: 10, itemId: 7, borrowerId: 1, lentDate: 1000);
   const data = VaultData(borrowers: [borrower], loans: [loan]);
 
   /// Pumps the contents page with [books] behind the read model.
-  Future<void> pumpPage(WidgetTester tester, BookRepository books) async {
+  Future<void> pumpPage(
+    WidgetTester tester,
+    CatalogueItemRepository books,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => books),
+          catalogueItemRepositoryProvider.overrideWith((ref) async => books),
           // The real tick self-reschedules a 60 s timer; stub it out so no
           // timer outlives the widget tree (same note as the N06 tests).
           nowTickProvider.overrideWith((ref) => 0),
@@ -100,7 +105,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _TitleBooks(const {7: 'Godaan'}),
           ),
           nowTickProvider.overrideWith((ref) => 0),

@@ -34,8 +34,8 @@ void main() {
         }),
       );
       final bundle = result.toNullable()!;
-      expect(bundle.payload.books.single.title, 'गोदान');
-      expect(bundle.payload.books.single.coverUrl, 'covers/uuid-1.jpg');
+      expect(bundle.payload.items.single.title, 'गोदान');
+      expect(bundle.payload.items.single.coverUrl, 'covers/uuid-1.jpg');
       expect(bundle.covers['uuid-1.jpg'], [9, 9, 9]);
     },
   );
@@ -60,6 +60,47 @@ void main() {
       expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
     });
   }
+
+  // S5 (H4): `periodicals` is a third valid top-level collection.
+  test('accepts a periodicals-only v4 bundle', () async {
+    final result = await reader.read(
+      _zip({
+        'library.json': utf8.encode(
+          '{"schemaVersion":4,"periodicals":['
+          '{"periodicalUid":"p1","title":"Frontline"}]}',
+        ),
+      }),
+    );
+    final bundle = result.toNullable()!;
+    expect(bundle.payload.periodicals.single.title, 'Frontline');
+    expect(bundle.payload.items, isEmpty);
+  });
+
+  for (final json in [
+    '{"books":[],"periodicals":"bad"}',
+    '{"books":[],"periodicals":null}',
+    '{"books":[],"periodicals":[7]}',
+    '{"periodicals":{}}',
+  ]) {
+    test('refuses a malformed periodicals collection: $json', () async {
+      final result = await reader.read(
+        _zip({'library.json': utf8.encode(json)}),
+      );
+      expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
+    });
+  }
+
+  test('keeps a v3 file without periodicals working unchanged', () async {
+    final result = await reader.read(
+      _zip({
+        'library.json': utf8.encode(
+          '{"schemaVersion":3,"books":[{"title":"A"}]}',
+        ),
+      }),
+    );
+    expect(result.toNullable()!.payload.periodicals, isEmpty);
+    expect(result.toNullable()!.payload.items.single.title, 'A');
+  });
 
   test('rejects unreferenced image entries', () async {
     final result = await reader.read(

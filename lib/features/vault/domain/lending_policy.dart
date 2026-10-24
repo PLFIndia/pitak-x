@@ -8,7 +8,7 @@
 /// use case applies and the UI renders. Pure and side-effect-free.
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
@@ -18,7 +18,7 @@ sealed class LendDecision {
 
   /// Decides for [book] given the vault's current [loans] (any book's loans
   /// may be passed; others are ignored).
-  factory LendDecision.forBook(Book book, Iterable<Loan> loans) {
+  factory LendDecision.forItem(CatalogueItem book, Iterable<Loan> loans) {
     if (book.removed) return const LendRefusedRemoved();
     final counts = activeLoanCountsByBook(loans);
     final out = counts[book.id] ?? 0;

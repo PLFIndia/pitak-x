@@ -1,0 +1,40 @@
+/// Update an existing library book (application layer, AGENTS.md §3/§4).
+///
+/// Mirrors Kotlin `UpdateBookUseCase`: title-required, the row must already
+/// exist (else [NotFoundFailure]), and the id is immutable (the repository
+/// matches on it). `addedDate` is intentionally user-editable (Kotlin D30, as
+/// amended) — the form may back-date a book — so it is NOT forced here.
+///
+/// The ISBN-change confirmation dialog (Kotlin D30) is a UI concern and is not
+/// part of this use case.
+library;
+
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+
+/// Validates and updates an existing [CatalogueItem].
+class UpdateCatalogueItemUseCase {
+  /// Creates the use case over [_repository].
+  const UpdateCatalogueItemUseCase(this._repository);
+
+  final CatalogueItemRepository _repository;
+
+  /// Updates [book] after validating it against the shared catalogue rules
+  /// (M15: `CatalogueItem.validate` is the single gate) and checking the id is
+  /// set. Returns the updated book or a typed [Failure].
+  Future<Either<Failure, CatalogueItem>> call(CatalogueItem book) {
+    return CatalogueItem.validate(book).match(
+      (errors) {
+        return Future.value(left(ValidationFailure(errors.first.userMessage)));
+      },
+      (valid) {
+        if (valid.id == CatalogueItem.emptyId) {
+          return Future.value(left(const NotFoundFailure()));
+        }
+        return _repository.update(valid);
+      },
+    );
+  }
+}

@@ -206,7 +206,9 @@ final class FfiVaultRepository implements VaultRepository {
       loans.add(
         Loan(
           id: l.id,
-          bookId: l.bookId,
+          // Vault column stays `book_id` (F2: a new kind never touches the
+          // vault); the FRB field is `bookId`, the domain field `itemId`.
+          itemId: l.bookId,
           borrowerId: l.borrowerId,
           lentDate: lentDate,
           dueDate: l.dueDate,
@@ -377,7 +379,7 @@ final class FfiVaultRepository implements VaultRepository {
         passphraseUtf8: bytes,
         blob: blob,
         dbPath: dbPath,
-        bookId: loan.bookId,
+        bookId: loan.itemId, // vault column stays `book_id`, F2
         borrowerId: loan.borrowerId,
         lentDate: loan.lentDate,
         dueDate: loan.dueDate,
@@ -400,7 +402,7 @@ final class FfiVaultRepository implements VaultRepository {
         blob: blob,
         dbPath: dbPath,
         id: loan.id,
-        bookId: loan.bookId,
+        bookId: loan.itemId, // vault column stays `book_id`, F2
         borrowerId: loan.borrowerId,
         lentDate: loan.lentDate,
         dueDate: loan.dueDate,

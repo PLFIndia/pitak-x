@@ -47,11 +47,14 @@ Future<BundleCoverFiles> bundleCoverFiles(BundleCoverFilesRef ref) async =>
 Future<ImportLibraryUseCase> importLibraryUseCase(
   ImportLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return ImportLibraryUseCase(
     bookRepo: bookRepo,
     wishlistRepo: wishlistRepo,
+    // ADR 0014 W1: schema v4 payloads carry periodicals.
+    periodicalRepo: periodicalRepo,
     // N14: the concrete JSON codec is infrastructure, wired here at the
     // composition root.
     jsonParser: const PitakaJsonImporter(),
@@ -73,11 +76,14 @@ Future<Future<Uint8List?> Function(String)> exportLogoReader(
 Future<ExportLibraryUseCase> exportLibraryUseCase(
   ExportLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
   final wishlistRepo = await ref.watch(wishlistRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return ExportLibraryUseCase(
     bookRepo: bookRepo,
     wishlistRepo: wishlistRepo,
+    // ADR 0014 W1: JSON writes periodicals top-level; CSV resolves series.
+    periodicalRepo: periodicalRepo,
     jsonEncoder: const PitakaJsonExporter(),
     pdfRenderer: const PdfLibraryRenderer(),
   );
@@ -117,9 +123,11 @@ PdfTextRasterizer pdfTextRasterizer(PdfTextRasterizerRef ref) =>
 Future<MergeLibraryUseCase> mergeLibraryUseCase(
   MergeLibraryUseCaseRef ref,
 ) async {
-  final bookRepo = await ref.watch(bookRepositoryProvider.future);
+  final bookRepo = await ref.watch(catalogueItemRepositoryProvider.future);
+  final periodicalRepo = await ref.watch(periodicalRepositoryProvider.future);
   return MergeLibraryUseCase(
     bookRepo: bookRepo,
+    periodicalRepo: periodicalRepo,
     namespace: ref.read(settingsControllerProvider.notifier),
     jsonParser: const PitakaJsonImporter(),
     replacementGuard: ref.read(vaultSessionControllerProvider.notifier),

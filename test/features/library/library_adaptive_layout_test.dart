@@ -4,32 +4,49 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+
+/// Empty series store: the row/card cover-fallback map
+/// (`periodicalCoversProvider`, S14) reads `listAll`; no series seeded here.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
 
 /// Minimal in-memory repo returning a fixed list (mirrors library_page_test).
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -38,20 +55,24 @@ class _FakeBookRepo implements BookRepository {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -61,25 +82,31 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
 Widget _app() => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith(
+    catalogueItemRepositoryProvider.overrideWith(
       (ref) async => _FakeBookRepo(const [
-        Book(title: 'The Hobbit', author: 'Tolkien'),
-        Book(title: 'Dune', author: 'Herbert'),
+        CatalogueItem(title: 'The Hobbit', author: 'Tolkien'),
+        CatalogueItem(title: 'Dune', author: 'Herbert'),
       ]),
     ),
+    periodicalRepositoryProvider.overrideWith((ref) async => _NoPeriodicals()),
+    // S14: the cover map watches PeriodicalsController → the real 60 s
+    // nowTick timer; pinned so the tests settle.
+    nowTickProvider.overrideWith((ref) => 0),
   ],
   child: const MaterialApp(home: LibraryPage()),
 );
@@ -89,22 +116,23 @@ void main() {
     // Reset any forced surface size between tests.
   });
 
-  testWidgets('narrow window renders the single-column list (BookRow)', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(400, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'narrow window renders the single-column list (CatalogueItemRow)',
+    (tester) async {
+      tester.view.physicalSize = const Size(400, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_app());
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(_app());
+      await tester.pumpAndSettle();
 
-    expect(find.byType(BookRow), findsWidgets);
-    expect(find.byType(BookGridCard), findsNothing);
-  });
+      expect(find.byType(CatalogueItemRow), findsWidgets);
+      expect(find.byType(CatalogueItemGridCard), findsNothing);
+    },
+  );
 
-  testWidgets('wide window renders the cover grid (BookGridCard)', (
+  testWidgets('wide window renders the cover grid (CatalogueItemGridCard)', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1000, 800);
@@ -115,7 +143,7 @@ void main() {
     await tester.pumpWidget(_app());
     await tester.pumpAndSettle();
 
-    expect(find.byType(BookGridCard), findsWidgets);
-    expect(find.byType(BookRow), findsNothing);
+    expect(find.byType(CatalogueItemGridCard), findsWidgets);
+    expect(find.byType(CatalogueItemRow), findsNothing);
   });
 }

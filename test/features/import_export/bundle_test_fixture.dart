@@ -12,8 +12,10 @@ import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/file_bundle_cover_store.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
+import 'package:pitaka/features/periodicals/infrastructure/drift_periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 import 'package:pitaka/features/wishlist/infrastructure/drift_wishlist_repository.dart';
 
@@ -22,8 +24,9 @@ final class BundleTestFixture {
   final directory = Directory.systemTemp.createTempSync('bundle_transaction');
   final database = AppDatabase(NativeDatabase.memory());
   final coordinator = CoverFileCoordinator();
-  late final books = DriftBookRepository(database);
+  late final books = DriftCatalogueItemRepository(database);
   late final wishlist = DriftWishlistRepository(database);
+  late final periodicals = DriftPeriodicalRepository(database);
   late final files = FileBundleCoverStore(coversDir: directory.path);
 
   File cover(String reference) =>
@@ -34,8 +37,9 @@ final class BundleTestFixture {
     ImportPayload payload, {
     Map<String, Uint8List> images = const {},
     BundleCoverFiles? coverFiles,
-    BookRepository? bookRepository,
+    CatalogueItemRepository? catalogueItemRepository,
     WishlistRepository? wishlistRepository,
+    PeriodicalRepository? periodicalRepository,
   }) async {
     final validated = ImportBundle.validate(payload, images);
     return validated.match(
@@ -43,8 +47,9 @@ final class BundleTestFixture {
       (bundle) =>
           ImportLibraryUseCase(
             jsonParser: const PitakaJsonImporter(),
-            bookRepo: bookRepository ?? books,
+            bookRepo: catalogueItemRepository ?? books,
             wishlistRepo: wishlistRepository ?? wishlist,
+            periodicalRepo: periodicalRepository ?? periodicals,
           ).importBundle(
             bundle,
             coverFiles: coverFiles ?? files,

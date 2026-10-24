@@ -80,6 +80,7 @@ class _GuideCard extends StatelessWidget {
   /// Icons are Flutter, so they live here (presentation), keyed by the pure
   /// [GuideId] — never stored in the domain model.
   static IconData _iconFor(GuideId id) => switch (id) {
+    GuideId.catalogue => Icons.library_books_outlined,
     GuideId.publish => Icons.cloud_upload_outlined,
     GuideId.map => Icons.place_outlined,
     GuideId.backup => Icons.save_outlined,

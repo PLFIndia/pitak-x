@@ -23,7 +23,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/application/delete_book_use_case.dart';
+import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/application/serial_op_queue.dart';
@@ -542,15 +542,15 @@ class VaultSessionController extends _$VaultSessionController
   Future<Either<Failure, Unit>> addLoan(Loan loan) =>
       _mutate((p, store, blob) async {
         final generation = _keeper.generation;
-        final books = await ref.read(bookRepositoryProvider.future);
+        final books = await ref.read(catalogueItemRepositoryProvider.future);
         if (!_keeper.isCurrent(generation)) return left(_cancelled);
-        final found = await books.getById(loan.bookId);
+        final found = await books.getById(loan.itemId);
         if (!_keeper.isCurrent(generation)) return left(_cancelled);
         if (found.isLeft()) return found.map((_) => unit);
         final book = found.toNullable();
         if (book == null) return left(const NotFoundFailure());
         if (loan.returnedDate == null) {
-          final decision = LendDecision.forBook(book, currentLoans ?? const []);
+          final decision = LendDecision.forItem(book, currentLoans ?? const []);
           if (decision is! LendAllowed) {
             return left(ValidationFailure(decision.reason!));
           }
@@ -594,7 +594,7 @@ class VaultSessionController extends _$VaultSessionController
   bool hasLoansForBook(int bookId) {
     final current = state.valueOrNull;
     if (current is! VaultUnlocked) return false;
-    return current.data.loans.any((l) => l.bookId == bookId);
+    return current.data.loans.any((l) => l.itemId == bookId);
   }
 
   /// Purges every loan referencing [bookId] (library hard-delete support, D3),
@@ -607,7 +607,7 @@ class VaultSessionController extends _$VaultSessionController
         final current = state.valueOrNull;
         final ids = current is VaultUnlocked
             ? current.data.loans
-                  .where((l) => l.bookId == bookId)
+                  .where((l) => l.itemId == bookId)
                   .map((l) => l.id)
                   .toList()
             : const <int>[];
@@ -666,7 +666,7 @@ class VaultSessionController extends _$VaultSessionController
             ),
           );
         }
-        loanIds = data.loans.map((l) => l.bookId).toSet();
+        loanIds = data.loans.map((l) => l.itemId).toSet();
         state = AsyncData(VaultUnlocked(data));
       } else if (state.valueOrNull is! VaultUninitialized ||
           store.hasOrphanDatabase() ||

@@ -4,7 +4,7 @@ import 'package:pitaka/features/import_export/application/export_library_use_cas
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_text_rasterizer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 void main() {
   // Rasterization uses dart:ui (a live engine), so the binding is required.
@@ -46,7 +46,9 @@ void main() {
     );
     final bytes = await const PdfLibraryRenderer().render(
       libraryName: 'पुस्तकालय',
-      books: const [Book(id: 1, title: 'बच्चे की कहानी', author: 'प्रेमचंद')],
+      books: const [
+        CatalogueItem(id: 1, title: 'बच्चे की कहानी', author: 'प्रेमचंद'),
+      ],
       columns: columns,
       footerAttribution: 'Pitak',
       textRasterizer: r,

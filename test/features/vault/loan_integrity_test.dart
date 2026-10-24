@@ -3,9 +3,9 @@ import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/loan_integrity.dart';
 
 void main() {
-  const loanOk = Loan(bookId: 1, borrowerId: 10, lentDate: 1);
-  const loanBadBook = Loan(bookId: 99, borrowerId: 10, lentDate: 1);
-  const loanBadBorrower = Loan(bookId: 1, borrowerId: 99, lentDate: 1);
+  const loanOk = Loan(itemId: 1, borrowerId: 10, lentDate: 1);
+  const loanBadBook = Loan(itemId: 99, borrowerId: 10, lentDate: 1);
+  const loanBadBorrower = Loan(itemId: 1, borrowerId: 99, lentDate: 1);
 
   group('LoanIntegrity', () {
     test('intact when every reference resolves', () {
@@ -42,7 +42,7 @@ void main() {
 
     test('reports both when book and borrower are missing', () {
       final dangling = LoanIntegrity.findDangling(
-        loans: const [Loan(bookId: 99, borrowerId: 99, lentDate: 1)],
+        loans: const [Loan(itemId: 99, borrowerId: 99, lentDate: 1)],
         knownBookIds: {1},
         knownBorrowerIds: {10},
       );

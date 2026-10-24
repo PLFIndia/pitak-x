@@ -15,14 +15,16 @@ import 'package:pitaka/features/import_export/application/merge_controller.dart'
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
 import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 
 import '../../support/a11y.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 
 class _Picker extends FileSelectorPlatform {
   _Picker([Uint8List? bytes]) : _file = null, _bytes = bytes ?? _defaultJson;
@@ -81,10 +83,13 @@ class _StrictXFile extends XFile {
       encoding.decode(_bytes);
 }
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
-      right([const Book(id: 7, title: 'Local', bookUid: 'old')]);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right([const CatalogueItem(id: 7, title: 'Local', itemUid: 'old')]);
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
@@ -126,6 +131,7 @@ void main() {
             mergeLibraryUseCaseProvider.overrideWith(
               (ref) async => MergeLibraryUseCase(
                 bookRepo: _Books(),
+                periodicalRepo: FakePeriodicals(),
                 namespace: ref.read(settingsControllerProvider.notifier),
                 jsonParser: const PitakaJsonImporter(),
                 replacementGuard: guard,
@@ -174,6 +180,7 @@ void main() {
             await gate.future;
             return MergeLibraryUseCase(
               bookRepo: _Books(),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
@@ -260,6 +267,7 @@ void main() {
           mergeLibraryUseCaseProvider.overrideWith(
             (ref) async => MergeLibraryUseCase(
               bookRepo: _Books(),
+              periodicalRepo: FakePeriodicals(),
               namespace: ref.read(settingsControllerProvider.notifier),
               jsonParser: const PitakaJsonImporter(),
               replacementGuard: FakeReplacementGuard(),
@@ -379,6 +387,74 @@ void main() {
       expect(find.text('Adjustments'), findsNothing);
       expect(find.textContaining('could not take on'), findsNothing);
       expect(find.textContaining('later update'), findsNothing);
+      expect(find.textContaining('Magazine titles'), findsNothing);
+    });
+
+    // Plan S19: the series counts ride the summary alongside the book counts
+    // (ADR 0014 W1) — including the add-only conflicts (kept local, listed).
+    testWidgets('periodical counts and kept-local titles are shown', (
+      tester,
+    ) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 1,
+          identical: 2,
+          conflicts: [],
+          possibleDuplicates: [],
+          periodicalsAdded: 1,
+          periodicalsIdentical: 1,
+          periodicalConflicts: [
+            PeriodicalMergeConflict(
+              local: Periodical(
+                id: 3,
+                periodicalUid: 'p1',
+                title: 'Chandamama',
+              ),
+              incoming: Periodical(
+                periodicalUid: 'p9',
+                title: 'Chandamama Weekly',
+              ),
+              matchedBy: PeriodicalMatchKind.issn,
+            ),
+          ],
+        ),
+      );
+
+      expect(find.text('Books added: 1'), findsOneWidget);
+      expect(find.text('Magazine titles added: 1'), findsOneWidget);
+      expect(find.text('Magazine titles already matched: 1'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Magazine titles kept as they are on this device: 1',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('• Chandamama Weekly'), findsOneWidget);
+      // Series conflicts are informational: no review section for them.
+      expect(find.text('Needs your review'), findsNothing);
+    });
+
+    testWidgets('a replacement reports the series count as "now on this '
+        'device"', (tester) async {
+      await pumpDone(
+        tester,
+        const MergeResult(
+          added: 12,
+          identical: 0,
+          conflicts: [],
+          possibleDuplicates: [],
+          replaced: true,
+          periodicalsAdded: 2,
+        ),
+      );
+
+      expect(find.text('Library replaced'), findsOneWidget);
+      expect(
+        find.text('Magazine titles now on this device: 2'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Magazine titles added'), findsNothing);
     });
   });
 
@@ -387,16 +463,16 @@ void main() {
   // review item is a card showing what differs (or why it looks like a
   // duplicate) with the three resolutions as buttons.
   group('N07 — per-row review cards', () {
-    const local = Book(
+    const local = CatalogueItem(
       id: 1,
-      bookUid: 'u1',
+      itemUid: 'u1',
       title: 'Godaan',
       author: 'Premchand',
       genre: 'Fiction',
       addedDate: 1,
     );
-    const incoming = Book(
-      bookUid: 'u1',
+    const incoming = CatalogueItem(
+      itemUid: 'u1',
       title: 'Godaan',
       author: 'Premchand',
       genre: 'Classic',
@@ -487,8 +563,8 @@ void main() {
     testWidgets('a fuzzy possible duplicate shows both titles and the '
         'similarity; a key collision shows a plain explanation and NO Take '
         'theirs', (tester) async {
-      const earlierIncoming = Book(
-        bookUid: 'uB',
+      const earlierIncoming = CatalogueItem(
+        itemUid: 'uB',
         title: 'Godaan',
         addedDate: 1,
       );
@@ -497,14 +573,14 @@ void main() {
         resultWith(
           duplicates: const [
             PossibleDuplicate(
-              local: Book(id: 3, title: 'Kabir ke Dohe', addedDate: 1),
-              incoming: Book(title: 'Kabir Dohe', addedDate: 1),
+              local: CatalogueItem(id: 3, title: 'Kabir ke Dohe', addedDate: 1),
+              incoming: CatalogueItem(title: 'Kabir Dohe', addedDate: 1),
               similarity: 0.75,
             ),
             PossibleDuplicate(
               local: earlierIncoming,
-              incoming: Book(
-                bookUid: 'uB',
+              incoming: CatalogueItem(
+                itemUid: 'uB',
                 title: 'Godaan (duplicate row)',
                 addedDate: 1,
               ),

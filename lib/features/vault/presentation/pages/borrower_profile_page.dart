@@ -167,7 +167,7 @@ class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: widget.loan.bookId),
+      title: _LoanTitle(bookId: widget.loan.itemId),
       subtitle: Text(BorrowerProfilePage.dueLabel(widget.loan)),
       trailing: TextButton(
         onPressed: _busy ? null : _return,
@@ -193,7 +193,7 @@ class _ReturnedLoanTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: loan.bookId),
+      title: _LoanTitle(bookId: loan.itemId),
       subtitle: Text(
         'Returned ${BorrowerProfilePage.formatDate(loan.returnedDate)}',
       ),

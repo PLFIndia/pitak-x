@@ -8,29 +8,31 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 /// In-memory repo whose write results are scriptable, so the controller's
 /// fail-closed behavior (§5) can be asserted.
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
 
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
 
   /// When set, markRemoved/restoreRemoved return this failure.
   Failure? failWritesWith;
@@ -42,33 +44,41 @@ class _FakeBookRepo implements BookRepository {
   final List<({LibraryQuery query, int limit, int offset})> pagesSeen = [];
 
   /// Sorts seen by page(), to prove the watched sort reaches the repo.
-  List<BookSort> get sortsSeen => pagesSeen.map((p) => p.query.sort).toList();
+  List<LibrarySort> get sortsSeen =>
+      pagesSeen.map((p) => p.query.sort).toList();
 
   int markRemovedCalls = 0;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
 
   /// Slices [_all] like a real store would: a plain listing pages `_all`
   /// verbatim; a search returns nothing (tests that need search rows use a
   /// subclass).
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     pagesSeen.add((query: query, limit: limit, offset: offset));
-    if (query.isSearch) return right(BookPage.empty);
+    if (query.isSearch) return right(CatalogueItemPage.empty);
     return right(slice(_all, limit: limit, offset: offset));
   }
 
   /// OFFSET/LIMIT over an in-memory list with the repository's `hasMore`
   /// rule (one row beyond the window exists).
-  static BookPage slice(List<Book> rows, {required int limit, int offset = 0}) {
+  static CatalogueItemPage slice(
+    List<CatalogueItem> rows, {
+    required int limit,
+    int offset = 0,
+  }) {
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
-    return BookPage(
+    return CatalogueItemPage(
       items: rows.sublist(start, end),
       hasMore: end < rows.length,
     );
@@ -88,27 +98,30 @@ class _FakeBookRepo implements BookRepository {
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
@@ -117,21 +130,21 @@ class _FakeBookRepo implements BookRepository {
 /// are keyed by their text; listing reads by `'list@<offset>'`.
 class _GatedRepo extends _FakeBookRepo {
   _GatedRepo(super.all);
-  final Map<String, Completer<BookPage>> gates = {};
+  final Map<String, Completer<CatalogueItemPage>> gates = {};
 
   static String keyFor(LibraryQuery query, int offset) =>
       query.isSearch ? query.text : 'list@$offset';
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) {
     pagesSeen.add((query: query, limit: limit, offset: offset));
-    return (gates[keyFor(query, offset)] ??= Completer<BookPage>()).future.then(
-      right,
-    );
+    return (gates[keyFor(query, offset)] ??= Completer<CatalogueItemPage>())
+        .future
+        .then(right);
   }
 }
 
@@ -141,10 +154,10 @@ class _GatedRepo extends _FakeBookRepo {
 /// this list.
 class _FixedSearchRepo extends _FakeBookRepo {
   _FixedSearchRepo(super.all, this.searchResults);
-  final List<Book> searchResults;
+  final List<CatalogueItem> searchResults;
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -162,7 +175,7 @@ class _FailingLaterRepo extends _FakeBookRepo {
   int okReads;
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -183,7 +196,7 @@ class _FakeSettingsRepo implements SettingsRepository {
   @override
   Future<AppSettings> load() async => settings;
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) async {
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) async {
     settings = settings.copyWith(librarySort: sort);
     return right(unit);
   }
@@ -234,12 +247,12 @@ class _FakeSettingsRepo implements SettingsRepository {
 }
 
 void main() {
-  const books = [Book(id: 1, title: 'Dune', author: 'Herbert')];
+  const books = [CatalogueItem(id: 1, title: 'Dune', author: 'Herbert')];
 
   /// [n] distinct books, ids 1..n, newest first (the fake pages them as-is).
-  List<Book> manyBooks(int n) => List.generate(
+  List<CatalogueItem> manyBooks(int n) => List.generate(
     n,
-    (i) => Book(id: i + 1, title: 'book ${i + 1}', addedDate: n - i),
+    (i) => CatalogueItem(id: i + 1, title: 'book ${i + 1}', addedDate: n - i),
   );
 
   ProviderContainer makeContainer(
@@ -248,7 +261,7 @@ void main() {
   }) {
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async => repo),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
         settingsRepositoryProvider.overrideWith(
           (ref) async => settings ?? _FakeSettingsRepo(),
         ),
@@ -314,19 +327,19 @@ void main() {
       final repo = _FakeBookRepo([...books]);
       final container = makeContainer(repo);
       await container.read(libraryControllerProvider.future);
-      expect(repo.sortsSeen, [BookSort.recentlyAdded]);
+      expect(repo.sortsSeen, [LibrarySort.recentlyAdded]);
 
       // Change the sort through the settings controller — the library
       // controller WATCHES it, so it must rebuild without any manual refresh.
       await container.read(settingsControllerProvider.future);
       await container
           .read(settingsControllerProvider.notifier)
-          .setLibrarySort(BookSort.languageAsc);
+          .setLibrarySort(LibrarySort.languageAsc);
       // Allow the dependent provider rebuild to run.
       await container.read(libraryControllerProvider.future);
       await Future<void>.delayed(Duration.zero);
 
-      expect(repo.sortsSeen, contains(BookSort.languageAsc));
+      expect(repo.sortsSeen, contains(LibrarySort.languageAsc));
     },
   );
 
@@ -339,7 +352,8 @@ void main() {
     final container = makeContainer(repo)
       ..listen(libraryControllerProvider, (_, _) {});
     final notifier = container.read(libraryControllerProvider.notifier);
-    repo.gates['list@0'] = Completer<BookPage>()..complete(BookPage.empty);
+    repo.gates['list@0'] = Completer<CatalogueItemPage>()
+      ..complete(CatalogueItemPage.empty);
     await container.read(libraryControllerProvider.future);
 
     notifier.onQueryChanged('slow');
@@ -349,11 +363,17 @@ void main() {
 
     // Complete the NEW query first, then let the OLD one land late.
     repo.gates['fast']!.complete(
-      const BookPage(items: [Book(id: 2, title: 'FAST')], hasMore: false),
+      const CatalogueItemPage(
+        items: [CatalogueItem(id: 2, title: 'FAST')],
+        hasMore: false,
+      ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     repo.gates['slow']!.complete(
-      const BookPage(items: [Book(id: 1, title: 'SLOW')], hasMore: false),
+      const CatalogueItemPage(
+        items: [CatalogueItem(id: 1, title: 'SLOW')],
+        hasMore: false,
+      ),
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
@@ -370,8 +390,8 @@ void main() {
     // Deliberately NOT in languageAsc order and NOT all Zulu: a controller
     // that still sorted or filtered would change this list.
     final fromRepo = [
-      const Book(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
-      const Book(
+      const CatalogueItem(id: 1, title: 'zulu', addedDate: 1, language: 'Zulu'),
+      const CatalogueItem(
         id: 2,
         title: 'afrikaans',
         addedDate: 2,
@@ -381,7 +401,7 @@ void main() {
     final repo = _FixedSearchRepo(const [], fromRepo);
     final settings = _FakeSettingsRepo()
       ..settings = AppSettings.defaults.copyWith(
-        librarySort: BookSort.languageAsc,
+        librarySort: LibrarySort.languageAsc,
       );
     final container = makeContainer(repo, settings: settings)
       ..listen(libraryControllerProvider, (_, _) {}); // keep alive
@@ -395,13 +415,53 @@ void main() {
 
     final searchRead = repo.pagesSeen.last;
     expect(searchRead.query.text, 'x');
-    expect(searchRead.query.sort, BookSort.languageAsc);
+    expect(searchRead.query.sort, LibrarySort.languageAsc);
     expect(searchRead.query.language, 'Zulu');
     expect(searchRead.offset, 0);
     expect(searchRead.limit, libraryPageSize);
     final titles = windowOf(container).books.map((x) => x.title).toList();
     expect(titles, ['zulu', 'afrikaans']);
   });
+
+  test(
+    'U1: the kind chip is a facet of the intent — a tap narrows the '
+    'query, tapping the selected kind again clears it (no "All" chip)',
+    () async {
+      final repo = _FakeBookRepo(manyBooks(3));
+      final container = makeContainer(repo)
+        ..listen(libraryControllerProvider, (_, _) {}); // keep alive
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull, reason: 'none = all');
+
+      final chips = container.read(libraryKindFilterProvider.notifier)
+        ..toggle(ItemKind.magazineIssue);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.magazineIssue);
+      expect(repo.pagesSeen.last.offset, 0, reason: 'a new intent');
+
+      // Another kind replaces, not combines.
+      chips.toggle(ItemKind.other);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.other);
+
+      // The selected kind again → cleared.
+      chips.toggle(ItemKind.other);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull);
+      expect(container.read(libraryKindFilterProvider), isNull);
+
+      // The language facet is untouched by kind taps and travels with it.
+      container.read(libraryLanguageFilterProvider.notifier).set('Hindi');
+      chips.toggle(ItemKind.book);
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, ItemKind.book);
+      expect(repo.pagesSeen.last.query.language, 'Hindi');
+      chips.clear();
+      await container.read(libraryControllerProvider.future);
+      expect(repo.pagesSeen.last.query.kind, isNull);
+      expect(repo.pagesSeen.last.query.language, 'Hindi');
+    },
+  );
 
   // Review finding N10-d part 2 ("lists load the whole catalogue"): the
   // controller reads WINDOWS, not the catalogue.
@@ -455,7 +515,7 @@ void main() {
       final container = makeContainer(repo)
         ..listen(libraryControllerProvider, (_, _) {});
       final notifier = container.read(libraryControllerProvider.notifier);
-      repo.gates['list@0'] = Completer<BookPage>()
+      repo.gates['list@0'] = Completer<CatalogueItemPage>()
         ..complete(_FakeBookRepo.slice(manyBooks(150), limit: 60));
       await container.read(libraryControllerProvider.future);
 
@@ -488,7 +548,7 @@ void main() {
       final container = makeContainer(repo)
         ..listen(libraryControllerProvider, (_, _) {});
       final notifier = container.read(libraryControllerProvider.notifier);
-      repo.gates['list@0'] = Completer<BookPage>()
+      repo.gates['list@0'] = Completer<CatalogueItemPage>()
         ..complete(_FakeBookRepo.slice(manyBooks(150), limit: 60));
       await container.read(libraryControllerProvider.future);
 
@@ -497,7 +557,10 @@ void main() {
       notifier.onQueryChanged('zzz'); // a new list supersedes it
       await Future<void>.delayed(const Duration(milliseconds: 150));
       repo.gates['zzz']!.complete(
-        const BookPage(items: [Book(id: 999, title: 'hit')], hasMore: false),
+        const CatalogueItemPage(
+          items: [CatalogueItem(id: 999, title: 'hit')],
+          hasMore: false,
+        ),
       );
       await container.read(libraryControllerProvider.future);
       // Now the OLD page-2 lands late.
@@ -567,9 +630,9 @@ void main() {
       await container.read(settingsControllerProvider.future);
       await container
           .read(settingsControllerProvider.notifier)
-          .setLibrarySort(BookSort.ageGroupAsc);
+          .setLibrarySort(LibrarySort.ageGroupAsc);
       var window = await container.read(libraryControllerProvider.future);
-      expect(repo.pagesSeen.last.query.sort, BookSort.ageGroupAsc);
+      expect(repo.pagesSeen.last.query.sort, LibrarySort.ageGroupAsc);
       expect(repo.pagesSeen.last.limit, libraryPageSize);
       expect(window.books, hasLength(libraryPageSize));
 

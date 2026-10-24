@@ -1,0 +1,858 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/crypto/secret_bytes.dart';
+import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/widgets/item_cover.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/cover_owner.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
+import 'package:pitaka/features/library/presentation/pages/other_item_form_page.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
+import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
+import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
+import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
+
+import '../../support/a11y.dart';
+import '../periodicals/application/periodical_fakes.dart';
+import '../vault/vault_repository_write_stub.dart';
+
+/// N03 widget tests: the detail page must show the CURRENT row, not the
+/// snapshot it was pushed with, and an Edit started from it must save on top
+/// of the current row (so a cover captured while the page was open survives
+/// an unrelated text edit).
+///
+/// The repository is an in-memory fake whose rows a test can mutate behind
+/// the page's back, the way `BookCoverController` / the remote-cover
+/// materializer do in production (write the row, then invalidate
+/// `libraryControllerProvider`).
+class _MemBookRepo implements CatalogueItemRepository {
+  _MemBookRepo(List<CatalogueItem> seed) : books = List.of(seed);
+
+  final List<CatalogueItem> books;
+
+  /// When set, `getById` returns this failure (safe-error test).
+  Failure? failGetByIdWith;
+
+  int getByIdCalls = 0;
+
+  @override
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async {
+    getByIdCalls++;
+    final f = failGetByIdWith;
+    if (f != null) return left(f);
+    return right(books.where((b) => b.id == id).firstOrNull);
+  }
+
+  @override
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async {
+    final i = books.indexWhere((b) => b.id == book.id);
+    if (i < 0) return left(const NotFoundFailure());
+    books[i] = book;
+    return right(book);
+  }
+
+  @override
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
+    final saved = book.copyWith(id: books.length + 1, itemUid: 'uid');
+    books.add(saved);
+    return right(saved);
+  }
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(books);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(books);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
+    LibraryQuery query, {
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = query.isSearch ? const <CatalogueItem>[] : books;
+    final start = offset.clamp(0, rows.length);
+    final end = (start + limit).clamp(start, rows.length);
+    return right(
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
+    );
+  }
+
+  @override
+  Future<Either<Failure, List<String>>> distinctLanguages() async =>
+      right(const []);
+  @override
+  Future<Either<Failure, List<String>>> distinctSourceDetails(
+    ItemSourceType type,
+  ) async => right(const []);
+  @override
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
+  @override
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
+  @override
+  Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
+      right(unit);
+  @override
+  Future<Either<Failure, Unit>> restoreRemoved(int id) async => right(unit);
+  @override
+  Future<Either<Failure, Unit>> delete(int id) async => right(unit);
+  @override
+  Future<Either<Failure, T>> runInTransaction<T>(
+    Future<Either<Failure, T>> Function() action,
+  ) => action();
+  @override
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
+  @override
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
+      right(b.length);
+}
+
+const _seed = CatalogueItem(
+  id: 7,
+  itemUid: 'uid-7',
+  title: 'Dune',
+  author: 'Herbert',
+  coverUrl: 'covers/old.jpg',
+  copyCount: 2,
+);
+
+/// Hosts the detail page ABOVE a home route so `Navigator.pop()` is observable
+/// and so the page is pushed the way `LibraryPage` pushes it. Exposes the
+/// `ProviderContainer` so a test can invalidate providers the way the
+/// application layer does after a background write.
+/// Read-only vault fake (S34): unlock returns an EMPTY snapshot — the detail
+/// page only needs the session STATE (locked / uninitialized / unlocked) to
+/// render the Lend section; no borrower data is exercised here.
+class _StubVault with VaultWriteUnsupported implements VaultRepository {
+  @override
+  Future<Either<Failure, VaultData>> unlockAndRead({
+    required SecretBytes passphrase,
+    required String blob,
+    required String dbPath,
+  }) async => right(VaultData.empty);
+}
+
+Widget _host(
+  _MemBookRepo repo,
+  String coversDir, {
+  CatalogueItem? initialBook,
+  List<Override> extraOverrides = const [],
+}) => ProviderScope(
+  overrides: [
+    catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+    coversDirProvider.overrideWith((ref) async => coversDir),
+    ...extraOverrides,
+  ],
+  child: MaterialApp(
+    home: Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: TextButton(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => CatalogueItemDetailPage(
+                  bookId: _seed.id,
+                  initialBook: initialBook,
+                ),
+              ),
+            ),
+            child: const Text('open detail'),
+          ),
+        ),
+      ),
+    ),
+  ),
+);
+
+Future<void> _openDetail(WidgetTester tester) async {
+  await tester.tap(find.text('open detail'));
+  await tester.pumpAndSettle();
+  expect(find.text('Book'), findsOneWidget, reason: 'detail app bar');
+}
+
+/// Scrolls the lazy edit form until the save button is built + visible, then
+/// taps it. Focus is dropped first: a focused text field scrolls itself back
+/// into view once the fling settles, which would unbuild the button again.
+Future<void> _tapSave(WidgetTester tester) async {
+  FocusManager.instance.primaryFocus?.unfocus();
+  await tester.pump();
+  final saveBtn = find.byType(FilledButton);
+  await tester.scrollUntilVisible(
+    saveBtn,
+    300,
+    scrollable: find.byType(Scrollable).first,
+  );
+  await tester.pumpAndSettle();
+  await tester.tap(saveBtn);
+  await tester.pumpAndSettle();
+}
+
+/// Simulates what every mutation path in the application layer does after
+/// writing a row: signal the library that something changed.
+void _signalLibraryChanged(WidgetTester tester) {
+  ProviderScope.containerOf(
+    tester.element(find.byType(CatalogueItemDetailPage)),
+  ).invalidate(libraryControllerProvider);
+}
+
+/// A 1×1 PNG so `Image.file` really decodes something.
+const _onePxPng = <int>[
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, // signature
+  0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52, // IHDR
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00,
+  0x1F, 0x15, 0xC4, 0x89, //
+  0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, // IDAT
+  0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, //
+  0x0D, 0x0A, 0x2D, 0xB4, //
+  0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, // IEND
+  0xAE, 0x42, 0x60, 0x82, //
+];
+
+void main() {
+  late Directory tmp;
+
+  setUp(() {
+    tmp = Directory.systemTemp.createTempSync('detail_page_test');
+  });
+  tearDown(() {
+    if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+  });
+
+  testWidgets('N03: renders the initial snapshot on the first frame', (
+    tester,
+  ) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+    await tester.tap(find.text('open detail'));
+    // ONE frame only: the provider has not resolved yet.
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Dune'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets(
+    'N03: a row rewritten while the page is open is shown without re-entry',
+    (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+      await _openDetail(tester);
+      expect(find.text('Dune'), findsOneWidget);
+      expect(find.byType(Image), findsNothing, reason: 'old.jpg is absent');
+
+      // Background write (what replaceCover / the materializer do): the row
+      // now points at a real file; then the shared signal fires.
+      File('${tmp.path}/new.png').writeAsBytesSync(_onePxPng);
+      await repo.update(
+        _seed.copyWith(title: 'Dune Messiah', coverUrl: 'covers/new.png'),
+      );
+      _signalLibraryChanged(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Dune Messiah'), findsOneWidget);
+      expect(find.text('Dune'), findsNothing);
+      expect(find.byType(Image), findsOneWidget, reason: 'new cover renders');
+    },
+  );
+
+  testWidgets(
+    'N03: capture cover → Edit → change text → Save keeps the NEW cover',
+    (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+      await _openDetail(tester);
+
+      // The cover pipeline rewrote the row (and the janitor deleted old.jpg).
+      await repo.update(_seed.copyWith(coverUrl: 'covers/new.jpg'));
+      _signalLibraryChanged(tester);
+      await tester.pumpAndSettle();
+
+      // Edit an unrelated field and save.
+      await tester.tap(find.byTooltip('Edit'));
+      await tester.pumpAndSettle();
+      expect(find.text('Edit book'), findsOneWidget);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Title *'),
+        'Dune (annotated)',
+      );
+      await _tapSave(tester);
+
+      final saved = repo.books.single;
+      expect(saved.title, 'Dune (annotated)');
+      expect(
+        saved.coverUrl,
+        'covers/new.jpg',
+        reason: 'the stale snapshot must not resurrect the deleted old cover',
+      );
+      expect(saved.itemUid, 'uid-7');
+      // Back on the detail page, which now shows the edited row (no pop to
+      // the list: the page renders truth).
+      expect(find.text('Dune (annotated)'), findsOneWidget);
+      expect(find.text('open detail'), findsNothing);
+    },
+  );
+
+  testWidgets('N03: a book deleted underneath shows a safe empty state', (
+    tester,
+  ) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+    await _openDetail(tester);
+
+    repo.books.clear();
+    _signalLibraryChanged(tester);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('no longer'), findsOneWidget);
+    expect(find.text('Dune'), findsNothing);
+    // No actions that would write to a missing row.
+    expect(find.byTooltip('Edit'), findsNothing);
+    expect(find.byTooltip('Remove from library'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('L2: issue detail renders the local series cover when the '
+      'issue has none', (tester) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: 'covers/series.png',
+        ),
+      );
+    File('${tmp.path}/series.png').writeAsBytesSync(_onePxPng);
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, 'covers/series.png');
+    expect(cover.owner, CoverOwners.periodical('per-1'));
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('issue detail keeps an inherited REMOTE cover periodical-owned', (
+    tester,
+  ) async {
+    const remote = 'https://covers.openlibrary.org/b/id/1-L.jpg';
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: remote,
+        ),
+      );
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => FakeSettings(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, remote);
+    expect(cover.owner, CoverOwners.periodical('per-1'));
+    expect(find.byType(Image), findsNothing);
+  });
+
+  testWidgets('issue detail keeps its own cover ahead of the series cover', (
+    tester,
+  ) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      coverUrl: 'covers/own.png',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(
+          id: 1,
+          periodicalUid: 'per-1',
+          title: 'Frontline',
+          coverUrl: 'covers/series.png',
+        ),
+      );
+    File('${tmp.path}/own.png').writeAsBytesSync(_onePxPng);
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    final cover = tester.widget<ItemCover>(find.byType(ItemCover));
+    expect(cover.coverUrl, 'covers/own.png');
+    expect(cover.owner, CoverOwners.item(7));
+    expect(find.byType(Image), findsOneWidget);
+  });
+
+  testWidgets('D8: an issue row edits through the ISSUE form, never the '
+      'book form (a book-form save would silently drop its details)', (
+    tester,
+  ) async {
+    const issue = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    );
+    final repo = _MemBookRepo([issue]);
+    // The pushed issue form builds its series picker off these.
+    final periodicals = FakePeriodicals()
+      ..seed(
+        const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+      );
+    await tester.pumpWidget(
+      _host(
+        repo,
+        tmp.path,
+        initialBook: issue,
+        extraOverrides: [
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+          nowTickProvider.overrideWith((ref) => 0),
+        ],
+      ),
+    );
+    await _openDetail(tester);
+
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AddIssuePage), findsOneWidget);
+    expect(find.text('Edit issue'), findsOneWidget);
+    expect(find.text('Edit book'), findsNothing);
+  });
+
+  testWidgets('D8: an other-kind row edits through the OTHERS form, never '
+      'the book form (a book-form save would silently flip its kind)', (
+    tester,
+  ) async {
+    const other = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Chess set',
+      details: OtherItemOf(),
+    );
+    final repo = _MemBookRepo([other]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: other));
+    await _openDetail(tester);
+
+    await tester.tap(find.byTooltip('Edit'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(OtherItemFormPage), findsOneWidget);
+    expect(find.text('Edit item'), findsOneWidget);
+    expect(find.text('Edit book'), findsNothing);
+  });
+
+  // S17: the kind-specific block (`ItemDetailsSection`). The tall surface
+  // builds the whole lazy page so every row of the block exists.
+  group('S17: item details section', () {
+    void useBigSurface(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    /// Hosts the detail page for [item] with a seeded periodicals store (the
+    /// section resolves "Open series" through `periodicalByUidProvider`).
+    Widget hostWithSeries(
+      _MemBookRepo repo,
+      CatalogueItem item,
+      FakePeriodicals periodicals,
+    ) => _host(
+      repo,
+      tmp.path,
+      initialBook: item,
+      extraOverrides: [
+        periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+        nowTickProvider.overrideWith((ref) => 0),
+      ],
+    );
+
+    testWidgets('an issue shows the series, numbers, date and label, and '
+        '"Open series" pushes the series page (U2)', (tester) async {
+      useBigSurface(tester);
+      final issue = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Frontline — Vol 2 No 5 (Oct 2026)',
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          volume: 2,
+          issueNumber: 5,
+          issueDate: DateTime.utc(2026, 10).millisecondsSinceEpoch,
+          label: 'Festive number',
+        ),
+      );
+      final repo = _MemBookRepo([issue]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+        );
+      await tester.pumpWidget(hostWithSeries(repo, issue, periodicals));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsOneWidget);
+      expect(find.text('Magazine title'), findsOneWidget);
+      expect(
+        find.text('Frontline'),
+        findsOneWidget,
+        reason: 'the series title resolved by uid',
+      );
+      expect(find.text('Volume'), findsOneWidget);
+      expect(find.text('Issue number'), findsOneWidget);
+      expect(find.text('Cover date'), findsOneWidget);
+      expect(find.text('2026-10-01'), findsOneWidget);
+      expect(find.text('Festive number'), findsOneWidget);
+
+      await tester.tap(find.text('Open series'));
+      await tester.pumpAndSettle();
+      expect(find.byType(PeriodicalDetailPage), findsOneWidget);
+    });
+
+    testWidgets('a bound volume shows the from/to range, not a cover date '
+        '(D4)', (tester) async {
+      useBigSurface(tester);
+      final bound = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Frontline — Jul–Dec 2025',
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          issueDate: DateTime.utc(2025, 7).millisecondsSinceEpoch,
+          boundUntil: DateTime.utc(2025, 12, 31).millisecondsSinceEpoch,
+        ),
+      );
+      final repo = _MemBookRepo([bound]);
+      final periodicals = FakePeriodicals()
+        ..seed(
+          const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+        );
+      await tester.pumpWidget(hostWithSeries(repo, bound, periodicals));
+      await _openDetail(tester);
+
+      expect(find.text('Bound volume'), findsOneWidget);
+      expect(find.text('Issues from'), findsOneWidget);
+      expect(find.text('Issues to'), findsOneWidget);
+      expect(find.text('2025-07-01'), findsOneWidget);
+      expect(find.text('2025-12-31'), findsOneWidget);
+      expect(find.text('Cover date'), findsNothing);
+    });
+
+    testWidgets('a book shows no kind block', (tester) async {
+      useBigSurface(tester);
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsNothing);
+      expect(find.text('Bound volume'), findsNothing);
+      expect(find.text('Open series'), findsNothing);
+    });
+
+    testWidgets('an other shows no kind block — its description is the '
+        'shared Notes block (O1)', (tester) async {
+      useBigSurface(tester);
+      const other = CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Chess set',
+        notes: 'A wooden chess set.',
+        details: OtherItemOf(),
+      );
+      final repo = _MemBookRepo([other]);
+      await tester.pumpWidget(_host(repo, tmp.path, initialBook: other));
+      await _openDetail(tester);
+
+      expect(find.text('Magazine issue'), findsNothing);
+      expect(find.text('Open series'), findsNothing);
+      expect(find.text('Notes'), findsOneWidget);
+      expect(find.text('A wooden chess set.'), findsOneWidget);
+    });
+  });
+
+  testWidgets('M15: a pre-M15 row with an out-of-range addedDate renders', (
+    tester,
+  ) async {
+    // Rows persisted before M15 (or by a hostile file on an old build) can
+    // hold an addedDate that DateTime cannot represent. The detail page must
+    // render the row without a date instead of throwing a RangeError.
+    const hostile = CatalogueItem(
+      id: 7,
+      itemUid: 'uid-7',
+      title: 'Dune',
+      addedDate: 8640000000000001, // maxDateMillis + 1
+    );
+    final repo = _MemBookRepo([hostile]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: hostile));
+    await _openDetail(tester);
+
+    expect(find.text('Dune'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('N03: a repository failure shows a safe message, not raw text', (
+    tester,
+  ) async {
+    final repo = _MemBookRepo([_seed])
+      ..failGetByIdWith = const StorageFailure('getById: SQLITE_IOERR');
+    await tester.pumpWidget(_host(repo, tmp.path));
+    await tester.tap(find.text('open detail'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining("Couldn't load"), findsOneWidget);
+    expect(find.textContaining('SQLITE_IOERR'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('N03: without a snapshot the page loads the row by id', (
+    tester,
+  ) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(_host(repo, tmp.path));
+    await _openDetail(tester);
+
+    expect(find.text('Dune'), findsOneWidget);
+    expect(find.text('Herbert'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget, reason: 'Quantity row');
+    expect(repo.getByIdCalls, greaterThanOrEqualTo(1));
+  });
+
+  // S34: a locked vault used to hide the Lend button silently — users could
+  // not tell lending existed or why it vanished. The section now renders
+  // whenever the vault state is KNOWN: locked/uninitialized show a grayed-out
+  // button plus a hint that routes to the vault screen; unlocked keeps the
+  // policy-driven behaviour (LendDecision) unchanged.
+  group('S34: the Lend section reflects the vault state', () {
+    /// A VaultStore whose files on disk say "a vault exists" (locked) or
+    /// "no vault yet" (uninitialized) — the fixture recipe used by
+    /// replacement_harness and vault_page_test.
+    VaultStore vaultStore({required bool initialized}) {
+      final dir = Directory('${tmp.path}/vault');
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+      final store = VaultStore(baseDir: dir.path);
+      if (initialized) {
+        File(store.dbPath).writeAsBytesSync([1, 2, 3]);
+        store.writeBlob('synthetic.blob.only');
+      }
+      return store;
+    }
+
+    List<Override> vaultOverrides(VaultStore store) => [
+      vaultStoreProvider.overrideWith((ref) async => store),
+      vaultRepositoryProvider.overrideWithValue(_StubVault()),
+    ];
+
+    Future<void> openLendSection(WidgetTester tester) async {
+      await _openDetail(tester);
+      await tester.scrollUntilVisible(
+        find.widgetWithText(FilledButton, 'Lend'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+    }
+
+    FilledButton lendButton(WidgetTester tester) =>
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Lend'));
+
+    testWidgets('locked vault: grayed-out Lend + unlock hint', (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      await openLendSection(tester);
+
+      expect(
+        lendButton(tester).onPressed,
+        isNull,
+        reason: 'disabled while locked',
+      );
+      expect(
+        find.text('Unlock the borrowers vault to lend this book.'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(TextButton, 'Unlock the vault'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('uninitialized vault: grayed-out Lend + set-up hint', (
+      tester,
+    ) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: false)),
+        ),
+      );
+      await openLendSection(tester);
+
+      expect(lendButton(tester).onPressed, isNull);
+      expect(
+        find.text('Set up the borrowers vault to start lending.'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(TextButton, 'Set up the vault'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('unlocked vault: Lend is enabled, no vault hint', (
+      tester,
+    ) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      final container = ProviderScope.containerOf(
+        tester.element(find.text('open detail')),
+      );
+      await container.read(vaultSessionControllerProvider.future);
+      final unlocked = await container
+          .read(vaultSessionControllerProvider.notifier)
+          .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+      expect(unlocked.isRight(), isTrue, reason: 'fixture unlock must succeed');
+      await tester.pumpAndSettle();
+      await openLendSection(tester);
+
+      // _seed has 2 copies and no loans → LendAllowed.
+      expect(lendButton(tester).onPressed, isNotNull);
+      expect(find.textContaining('borrowers vault to'), findsNothing);
+    });
+
+    testWidgets('the unlock hint opens the vault screen', (tester) async {
+      final repo = _MemBookRepo([_seed]);
+      await tester.pumpWidget(
+        _host(
+          repo,
+          tmp.path,
+          initialBook: _seed,
+          extraOverrides: vaultOverrides(vaultStore(initialized: true)),
+        ),
+      );
+      await openLendSection(tester);
+      await tester.scrollUntilVisible(
+        find.widgetWithText(TextButton, 'Unlock the vault'),
+        100,
+        scrollable: find.byType(Scrollable).first,
+      );
+
+      await tester.tap(find.widgetWithText(TextButton, 'Unlock the vault'));
+      await tester.pumpAndSettle();
+      expect(find.text('Borrowers vault'), findsOneWidget);
+    });
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(_host(repo, tmp.path, initialBook: _seed));
+    await tester.tap(find.text('open detail'));
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  // A6 text-scaling smoke test: 2x system font scale must not overflow.
+  testWidgets('renders at 2x text scale without overflowing', (tester) async {
+    final repo = _MemBookRepo([_seed]);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+          coversDirProvider.overrideWith((ref) async => tmp.path),
+        ],
+        child: MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: CatalogueItemDetailPage(bookId: _seed.id, initialBook: _seed),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+}

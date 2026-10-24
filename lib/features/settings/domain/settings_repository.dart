@@ -48,7 +48,7 @@ abstract interface class SettingsRepository {
   Future<Either<Failure, Unit>> setMaintainerName(String name);
 
   /// Persists the library list sort.
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort);
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort);
 
   /// Persists the remote-cover opt-in (#31). Non-secret; default false.
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled});

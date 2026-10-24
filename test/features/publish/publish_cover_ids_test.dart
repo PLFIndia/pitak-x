@@ -29,11 +29,50 @@ void main() {
       );
     });
 
+    test('ASCII hashes remain byte-identical', () {
+      final salt = ascii.encode('salt-1234567890');
+      expect(PublishCoverIds.shortHashHex(salt, 42), 'a2b5b2e0637ead89');
+      expect(
+        PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1'),
+        '8a6f3469e99e562b',
+      );
+    });
+
+    test('non-ASCII keys hash deterministically as UTF-8', () {
+      final salt = ascii.encode('salt-1234567890');
+      const key = 'periodical:పత్రిక-१';
+      expect(PublishCoverIds.shortHashHexForKey(salt, key), 'd6558de0d7c76239');
+      expect(
+        PublishCoverIds.shortHashHexForKey(salt, key),
+        PublishCoverIds.shortHashHexForKey(salt, key),
+      );
+    });
+
     test('pathFor builds covers/<hash>.jpg', () async {
       final ids = PublishCoverIds(_FixedSalt(ascii.encode('salt-1234567890')));
       final path = await ids.pathFor(7);
       expect(path, startsWith('covers/'));
       expect(path, endsWith('.jpg'));
     });
+
+    test(
+      'pathForPeriodical is stable and domain-separated from book paths',
+      () async {
+        final salt = ascii.encode('salt-1234567890');
+        final ids = PublishCoverIds(_FixedSalt(salt));
+        // Same uid ⇒ same path (external links keep working across publishes).
+        expect(
+          await ids.pathForPeriodical('uid-1'),
+          await ids.pathForPeriodical('uid-1'),
+        );
+        // A periodical whose uid happens to look like a book id still gets a
+        // different path — the 'periodical:' prefix separates the domains.
+        expect(await ids.pathForPeriodical('42'), isNot(await ids.pathFor(42)));
+        expect(
+          await ids.pathForPeriodical('uid-1'),
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+        );
+      },
+    );
   });
 }
