@@ -2,7 +2,7 @@
 ///
 /// Renders a local `posters/<uuid>.jpg` file from the app docs dir, with a
 /// graceful placeholder while the path resolves or if the file is missing /
-/// unreadable. Mirrors how `BookCover` resolves local covers — a corrupt or
+/// unreadable. Mirrors how `ItemCover` resolves local covers — a corrupt or
 /// absent file must never crash the screen.
 library;
 

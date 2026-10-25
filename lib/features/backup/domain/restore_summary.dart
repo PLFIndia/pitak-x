@@ -23,6 +23,15 @@ class RestoreSummary {
     this.networkApplied = false,
     this.networkRestored = 0,
     this.networkRowsDropped = 0,
+    this.kindsApplied = 0,
+    this.periodicalsRestored = 0,
+    this.issuesLinked = 0,
+    this.issuesDetached = 0,
+    this.issueEntriesDropped = 0,
+    this.rowsSkippedUnknownKind = 0,
+    this.periodicalsDropped = 0,
+    this.itemKindsInvalid = false,
+    this.periodicalsInvalid = false,
   });
 
   /// Number of library books written.
@@ -99,6 +108,48 @@ class RestoreSummary {
   /// page says so in one sentence; these rows never reach [restoredNetwork].
   final int networkRowsDropped;
 
+  /// W2 (ADR 0014): restored rows that got their non-book kind back (an
+  /// "other" marker, or an issue whose details linked).
+  final int kindsApplied;
+
+  /// W2: magazine titles written to the periodicals table (0 when the
+  /// archive carried none — the table was then cleared: restore is an
+  /// authoritative overwrite).
+  final int periodicalsRestored;
+
+  /// W2: `periodicals.json` `issues[]` entries joined to a restored row.
+  final int issuesLinked;
+
+  /// W2/S5: CATALOGUE ROWS restored as books because no usable issue link
+  /// could be applied — declared issues without an entry, and issues whose
+  /// series is absent (the W1 orphan rule's backup twin). Deduplicated by
+  /// `bookUid`, so one row counts once. A ROW unit: the raw-entry twin is
+  /// [issueEntriesDropped], and the two are never summed.
+  final int issuesDetached;
+
+  /// W2/S5: RAW `issues[]` ENTRIES whose link was not applied — malformed,
+  /// duplicate, or over-cap at decode time, keyed to a row absent from
+  /// `books.db`, or keyed to a row whose declared kind is not an issue.
+  /// An ENTRY unit; see [issuesDetached].
+  final int issueEntriesDropped;
+
+  /// W2: `item_kinds.json` rows skipped at parse (malformed or an unknown
+  /// kind token — F6, never guessed). Affected rows restored as books.
+  final int rowsSkippedUnknownKind;
+
+  /// W2: `periodicals.json` `periodicals[]` rows dropped as invalid (a
+  /// crafted or damaged entry — the writer only emits valid rows).
+  final int periodicalsDropped;
+
+  /// True when the archive declared `item_kinds.json` (`hasItemKinds`) but
+  /// the entry could not be read — the user should hear "could not be read",
+  /// not nothing (same rule as [identityInvalid]).
+  final bool itemKindsInvalid;
+
+  /// True when the archive declared `periodicals.json` (`hasPeriodicals`)
+  /// but the entry could not be read.
+  final bool periodicalsInvalid;
+
   /// Returns a copy with the post-restore adoption outcomes filled in (the
   /// restorer parses but never applies identity/network — that is the
   /// controller's job, after the catalogue switch).
@@ -123,12 +174,27 @@ class RestoreSummary {
       networkApplied: networkApplied,
       networkRestored: networkRestored,
       networkRowsDropped: networkRowsDropped,
+      kindsApplied: kindsApplied,
+      periodicalsRestored: periodicalsRestored,
+      issuesLinked: issuesLinked,
+      issuesDetached: issuesDetached,
+      issueEntriesDropped: issueEntriesDropped,
+      rowsSkippedUnknownKind: rowsSkippedUnknownKind,
+      periodicalsDropped: periodicalsDropped,
+      itemKindsInvalid: itemKindsInvalid,
+      periodicalsInvalid: periodicalsInvalid,
     );
   }
 
   /// True when restore changed anything the user should know about beyond
-  /// the row counts (today: dropped cover links).
-  bool get hasAdjustments => coversDropped > 0;
+  /// the row counts: dropped cover links (M15) or W2 rows/links that could
+  /// not be honoured.
+  bool get hasAdjustments =>
+      coversDropped > 0 ||
+      issuesDetached > 0 ||
+      issueEntriesDropped > 0 ||
+      rowsSkippedUnknownKind > 0 ||
+      periodicalsDropped > 0;
 
   /// True when restored loans resolve, or retained loan links were verified
   /// and preserved. A retained but unchecked vault can no longer succeed.

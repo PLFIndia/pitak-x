@@ -15,9 +15,9 @@
 library;
 
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
-/// Narrows an export to one [BookSourceType], optionally to one
+/// Narrows an export to one [ItemSourceType], optionally to one
 /// [sourceDetail] within it.
 final class ExportSourceFilter {
   /// Every book, whatever its source (the default).
@@ -29,12 +29,12 @@ final class ExportSourceFilter {
   ///
   /// [detail] is normalised here — trimmed, blank → null — so callers never
   /// have to remember to.
-  ExportSourceFilter.byType(BookSourceType type, {String? detail})
+  ExportSourceFilter.byType(ItemSourceType type, {String? detail})
     : sourceType = type,
       sourceDetail = _trimToNull(detail);
 
   /// The provenance category to keep, or null for "all".
-  final BookSourceType? sourceType;
+  final ItemSourceType? sourceType;
 
   /// The free-text detail to keep (trimmed, never blank), or null for "any
   /// detail". Always null when [sourceType] is null.
@@ -46,7 +46,7 @@ final class ExportSourceFilter {
   /// Whether [book] passes the filter. A book with no source recorded never
   /// matches an active filter (it is not "donated" just because we do not
   /// know where it came from).
-  bool matches(Book book) {
+  bool matches(CatalogueItem book) {
     final type = sourceType;
     if (type == null) return true;
     if (book.sourceType != type) return false;
@@ -56,7 +56,7 @@ final class ExportSourceFilter {
   }
 
   /// The subset of [books] that [matches], in the same order.
-  List<Book> apply(List<Book> books) =>
+  List<CatalogueItem> apply(List<CatalogueItem> books) =>
       isActive ? books.where(matches).toList(growable: false) : books;
 
   static String? _trimToNull(String? value) {

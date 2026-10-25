@@ -311,11 +311,11 @@ pub fn update_borrower(
     Ok(())
 }
 
-/// User-facing reason a borrower cannot be deleted while books are still out.
+/// User-facing reason a borrower cannot be deleted while items are still out.
 /// Surfaced verbatim by the UI (Dart maps `Constraint` → `ValidationFailure`),
 /// so it is written as a sentence, not a SQL diagnostic.
 pub const ACTIVE_LOANS_BLOCK_DELETE: &str =
-    "This borrower still has books out. Mark those loans returned first.";
+    "This borrower still has items out. Mark those loans returned first.";
 
 /// Deletes a borrower by id together with their returned-loan history.
 ///
@@ -667,8 +667,12 @@ mod tests {
         )
         .unwrap();
 
-        // A book is still out (returned_date IS NULL) → refuse, with the
+        // An item is still out (returned_date IS NULL) → refuse, with the
         // human-readable reason (not a raw SQLite diagnostic).
+        assert_eq!(
+            ACTIVE_LOANS_BLOCK_DELETE,
+            "This borrower still has items out. Mark those loans returned first."
+        );
         let res = delete_borrower(&db, &key, bid);
         assert!(
             matches!(res, Err(VaultError::Constraint(ref m)) if m == ACTIVE_LOANS_BLOCK_DELETE),

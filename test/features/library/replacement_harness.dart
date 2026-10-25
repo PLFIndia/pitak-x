@@ -12,8 +12,8 @@ import 'package:pitaka/core/storage/active_data_generation.dart';
 import 'package:pitaka/core/storage/data_generations.dart';
 import 'package:pitaka/features/backup/infrastructure/restore_backup.dart';
 import 'package:pitaka/features/import_export/application/merge_library_use_case.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
@@ -124,7 +124,7 @@ class ReplacementHarness {
       db = database ?? AppDatabase(NativeDatabase.memory());
       store = VaultStore(baseDir: directory.path);
     }
-    books = DriftBookRepository(db);
+    books = DriftCatalogueItemRepository(db);
     container = ProviderContainer(
       overrides: [
         appDocsDirProvider.overrideWith((ref) async => directory),
@@ -158,7 +158,7 @@ class ReplacementHarness {
               ),
             );
           }),
-        bookRepositoryProvider.overrideWith((ref) async => books),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         vaultRepositoryProvider.overrideWithValue(vault),
       ],
@@ -169,7 +169,7 @@ class ReplacementHarness {
   final bool usesGenerations;
   late final Directory directory;
   late final AppDatabase db;
-  late final DriftBookRepository books;
+  late final DriftCatalogueItemRepository books;
   late final VaultStore store;
   late final ProviderContainer container;
   final vault = ReplacementVault();
@@ -181,10 +181,10 @@ class ReplacementHarness {
   /// The book repository over the CURRENT catalogue. After a restore the
   /// active generation has moved, so the pre-restore [books] handle would
   /// read the deleted old file; this one follows the switch.
-  Future<DriftBookRepository> currentBooks() async {
+  Future<DriftCatalogueItemRepository> currentBooks() async {
     if (!usesGenerations) return books;
     final database = await container.read(appDatabaseProvider.future);
-    return DriftBookRepository(database);
+    return DriftCatalogueItemRepository(database);
   }
 
   /// The vault store of the CURRENT generation (or the flat one).
@@ -214,7 +214,9 @@ class ReplacementHarness {
   static SecretBytes secret() =>
       SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8]));
 
-  Future<Either<Failure, MergeResult>> overwrite(List<Book> incoming) async {
+  Future<Either<Failure, MergeResult>> overwrite(
+    List<CatalogueItem> incoming,
+  ) async {
     final useCase = await container.read(mergeLibraryUseCaseProvider.future);
     return useCase.applyOverwrite(
       MergeDiffersDecision(

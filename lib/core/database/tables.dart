@@ -1,4 +1,5 @@
-/// Drift table definitions for the NON-secret stores (books, wishlist).
+/// Drift table definitions for the NON-secret stores (books, wishlist,
+/// network, periodicals).
 ///
 /// Every column the Kotlin Room schema had is carried here (verified against
 /// `app/schemas/.../BooksDatabase/10.json` and `WishlistDatabase/1.json`), with
@@ -10,7 +11,8 @@ library;
 
 import 'package:drift/drift.dart';
 
-/// Library books. Mirrors Room `books` (25 columns, schema v10).
+/// Catalogue items of every kind — the base row (ADR 0013 F1). Mirrors Room
+/// `books` (25 columns, schema v10) plus `kind` (schema v5).
 @DataClassName('BookRow')
 class Books extends Table {
   @override
@@ -20,7 +22,9 @@ class Books extends Table {
   IntColumn get id => integer().autoIncrement()();
 
   /// Stable cross-device UUID (unique among non-null). Minted at first persist.
-  TextColumn get bookUid => text().named('book_uid').nullable()();
+  /// The column stays `book_uid` (persisted contract, plan F7); only the Dart
+  /// getter says "item" because the row is the base of every item kind.
+  TextColumn get itemUid => text().named('book_uid').nullable()();
 
   /// Required title (native script).
   TextColumn get title => text()();
@@ -95,6 +99,12 @@ class Books extends Table {
 
   /// Maintainer attribution handle.
   TextColumn get addedBy => text().named('added_by').nullable()();
+
+  /// What the row is: an `ItemKind` token (`book` | `magazine-issue` |
+  /// `other`), schema v5 (ADR 0013 F3). Rows that predate the column read
+  /// as books through the default; an unknown token is kept as stored (a
+  /// newer build wrote it) and refused on write-back (F6).
+  TextColumn get kind => text().withDefault(const Constant('book'))();
 }
 
 /// Wishlist books. Mirrors Room `wishlist_books` (16 columns, schema v1).
@@ -249,4 +259,130 @@ class NetworkLibraries extends Table {
   List<Set<Column>> get uniqueKeys => [
     {fingerprint},
   ];
+}
+
+/// Kind-specific data of a magazine issue (ADR 0013 F4, D1): one row per
+/// `books` row whose `kind` is `magazine-issue`, 1:1 through [itemId].
+///
+/// This is the first table with a REAL foreign key (`ON DELETE CASCADE`):
+/// deleting the base row deletes its detail row, so a hard delete, a
+/// `replaceAll` and a restore never leave an orphan detail. SQLite only
+/// enforces foreign keys when `PRAGMA foreign_keys = ON`, which
+/// `AppDatabase` sets in `beforeOpen` (schema v5; no earlier table declares
+/// a FK, so turning it on changes nothing else). `periodicalUid` is a SOFT
+/// link to `periodicals` (D8: deleting a periodical with issues fails closed
+/// in the repository instead).
+@DataClassName('MagazineIssueRow')
+class MagazineIssues extends Table {
+  @override
+  String get tableName => 'magazine_issues';
+
+  /// The base row (`books.id`); also the primary key.
+  IntColumn get itemId => integer()
+      .named('item_id')
+      .references(Books, #id, onDelete: KeyAction.cascade)();
+
+  /// `periodicals.periodical_uid` of the series (soft link).
+  TextColumn get periodicalUid => text().named('periodical_uid')();
+
+  /// Volume number, when the magazine numbers volumes.
+  IntColumn get volume => integer().nullable()();
+
+  /// Issue number, when known.
+  IntColumn get issueNumber => integer().named('issue_number').nullable()();
+
+  /// Cover calendar day at 00:00 UTC (epoch millis); first issue of a bound
+  /// volume. This is a date-only value, not a local-midnight instant.
+  IntColumn get issueDate => integer().named('issue_date').nullable()();
+
+  /// Last issue calendar day at 00:00 UTC (epoch millis); NULL for a single
+  /// issue. Range arithmetic and display use UTC calendar fields.
+  IntColumn get boundUntil => integer().named('bound_until').nullable()();
+
+  /// Free-text label ("Dasara special"). Not in the FTS index (D10).
+  TextColumn get issueLabel => text().named('issue_label').nullable()();
+
+  @override
+  Set<Column> get primaryKey => {itemId};
+}
+
+/// Magazine titles (ADR 0013 D2), schema v5. Not Room-mirrored. The
+/// cross-device identity is `periodical_uid`; the ISSN is unique among
+/// non-null values (D7). Both UNIQUE indexes are raw SQL in
+/// `AppDatabase._createIndexesAndFts`, next to the `books` ones, and listed
+/// in the migration test's raw-object census.
+@DataClassName('PeriodicalRow')
+class Periodicals extends Table {
+  @override
+  String get tableName => 'periodicals';
+
+  /// Per-device autoincrement id.
+  IntColumn get id => integer().autoIncrement()();
+
+  /// Stable cross-device UUID, minted at first persist (never NULL: the
+  /// repository mints before the insert).
+  TextColumn get periodicalUid => text().named('periodical_uid')();
+
+  /// Required title (native script).
+  TextColumn get title => text()();
+
+  /// Roman-script search aid.
+  TextColumn get titleTransliteration =>
+      text().named('title_transliteration').nullable()();
+
+  /// Unicode-aware lowercase shadow of title for sorting.
+  TextColumn get titleSort =>
+      text().named('title_sort').withDefault(const Constant(''))();
+
+  /// Canonical ISSN `NNNN-NNNC`, unique among non-null values.
+  TextColumn get issn => text().nullable()();
+
+  /// Publisher.
+  TextColumn get publisher => text().nullable()();
+
+  /// Language.
+  TextColumn get language => text().nullable()();
+
+  /// Series cover reference (relative/file/remote).
+  TextColumn get coverUrl => text().named('cover_url').nullable()();
+
+  /// `PeriodicalFrequency` token.
+  TextColumn get frequency => text().nullable()();
+
+  /// Subscription start calendar day at 00:00 UTC (epoch millis), private.
+  /// Date-only value; addedDate/removedAt remain instants.
+  IntColumn get subscriptionStart =>
+      integer().named('subscription_start').nullable()();
+
+  /// Subscription end calendar day at 00:00 UTC (epoch millis), private;
+  /// NULL = untracked (D5). The entire local end date remains in-window.
+  IntColumn get subscriptionEnd =>
+      integer().named('subscription_end').nullable()();
+
+  /// Private notes.
+  TextColumn get notes => text().nullable()();
+
+  /// Private shelf location.
+  TextColumn get location => text().nullable()();
+
+  /// Provenance category (enum token), private.
+  TextColumn get sourceType => text().named('source_type').nullable()();
+
+  /// Free-form provenance detail, private.
+  TextColumn get sourceDetail => text().named('source_detail').nullable()();
+
+  /// Age band token (e.g. `above-3`), public; projected onto issues.
+  TextColumn get ageGroup => text().named('age_group').nullable()();
+
+  /// Epoch millis at insert.
+  IntColumn get addedDate => integer().named('added_date')();
+
+  /// Soft-delete flag.
+  BoolColumn get removed => boolean().withDefault(const Constant(false))();
+
+  /// Epoch millis when removed; null when active.
+  IntColumn get removedAt => integer().named('removed_at').nullable()();
+
+  /// Maintainer attribution handle.
+  TextColumn get addedBy => text().named('added_by').nullable()();
 }

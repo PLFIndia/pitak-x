@@ -21,11 +21,11 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
       'PRIMARY KEY AUTOINCREMENT',
     ),
   );
-  static const VerificationMeta _bookUidMeta = const VerificationMeta(
-    'bookUid',
+  static const VerificationMeta _itemUidMeta = const VerificationMeta(
+    'itemUid',
   );
   @override
-  late final GeneratedColumn<String> bookUid = GeneratedColumn<String>(
+  late final GeneratedColumn<String> itemUid = GeneratedColumn<String>(
     'book_uid',
     aliasedName,
     true,
@@ -286,10 +286,20 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _kindMeta = const VerificationMeta('kind');
+  @override
+  late final GeneratedColumn<String> kind = GeneratedColumn<String>(
+    'kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('book'),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
-    bookUid,
+    itemUid,
     title,
     titleTransliteration,
     author,
@@ -313,6 +323,7 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     removed,
     removedAt,
     addedBy,
+    kind,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -331,8 +342,8 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
     }
     if (data.containsKey('book_uid')) {
       context.handle(
-        _bookUidMeta,
-        bookUid.isAcceptableOrUnknown(data['book_uid']!, _bookUidMeta),
+        _itemUidMeta,
+        itemUid.isAcceptableOrUnknown(data['book_uid']!, _itemUidMeta),
       );
     }
     if (data.containsKey('title')) {
@@ -489,6 +500,12 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         addedBy.isAcceptableOrUnknown(data['added_by']!, _addedByMeta),
       );
     }
+    if (data.containsKey('kind')) {
+      context.handle(
+        _kindMeta,
+        kind.isAcceptableOrUnknown(data['kind']!, _kindMeta),
+      );
+    }
     return context;
   }
 
@@ -502,7 +519,7 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         DriftSqlType.int,
         data['${effectivePrefix}id'],
       )!,
-      bookUid: attachedDatabase.typeMapping.read(
+      itemUid: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}book_uid'],
       ),
@@ -598,6 +615,10 @@ class $BooksTable extends Books with TableInfo<$BooksTable, BookRow> {
         DriftSqlType.string,
         data['${effectivePrefix}added_by'],
       ),
+      kind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}kind'],
+      )!,
     );
   }
 
@@ -612,7 +633,9 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   final int id;
 
   /// Stable cross-device UUID (unique among non-null). Minted at first persist.
-  final String? bookUid;
+  /// The column stays `book_uid` (persisted contract, plan F7); only the Dart
+  /// getter says "item" because the row is the base of every item kind.
+  final String? itemUid;
 
   /// Required title (native script).
   final String title;
@@ -682,9 +705,15 @@ class BookRow extends DataClass implements Insertable<BookRow> {
 
   /// Maintainer attribution handle.
   final String? addedBy;
+
+  /// What the row is: an `ItemKind` token (`book` | `magazine-issue` |
+  /// `other`), schema v5 (ADR 0013 F3). Rows that predate the column read
+  /// as books through the default; an unknown token is kept as stored (a
+  /// newer build wrote it) and refused on write-back (F6).
+  final String kind;
   const BookRow({
     required this.id,
-    this.bookUid,
+    this.itemUid,
     required this.title,
     this.titleTransliteration,
     this.author,
@@ -708,13 +737,14 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     required this.removed,
     this.removedAt,
     this.addedBy,
+    required this.kind,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
     final map = <String, Expression>{};
     map['id'] = Variable<int>(id);
-    if (!nullToAbsent || bookUid != null) {
-      map['book_uid'] = Variable<String>(bookUid);
+    if (!nullToAbsent || itemUid != null) {
+      map['book_uid'] = Variable<String>(itemUid);
     }
     map['title'] = Variable<String>(title);
     if (!nullToAbsent || titleTransliteration != null) {
@@ -771,15 +801,16 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     if (!nullToAbsent || addedBy != null) {
       map['added_by'] = Variable<String>(addedBy);
     }
+    map['kind'] = Variable<String>(kind);
     return map;
   }
 
   BooksCompanion toCompanion(bool nullToAbsent) {
     return BooksCompanion(
       id: Value(id),
-      bookUid: bookUid == null && nullToAbsent
+      itemUid: itemUid == null && nullToAbsent
           ? const Value.absent()
-          : Value(bookUid),
+          : Value(itemUid),
       title: Value(title),
       titleTransliteration: titleTransliteration == null && nullToAbsent
           ? const Value.absent()
@@ -833,6 +864,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       addedBy: addedBy == null && nullToAbsent
           ? const Value.absent()
           : Value(addedBy),
+      kind: Value(kind),
     );
   }
 
@@ -843,7 +875,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return BookRow(
       id: serializer.fromJson<int>(json['id']),
-      bookUid: serializer.fromJson<String?>(json['bookUid']),
+      itemUid: serializer.fromJson<String?>(json['itemUid']),
       title: serializer.fromJson<String>(json['title']),
       titleTransliteration: serializer.fromJson<String?>(
         json['titleTransliteration'],
@@ -869,6 +901,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       removed: serializer.fromJson<bool>(json['removed']),
       removedAt: serializer.fromJson<int?>(json['removedAt']),
       addedBy: serializer.fromJson<String?>(json['addedBy']),
+      kind: serializer.fromJson<String>(json['kind']),
     );
   }
   @override
@@ -876,7 +909,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     serializer ??= driftRuntimeOptions.defaultSerializer;
     return <String, dynamic>{
       'id': serializer.toJson<int>(id),
-      'bookUid': serializer.toJson<String?>(bookUid),
+      'itemUid': serializer.toJson<String?>(itemUid),
       'title': serializer.toJson<String>(title),
       'titleTransliteration': serializer.toJson<String?>(titleTransliteration),
       'author': serializer.toJson<String?>(author),
@@ -900,12 +933,13 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       'removed': serializer.toJson<bool>(removed),
       'removedAt': serializer.toJson<int?>(removedAt),
       'addedBy': serializer.toJson<String?>(addedBy),
+      'kind': serializer.toJson<String>(kind),
     };
   }
 
   BookRow copyWith({
     int? id,
-    Value<String?> bookUid = const Value.absent(),
+    Value<String?> itemUid = const Value.absent(),
     String? title,
     Value<String?> titleTransliteration = const Value.absent(),
     Value<String?> author = const Value.absent(),
@@ -929,9 +963,10 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     bool? removed,
     Value<int?> removedAt = const Value.absent(),
     Value<String?> addedBy = const Value.absent(),
+    String? kind,
   }) => BookRow(
     id: id ?? this.id,
-    bookUid: bookUid.present ? bookUid.value : this.bookUid,
+    itemUid: itemUid.present ? itemUid.value : this.itemUid,
     title: title ?? this.title,
     titleTransliteration: titleTransliteration.present
         ? titleTransliteration.value
@@ -959,11 +994,12 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     removed: removed ?? this.removed,
     removedAt: removedAt.present ? removedAt.value : this.removedAt,
     addedBy: addedBy.present ? addedBy.value : this.addedBy,
+    kind: kind ?? this.kind,
   );
   BookRow copyWithCompanion(BooksCompanion data) {
     return BookRow(
       id: data.id.present ? data.id.value : this.id,
-      bookUid: data.bookUid.present ? data.bookUid.value : this.bookUid,
+      itemUid: data.itemUid.present ? data.itemUid.value : this.itemUid,
       title: data.title.present ? data.title.value : this.title,
       titleTransliteration: data.titleTransliteration.present
           ? data.titleTransliteration.value
@@ -999,6 +1035,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
       removed: data.removed.present ? data.removed.value : this.removed,
       removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
       addedBy: data.addedBy.present ? data.addedBy.value : this.addedBy,
+      kind: data.kind.present ? data.kind.value : this.kind,
     );
   }
 
@@ -1006,7 +1043,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   String toString() {
     return (StringBuffer('BookRow(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('itemUid: $itemUid, ')
           ..write('title: $title, ')
           ..write('titleTransliteration: $titleTransliteration, ')
           ..write('author: $author, ')
@@ -1029,7 +1066,8 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           ..write('needsMetadata: $needsMetadata, ')
           ..write('removed: $removed, ')
           ..write('removedAt: $removedAt, ')
-          ..write('addedBy: $addedBy')
+          ..write('addedBy: $addedBy, ')
+          ..write('kind: $kind')
           ..write(')'))
         .toString();
   }
@@ -1037,7 +1075,7 @@ class BookRow extends DataClass implements Insertable<BookRow> {
   @override
   int get hashCode => Object.hashAll([
     id,
-    bookUid,
+    itemUid,
     title,
     titleTransliteration,
     author,
@@ -1061,13 +1099,14 @@ class BookRow extends DataClass implements Insertable<BookRow> {
     removed,
     removedAt,
     addedBy,
+    kind,
   ]);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is BookRow &&
           other.id == this.id &&
-          other.bookUid == this.bookUid &&
+          other.itemUid == this.itemUid &&
           other.title == this.title &&
           other.titleTransliteration == this.titleTransliteration &&
           other.author == this.author &&
@@ -1090,12 +1129,13 @@ class BookRow extends DataClass implements Insertable<BookRow> {
           other.needsMetadata == this.needsMetadata &&
           other.removed == this.removed &&
           other.removedAt == this.removedAt &&
-          other.addedBy == this.addedBy);
+          other.addedBy == this.addedBy &&
+          other.kind == this.kind);
 }
 
 class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<int> id;
-  final Value<String?> bookUid;
+  final Value<String?> itemUid;
   final Value<String> title;
   final Value<String?> titleTransliteration;
   final Value<String?> author;
@@ -1119,9 +1159,10 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   final Value<bool> removed;
   final Value<int?> removedAt;
   final Value<String?> addedBy;
+  final Value<String> kind;
   const BooksCompanion({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.itemUid = const Value.absent(),
     this.title = const Value.absent(),
     this.titleTransliteration = const Value.absent(),
     this.author = const Value.absent(),
@@ -1145,10 +1186,11 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.removed = const Value.absent(),
     this.removedAt = const Value.absent(),
     this.addedBy = const Value.absent(),
+    this.kind = const Value.absent(),
   });
   BooksCompanion.insert({
     this.id = const Value.absent(),
-    this.bookUid = const Value.absent(),
+    this.itemUid = const Value.absent(),
     required String title,
     this.titleTransliteration = const Value.absent(),
     this.author = const Value.absent(),
@@ -1172,11 +1214,12 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     this.removed = const Value.absent(),
     this.removedAt = const Value.absent(),
     this.addedBy = const Value.absent(),
+    this.kind = const Value.absent(),
   }) : title = Value(title),
        addedDate = Value(addedDate);
   static Insertable<BookRow> custom({
     Expression<int>? id,
-    Expression<String>? bookUid,
+    Expression<String>? itemUid,
     Expression<String>? title,
     Expression<String>? titleTransliteration,
     Expression<String>? author,
@@ -1200,10 +1243,11 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Expression<bool>? removed,
     Expression<int>? removedAt,
     Expression<String>? addedBy,
+    Expression<String>? kind,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
-      if (bookUid != null) 'book_uid': bookUid,
+      if (itemUid != null) 'book_uid': itemUid,
       if (title != null) 'title': title,
       if (titleTransliteration != null)
         'title_transliteration': titleTransliteration,
@@ -1228,12 +1272,13 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       if (removed != null) 'removed': removed,
       if (removedAt != null) 'removed_at': removedAt,
       if (addedBy != null) 'added_by': addedBy,
+      if (kind != null) 'kind': kind,
     });
   }
 
   BooksCompanion copyWith({
     Value<int>? id,
-    Value<String?>? bookUid,
+    Value<String?>? itemUid,
     Value<String>? title,
     Value<String?>? titleTransliteration,
     Value<String?>? author,
@@ -1257,10 +1302,11 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     Value<bool>? removed,
     Value<int?>? removedAt,
     Value<String?>? addedBy,
+    Value<String>? kind,
   }) {
     return BooksCompanion(
       id: id ?? this.id,
-      bookUid: bookUid ?? this.bookUid,
+      itemUid: itemUid ?? this.itemUid,
       title: title ?? this.title,
       titleTransliteration: titleTransliteration ?? this.titleTransliteration,
       author: author ?? this.author,
@@ -1284,6 +1330,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
       removed: removed ?? this.removed,
       removedAt: removedAt ?? this.removedAt,
       addedBy: addedBy ?? this.addedBy,
+      kind: kind ?? this.kind,
     );
   }
 
@@ -1293,8 +1340,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     if (id.present) {
       map['id'] = Variable<int>(id.value);
     }
-    if (bookUid.present) {
-      map['book_uid'] = Variable<String>(bookUid.value);
+    if (itemUid.present) {
+      map['book_uid'] = Variable<String>(itemUid.value);
     }
     if (title.present) {
       map['title'] = Variable<String>(title.value);
@@ -1367,6 +1414,9 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
     if (addedBy.present) {
       map['added_by'] = Variable<String>(addedBy.value);
     }
+    if (kind.present) {
+      map['kind'] = Variable<String>(kind.value);
+    }
     return map;
   }
 
@@ -1374,7 +1424,7 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
   String toString() {
     return (StringBuffer('BooksCompanion(')
           ..write('id: $id, ')
-          ..write('bookUid: $bookUid, ')
+          ..write('itemUid: $itemUid, ')
           ..write('title: $title, ')
           ..write('titleTransliteration: $titleTransliteration, ')
           ..write('author: $author, ')
@@ -1397,7 +1447,8 @@ class BooksCompanion extends UpdateCompanion<BookRow> {
           ..write('needsMetadata: $needsMetadata, ')
           ..write('removed: $removed, ')
           ..write('removedAt: $removedAt, ')
-          ..write('addedBy: $addedBy')
+          ..write('addedBy: $addedBy, ')
+          ..write('kind: $kind')
           ..write(')'))
         .toString();
   }
@@ -3359,6 +3410,1709 @@ class NetworkLibrariesCompanion extends UpdateCompanion<NetworkLibraryRow> {
   }
 }
 
+class $MagazineIssuesTable extends MagazineIssues
+    with TableInfo<$MagazineIssuesTable, MagazineIssueRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $MagazineIssuesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _itemIdMeta = const VerificationMeta('itemId');
+  @override
+  late final GeneratedColumn<int> itemId = GeneratedColumn<int>(
+    'item_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'REFERENCES books (id) ON DELETE CASCADE',
+    ),
+  );
+  static const VerificationMeta _periodicalUidMeta = const VerificationMeta(
+    'periodicalUid',
+  );
+  @override
+  late final GeneratedColumn<String> periodicalUid = GeneratedColumn<String>(
+    'periodical_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _volumeMeta = const VerificationMeta('volume');
+  @override
+  late final GeneratedColumn<int> volume = GeneratedColumn<int>(
+    'volume',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _issueNumberMeta = const VerificationMeta(
+    'issueNumber',
+  );
+  @override
+  late final GeneratedColumn<int> issueNumber = GeneratedColumn<int>(
+    'issue_number',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _issueDateMeta = const VerificationMeta(
+    'issueDate',
+  );
+  @override
+  late final GeneratedColumn<int> issueDate = GeneratedColumn<int>(
+    'issue_date',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _boundUntilMeta = const VerificationMeta(
+    'boundUntil',
+  );
+  @override
+  late final GeneratedColumn<int> boundUntil = GeneratedColumn<int>(
+    'bound_until',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _issueLabelMeta = const VerificationMeta(
+    'issueLabel',
+  );
+  @override
+  late final GeneratedColumn<String> issueLabel = GeneratedColumn<String>(
+    'issue_label',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    itemId,
+    periodicalUid,
+    volume,
+    issueNumber,
+    issueDate,
+    boundUntil,
+    issueLabel,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'magazine_issues';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<MagazineIssueRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('item_id')) {
+      context.handle(
+        _itemIdMeta,
+        itemId.isAcceptableOrUnknown(data['item_id']!, _itemIdMeta),
+      );
+    }
+    if (data.containsKey('periodical_uid')) {
+      context.handle(
+        _periodicalUidMeta,
+        periodicalUid.isAcceptableOrUnknown(
+          data['periodical_uid']!,
+          _periodicalUidMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_periodicalUidMeta);
+    }
+    if (data.containsKey('volume')) {
+      context.handle(
+        _volumeMeta,
+        volume.isAcceptableOrUnknown(data['volume']!, _volumeMeta),
+      );
+    }
+    if (data.containsKey('issue_number')) {
+      context.handle(
+        _issueNumberMeta,
+        issueNumber.isAcceptableOrUnknown(
+          data['issue_number']!,
+          _issueNumberMeta,
+        ),
+      );
+    }
+    if (data.containsKey('issue_date')) {
+      context.handle(
+        _issueDateMeta,
+        issueDate.isAcceptableOrUnknown(data['issue_date']!, _issueDateMeta),
+      );
+    }
+    if (data.containsKey('bound_until')) {
+      context.handle(
+        _boundUntilMeta,
+        boundUntil.isAcceptableOrUnknown(data['bound_until']!, _boundUntilMeta),
+      );
+    }
+    if (data.containsKey('issue_label')) {
+      context.handle(
+        _issueLabelMeta,
+        issueLabel.isAcceptableOrUnknown(data['issue_label']!, _issueLabelMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {itemId};
+  @override
+  MagazineIssueRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return MagazineIssueRow(
+      itemId: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}item_id'],
+      )!,
+      periodicalUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}periodical_uid'],
+      )!,
+      volume: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}volume'],
+      ),
+      issueNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}issue_number'],
+      ),
+      issueDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}issue_date'],
+      ),
+      boundUntil: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}bound_until'],
+      ),
+      issueLabel: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}issue_label'],
+      ),
+    );
+  }
+
+  @override
+  $MagazineIssuesTable createAlias(String alias) {
+    return $MagazineIssuesTable(attachedDatabase, alias);
+  }
+}
+
+class MagazineIssueRow extends DataClass
+    implements Insertable<MagazineIssueRow> {
+  /// The base row (`books.id`); also the primary key.
+  final int itemId;
+
+  /// `periodicals.periodical_uid` of the series (soft link).
+  final String periodicalUid;
+
+  /// Volume number, when the magazine numbers volumes.
+  final int? volume;
+
+  /// Issue number, when known.
+  final int? issueNumber;
+
+  /// Cover calendar day at 00:00 UTC (epoch millis); first issue of a bound
+  /// volume. This is a date-only value, not a local-midnight instant.
+  final int? issueDate;
+
+  /// Last issue calendar day at 00:00 UTC (epoch millis); NULL for a single
+  /// issue. Range arithmetic and display use UTC calendar fields.
+  final int? boundUntil;
+
+  /// Free-text label ("Dasara special"). Not in the FTS index (D10).
+  final String? issueLabel;
+  const MagazineIssueRow({
+    required this.itemId,
+    required this.periodicalUid,
+    this.volume,
+    this.issueNumber,
+    this.issueDate,
+    this.boundUntil,
+    this.issueLabel,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['item_id'] = Variable<int>(itemId);
+    map['periodical_uid'] = Variable<String>(periodicalUid);
+    if (!nullToAbsent || volume != null) {
+      map['volume'] = Variable<int>(volume);
+    }
+    if (!nullToAbsent || issueNumber != null) {
+      map['issue_number'] = Variable<int>(issueNumber);
+    }
+    if (!nullToAbsent || issueDate != null) {
+      map['issue_date'] = Variable<int>(issueDate);
+    }
+    if (!nullToAbsent || boundUntil != null) {
+      map['bound_until'] = Variable<int>(boundUntil);
+    }
+    if (!nullToAbsent || issueLabel != null) {
+      map['issue_label'] = Variable<String>(issueLabel);
+    }
+    return map;
+  }
+
+  MagazineIssuesCompanion toCompanion(bool nullToAbsent) {
+    return MagazineIssuesCompanion(
+      itemId: Value(itemId),
+      periodicalUid: Value(periodicalUid),
+      volume: volume == null && nullToAbsent
+          ? const Value.absent()
+          : Value(volume),
+      issueNumber: issueNumber == null && nullToAbsent
+          ? const Value.absent()
+          : Value(issueNumber),
+      issueDate: issueDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(issueDate),
+      boundUntil: boundUntil == null && nullToAbsent
+          ? const Value.absent()
+          : Value(boundUntil),
+      issueLabel: issueLabel == null && nullToAbsent
+          ? const Value.absent()
+          : Value(issueLabel),
+    );
+  }
+
+  factory MagazineIssueRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return MagazineIssueRow(
+      itemId: serializer.fromJson<int>(json['itemId']),
+      periodicalUid: serializer.fromJson<String>(json['periodicalUid']),
+      volume: serializer.fromJson<int?>(json['volume']),
+      issueNumber: serializer.fromJson<int?>(json['issueNumber']),
+      issueDate: serializer.fromJson<int?>(json['issueDate']),
+      boundUntil: serializer.fromJson<int?>(json['boundUntil']),
+      issueLabel: serializer.fromJson<String?>(json['issueLabel']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'itemId': serializer.toJson<int>(itemId),
+      'periodicalUid': serializer.toJson<String>(periodicalUid),
+      'volume': serializer.toJson<int?>(volume),
+      'issueNumber': serializer.toJson<int?>(issueNumber),
+      'issueDate': serializer.toJson<int?>(issueDate),
+      'boundUntil': serializer.toJson<int?>(boundUntil),
+      'issueLabel': serializer.toJson<String?>(issueLabel),
+    };
+  }
+
+  MagazineIssueRow copyWith({
+    int? itemId,
+    String? periodicalUid,
+    Value<int?> volume = const Value.absent(),
+    Value<int?> issueNumber = const Value.absent(),
+    Value<int?> issueDate = const Value.absent(),
+    Value<int?> boundUntil = const Value.absent(),
+    Value<String?> issueLabel = const Value.absent(),
+  }) => MagazineIssueRow(
+    itemId: itemId ?? this.itemId,
+    periodicalUid: periodicalUid ?? this.periodicalUid,
+    volume: volume.present ? volume.value : this.volume,
+    issueNumber: issueNumber.present ? issueNumber.value : this.issueNumber,
+    issueDate: issueDate.present ? issueDate.value : this.issueDate,
+    boundUntil: boundUntil.present ? boundUntil.value : this.boundUntil,
+    issueLabel: issueLabel.present ? issueLabel.value : this.issueLabel,
+  );
+  MagazineIssueRow copyWithCompanion(MagazineIssuesCompanion data) {
+    return MagazineIssueRow(
+      itemId: data.itemId.present ? data.itemId.value : this.itemId,
+      periodicalUid: data.periodicalUid.present
+          ? data.periodicalUid.value
+          : this.periodicalUid,
+      volume: data.volume.present ? data.volume.value : this.volume,
+      issueNumber: data.issueNumber.present
+          ? data.issueNumber.value
+          : this.issueNumber,
+      issueDate: data.issueDate.present ? data.issueDate.value : this.issueDate,
+      boundUntil: data.boundUntil.present
+          ? data.boundUntil.value
+          : this.boundUntil,
+      issueLabel: data.issueLabel.present
+          ? data.issueLabel.value
+          : this.issueLabel,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MagazineIssueRow(')
+          ..write('itemId: $itemId, ')
+          ..write('periodicalUid: $periodicalUid, ')
+          ..write('volume: $volume, ')
+          ..write('issueNumber: $issueNumber, ')
+          ..write('issueDate: $issueDate, ')
+          ..write('boundUntil: $boundUntil, ')
+          ..write('issueLabel: $issueLabel')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    itemId,
+    periodicalUid,
+    volume,
+    issueNumber,
+    issueDate,
+    boundUntil,
+    issueLabel,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is MagazineIssueRow &&
+          other.itemId == this.itemId &&
+          other.periodicalUid == this.periodicalUid &&
+          other.volume == this.volume &&
+          other.issueNumber == this.issueNumber &&
+          other.issueDate == this.issueDate &&
+          other.boundUntil == this.boundUntil &&
+          other.issueLabel == this.issueLabel);
+}
+
+class MagazineIssuesCompanion extends UpdateCompanion<MagazineIssueRow> {
+  final Value<int> itemId;
+  final Value<String> periodicalUid;
+  final Value<int?> volume;
+  final Value<int?> issueNumber;
+  final Value<int?> issueDate;
+  final Value<int?> boundUntil;
+  final Value<String?> issueLabel;
+  const MagazineIssuesCompanion({
+    this.itemId = const Value.absent(),
+    this.periodicalUid = const Value.absent(),
+    this.volume = const Value.absent(),
+    this.issueNumber = const Value.absent(),
+    this.issueDate = const Value.absent(),
+    this.boundUntil = const Value.absent(),
+    this.issueLabel = const Value.absent(),
+  });
+  MagazineIssuesCompanion.insert({
+    this.itemId = const Value.absent(),
+    required String periodicalUid,
+    this.volume = const Value.absent(),
+    this.issueNumber = const Value.absent(),
+    this.issueDate = const Value.absent(),
+    this.boundUntil = const Value.absent(),
+    this.issueLabel = const Value.absent(),
+  }) : periodicalUid = Value(periodicalUid);
+  static Insertable<MagazineIssueRow> custom({
+    Expression<int>? itemId,
+    Expression<String>? periodicalUid,
+    Expression<int>? volume,
+    Expression<int>? issueNumber,
+    Expression<int>? issueDate,
+    Expression<int>? boundUntil,
+    Expression<String>? issueLabel,
+  }) {
+    return RawValuesInsertable({
+      if (itemId != null) 'item_id': itemId,
+      if (periodicalUid != null) 'periodical_uid': periodicalUid,
+      if (volume != null) 'volume': volume,
+      if (issueNumber != null) 'issue_number': issueNumber,
+      if (issueDate != null) 'issue_date': issueDate,
+      if (boundUntil != null) 'bound_until': boundUntil,
+      if (issueLabel != null) 'issue_label': issueLabel,
+    });
+  }
+
+  MagazineIssuesCompanion copyWith({
+    Value<int>? itemId,
+    Value<String>? periodicalUid,
+    Value<int?>? volume,
+    Value<int?>? issueNumber,
+    Value<int?>? issueDate,
+    Value<int?>? boundUntil,
+    Value<String?>? issueLabel,
+  }) {
+    return MagazineIssuesCompanion(
+      itemId: itemId ?? this.itemId,
+      periodicalUid: periodicalUid ?? this.periodicalUid,
+      volume: volume ?? this.volume,
+      issueNumber: issueNumber ?? this.issueNumber,
+      issueDate: issueDate ?? this.issueDate,
+      boundUntil: boundUntil ?? this.boundUntil,
+      issueLabel: issueLabel ?? this.issueLabel,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (itemId.present) {
+      map['item_id'] = Variable<int>(itemId.value);
+    }
+    if (periodicalUid.present) {
+      map['periodical_uid'] = Variable<String>(periodicalUid.value);
+    }
+    if (volume.present) {
+      map['volume'] = Variable<int>(volume.value);
+    }
+    if (issueNumber.present) {
+      map['issue_number'] = Variable<int>(issueNumber.value);
+    }
+    if (issueDate.present) {
+      map['issue_date'] = Variable<int>(issueDate.value);
+    }
+    if (boundUntil.present) {
+      map['bound_until'] = Variable<int>(boundUntil.value);
+    }
+    if (issueLabel.present) {
+      map['issue_label'] = Variable<String>(issueLabel.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('MagazineIssuesCompanion(')
+          ..write('itemId: $itemId, ')
+          ..write('periodicalUid: $periodicalUid, ')
+          ..write('volume: $volume, ')
+          ..write('issueNumber: $issueNumber, ')
+          ..write('issueDate: $issueDate, ')
+          ..write('boundUntil: $boundUntil, ')
+          ..write('issueLabel: $issueLabel')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PeriodicalsTable extends Periodicals
+    with TableInfo<$PeriodicalsTable, PeriodicalRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PeriodicalsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<int> id = GeneratedColumn<int>(
+    'id',
+    aliasedName,
+    false,
+    hasAutoIncrement: true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'PRIMARY KEY AUTOINCREMENT',
+    ),
+  );
+  static const VerificationMeta _periodicalUidMeta = const VerificationMeta(
+    'periodicalUid',
+  );
+  @override
+  late final GeneratedColumn<String> periodicalUid = GeneratedColumn<String>(
+    'periodical_uid',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleMeta = const VerificationMeta('title');
+  @override
+  late final GeneratedColumn<String> title = GeneratedColumn<String>(
+    'title',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _titleTransliterationMeta =
+      const VerificationMeta('titleTransliteration');
+  @override
+  late final GeneratedColumn<String> titleTransliteration =
+      GeneratedColumn<String>(
+        'title_transliteration',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _titleSortMeta = const VerificationMeta(
+    'titleSort',
+  );
+  @override
+  late final GeneratedColumn<String> titleSort = GeneratedColumn<String>(
+    'title_sort',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(''),
+  );
+  static const VerificationMeta _issnMeta = const VerificationMeta('issn');
+  @override
+  late final GeneratedColumn<String> issn = GeneratedColumn<String>(
+    'issn',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _publisherMeta = const VerificationMeta(
+    'publisher',
+  );
+  @override
+  late final GeneratedColumn<String> publisher = GeneratedColumn<String>(
+    'publisher',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _languageMeta = const VerificationMeta(
+    'language',
+  );
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+    'language',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _coverUrlMeta = const VerificationMeta(
+    'coverUrl',
+  );
+  @override
+  late final GeneratedColumn<String> coverUrl = GeneratedColumn<String>(
+    'cover_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _frequencyMeta = const VerificationMeta(
+    'frequency',
+  );
+  @override
+  late final GeneratedColumn<String> frequency = GeneratedColumn<String>(
+    'frequency',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _subscriptionStartMeta = const VerificationMeta(
+    'subscriptionStart',
+  );
+  @override
+  late final GeneratedColumn<int> subscriptionStart = GeneratedColumn<int>(
+    'subscription_start',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _subscriptionEndMeta = const VerificationMeta(
+    'subscriptionEnd',
+  );
+  @override
+  late final GeneratedColumn<int> subscriptionEnd = GeneratedColumn<int>(
+    'subscription_end',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _notesMeta = const VerificationMeta('notes');
+  @override
+  late final GeneratedColumn<String> notes = GeneratedColumn<String>(
+    'notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _locationMeta = const VerificationMeta(
+    'location',
+  );
+  @override
+  late final GeneratedColumn<String> location = GeneratedColumn<String>(
+    'location',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceTypeMeta = const VerificationMeta(
+    'sourceType',
+  );
+  @override
+  late final GeneratedColumn<String> sourceType = GeneratedColumn<String>(
+    'source_type',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceDetailMeta = const VerificationMeta(
+    'sourceDetail',
+  );
+  @override
+  late final GeneratedColumn<String> sourceDetail = GeneratedColumn<String>(
+    'source_detail',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _ageGroupMeta = const VerificationMeta(
+    'ageGroup',
+  );
+  @override
+  late final GeneratedColumn<String> ageGroup = GeneratedColumn<String>(
+    'age_group',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _addedDateMeta = const VerificationMeta(
+    'addedDate',
+  );
+  @override
+  late final GeneratedColumn<int> addedDate = GeneratedColumn<int>(
+    'added_date',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _removedMeta = const VerificationMeta(
+    'removed',
+  );
+  @override
+  late final GeneratedColumn<bool> removed = GeneratedColumn<bool>(
+    'removed',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("removed" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _removedAtMeta = const VerificationMeta(
+    'removedAt',
+  );
+  @override
+  late final GeneratedColumn<int> removedAt = GeneratedColumn<int>(
+    'removed_at',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _addedByMeta = const VerificationMeta(
+    'addedBy',
+  );
+  @override
+  late final GeneratedColumn<String> addedBy = GeneratedColumn<String>(
+    'added_by',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    periodicalUid,
+    title,
+    titleTransliteration,
+    titleSort,
+    issn,
+    publisher,
+    language,
+    coverUrl,
+    frequency,
+    subscriptionStart,
+    subscriptionEnd,
+    notes,
+    location,
+    sourceType,
+    sourceDetail,
+    ageGroup,
+    addedDate,
+    removed,
+    removedAt,
+    addedBy,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'periodicals';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PeriodicalRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    }
+    if (data.containsKey('periodical_uid')) {
+      context.handle(
+        _periodicalUidMeta,
+        periodicalUid.isAcceptableOrUnknown(
+          data['periodical_uid']!,
+          _periodicalUidMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_periodicalUidMeta);
+    }
+    if (data.containsKey('title')) {
+      context.handle(
+        _titleMeta,
+        title.isAcceptableOrUnknown(data['title']!, _titleMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_titleMeta);
+    }
+    if (data.containsKey('title_transliteration')) {
+      context.handle(
+        _titleTransliterationMeta,
+        titleTransliteration.isAcceptableOrUnknown(
+          data['title_transliteration']!,
+          _titleTransliterationMeta,
+        ),
+      );
+    }
+    if (data.containsKey('title_sort')) {
+      context.handle(
+        _titleSortMeta,
+        titleSort.isAcceptableOrUnknown(data['title_sort']!, _titleSortMeta),
+      );
+    }
+    if (data.containsKey('issn')) {
+      context.handle(
+        _issnMeta,
+        issn.isAcceptableOrUnknown(data['issn']!, _issnMeta),
+      );
+    }
+    if (data.containsKey('publisher')) {
+      context.handle(
+        _publisherMeta,
+        publisher.isAcceptableOrUnknown(data['publisher']!, _publisherMeta),
+      );
+    }
+    if (data.containsKey('language')) {
+      context.handle(
+        _languageMeta,
+        language.isAcceptableOrUnknown(data['language']!, _languageMeta),
+      );
+    }
+    if (data.containsKey('cover_url')) {
+      context.handle(
+        _coverUrlMeta,
+        coverUrl.isAcceptableOrUnknown(data['cover_url']!, _coverUrlMeta),
+      );
+    }
+    if (data.containsKey('frequency')) {
+      context.handle(
+        _frequencyMeta,
+        frequency.isAcceptableOrUnknown(data['frequency']!, _frequencyMeta),
+      );
+    }
+    if (data.containsKey('subscription_start')) {
+      context.handle(
+        _subscriptionStartMeta,
+        subscriptionStart.isAcceptableOrUnknown(
+          data['subscription_start']!,
+          _subscriptionStartMeta,
+        ),
+      );
+    }
+    if (data.containsKey('subscription_end')) {
+      context.handle(
+        _subscriptionEndMeta,
+        subscriptionEnd.isAcceptableOrUnknown(
+          data['subscription_end']!,
+          _subscriptionEndMeta,
+        ),
+      );
+    }
+    if (data.containsKey('notes')) {
+      context.handle(
+        _notesMeta,
+        notes.isAcceptableOrUnknown(data['notes']!, _notesMeta),
+      );
+    }
+    if (data.containsKey('location')) {
+      context.handle(
+        _locationMeta,
+        location.isAcceptableOrUnknown(data['location']!, _locationMeta),
+      );
+    }
+    if (data.containsKey('source_type')) {
+      context.handle(
+        _sourceTypeMeta,
+        sourceType.isAcceptableOrUnknown(data['source_type']!, _sourceTypeMeta),
+      );
+    }
+    if (data.containsKey('source_detail')) {
+      context.handle(
+        _sourceDetailMeta,
+        sourceDetail.isAcceptableOrUnknown(
+          data['source_detail']!,
+          _sourceDetailMeta,
+        ),
+      );
+    }
+    if (data.containsKey('age_group')) {
+      context.handle(
+        _ageGroupMeta,
+        ageGroup.isAcceptableOrUnknown(data['age_group']!, _ageGroupMeta),
+      );
+    }
+    if (data.containsKey('added_date')) {
+      context.handle(
+        _addedDateMeta,
+        addedDate.isAcceptableOrUnknown(data['added_date']!, _addedDateMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_addedDateMeta);
+    }
+    if (data.containsKey('removed')) {
+      context.handle(
+        _removedMeta,
+        removed.isAcceptableOrUnknown(data['removed']!, _removedMeta),
+      );
+    }
+    if (data.containsKey('removed_at')) {
+      context.handle(
+        _removedAtMeta,
+        removedAt.isAcceptableOrUnknown(data['removed_at']!, _removedAtMeta),
+      );
+    }
+    if (data.containsKey('added_by')) {
+      context.handle(
+        _addedByMeta,
+        addedBy.isAcceptableOrUnknown(data['added_by']!, _addedByMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PeriodicalRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PeriodicalRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}id'],
+      )!,
+      periodicalUid: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}periodical_uid'],
+      )!,
+      title: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title'],
+      )!,
+      titleTransliteration: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title_transliteration'],
+      ),
+      titleSort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}title_sort'],
+      )!,
+      issn: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}issn'],
+      ),
+      publisher: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}publisher'],
+      ),
+      language: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language'],
+      ),
+      coverUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}cover_url'],
+      ),
+      frequency: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}frequency'],
+      ),
+      subscriptionStart: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}subscription_start'],
+      ),
+      subscriptionEnd: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}subscription_end'],
+      ),
+      notes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}notes'],
+      ),
+      location: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}location'],
+      ),
+      sourceType: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_type'],
+      ),
+      sourceDetail: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_detail'],
+      ),
+      ageGroup: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}age_group'],
+      ),
+      addedDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}added_date'],
+      )!,
+      removed: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}removed'],
+      )!,
+      removedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}removed_at'],
+      ),
+      addedBy: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}added_by'],
+      ),
+    );
+  }
+
+  @override
+  $PeriodicalsTable createAlias(String alias) {
+    return $PeriodicalsTable(attachedDatabase, alias);
+  }
+}
+
+class PeriodicalRow extends DataClass implements Insertable<PeriodicalRow> {
+  /// Per-device autoincrement id.
+  final int id;
+
+  /// Stable cross-device UUID, minted at first persist (never NULL: the
+  /// repository mints before the insert).
+  final String periodicalUid;
+
+  /// Required title (native script).
+  final String title;
+
+  /// Roman-script search aid.
+  final String? titleTransliteration;
+
+  /// Unicode-aware lowercase shadow of title for sorting.
+  final String titleSort;
+
+  /// Canonical ISSN `NNNN-NNNC`, unique among non-null values.
+  final String? issn;
+
+  /// Publisher.
+  final String? publisher;
+
+  /// Language.
+  final String? language;
+
+  /// Series cover reference (relative/file/remote).
+  final String? coverUrl;
+
+  /// `PeriodicalFrequency` token.
+  final String? frequency;
+
+  /// Subscription start calendar day at 00:00 UTC (epoch millis), private.
+  /// Date-only value; addedDate/removedAt remain instants.
+  final int? subscriptionStart;
+
+  /// Subscription end calendar day at 00:00 UTC (epoch millis), private;
+  /// NULL = untracked (D5). The entire local end date remains in-window.
+  final int? subscriptionEnd;
+
+  /// Private notes.
+  final String? notes;
+
+  /// Private shelf location.
+  final String? location;
+
+  /// Provenance category (enum token), private.
+  final String? sourceType;
+
+  /// Free-form provenance detail, private.
+  final String? sourceDetail;
+
+  /// Age band token (e.g. `above-3`), public; projected onto issues.
+  final String? ageGroup;
+
+  /// Epoch millis at insert.
+  final int addedDate;
+
+  /// Soft-delete flag.
+  final bool removed;
+
+  /// Epoch millis when removed; null when active.
+  final int? removedAt;
+
+  /// Maintainer attribution handle.
+  final String? addedBy;
+  const PeriodicalRow({
+    required this.id,
+    required this.periodicalUid,
+    required this.title,
+    this.titleTransliteration,
+    required this.titleSort,
+    this.issn,
+    this.publisher,
+    this.language,
+    this.coverUrl,
+    this.frequency,
+    this.subscriptionStart,
+    this.subscriptionEnd,
+    this.notes,
+    this.location,
+    this.sourceType,
+    this.sourceDetail,
+    this.ageGroup,
+    required this.addedDate,
+    required this.removed,
+    this.removedAt,
+    this.addedBy,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<int>(id);
+    map['periodical_uid'] = Variable<String>(periodicalUid);
+    map['title'] = Variable<String>(title);
+    if (!nullToAbsent || titleTransliteration != null) {
+      map['title_transliteration'] = Variable<String>(titleTransliteration);
+    }
+    map['title_sort'] = Variable<String>(titleSort);
+    if (!nullToAbsent || issn != null) {
+      map['issn'] = Variable<String>(issn);
+    }
+    if (!nullToAbsent || publisher != null) {
+      map['publisher'] = Variable<String>(publisher);
+    }
+    if (!nullToAbsent || language != null) {
+      map['language'] = Variable<String>(language);
+    }
+    if (!nullToAbsent || coverUrl != null) {
+      map['cover_url'] = Variable<String>(coverUrl);
+    }
+    if (!nullToAbsent || frequency != null) {
+      map['frequency'] = Variable<String>(frequency);
+    }
+    if (!nullToAbsent || subscriptionStart != null) {
+      map['subscription_start'] = Variable<int>(subscriptionStart);
+    }
+    if (!nullToAbsent || subscriptionEnd != null) {
+      map['subscription_end'] = Variable<int>(subscriptionEnd);
+    }
+    if (!nullToAbsent || notes != null) {
+      map['notes'] = Variable<String>(notes);
+    }
+    if (!nullToAbsent || location != null) {
+      map['location'] = Variable<String>(location);
+    }
+    if (!nullToAbsent || sourceType != null) {
+      map['source_type'] = Variable<String>(sourceType);
+    }
+    if (!nullToAbsent || sourceDetail != null) {
+      map['source_detail'] = Variable<String>(sourceDetail);
+    }
+    if (!nullToAbsent || ageGroup != null) {
+      map['age_group'] = Variable<String>(ageGroup);
+    }
+    map['added_date'] = Variable<int>(addedDate);
+    map['removed'] = Variable<bool>(removed);
+    if (!nullToAbsent || removedAt != null) {
+      map['removed_at'] = Variable<int>(removedAt);
+    }
+    if (!nullToAbsent || addedBy != null) {
+      map['added_by'] = Variable<String>(addedBy);
+    }
+    return map;
+  }
+
+  PeriodicalsCompanion toCompanion(bool nullToAbsent) {
+    return PeriodicalsCompanion(
+      id: Value(id),
+      periodicalUid: Value(periodicalUid),
+      title: Value(title),
+      titleTransliteration: titleTransliteration == null && nullToAbsent
+          ? const Value.absent()
+          : Value(titleTransliteration),
+      titleSort: Value(titleSort),
+      issn: issn == null && nullToAbsent ? const Value.absent() : Value(issn),
+      publisher: publisher == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publisher),
+      language: language == null && nullToAbsent
+          ? const Value.absent()
+          : Value(language),
+      coverUrl: coverUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(coverUrl),
+      frequency: frequency == null && nullToAbsent
+          ? const Value.absent()
+          : Value(frequency),
+      subscriptionStart: subscriptionStart == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subscriptionStart),
+      subscriptionEnd: subscriptionEnd == null && nullToAbsent
+          ? const Value.absent()
+          : Value(subscriptionEnd),
+      notes: notes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(notes),
+      location: location == null && nullToAbsent
+          ? const Value.absent()
+          : Value(location),
+      sourceType: sourceType == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceType),
+      sourceDetail: sourceDetail == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceDetail),
+      ageGroup: ageGroup == null && nullToAbsent
+          ? const Value.absent()
+          : Value(ageGroup),
+      addedDate: Value(addedDate),
+      removed: Value(removed),
+      removedAt: removedAt == null && nullToAbsent
+          ? const Value.absent()
+          : Value(removedAt),
+      addedBy: addedBy == null && nullToAbsent
+          ? const Value.absent()
+          : Value(addedBy),
+    );
+  }
+
+  factory PeriodicalRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PeriodicalRow(
+      id: serializer.fromJson<int>(json['id']),
+      periodicalUid: serializer.fromJson<String>(json['periodicalUid']),
+      title: serializer.fromJson<String>(json['title']),
+      titleTransliteration: serializer.fromJson<String?>(
+        json['titleTransliteration'],
+      ),
+      titleSort: serializer.fromJson<String>(json['titleSort']),
+      issn: serializer.fromJson<String?>(json['issn']),
+      publisher: serializer.fromJson<String?>(json['publisher']),
+      language: serializer.fromJson<String?>(json['language']),
+      coverUrl: serializer.fromJson<String?>(json['coverUrl']),
+      frequency: serializer.fromJson<String?>(json['frequency']),
+      subscriptionStart: serializer.fromJson<int?>(json['subscriptionStart']),
+      subscriptionEnd: serializer.fromJson<int?>(json['subscriptionEnd']),
+      notes: serializer.fromJson<String?>(json['notes']),
+      location: serializer.fromJson<String?>(json['location']),
+      sourceType: serializer.fromJson<String?>(json['sourceType']),
+      sourceDetail: serializer.fromJson<String?>(json['sourceDetail']),
+      ageGroup: serializer.fromJson<String?>(json['ageGroup']),
+      addedDate: serializer.fromJson<int>(json['addedDate']),
+      removed: serializer.fromJson<bool>(json['removed']),
+      removedAt: serializer.fromJson<int?>(json['removedAt']),
+      addedBy: serializer.fromJson<String?>(json['addedBy']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<int>(id),
+      'periodicalUid': serializer.toJson<String>(periodicalUid),
+      'title': serializer.toJson<String>(title),
+      'titleTransliteration': serializer.toJson<String?>(titleTransliteration),
+      'titleSort': serializer.toJson<String>(titleSort),
+      'issn': serializer.toJson<String?>(issn),
+      'publisher': serializer.toJson<String?>(publisher),
+      'language': serializer.toJson<String?>(language),
+      'coverUrl': serializer.toJson<String?>(coverUrl),
+      'frequency': serializer.toJson<String?>(frequency),
+      'subscriptionStart': serializer.toJson<int?>(subscriptionStart),
+      'subscriptionEnd': serializer.toJson<int?>(subscriptionEnd),
+      'notes': serializer.toJson<String?>(notes),
+      'location': serializer.toJson<String?>(location),
+      'sourceType': serializer.toJson<String?>(sourceType),
+      'sourceDetail': serializer.toJson<String?>(sourceDetail),
+      'ageGroup': serializer.toJson<String?>(ageGroup),
+      'addedDate': serializer.toJson<int>(addedDate),
+      'removed': serializer.toJson<bool>(removed),
+      'removedAt': serializer.toJson<int?>(removedAt),
+      'addedBy': serializer.toJson<String?>(addedBy),
+    };
+  }
+
+  PeriodicalRow copyWith({
+    int? id,
+    String? periodicalUid,
+    String? title,
+    Value<String?> titleTransliteration = const Value.absent(),
+    String? titleSort,
+    Value<String?> issn = const Value.absent(),
+    Value<String?> publisher = const Value.absent(),
+    Value<String?> language = const Value.absent(),
+    Value<String?> coverUrl = const Value.absent(),
+    Value<String?> frequency = const Value.absent(),
+    Value<int?> subscriptionStart = const Value.absent(),
+    Value<int?> subscriptionEnd = const Value.absent(),
+    Value<String?> notes = const Value.absent(),
+    Value<String?> location = const Value.absent(),
+    Value<String?> sourceType = const Value.absent(),
+    Value<String?> sourceDetail = const Value.absent(),
+    Value<String?> ageGroup = const Value.absent(),
+    int? addedDate,
+    bool? removed,
+    Value<int?> removedAt = const Value.absent(),
+    Value<String?> addedBy = const Value.absent(),
+  }) => PeriodicalRow(
+    id: id ?? this.id,
+    periodicalUid: periodicalUid ?? this.periodicalUid,
+    title: title ?? this.title,
+    titleTransliteration: titleTransliteration.present
+        ? titleTransliteration.value
+        : this.titleTransliteration,
+    titleSort: titleSort ?? this.titleSort,
+    issn: issn.present ? issn.value : this.issn,
+    publisher: publisher.present ? publisher.value : this.publisher,
+    language: language.present ? language.value : this.language,
+    coverUrl: coverUrl.present ? coverUrl.value : this.coverUrl,
+    frequency: frequency.present ? frequency.value : this.frequency,
+    subscriptionStart: subscriptionStart.present
+        ? subscriptionStart.value
+        : this.subscriptionStart,
+    subscriptionEnd: subscriptionEnd.present
+        ? subscriptionEnd.value
+        : this.subscriptionEnd,
+    notes: notes.present ? notes.value : this.notes,
+    location: location.present ? location.value : this.location,
+    sourceType: sourceType.present ? sourceType.value : this.sourceType,
+    sourceDetail: sourceDetail.present ? sourceDetail.value : this.sourceDetail,
+    ageGroup: ageGroup.present ? ageGroup.value : this.ageGroup,
+    addedDate: addedDate ?? this.addedDate,
+    removed: removed ?? this.removed,
+    removedAt: removedAt.present ? removedAt.value : this.removedAt,
+    addedBy: addedBy.present ? addedBy.value : this.addedBy,
+  );
+  PeriodicalRow copyWithCompanion(PeriodicalsCompanion data) {
+    return PeriodicalRow(
+      id: data.id.present ? data.id.value : this.id,
+      periodicalUid: data.periodicalUid.present
+          ? data.periodicalUid.value
+          : this.periodicalUid,
+      title: data.title.present ? data.title.value : this.title,
+      titleTransliteration: data.titleTransliteration.present
+          ? data.titleTransliteration.value
+          : this.titleTransliteration,
+      titleSort: data.titleSort.present ? data.titleSort.value : this.titleSort,
+      issn: data.issn.present ? data.issn.value : this.issn,
+      publisher: data.publisher.present ? data.publisher.value : this.publisher,
+      language: data.language.present ? data.language.value : this.language,
+      coverUrl: data.coverUrl.present ? data.coverUrl.value : this.coverUrl,
+      frequency: data.frequency.present ? data.frequency.value : this.frequency,
+      subscriptionStart: data.subscriptionStart.present
+          ? data.subscriptionStart.value
+          : this.subscriptionStart,
+      subscriptionEnd: data.subscriptionEnd.present
+          ? data.subscriptionEnd.value
+          : this.subscriptionEnd,
+      notes: data.notes.present ? data.notes.value : this.notes,
+      location: data.location.present ? data.location.value : this.location,
+      sourceType: data.sourceType.present
+          ? data.sourceType.value
+          : this.sourceType,
+      sourceDetail: data.sourceDetail.present
+          ? data.sourceDetail.value
+          : this.sourceDetail,
+      ageGroup: data.ageGroup.present ? data.ageGroup.value : this.ageGroup,
+      addedDate: data.addedDate.present ? data.addedDate.value : this.addedDate,
+      removed: data.removed.present ? data.removed.value : this.removed,
+      removedAt: data.removedAt.present ? data.removedAt.value : this.removedAt,
+      addedBy: data.addedBy.present ? data.addedBy.value : this.addedBy,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PeriodicalRow(')
+          ..write('id: $id, ')
+          ..write('periodicalUid: $periodicalUid, ')
+          ..write('title: $title, ')
+          ..write('titleTransliteration: $titleTransliteration, ')
+          ..write('titleSort: $titleSort, ')
+          ..write('issn: $issn, ')
+          ..write('publisher: $publisher, ')
+          ..write('language: $language, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('frequency: $frequency, ')
+          ..write('subscriptionStart: $subscriptionStart, ')
+          ..write('subscriptionEnd: $subscriptionEnd, ')
+          ..write('notes: $notes, ')
+          ..write('location: $location, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourceDetail: $sourceDetail, ')
+          ..write('ageGroup: $ageGroup, ')
+          ..write('addedDate: $addedDate, ')
+          ..write('removed: $removed, ')
+          ..write('removedAt: $removedAt, ')
+          ..write('addedBy: $addedBy')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hashAll([
+    id,
+    periodicalUid,
+    title,
+    titleTransliteration,
+    titleSort,
+    issn,
+    publisher,
+    language,
+    coverUrl,
+    frequency,
+    subscriptionStart,
+    subscriptionEnd,
+    notes,
+    location,
+    sourceType,
+    sourceDetail,
+    ageGroup,
+    addedDate,
+    removed,
+    removedAt,
+    addedBy,
+  ]);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PeriodicalRow &&
+          other.id == this.id &&
+          other.periodicalUid == this.periodicalUid &&
+          other.title == this.title &&
+          other.titleTransliteration == this.titleTransliteration &&
+          other.titleSort == this.titleSort &&
+          other.issn == this.issn &&
+          other.publisher == this.publisher &&
+          other.language == this.language &&
+          other.coverUrl == this.coverUrl &&
+          other.frequency == this.frequency &&
+          other.subscriptionStart == this.subscriptionStart &&
+          other.subscriptionEnd == this.subscriptionEnd &&
+          other.notes == this.notes &&
+          other.location == this.location &&
+          other.sourceType == this.sourceType &&
+          other.sourceDetail == this.sourceDetail &&
+          other.ageGroup == this.ageGroup &&
+          other.addedDate == this.addedDate &&
+          other.removed == this.removed &&
+          other.removedAt == this.removedAt &&
+          other.addedBy == this.addedBy);
+}
+
+class PeriodicalsCompanion extends UpdateCompanion<PeriodicalRow> {
+  final Value<int> id;
+  final Value<String> periodicalUid;
+  final Value<String> title;
+  final Value<String?> titleTransliteration;
+  final Value<String> titleSort;
+  final Value<String?> issn;
+  final Value<String?> publisher;
+  final Value<String?> language;
+  final Value<String?> coverUrl;
+  final Value<String?> frequency;
+  final Value<int?> subscriptionStart;
+  final Value<int?> subscriptionEnd;
+  final Value<String?> notes;
+  final Value<String?> location;
+  final Value<String?> sourceType;
+  final Value<String?> sourceDetail;
+  final Value<String?> ageGroup;
+  final Value<int> addedDate;
+  final Value<bool> removed;
+  final Value<int?> removedAt;
+  final Value<String?> addedBy;
+  const PeriodicalsCompanion({
+    this.id = const Value.absent(),
+    this.periodicalUid = const Value.absent(),
+    this.title = const Value.absent(),
+    this.titleTransliteration = const Value.absent(),
+    this.titleSort = const Value.absent(),
+    this.issn = const Value.absent(),
+    this.publisher = const Value.absent(),
+    this.language = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.frequency = const Value.absent(),
+    this.subscriptionStart = const Value.absent(),
+    this.subscriptionEnd = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.location = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.sourceDetail = const Value.absent(),
+    this.ageGroup = const Value.absent(),
+    this.addedDate = const Value.absent(),
+    this.removed = const Value.absent(),
+    this.removedAt = const Value.absent(),
+    this.addedBy = const Value.absent(),
+  });
+  PeriodicalsCompanion.insert({
+    this.id = const Value.absent(),
+    required String periodicalUid,
+    required String title,
+    this.titleTransliteration = const Value.absent(),
+    this.titleSort = const Value.absent(),
+    this.issn = const Value.absent(),
+    this.publisher = const Value.absent(),
+    this.language = const Value.absent(),
+    this.coverUrl = const Value.absent(),
+    this.frequency = const Value.absent(),
+    this.subscriptionStart = const Value.absent(),
+    this.subscriptionEnd = const Value.absent(),
+    this.notes = const Value.absent(),
+    this.location = const Value.absent(),
+    this.sourceType = const Value.absent(),
+    this.sourceDetail = const Value.absent(),
+    this.ageGroup = const Value.absent(),
+    required int addedDate,
+    this.removed = const Value.absent(),
+    this.removedAt = const Value.absent(),
+    this.addedBy = const Value.absent(),
+  }) : periodicalUid = Value(periodicalUid),
+       title = Value(title),
+       addedDate = Value(addedDate);
+  static Insertable<PeriodicalRow> custom({
+    Expression<int>? id,
+    Expression<String>? periodicalUid,
+    Expression<String>? title,
+    Expression<String>? titleTransliteration,
+    Expression<String>? titleSort,
+    Expression<String>? issn,
+    Expression<String>? publisher,
+    Expression<String>? language,
+    Expression<String>? coverUrl,
+    Expression<String>? frequency,
+    Expression<int>? subscriptionStart,
+    Expression<int>? subscriptionEnd,
+    Expression<String>? notes,
+    Expression<String>? location,
+    Expression<String>? sourceType,
+    Expression<String>? sourceDetail,
+    Expression<String>? ageGroup,
+    Expression<int>? addedDate,
+    Expression<bool>? removed,
+    Expression<int>? removedAt,
+    Expression<String>? addedBy,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (periodicalUid != null) 'periodical_uid': periodicalUid,
+      if (title != null) 'title': title,
+      if (titleTransliteration != null)
+        'title_transliteration': titleTransliteration,
+      if (titleSort != null) 'title_sort': titleSort,
+      if (issn != null) 'issn': issn,
+      if (publisher != null) 'publisher': publisher,
+      if (language != null) 'language': language,
+      if (coverUrl != null) 'cover_url': coverUrl,
+      if (frequency != null) 'frequency': frequency,
+      if (subscriptionStart != null) 'subscription_start': subscriptionStart,
+      if (subscriptionEnd != null) 'subscription_end': subscriptionEnd,
+      if (notes != null) 'notes': notes,
+      if (location != null) 'location': location,
+      if (sourceType != null) 'source_type': sourceType,
+      if (sourceDetail != null) 'source_detail': sourceDetail,
+      if (ageGroup != null) 'age_group': ageGroup,
+      if (addedDate != null) 'added_date': addedDate,
+      if (removed != null) 'removed': removed,
+      if (removedAt != null) 'removed_at': removedAt,
+      if (addedBy != null) 'added_by': addedBy,
+    });
+  }
+
+  PeriodicalsCompanion copyWith({
+    Value<int>? id,
+    Value<String>? periodicalUid,
+    Value<String>? title,
+    Value<String?>? titleTransliteration,
+    Value<String>? titleSort,
+    Value<String?>? issn,
+    Value<String?>? publisher,
+    Value<String?>? language,
+    Value<String?>? coverUrl,
+    Value<String?>? frequency,
+    Value<int?>? subscriptionStart,
+    Value<int?>? subscriptionEnd,
+    Value<String?>? notes,
+    Value<String?>? location,
+    Value<String?>? sourceType,
+    Value<String?>? sourceDetail,
+    Value<String?>? ageGroup,
+    Value<int>? addedDate,
+    Value<bool>? removed,
+    Value<int?>? removedAt,
+    Value<String?>? addedBy,
+  }) {
+    return PeriodicalsCompanion(
+      id: id ?? this.id,
+      periodicalUid: periodicalUid ?? this.periodicalUid,
+      title: title ?? this.title,
+      titleTransliteration: titleTransliteration ?? this.titleTransliteration,
+      titleSort: titleSort ?? this.titleSort,
+      issn: issn ?? this.issn,
+      publisher: publisher ?? this.publisher,
+      language: language ?? this.language,
+      coverUrl: coverUrl ?? this.coverUrl,
+      frequency: frequency ?? this.frequency,
+      subscriptionStart: subscriptionStart ?? this.subscriptionStart,
+      subscriptionEnd: subscriptionEnd ?? this.subscriptionEnd,
+      notes: notes ?? this.notes,
+      location: location ?? this.location,
+      sourceType: sourceType ?? this.sourceType,
+      sourceDetail: sourceDetail ?? this.sourceDetail,
+      ageGroup: ageGroup ?? this.ageGroup,
+      addedDate: addedDate ?? this.addedDate,
+      removed: removed ?? this.removed,
+      removedAt: removedAt ?? this.removedAt,
+      addedBy: addedBy ?? this.addedBy,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<int>(id.value);
+    }
+    if (periodicalUid.present) {
+      map['periodical_uid'] = Variable<String>(periodicalUid.value);
+    }
+    if (title.present) {
+      map['title'] = Variable<String>(title.value);
+    }
+    if (titleTransliteration.present) {
+      map['title_transliteration'] = Variable<String>(
+        titleTransliteration.value,
+      );
+    }
+    if (titleSort.present) {
+      map['title_sort'] = Variable<String>(titleSort.value);
+    }
+    if (issn.present) {
+      map['issn'] = Variable<String>(issn.value);
+    }
+    if (publisher.present) {
+      map['publisher'] = Variable<String>(publisher.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (coverUrl.present) {
+      map['cover_url'] = Variable<String>(coverUrl.value);
+    }
+    if (frequency.present) {
+      map['frequency'] = Variable<String>(frequency.value);
+    }
+    if (subscriptionStart.present) {
+      map['subscription_start'] = Variable<int>(subscriptionStart.value);
+    }
+    if (subscriptionEnd.present) {
+      map['subscription_end'] = Variable<int>(subscriptionEnd.value);
+    }
+    if (notes.present) {
+      map['notes'] = Variable<String>(notes.value);
+    }
+    if (location.present) {
+      map['location'] = Variable<String>(location.value);
+    }
+    if (sourceType.present) {
+      map['source_type'] = Variable<String>(sourceType.value);
+    }
+    if (sourceDetail.present) {
+      map['source_detail'] = Variable<String>(sourceDetail.value);
+    }
+    if (ageGroup.present) {
+      map['age_group'] = Variable<String>(ageGroup.value);
+    }
+    if (addedDate.present) {
+      map['added_date'] = Variable<int>(addedDate.value);
+    }
+    if (removed.present) {
+      map['removed'] = Variable<bool>(removed.value);
+    }
+    if (removedAt.present) {
+      map['removed_at'] = Variable<int>(removedAt.value);
+    }
+    if (addedBy.present) {
+      map['added_by'] = Variable<String>(addedBy.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PeriodicalsCompanion(')
+          ..write('id: $id, ')
+          ..write('periodicalUid: $periodicalUid, ')
+          ..write('title: $title, ')
+          ..write('titleTransliteration: $titleTransliteration, ')
+          ..write('titleSort: $titleSort, ')
+          ..write('issn: $issn, ')
+          ..write('publisher: $publisher, ')
+          ..write('language: $language, ')
+          ..write('coverUrl: $coverUrl, ')
+          ..write('frequency: $frequency, ')
+          ..write('subscriptionStart: $subscriptionStart, ')
+          ..write('subscriptionEnd: $subscriptionEnd, ')
+          ..write('notes: $notes, ')
+          ..write('location: $location, ')
+          ..write('sourceType: $sourceType, ')
+          ..write('sourceDetail: $sourceDetail, ')
+          ..write('ageGroup: $ageGroup, ')
+          ..write('addedDate: $addedDate, ')
+          ..write('removed: $removed, ')
+          ..write('removedAt: $removedAt, ')
+          ..write('addedBy: $addedBy')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$AppDatabase extends GeneratedDatabase {
   _$AppDatabase(QueryExecutor e) : super(e);
   $AppDatabaseManager get managers => $AppDatabaseManager(this);
@@ -3367,6 +5121,8 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   late final $NetworkLibrariesTable networkLibraries = $NetworkLibrariesTable(
     this,
   );
+  late final $MagazineIssuesTable magazineIssues = $MagazineIssuesTable(this);
+  late final $PeriodicalsTable periodicals = $PeriodicalsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3375,13 +5131,25 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     books,
     wishlistBooks,
     networkLibraries,
+    magazineIssues,
+    periodicals,
   ];
+  @override
+  StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'books',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('magazine_issues', kind: UpdateKind.delete)],
+    ),
+  ]);
 }
 
 typedef $$BooksTableCreateCompanionBuilder =
     BooksCompanion Function({
       Value<int> id,
-      Value<String?> bookUid,
+      Value<String?> itemUid,
       required String title,
       Value<String?> titleTransliteration,
       Value<String?> author,
@@ -3405,11 +5173,12 @@ typedef $$BooksTableCreateCompanionBuilder =
       Value<bool> removed,
       Value<int?> removedAt,
       Value<String?> addedBy,
+      Value<String> kind,
     });
 typedef $$BooksTableUpdateCompanionBuilder =
     BooksCompanion Function({
       Value<int> id,
-      Value<String?> bookUid,
+      Value<String?> itemUid,
       Value<String> title,
       Value<String?> titleTransliteration,
       Value<String?> author,
@@ -3433,7 +5202,31 @@ typedef $$BooksTableUpdateCompanionBuilder =
       Value<bool> removed,
       Value<int?> removedAt,
       Value<String?> addedBy,
+      Value<String> kind,
     });
+
+final class $$BooksTableReferences
+    extends BaseReferences<_$AppDatabase, $BooksTable, BookRow> {
+  $$BooksTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$MagazineIssuesTable, List<MagazineIssueRow>>
+  _magazineIssuesRefsTable(_$AppDatabase db) => MultiTypedResultKey.fromTable(
+    db.magazineIssues,
+    aliasName: $_aliasNameGenerator(db.books.id, db.magazineIssues.itemId),
+  );
+
+  $$MagazineIssuesTableProcessedTableManager get magazineIssuesRefs {
+    final manager = $$MagazineIssuesTableTableManager(
+      $_db,
+      $_db.magazineIssues,
+    ).filter((f) => f.itemId.id.sqlEquals($_itemColumn<int>('id')!));
+
+    final cache = $_typedResult.readTableOrNull(_magazineIssuesRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
 
 class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
   $$BooksTableFilterComposer({
@@ -3448,8 +5241,8 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<String> get bookUid => $composableBuilder(
-    column: $table.bookUid,
+  ColumnFilters<String> get itemUid => $composableBuilder(
+    column: $table.itemUid,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3567,6 +5360,36 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
     column: $table.addedBy,
     builder: (column) => ColumnFilters(column),
   );
+
+  ColumnFilters<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> magazineIssuesRefs(
+    Expression<bool> Function($$MagazineIssuesTableFilterComposer f) f,
+  ) {
+    final $$MagazineIssuesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.magazineIssues,
+      getReferencedColumn: (t) => t.itemId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MagazineIssuesTableFilterComposer(
+            $db: $db,
+            $table: $db.magazineIssues,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$BooksTableOrderingComposer
@@ -3583,8 +5406,8 @@ class $$BooksTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get bookUid => $composableBuilder(
-    column: $table.bookUid,
+  ColumnOrderings<String> get itemUid => $composableBuilder(
+    column: $table.itemUid,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -3702,6 +5525,11 @@ class $$BooksTableOrderingComposer
     column: $table.addedBy,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get kind => $composableBuilder(
+    column: $table.kind,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BooksTableAnnotationComposer
@@ -3716,8 +5544,8 @@ class $$BooksTableAnnotationComposer
   GeneratedColumn<int> get id =>
       $composableBuilder(column: $table.id, builder: (column) => column);
 
-  GeneratedColumn<String> get bookUid =>
-      $composableBuilder(column: $table.bookUid, builder: (column) => column);
+  GeneratedColumn<String> get itemUid =>
+      $composableBuilder(column: $table.itemUid, builder: (column) => column);
 
   GeneratedColumn<String> get title =>
       $composableBuilder(column: $table.title, builder: (column) => column);
@@ -3799,6 +5627,34 @@ class $$BooksTableAnnotationComposer
 
   GeneratedColumn<String> get addedBy =>
       $composableBuilder(column: $table.addedBy, builder: (column) => column);
+
+  GeneratedColumn<String> get kind =>
+      $composableBuilder(column: $table.kind, builder: (column) => column);
+
+  Expression<T> magazineIssuesRefs<T extends Object>(
+    Expression<T> Function($$MagazineIssuesTableAnnotationComposer a) f,
+  ) {
+    final $$MagazineIssuesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.magazineIssues,
+      getReferencedColumn: (t) => t.itemId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$MagazineIssuesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.magazineIssues,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
 }
 
 class $$BooksTableTableManager
@@ -3812,9 +5668,9 @@ class $$BooksTableTableManager
           $$BooksTableAnnotationComposer,
           $$BooksTableCreateCompanionBuilder,
           $$BooksTableUpdateCompanionBuilder,
-          (BookRow, BaseReferences<_$AppDatabase, $BooksTable, BookRow>),
+          (BookRow, $$BooksTableReferences),
           BookRow,
-          PrefetchHooks Function()
+          PrefetchHooks Function({bool magazineIssuesRefs})
         > {
   $$BooksTableTableManager(_$AppDatabase db, $BooksTable table)
     : super(
@@ -3830,7 +5686,7 @@ class $$BooksTableTableManager
           updateCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<String?> bookUid = const Value.absent(),
+                Value<String?> itemUid = const Value.absent(),
                 Value<String> title = const Value.absent(),
                 Value<String?> titleTransliteration = const Value.absent(),
                 Value<String?> author = const Value.absent(),
@@ -3854,9 +5710,10 @@ class $$BooksTableTableManager
                 Value<bool> removed = const Value.absent(),
                 Value<int?> removedAt = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
+                Value<String> kind = const Value.absent(),
               }) => BooksCompanion(
                 id: id,
-                bookUid: bookUid,
+                itemUid: itemUid,
                 title: title,
                 titleTransliteration: titleTransliteration,
                 author: author,
@@ -3880,11 +5737,12 @@ class $$BooksTableTableManager
                 removed: removed,
                 removedAt: removedAt,
                 addedBy: addedBy,
+                kind: kind,
               ),
           createCompanionCallback:
               ({
                 Value<int> id = const Value.absent(),
-                Value<String?> bookUid = const Value.absent(),
+                Value<String?> itemUid = const Value.absent(),
                 required String title,
                 Value<String?> titleTransliteration = const Value.absent(),
                 Value<String?> author = const Value.absent(),
@@ -3908,9 +5766,10 @@ class $$BooksTableTableManager
                 Value<bool> removed = const Value.absent(),
                 Value<int?> removedAt = const Value.absent(),
                 Value<String?> addedBy = const Value.absent(),
+                Value<String> kind = const Value.absent(),
               }) => BooksCompanion.insert(
                 id: id,
-                bookUid: bookUid,
+                itemUid: itemUid,
                 title: title,
                 titleTransliteration: titleTransliteration,
                 author: author,
@@ -3934,11 +5793,45 @@ class $$BooksTableTableManager
                 removed: removed,
                 removedAt: removedAt,
                 addedBy: addedBy,
+                kind: kind,
               ),
           withReferenceMapper: (p0) => p0
-              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .map(
+                (e) =>
+                    (e.readTable(table), $$BooksTableReferences(db, table, e)),
+              )
               .toList(),
-          prefetchHooksCallback: null,
+          prefetchHooksCallback: ({magazineIssuesRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (magazineIssuesRefs) db.magazineIssues,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (magazineIssuesRefs)
+                    await $_getPrefetchedData<
+                      BookRow,
+                      $BooksTable,
+                      MagazineIssueRow
+                    >(
+                      currentTable: table,
+                      referencedTable: $$BooksTableReferences
+                          ._magazineIssuesRefsTable(db),
+                      managerFromTypedResult: (p0) => $$BooksTableReferences(
+                        db,
+                        table,
+                        p0,
+                      ).magazineIssuesRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where((e) => e.itemId == item.id),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
         ),
       );
 }
@@ -3953,9 +5846,9 @@ typedef $$BooksTableProcessedTableManager =
       $$BooksTableAnnotationComposer,
       $$BooksTableCreateCompanionBuilder,
       $$BooksTableUpdateCompanionBuilder,
-      (BookRow, BaseReferences<_$AppDatabase, $BooksTable, BookRow>),
+      (BookRow, $$BooksTableReferences),
       BookRow,
-      PrefetchHooks Function()
+      PrefetchHooks Function({bool magazineIssuesRefs})
     >;
 typedef $$WishlistBooksTableCreateCompanionBuilder =
     WishlistBooksCompanion Function({
@@ -4814,6 +6707,882 @@ typedef $$NetworkLibrariesTableProcessedTableManager =
       NetworkLibraryRow,
       PrefetchHooks Function()
     >;
+typedef $$MagazineIssuesTableCreateCompanionBuilder =
+    MagazineIssuesCompanion Function({
+      Value<int> itemId,
+      required String periodicalUid,
+      Value<int?> volume,
+      Value<int?> issueNumber,
+      Value<int?> issueDate,
+      Value<int?> boundUntil,
+      Value<String?> issueLabel,
+    });
+typedef $$MagazineIssuesTableUpdateCompanionBuilder =
+    MagazineIssuesCompanion Function({
+      Value<int> itemId,
+      Value<String> periodicalUid,
+      Value<int?> volume,
+      Value<int?> issueNumber,
+      Value<int?> issueDate,
+      Value<int?> boundUntil,
+      Value<String?> issueLabel,
+    });
+
+final class $$MagazineIssuesTableReferences
+    extends
+        BaseReferences<_$AppDatabase, $MagazineIssuesTable, MagazineIssueRow> {
+  $$MagazineIssuesTableReferences(
+    super.$_db,
+    super.$_table,
+    super.$_typedResult,
+  );
+
+  static $BooksTable _itemIdTable(_$AppDatabase db) => db.books.createAlias(
+    $_aliasNameGenerator(db.magazineIssues.itemId, db.books.id),
+  );
+
+  $$BooksTableProcessedTableManager get itemId {
+    final $_column = $_itemColumn<int>('item_id')!;
+
+    final manager = $$BooksTableTableManager(
+      $_db,
+      $_db.books,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_itemIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+}
+
+class $$MagazineIssuesTableFilterComposer
+    extends Composer<_$AppDatabase, $MagazineIssuesTable> {
+  $$MagazineIssuesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get volume => $composableBuilder(
+    column: $table.volume,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get issueNumber => $composableBuilder(
+    column: $table.issueNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get issueDate => $composableBuilder(
+    column: $table.issueDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get boundUntil => $composableBuilder(
+    column: $table.boundUntil,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get issueLabel => $composableBuilder(
+    column: $table.issueLabel,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  $$BooksTableFilterComposer get itemId {
+    final $$BooksTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.itemId,
+      referencedTable: $db.books,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$BooksTableFilterComposer(
+            $db: $db,
+            $table: $db.books,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MagazineIssuesTableOrderingComposer
+    extends Composer<_$AppDatabase, $MagazineIssuesTable> {
+  $$MagazineIssuesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get volume => $composableBuilder(
+    column: $table.volume,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get issueNumber => $composableBuilder(
+    column: $table.issueNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get issueDate => $composableBuilder(
+    column: $table.issueDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get boundUntil => $composableBuilder(
+    column: $table.boundUntil,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get issueLabel => $composableBuilder(
+    column: $table.issueLabel,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  $$BooksTableOrderingComposer get itemId {
+    final $$BooksTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.itemId,
+      referencedTable: $db.books,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$BooksTableOrderingComposer(
+            $db: $db,
+            $table: $db.books,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MagazineIssuesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $MagazineIssuesTable> {
+  $$MagazineIssuesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get volume =>
+      $composableBuilder(column: $table.volume, builder: (column) => column);
+
+  GeneratedColumn<int> get issueNumber => $composableBuilder(
+    column: $table.issueNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get issueDate =>
+      $composableBuilder(column: $table.issueDate, builder: (column) => column);
+
+  GeneratedColumn<int> get boundUntil => $composableBuilder(
+    column: $table.boundUntil,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get issueLabel => $composableBuilder(
+    column: $table.issueLabel,
+    builder: (column) => column,
+  );
+
+  $$BooksTableAnnotationComposer get itemId {
+    final $$BooksTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.itemId,
+      referencedTable: $db.books,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$BooksTableAnnotationComposer(
+            $db: $db,
+            $table: $db.books,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+}
+
+class $$MagazineIssuesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $MagazineIssuesTable,
+          MagazineIssueRow,
+          $$MagazineIssuesTableFilterComposer,
+          $$MagazineIssuesTableOrderingComposer,
+          $$MagazineIssuesTableAnnotationComposer,
+          $$MagazineIssuesTableCreateCompanionBuilder,
+          $$MagazineIssuesTableUpdateCompanionBuilder,
+          (MagazineIssueRow, $$MagazineIssuesTableReferences),
+          MagazineIssueRow,
+          PrefetchHooks Function({bool itemId})
+        > {
+  $$MagazineIssuesTableTableManager(
+    _$AppDatabase db,
+    $MagazineIssuesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$MagazineIssuesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$MagazineIssuesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$MagazineIssuesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> itemId = const Value.absent(),
+                Value<String> periodicalUid = const Value.absent(),
+                Value<int?> volume = const Value.absent(),
+                Value<int?> issueNumber = const Value.absent(),
+                Value<int?> issueDate = const Value.absent(),
+                Value<int?> boundUntil = const Value.absent(),
+                Value<String?> issueLabel = const Value.absent(),
+              }) => MagazineIssuesCompanion(
+                itemId: itemId,
+                periodicalUid: periodicalUid,
+                volume: volume,
+                issueNumber: issueNumber,
+                issueDate: issueDate,
+                boundUntil: boundUntil,
+                issueLabel: issueLabel,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> itemId = const Value.absent(),
+                required String periodicalUid,
+                Value<int?> volume = const Value.absent(),
+                Value<int?> issueNumber = const Value.absent(),
+                Value<int?> issueDate = const Value.absent(),
+                Value<int?> boundUntil = const Value.absent(),
+                Value<String?> issueLabel = const Value.absent(),
+              }) => MagazineIssuesCompanion.insert(
+                itemId: itemId,
+                periodicalUid: periodicalUid,
+                volume: volume,
+                issueNumber: issueNumber,
+                issueDate: issueDate,
+                boundUntil: boundUntil,
+                issueLabel: issueLabel,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable(table),
+                  $$MagazineIssuesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({itemId = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [],
+              addJoins:
+                  <
+                    T extends TableManagerState<
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic,
+                      dynamic
+                    >
+                  >(state) {
+                    if (itemId) {
+                      state =
+                          state.withJoin(
+                                currentTable: table,
+                                currentColumn: table.itemId,
+                                referencedTable: $$MagazineIssuesTableReferences
+                                    ._itemIdTable(db),
+                                referencedColumn:
+                                    $$MagazineIssuesTableReferences
+                                        ._itemIdTable(db)
+                                        .id,
+                              )
+                              as T;
+                    }
+
+                    return state;
+                  },
+              getPrefetchedDataCallback: (items) async {
+                return [];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$MagazineIssuesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $MagazineIssuesTable,
+      MagazineIssueRow,
+      $$MagazineIssuesTableFilterComposer,
+      $$MagazineIssuesTableOrderingComposer,
+      $$MagazineIssuesTableAnnotationComposer,
+      $$MagazineIssuesTableCreateCompanionBuilder,
+      $$MagazineIssuesTableUpdateCompanionBuilder,
+      (MagazineIssueRow, $$MagazineIssuesTableReferences),
+      MagazineIssueRow,
+      PrefetchHooks Function({bool itemId})
+    >;
+typedef $$PeriodicalsTableCreateCompanionBuilder =
+    PeriodicalsCompanion Function({
+      Value<int> id,
+      required String periodicalUid,
+      required String title,
+      Value<String?> titleTransliteration,
+      Value<String> titleSort,
+      Value<String?> issn,
+      Value<String?> publisher,
+      Value<String?> language,
+      Value<String?> coverUrl,
+      Value<String?> frequency,
+      Value<int?> subscriptionStart,
+      Value<int?> subscriptionEnd,
+      Value<String?> notes,
+      Value<String?> location,
+      Value<String?> sourceType,
+      Value<String?> sourceDetail,
+      Value<String?> ageGroup,
+      required int addedDate,
+      Value<bool> removed,
+      Value<int?> removedAt,
+      Value<String?> addedBy,
+    });
+typedef $$PeriodicalsTableUpdateCompanionBuilder =
+    PeriodicalsCompanion Function({
+      Value<int> id,
+      Value<String> periodicalUid,
+      Value<String> title,
+      Value<String?> titleTransliteration,
+      Value<String> titleSort,
+      Value<String?> issn,
+      Value<String?> publisher,
+      Value<String?> language,
+      Value<String?> coverUrl,
+      Value<String?> frequency,
+      Value<int?> subscriptionStart,
+      Value<int?> subscriptionEnd,
+      Value<String?> notes,
+      Value<String?> location,
+      Value<String?> sourceType,
+      Value<String?> sourceDetail,
+      Value<String?> ageGroup,
+      Value<int> addedDate,
+      Value<bool> removed,
+      Value<int?> removedAt,
+      Value<String?> addedBy,
+    });
+
+class $$PeriodicalsTableFilterComposer
+    extends Composer<_$AppDatabase, $PeriodicalsTable> {
+  $$PeriodicalsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get titleTransliteration => $composableBuilder(
+    column: $table.titleTransliteration,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get titleSort => $composableBuilder(
+    column: $table.titleSort,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get issn => $composableBuilder(
+    column: $table.issn,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get publisher => $composableBuilder(
+    column: $table.publisher,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get frequency => $composableBuilder(
+    column: $table.frequency,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get subscriptionStart => $composableBuilder(
+    column: $table.subscriptionStart,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get subscriptionEnd => $composableBuilder(
+    column: $table.subscriptionEnd,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get location => $composableBuilder(
+    column: $table.location,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceDetail => $composableBuilder(
+    column: $table.sourceDetail,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get ageGroup => $composableBuilder(
+    column: $table.ageGroup,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get addedDate => $composableBuilder(
+    column: $table.addedDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get removed => $composableBuilder(
+    column: $table.removed,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get removedAt => $composableBuilder(
+    column: $table.removedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get addedBy => $composableBuilder(
+    column: $table.addedBy,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PeriodicalsTableOrderingComposer
+    extends Composer<_$AppDatabase, $PeriodicalsTable> {
+  $$PeriodicalsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<int> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get title => $composableBuilder(
+    column: $table.title,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get titleTransliteration => $composableBuilder(
+    column: $table.titleTransliteration,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get titleSort => $composableBuilder(
+    column: $table.titleSort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get issn => $composableBuilder(
+    column: $table.issn,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get publisher => $composableBuilder(
+    column: $table.publisher,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get coverUrl => $composableBuilder(
+    column: $table.coverUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get frequency => $composableBuilder(
+    column: $table.frequency,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get subscriptionStart => $composableBuilder(
+    column: $table.subscriptionStart,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get subscriptionEnd => $composableBuilder(
+    column: $table.subscriptionEnd,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get notes => $composableBuilder(
+    column: $table.notes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get location => $composableBuilder(
+    column: $table.location,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceDetail => $composableBuilder(
+    column: $table.sourceDetail,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get ageGroup => $composableBuilder(
+    column: $table.ageGroup,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get addedDate => $composableBuilder(
+    column: $table.addedDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get removed => $composableBuilder(
+    column: $table.removed,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get removedAt => $composableBuilder(
+    column: $table.removedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get addedBy => $composableBuilder(
+    column: $table.addedBy,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PeriodicalsTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PeriodicalsTable> {
+  $$PeriodicalsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<int> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get periodicalUid => $composableBuilder(
+    column: $table.periodicalUid,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get title =>
+      $composableBuilder(column: $table.title, builder: (column) => column);
+
+  GeneratedColumn<String> get titleTransliteration => $composableBuilder(
+    column: $table.titleTransliteration,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get titleSort =>
+      $composableBuilder(column: $table.titleSort, builder: (column) => column);
+
+  GeneratedColumn<String> get issn =>
+      $composableBuilder(column: $table.issn, builder: (column) => column);
+
+  GeneratedColumn<String> get publisher =>
+      $composableBuilder(column: $table.publisher, builder: (column) => column);
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<String> get coverUrl =>
+      $composableBuilder(column: $table.coverUrl, builder: (column) => column);
+
+  GeneratedColumn<String> get frequency =>
+      $composableBuilder(column: $table.frequency, builder: (column) => column);
+
+  GeneratedColumn<int> get subscriptionStart => $composableBuilder(
+    column: $table.subscriptionStart,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get subscriptionEnd => $composableBuilder(
+    column: $table.subscriptionEnd,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get notes =>
+      $composableBuilder(column: $table.notes, builder: (column) => column);
+
+  GeneratedColumn<String> get location =>
+      $composableBuilder(column: $table.location, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceType => $composableBuilder(
+    column: $table.sourceType,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceDetail => $composableBuilder(
+    column: $table.sourceDetail,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get ageGroup =>
+      $composableBuilder(column: $table.ageGroup, builder: (column) => column);
+
+  GeneratedColumn<int> get addedDate =>
+      $composableBuilder(column: $table.addedDate, builder: (column) => column);
+
+  GeneratedColumn<bool> get removed =>
+      $composableBuilder(column: $table.removed, builder: (column) => column);
+
+  GeneratedColumn<int> get removedAt =>
+      $composableBuilder(column: $table.removedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get addedBy =>
+      $composableBuilder(column: $table.addedBy, builder: (column) => column);
+}
+
+class $$PeriodicalsTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PeriodicalsTable,
+          PeriodicalRow,
+          $$PeriodicalsTableFilterComposer,
+          $$PeriodicalsTableOrderingComposer,
+          $$PeriodicalsTableAnnotationComposer,
+          $$PeriodicalsTableCreateCompanionBuilder,
+          $$PeriodicalsTableUpdateCompanionBuilder,
+          (
+            PeriodicalRow,
+            BaseReferences<_$AppDatabase, $PeriodicalsTable, PeriodicalRow>,
+          ),
+          PeriodicalRow,
+          PrefetchHooks Function()
+        > {
+  $$PeriodicalsTableTableManager(_$AppDatabase db, $PeriodicalsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PeriodicalsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PeriodicalsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PeriodicalsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                Value<String> periodicalUid = const Value.absent(),
+                Value<String> title = const Value.absent(),
+                Value<String?> titleTransliteration = const Value.absent(),
+                Value<String> titleSort = const Value.absent(),
+                Value<String?> issn = const Value.absent(),
+                Value<String?> publisher = const Value.absent(),
+                Value<String?> language = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<String?> frequency = const Value.absent(),
+                Value<int?> subscriptionStart = const Value.absent(),
+                Value<int?> subscriptionEnd = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> location = const Value.absent(),
+                Value<String?> sourceType = const Value.absent(),
+                Value<String?> sourceDetail = const Value.absent(),
+                Value<String?> ageGroup = const Value.absent(),
+                Value<int> addedDate = const Value.absent(),
+                Value<bool> removed = const Value.absent(),
+                Value<int?> removedAt = const Value.absent(),
+                Value<String?> addedBy = const Value.absent(),
+              }) => PeriodicalsCompanion(
+                id: id,
+                periodicalUid: periodicalUid,
+                title: title,
+                titleTransliteration: titleTransliteration,
+                titleSort: titleSort,
+                issn: issn,
+                publisher: publisher,
+                language: language,
+                coverUrl: coverUrl,
+                frequency: frequency,
+                subscriptionStart: subscriptionStart,
+                subscriptionEnd: subscriptionEnd,
+                notes: notes,
+                location: location,
+                sourceType: sourceType,
+                sourceDetail: sourceDetail,
+                ageGroup: ageGroup,
+                addedDate: addedDate,
+                removed: removed,
+                removedAt: removedAt,
+                addedBy: addedBy,
+              ),
+          createCompanionCallback:
+              ({
+                Value<int> id = const Value.absent(),
+                required String periodicalUid,
+                required String title,
+                Value<String?> titleTransliteration = const Value.absent(),
+                Value<String> titleSort = const Value.absent(),
+                Value<String?> issn = const Value.absent(),
+                Value<String?> publisher = const Value.absent(),
+                Value<String?> language = const Value.absent(),
+                Value<String?> coverUrl = const Value.absent(),
+                Value<String?> frequency = const Value.absent(),
+                Value<int?> subscriptionStart = const Value.absent(),
+                Value<int?> subscriptionEnd = const Value.absent(),
+                Value<String?> notes = const Value.absent(),
+                Value<String?> location = const Value.absent(),
+                Value<String?> sourceType = const Value.absent(),
+                Value<String?> sourceDetail = const Value.absent(),
+                Value<String?> ageGroup = const Value.absent(),
+                required int addedDate,
+                Value<bool> removed = const Value.absent(),
+                Value<int?> removedAt = const Value.absent(),
+                Value<String?> addedBy = const Value.absent(),
+              }) => PeriodicalsCompanion.insert(
+                id: id,
+                periodicalUid: periodicalUid,
+                title: title,
+                titleTransliteration: titleTransliteration,
+                titleSort: titleSort,
+                issn: issn,
+                publisher: publisher,
+                language: language,
+                coverUrl: coverUrl,
+                frequency: frequency,
+                subscriptionStart: subscriptionStart,
+                subscriptionEnd: subscriptionEnd,
+                notes: notes,
+                location: location,
+                sourceType: sourceType,
+                sourceDetail: sourceDetail,
+                ageGroup: ageGroup,
+                addedDate: addedDate,
+                removed: removed,
+                removedAt: removedAt,
+                addedBy: addedBy,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PeriodicalsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PeriodicalsTable,
+      PeriodicalRow,
+      $$PeriodicalsTableFilterComposer,
+      $$PeriodicalsTableOrderingComposer,
+      $$PeriodicalsTableAnnotationComposer,
+      $$PeriodicalsTableCreateCompanionBuilder,
+      $$PeriodicalsTableUpdateCompanionBuilder,
+      (
+        PeriodicalRow,
+        BaseReferences<_$AppDatabase, $PeriodicalsTable, PeriodicalRow>,
+      ),
+      PeriodicalRow,
+      PrefetchHooks Function()
+    >;
 
 class $AppDatabaseManager {
   final _$AppDatabase _db;
@@ -4824,4 +7593,8 @@ class $AppDatabaseManager {
       $$WishlistBooksTableTableManager(_db, _db.wishlistBooks);
   $$NetworkLibrariesTableTableManager get networkLibraries =>
       $$NetworkLibrariesTableTableManager(_db, _db.networkLibraries);
+  $$MagazineIssuesTableTableManager get magazineIssues =>
+      $$MagazineIssuesTableTableManager(_db, _db.magazineIssues);
+  $$PeriodicalsTableTableManager get periodicals =>
+      $$PeriodicalsTableTableManager(_db, _db.periodicals);
 }

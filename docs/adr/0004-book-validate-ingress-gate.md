@@ -24,3 +24,5 @@ churn every one of them.
   fails the test.
 - The deviation is documented in AGENTS §3.3 itself, so the exception is a
   decision, not drift.
+- 2026-10: `Book` renamed `CatalogueItem` (`entities/catalogue_item.dart`; gate test
+  `catalogue_item_validation_gate_test.dart`); the gate is unchanged.

@@ -117,7 +117,7 @@ class WishlistBook {
   /// Validates [book] against the shared [CatalogueRules] (M15) and returns
   /// a normalised copy (title trimmed) or every field error found.
   ///
-  /// Same contract as `Book.validate`: every ingress (form, JSON/CSV import,
+  /// Same contract as `CatalogueItem.validate`: every ingress (form, JSON/CSV import,
   /// merge, restore) passes a row through here BEFORE persistence. A priority
   /// outside 0..2 has no matching dropdown item (the edit form asserts), and
   /// a non-finite price makes `jsonEncode` throw on the next export — so both
@@ -177,9 +177,10 @@ class WishlistBook {
         ),
       );
     }
-    // Cover is NORMALISED, never rejected — same rationale as Book.validate
-    // (a pre-M15 row must stay editable; the ref is inert because display and
-    // publish re-check the allow-list). Importers report the drop.
+    // Cover is NORMALISED, never rejected — same rationale as
+    // CatalogueItem.validate (a pre-M15 row must stay editable; the ref is
+    // inert because display and publish re-check the allow-list). Importers
+    // report the drop.
     final safeCover = CatalogueRules.isValidCoverRef(book.coverUrl)
         ? (book.coverUrl?.trim().isEmpty ?? true ? null : book.coverUrl!.trim())
         : null;

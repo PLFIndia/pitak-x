@@ -1,5 +1,6 @@
-/// Reads the Pitaka JSON export (`PitakaExport`, schema v3). Pure Dart port of
-/// Kotlin `PitakaJsonImporter` + the Moshi-reflective `PitakaExport` shape.
+/// Reads the Pitaka JSON export (`PitakaExport`, up to schema v4). Pure Dart
+/// port of Kotlin `PitakaJsonImporter` + the Moshi-reflective `PitakaExport`
+/// shape, extended by ADR 0014 W1 for item kinds.
 ///
 /// Key contract (verified against Kotlin source §3):
 ///  - Moshi reflective serialization uses **Kotlin property names** → camelCase
@@ -12,6 +13,16 @@
 ///  - Imported rows get FRESH ids (id = 0); LOCAL cover references are dropped
 ///    unless keepLocalCovers is set (only the bundle path ships image bytes).
 ///  - Malformed input never throws — errors are collected into the payload.
+///
+/// v4 rules (ADR 0014 W1, fail closed on the unknown — P1):
+///  - `kind` absent ⇒ `book`; an UNKNOWN kind token ⇒ the row is skipped and
+///    counted, never mis-catalogued as a book (F6);
+///  - `magazine-issue` without a nested `issue{}` ⇒ the row is rejected;
+///  - an issue whose `periodicalUid` matches no periodical IN THE FILE is
+///    imported as a plain book with a warning (its own fields survive; only
+///    the series link is dropped);
+///  - `periodicals[]` is parsed before `books[]` so the orphan check knows
+///    every uid the file carries.
 library;
 
 import 'dart:convert';
@@ -21,12 +32,18 @@ import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/domain/library_json_codec.dart';
+import 'package:pitaka/features/import_export/domain/periodical_uid_ambiguity.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
-/// Highest `schemaVersion` this build can read (Kotlin `SCHEMA_VERSION = 3`).
-const int kPitakaSchemaVersion = 3;
+/// Highest `schemaVersion` this build can read (v4 = item kinds, ADR 0014 W1;
+/// the Kotlin-era ceiling was 3).
+const int kPitakaSchemaVersion = 4;
 
 /// Parses Pitaka JSON export files into an [ImportPayload].
 final class PitakaJsonImporter implements Importer, LibraryJsonParser {
@@ -70,15 +87,55 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       final msg =
           'This file was created by a newer version of Pitak '
           '(schema v$schemaVersion). Update the app before importing.';
-      return ImportPayload(parseErrors: [msg]);
+      return ImportPayload(
+        parseErrors: [msg],
+        tooNewSchemaVersion: schemaVersion,
+      );
     }
 
-    final books = <Book>[];
+    final books = <CatalogueItem>[];
+    final periodicals = <Periodical>[];
     final wishlist = <WishlistBook>[];
     final errors = <String>[];
     final warnings = <String>[];
 
+    // W1: periodicals FIRST — the orphan check on issues needs the set of
+    // uids the file carries, regardless of key order inside the document.
+    final filePeriodicalUids = <String>{};
+    // Validation canonicalises UIDs, so the normalised rows cannot show that a
+    // file spelled one identity two ways. The scan keeps the raw spellings
+    // long enough to tell an exact duplicate (first row wins) from the fatal
+    // trim-created collision.
+    final uidScan = PeriodicalUidAmbiguityScan();
+    var hasTrimCreatedUidCollision = false;
+    final rawPeriodicals = decoded['periodicals'];
+    if (rawPeriodicals is List) {
+      for (var i = 0; i < rawPeriodicals.length; i++) {
+        final item = rawPeriodicals[i];
+        if (item is Map<String, dynamic>) {
+          if (periodicals.length >= limits.maxRows) {
+            errors.add(
+              'Only the first ${limits.maxRows} magazine titles were '
+              'imported; the rest were skipped.',
+            );
+            break;
+          }
+          final r = _RowReader('Magazine title', item, i + 1, limits, warnings);
+          _periodical(r).match((errs) => errors.add(r.rowError(errs)), (p) {
+            final uid = p.periodicalUid?.trim();
+            if (uid != null && uid.isNotEmpty) filePeriodicalUids.add(uid);
+            if (uidScan.isAmbiguous(_asString(item['periodicalUid']))) {
+              hasTrimCreatedUidCollision = true;
+            }
+            periodicals.add(p);
+          });
+        }
+      }
+    }
+
     // M4: cap each collection's row count; drop the overflow with one error.
+    // JSON key stays `books` (wire contract, ADR 0014); the payload field is
+    // `items` because the list carries every catalogue item kind.
     final rawBooks = decoded['books'];
     if (rawBooks is List) {
       for (var i = 0; i < rawBooks.length; i++) {
@@ -92,7 +149,10 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
             break;
           }
           final r = _RowReader('Book', item, i + 1, limits, warnings);
-          _book(r).match((errs) => errors.add(r.rowError(errs)), books.add);
+          _book(
+            r,
+            filePeriodicalUids,
+          ).match((errs) => errors.add(r.rowError(errs)), books.add);
         }
       }
     }
@@ -118,9 +178,13 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     }
 
     return ImportPayload(
-      books: books,
+      items: books,
+      periodicals: periodicals,
       wishlist: wishlist,
       parseErrors: errors,
+      fatalErrors: [
+        if (hasTrimCreatedUidCollision) kPeriodicalUidTrimCollisionMessage,
+      ],
       warnings: warnings,
     );
   }
@@ -146,21 +210,67 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
     }
   }
 
-  /// Builds one [Book] from a JSON row and validates it (M15): the row is
-  /// either returned normalised or rejected with its field errors — never
+  /// Builds one [CatalogueItem] from a JSON row and validates it (M15): the row
+  /// is either returned normalised or rejected with its field errors — never
   /// silently coerced. Over-long text is truncated + reported (D2); a
   /// disallowed cover link is dropped + reported.
-  Either<List<FieldError>, Book> _book(_RowReader r) {
+  ///
+  /// [filePeriodicalUids] is every series uid the file carries (parsed first),
+  /// for the W1 orphan rule.
+  Either<List<FieldError>, CatalogueItem> _book(
+    _RowReader r,
+    Set<String> filePeriodicalUids,
+  ) {
     // Fresh id on import; drop LOCAL cover refs unless bundled. Remote https
-    // covers are allow-list-checked by Book.validate below.
+    // covers are allow-list-checked by CatalogueItem.validate below.
     final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
     if (unsafe != null) return left([unsafe]);
     final cover = r.cover(keepLocalCovers: keepLocalCovers);
+
+    // W1: the kind token decides the row's `details`. Absent ⇒ book; an
+    // unknown token skips the row (F6 — never mis-catalogued as a book).
+    final ItemDetails? details;
+    final kindToken = _asString(r.raw['kind']);
+    if (kindToken == null || kindToken.trim().isEmpty) {
+      details = null;
+    } else {
+      switch (ItemKind.fromToken(kindToken)) {
+        case null:
+          return left([const FieldError('kind', 'is not a known kind')]);
+        case ItemKind.book:
+          details = null;
+        case ItemKind.other:
+          details = const OtherItemOf();
+        case ItemKind.magazineIssue:
+          final rawIssue = r.raw['issue'];
+          if (rawIssue is! Map<String, dynamic>) {
+            return left([
+              const FieldError('issue', 'is required for a magazine issue'),
+            ]);
+          }
+          final issue = _issue(rawIssue);
+          if (filePeriodicalUids.contains(issue.periodicalUid.trim())) {
+            details = issue;
+          } else {
+            // W1 orphan rule: the series is not in the file, so the issue
+            // becomes a plain book (its base fields survive intact) with a
+            // warning — the alternative (a dangling series link) would be
+            // silent data corruption.
+            r.warnings.add(
+              '${r.kind} ${r.label}: its magazine title is not in the file; '
+              'the row was imported as a book.',
+            );
+            details = null;
+          }
+      }
+    }
+
     // M4: clamp every persisted text field so one giant cell can't bloat the
     // DB. M15/D2: clamping is now REPORTED as a warning, not silent.
-    final candidate = Book(
+    final candidate = CatalogueItem(
       title: r.text('title') ?? '',
-      bookUid: r.text('bookUid'),
+      // JSON key stays `bookUid` (wire contract, ADR 0014).
+      itemUid: r.text('bookUid'),
       titleTransliteration: r.text('titleTransliteration'),
       author: r.text('author'),
       isbn: r.text('isbn'),
@@ -172,7 +282,7 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       language: r.text('language'),
       notes: r.text('notes'),
       location: r.text('location'),
-      sourceType: BookSourceTypeX.fromToken(_asString(r.raw['sourceType'])),
+      sourceType: ItemSourceTypeX.fromToken(_asString(r.raw['sourceType'])),
       sourceDetail: r.text('sourceDetail'),
       ageGroup: AgeGroup.fromToken(_asString(r.raw['ageGroup'])),
       addedDate: _asInt(r.raw['addedDate']) ?? 0,
@@ -182,8 +292,59 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       removedAt: _asInt(r.raw['removedAt']),
       // M15: addedBy was the ONE text field that skipped the cap.
       addedBy: r.text('addedBy'),
+      details: details,
     );
-    return Book.validate(candidate).map((valid) {
+    // The gate appends the details' own `issue.*` errors, so a malformed
+    // issue block rejects the row with field names that point at it.
+    return CatalogueItem.validate(candidate).map((valid) {
+      r.reportDroppedCover(valid.coverUrl, cover);
+      return valid;
+    });
+  }
+
+  /// Reads the nested `issue{}` object of a magazine-issue row (W1). Field
+  /// rules (`periodicalUid` non-blank, a number or date present, a bound
+  /// range in order) are enforced by `IssueOf.validate` downstream, not here.
+  IssueOf _issue(Map<String, dynamic> raw) {
+    return IssueOf(
+      periodicalUid: _asString(raw['periodicalUid']) ?? '',
+      volume: _asInt(raw['volume']),
+      issueNumber: _asInt(raw['issueNumber']),
+      issueDate: _asInt(raw['issueDate']),
+      boundUntil: _asInt(raw['boundUntil']),
+      label: _asString(raw['label']),
+    );
+  }
+
+  /// Builds one [Periodical] from a JSON row and validates it — the same
+  /// validate-or-reject contract as [_book] (the gate trims the title and
+  /// canonicalises the ISSN).
+  Either<List<FieldError>, Periodical> _periodical(_RowReader r) {
+    final unsafe = r.unsafeLocalCoverError(keepLocalCovers: keepLocalCovers);
+    if (unsafe != null) return left([unsafe]);
+    final cover = r.cover(keepLocalCovers: keepLocalCovers);
+    final candidate = Periodical(
+      title: r.text('title') ?? '',
+      periodicalUid: r.text('periodicalUid'),
+      titleTransliteration: r.text('titleTransliteration'),
+      issn: r.text('issn'),
+      publisher: r.text('publisher'),
+      language: r.text('language'),
+      coverUrl: cover,
+      frequency: PeriodicalFrequency.fromToken(_asString(r.raw['frequency'])),
+      subscriptionStart: _asInt(r.raw['subscriptionStart']),
+      subscriptionEnd: _asInt(r.raw['subscriptionEnd']),
+      notes: r.text('notes'),
+      location: r.text('location'),
+      sourceType: ItemSourceTypeX.fromToken(_asString(r.raw['sourceType'])),
+      sourceDetail: r.text('sourceDetail'),
+      ageGroup: AgeGroup.fromToken(_asString(r.raw['ageGroup'])),
+      addedDate: _asInt(r.raw['addedDate']) ?? 0,
+      removed: _asBool(r.raw['removed']) ?? false,
+      removedAt: _asInt(r.raw['removedAt']),
+      addedBy: r.text('addedBy'),
+    );
+    return Periodical.validate(candidate).map((valid) {
       r.reportDroppedCover(valid.coverUrl, cover);
       return valid;
     });

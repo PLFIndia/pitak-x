@@ -137,14 +137,14 @@ final remoteCoverFetcherProvider =
 // ignore: unused_element
 typedef RemoteCoverFetcherRef = AutoDisposeProviderRef<RemoteCoverFetcher>;
 String _$materializeRemoteCoverUseCaseHash() =>
-    r'bb4da8dda1eb1c8461492c67cbc761ded88f4bb7';
+    r'bbd44e694779fde5a531b0f009d1873b1f6333a3';
 
-/// Materialises a book's allow-listed remote cover as a local file (M09),
-/// through the same bounded download publishing uses and the same cover store
-/// / janitor a photo replace uses.
+/// Materialises an item or periodical's allow-listed remote cover as a local
+/// file, through the same bounded download publishing uses and the same cover
+/// store / janitor a photo replace uses.
 ///
 /// N11 D4-b: a refused download is reported here as ONE debug-build log line
-/// carrying the book id and the coarse [CoverRefusal] — never the URL or host
+/// carrying the typed owner and coarse [CoverRefusal] — never the URL or host
 /// (AGENTS.md §6.2). `kDebugMode` makes it a no-op in release builds; no
 /// telemetry (§3.4). The composition root owns the Flutter import so the
 /// application layer stays framework-free.

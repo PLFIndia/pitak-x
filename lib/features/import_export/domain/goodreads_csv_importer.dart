@@ -12,7 +12,7 @@ library;
 import 'package:pitaka/features/import_export/domain/csv_parser.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
 /// Imports a Goodreads library CSV export.
@@ -53,7 +53,7 @@ final class GoodreadsCsvImporter implements Importer {
       );
     }
 
-    final books = <Book>[];
+    final books = <CatalogueItem>[];
     final wishlist = <WishlistBook>[];
     final errors = <String>[];
 
@@ -114,8 +114,8 @@ final class GoodreadsCsvImporter implements Importer {
           wishlist.add,
         );
       } else {
-        Book.validate(
-          Book(
+        CatalogueItem.validate(
+          CatalogueItem(
             title: limits.clampField(title)!,
             author: limits.clampField(author),
             isbn: limits.clampField(isbn),
@@ -134,7 +134,7 @@ final class GoodreadsCsvImporter implements Importer {
       }
     }
 
-    return ImportPayload(books: books, wishlist: wishlist, parseErrors: errors);
+    return ImportPayload(items: books, wishlist: wishlist, parseErrors: errors);
   }
 
   static String? _cell(List<String> row, Map<String, int> index, String name) {

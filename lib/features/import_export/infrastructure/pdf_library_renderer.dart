@@ -54,7 +54,7 @@ import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_fonts.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Renders a book list to a paginated PDF and returns the encoded bytes.
 class PdfLibraryRenderer implements LibraryPdfRenderer {
@@ -136,7 +136,7 @@ class PdfLibraryRenderer implements LibraryPdfRenderer {
   @override
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,

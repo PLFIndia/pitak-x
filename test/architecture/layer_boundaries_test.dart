@@ -174,22 +174,36 @@ void main() {
     // its recorded size (measured 2026-10-16). An allow-listed file may
     // SHRINK but never exceed its recorded size; when it drops under 500,
     // delete its entry. Adding a new entry is a deliberate, reviewed change —
-    // same bar as the Book.validate allow-list.
+    // same bar as the CatalogueItem.validate allow-list.
     const allowList = <String, int>{
       'lib/features/vault/application/vault_session_controller.dart': 836,
-      'lib/features/library/domain/merge/library_merge_engine.dart': 721,
-      // settings_page.dart left this list on 2026-10-19: the community-library
-      // section moved to widgets/community_library_section.dart (631 → <500).
-      'lib/features/library/presentation/pages/book_detail_page.dart': 676,
+      // library_merge_engine.dart left this list on 2026-10-23 (plan S19):
+      // the fuzzy index moved to fuzzy_index.dart and the field specs to
+      // merge_fields.dart (721 → <500). merge_page.dart left it the same day:
+      // the review cards moved to widgets/merge_review_section.dart when the
+      // periodical counts landed (538 → <500).
       'lib/features/publish/application/github_connection_controller.dart': 670,
-      'lib/features/library/presentation/pages/add_book_page.dart': 638,
+      // 2026-10 (plan F7 rename sessions): `CatalogueItem`,
+      // `CatalogueItemRepository` etc. are longer identifiers, so dart format
+      // wrapped signatures and the 80-column lint forced doc-comment reflows:
+      // add_book_page +2, merge_library_use_case +2. No logic was added.
+      // catalogue_item_detail_page left this list on 2026-10-23 (plan S14):
+      // its actions moved to widgets/catalogue_item_actions.dart (681 → <500).
+      // add_book_page shrank on 2026-10-23 (plan S16): the Session-33
+      // language field moved to widgets/language_field.dart (640 → 526) so
+      // the periodical form could share it.
+      'lib/features/library/presentation/pages/add_book_page.dart': 526,
       'lib/features/import_export/infrastructure/pdf_library_renderer.dart':
           605,
       'lib/features/publish/infrastructure/http_github_api.dart': 600,
-      'lib/features/library/infrastructure/drift_book_repository.dart': 597,
-      'lib/features/backup/infrastructure/restore_backup.dart': 553,
-      'lib/features/import_export/application/merge_library_use_case.dart': 543,
-      'lib/features/import_export/presentation/pages/merge_page.dart': 538,
+      // drift_catalogue_item_repository.dart left this list on 2026-10-22 (plan
+      // S8): its SQL helpers moved to drift_catalogue_sql.dart (599 → <500).
+      // restore_backup.dart left this list on 2026-10-23 (plan S21): the W2
+      // kinds/details apply moved to restore_item_details.dart and the legacy
+      // DB read phase to restore_legacy_read.dart (553 → <500).
+      // merge_library_use_case.dart left this list on 2026-10-24 (magazine
+      // remediation S4): the per-row resolution apply moved to
+      // merge_resolution_applier.dart (516 → <500).
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
     };
 

@@ -8,8 +8,9 @@
 /// grew with the garbage. This is the ONE place that knows the rule for when
 /// a cover file may be deleted:
 ///
-///   a file may go only when NO book row references it, NO wishlist row
-///   references it (M11), AND it is not the current library logo.
+///   a file may go only when NO catalogue row references it, NO wishlist row
+///   references it (M11), NO periodical references it (ADR 0014 W4), AND it
+///   is not the current library logo.
 ///
 /// Two entry points share that rule:
 ///  - `releaseReference` — call right after a row stopped pointing at a file
@@ -25,29 +26,38 @@ library;
 import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/library/domain/cover_file_coordinator.dart';
 import 'package:pitaka/features/library/domain/cover_files.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
-/// Deletes cover files that no book row, no wishlist row, and no logo setting
-/// point at.
+/// Deletes cover files that no catalogue row, no wishlist row, no periodical
+/// and no logo setting point at.
 class CoverFileJanitor {
   /// Creates the janitor over its collaborators.
   const CoverFileJanitor({
     required this.books,
     required this.wishlist,
+    required this.periodicals,
     required this.settings,
     required this.store,
     required this.coordinator,
   });
 
-  /// Source of truth for which covers are referenced by library books.
-  final BookRepository books;
+  /// Source of truth for which covers are referenced by catalogue items
+  /// (of every kind — an issue's own cover is on its base row).
+  final CatalogueItemRepository books;
 
   /// Source of truth for which covers are referenced by wishlist entries
   /// (M11: they share the same `covers/` directory, so their references are
   /// live too — sweeping without them deleted wishlist-only artwork).
   final WishlistRepository wishlist;
+
+  /// Source of truth for which covers are referenced by periodicals (ADR
+  /// 0014 W4): a series cover is the fallback cover of every issue that has
+  /// none of its own, and it lives in the same `covers/` directory — the
+  /// same bug class as M11 if it were not counted.
+  final PeriodicalRepository periodicals;
 
   /// Source of truth for the current library logo reference.
   final SettingsRepository settings;
@@ -76,6 +86,15 @@ class CoverFileJanitor {
     if (wishlistRows == null) return null;
     for (final w in wishlistRows) {
       final leaf = CoverPaths.leafOf(w.coverUrl);
+      if (leaf != null) leaves.add(leaf);
+    }
+    // W4: series covers. `listAll` is the one read the interface offers;
+    // it also computes issue summaries, which is cheap here because a
+    // library has tens of titles, not thousands. Fail-closed like the rest.
+    final periodicalRows = (await periodicals.listAll()).toNullable();
+    if (periodicalRows == null) return null;
+    for (final summary in periodicalRows) {
+      final leaf = CoverPaths.leafOf(summary.periodical.coverUrl);
       if (leaf != null) leaves.add(leaf);
     }
     final logoLeaf = CoverPaths.leafOf((await settings.load()).libraryLogo);

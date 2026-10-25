@@ -29,7 +29,7 @@ import 'package:pitaka/features/import_export/application/export_controller.dart
 import 'package:pitaka/features/import_export/application/export_library_use_case.dart';
 import 'package:pitaka/features/import_export/domain/export_source_filter.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Screen to export the library/wishlist to a file.
 class ExportPage extends ConsumerStatefulWidget {
@@ -70,7 +70,7 @@ class _ExportPageState extends ConsumerState<ExportPage> {
 
   /// Picking a type (or "All") resets the detail: a donor name belongs to
   /// "donated", it means nothing under "purchased".
-  void _pickSourceType(BookSourceType? type) => setState(() {
+  void _pickSourceType(ItemSourceType? type) => setState(() {
     _sourceFilter = type == null
         ? const ExportSourceFilter.all()
         : ExportSourceFilter.byType(type);
@@ -150,7 +150,10 @@ class _ExportPageState extends ConsumerState<ExportPage> {
           ),
           const SizedBox(height: 8),
           Text(switch (_format) {
-            ExportFormat.json => 'JSON can be re-imported with no data loss.',
+            ExportFormat.json =>
+              'JSON can be re-imported with no data loss. It carries item '
+                  'kinds (magazines, others), so an older Pitak refuses it '
+                  'and asks for an update first.',
             ExportFormat.csv =>
               'CSV exports the library as a flat spreadsheet.',
             ExportFormat.pdf =>
@@ -295,13 +298,13 @@ class _ExportProgress extends StatelessWidget {
   }
 }
 
-/// "All sources" plus one ChoiceChip per [BookSourceType]; exactly one is
+/// "All sources" plus one ChoiceChip per [ItemSourceType]; exactly one is
 /// selected (null = all).
 class _SourceTypeChips extends StatelessWidget {
   const _SourceTypeChips({required this.selected, required this.onPick});
 
-  final BookSourceType? selected;
-  final ValueChanged<BookSourceType?>? onPick;
+  final ItemSourceType? selected;
+  final ValueChanged<ItemSourceType?>? onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -316,7 +319,7 @@ class _SourceTypeChips extends StatelessWidget {
           selected: selected == null,
           onSelected: enabled ? (_) => onPick!(null) : null,
         ),
-        for (final type in BookSourceType.values)
+        for (final type in ItemSourceType.values)
           ChoiceChip(
             key: Key('export-source-${type.name}'),
             label: Text(sourceTypeLabel(type)),
@@ -345,7 +348,7 @@ class _SourceDetailPicker extends ConsumerWidget {
 
   static const String _any = '';
 
-  final BookSourceType type;
+  final ItemSourceType type;
   final String? selected;
   final ValueChanged<String?>? onChanged;
 

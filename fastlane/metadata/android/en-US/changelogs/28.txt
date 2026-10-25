@@ -1,0 +1,2 @@
+* New: "How Pitak works" — five short guides in the drawer (publishing your site, the network map, backup/restore/export/import, vault & lending, hubs & members). Each ends with a button that opens the screen it describes.
+* Restore now says plainly that the library logo is not part of a backup — pick it again after a restore. The Create-backup page and the backup guide say the same.

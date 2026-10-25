@@ -42,6 +42,32 @@ void main() {
       expect(m.hasNetwork, isFalse);
     });
 
+    test('hasItemKinds/hasPeriodicals default false on older archives', () {
+      // ADR 0014 W2: a flag-less (Kotlin-era or pre-v5) archive restores
+      // exactly as before — every catalogue row as a book.
+      final m = BackupManifest.tryParse(jsonEncode({'exportedAt': 1}));
+      expect(m!.hasItemKinds, isFalse);
+      expect(m.hasPeriodicals, isFalse);
+    });
+
+    test('hasItemKinds/hasPeriodicals round-trip through toJson', () {
+      final parsed = BackupManifest.tryParse(
+        const BackupManifest(
+          exportedAt: 1,
+          hasItemKinds: true,
+          hasPeriodicals: true,
+        ).toJson(),
+      );
+      expect(parsed!.hasItemKinds, isTrue);
+      expect(parsed.hasPeriodicals, isTrue);
+      // Tolerant parse, same _asBool leniency as the other flags.
+      final lax = BackupManifest.tryParse(
+        jsonEncode({'exportedAt': 1, 'hasItemKinds': 1, 'hasPeriodicals': 0}),
+      );
+      expect(lax!.hasItemKinds, isTrue);
+      expect(lax.hasPeriodicals, isFalse);
+    });
+
     test('hasIdentity/hasNetwork round-trip and tolerate string tokens', () {
       final parsed = BackupManifest.tryParse(
         const BackupManifest(

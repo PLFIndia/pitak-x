@@ -1,14 +1,15 @@
-/// The five "How Pitak works" guides — THE source of truth for their copy.
+/// The six "How Pitak works" guides — THE source of truth for their copy.
 ///
 /// Text is transcribed verbatim from the approved draft in
-/// `docs/mockups/how-pitak-works.md` §3 (2026-10-19); every bold button /
+/// `docs/mockups/how-pitak-works.md` §3 (2026-10-19; the catalogue guide
+/// §3.6 was added with the item-kinds work, 2026-10-23); every bold button /
 /// menu label there was checked against the real screens. If a screen's
 /// label changes, change it here in the same commit — the catalog test cannot
 /// know a button was renamed, only that the markup still parses.
 ///
-/// Terminology: the app's own words (member, hub). "Spokes" appears exactly
-/// once, as the wheel picture in the hubs guide — `guide_catalog_test.dart`
-/// enforces that.
+/// Terminology: the app's own words (member, hub, magazine title, issue,
+/// other item). "Spokes" appears exactly once, as the wheel picture in the
+/// hubs guide — `guide_catalog_test.dart` enforces that.
 library;
 
 // Why this lint is off for THIS file only: every list element below is a
@@ -22,11 +23,100 @@ library;
 
 import 'package:pitaka/features/guides/domain/guide.dart';
 
-/// All guides, in the approved index order.
-const List<Guide> guideCatalog = [_publish, _map, _backup, _vault, _network];
+/// All guides, in the approved index order. The catalogue guide comes first:
+/// adding items is the first job anyone does with the app, and the other
+/// guides build on a catalogue that already exists.
+const List<Guide> guideCatalog = [
+  _catalogue,
+  _publish,
+  _map,
+  _backup,
+  _vault,
+  _network,
+];
 
 /// Looks a guide up by [id]. Every [GuideId] has exactly one guide.
 Guide guideById(GuideId id) => guideCatalog.firstWhere((g) => g.id == id);
+
+const Guide _catalogue = Guide(
+  id: GuideId.catalogue,
+  title: 'Books, magazines and other items',
+  cardSubtitle: 'Three kinds of item, one library — which form to use',
+  intro:
+      'Your library holds three kinds of item: **books**, **magazine '
+      'issues** (grouped under their magazine title) and **other items** — '
+      'a DVD, a board game, a map. One list, one search, one way of '
+      'lending; the kind only decides which form you fill in.',
+  needs: [],
+  sections: [
+    GuideTable(
+      title: '',
+      rows: [
+        (
+          want: 'Add a book',
+          use: '**+** → **Add book**, or **Scan to add** its barcode',
+        ),
+        (
+          want: 'Add a magazine',
+          use:
+              '**+** → **New magazine title** once, then **Add magazine '
+              'issue** per issue',
+        ),
+        (
+          want: 'Add something else',
+          use: '**+** → **Add other item**; describe it in **Description**',
+        ),
+      ],
+    ),
+    GuideSteps(
+      title: 'Catalogue a magazine',
+      steps: [
+        'On the Library screen tap **+**, then **New magazine title**.',
+        'Type the title (ISSN, publisher and frequency are optional) and tap '
+            '**Add magazine title**.',
+        'Open **☰ → Magazines**, tap the magazine, then **Add issue**.',
+        'Type the **Issue number** or pick a **Cover date**; **Title '
+            'preview** shows the name the issue will get.',
+        'Tap **Add issue**. The issue is listed under its magazine and in '
+            'the Library.',
+      ],
+    ),
+    GuideBullets(
+      title: 'How magazines behave',
+      bullets: [
+        'An issue takes its title, publisher and language from its magazine '
+            'title; edit the title once and every issue follows.',
+        '**Bound volume** (a switch on the issue form): several issues bound '
+            'as one physical item, identified by its first and last issue '
+            'dates. One item, one loan.',
+        '**Track subscription** on a magazine title makes the **Magazines** '
+            'list warn **Expiring soon** 30 days before the end date, then '
+            '**Lapsed**.',
+      ],
+    ),
+    GuideBullets(
+      title: 'The same for every kind',
+      bullets: [
+        'Lend any item — a book, an issue, a board game — with **Lend** on '
+            'its page.',
+        'The chips **Books**, **Magazines**, **Others** show one kind; tap '
+            'again for everything. Search reads notes too, so a '
+            '**Description** is searchable.',
+        'Backups, exports, merges and your published page carry every kind.',
+      ],
+    ),
+  ],
+  goodToKnow: [
+    'An item keeps its kind — a book cannot later become a magazine issue. '
+        '**Delete permanently**, then add it again with the right form.',
+    'A magazine title cannot be deleted while it still has issues; delete '
+        'those first.',
+    "An other item's **Description** stays on this phone; the published "
+        'page shows only its title, cover, language and age group.',
+  ],
+  destination: GuideDestination.magazines,
+  destinationLabel: 'Open Magazines',
+);
 
 const Guide _publish = Guide(
   id: GuideId.publish,
@@ -173,8 +263,9 @@ const Guide _backup = Guide(
     GuideParagraphs(
       title: 'Backup — what is inside',
       paragraphs: [
-        'Your books, wishlist, cover images, library identity and '
-            'saved-libraries list, plus the borrowers vault if you have one '
+        'Your whole catalogue — books, magazine titles and issues, other '
+            'items — plus wishlist, cover images, library identity and '
+            'saved-libraries list, and the borrowers vault if you have one '
             '(it stays encrypted and opens with the same passphrase).',
         '**Not inside:** events and posters, logo, contact details, '
             'publishing setup, app settings — set those up again after a '
@@ -239,11 +330,11 @@ const Guide _vault = Guide(
   id: GuideId.vault,
   title: 'Lending and the borrowers vault',
   cardSubtitle:
-      'Who borrowed which book, when it is due — encrypted on this phone',
+      'Who borrowed which item, when it is due — encrypted on this phone',
   intro:
-      "The vault is Pitak's locked drawer: who borrowed which book, when it "
+      "The vault is Pitak's locked drawer: who borrowed which item, when it "
       'is due, and how to reach them. It is encrypted on this phone and '
-      'opens only with your passphrase. Your book list is never locked — you '
+      'opens only with your passphrase. Your catalogue is never locked — you '
       'can catalogue without opening the vault.',
   needs: [],
   sections: [
@@ -259,9 +350,9 @@ const Guide _vault = Guide(
       ],
     ),
     GuideSteps(
-      title: 'Lend a book',
+      title: 'Lend an item',
       steps: [
-        'Open the book and tap **Lend**. (Locked vault? Unlock it first.)',
+        'Open the item and tap **Lend**. (Locked vault? Unlock it first.)',
         'Pick an **Existing borrower**, or type a **New borrower name**.',
         'Set a **Due date** if you want a reminder. Tap **Lend**.',
       ],
@@ -270,9 +361,9 @@ const Guide _vault = Guide(
       title: 'Returns and reminders',
       bullets: [
         '**☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** '
-            'next to the book.',
+            'next to the item.',
         'The bell icon (**Pending**) on the vault screen lists overdue loans, '
-            'loans due soon, and books missing details.',
+            'loans due soon, and items missing details.',
         "Add a phone or email on a borrower's page and you get **Call**, "
             '**WhatsApp** and **Email** buttons there.',
       ],

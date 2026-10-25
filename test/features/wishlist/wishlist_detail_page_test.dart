@@ -6,10 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
@@ -59,18 +59,18 @@ class _MemWishlistRepo implements WishlistRepository {
       right(b.length);
 }
 
-class _ScriptedBookRepo implements BookRepository {
+class _ScriptedBookRepo implements CatalogueItemRepository {
   /// When set, `insert` returns this failure.
   Failure? failInsertWith;
 
   /// When set, `insert` does not complete until this completer is completed.
   Completer<void>? insertGate;
 
-  final List<Book> stored = [];
+  final List<CatalogueItem> stored = [];
   int insertCalls = 0;
 
   @override
-  Future<Either<Failure, Book>> insert(Book book) async {
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async {
     insertCalls++;
     final gate = insertGate;
     if (gate != null) await gate.future;
@@ -86,23 +86,30 @@ class _ScriptedBookRepo implements BookRepository {
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async =>
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
       right(stored.where((b) => b.isbn == isbn).firstOrNull);
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(stored);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(stored);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(stored);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : stored;
+    final rows = query.isSearch ? const <CatalogueItem>[] : stored;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -111,13 +118,14 @@ class _ScriptedBookRepo implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
       right(stored.where((b) => b.id == id).firstOrNull);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -126,9 +134,10 @@ class _ScriptedBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -140,7 +149,7 @@ Widget _host(_MemWishlistRepo wishlist, _ScriptedBookRepo books) =>
     ProviderScope(
       overrides: [
         wishlistRepositoryProvider.overrideWith((ref) async => wishlist),
-        bookRepositoryProvider.overrideWith((ref) async => books),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
       ],
       child: MaterialApp(
         home: Builder(

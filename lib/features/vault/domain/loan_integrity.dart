@@ -25,7 +25,7 @@ class DanglingLoan {
   /// The offending loan.
   final Loan loan;
 
-  /// True if [Loan.bookId] is not among the known book ids.
+  /// True if [Loan.itemId] is not among the known catalogue item ids.
   final bool missingBook;
 
   /// True if [Loan.borrowerId] is not among the known borrower ids.
@@ -47,7 +47,7 @@ abstract final class LoanIntegrity {
   }) {
     final result = <DanglingLoan>[];
     for (final loan in loans) {
-      final missingBook = !knownBookIds.contains(loan.bookId);
+      final missingBook = !knownBookIds.contains(loan.itemId);
       final missingBorrower = !knownBorrowerIds.contains(loan.borrowerId);
       if (missingBook || missingBorrower) {
         result.add(

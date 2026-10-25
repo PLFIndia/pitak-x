@@ -168,11 +168,26 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
 1. Bump `version: x.y.z+N` in `pubspec.yaml`.
 2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under
    `## [x.y.z] - YYYY-MM (tag x.y.z, versionCode N)`.
-3. Add `fastlane/metadata/android/en-US/changelogs/N.txt` (Play, ≤ 500 chars)
-   and `N1.txt`, `N2.txt`, `N3.txt` (F-Droid, one per ABI).
+3. Add `fastlane/metadata/android/en-US/changelogs/N.txt` (Play, ≤ 500
+   characters) and `N1.txt`, `N2.txt`, `N3.txt` (F-Droid, one per ABI).
+   Verify the limit as UTF-8 text characters, not bytes and not an exact
+   count. Pass the release versionCode as the command's only argument (`29`
+   below; change it for a later release):
+
+   ```bash
+   python3 tool/check_fastlane_changelog_chars.py 29
+   ```
+
+   The checked-in check prints every count, accepts exactly 500, and exits
+   nonzero above 500, when any of the four required files is missing, or when
+   an unexpected prefix-matching file is present. Its unit tests cover those
+   file-set cases, the boundary, and multibyte text whose byte count exceeds
+   its character count; CI runs the tests and checks all four release files.
 4. Update the version in the status note at the top of `README.md`.
 5. Run the quality gates (`CONTRIBUTING.md`) and the purity check (§2).
-6. Walk Library → Vault → Settings once with TalkBack on (5 minutes).
+6. Walk Library → Magazines → Vault → Settings once with TalkBack on
+   (5 minutes), including the series detail, magazine forms, Others form and
+   add sheet.
 7. On-device smoke test on a **cleared** install (it creates the vault, so
    it needs an empty app):
    `adb uninstall dev.khoj.pitaka.fdroid`, then

@@ -105,4 +105,31 @@ void main() {
     // The reveal probe is a HEAD fetch of the sibling page.
     expect(html, contains('fetch("events.html"'));
   });
+
+  test(
+    'carries the v7 kind facet, series grouping and kind badges (W3)',
+    () async {
+      final html = utf8.decode(
+        await const ViewerHtmlBuilder(
+          libraryName: 'X',
+          sharing: LocationSharing.exact,
+          contact: PublishContact(),
+        ).build(),
+      );
+      // Fixed kind facet (kinds are app-defined, ADR 0013 F3).
+      expect(html, contains('id="kind"'));
+      expect(
+        html,
+        contains('<option value="magazine-issue">Magazines</option>'),
+      );
+      // The additive payload keys are read defensively (older payloads lack
+      // them, older viewers ignore them).
+      expect(html, contains('data.periodicals'));
+      expect(html, contains('(b.kind || "book")'));
+      // Issues group under their series; bound volumes get the badge.
+      expect(html, contains('function groupIssues('));
+      expect(html, contains('seriesLabel'));
+      expect(html, contains('>Bound volume</span>'));
+    },
+  );
 }

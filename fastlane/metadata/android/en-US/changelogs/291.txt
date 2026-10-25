@@ -1,0 +1,4 @@
+* New: magazines. Add a magazine title (ISSN, publisher, frequency, optional subscription tracking with an "Expiring soon" warning), then its issues — single or bound volumes — grouped under the title on the Magazines screen. Issues are lent like books.
+* New: "Other items" (a DVD, a board game, a map) with a searchable Description.
+* Library: Books · Magazines · Others chips, a "+" sheet, kind badges; a magazine barcode scan opens the issue form.
+* New guide: Books, magazines, other items.

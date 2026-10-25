@@ -404,13 +404,62 @@ class _RestoreOutcome extends StatelessWidget {
                 'not be read from the backup and were skipped.',
                 style: textTheme.bodySmall,
               ),
-            if (summary.hasAdjustments) ...[
-              const SizedBox(height: 4),
+            // W2 (ADR 0014): one plain sentence each for the item-kind
+            // extras — the same additive-extras rule as above.
+            if (summary.itemKindsInvalid)
               Text(
-                '${summary.coversDropped} cover link(s) were removed because '
-                'they pointed to unsupported sites.',
+                'The item-kind list in this backup could not be read; '
+                'magazine issues and other items were restored as books.',
                 style: textTheme.bodySmall,
               ),
+            if (summary.periodicalsInvalid)
+              Text(
+                'The magazine titles in this backup could not be read; '
+                'no magazine titles were restored.',
+                style: textTheme.bodySmall,
+              ),
+            if (summary.periodicalsRestored > 0)
+              Text(
+                'Magazine titles restored: ${summary.periodicalsRestored}',
+                style: textTheme.bodySmall,
+              ),
+            if (summary.hasAdjustments) ...[
+              const SizedBox(height: 4),
+              if (summary.coversDropped > 0)
+                Text(
+                  '${summary.coversDropped} cover link(s) were removed '
+                  'because they pointed to unsupported sites.',
+                  style: textTheme.bodySmall,
+                ),
+              // W2: detached/skipped rows restore as plain books — said
+              // plainly, never silently (§5.5: dropped and counted).
+              if (summary.issuesDetached > 0)
+                Text(
+                  '${summary.issuesDetached} issue link(s) could not be '
+                  'honoured; the affected items were restored as books.',
+                  style: textTheme.bodySmall,
+                ),
+              // S5 (M2): entry drops are a DIFFERENT unit from detached rows —
+              // say so separately, never summed into the sentence above.
+              if (summary.issueEntriesDropped > 0)
+                Text(
+                  '${summary.issueEntriesDropped} issue detail(s) in the '
+                  'backup could not be used and were ignored.',
+                  style: textTheme.bodySmall,
+                ),
+              if (summary.rowsSkippedUnknownKind > 0)
+                Text(
+                  '${summary.rowsSkippedUnknownKind} item-kind row(s) in the '
+                  'backup could not be read; the affected items were '
+                  'restored as books.',
+                  style: textTheme.bodySmall,
+                ),
+              if (summary.periodicalsDropped > 0)
+                Text(
+                  '${summary.periodicalsDropped} magazine-title row(s) in '
+                  'the backup could not be read and were skipped.',
+                  style: textTheme.bodySmall,
+                ),
             ],
           ],
         );

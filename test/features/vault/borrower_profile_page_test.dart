@@ -1,5 +1,5 @@
 /// Review finding N06 widget tests: the borrower profile must resolve
-/// book titles through a read model (not "Book #id"), surface per-return
+/// book titles through a read model (not "Item #id"), surface per-return
 /// progress and typed failures, and treat repeat returns as no-ops.
 library;
 
@@ -13,8 +13,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
@@ -68,13 +68,14 @@ class _ScriptedVault with VaultWriteUnsupported implements VaultRepository {
 }
 
 /// Minimal book repo serving titles for the read model.
-class _TitleBooks implements BookRepository {
+class _TitleBooks implements CatalogueItemRepository {
   _TitleBooks(this.byId);
   final Map<int, String> byId;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async =>
-      right(byId.containsKey(id) ? Book(id: id, title: byId[id]!) : null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(
+    byId.containsKey(id) ? CatalogueItem(id: id, title: byId[id]!) : null,
+  );
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
@@ -87,7 +88,7 @@ void main() {
   late Directory tmp;
 
   const borrower = Borrower(id: 1, name: 'Asha');
-  const loan = Loan(id: 10, bookId: 7, borrowerId: 1, lentDate: 1000);
+  const loan = Loan(id: 10, itemId: 7, borrowerId: 1, lentDate: 1000);
 
   setUp(() => tmp = Directory.systemTemp.createTempSync('profile_test'));
   tearDown(() => tmp.deleteSync(recursive: true));
@@ -103,7 +104,9 @@ void main() {
       overrides: [
         vaultStoreProvider.overrideWith((ref) async => store),
         vaultRepositoryProvider.overrideWith((ref) => vault),
-        bookRepositoryProvider.overrideWith((ref) async => _TitleBooks(books)),
+        catalogueItemRepositoryProvider.overrideWith(
+          (ref) async => _TitleBooks(books),
+        ),
         // N04: the real tick self-reschedules a 60 s timer; these tests don't
         // wait on the clock, so stub it out (a pending timer would outlive
         // the widget tree and fail the test binding's invariant check).
@@ -137,16 +140,16 @@ void main() {
     await pumpUnlocked(tester, vault);
 
     expect(find.text('Godaan'), findsOneWidget);
-    expect(find.textContaining('Book #7'), findsNothing);
+    expect(find.textContaining('Item #7'), findsNothing);
   });
 
-  testWidgets('N06: a missing book falls back to "Book #id"', (tester) async {
+  testWidgets('N06: a missing book falls back to "Item #id"', (tester) async {
     final vault = _ScriptedVault(
       const VaultData(borrowers: [borrower], loans: [loan]),
     );
     await pumpUnlocked(tester, vault, books: const {});
 
-    expect(find.text('Book #7'), findsOneWidget);
+    expect(find.text('Item #7'), findsOneWidget);
   });
 
   testWidgets('N06: Return writes the loan and moves it to History', (
@@ -198,7 +201,7 @@ void main() {
     await tester.tap(find.text('Return'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Could not return this book'), findsOneWidget);
+    expect(find.textContaining('Could not return this item'), findsOneWidget);
     // The raw failure reason never reaches the UI (§5).
     expect(find.textContaining('db locked'), findsNothing);
     // Still an active loan: the button stays available for a retry.

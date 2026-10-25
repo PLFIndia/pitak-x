@@ -26,8 +26,12 @@ import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -78,19 +82,24 @@ class ExportResult {
 class ExportLibraryUseCase {
   /// Creates the use case over its collaborators.
   const ExportLibraryUseCase({
-    required BookRepository bookRepo,
+    required CatalogueItemRepository bookRepo,
     required WishlistRepository wishlistRepo,
+    // ADR 0014 W1: JSON writes periodicals top-level and CSV resolves an
+    // issue's Series cell — both come from this repository.
+    required PeriodicalRepository periodicalRepo,
     // N14: the concrete JSON codec and PDF renderer live in infrastructure;
     // the use case depends on the domain ports, injected via DI.
     required LibraryJsonEncoder jsonEncoder,
     required LibraryPdfRenderer pdfRenderer,
   }) : _books = bookRepo,
        _wishlist = wishlistRepo,
+       _periodicals = periodicalRepo,
        _json = jsonEncoder,
        _pdf = pdfRenderer;
 
-  final BookRepository _books;
+  final CatalogueItemRepository _books;
   final WishlistRepository _wishlist;
+  final PeriodicalRepository _periodicals;
   final LibraryJsonEncoder _json;
   final LibraryPdfRenderer _pdf;
 
@@ -135,11 +144,13 @@ class ExportLibraryUseCase {
   }) async {
     final stamp = now ?? DateTime.now().millisecondsSinceEpoch;
 
-    var bookList = <Book>[];
+    var bookList = <CatalogueItem>[];
     if (scope != ExportScope.wishlistOnly || format == ExportFormat.pdf) {
-      final res = await _books.getAll();
-      if (res.isLeft()) return left((res as Left<Failure, List<Book>>).value);
-      bookList = res.getOrElse((_) => const <Book>[]);
+      final res = await _books.getAllForInterchange();
+      if (res.isLeft()) {
+        return left((res as Left<Failure, List<CatalogueItem>>).value);
+      }
+      bookList = res.getOrElse((_) => const <CatalogueItem>[]);
     }
     var wishlistList = <WishlistBook>[];
     if (scope != ExportScope.libraryOnly && format != ExportFormat.pdf) {
@@ -148,6 +159,23 @@ class ExportLibraryUseCase {
         return left((res as Left<Failure, List<WishlistBook>>).value);
       }
       wishlistList = res.getOrElse((_) => const <WishlistBook>[]);
+    }
+    // W1: JSON writes periodicals top-level (a backup missing them would
+    // silently orphan its issues on import, P1) and CSV resolves an issue's
+    // Series cell. PDF never references them. A read failure fails the whole
+    // export — a partial backup must not look complete.
+    var periodicalList = <Periodical>[];
+    final libraryRead =
+        scope != ExportScope.wishlistOnly || format == ExportFormat.pdf;
+    if (libraryRead && format != ExportFormat.pdf) {
+      final res = await _periodicals.listAll();
+      if (res.isLeft()) {
+        return left((res as Left<Failure, List<PeriodicalSummary>>).value);
+      }
+      periodicalList = [
+        for (final s in res.getOrElse((_) => const <PeriodicalSummary>[]))
+          s.periodical,
+      ];
     }
     final ymd = _ymd(stamp);
 
@@ -160,6 +188,7 @@ class ExportLibraryUseCase {
             bytes: _utf8(
               _json.export(
                 books: bookList,
+                periodicals: periodicalList,
                 wishlist: wishlistList,
                 exportedAt: stamp,
                 libraryId: libraryId,
@@ -174,7 +203,15 @@ class ExportLibraryUseCase {
             suggestedFileName:
                 'pitak-library-${sourceFilterFileTag(sourceFilter)}$ymd.csv',
             mimeType: 'text/csv',
-            bytes: _utf8(_libraryCsv(sourceFilter.apply(bookList))),
+            bytes: _utf8(
+              _libraryCsv(
+                sourceFilter.apply(bookList),
+                seriesTitles: {
+                  for (final p in periodicalList)
+                    if (p.periodicalUid case final uid?) uid: p.title,
+                },
+              ),
+            ),
           ),
         );
       case ExportFormat.pdf:
@@ -210,7 +247,16 @@ class ExportLibraryUseCase {
   }
 
   /// Flat library CSV with a header row; values RFC4180-quoted.
-  String _libraryCsv(List<Book> books) {
+  ///
+  /// W1 (ADR 0014): the kind columns are appended after the classic set so
+  /// existing column positions do not move. `Series` is the issue's magazine
+  /// title, resolved from [seriesTitles] (uid → title); dates are ISO
+  /// `YYYY-MM-DD`. CSV is export-only, so the cells are written for humans:
+  /// `Kind` is the singular display name, not the storage token.
+  String _libraryCsv(
+    List<CatalogueItem> books, {
+    Map<String, String> seriesTitles = const {},
+  }) {
     const headers = [
       'title',
       'author',
@@ -223,9 +269,17 @@ class ExportLibraryUseCase {
       'location',
       'copyCount',
       'notes',
+      'Kind',
+      'Series',
+      'Volume',
+      'Issue',
+      'Issue date',
+      'Bound until',
+      'Issue label',
     ];
     final buf = StringBuffer()..writeln(headers.map(_csv).join(','));
     for (final b in books) {
+      final issue = b.issue;
       buf.writeln(
         [
           b.title,
@@ -239,11 +293,31 @@ class ExportLibraryUseCase {
           b.location ?? '',
           b.copyCount.toString(),
           b.notes ?? '',
+          _kindLabel(b),
+          if (issue == null) '' else seriesTitles[issue.periodicalUid] ?? '',
+          issue?.volume?.toString() ?? '',
+          issue?.issueNumber?.toString() ?? '',
+          _isoDate(issue?.issueDate),
+          _isoDate(issue?.boundUntil),
+          issue?.label ?? '',
         ].map(_csv).join(','),
       );
     }
     return buf.toString();
   }
+
+  /// The singular, human-facing kind name for the CSV cell (the plural
+  /// `ItemKind.label` is the chip wording, U1).
+  static String _kindLabel(CatalogueItem b) => switch (b.details) {
+    IssueOf() => 'Magazine issue',
+    OtherItemOf() => 'Other',
+    null => 'Book',
+  };
+
+  /// ISO `YYYY-MM-DD` for a CSV date cell; blank when unset or unrepresentable
+  /// (M15: never throw mid-export).
+  static String _isoDate(int? epochMillis) =>
+      CalendarDate.fromEpochMillisOrNull(epochMillis)?.toString() ?? '';
 
   static Uint8List _utf8(String s) => Uint8List.fromList(utf8.encode(s));
 
@@ -317,18 +391,18 @@ PdfColumnLabels defaultPdfLabels() => const PdfColumnLabels(
   formatDate: _formatDate,
 );
 
-String _sourceTypeLabel(BookSourceType t) => switch (t) {
-  BookSourceType.purchased => 'Purchased',
-  BookSourceType.gift => 'Gift',
-  BookSourceType.donated => 'Donated',
-  BookSourceType.inherited => 'Inherited',
-  BookSourceType.other => 'Other',
+String _sourceTypeLabel(ItemSourceType t) => switch (t) {
+  ItemSourceType.purchased => 'Purchased',
+  ItemSourceType.gift => 'Gift',
+  ItemSourceType.donated => 'Donated',
+  ItemSourceType.inherited => 'Inherited',
+  ItemSourceType.other => 'Other',
 };
 
-/// The user-facing name of a [BookSourceType] ("Donated"), shared by the
+/// The user-facing name of an [ItemSourceType] ("Donated"), shared by the
 /// PDF cells, the export filter chips and the subtitle so the three never
 /// drift apart.
-String sourceTypeLabel(BookSourceType type) => _sourceTypeLabel(type);
+String sourceTypeLabel(ItemSourceType type) => _sourceTypeLabel(type);
 
 /// One line that says what a filtered export contains — the PDF subtitle.
 /// "Donated by Ram Sharma", "Purchased from City Books", or just "Donated
@@ -339,19 +413,19 @@ String describeSourceFilter(ExportSourceFilter filter) {
   final detail = filter.sourceDetail;
   if (detail == null) {
     return switch (type) {
-      BookSourceType.purchased => 'Purchased books',
-      BookSourceType.gift => 'Gifted books',
-      BookSourceType.donated => 'Donated books',
-      BookSourceType.inherited => 'Inherited books',
-      BookSourceType.other => 'Books from other sources',
+      ItemSourceType.purchased => 'Purchased books',
+      ItemSourceType.gift => 'Gifted books',
+      ItemSourceType.donated => 'Donated books',
+      ItemSourceType.inherited => 'Inherited books',
+      ItemSourceType.other => 'Books from other sources',
     };
   }
   return switch (type) {
-    BookSourceType.purchased => 'Purchased from $detail',
-    BookSourceType.gift => 'Gift from $detail',
-    BookSourceType.donated => 'Donated by $detail',
-    BookSourceType.inherited => 'Inherited from $detail',
-    BookSourceType.other => 'Source: $detail',
+    ItemSourceType.purchased => 'Purchased from $detail',
+    ItemSourceType.gift => 'Gift from $detail',
+    ItemSourceType.donated => 'Donated by $detail',
+    ItemSourceType.inherited => 'Inherited from $detail',
+    ItemSourceType.other => 'Source: $detail',
   };
 }
 

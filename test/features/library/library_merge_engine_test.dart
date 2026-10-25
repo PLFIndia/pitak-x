@@ -3,12 +3,13 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 
 /// Faithful port of Kotlin `LibraryMergeEngineTest` (PLAN-merge.md S3).
 void main() {
-  Book book({
+  CatalogueItem book({
     int id = 0,
     String? uid,
     String title = 'Title',
@@ -19,9 +20,9 @@ void main() {
     String? language,
     bool removed = false,
     int copyCount = 1,
-  }) => Book(
+  }) => CatalogueItem(
     id: id,
-    bookUid: uid,
+    itemUid: uid,
     title: title,
     author: author,
     isbn: isbn,
@@ -227,10 +228,10 @@ void main() {
       final plan = planMerge(const [], incoming);
 
       expect(plan.toAdd, hasLength(1));
-      expect(plan.toAdd[0].bookUid, 'uB');
+      expect(plan.toAdd[0].itemUid, 'uB');
       expect(plan.possibleDuplicates, hasLength(1));
-      expect(plan.possibleDuplicates[0].incoming.bookUid, 'uC');
-      expect(plan.possibleDuplicates[0].local.bookUid, 'uB');
+      expect(plan.possibleDuplicates[0].incoming.itemUid, 'uC');
+      expect(plan.possibleDuplicates[0].local.itemUid, 'uB');
       expect(plan.possibleDuplicates[0].similarity, 1.0);
     });
 
@@ -365,6 +366,7 @@ void main() {
       ];
       final json = const PitakaJsonExporter().export(
         books: lib,
+        periodicals: const [],
         wishlist: const [],
         exportedAt: 1234,
       );
@@ -372,11 +374,11 @@ void main() {
       expect(payload.parseErrors, isEmpty);
       // The local cover ref really was nulled by the parse (precondition).
       expect(
-        payload.books.firstWhere((b) => b.bookUid == 'u1').coverUrl,
+        payload.items.firstWhere((b) => b.itemUid == 'u1').coverUrl,
         isNull,
       );
 
-      final plan = planMerge(lib, payload.books);
+      final plan = planMerge(lib, payload.items);
 
       expect(plan.isNoOp, isTrue);
       expect(plan.identical, 3);
@@ -474,7 +476,7 @@ void main() {
 
       final dup = plan.possibleDuplicates.single;
       expect(dup.reason, DuplicateReason.identityKey);
-      expect(dup.local.id, Book.emptyId);
+      expect(dup.local.id, CatalogueItem.emptyId);
     });
 
     test('a fuzzy hit with identical tokens scores 1.0 but is still '
@@ -572,16 +574,16 @@ void main() {
 
     test('mergeDifferences ignores per-device bookkeeping (id, uid, '
         'addedDate, addedBy)', () {
-      const a = Book(
+      const a = CatalogueItem(
         id: 1,
-        bookUid: 'u1',
+        itemUid: 'u1',
         title: 'T',
         addedDate: 1,
         addedBy: 'me',
       );
-      const b = Book(
+      const b = CatalogueItem(
         id: 2,
-        bookUid: 'u2',
+        itemUid: 'u2',
         title: 'T',
         addedDate: 2,
         addedBy: 'you',
@@ -593,7 +595,7 @@ void main() {
         'compared field', () {
       // Both must read the SAME field list, or a future field added to one
       // and not the other would make the summary lie about a conflict.
-      const base = Book(
+      const base = CatalogueItem(
         id: 1,
         title: 'T',
         titleTransliteration: 'tt',
@@ -607,13 +609,16 @@ void main() {
         language: 'hi',
         notes: 'n',
         location: 'l',
-        sourceType: BookSourceType.gift,
+        sourceType: ItemSourceType.gift,
         sourceDetail: 'sd',
         ageGroup: AgeGroup.above6,
         addedDate: 1,
         copyCount: 2,
       );
-      final variants = <Book>[
+      final variants = <CatalogueItem>[
+        // ADR 0013 D6/D8: a kind flip is exactly ONE difference (kind); the
+        // issue-fields spec defers to it unless BOTH sides are issues.
+        base.copyWith(details: const OtherItemOf()),
         base.copyWith(title: 'X'),
         base.copyWith(titleTransliteration: 'X'),
         base.copyWith(author: 'X'),
@@ -626,20 +631,38 @@ void main() {
         base.copyWith(language: 'en'),
         base.copyWith(notes: 'X'),
         base.copyWith(location: 'X'),
-        base.copyWith(sourceType: BookSourceType.donated),
+        base.copyWith(sourceType: ItemSourceType.donated),
         base.copyWith(sourceDetail: 'X'),
         base.copyWith(ageGroup: AgeGroup.advanced),
         base.copyWith(copyCount: 3),
         base.copyWith(needsMetadata: true),
         base.copyWith(removed: true),
       ];
-      expect(variants, hasLength(MergeField.values.length));
+      expect(variants, hasLength(MergeField.values.length - 1));
       expect(mergeEquals(base, base), isTrue);
       expect(mergeDifferences(base, base), isEmpty);
       for (final v in variants) {
         expect(mergeEquals(base, v), isFalse);
         expect(mergeDifferences(base, v), hasLength(1));
       }
+
+      // The remaining field (MergeField.issue) only compares two ISSUES —
+      // base is a book, so it gets its own pair: same issue identity,
+      // different label.
+      const issueA = CatalogueItem(
+        id: 1,
+        title: 'T',
+        addedDate: 1,
+        details: IssueOf(periodicalUid: 'p1', issueNumber: 3, label: 'a'),
+      );
+      final issueB = issueA.copyWith(
+        details: const IssueOf(periodicalUid: 'p1', issueNumber: 3, label: 'b'),
+      );
+      expect(mergeEquals(issueA, issueA), isTrue);
+      expect(mergeEquals(issueA, issueB), isFalse);
+      expect(mergeDifferences(issueA, issueB).map((d) => d.field), [
+        MergeField.issue,
+      ]);
     });
   });
 
@@ -663,8 +686,8 @@ void main() {
           book(uid: 'N$i', title: 'Incoming Title $i', author: 'W$i'),
       ];
       final calls = <String, int>{};
-      Set<String> counting(Book b) {
-        calls.update(b.bookUid!, (n) => n + 1, ifAbsent: () => 1);
+      Set<String> counting(CatalogueItem b) {
+        calls.update(b.itemUid!, (n) => n + 1, ifAbsent: () => 1);
         return tokenSet(b);
       }
 
@@ -672,13 +695,13 @@ void main() {
 
       for (final l in local) {
         if (normIsbn(l.isbn).isNotEmpty) {
-          expect(calls[l.bookUid], isNull, reason: '${l.bookUid} has an ISBN');
+          expect(calls[l.itemUid], isNull, reason: '${l.itemUid} has an ISBN');
         } else {
-          expect(calls[l.bookUid], 1, reason: '${l.bookUid} tokenised twice');
+          expect(calls[l.itemUid], 1, reason: '${l.itemUid} tokenised twice');
         }
       }
       for (final inc in incoming) {
-        expect(calls[inc.bookUid], 1, reason: '${inc.bookUid}');
+        expect(calls[inc.itemUid], 1, reason: '${inc.itemUid}');
       }
       // 50 local candidates + 40 incoming rows. The old scan did 50·40 + 40.
       expect(calls.values.fold<int>(0, (a, b) => a + b), 90);
@@ -751,7 +774,7 @@ void main() {
         final plan = planMerge(local, incoming, fuzzyThreshold: 0);
 
         expect(plan.possibleDuplicates, isEmpty);
-        expect(plan.toAdd.map((b) => b.bookUid), ['uZ']);
+        expect(plan.toAdd.map((b) => b.itemUid), ['uZ']);
       },
     );
 
@@ -777,7 +800,7 @@ void main() {
       ];
       String phrase(int n) =>
           List.generate(n, (_) => vocab[rng.nextInt(vocab.length)]).join(' ');
-      Book row(String uid, int id) => book(
+      CatalogueItem row(String uid, int id) => book(
         id: id,
         uid: uid,
         title: phrase(1 + rng.nextInt(3)),
@@ -787,7 +810,7 @@ void main() {
       for (var round = 0; round < 25; round++) {
         final local = [for (var i = 0; i < 40; i++) row('L$round-$i', i + 1)];
         final incoming = [
-          for (var i = 0; i < 40; i++) row('N$round-$i', Book.emptyId),
+          for (var i = 0; i < 40; i++) row('N$round-$i', CatalogueItem.emptyId),
         ];
         final threshold = const [0.3, 0.5, 0.6, 0.8][rng.nextInt(4)];
 
@@ -796,13 +819,13 @@ void main() {
 
         expect(
           plan.possibleDuplicates
-              .map((d) => (d.incoming.bookUid, d.local.id, d.similarity))
+              .map((d) => (d.incoming.itemUid, d.local.id, d.similarity))
               .toList(),
           expected.surfaced,
           reason: 'round $round, threshold $threshold',
         );
         expect(
-          plan.toAdd.map((b) => b.bookUid).toList(),
+          plan.toAdd.map((b) => b.itemUid).toList(),
           expected.added,
           reason: 'round $round, threshold $threshold',
         );
@@ -847,8 +870,8 @@ void main() {
 /// highest Jaccard (earliest on ties), claims it when ≥ threshold. All rows
 /// are no-ISBN with unique uids, so the key-matching steps never fire.
 ({List<(String?, int, double)> surfaced, List<String?> added}) _bruteForceFuzzy(
-  List<Book> local,
-  List<Book> incoming,
+  List<CatalogueItem> local,
+  List<CatalogueItem> incoming,
   double threshold,
 ) {
   final claimed = <int>{};
@@ -856,7 +879,7 @@ void main() {
   final added = <String?>[];
   for (final inc in incoming) {
     final incTokens = tokenSet(inc);
-    Book? best;
+    CatalogueItem? best;
     var bestScore = 0.0;
     if (incTokens.isNotEmpty) {
       for (final c in local) {
@@ -870,9 +893,9 @@ void main() {
     }
     if (best != null && bestScore >= threshold) {
       claimed.add(best.id);
-      surfaced.add((inc.bookUid, best.id, bestScore));
+      surfaced.add((inc.itemUid, best.id, bestScore));
     } else {
-      added.add(inc.bookUid);
+      added.add(inc.itemUid);
     }
   }
   return (surfaced: surfaced, added: added);

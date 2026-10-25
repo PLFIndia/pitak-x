@@ -22,6 +22,8 @@ class BackupManifest {
     this.hasCovers = false,
     this.hasIdentity = false,
     this.hasNetwork = false,
+    this.hasItemKinds = false,
+    this.hasPeriodicals = false,
     this.backupHint,
   });
 
@@ -61,6 +63,17 @@ class BackupManifest {
   /// [hasIdentity].
   final bool hasNetwork;
 
+  /// Whether the archive contains `item_kinds.json` (ADR 0014 W2): the
+  /// explicit kind token of every non-book catalogue row. Same default-false
+  /// forward-compat rule as [hasIdentity] — a flag-less (Kotlin-era or
+  /// pre-v5) archive restores every row as a book, exactly as before.
+  final bool hasItemKinds;
+
+  /// Whether the archive contains `periodicals.json` (ADR 0014 W2): the
+  /// magazine titles and the per-issue detail entries. Same default-false
+  /// rule as [hasItemKinds].
+  final bool hasPeriodicals;
+
   /// Optional user-facing passphrase hint.
   final String? backupHint;
 
@@ -87,6 +100,8 @@ class BackupManifest {
       hasCovers: _asBool(decoded['hasCovers']) ?? false,
       hasIdentity: _asBool(decoded['hasIdentity']) ?? false,
       hasNetwork: _asBool(decoded['hasNetwork']) ?? false,
+      hasItemKinds: _asBool(decoded['hasItemKinds']) ?? false,
+      hasPeriodicals: _asBool(decoded['hasPeriodicals']) ?? false,
       backupHint: decoded['backupHint'] is String
           ? decoded['backupHint'] as String
           : null,
@@ -108,6 +123,8 @@ class BackupManifest {
       'hasCovers': hasCovers,
       'hasIdentity': hasIdentity,
       'hasNetwork': hasNetwork,
+      'hasItemKinds': hasItemKinds,
+      'hasPeriodicals': hasPeriodicals,
       if (backupHint != null) 'backupHint': backupHint,
     };
     return const JsonEncoder.withIndent('  ').convert(map);

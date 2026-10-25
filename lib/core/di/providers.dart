@@ -27,6 +27,7 @@ export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
 export 'package:pitaka/core/di/src/lookup_providers.dart';
 export 'package:pitaka/core/di/src/network_providers.dart';
+export 'package:pitaka/core/di/src/periodical_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';
 export 'package:pitaka/core/di/src/publish_providers.dart';
 export 'package:pitaka/core/di/src/settings_providers.dart';

@@ -34,8 +34,8 @@ void main() {
         }),
       );
       final bundle = result.toNullable()!;
-      expect(bundle.payload.books.single.title, 'गोदान');
-      expect(bundle.payload.books.single.coverUrl, 'covers/uuid-1.jpg');
+      expect(bundle.payload.items.single.title, 'गोदान');
+      expect(bundle.payload.items.single.coverUrl, 'covers/uuid-1.jpg');
       expect(bundle.covers['uuid-1.jpg'], [9, 9, 9]);
     },
   );
@@ -48,7 +48,6 @@ void main() {
     '{"books":"bad"}',
     '{"books":[7]}',
     '{"books":[],"wishlist":[null]}',
-    '{"schemaVersion":999,"books":[]}',
     '{"books":[{"title":"A","coverUrl":"covers/missing.jpg"}]}',
     '{"wishlist":[{"title":"A","coverUrl":"file:///old/missing.jpg"}]}',
     '{"books":[{"title":"A","coverUrl":"covers/../bad.jpg"}]}',
@@ -60,6 +59,75 @@ void main() {
       expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
     });
   }
+
+  test('a too-new catalogue schema remains a typed update failure', () async {
+    final result = await reader.read(
+      _zip({'library.json': utf8.encode('{"schemaVersion":999,"books":[]}')}),
+    );
+
+    final failure = result.swap().toNullable();
+    expect(failure, isA<SchemaTooNewFailure>());
+    expect((failure! as SchemaTooNewFailure).schemaVersion, 999);
+  });
+
+  for (final json in [
+    '{"schemaVersion":999}',
+    '{"schemaVersion":999,"books":[7]}',
+  ]) {
+    test(
+      'too-new schema takes precedence over malformed collections: $json',
+      () async {
+        final result = await reader.read(
+          _zip({'library.json': utf8.encode(json)}),
+        );
+
+        final failure = result.swap().toNullable();
+        expect(failure, isA<SchemaTooNewFailure>());
+        expect((failure! as SchemaTooNewFailure).schemaVersion, 999);
+      },
+    );
+  }
+
+  // S5 (H4): `periodicals` is a third valid top-level collection.
+  test('accepts a periodicals-only v4 bundle', () async {
+    final result = await reader.read(
+      _zip({
+        'library.json': utf8.encode(
+          '{"schemaVersion":4,"periodicals":['
+          '{"periodicalUid":"p1","title":"Frontline"}]}',
+        ),
+      }),
+    );
+    final bundle = result.toNullable()!;
+    expect(bundle.payload.periodicals.single.title, 'Frontline');
+    expect(bundle.payload.items, isEmpty);
+  });
+
+  for (final json in [
+    '{"books":[],"periodicals":"bad"}',
+    '{"books":[],"periodicals":null}',
+    '{"books":[],"periodicals":[7]}',
+    '{"periodicals":{}}',
+  ]) {
+    test('refuses a malformed periodicals collection: $json', () async {
+      final result = await reader.read(
+        _zip({'library.json': utf8.encode(json)}),
+      );
+      expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
+    });
+  }
+
+  test('keeps a v3 file without periodicals working unchanged', () async {
+    final result = await reader.read(
+      _zip({
+        'library.json': utf8.encode(
+          '{"schemaVersion":3,"books":[{"title":"A"}]}',
+        ),
+      }),
+    );
+    expect(result.toNullable()!.payload.periodicals, isEmpty);
+    expect(result.toNullable()!.payload.items.single.title, 'A');
+  });
 
   test('rejects unreferenced image entries', () async {
     final result = await reader.read(

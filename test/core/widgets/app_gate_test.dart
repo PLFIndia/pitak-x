@@ -9,10 +9,10 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/lock_suppressor.dart';
 import 'package:pitaka/core/widgets/splash_screen.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -20,43 +20,52 @@ import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// Empty book repo so the gate's LibraryPage can build without a database.
-class _EmptyRepo implements BookRepository {
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+class _EmptyRepo implements CatalogueItemRepository {
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(const []);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      right(const []);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(const []);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -66,13 +75,16 @@ class _EmptyRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -130,7 +142,7 @@ Widget _gateBuilder(BuildContext context, Widget? child) =>
 
 Widget _app(List<Override> overrides) => ProviderScope(
   overrides: [
-    bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+    catalogueItemRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
     ...overrides,
   ],
   child: _shell(),
@@ -276,7 +288,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith((ref) async => _EmptyRepo()),
+          catalogueItemRepositoryProvider.overrideWith(
+            (ref) async => _EmptyRepo(),
+          ),
           biometricAuthenticatorProvider.overrideWithValue(auth),
         ],
         child: Consumer(

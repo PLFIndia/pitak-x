@@ -8,11 +8,12 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/features/app_update/domain/app_update_policy.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
@@ -21,30 +22,34 @@ import '../app_update/fake_app_update_service.dart';
 /// In-memory repo: [getAll] returns [_all]; a search page returns only titles
 /// that contain the query (case-insensitive), mimicking the FTS5 contract
 /// enough for a widget test without a real database.
-class _FakeBookRepo implements BookRepository {
+class _FakeBookRepo implements CatalogueItemRepository {
   _FakeBookRepo(this._all);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
 
-  final List<Book> _all;
+  final List<CatalogueItem> _all;
   Failure? failWith;
 
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
+      failWith != null ? left(failWith!) : right(_all);
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
       failWith != null ? left(failWith!) : right(_all);
 
   /// Every page read the page asked for, as (offset, limit) — N10-d part 2.
   final List<(int, int)> pagesSeen = [];
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
@@ -52,30 +57,51 @@ class _FakeBookRepo implements BookRepository {
     pagesSeen.add((offset, limit));
     if (failWith != null) return left(failWith!);
     final q = query.text.toLowerCase();
-    final rows = query.isSearch
-        ? _all.where((b) => b.title.toLowerCase().contains(q)).toList()
-        : _all;
+    final rows = _all.where((item) {
+      if (query.isSearch && !item.title.toLowerCase().contains(q)) {
+        return false;
+      }
+      if (query.kind != null && item.kind != query.kind) return false;
+      final language = query.language;
+      if (language != null &&
+          item.language?.toLowerCase() != language.toLowerCase()) {
+        return false;
+      }
+      return true;
+    }).toList();
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   // N03: the detail page observes its row by id, so the fake must answer
   // from the same list the rows came from.
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => failWith != null
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
+      failWith != null
       ? left(failWith!)
       : right(_all.where((b) => b.id == id).firstOrNull);
   @override
-  Future<Either<Failure, List<String>>> distinctLanguages() async =>
-      right(const []);
+  Future<Either<Failure, List<String>>> distinctLanguages() async {
+    final languages = <String>{};
+    for (final item in _all) {
+      final language = item.language?.trim();
+      if (language != null && language.isNotEmpty) languages.add(language);
+    }
+    return right(languages.toList()..sort());
+  }
+
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -86,31 +112,68 @@ class _FakeBookRepo implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, Book>> update(Book book) async => right(book);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem book) async =>
+      right(book);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> books) async =>
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> books) async =>
       right(books.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> books) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> books) async =>
       right(books.length);
 }
 
-Widget _app(BookRepository repo) {
+/// Empty series store: the row's cover-fallback map
+/// (`periodicalCoversProvider`, S14) reads `listAll`; these tests use books,
+/// so the map stays empty.
+class _NoPeriodicals implements PeriodicalRepository {
+  @override
+  Future<Either<Failure, List<PeriodicalSummary>>> listAll() async =>
+      right(const []);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError('${invocation.memberName} not used here');
+}
+
+Widget _app(CatalogueItemRepository repo) {
   return ProviderScope(
-    overrides: [bookRepositoryProvider.overrideWith((ref) async => repo)],
+    overrides: [
+      catalogueItemRepositoryProvider.overrideWith((ref) async => repo),
+      periodicalRepositoryProvider.overrideWith(
+        (ref) async => _NoPeriodicals(),
+      ),
+      // S14: the row's cover map watches PeriodicalsController, whose build
+      // arms the real 60 s nowTick timer — pinned to a constant here so the
+      // widget tests can settle (same override vault page tests use).
+      nowTickProvider.overrideWith((ref) => 0),
+    ],
     child: const MaterialApp(home: LibraryPage()),
   );
 }
+
+Future<void> _enterQuery(WidgetTester tester, String query) async {
+  await tester.enterText(find.byType(TextField), query);
+  // Let the 120ms debounce elapse and the asynchronous reload settle.
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
+
+String _visibleQuery(WidgetTester tester) =>
+    tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+FilterChip _filterChip(WidgetTester tester, String label) =>
+    tester.widget<FilterChip>(find.widgetWithText(FilterChip, label));
 
 void main() {
   // Distinct ids: rows are opened by id (N03), and three books sharing the
   // `emptyId` sentinel would be indistinguishable to the detail page.
   const books = [
-    Book(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
-    Book(id: 2, title: 'Dune', author: 'Herbert'),
-    Book(id: 3, title: 'Old Tales', removed: true),
+    CatalogueItem(id: 1, title: 'The Hobbit', author: 'Tolkien', copyCount: 3),
+    CatalogueItem(id: 2, title: 'Dune', author: 'Herbert'),
+    CatalogueItem(id: 3, title: 'Old Tales', removed: true),
   ];
 
   testWidgets('renders all books newest-first on load', (tester) async {
@@ -138,17 +201,103 @@ void main() {
     expect(find.text('Dune'), findsNothing);
   });
 
-  testWidgets('shows no-matches empty state for a query that hits nothing', (
+  testWidgets('S9: a query-only empty result clears its visible search', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_FakeBookRepo(books)));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'zzzz');
+    await _enterQuery(tester, 'zzzz');
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsNothing);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsNothing);
+    expect(find.text('Add a book'), findsNothing);
+    expect(find.text('Import'), findsNothing);
+
+    await tester.tap(find.text('Clear search'));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    expect(find.text('No matches for "zzzz"'), findsOneWidget);
+    expect(_visibleQuery(tester), isEmpty);
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+  });
+
+  testWidgets('S9: a facet-only empty result is not an empty library', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Magazines'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsNothing);
+    expect(find.text('Clear filters'), findsOneWidget);
+    expect(find.text('Clear search'), findsNothing);
+    expect(find.text('Add a book'), findsNothing);
+    expect(find.text('Import'), findsNothing);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+    expect(_filterChip(tester, 'Magazines').selected, isFalse);
+  });
+
+  testWidgets('S9: Clear filters preserves the query in a combined empty '
+      'result', (tester) async {
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+
+    await _enterQuery(tester, 'hobbit');
+    await tester.tap(find.text('Magazines'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsOneWidget);
+    await expectMeetsA11yGuidelines(tester);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+
+    expect(_visibleQuery(tester), 'hobbit');
+    expect(_filterChip(tester, 'Magazines').selected, isFalse);
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsNothing);
+  });
+
+  testWidgets('S9: Clear search preserves facets in a combined empty result', (
+    tester,
+  ) async {
+    const facetedBooks = [
+      CatalogueItem(id: 1, title: 'Dune', language: 'English'),
+      CatalogueItem(id: 2, title: 'Godaan', language: 'Hindi'),
+    ];
+    await tester.pumpWidget(_app(_FakeBookRepo(facetedBooks)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    await _enterQuery(tester, 'zzzz');
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsOneWidget);
+
+    await tester.tap(find.text('Clear search'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    expect(_visibleQuery(tester), isEmpty);
+    expect(_filterChip(tester, 'English').selected, isTrue);
+    expect(find.text('Dune'), findsOneWidget);
+    expect(find.text('Godaan'), findsNothing);
   });
 
   testWidgets('shows empty-library state when there are no books', (
@@ -192,8 +341,8 @@ void main() {
     await tester.tap(find.text('The Hobbit'));
     await tester.pumpAndSettle();
 
-    // Detail page app bar + a labeled row unique to detail.
-    expect(find.text('Book'), findsOneWidget);
+    // Generic detail uses kind-neutral wording, even though this row is a book.
+    expect(find.text('Item'), findsOneWidget);
     expect(find.text('Quantity'), findsOneWidget);
   });
 
@@ -214,7 +363,11 @@ void main() {
   group('N10-d part 2 — windowed list', () {
     final many = List.generate(
       150,
-      (i) => Book(id: i + 1, title: 'Book number ${i + 1}', addedDate: 150 - i),
+      (i) => CatalogueItem(
+        id: i + 1,
+        title: 'Book number ${i + 1}',
+        addedDate: 150 - i,
+      ),
     );
 
     testWidgets('first paint reads ONE page and shows only its rows', (
@@ -302,9 +455,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
           appUpdateServiceProvider.overrideWithValue(updates),
         ],
         child: const MaterialApp(home: LibraryPage()),
@@ -331,9 +488,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
         ],
         // The shipped dark theme (lib/core/theme/app_theme.dart), not a
         // generic ThemeData.dark(): contrast is checked on real colours.
@@ -349,9 +510,13 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          bookRepositoryProvider.overrideWith(
+          catalogueItemRepositoryProvider.overrideWith(
             (ref) async => _FakeBookRepo(books),
           ),
+          periodicalRepositoryProvider.overrideWith(
+            (ref) async => _NoPeriodicals(),
+          ),
+          nowTickProvider.overrideWith((ref) => 0),
         ],
         child: MaterialApp(
           builder: (context, child) => MediaQuery(
@@ -383,7 +548,7 @@ class _SlowSecondPageRepo extends _FakeBookRepo {
   Completer<void>? gate;
 
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,

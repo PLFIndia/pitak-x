@@ -1,19 +1,26 @@
-/// Library sort + language-filter controls (presentation, AGENTS.md §3.1).
+/// Library sort + filter controls (presentation, AGENTS.md §3.1).
 ///
 /// Parity with Kotlin `LibraryControlsRow`: a sort dropdown
 /// {Date added, Language, Age group} and horizontally-scrolling language filter
 /// chips, with a "Clear" chip when a facet is active. Sort persists via
 /// settings; the language filter is library-session state on the controller.
+///
+/// S14 (ADR 0013 U1) adds the item-KIND chips — a fixed row from
+/// `ItemKind.values` (Books · Magazines · Others) with toggle semantics:
+/// tapping the selected chip clears the facet, "none selected" IS all. The
+/// list controller already watches `libraryKindFilterProvider`, so a chip tap
+/// re-queries the list with no extra plumbing.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 
-/// Sort selector + language facet chips for the library list.
+/// Sort selector + language and kind facet chips for the library list.
 class LibraryControlsRow extends ConsumerWidget {
   /// Creates the controls row.
   const LibraryControlsRow({super.key});
@@ -26,13 +33,14 @@ class LibraryControlsRow extends ConsumerWidget {
       settingsControllerProvider.select(
         (s) => s.maybeWhen(
           data: (settings) => settings.librarySort,
-          orElse: () => BookSort.recentlyAdded,
+          orElse: () => LibrarySort.recentlyAdded,
         ),
       ),
     );
     // Provider STATE, not a notifier field: the chip's `selected` and the
     // "Clear" chip rebuild the moment the filter changes (review 2026-09-03).
     final activeLang = ref.watch(libraryLanguageFilterProvider);
+    final activeKind = ref.watch(libraryKindFilterProvider);
     final languages = ref
         .watch(libraryLanguagesProvider)
         .maybeWhen(data: (l) => l, orElse: () => const <String>[]);
@@ -43,17 +51,29 @@ class LibraryControlsRow extends ConsumerWidget {
       child: Row(
         children: [
           _SortChip(sort: sort),
-          if (activeLang != null) ...[
-            const SizedBox(width: 8),
-            InputChip(
-              label: const Text('Clear'),
-              avatar: const Icon(Icons.close, size: 16),
-              onPressed: () =>
-                  ref.read(libraryLanguageFilterProvider.notifier).clear(),
+          const SizedBox(width: 8),
+          // Kind facet (U1): one chip per ItemKind, toggled through the
+          // notifier's `toggle` so the row never compares state itself.
+          for (final kind in ItemKind.values) ...[
+            FilterChip(
+              label: Text(kind.label),
+              selected: activeKind == kind,
+              onSelected: (_) =>
+                  ref.read(libraryKindFilterProvider.notifier).toggle(kind),
             ),
-          ],
-          for (final lang in languages) ...[
             const SizedBox(width: 8),
+          ],
+          if (activeLang != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: InputChip(
+                label: const Text('Clear'),
+                avatar: const Icon(Icons.close, size: 16),
+                onPressed: () =>
+                    ref.read(libraryLanguageFilterProvider.notifier).clear(),
+              ),
+            ),
+          for (final lang in languages) ...[
             FilterChip(
               label: Text(lang),
               selected: activeLang?.toLowerCase() == lang.toLowerCase(),
@@ -61,6 +81,7 @@ class LibraryControlsRow extends ConsumerWidget {
                   .read(libraryLanguageFilterProvider.notifier)
                   .set(sel ? lang : null),
             ),
+            const SizedBox(width: 8),
           ],
         ],
       ),
@@ -71,24 +92,24 @@ class LibraryControlsRow extends ConsumerWidget {
 class _SortChip extends ConsumerWidget {
   const _SortChip({required this.sort});
 
-  final BookSort sort;
+  final LibrarySort sort;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    String label(BookSort s) => switch (s) {
-      BookSort.recentlyAdded => 'Date added',
-      BookSort.languageAsc => 'Language',
-      BookSort.ageGroupAsc => 'Age group',
+    String label(LibrarySort s) => switch (s) {
+      LibrarySort.recentlyAdded => 'Date added',
+      LibrarySort.languageAsc => 'Language',
+      LibrarySort.ageGroupAsc => 'Age group',
     };
 
-    return PopupMenuButton<BookSort>(
+    return PopupMenuButton<LibrarySort>(
       onSelected: (s) =>
           // LibraryController.build WATCHES the sort setting (select), so the
           // list re-queries by itself — a manual refresh() here caused a
           // second load and a visible flash.
           ref.read(settingsControllerProvider.notifier).setLibrarySort(s),
       itemBuilder: (context) => [
-        for (final s in BookSort.values)
+        for (final s in LibrarySort.values)
           PopupMenuItem(value: s, child: Text(label(s))),
       ],
       child: Chip(

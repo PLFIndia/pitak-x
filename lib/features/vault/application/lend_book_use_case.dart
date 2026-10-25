@@ -19,7 +19,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
 
@@ -66,7 +66,7 @@ class LendBookUseCase {
   const LendBookUseCase({required this.books, required this.vault});
 
   /// Library repository (to load the book's `removed` + `copyCount`).
-  final BookRepository books;
+  final CatalogueItemRepository books;
 
   /// Vault side (current loans + writes).
   final VaultLender vault;
@@ -93,7 +93,7 @@ class LendBookUseCase {
     if (found.isLeft()) return found.map((_) => unit);
     if (book == null) return left(const NotFoundFailure());
 
-    final decision = LendDecision.forBook(book, loans);
+    final decision = LendDecision.forItem(book, loans);
     if (decision is! LendAllowed) {
       return left(ValidationFailure(decision.reason!));
     }
@@ -117,7 +117,7 @@ class LendBookUseCase {
 
     final written = await vault.addLoan(
       Loan(
-        bookId: bookId,
+        itemId: bookId,
         borrowerId: borrowerId,
         lentDate: lentDate,
         dueDate: dueDate,

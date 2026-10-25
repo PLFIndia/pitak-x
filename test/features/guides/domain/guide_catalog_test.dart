@@ -8,8 +8,9 @@ import 'package:pitaka/features/guides/domain/guide_catalog.dart';
 import 'package:pitaka/features/guides/domain/guide_markup.dart';
 
 void main() {
-  test('exactly five guides, unique ids, in the approved order', () {
+  test('exactly six guides, unique ids, in the approved order', () {
     expect(guideCatalog.map((g) => g.id).toList(), [
+      GuideId.catalogue,
       GuideId.publish,
       GuideId.map,
       GuideId.backup,
@@ -28,12 +29,26 @@ void main() {
 
   test('the approved titles, in order', () {
     expect(guideCatalog.map((g) => g.title).toList(), [
+      'Books, magazines and other items',
       'Put your catalogue online',
       'Put your library on the map',
       'Backup, restore, export, import',
       'Lending and the borrowers vault',
       'Hubs, members and library cards',
     ]);
+  });
+
+  test('S9: the vault guide uses kind-neutral lending copy', () {
+    final text = guideById(GuideId.vault).allText.join('\n');
+
+    expect(text, contains('who borrowed which item'));
+    expect(text, contains('Your catalogue is never locked'));
+    expect(text, contains('Lend an item'));
+    expect(text, contains('Open the item'));
+    expect(text, contains('next to the item'));
+    expect(text, contains('items missing details'));
+    expect(text, isNot(contains('which book')));
+    expect(text, isNot(contains('Lend a book')));
   });
 
   test('every GuideSteps section has 2–7 steps', () {
@@ -56,6 +71,8 @@ void main() {
     // numbers are the mockup's (docs/mockups/how-pitak-works.md §3): per
     // guide, [needs, blocks…, goodToKnow].
     const expected = <GuideId, List<int>>{
+      // §3.6: picker table (3 rows), 5 steps, two bullet blocks of 3.
+      GuideId.catalogue: [0, 3, 5, 3, 3, 3],
       GuideId.publish: [2, 2, 6, 1, 3],
       GuideId.map: [0, 6, 3, 3],
       GuideId.backup: [0, 5, 3, 2, 3, 1, 1, 1, 2],

@@ -1,6 +1,6 @@
 /// Review finding M15 part 2: the backup-restore reader is the last
 /// ingress that built catalogue entities with the plain constructors. Every
-/// row must pass `Book.validate` / `WishlistBook.validate` before it can be
+/// row must pass `CatalogueItem.validate` / `WishlistBook.validate` before it can be
 /// persisted, and the archive must be REFUSED (typed `ValidationFailure`,
 /// never a throw) on the first invalid row — restore is an authoritative
 /// overwrite, so silently skipping or truncating a row would break the
@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/legacy_db_reader.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
 import 'package:sqlite3/sqlite3.dart';
@@ -95,11 +95,11 @@ void main() {
     return result.fold((f) => f, (_) => fail('expected a refusal'));
   }
 
-  List<Book> readBooksOk() {
+  List<CatalogueItem> readBooksOk() {
     final result = LegacyDbReader(db).readBooks();
     return result.fold(
       (f) => fail('unexpected refusal: $f'),
-      (rows) => rows.books,
+      (rows) => rows.items,
     );
   }
 
@@ -112,7 +112,7 @@ void main() {
     final result = LegacyDbReader(db).readWishlist();
     return result.fold(
       (f) => fail('unexpected refusal: $f'),
-      (rows) => rows.books,
+      (rows) => rows.items,
     );
   }
 
@@ -133,7 +133,7 @@ void main() {
 
       final rows = readBooksOk();
       expect(rows.single.id, 42);
-      expect(rows.single.bookUid, 'uid-42');
+      expect(rows.single.itemUid, 'uid-42');
       expect(rows.single.title, 'Godan');
       expect(rows.single.coverUrl, 'covers/abc.jpg');
       expect(rows.single.copyCount, 3);
@@ -269,7 +269,7 @@ void main() {
       insertBook({'cover_url': "'http://evil.example/x.jpg'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -278,7 +278,7 @@ void main() {
       insertBook({'cover_url': "'covers/../../etc/passwd'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -287,7 +287,7 @@ void main() {
       insertBook({'cover_url': "'https://tracker.example/c.jpg'"});
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
 
@@ -298,7 +298,7 @@ void main() {
       });
       final result = LegacyDbReader(db).readBooks();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNotNull);
+      expect(rows.items.single.coverUrl, isNotNull);
       expect(rows.coversDropped, 0);
     });
   });
@@ -369,7 +369,7 @@ void main() {
       insertWishlist({'cover_url': "'https://tracker.example/c.jpg'"});
       final result = LegacyDbReader(db).readWishlist();
       final rows = result.fold((f) => fail('must not refuse: $f'), (r) => r);
-      expect(rows.books.single.coverUrl, isNull);
+      expect(rows.items.single.coverUrl, isNull);
       expect(rows.coversDropped, 1);
     });
   });

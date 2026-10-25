@@ -17,7 +17,7 @@ import 'package:pitaka/features/vault/application/vault_session_controller.dart'
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_session_state.dart';
 
-/// Screen to lend the book with [bookId] (and [bookTitle] for display).
+/// Screen to lend the item with [bookId] (and [bookTitle] for display).
 class LendBookPage extends ConsumerStatefulWidget {
   /// Creates the lend screen for the given library book.
   const LendBookPage({
@@ -113,8 +113,8 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
 
   static String _messageFor(Failure f) => switch (f) {
     ValidationFailure(:final message) => message,
-    NotFoundFailure() => 'That book or borrower no longer exists.',
-    _ => 'Could not lend the book. Please try again.',
+    NotFoundFailure() => 'That item or borrower no longer exists.',
+    _ => 'Could not lend the item. Please try again.',
   };
 
   @override
@@ -124,14 +124,14 @@ class _LendBookPageState extends ConsumerState<LendBookPage> {
 
     if (session is! VaultUnlocked) {
       return Scaffold(
-        appBar: AppBar(title: const Text('Lend book')),
-        body: const Center(child: Text('Unlock the vault to lend a book.')),
+        appBar: AppBar(title: const Text('Lend item')),
+        body: const Center(child: Text('Unlock the vault to lend an item.')),
       );
     }
     final borrowers = session.data.borrowers;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Lend book')),
+      appBar: AppBar(title: const Text('Lend item')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [

@@ -1,0 +1,325 @@
+/// SQL building blocks of `DriftCatalogueItemRepository` (infrastructure-
+/// internal). The only other importer is `DriftPeriodicalRepository`, whose
+/// series-side issue reads must use the SAME join, identity key and order
+/// as the item repository (ADR 0013 D6, U2) — one definition, two callers.
+///
+/// Why a separate file (beginner note): the repository is the one place that
+/// talks to the `books` table, and it was growing past the file-size
+/// ratchet. What moved here is everything that is "how to say it in SQL" —
+/// the ORDER BY twins of `CatalogueItemSorter`, the FTS5 search statement,
+/// the language-spelling resolver and the transaction-rollback carrier —
+/// while the repository keeps "what the use cases ask for". Both halves are
+/// tested through the repository's public contract.
+library;
+
+import 'package:drift/drift.dart';
+import 'package:pitaka/core/database/app_database.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/periodical_identity.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/language_name.dart';
+import 'package:pitaka/features/library/infrastructure/catalogue_item_mapper.dart';
+import 'package:pitaka/features/library/infrastructure/drift_item_details.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+
+/// One ORDER BY term over the `books` table (Drift's `orderBy` callback shape).
+typedef OrderingOf = OrderingTerm Function($BooksTable t);
+
+/// Ordering, search and query-text helpers over the `books` table.
+abstract final class CatalogueSql {
+  /// The read every repository query starts from: `books` LEFT JOIN
+  /// `magazine_issues`, so an issue comes back with its detail row and a
+  /// book or an "other" item simply has none (ADR 0013 F4).
+  static JoinedSelectStatement<HasResultSet, dynamic> joined(AppDatabase db) =>
+      db.select(db.books).join([
+        leftOuterJoin(
+          db.magazineIssues,
+          db.magazineIssues.itemId.equalsExp(db.books.id),
+        ),
+      ]);
+
+  /// Age band as an integer rank, in SQL. `AgeGroup.sortRank` (not the token's
+  /// alphabetical order) defines band order; NULL — and any token the domain
+  /// parser would not recognise — falls to `ELSE` and sorts LAST, exactly as
+  /// `AgeGroup.fromToken` → null does on the Dart side. Built from the enum
+  /// so a new band is picked up without touching this file.
+  static Expression<int> _ageRank($BooksTable t) => t.ageGroup.caseMatch<int>(
+    when: {
+      for (final band in AgeGroup.values)
+        Constant<String>(band.token): Constant<int>(band.sortRank),
+    },
+    orElse: const Constant<int>(_unrankedAge),
+  );
+
+  /// Rank for rows with no (recognised) age band: after every real band.
+  static const _unrankedAge = 1 << 30;
+
+  /// 1 when the language is NULL or blank, else 0 — blanks sort LAST.
+  static Expression<int> _languageBlank($BooksTable t) =>
+      CaseWhenExpression<int>(
+        cases: [
+          CaseWhen(
+            t.language.isNull() | t.language.trim().equals(''),
+            then: const Constant(1),
+          ),
+        ],
+        orElse: const Constant(0),
+      );
+
+  /// The language as `CatalogueItemSorter` compares it: `(language ??
+  /// '').trim()`. Without the COALESCE, SQLite would put NULL before `''`
+  /// inside the "blank" bucket, while the domain treats both as the same key.
+  static Expression<String> _languageKey($BooksTable t) =>
+      coalesce<String>([t.language, const Constant('')]).trim();
+
+  /// The typed ORDER BY for [sort]. Every sort ends with the shared
+  /// tie-breaks `added_date DESC, id ASC` so the order is TOTAL: two rows can
+  /// never swap between two runs (or two pages) of the same statement.
+  /// Twin of [orderSql]; both must match `CatalogueItemSorter` (tested).
+  static List<OrderingOf> orderingTerms(LibrarySort sort) {
+    final byKey = switch (sort) {
+      LibrarySort.recentlyAdded => const <OrderingOf>[],
+      LibrarySort.languageAsc => <OrderingOf>[
+        (t) => OrderingTerm.asc(_languageBlank(t)),
+        (t) => OrderingTerm.asc(_languageKey(t)),
+      ],
+      LibrarySort.ageGroupAsc => <OrderingOf>[
+        (t) => OrderingTerm.asc(_ageRank(t)),
+      ],
+    };
+    return [
+      ...byKey,
+      (t) => OrderingTerm.desc(t.addedDate),
+      (t) => OrderingTerm.asc(t.id),
+    ];
+  }
+
+  /// The typed ORDER BY of a series page (ADR 0013 U2): `IssueSorter`'s
+  /// contract — issue date, volume, issue number, each DESC with NULLs
+  /// last, then id DESC — over the joined `magazine_issues` columns.
+  /// Twin of [issueOrderSql]; both are tested against `IssueSorter`.
+  static List<OrderingTerm> issueOrderingTerms(AppDatabase db) {
+    final m = db.magazineIssues;
+    return [
+      OrderingTerm(
+        expression: m.issueDate,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm(
+        expression: m.volume,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm(
+        expression: m.issueNumber,
+        mode: OrderingMode.desc,
+        nulls: NullsOrder.last,
+      ),
+      OrderingTerm.desc(db.books.id),
+    ];
+  }
+
+  /// The raw-SQL twin of [issueOrderingTerms]; `b` is `books` and `m` is
+  /// `magazine_issues` in the FTS statement.
+  static const String issueOrderSql =
+      'ORDER BY m.issue_date DESC NULLS LAST, m.volume DESC NULLS LAST, '
+      'm.issue_number DESC NULLS LAST, b.id DESC';
+
+  /// The identity key of [issue] (ADR 0013 D6) as a typed WHERE over the
+  /// joined `magazine_issues` columns — the same tuple the two partial
+  /// UNIQUE indexes enforce — or null when the issue has no key (a
+  /// date-only single issue has no uniqueness guarantee, like a book
+  /// without an ISBN).
+  ///
+  /// - numbered issue: `(periodical_uid, COALESCE(volume, 0), issue_number)`
+  ///   among rows with no `bound_until` (so a bound volume never matches);
+  /// - bound volume: `(periodical_uid, issue_date, bound_until)`.
+  ///
+  /// One definition, two callers: the collision lookup after a failed write
+  /// and `DriftPeriodicalRepository.findIssue` / `findBoundVolume` must agree
+  /// on what "the same issue" means.
+  static Expression<bool>? issueIdentityKey(AppDatabase db, IssueOf issue) {
+    final normalized = issue.normalized();
+    final m = db.magazineIssues;
+    final Expression<bool> key;
+    if (normalized.isBound) {
+      final from = normalized.issueDate;
+      final until = normalized.boundUntil;
+      if (from == null || until == null) return null;
+      key = m.issueDate.equals(from) & m.boundUntil.equals(until);
+    } else {
+      final number = normalized.issueNumber;
+      if (number == null) return null;
+      key =
+          coalesce<int>([
+            m.volume,
+            const Constant(0),
+          ]).equals(normalized.volume ?? 0) &
+          m.issueNumber.equals(number) &
+          m.boundUntil.isNull();
+    }
+    return m.periodicalUid.equals(normalized.periodicalUid) & key;
+  }
+
+  /// The typed WHERE for the facets of [query] (language, kind, series), or
+  /// null when it has none. Every value is a bound parameter: the language
+  /// is the stored spelling the user tapped, the kind is an enum token, the
+  /// series uid is a stored identity.
+  static Expression<bool>? facetPredicate(AppDatabase db, LibraryQuery query) {
+    final parts = <Expression<bool>>[
+      // D1-a: exact match on the STORED string. The facet value comes from
+      // `distinctLanguages()` (the stored spelling verbatim), so equality
+      // is what the user tapped. SQLite's `lower()` is ASCII-only, so the
+      // previous `lower(language) = lower(?)` silently missed every
+      // non-Latin language name (e.g. `Ελληνικά`).
+      if (query.language case final lang?) db.books.language.equals(lang),
+      if (query.kind case final kind?) db.books.kind.equals(kind.token),
+      if (query.periodicalUid case final uid?)
+        db.magazineIssues.periodicalUid.equals(canonicalPeriodicalUid(uid)),
+    ];
+    if (parts.isEmpty) return null;
+    return parts.reduce((acc, part) => acc & part);
+  }
+
+  /// The raw-SQL ORDER BY for [sort], for the FTS statement in [searchRows]
+  /// (hand-written SQL because `books_fts` is a virtual table Drift does not
+  /// model). `b` is the alias of `books` in that statement. MUST order exactly
+  /// like [orderingTerms] — `drift_catalogue_item_repository_test.dart` checks
+  /// both paths against the same oracle. Contains only compile-time constants
+  /// (enum tokens), never user input.
+  static String orderSql(LibrarySort sort) {
+    final byKey = switch (sort) {
+      LibrarySort.recentlyAdded => '',
+      LibrarySort.languageAsc =>
+        "CASE WHEN b.language IS NULL OR TRIM(b.language) = '' "
+            'THEN 1 ELSE 0 END ASC, '
+            "TRIM(COALESCE(b.language, '')) ASC, ",
+      LibrarySort.ageGroupAsc => '${_ageRankSql('b.age_group')} ASC, ',
+    };
+    return 'ORDER BY ${byKey}b.added_date DESC, b.id ASC';
+  }
+
+  /// Textual twin of [_ageRank] over [column].
+  static String _ageRankSql(String column) {
+    final whens = AgeGroup.values
+        .map((band) => "WHEN '${band.token}' THEN ${band.sortRank}")
+        .join(' ');
+    return 'CASE $column $whens ELSE $_unrankedAge END';
+  }
+
+  /// Typed search box: match the FTS5 index, join back to `books` (and the
+  /// optional `magazine_issues` detail row) for full rows, then narrow,
+  /// order AND window in the SAME statement so the page is final (N10-d).
+  /// The search text and every facet are bound variables (never
+  /// interpolated); the ORDER BY text is built from constants only;
+  /// LIMIT/OFFSET are bound clamped ints.
+  ///
+  /// Returns entities (not rows): the detail row is read through [details]
+  /// so an unknown kind reads fail-soft as a book here too.
+  static Future<List<CatalogueItem>> searchRows(
+    AppDatabase db,
+    DriftItemDetails details,
+    LibraryQuery query, {
+    required int limit,
+    required int offset,
+  }) async {
+    // Predicates and their variables are built side by side, so the `?`
+    // placeholders and the bound values cannot drift apart.
+    final where = StringBuffer('WHERE books_fts MATCH ?');
+    final variables = <Variable<Object>>[
+      Variable<String>(ftsQuery(query.text)),
+    ];
+    if (query.language case final lang?) {
+      where.write(' AND b.language = ?');
+      variables.add(Variable<String>(lang));
+    }
+    if (query.kind case final kind?) {
+      where.write(' AND b.kind = ?');
+      variables.add(Variable<String>(kind.token));
+    }
+    if (query.periodicalUid case final uid?) {
+      where.write(' AND m.periodical_uid = ?');
+      variables.add(Variable<String>(canonicalPeriodicalUid(uid)));
+    }
+    variables
+      ..add(Variable<int>(limit))
+      ..add(Variable<int>(offset));
+    final order = query.periodicalUid == null
+        ? orderSql(query.sort)
+        : issueOrderSql;
+    final rows = await db
+        .customSelect(
+          'SELECT b.*, m.* FROM books_fts f '
+          'JOIN books b ON b.id = f.rowid '
+          'LEFT JOIN magazine_issues m ON m.item_id = b.id '
+          '$where $order LIMIT ? OFFSET ?',
+          variables: variables,
+          readsFrom: {db.books, db.magazineIssues},
+        )
+        .get();
+    return rows
+        .map((r) {
+          final base = db.books.map(r.data);
+          // The LEFT JOIN leaves every `m.*` column NULL for a non-issue;
+          // `item_id` is the detail table's primary key, so NULL there means
+          // "no detail row".
+          final issue = r.data['item_id'] == null
+              ? null
+              : db.magazineIssues.map(r.data);
+          return base.toDomain(details: details.read(base.kind, issue));
+        })
+        .toList(growable: false);
+  }
+
+  /// Turns free text into a safe FTS5 prefix query, quoting each token to
+  /// neutralise FTS5 operators in user input (AGENTS.md §6.5 boundary input).
+  static String ftsQuery(String raw) {
+    final tokens = raw
+        .split(RegExp(r'\s+'))
+        .where((t) => t.isNotEmpty)
+        .map((t) => '"${t.replaceAll('"', '""')}"*');
+    return tokens.join(' ');
+  }
+}
+
+/// Snaps each incoming book's language to the one canonical spelling
+/// (Session 33, `LanguageName`). Seeded with the spellings already stored
+/// and GROWS as it accepts new ones, so within a single batch the first
+/// spelling of a new language wins for every later row of that batch.
+///
+/// Why here and not in `CatalogueItem.validate`: only the repository can see
+/// what is already stored, and every ingress (form, import, merge, restore)
+/// ends in this class, so this is the one place the rule cannot be bypassed.
+final class LanguageResolver {
+  /// Seeds the resolver with the spellings already [stored].
+  LanguageResolver(Iterable<String> stored) : _known = [...stored];
+
+  final List<String> _known;
+
+  /// [book] with its language replaced by the canonical spelling. An absent
+  /// or whitespace-only language is left untouched: `copyWith` cannot null a
+  /// field, and every read already treats NULL and blank as the same "no
+  /// language" (`distinctLanguages` filters `TRIM(language) != ''`, the
+  /// sort buckets both LAST), so a stored blank is inert.
+  CatalogueItem resolve(CatalogueItem book) {
+    final raw = book.language;
+    if (raw == null) return book;
+    final canonical = LanguageName.canonicalise(raw, _known);
+    if (canonical == null) return book;
+    if (!_known.contains(canonical)) _known.add(canonical);
+    return canonical == raw ? book : book.copyWith(language: canonical);
+  }
+}
+
+/// Carries a `Left` out of a Drift transaction so it rolls back; unwrapped by
+/// `DriftCatalogueItemRepository.runInTransaction`. Never escapes the
+/// repository.
+final class RollbackWith implements Exception {
+  /// Wraps the `Left` [result] that asked for the rollback.
+  RollbackWith(this.result);
+
+  /// The `Either` (always a `Left`) to hand back after the rollback.
+  final Object result;
+}

@@ -9,13 +9,16 @@
 library;
 
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 
-/// Parses Pitaka-JSON library files (schema v3) without throwing.
+/// Parses Pitaka-JSON library files (up to schema v4) without throwing.
 abstract interface class LibraryJsonParser {
   /// Parses [text] into an [ImportPayload]; malformed rows are collected as
-  /// [ImportPayload.parseErrors] rather than thrown.
+  /// [ImportPayload.parseErrors], while file-level ambiguities that forbid a
+  /// partial import are collected as [ImportPayload.fatalErrors]. Neither case
+  /// is thrown across the boundary.
   ImportPayload parse(String text);
 
   /// Reads only the merge-namespace envelope fields (library id/name)
@@ -29,11 +32,13 @@ abstract interface class LibraryJsonParser {
 /// abstraction, not the infrastructure codec.
 // ignore: one_member_abstracts
 abstract interface class LibraryJsonEncoder {
-  /// Builds a pretty-printed schema-v3 export document. Blank
+  /// Builds a pretty-printed schema-v4 export document (ADR 0014 W1: per-row
+  /// `kind`, nested `issue{}` for issues, top-level `periodicals[]`). Blank
   /// [libraryId]/[libraryName] are omitted (merge gate treats them as
   /// "unknown library").
   String export({
-    required List<Book> books,
+    required List<CatalogueItem> books,
+    required List<Periodical> periodicals,
     required List<WishlistBook> wishlist,
     required int exportedAt,
     String libraryId,

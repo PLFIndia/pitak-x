@@ -219,7 +219,7 @@ class SettingsController extends _$SettingsController
   );
 
   /// Sets the persisted library sort.
-  Future<void> setLibrarySort(BookSort sort) => _update(
+  Future<void> setLibrarySort(LibrarySort sort) => _update(
     (repo) => repo.setLibrarySort(sort),
     (s) => s.copyWith(librarySort: sort),
   );

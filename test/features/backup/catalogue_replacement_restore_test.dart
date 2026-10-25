@@ -7,7 +7,10 @@ import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/infrastructure/backup_archive_writer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
@@ -32,8 +35,8 @@ class _RestoreDb extends AppDatabase {
   }
 }
 
-const _book = Book(id: 7, bookUid: 'stable', title: 'Existing');
-const _loan = Loan(id: 1, bookId: 7, borrowerId: 1, lentDate: 1);
+const _book = CatalogueItem(id: 7, itemUid: 'stable', title: 'Existing');
+const _loan = Loan(id: 1, itemId: 7, borrowerId: 1, lentDate: 1);
 
 void main() {
   late ReplacementHarness h;
@@ -46,18 +49,26 @@ void main() {
   });
   tearDown(() => h.close());
 
-  Future<Uint8List> archive(List<Book> incoming) =>
+  Future<Uint8List> archive(
+    List<CatalogueItem> incoming, {
+    List<Periodical> periodicals = const [],
+  }) =>
       BackupArchiveWriter(
-        vaultStore: VaultStore(baseDir: '${h.directory.path}/no_source_vault'),
-        coversDir: '${h.directory.path}/incoming_covers',
-      ).build(
-        books: incoming,
-        wishlist: [],
-        workDir: '${h.directory.path}/build_archive',
-        exportedAt: 1,
-        identityJson: null,
-        networkJson: null,
-      );
+            vaultStore: VaultStore(
+              baseDir: '${h.directory.path}/no_source_vault',
+            ),
+            coversDir: '${h.directory.path}/incoming_covers',
+          )
+          .build(
+            books: incoming,
+            wishlist: [],
+            periodicals: periodicals,
+            workDir: '${h.directory.path}/build_archive',
+            exportedAt: 1,
+            identityJson: null,
+            networkJson: null,
+          )
+          .then((r) => r.getOrElse((f) => fail('unexpected left: $f')));
 
   Future<void> existing({bool returned = false}) async {
     await h.books.insert(_book);
@@ -72,7 +83,7 @@ void main() {
         await existing(returned: returned);
         final restorer = await h.container.read(restoreBackupProvider.future);
         final bytes = await archive([
-          const Book(id: 7, bookUid: 'new', title: 'New'),
+          const CatalogueItem(id: 7, itemUid: 'new', title: 'New'),
           _book.copyWith(id: 99, title: 'Changed'),
         ]);
         final result = await restorer.restore(archiveBytes: bytes);
@@ -84,7 +95,7 @@ void main() {
         final books = await h.currentBooks();
         expect((await books.getById(7)).toNullable()!.title, 'Changed');
         expect((await books.getAll()).toNullable()!.length, 2);
-        expect(h.vault.loans.single.bookId, 7);
+        expect(h.vault.loans.single.itemId, 7);
         expect(h.vault.writes, 0);
         // The retained vault moved with the catalogue into the new generation.
         final store = await h.currentStore();
@@ -98,7 +109,7 @@ void main() {
         await h.session.unlock(ReplacementHarness.secret());
         expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
         final again = await h.currentBooks();
-        expect((await again.getById(7)).toNullable()!.bookUid, 'stable');
+        expect((await again.getById(7)).toNullable()!.itemUid, 'stable');
       },
     );
   }
@@ -121,7 +132,7 @@ void main() {
       final restorer = await h.container.read(restoreBackupProvider.future);
       final result = await restorer.restore(
         archiveBytes: await archive([
-          const Book(id: 7, bookUid: 'unrelated', title: 'Other'),
+          const CatalogueItem(id: 7, itemUid: 'unrelated', title: 'Other'),
         ]),
       );
       expect(result.getLeft().toNullable(), isA<ValidationFailure>());
@@ -189,6 +200,46 @@ void main() {
       expect((await restorer.restore(archiveBytes: bytes)).isRight(), isTrue);
     },
   );
+
+  // ADR 0014 W2 meets M03: a loaned row that comes back as a magazine issue
+  // must keep its local id (the vault's loans.book_id) AND gain its detail
+  // row — the replacement plan re-ids the base row, the detail write follows
+  // the SAME id.
+  test('a loaned row restored as an issue keeps its id and its loan', () async {
+    await existing();
+    final restorer = await h.container.read(restoreBackupProvider.future);
+    const series = Periodical(title: 'Chandamama', periodicalUid: 'puid-1');
+    final bytes = await archive(
+      [
+        _book.copyWith(
+          id: 99,
+          title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+          details: const IssueOf(
+            periodicalUid: 'puid-1',
+            volume: 249,
+            issueNumber: 10,
+            issueDate: 1759276800000,
+          ),
+        ),
+      ],
+      periodicals: const [series],
+    );
+    final result = await restorer.restore(archiveBytes: bytes);
+    expect(result.isRight(), isTrue);
+    final summary = result.toNullable()!;
+    expect(summary.kindsApplied, 1);
+    expect(summary.issuesLinked, 1);
+    expect(summary.periodicalsRestored, 1);
+
+    final books = await h.currentBooks();
+    final row = (await books.getById(7)).toNullable()!;
+    expect(row.kind, ItemKind.magazineIssue);
+    expect(row.issue!.periodicalUid, 'puid-1');
+    expect(row.issue!.issueNumber, 10);
+    // The loan still points at the same row; the vault was never rewritten.
+    expect(h.vault.loans.single.itemId, 7);
+    expect(h.vault.writes, 0);
+  });
 
   test('empty backup cannot erase books referenced by loan history', () async {
     await existing(returned: true);

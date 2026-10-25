@@ -17,11 +17,11 @@ library;
 
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 
-/// Reason a borrower cannot be deleted while books are still out. Shown to the
+/// Reason a borrower cannot be deleted while items are still out. Shown to the
 /// user as-is; kept in sync with `ACTIVE_LOANS_BLOCK_DELETE` in the Rust core
 /// so the pre-check and the authoritative check say the same thing.
 const String activeLoansBlockDeleteMessage =
-    'This borrower still has books out. Mark those loans returned first.';
+    'This borrower still has items out. Mark those loans returned first.';
 
 /// What deleting a given borrower would do, computed from their loans.
 ///
@@ -50,7 +50,7 @@ sealed class BorrowerDeletion {
   }
 }
 
-/// Deletion is refused: [activeLoanCount] books are still out.
+/// Deletion is refused: [activeLoanCount] items are still out.
 final class BorrowerDeletionBlocked extends BorrowerDeletion {
   /// Creates a blocked outcome.
   const BorrowerDeletionBlocked({required this.activeLoanCount});

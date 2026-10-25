@@ -2,12 +2,12 @@
 ///
 /// A `@riverpod` AsyncNotifier the Library screen drives. Its state is a
 /// [LibraryWindow]: the rows loaded so far for the current intent (search
-/// text + persisted sort + language chip), whether more exist, and whether
-/// the next page is in flight. Queries are debounced (120ms) to mirror the
-/// Kotlin query flow and avoid hammering SQLite on every keystroke. The
-/// repository returns `Either<Failure, _>`; a left on the FIRST page becomes
-/// `AsyncError(Failure)` so the UI can render a safe message (raw exception
-/// text is never surfaced).
+/// text + persisted sort + language chip + kind chip), whether more exist
+/// and whether the next page is in flight. Queries are debounced (120ms) to
+/// mirror the Kotlin query flow and avoid hammering SQLite on every
+/// keystroke. The repository returns `Either<Failure, _>`; a left on the
+/// FIRST page becomes `AsyncError(Failure)` so the UI can render a safe
+/// message (raw exception text is never surfaced).
 ///
 /// ## Windows, not the catalogue (review finding N10-d part 2, "lists load
 /// the whole catalogue")
@@ -39,9 +39,10 @@ import 'dart:math' as math;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -57,7 +58,8 @@ class LibraryController extends _$LibraryController {
   Timer? _debounce;
   String _query = '';
   String? _languageFilter;
-  BookSort _sort = BookSort.recentlyAdded;
+  ItemKind? _kindFilter;
+  LibrarySort _sort = LibrarySort.recentlyAdded;
 
   /// The intent the current rows belong to; null before the first build.
   LibraryQuery? _lastQuery;
@@ -93,7 +95,7 @@ class LibraryController extends _$LibraryController {
       settingsControllerProvider.select(
         (s) => s.maybeWhen(
           data: (settings) => settings.librarySort,
-          orElse: () => BookSort.recentlyAdded,
+          orElse: () => LibrarySort.recentlyAdded,
         ),
       ),
     );
@@ -101,6 +103,9 @@ class LibraryController extends _$LibraryController {
     // library_filter_controller.dart), so a chip tap rebuilds this list AND
     // the chips from one source of truth.
     _languageFilter = ref.watch(libraryLanguageFilterProvider);
+    // The kind chips (ADR 0013 U1) are a second facet with the same
+    // contract: provider state, watched here, so a tap is a new intent.
+    _kindFilter = ref.watch(libraryKindFilterProvider);
     return _loadHead(_intent(_query));
   }
 
@@ -148,7 +153,7 @@ class LibraryController extends _$LibraryController {
   Future<void> _loadMore(LibraryWindow current) async {
     final rev = _revision;
     state = AsyncData(current.copyWith(isLoadingMore: true));
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.page(
       _intent(_query),
       limit: libraryPageSize,
@@ -165,7 +170,10 @@ class LibraryController extends _$LibraryController {
     final latest = state.valueOrNull ?? current;
     state = AsyncData(
       result.fold((_) => latest.copyWith(isLoadingMore: false), (page) {
-        final books = List<Book>.unmodifiable([...latest.books, ...page.items]);
+        final books = List<CatalogueItem>.unmodifiable([
+          ...latest.books,
+          ...page.items,
+        ]);
         _loadedDepth = books.length;
         return LibraryWindow(books: books, hasMore: page.hasMore);
       }),
@@ -187,7 +195,7 @@ class LibraryController extends _$LibraryController {
   /// Fail closed (§5): a repository Left becomes `AsyncError(Failure)` — a
   /// failed write must never refresh the list as if it succeeded.
   Future<void> remove(int id) async {
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.markRemoved(
       id,
       DateTime.now().millisecondsSinceEpoch,
@@ -201,7 +209,7 @@ class LibraryController extends _$LibraryController {
   /// Clears the soft-delete flag on book [id], then refreshes. Fails closed
   /// like [remove].
   Future<void> restoreRemoved(int id) async {
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.restoreRemoved(id);
     await result.fold(
       (failure) async => state = AsyncError(failure, StackTrace.current),
@@ -209,10 +217,14 @@ class LibraryController extends _$LibraryController {
     );
   }
 
-  /// The whole read intent as one value: [text] plus the sort and facet
+  /// The whole read intent as one value: [text] plus the sort and facets
   /// watched in [build]. Normalised by `LibraryQuery` itself.
-  LibraryQuery _intent(String text) =>
-      LibraryQuery(text: text, sort: _sort, language: _languageFilter);
+  LibraryQuery _intent(String text) => LibraryQuery(
+    text: text,
+    sort: _sort,
+    language: _languageFilter,
+    kind: _kindFilter,
+  );
 
   /// Loads the head of the list for [query]: one page for a new intent, or
   /// the previously loaded depth for the same intent (D2-b). Records the
@@ -227,16 +239,16 @@ class LibraryController extends _$LibraryController {
     _lastQuery = query;
     _loadedDepth = depth;
 
-    final repo = await ref.read(bookRepositoryProvider.future);
+    final repo = await ref.read(catalogueItemRepositoryProvider.future);
     final result = await repo.page(query, limit: depth);
     return result.fold(
       (failure) =>
           // ignore: only_throw_errors, Riverpod surfaces errors via throw
           throw failure,
-      (BookPage page) {
+      (CatalogueItemPage page) {
         _loadedDepth = math.max(page.items.length, libraryPageSize);
         return LibraryWindow(
-          books: List<Book>.unmodifiable(page.items),
+          books: List<CatalogueItem>.unmodifiable(page.items),
           hasMore: page.hasMore,
         );
       },

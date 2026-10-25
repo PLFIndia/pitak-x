@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
@@ -18,6 +19,14 @@ import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits, hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
+
+String _importErrorMessage(Object error) {
+  if (error is SchemaTooNewFailure) {
+    return 'This file was created by a newer version of Pitak. '
+        'Update the app before importing.';
+  }
+  return "Couldn't import that. Please check the file and try again.";
+}
 
 /// Screen to import a library/wishlist from pasted text or a chosen file.
 class ImportPage extends ConsumerStatefulWidget {
@@ -168,8 +177,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
             ),
           state.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, _) => Text(
-              "Couldn't import that. Please check the file and try again.",
+            error: (error, _) => Text(
+              _importErrorMessage(error),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
             data: (summary) =>
@@ -209,7 +218,26 @@ class _Summary extends StatelessWidget {
         if (summary.format != null) Text('Format: $formatName'),
         Text('Books added: ${summary.booksAdded}'),
         Text('Books updated (same identity): ${summary.booksUpdated}'),
-        Text('Books skipped (same ISBN): ${summary.booksSkipped}'),
+        Text(
+          'Books skipped (same ISBN or issue identity): '
+          '${summary.booksSkipped}',
+        ),
+        // W1: only a schema-v4 file can carry periodicals — show the counts
+        // only when one did, so a v3/CSV summary reads exactly as before.
+        if (summary.periodicalsAdded +
+                summary.periodicalsUpdated +
+                summary.periodicalsSkipped >
+            0) ...[
+          Text('Magazine titles added: ${summary.periodicalsAdded}'),
+          Text(
+            'Magazine titles updated (same identity): '
+            '${summary.periodicalsUpdated}',
+          ),
+          Text(
+            'Magazine titles skipped (same ISSN or duplicate key): '
+            '${summary.periodicalsSkipped}',
+          ),
+        ],
         Text('Wishlist added: ${summary.wishlistAdded}'),
         Text('Wishlist replaced: ${summary.wishlistReplaced}'),
         if (summary.parseErrors.isNotEmpty) ...[

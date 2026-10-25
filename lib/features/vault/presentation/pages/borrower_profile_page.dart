@@ -115,7 +115,7 @@ class _LoanTitle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final title = ref.watch(bookTitleProvider(bookId: bookId)).valueOrNull;
     final text = (title == null || title.trim().isEmpty)
-        ? 'Book #$bookId'
+        ? 'Item #$bookId'
         : title;
     return Text(text, overflow: TextOverflow.ellipsis);
   }
@@ -154,7 +154,7 @@ class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
       final failure = result.swap().toNullable();
       final message = failure is NotFoundFailure
           ? 'That loan no longer exists.'
-          : 'Could not return this book. Please try again.';
+          : 'Could not return this item. Please try again.';
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));
@@ -167,7 +167,7 @@ class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: widget.loan.bookId),
+      title: _LoanTitle(bookId: widget.loan.itemId),
       subtitle: Text(BorrowerProfilePage.dueLabel(widget.loan)),
       trailing: TextButton(
         onPressed: _busy ? null : _return,
@@ -193,7 +193,7 @@ class _ReturnedLoanTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      title: _LoanTitle(bookId: loan.bookId),
+      title: _LoanTitle(bookId: loan.itemId),
       subtitle: Text(
         'Returned ${BorrowerProfilePage.formatDate(loan.returnedDate)}',
       ),

@@ -1,57 +1,67 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
 
 /// Books by id; everything else unused here.
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   _Books(this.byId);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final Map<int, Book> byId;
+  final Map<int, CatalogueItem> byId;
 
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(byId[id]);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async =>
+      right(byId[id]);
   @override
-  Future<Either<Failure, List<Book>>> getAll() async =>
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async =>
       right(byId.values.toList());
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(byId.values.toList());
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
     final rows = query.isSearch
-        ? const <Book>[]
+        ? const <CatalogueItem>[]
         : (await getAll()).getOrElse((_) => const []);
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String isbn) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String isbn) async =>
+      right(null);
   @override
   Future<Either<Failure, List<String>>> distinctLanguages() async =>
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
@@ -61,13 +71,16 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -99,42 +112,78 @@ class _Vault implements VaultLender {
 }
 
 void main() {
-  const single = Book(id: 1, title: 'One copy');
-  const triple = Book(id: 2, title: 'Three copies', copyCount: 3);
-  const removed = Book(id: 3, title: 'Gone', removed: true);
-  Loan out(int bookId) => Loan(bookId: bookId, borrowerId: 9, lentDate: 1);
+  const single = CatalogueItem(id: 1, title: 'One copy');
+  const triple = CatalogueItem(id: 2, title: 'Three copies', copyCount: 3);
+  const removed = CatalogueItem(id: 3, title: 'Gone', removed: true);
+  Loan out(int bookId) => Loan(itemId: bookId, borrowerId: 9, lentDate: 1);
   Loan back(int bookId) =>
-      Loan(bookId: bookId, borrowerId: 9, lentDate: 1, returnedDate: 2);
+      Loan(itemId: bookId, borrowerId: 9, lentDate: 1, returnedDate: 2);
 
   group('LendDecision (pure policy)', () {
     test('allowed when copies are free; counts only ACTIVE loans', () {
-      final d = LendDecision.forBook(triple, [out(2), back(2), back(2)]);
+      final d = LendDecision.forItem(triple, [out(2), back(2), back(2)]);
       expect(d, isA<LendAllowed>());
       expect((d as LendAllowed).copiesFree, 2);
       expect(d.reason, isNull);
     });
 
     test('refused when every copy is out, with a plain-language reason', () {
-      final d1 = LendDecision.forBook(single, [out(1)]);
+      final d1 = LendDecision.forItem(single, [out(1)]);
       expect(d1, isA<LendRefusedAllCopiesOut>());
       expect(d1.reason, contains('already out on loan'));
 
-      final d3 = LendDecision.forBook(triple, [out(2), out(2), out(2)]);
+      final d3 = LendDecision.forItem(triple, [out(2), out(2), out(2)]);
       expect(d3, isA<LendRefusedAllCopiesOut>());
       expect(d3.reason, contains('All 3 copies'));
     });
 
     test('refused for a removed book regardless of loans', () {
-      final d = LendDecision.forBook(removed, const []);
+      final d = LendDecision.forItem(removed, const []);
       expect(d, isA<LendRefusedRemoved>());
       expect(d.reason, contains('marked as removed'));
     });
 
+    test('S9: issue and Other refusal reasons use neutral item wording', () {
+      const items = [
+        CatalogueItem(
+          id: 5,
+          title: 'Frontline — No 5',
+          removed: true,
+          details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+        ),
+        CatalogueItem(
+          id: 6,
+          title: 'Chess set',
+          removed: true,
+          details: OtherItemOf(),
+        ),
+      ];
+
+      for (final item in items) {
+        final removedDecision = LendDecision.forItem(item, const []);
+        expect(removedDecision.reason, contains('This item'));
+        expect(removedDecision.reason, isNot(contains('book')));
+
+        final available = item.copyWith(removed: false);
+        final outDecision = LendDecision.forItem(available, [out(item.id)]);
+        expect(outDecision.reason, contains('This item'));
+        expect(outDecision.reason, isNot(contains('book')));
+
+        final twoCopies = available.copyWith(copyCount: 2);
+        final pluralDecision = LendDecision.forItem(twoCopies, [
+          out(item.id),
+          out(item.id),
+        ]);
+        expect(pluralDecision.reason, contains('copies of this item'));
+        expect(pluralDecision.reason, isNot(contains('book')));
+      }
+    });
+
     test('a malformed copyCount of 0 behaves like 1', () {
-      const zero = Book(id: 4, title: 'Z', copyCount: 0);
-      expect(LendDecision.forBook(zero, const []), isA<LendAllowed>());
+      const zero = CatalogueItem(id: 4, title: 'Z', copyCount: 0);
+      expect(LendDecision.forItem(zero, const []), isA<LendAllowed>());
       expect(
-        LendDecision.forBook(zero, [out(4)]),
+        LendDecision.forItem(zero, [out(4)]),
         isA<LendRefusedAllCopiesOut>(),
       );
     });

@@ -13,19 +13,23 @@ import 'package:pitaka/features/import_export/domain/import_bundle.dart';
 import 'package:pitaka/features/import_export/domain/import_payload.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 import 'bundle_test_fixture.dart';
 import 'controlled_bundle_files.dart';
 
-Uint8List _bytes() {
+Uint8List _bytes({int? schemaVersion}) {
+  final libraryJson = jsonEncode({
+    if (schemaVersion != null) 'schemaVersion': schemaVersion,
+    'books': [
+      {'title': 'A', 'isbn': '111', 'coverUrl': 'covers/a.jpg'},
+    ],
+  });
   final archive = Archive();
   for (final entry in {
-    'library.json': utf8.encode(
-      '{"books":[{"title":"A","isbn":"111","coverUrl":"covers/a.jpg"}]}',
-    ),
+    'library.json': utf8.encode(libraryJson),
     'cover_a.jpg': [1, 2],
   }.entries) {
     archive.addFile(ArchiveFile(entry.key, entry.value.length, entry.value));
@@ -97,7 +101,9 @@ void main() {
         };
         if (failFirst) files.failures.add('stage');
         const payload = ImportPayload(
-          books: [Book(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg')],
+          items: [
+            CatalogueItem(title: 'A', isbn: '111', coverUrl: 'covers/a.jpg'),
+          ],
         );
         final images = {
           'a.jpg': Uint8List.fromList([1]),
@@ -188,6 +194,41 @@ void main() {
     expect(find.text('Books added: 1'), findsOneWidget);
     expect(fixture.images, hasLength(1));
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('import page shows update guidance for a newer bundle', (
+    tester,
+  ) async {
+    final c = container();
+    addTearDown(c.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: c,
+        child: const MaterialApp(home: ImportPage()),
+      ),
+    );
+
+    await tester.runAsync(
+      () => c
+          .read(importControllerProvider.notifier)
+          .importBytes(_bytes(schemaVersion: 99)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'This file was created by a newer version of Pitak. '
+        'Update the app before importing.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.text("Couldn't import that. Please check the file and try again."),
+      findsNothing,
+    );
+    expect(c.read(importControllerProvider).error, isA<SchemaTooNewFailure>());
+    expect(files.stages, 0);
+    expect(fixture.images, isEmpty);
   });
 
   test(

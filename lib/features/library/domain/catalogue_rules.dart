@@ -1,4 +1,4 @@
-/// Field-level validation rules for the catalogue entities (`Book` and
+/// Field-level validation rules for the catalogue entities (`CatalogueItem` and
 /// `WishlistBook` — not imported here to keep this leaf dependency-free) —
 /// the single source of truth every ingress must pass through (review finding
 /// M15: imports coerced instead of validating, persisting values that later
@@ -17,7 +17,7 @@
 ///
 /// Cover references are the one exception: they are NORMALISED (dropped to
 /// null), never a rejection, so a pre-M15 database row carrying a
-/// now-disallowed URL stays editable (see the `Book.validate` doc).
+/// now-disallowed URL stays editable (see the `CatalogueItem.validate` doc).
 ///
 /// The numeric bounds mirror the Rust vault core (`rust/src/api.rs`
 /// `MAX_DATE_MILLIS`, `validate_date`) so both trusted cores agree on what a
@@ -57,6 +57,12 @@ abstract final class CatalogueRules {
   static bool isValidOptionalDateMillis(int? value) =>
       value == null || isValidDateMillis(value);
 
+  /// A date range in order: true when either end is absent or [until] is on
+  /// or after [from] (same day counts). Used for a bound volume's
+  /// `issueDate..boundUntil` and a subscription window (ADR 0013 D4, D5).
+  static bool isValidDateOrder(int? from, int? until) =>
+      from == null || until == null || until >= from;
+
   /// A publication year: null (unknown) or 1..9999.
   static bool isValidYear(int? year) =>
       year == null || (year >= minYear && year <= maxYear);
@@ -76,8 +82,9 @@ abstract final class CatalogueRules {
       value == null || value.length <= maxFieldChars;
 
   /// The comparison key for a free-text `sourceDetail` (donor / seller
-  /// name): trimmed and lower-cased, or null when blank. `Book.sourceDetail`
-  /// is typed by hand, so "Ram Sharma" and "ram sharma " must count as the
+  /// name): trimmed and lower-cased, or null when blank.
+  /// `CatalogueItem.sourceDetail` is typed by hand, so "Ram Sharma" and
+  /// "ram sharma " must count as the
   /// SAME person wherever details are listed or matched — the repository's
   /// distinct-detail facet and the export filter both compare by this key,
   /// so a value picked from the one always matches in the other. Dart's
@@ -139,6 +146,18 @@ final class FieldError {
       'priority' => 'The priority',
       'priceEstimate' => 'The price estimate',
       'coverUrl' => 'The cover link',
+      // Periodicals (ADR 0013 D2, D5, D7).
+      'issn' => 'The ISSN',
+      'frequency' => 'The frequency',
+      'subscriptionStart' => 'The subscription start date',
+      'subscriptionEnd' => 'The subscription end date',
+      // Magazine issues (`IssueOf.validate`, ADR 0013 D1, D4).
+      'issue.periodicalUid' => 'The magazine title',
+      'issue.volume' => 'The volume number',
+      'issue.issueNumber' => 'An issue number',
+      'issue.issueDate' => 'The issue date',
+      'issue.boundUntil' => 'The last issue date',
+      'issue.label' => 'The issue label',
       _ => field,
     };
     return '$label $problem.';

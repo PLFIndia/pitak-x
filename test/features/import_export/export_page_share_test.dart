@@ -17,12 +17,14 @@ import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_exporter.dart';
 import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
-import 'package:pitaka/features/library/domain/book_page.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
+
+import '../periodicals/application/periodical_fakes.dart';
 
 /// Captures what would be handed to the OS share sheet.
 class _FakeShare implements FileShareService {
@@ -59,7 +61,7 @@ class _GatedRenderer implements LibraryPdfRenderer {
   @override
   Future<Uint8List> render({
     required String libraryName,
-    required List<Book> books,
+    required List<CatalogueItem> books,
     required List<PrintColumn> columns,
     required String footerAttribution,
     String? subtitle,
@@ -107,31 +109,38 @@ class _NoRaster implements PdfTextRasterizer {
   }) async => null;
 }
 
-class _Books implements BookRepository {
+class _Books implements CatalogueItemRepository {
   _Books(this._books);
 
-  // BookRepository additions (review 2026-09-03): fakes default to "no match"
-  // and a pass-through transaction unless a test overrides them.
+  // CatalogueItemRepository additions (review 2026-09-03): fakes default to "no
+  // match" and a pass-through transaction unless a test overrides them.
   @override
-  Future<Either<Failure, Book?>> findByUid(String bookUid) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByUid(String itemUid) async =>
+      right(null);
   @override
   Future<Either<Failure, T>> runInTransaction<T>(
     Future<Either<Failure, T>> Function() action,
   ) => action();
-  final List<Book> _books;
+  final List<CatalogueItem> _books;
   @override
-  Future<Either<Failure, List<Book>>> getAll() async => right(_books);
+  Future<Either<Failure, List<CatalogueItem>>> getAll() async => right(_books);
   @override
-  Future<Either<Failure, BookPage>> page(
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
+      right(_books);
+  @override
+  Future<Either<Failure, CatalogueItemPage>> page(
     LibraryQuery query, {
     required int limit,
     int offset = 0,
   }) async {
-    final rows = query.isSearch ? const <Book>[] : _books;
+    final rows = query.isSearch ? const <CatalogueItem>[] : _books;
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
-      BookPage(items: rows.sublist(start, end), hasMore: end < rows.length),
+      CatalogueItemPage(
+        items: rows.sublist(start, end),
+        hasMore: end < rows.length,
+      ),
     );
   }
 
@@ -140,14 +149,16 @@ class _Books implements BookRepository {
       right(const []);
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
-    BookSourceType type,
+    ItemSourceType type,
   ) async => right(const []);
   @override
-  Future<Either<Failure, Book?>> getById(int id) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> getById(int id) async => right(null);
   @override
-  Future<Either<Failure, Book>> insert(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> insert(CatalogueItem b) async =>
+      right(b);
   @override
-  Future<Either<Failure, Book>> update(Book b) async => right(b);
+  Future<Either<Failure, CatalogueItem>> update(CatalogueItem b) async =>
+      right(b);
   @override
   Future<Either<Failure, Unit>> markRemoved(int id, int at) async =>
       right(unit);
@@ -156,11 +167,13 @@ class _Books implements BookRepository {
   @override
   Future<Either<Failure, Unit>> delete(int id) async => right(unit);
   @override
-  Future<Either<Failure, Book?>> findByIsbn(String i) async => right(null);
+  Future<Either<Failure, CatalogueItem?>> findByIsbn(String i) async =>
+      right(null);
   @override
-  Future<Either<Failure, int>> insertAll(List<Book> b) async => right(b.length);
+  Future<Either<Failure, int>> insertAll(List<CatalogueItem> b) async =>
+      right(b.length);
   @override
-  Future<Either<Failure, int>> replaceAll(List<Book> b) async =>
+  Future<Either<Failure, int>> replaceAll(List<CatalogueItem> b) async =>
       right(b.length);
 }
 
@@ -200,8 +213,11 @@ void main() {
     final useCase = ExportLibraryUseCase(
       jsonEncoder: const PitakaJsonExporter(),
       pdfRenderer: const PdfLibraryRenderer(),
-      bookRepo: _Books([const Book(id: 1, title: 'Godaan', isbn: '111')]),
+      bookRepo: _Books([
+        const CatalogueItem(id: 1, title: 'Godaan', isbn: '111'),
+      ]),
       wishlistRepo: _Wishlist(),
+      periodicalRepo: FakePeriodicals(),
     );
 
     await tester.pumpWidget(
@@ -230,20 +246,24 @@ void main() {
 
   group('source filter (Books to include)', () {
     const books = [
-      Book(
+      CatalogueItem(
         id: 1,
         title: 'Godaan',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Ram Sharma',
       ),
-      Book(
+      CatalogueItem(
         id: 2,
         title: 'Gaban',
-        sourceType: BookSourceType.donated,
+        sourceType: ItemSourceType.donated,
         sourceDetail: 'Sita Devi',
       ),
-      Book(id: 3, title: 'Karmabhoomi', sourceType: BookSourceType.purchased),
-      Book(id: 4, title: 'Sevasadan'),
+      CatalogueItem(
+        id: 3,
+        title: 'Karmabhoomi',
+        sourceType: ItemSourceType.purchased,
+      ),
+      CatalogueItem(id: 4, title: 'Sevasadan'),
     ];
 
     Future<_FakeShare> pump(WidgetTester tester) async {
@@ -257,6 +277,7 @@ void main() {
         pdfRenderer: const PdfLibraryRenderer(),
         bookRepo: _Books(books),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       await tester.pumpWidget(
         ProviderScope(
@@ -264,10 +285,10 @@ void main() {
             exportLibraryUseCaseProvider.overrideWith((ref) async => useCase),
             fileShareServiceProvider.overrideWithValue(share),
             // The facet the picker lists — what the repository would return.
-            for (final type in BookSourceType.values)
+            for (final type in ItemSourceType.values)
               librarySourceDetailsProvider(type).overrideWith(
                 (ref) async => switch (type) {
-                  BookSourceType.donated => const ['Ram Sharma', 'Sita Devi'],
+                  ItemSourceType.donated => const ['Ram Sharma', 'Sita Devi'],
                   _ => const <String>[],
                 },
               ),
@@ -408,8 +429,9 @@ void main() {
       final useCase = ExportLibraryUseCase(
         jsonEncoder: const PitakaJsonExporter(),
         pdfRenderer: renderer,
-        bookRepo: _Books([const Book(id: 1, title: 'Godaan')]),
+        bookRepo: _Books([const CatalogueItem(id: 1, title: 'Godaan')]),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       await tester.pumpWidget(
         ProviderScope(
@@ -495,8 +517,9 @@ void main() {
       final useCase = ExportLibraryUseCase(
         jsonEncoder: const PitakaJsonExporter(),
         pdfRenderer: renderer,
-        bookRepo: _Books([const Book(id: 1, title: 'Godaan')]),
+        bookRepo: _Books([const CatalogueItem(id: 1, title: 'Godaan')]),
         wishlistRepo: _Wishlist(),
+        periodicalRepo: FakePeriodicals(),
       );
       final navKey = GlobalKey<NavigatorState>();
       await tester.pumpWidget(

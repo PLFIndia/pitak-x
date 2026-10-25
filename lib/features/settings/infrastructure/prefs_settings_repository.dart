@@ -49,7 +49,7 @@ class PrefsSettingsRepository implements SettingsRepository {
       libraryName: _prefs.getString(_libraryNameKey) ?? '',
       libraryId: _prefs.getString(_libraryIdKey) ?? '',
       maintainerName: _prefs.getString(_maintainerNameKey) ?? '',
-      librarySort: BookSortX.fromToken(_prefs.getString(_librarySortKey)),
+      librarySort: LibrarySortX.fromToken(_prefs.getString(_librarySortKey)),
       loadRemoteCovers: _prefs.getBool(_loadRemoteCoversKey) ?? false,
       publishContactAddress: _readAddressWithMigration(),
       publishContactGps: _readGpsWithMigration(),
@@ -132,7 +132,7 @@ class PrefsSettingsRepository implements SettingsRepository {
   );
 
   @override
-  Future<Either<Failure, Unit>> setLibrarySort(BookSort sort) =>
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) =>
       _write(() => _prefs.setString(_librarySortKey, sort.token), 'sort');
 
   @override

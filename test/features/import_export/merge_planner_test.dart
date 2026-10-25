@@ -3,17 +3,29 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/infrastructure/background_merge_planner.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/merge/library_merge_engine.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 
 /// No-ISBN books with unique uids so the plan exercises the fuzzy pass (the
 /// expensive part) rather than the O(1) key lookups.
-Book _book({required String title, int id = Book.emptyId, String? uid}) =>
-    Book(id: id, bookUid: uid, title: title, author: 'A', addedDate: 1);
+CatalogueItem _book({
+  required String title,
+  int id = CatalogueItem.emptyId,
+  String? uid,
+}) => CatalogueItem(
+  id: id,
+  itemUid: uid,
+  title: title,
+  author: 'A',
+  addedDate: 1,
+);
 
 /// Deterministic 3000 × 3000 fixture (same shape as the N10-b wall-clock
 /// test): enough work that a synchronous plan visibly blocks the event loop.
-({List<Book> local, List<Book> incoming}) _bigFixture() {
+({List<CatalogueItem> local, List<CatalogueItem> incoming}) _bigFixture() {
   final rng = Random(7);
   String phrase(int n) =>
       List.generate(n, (_) => 'w${rng.nextInt(400)}x').join(' ');
@@ -50,23 +62,28 @@ void main() {
       expect(expected.possibleDuplicates, hasLength(1));
       expect(expected.toAdd, hasLength(1));
 
-      final actual = await planMergeInBackground(local, incoming);
+      final actual = await planMergeInBackground(
+        local,
+        incoming,
+        const [],
+        const [],
+      );
 
       expect(actual.identical, expected.identical);
       expect(
-        actual.toAdd.map((b) => b.bookUid),
-        expected.toAdd.map((b) => b.bookUid),
+        actual.toAdd.map((b) => b.itemUid),
+        expected.toAdd.map((b) => b.itemUid),
       );
       expect(
-        actual.conflicts.map((c) => (c.local.id, c.incoming.bookUid)),
-        expected.conflicts.map((c) => (c.local.id, c.incoming.bookUid)),
+        actual.conflicts.map((c) => (c.local.id, c.incoming.itemUid)),
+        expected.conflicts.map((c) => (c.local.id, c.incoming.itemUid)),
       );
       expect(
         actual.possibleDuplicates.map(
-          (d) => (d.local.id, d.incoming.bookUid, d.similarity, d.reason),
+          (d) => (d.local.id, d.incoming.itemUid, d.similarity, d.reason),
         ),
         expected.possibleDuplicates.map(
-          (d) => (d.local.id, d.incoming.bookUid, d.similarity, d.reason),
+          (d) => (d.local.id, d.incoming.itemUid, d.similarity, d.reason),
         ),
       );
       // Entities survive the isolate hop with their fields intact.
@@ -84,7 +101,12 @@ void main() {
       Timer(const Duration(milliseconds: 1), () {
         fired.complete(sw.elapsedMilliseconds);
       });
-      final work = planMergeInBackground(fx.local, fx.incoming);
+      final work = planMergeInBackground(
+        fx.local,
+        fx.incoming,
+        const [],
+        const [],
+      );
       final firedAt = await fired.future;
       final plan = await work;
       final total = sw.elapsedMilliseconds;
@@ -99,9 +121,91 @@ void main() {
     });
 
     test('empty inputs produce an empty plan without error', () async {
-      final plan = await planMergeInBackground(const [], const []);
+      final plan = await planMergeInBackground(
+        const [],
+        const [],
+        const [],
+        const [],
+      );
       expect(plan.isNoOp, isTrue);
       expect(plan.identical, 0);
+    });
+
+    test('S19: periodicals and issues survive the isolate hop', () async {
+      // Everything the planner receives must be sendable plain Dart (N10-c):
+      // a Periodical with every enum-shaped field set, and an issue row whose
+      // `IssueOf` rides along. The plan must carry the series union back.
+      const localSeries = Periodical(
+        id: 1,
+        periodicalUid: 'per-local',
+        title: 'Chandamama',
+        issn: '0976-3279',
+        frequency: PeriodicalFrequency.monthly,
+        language: 'hi',
+        ageGroup: AgeGroup.above6,
+        sourceType: ItemSourceType.purchased,
+        subscriptionStart: 1000,
+        subscriptionEnd: 2000,
+        addedDate: 1,
+      );
+      // The same series parsed from the file (id stripped, uid kept), so the
+      // periodical match path crosses the isolate too.
+      const incomingSameSeries = Periodical(
+        periodicalUid: 'per-local',
+        title: 'Chandamama',
+        issn: '0976-3279',
+        frequency: PeriodicalFrequency.monthly,
+        language: 'hi',
+        ageGroup: AgeGroup.above6,
+        sourceType: ItemSourceType.purchased,
+        subscriptionStart: 1000,
+        subscriptionEnd: 2000,
+        addedDate: 1,
+      );
+      const incomingSeries = Periodical(
+        periodicalUid: 'per-new',
+        title: 'National Geographic',
+        issn: '0027-9358',
+        addedDate: 2,
+      );
+      final local = <CatalogueItem>[
+        const CatalogueItem(
+          id: 1,
+          itemUid: 'i1',
+          title: 'Chandamama — No 5',
+          addedDate: 1,
+          details: IssueOf(periodicalUid: 'per-local', issueNumber: 5),
+        ),
+      ];
+      final incoming = <CatalogueItem>[
+        const CatalogueItem(
+          itemUid: 'i2',
+          title: 'National Geographic — No 1 (Jan 2026)',
+          addedDate: 2,
+          details: IssueOf(
+            periodicalUid: 'per-new',
+            issueNumber: 1,
+            // 2026-01-15T12:00Z — mid-day, so every timezone reads Jan 2026.
+            issueDate: 1768478400000,
+          ),
+        ),
+      ];
+
+      final plan = await planMergeInBackground(
+        local,
+        incoming,
+        const [localSeries],
+        const [incomingSameSeries, incomingSeries],
+      );
+
+      expect(plan.periodicalsToAdd.single.title, 'National Geographic');
+      expect(plan.periodicalsIdentical, 1);
+      expect(plan.toAdd.single.itemUid, 'i2');
+      // The issue arrived re-anchored and re-projected from its (added)
+      // series — the D3/D6 canonical form.
+      expect(plan.toAdd.single.issue?.periodicalUid, 'per-new');
+      expect(plan.toAdd.single.title, 'National Geographic — No 1 (Jan 2026)');
+      expect(plan.matchedLocalSeries.single.periodicalUid, 'per-local');
     });
   });
 }

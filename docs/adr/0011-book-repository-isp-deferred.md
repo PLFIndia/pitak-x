@@ -22,3 +22,7 @@ indirection without a second client to justify it.
 - Trigger to start: a second consumer that needs only a slice of
   `BookRepository` (e.g., a standalone import tool), or the interface
   growing past the point where one screen can explain it.
+
+- 2026-10: `BookRepository` renamed `CatalogueItemRepository`
+  (`DriftCatalogueItemRepository`, `catalogueItemRepositoryProvider`); the
+  deferral stands unchanged.

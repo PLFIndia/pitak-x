@@ -4,7 +4,7 @@
 /// uploaded to GitHub Pages. SEPARATE from the re-importable export payload on
 /// purpose: it carries ONLY viewer-facing catalog metadata plus a coarse
 /// availability flag — never id, notes, location, source, addedDate (those are
-/// stripped before a [PublishBook] is built; see `redactForPublish`).
+/// stripped before a [PublishItem] is built; see `redactForPublish`).
 library;
 
 /// The full world-facing payload serialised to `books.json`.
@@ -13,6 +13,7 @@ final class PublishExport {
   const PublishExport({
     required this.exportedAt,
     required this.books,
+    this.periodicals = const [],
     this.schemaVersion = schemaVersionValue,
   });
 
@@ -26,22 +27,35 @@ final class PublishExport {
   /// Epoch millis the payload was built.
   final int exportedAt;
 
-  /// The world-facing book rows.
-  final List<PublishBook> books;
+  /// The world-facing book rows (books, magazine issues and others — the
+  /// list kept its Kotlin-era name; the wire key stays `books`, ADR 0014).
+  final List<PublishItem> books;
+
+  /// The world-facing magazine titles the issues group under (ADR 0014 W3).
+  /// Public fields only — see `redactPeriodicalForPublish`.
+  final List<PublishPeriodical> periodicals;
 
   /// JSON map (camelCase keys mirror the Kotlin payload + viewer reads).
   Map<String, dynamic> toJson() => {
     'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
     'books': books.map((b) => b.toJson()).toList(),
+    // Omitted when empty (the S18 Pitaka-JSON v4 rule): additive keys are
+    // ignored by older viewers, and a library without magazines keeps the
+    // payload it always had.
+    if (periodicals.isNotEmpty)
+      'periodicals': periodicals.map((p) => p.toJson()).toList(),
   };
 }
 
-/// One book in the world-facing payload. No id/notes/location/source/addedDate.
-final class PublishBook {
-  /// Creates a publish row.
-  const PublishBook({
+/// One item in the world-facing payload. No id/notes/location/source/addedDate.
+final class PublishItem {
+  /// Creates a publish row. [kind] is required (ADR 0014 W3: every entry
+  /// gains `kind`) so no mapping can silently default an issue to a book.
+  const PublishItem({
     required this.title,
+    required this.kind,
+    this.issue,
     this.titleTransliteration,
     this.author,
     this.isbn,
@@ -60,8 +74,18 @@ final class PublishBook {
   /// Coarse availability sentinel: all copies lent out.
   static const String out = 'out';
 
-  /// Title (may include subtitle).
+  /// Title (may include subtitle). An issue's title is the composed,
+  /// projected one ("<Series> — Vol 249 No 10 (Oct 2026)", ADR 0013 D3).
   final String title;
+
+  /// Stable kind token (`book` / `magazine-issue` / `other`,
+  /// `ItemKind.token`). Written for EVERY entry; absent on files published
+  /// by older builds, which the viewer reads as `book`.
+  final String kind;
+
+  /// The issue part of a `magazine-issue` entry (public identity fields
+  /// only); null for books and others.
+  final PublishIssue? issue;
 
   /// Title transliteration.
   final String? titleTransliteration;
@@ -98,6 +122,8 @@ final class PublishBook {
   /// viewer reads optional keys defensively.
   Map<String, dynamic> toJson() => {
     'title': title,
+    'kind': kind,
+    if (issue != null) 'issue': issue!.toJson(),
     if (titleTransliteration != null)
       'titleTransliteration': titleTransliteration,
     if (author != null) 'author': author,
@@ -109,5 +135,112 @@ final class PublishBook {
     if (coverUrl != null) 'coverUrl': coverUrl,
     if (ageGroup != null) 'ageGroup': ageGroup,
     if (availability != null) 'availability': availability,
+  };
+}
+
+/// The issue part of a published magazine-issue entry (ADR 0013 D1, D4 —
+/// the public identity fields; the item's private fields stay on the base
+/// row and are stripped before a [PublishItem] is built).
+final class PublishIssue {
+  /// Creates the nested `issue{}` object.
+  const PublishIssue({
+    required this.periodicalUid,
+    this.volume,
+    this.issueNumber,
+    this.issueDate,
+    this.boundUntil,
+    this.label,
+  });
+
+  /// `Periodical.periodicalUid` of the series — the viewer's grouping key
+  /// into the payload's top-level `periodicals[]`.
+  final String periodicalUid;
+
+  /// Volume number, when the magazine numbers volumes.
+  final int? volume;
+
+  /// Issue number within the volume (or absolute), when known.
+  final int? issueNumber;
+
+  /// Cover calendar day at 00:00 UTC (epoch millis); for a bound volume,
+  /// the FIRST issue's day. The wire integer is emitted pass-through.
+  final int? issueDate;
+
+  /// Bound volumes only: the LAST issue's calendar day at 00:00 UTC. Non-null
+  /// is exactly what makes the viewer render the "Bound volume" badge.
+  final int? boundUntil;
+
+  /// Free-text label ("Dasara special"), optional.
+  final String? label;
+
+  /// JSON map; omits null fields.
+  Map<String, dynamic> toJson() => {
+    'periodicalUid': periodicalUid,
+    if (volume != null) 'volume': volume,
+    if (issueNumber != null) 'issueNumber': issueNumber,
+    if (issueDate != null) 'issueDate': issueDate,
+    if (boundUntil != null) 'boundUntil': boundUntil,
+    if (label != null) 'label': label,
+  };
+}
+
+/// One magazine title in the world-facing payload (ADR 0014 W3). PUBLIC
+/// fields only — the subscription window, notes, location, source, added*
+/// and the per-device id are stripped by `redactPeriodicalForPublish` and
+/// never leave the device.
+final class PublishPeriodical {
+  /// Creates a publish row for a series.
+  const PublishPeriodical({
+    required this.periodicalUid,
+    required this.title,
+    this.titleTransliteration,
+    this.issn,
+    this.publisher,
+    this.language,
+    this.coverUrl,
+    this.frequency,
+    this.ageGroup,
+  });
+
+  /// Stable cross-device identity — the key an issue's
+  /// [PublishIssue.periodicalUid] points at.
+  final String periodicalUid;
+
+  /// Series title.
+  final String title;
+
+  /// Roman-script title form, when recorded.
+  final String? titleTransliteration;
+
+  /// Canonical ISSN (`NNNN-NNNC`), when the title has one (D7).
+  final String? issn;
+
+  /// Publisher.
+  final String? publisher;
+
+  /// Language.
+  final String? language;
+
+  /// Cover URL (relative `covers/…` path or an allow-listed https URL).
+  final String? coverUrl;
+
+  /// Publication cadence token (`PeriodicalFrequency.token`), when known.
+  final String? frequency;
+
+  /// Reader age band token, or null.
+  final String? ageGroup;
+
+  /// JSON map; omits null fields so the payload stays compact.
+  Map<String, dynamic> toJson() => {
+    'periodicalUid': periodicalUid,
+    'title': title,
+    if (titleTransliteration != null)
+      'titleTransliteration': titleTransliteration,
+    if (issn != null) 'issn': issn,
+    if (publisher != null) 'publisher': publisher,
+    if (language != null) 'language': language,
+    if (coverUrl != null) 'coverUrl': coverUrl,
+    if (frequency != null) 'frequency': frequency,
+    if (ageGroup != null) 'ageGroup': ageGroup,
   };
 }

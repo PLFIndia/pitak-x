@@ -10,7 +10,7 @@ import 'package:pitaka/features/import_export/domain/pdf_render_port.dart';
 import 'package:pitaka/features/import_export/domain/pdf_render_progress.dart';
 import 'package:pitaka/features/import_export/domain/pdf_text_raster.dart';
 import 'package:pitaka/features/import_export/infrastructure/pdf_library_renderer.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// A 1x1 transparent PNG — the smallest image `PdfImage.file` can decode, so
 /// the fake tiles below take the REAL embed path (decode + XObject) without
@@ -91,8 +91,8 @@ void main() {
 
   test('renders a small Latin library to a valid PDF', () async {
     final books = [
-      const Book(title: 'A Book', author: 'An Author', copyCount: 2),
-      const Book(title: 'Another', isbn: '978-1', publishedYear: 2020),
+      const CatalogueItem(title: 'A Book', author: 'An Author', copyCount: 2),
+      const CatalogueItem(title: 'Another', isbn: '978-1', publishedYear: 2020),
     ];
     final bytes = await renderer.render(
       libraryName: 'Test Lib',
@@ -108,8 +108,11 @@ void main() {
   test('renders Devanagari (Hindi) titles without throwing', () async {
     // This is the exact failure case that crashed Helvetica (Latin-1 only).
     final books = [
-      const Book(title: 'भारत: गांधी के बाद', author: 'Ramachandra Guha'),
-      const Book(title: 'गोदान', author: 'प्रेमचंद'),
+      const CatalogueItem(
+        title: 'भारत: गांधी के बाद',
+        author: 'Ramachandra Guha',
+      ),
+      const CatalogueItem(title: 'गोदान', author: 'प्रेमचंद'),
     ];
     final bytes = await renderer.render(
       libraryName: 'मेरी लाइब्रेरी',
@@ -125,7 +128,7 @@ void main() {
   test('paginates a large library without throwing', () async {
     final books = List.generate(
       200,
-      (i) => Book(title: 'Book number $i', author: 'Author $i'),
+      (i) => CatalogueItem(title: 'Book number $i', author: 'Author $i'),
     );
     final bytes = await renderer.render(
       libraryName: 'Big Library',
@@ -147,7 +150,7 @@ void main() {
         final bytes = await renderer.render(
           libraryName: 'Riverside Library',
           subtitle: 'Donated by Ram Sharma',
-          books: const [Book(title: 'Godaan', author: 'Premchand')],
+          books: const [CatalogueItem(title: 'Godaan', author: 'Premchand')],
           columns: cols(),
           footerAttribution: kPdfFooterAttribution,
           regularFonts: await regular(),
@@ -166,8 +169,8 @@ void main() {
           libraryName: 'Riverside Library',
           subtitle: 'Donated by Ram Sharma',
           books: const [
-            Book(title: 'Godaan'),
-            Book(title: 'Nirmala'),
+            CatalogueItem(title: 'Godaan'),
+            CatalogueItem(title: 'Nirmala'),
           ],
           columns: cols(),
           footerAttribution: kPdfFooterAttribution,
@@ -190,7 +193,7 @@ void main() {
       await renderer.render(
         libraryName: 'Lib',
         subtitle: '   ',
-        books: const [Book(title: 'X')],
+        books: const [CatalogueItem(title: 'X')],
         columns: cols(),
         footerAttribution: kPdfFooterAttribution,
         textRasterizer: raster,
@@ -202,7 +205,7 @@ void main() {
   test('a bad logo/icon is skipped, not fatal', () async {
     final bytes = await renderer.render(
       libraryName: 'Lib',
-      books: const [Book(title: 'X')],
+      books: const [CatalogueItem(title: 'X')],
       columns: cols(),
       footerAttribution: kPdfFooterAttribution,
       regularFonts: await regular(),
@@ -215,9 +218,9 @@ void main() {
   group('N10-e — bounded tiles, progress, cancel (shaped-image mode)', () {
     // Every title/author/ISBN is unique so nothing dedups: the tile count is
     // the honest measure of what the renderer holds on to.
-    List<Book> uniqueRows(int n) => List.generate(
+    List<CatalogueItem> uniqueRows(int n) => List.generate(
       n,
-      (i) => Book(
+      (i) => CatalogueItem(
         title: 'Unique title number $i with some words',
         author: 'Author $i',
         isbn: '9780000${i.toString().padLeft(6, '0')}',

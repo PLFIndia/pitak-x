@@ -11,7 +11,7 @@
 /// equality-based rebuild logic sees each transition (§7).
 library;
 
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Rows loaded so far for the current intent, plus paging facts.
 final class LibraryWindow {
@@ -23,7 +23,7 @@ final class LibraryWindow {
   });
 
   /// The rows shown, in list order — every page loaded so far, concatenated.
-  final List<Book> books;
+  final List<CatalogueItem> books;
 
   /// Whether the store has more rows after [books] (from the last page read).
   final bool hasMore;
@@ -34,7 +34,7 @@ final class LibraryWindow {
 
   /// Returns a copy with the given fields replaced.
   LibraryWindow copyWith({
-    List<Book>? books,
+    List<CatalogueItem>? books,
     bool? hasMore,
     bool? isLoadingMore,
   }) => LibraryWindow(

@@ -89,6 +89,49 @@ class _FailedExtrasRestoreController extends RestoreController {
   );
 }
 
+/// W2 outcome-copy fixture (ADR 0014): a series restored, one issue link
+/// detached, one kinds row skipped — each named in one sentence.
+class _ItemKindsRestoreController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 3,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    kindsApplied: 2,
+    periodicalsRestored: 1,
+    issuesDetached: 1,
+    rowsSkippedUnknownKind: 1,
+  );
+}
+
+/// S5 fixture (M2): detached ROWS and dropped ENTRIES are different units and
+/// must appear as two separate sentences.
+class _SplitIssueCountsController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 3,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    issuesDetached: 2,
+    issueEntriesDropped: 3,
+  );
+}
+
+/// W2 failure fixture: both item-details entries declared but unreadable.
+class _UnreadableItemDetailsController extends RestoreController {
+  @override
+  RestoreSummary? build() => const RestoreSummary(
+    booksRestored: 3,
+    wishlistRestored: 0,
+    borrowersRestored: 0,
+    loansRestored: 0,
+    itemKindsInvalid: true,
+    periodicalsInvalid: true,
+  );
+}
+
 class _FakeVault with VaultWriteUnsupported implements VaultRepository {
   @override
   Future<Either<Failure, VaultData>> unlockAndRead({
@@ -166,9 +209,13 @@ Uint8List _vaultArchive() {
   return Uint8List.fromList(ZipEncoder().encode(a)!);
 }
 
-Uint8List _archive({required bool withVault, int exportedAt = 123}) {
+Uint8List _archive({
+  required bool withVault,
+  int exportedAt = 123,
+  int schemaVersion = 1,
+}) {
   final manifest = jsonEncode({
-    'schemaVersion': 1,
+    'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
     'hasBooks': true,
     'hasWishlist': true,
@@ -338,6 +385,28 @@ void main() {
       isFalse,
     );
     expect(find.text('Passphrase'), findsNothing);
+  });
+
+  testWidgets('a newer backup schema asks for an update before any restore', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(_archive(withVault: false, schemaVersion: 99)),
+    );
+    await pick(tester);
+
+    expect(
+      find.text(
+        'This backup was made by a newer version of the app and can’t be '
+        'restored here. Please update first.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('valid Pitak backup'), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      isFalse,
+    );
   });
 
   testWidgets('M05: an oversized pick is refused before it is read', (
@@ -571,6 +640,97 @@ void main() {
         find.text(
           '2 saved-libraries row(s) could not be read from the backup and '
           'were skipped.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('W2 sentences: titles restored, detached + skipped named', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _ItemKindsRestoreController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Magazine titles restored: 1'), findsOneWidget);
+      expect(
+        find.text(
+          '1 issue link(s) could not be honoured; the affected items were '
+          'restored as books.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          '1 item-kind row(s) in the backup could not be read; the affected '
+          'items were restored as books.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('S5: detached rows and dropped entries are separate '
+        'sentences', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _SplitIssueCountsController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          '2 issue link(s) could not be honoured; the affected items were '
+          'restored as books.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          '3 issue detail(s) in the backup could not be used and were '
+          'ignored.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('W2 failure sentences: both entries unreadable', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            restoreControllerProvider.overrideWith(
+              _UnreadableItemDetailsController.new,
+            ),
+          ],
+          child: const MaterialApp(home: RestorePage()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining(
+          'The item-kind list in this backup could not be read',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(
+          'The magazine titles in this backup could not be read',
         ),
         findsOneWidget,
       );

@@ -1,15 +1,16 @@
 # Pitak
 
 A privacy-first, offline personal **library catalogue** for Android. Pitak is a
-Kotlin→Flutter port of the original Android app: catalogue your books, lend
-them to borrowers from an **encrypted vault**, keep a wishlist, import/export
-(JSON · CSV · PDF), make portable backups, publish a read-only library site
+Kotlin→Flutter port of the original Android app: catalogue your books,
+magazines and other items, lend them to borrowers from an **encrypted vault**,
+keep a wishlist, import/export (JSON · CSV · PDF), make portable backups,
+publish a read-only library site
 to GitHub Pages with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.5.1**
-> (`pubspec.yaml`, tag `1.5.1`); F-Droid builds from the tag on its own
+> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.5.2**
+> (`pubspec.yaml`, tag `1.5.2`); F-Droid builds from the tag on its own
 > schedule, so its index may lag by a release.
 >
 > **Where things are documented:** `AGENTS.md` — the engineering rules;
@@ -22,9 +23,15 @@ a **library network** (pins on a map, hub/member cards).
 
 ## Features
 
-- **Library** — add/edit/search/sort/filter books; soft-delete (Remove/Restore)
-  and hard delete; on-device cover capture; ISBN barcode scan + metadata lookup
-  (Open Library → Google Books, chained + cached).
+- **Library** — one catalogue for three kinds of item: **books**,
+  **magazine issues** (grouped under a magazine title with ISSN,
+  frequency and optional subscription tracking — single issues or bound
+  volumes) and **other items** (a DVD, a board game, a map — described in
+  a searchable Description). Add/edit/search/sort/filter, kind chips
+  (Books · Magazines · Others), soft-delete (Remove/Restore) and hard
+  delete; on-device cover capture; ISBN barcode scan + metadata lookup
+  (Open Library → Google Books, chained + cached); a magazine barcode
+  (`977…`) opens the issue form.
 - **Borrowers vault** — a persistent, **AES-256-GCM encrypted** store for
   borrowers and loans, unlocked by a passphrase (Argon2id KEK). Optional
   biometric unlock, bound to an Android Keystore key that requires a fresh
@@ -36,8 +43,9 @@ a **library network** (pins on a map, hub/member cards).
 - **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
   **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
   the Kotlin app is retired and is not a restore target). **Honest limit:**
-  the archive is *not* fully encrypted — books, wishlist and covers are stored
-  plainly inside it; only the borrowers vault (when present) stays encrypted.
+  the archive is *not* fully encrypted — the catalogue (every kind), wishlist
+  and covers are stored plainly inside it; only the borrowers vault (when
+  present) stays encrypted.
   The archive also carries your **library identity (name + ID) and your
   saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
   the ID your hubs know. Treat backup files accordingly. Restore is
@@ -155,7 +163,8 @@ The layer rules, module map, crypto chain and the cross-device data contracts
 ## Getting started
 
 Prerequisites: Flutter 3.44.2 (pinned in `.fvmrc`) stable, the Android SDK, and a Rust toolchain
-(cargokit compiles the native crate during the Android build).
+(cargokit compiles the native crate during the Android build). Viewer JavaScript
+runtime tests also need Node.js 22 or newer on PATH; no npm packages are required.
 
 **Use the pinned Flutter, not whichever `flutter` is on PATH.** Install
 [FVM](https://fvm.app), run `fvm install` once per clone, then either prefix

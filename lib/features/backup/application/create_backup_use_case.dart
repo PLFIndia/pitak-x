@@ -21,9 +21,10 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_identity.dart';
 import 'package:pitaka/features/backup/domain/create_backup_result.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/network/domain/network_archive_codec.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -33,6 +34,7 @@ class CreateBackupUseCase {
   const CreateBackupUseCase({
     required this.books,
     required this.wishlist,
+    required this.periodicals,
     required this.writer,
     required this.workDir,
     required this.namespace,
@@ -40,10 +42,15 @@ class CreateBackupUseCase {
   });
 
   /// Library source.
-  final BookRepository books;
+  final CatalogueItemRepository books;
 
   /// Wishlist source.
   final WishlistRepository wishlist;
+
+  /// Magazine-title source (ADR 0014 W2: `periodicals.json`). Read through
+  /// `listAll` so REMOVED titles travel too — their issues may still exist
+  /// (D8) and must re-link on restore.
+  final PeriodicalRepository periodicals;
 
   /// The archive builder (Room-format DBs + vault copy + covers + manifest).
   final BackupArchiveBuilder writer;
@@ -62,7 +69,7 @@ class CreateBackupUseCase {
   /// identity and network entries never turn the result into a Left — see
   /// the library doc.
   Future<Either<Failure, CreateBackupResult>> call() async {
-    final booksResult = await books.getAll();
+    final booksResult = await books.getAllForInterchange();
     final allBooks = booksResult.toNullable();
     if (allBooks == null) {
       return left(booksResult.getLeft().toNullable()!);
@@ -71,6 +78,15 @@ class CreateBackupUseCase {
     final allWishlist = wishlistResult.toNullable();
     if (allWishlist == null) {
       return left(wishlistResult.getLeft().toNullable()!);
+    }
+    // W2: the periodicals read is REQUIRED, not best-effort (S18/S20's rule:
+    // no partial backup). A backup that silently dropped the magazine titles
+    // would restore every issue as a book on a new build — a silent
+    // downgrade, which P1 forbids.
+    final periodicalsResult = await periodicals.listAll();
+    final allPeriodicals = periodicalsResult.toNullable();
+    if (allPeriodicals == null) {
+      return left(periodicalsResult.getLeft().toNullable()!);
     }
 
     // Best-effort extras (§7 S6). identity via the namespace port: a Left
@@ -83,16 +99,22 @@ class CreateBackupUseCase {
       // N10-c: the builder runs on a worker isolate; awaiting here keeps the
       // UI isolate free while the archive is assembled. The two JSON strings
       // cross the isolate boundary trivially.
-      final bytes = await writer.build(
+      //
+      // S5 (L5): the builder can now refuse — `BackupTooLargeFailure` when the
+      // catalogue does not fit the format the RESTORE reader accepts. That is
+      // an expected failure, so it travels as a Left instead of an exception,
+      // and no archive is produced.
+      final built = await writer.build(
         books: allBooks,
         wishlist: allWishlist,
+        periodicals: [for (final s in allPeriodicals) s.periodical],
         workDir: workDir,
         exportedAt: DateTime.now().millisecondsSinceEpoch,
         identityJson: identityJson,
         networkJson: networkJson,
       );
-      return right(
-        CreateBackupResult(
+      return built.map(
+        (bytes) => CreateBackupResult(
           bytes: bytes,
           includesIdentity: identityJson != null,
           includesNetwork: networkJson != null,

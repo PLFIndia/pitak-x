@@ -11,8 +11,8 @@ import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/infrastructure/drift_book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/infrastructure/drift_catalogue_item_repository.dart';
 import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';
@@ -270,12 +270,12 @@ void main() {
   }) {
     final container = ProviderContainer(
       overrides: [
-        bookRepositoryProvider.overrideWith((ref) async {
+        catalogueItemRepositoryProvider.overrideWith((ref) async {
           final db = AppDatabase(NativeDatabase.memory());
           ref.onDispose(db.close);
-          final books = DriftBookRepository(db);
-          await books.insert(const Book(id: 1, title: 'First'));
-          await books.insert(const Book(id: 2, title: 'Second'));
+          final books = DriftCatalogueItemRepository(db);
+          await books.insert(const CatalogueItem(id: 1, title: 'First'));
+          await books.insert(const CatalogueItem(id: 2, title: 'Second'));
           return books;
         }),
         vaultRepositoryProvider.overrideWithValue(vault),
@@ -491,7 +491,7 @@ void main() {
       () async {
         final container = makeContainer(_InMemoryVault());
         final (notifier, id) = await unlockedWithBorrower(container);
-        await notifier.addLoan(Loan(bookId: 1, borrowerId: id, lentDate: 1));
+        await notifier.addLoan(Loan(itemId: 1, borrowerId: id, lentDate: 1));
 
         final plan = notifier.planDeleteBorrower(id);
         expect(plan, isA<BorrowerDeletionBlocked>());
@@ -518,10 +518,10 @@ void main() {
         final container = makeContainer(_InMemoryVault());
         final (notifier, id) = await unlockedWithBorrower(container);
         await notifier.addLoan(
-          Loan(bookId: 1, borrowerId: id, lentDate: 1, returnedDate: 2),
+          Loan(itemId: 1, borrowerId: id, lentDate: 1, returnedDate: 2),
         );
         await notifier.addLoan(
-          Loan(bookId: 2, borrowerId: id, lentDate: 1, returnedDate: 3),
+          Loan(itemId: 2, borrowerId: id, lentDate: 1, returnedDate: 3),
         );
 
         final plan = notifier.planDeleteBorrower(id);

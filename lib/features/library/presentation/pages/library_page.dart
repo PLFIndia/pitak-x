@@ -9,66 +9,102 @@
 /// loaded so far — and asks for the next window as the user nears the end
 /// (`loadMore`), with a footer indicator while it is in flight. The screen
 /// never holds the whole catalogue.
+///
+/// S14: the app-bar overflow menu moved to `widgets/library_menu_button.dart`;
+/// the quick-add scan now routes through [RouteScannedBarcodeUseCase] (ADR
+/// 0013 D11) — the page only switches on the sealed [ScanRoute].
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/layout/breakpoints.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/app_update/presentation/widgets/app_update_banner.dart';
-import 'package:pitaka/features/backup/presentation/pages/create_backup_page.dart';
-import 'package:pitaka/features/backup/presentation/pages/restore_page.dart';
-import 'package:pitaka/features/import_export/presentation/pages/export_page.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/presentation/pages/add_book_page.dart';
-import 'package:pitaka/features/library/presentation/pages/book_detail_page.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_grid_card.dart';
-import 'package:pitaka/features/library/presentation/widgets/book_row.dart';
+import 'package:pitaka/features/library/presentation/pages/catalogue_item_detail_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/add_sheet.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_grid_card.dart';
+import 'package:pitaka/features/library/presentation/widgets/catalogue_item_row.dart';
 import 'package:pitaka/features/library/presentation/widgets/empty_library_state.dart';
 import 'package:pitaka/features/library/presentation/widgets/library_controls_row.dart';
-import 'package:pitaka/features/lookup/domain/isbn_format.dart';
+import 'package:pitaka/features/library/presentation/widgets/library_menu_button.dart';
 import 'package:pitaka/features/lookup/presentation/pages/scanner_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/add_issue_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_detail_page.dart';
+import 'package:pitaka/features/periodicals/presentation/pages/periodical_form_page.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 
 /// The library list screen with a debounced search field.
-class LibraryPage extends ConsumerWidget {
+class LibraryPage extends ConsumerStatefulWidget {
   /// Creates the library page.
   const LibraryPage({super.key});
 
-  /// Quick-add (Q2=A): scan a barcode, then route the ISBN (S34): an
-  /// already-catalogued book offers to open the EXISTING row; a new ISBN
-  /// opens the Add-Book form pre-filled. Scanning never creates a book on
-  /// its own.
-  Future<void> _quickAddByScan(BuildContext context, WidgetRef ref) async {
+  @override
+  ConsumerState<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends ConsumerState<LibraryPage> {
+  /// The page owns the visible field's value so Clear search can empty it
+  /// immediately. Disposing it here avoids leaking one controller per visit.
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    // TextEditingController.clear does not call TextField.onChanged, so emit
+    // the empty query explicitly while leaving both facet providers intact.
+    ref.read(libraryControllerProvider.notifier).onQueryChanged('');
+  }
+
+  void _clearFilters() {
+    // Independent of Clear search: only the two facets reset; the visible
+    // query and LibraryController's debounced query remain untouched.
+    ref.read(libraryLanguageFilterProvider.notifier).clear();
+    ref.read(libraryKindFilterProvider.notifier).clear();
+  }
+
+  /// Quick-add (Q2=A): scan a barcode, then route it (S34, ADR 0013 D11).
+  /// Scanning never creates a row on its own — the route decides which
+  /// existing row, form, or placeholder the scan leads to.
+  Future<void> _quickAddByScan() async {
     // Resolve the use case BEFORE the camera flow: no `ref` use after an
     // async gap that could outlive this widget instance.
-    final findByIsbn = await ref.read(findByIsbnUseCaseProvider.future);
-    if (!context.mounted) return;
+    final route = await ref.read(routeScannedBarcodeUseCaseProvider.future);
+    if (!mounted) return;
     final scanned = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
     );
-    if (scanned == null || !context.mounted) return;
-    await routeScannedIsbn(
-      context,
-      IsbnFormat.normalize(scanned),
-      findByIsbn.call,
-    );
+    if (scanned == null || !mounted) return;
+    await routeScannedBarcode(context, route, scanned);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final controller = ref.watch(libraryControllerProvider.notifier);
     final booksAsync = ref.watch(libraryControllerProvider);
+    final hasQuery = controller.query.trim().isNotEmpty;
+    // Facets are independent provider state (the same source as the chips).
+    // Watching them here keeps the empty-state explanation and recovery
+    // buttons truthful immediately after a chip is tapped or cleared.
+    final hasKindFilter = ref.watch(libraryKindFilterProvider) != null;
+    final hasLanguageFilter = ref.watch(libraryLanguageFilterProvider) != null;
+    final hasFilters = hasKindFilter || hasLanguageFilter;
     // Use the user's library name as the title (select: only that field
     // rebuilds this page, §8), falling back to 'Library'.
     final libraryName = ref.watch(
@@ -112,7 +148,7 @@ class LibraryPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan to add',
-            onPressed: () => _quickAddByScan(context, ref),
+            onPressed: _quickAddByScan,
           ),
           IconButton(
             icon: const Icon(Icons.campaign_outlined),
@@ -124,44 +160,10 @@ class LibraryPage extends ConsumerWidget {
               ),
             ),
           ),
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'backup') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const CreateBackupPage(),
-                  ),
-                );
-              } else if (value == 'restore') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const RestorePage()),
-                );
-              } else if (value == 'import') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const ImportPage()),
-                );
-              } else if (value == 'export') {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(builder: (_) => const ExportPage()),
-                );
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(value: 'import', child: Text('Import')),
-              PopupMenuItem(value: 'export', child: Text('Export')),
-              PopupMenuItem(value: 'backup', child: Text('Create backup')),
-              PopupMenuItem(value: 'restore', child: Text('Restore backup')),
-            ],
-          ),
+          const LibraryMenuButton(),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute<void>(builder: (_) => const AddBookPage())),
-        tooltip: 'Add book',
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: const AddSheetFab(),
       body: Column(
         children: [
           // S35: Play flexible-update banner — renders zero-height unless
@@ -171,9 +173,10 @@ class LibraryPage extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
+              controller: _searchController,
               onChanged: controller.onQueryChanged,
               decoration: const InputDecoration(
-                hintText: 'Search title, author, ISBN…',
+                hintText: 'Search title, author, ISBN, notes…',
                 prefixIcon: Icon(Icons.search),
                 border: OutlineInputBorder(),
               ),
@@ -185,13 +188,15 @@ class LibraryPage extends ConsumerWidget {
               loading: () =>
                   const Center(child: CircularProgressIndicator.adaptive()),
               error: (error, _) => _LibraryError(
-                isSearching: controller.query.trim().isNotEmpty,
+                isSearching: hasQuery,
                 onRetry: controller.refresh,
               ),
               data: (window) => window.books.isEmpty
                   ? EmptyLibraryState(
-                      isSearching: controller.query.trim().isNotEmpty,
-                      query: controller.query,
+                      hasQuery: hasQuery,
+                      hasFilters: hasFilters,
+                      onClearSearch: _clearSearch,
+                      onClearFilters: _clearFilters,
                       onAdd: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => const AddBookPage(),
@@ -246,7 +251,7 @@ class _BookList extends ConsumerWidget {
     // "Not available" badge is hidden otherwise (availability unknown).
     final activeCounts = ref.watch(activeLoanCountsProvider);
 
-    bool unavailableOf(Book book) =>
+    bool unavailableOf(CatalogueItem book) =>
         activeCounts != null &&
         isBookUnavailable(
           bookId: book.id,
@@ -255,9 +260,10 @@ class _BookList extends ConsumerWidget {
         );
     // N03: the detail page observes the row by id; the tapped row is only the
     // first frame's content.
-    void openDetail(Book book) => Navigator.of(context).push(
+    void openDetail(CatalogueItem book) => Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => BookDetailPage(bookId: book.id, initialBook: book),
+        builder: (_) =>
+            CatalogueItemDetailPage(bookId: book.id, initialBook: book),
       ),
     );
 
@@ -298,7 +304,7 @@ class _BookList extends ConsumerWidget {
                     itemCount: books.length,
                     itemBuilder: (context, index) {
                       final book = books[index];
-                      return BookGridCard(
+                      return CatalogueItemGridCard(
                         book: book,
                         unavailable: unavailableOf(book),
                         onTap: () => openDetail(book),
@@ -322,7 +328,7 @@ class _BookList extends ConsumerWidget {
                   separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final book = books[index];
-                    return BookRow(
+                    return CatalogueItemRow(
                       book: book,
                       unavailable: unavailableOf(book),
                       onTap: () => openDetail(book),
@@ -339,54 +345,79 @@ class _BookList extends ConsumerWidget {
   }
 }
 
-/// Post-scan ISBN routing (S34), extracted from the quick-add flow so it is
-/// testable without a camera.
+/// Post-scan routing (S34 + ADR 0013 D11): the page's side of
+/// [RouteScannedBarcodeUseCase], extracted so it is testable without a camera.
 ///
-/// An ISBN already in the catalogue opens an "already in your library" dialog
-/// offering the EXISTING book — filling in a form the UNIQUE index would
-/// refuse to save is wasted work and a confusing error. A new ISBN opens the
-/// Add-Book form pre-filled, as before.
+/// The use case already decided WHERE the raw scan leads; this function only
+/// turns the sealed [ScanRoute] into a navigation step:
 ///
-/// A FAILED [findByIsbn] read also falls through to the add form on purpose:
-/// this is navigation, not a security gate — the save path re-checks and the
-/// UNIQUE index still makes a duplicate row impossible (fail-safe by layers).
-Future<void> routeScannedIsbn(
+/// - [OpenCataloguedItem] → the "already in your library" dialog offering the
+///   EXISTING row — filling in a form the UNIQUE isbn index would refuse to
+///   save is wasted work and a confusing error;
+/// - [AddBookByIsbn] → the add-book form pre-filled;
+/// - [AddIssueOfPeriodical] → the add-issue form with the series preselected;
+/// - [OpenPeriodical] → the removed series' detail, where it can be restored;
+/// - [AddPeriodicalByIssn] → the series form with the scanned ISSN pre-filled
+///   (both S16 forms; the ISSN identifies the TITLE, never the issue — D7).
+Future<void> routeScannedBarcode(
   BuildContext context,
-  String isbn,
-  Future<Either<Failure, Book?>> Function(String isbn) findByIsbn,
+  RouteScannedBarcodeUseCase useCase,
+  String raw,
 ) async {
-  final existing = await findByIsbn(isbn);
+  final route = await useCase(raw);
   if (!context.mounted) return;
-  final found = existing.getOrElse((_) => null);
-  if (found == null) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => AddBookPage(initialIsbn: isbn)),
-    );
-    return;
-  }
-  final open = await showDialog<bool>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      title: const Text('Already in your library'),
-      content: Text("'${found.title}' is already in your library."),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(false),
-          child: const Text('Cancel'),
+  switch (route) {
+    case OpenCataloguedItem(item: final found):
+      final open = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Already in your library'),
+          content: Text("'${found.title}' is already in your library."),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('View item'),
+            ),
+          ],
         ),
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop(true),
-          child: const Text('View book'),
+      );
+      if ((open ?? false) && context.mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) =>
+                CatalogueItemDetailPage(bookId: found.id, initialBook: found),
+          ),
+        );
+      }
+    case AddBookByIsbn(isbn: final isbn):
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => AddBookPage(initialIsbn: isbn)),
+      );
+    case AddIssueOfPeriodical(periodical: final periodical):
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => AddIssuePage(periodical: periodical),
         ),
-      ],
-    ),
-  );
-  if ((open ?? false) && context.mounted) {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => BookDetailPage(bookId: found.id, initialBook: found),
-      ),
-    );
+      );
+    case OpenPeriodical(periodical: final periodical):
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PeriodicalDetailPage(
+            periodicalId: periodical.id,
+            initialPeriodical: periodical,
+          ),
+        ),
+      );
+    case AddPeriodicalByIssn(issn: final issn):
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PeriodicalFormPage(initialIssn: issn),
+        ),
+      );
   }
 }
 

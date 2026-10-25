@@ -51,10 +51,17 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:path/path.dart' as p;
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/backup/domain/backup_archive_builder.dart';
 import 'package:pitaka/features/backup/domain/backup_manifest.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/backup/infrastructure/backup_entry_bounds.dart';
+import 'package:pitaka/features/backup/infrastructure/item_details_archive_codec.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
+import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/vault/domain/vault_artifacts_store.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:sqlite3/common.dart';
@@ -71,6 +78,8 @@ const String _coverEntryPrefix = 'cover_';
 // plain JSON, announced by the hasIdentity/hasNetwork manifest flags.
 const String _identityEntry = 'identity.json';
 const String _networkEntry = 'network.json';
+// ADR 0014 W2: the item-kind entries. Their names live in
+// `item_details_archive_codec.dart`, shared with the restore reader.
 
 /// Room identity contract (from app/schemas) so the Kotlin app accepts our DBs.
 const int _booksDbVersion = 9;
@@ -83,6 +92,9 @@ const String _wishlistIdentityHash = 'ef4bdbbc39ca94fef44d980ecc902f28';
 /// `sqlite3` binding, so no FFI handle ever has to cross the isolate boundary.
 CommonDatabase _openSqlite(String path) => sqlite3.open(path);
 
+/// What the worker hands back: exact archive bytes, or one overflow code.
+typedef _BuildOutcome = ({Uint8List? bytes, BackupEntryOverflow? overflow});
+
 /// Everything the worker isolate needs, as plain sendable data (paths,
 /// strings, ints, entity lists). No closures, no `ref`, no FFI handles.
 ///
@@ -90,8 +102,9 @@ CommonDatabase _openSqlite(String path) => sqlite3.open(path);
 /// record makes it visually obvious at the `Isolate.run` call that only data
 /// crosses.
 typedef _BackupJob = ({
-  List<Book> books,
+  List<CatalogueItem> books,
   List<WishlistBook> wishlist,
+  List<Periodical> periodicals,
   String workDir,
   int exportedAt,
   bool hasVault,
@@ -119,10 +132,10 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Directory holding user cover images (`covers/<leaf>`).
   final String coversDir;
 
-  /// Builds the archive bytes from [books] + [wishlist], including the vault
-  /// and covers when present. [workDir] is a scratch directory for the
-  /// transient Room DB files; it is created fresh and removed afterward.
-  /// [exportedAt] stamps the manifest (epoch millis).
+  /// Builds the archive bytes from [books] + [wishlist] + [periodicals],
+  /// including the vault and covers when present. [workDir] is a scratch
+  /// directory for the transient Room DB files; it is created fresh and
+  /// removed afterward. [exportedAt] stamps the manifest (epoch millis).
   ///
   /// The heavy lifting runs in a worker isolate (see the library doc). The
   /// vault facts are read HERE, on the calling isolate, because
@@ -130,9 +143,10 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// guaranteed sendable; they are two `existsSync` calls and a tiny file
   /// read, and the blob is ciphertext that already lives as a plain file.
   @override
-  Future<Uint8List> build({
-    required List<Book> books,
+  Future<Either<Failure, Uint8List>> build({
+    required List<CatalogueItem> books,
     required List<WishlistBook> wishlist,
+    required List<Periodical> periodicals,
     required String workDir,
     required int exportedAt,
     required String? identityJson,
@@ -143,6 +157,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     final job = (
       books: books,
       wishlist: wishlist,
+      periodicals: periodicals,
       workDir: workDir,
       exportedAt: exportedAt,
       hasVault: hasVault,
@@ -155,12 +170,65 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
     return Isolate.run(
       () => _buildInWorker(job),
       debugName: 'pitaka-backup-build',
-    );
+    ).then(_toEither);
+  }
+
+  /// Maps the worker's plain outcome to the typed result ON THIS ISOLATE —
+  /// no [Failure] object ever crosses the boundary (S5).
+  static Either<Failure, Uint8List> _toEither(_BuildOutcome outcome) {
+    final bytes = outcome.bytes;
+    if (bytes != null) return right(bytes);
+    return left(BackupTooLargeFailure(outcome.overflow!.name));
   }
 
   /// The whole build, run inside the worker isolate. Static so it cannot
   /// accidentally capture `this` (and with it the non-sendable store).
-  static Uint8List _buildInWorker(_BackupJob job) {
+  static _BuildOutcome _buildInWorker(_BackupJob job) {
+    // ADR 0014 W2: kinds are EXPLICIT because books.db is Room-shaped and
+    // cannot say them. Both entries are omitted (flags false) when there is
+    // nothing to say — a books-only library keeps the archive it always had.
+    final hasKinds = job.books.any(
+      (b) =>
+          b.kind != ItemKind.book &&
+          b.itemUid != null &&
+          b.itemUid!.trim().isNotEmpty,
+    );
+    final hasIssues = job.books.any(
+      (b) =>
+          b.details is IssueOf &&
+          b.itemUid != null &&
+          b.itemUid!.trim().isNotEmpty,
+    );
+    final itemKindsJson = hasKinds
+        ? ItemDetailsArchiveCodec.encodeItemKinds(job.books)
+        : null;
+    final periodicalsJson = job.periodicals.isNotEmpty || hasIssues
+        ? ItemDetailsArchiveCodec.encodePeriodicals(job.periodicals, job.books)
+        : null;
+
+    // S5 (L5): refuse to emit an archive the restore reader would reject or
+    // downgrade. The bounds are the READER's own constants, so writer and
+    // reader cannot drift apart. This runs FIRST — pure in-memory work — so an
+    // oversized catalogue is refused before a single file is created.
+    if (itemKindsJson != null) {
+      final overflow = overflowOf(
+        json: itemKindsJson,
+        rows: itemKindRowCount(job.books),
+        tooLarge: BackupEntryOverflow.itemKindsTooLarge,
+        tooManyRows: BackupEntryOverflow.itemKindsTooManyRows,
+      );
+      if (overflow != null) return (bytes: null, overflow: overflow);
+    }
+    if (periodicalsJson != null) {
+      final overflow = overflowOf(
+        json: periodicalsJson,
+        rows: periodicalEntryRowCount(job.periodicals, job.books),
+        tooLarge: BackupEntryOverflow.periodicalsTooLarge,
+        tooManyRows: BackupEntryOverflow.periodicalsTooManyRows,
+      );
+      if (overflow != null) return (bytes: null, overflow: overflow);
+    }
+
     final work = Directory(job.workDir);
     if (work.existsSync()) work.deleteSync(recursive: true);
     work.createSync(recursive: true);
@@ -179,6 +247,8 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         hasCovers: coverFiles.isNotEmpty,
         hasIdentity: job.identityJson != null,
         hasNetwork: job.networkJson != null,
+        hasItemKinds: itemKindsJson != null,
+        hasPeriodicals: periodicalsJson != null,
       );
 
       // Incremental encoding: each addFile deflates ONE entry, appends it to
@@ -215,11 +285,19 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
       if (job.networkJson case final networkJson?) {
         encoder.addFile(_entry(_networkEntry, _utf8(networkJson)));
       }
+      // W2 additions, plain JSON like the §3.4 entries above (same honest
+      // limit of the format).
+      if (itemKindsJson case final itemKindsJson?) {
+        encoder.addFile(_entry(itemKindsEntryName, _utf8(itemKindsJson)));
+      }
+      if (periodicalsJson case final periodicalsJson?) {
+        encoder.addFile(_entry(periodicalsEntryName, _utf8(periodicalsJson)));
+      }
       encoder.endEncode();
 
       // `getBytes()` is a view over an over-allocated buffer; copy to exact
       // size so the caller (and the share sheet) hold only the real archive.
-      return Uint8List.fromList(out.getBytes());
+      return (bytes: Uint8List.fromList(out.getBytes()), overflow: null);
     } finally {
       if (work.existsSync()) work.deleteSync(recursive: true);
     }
@@ -237,7 +315,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
   /// Writes a Room-compatible `books.db` with the books table and the Room
   /// identity row. No FTS mirror is written (see class doc / the inline note):
   /// the bundled SQLite lacks the FTS4 module and restore never reads it.
-  static void _writeBooksDb(String path, List<Book> books) {
+  static void _writeBooksDb(String path, List<CatalogueItem> books) {
     final db = _openSqlite(path);
     try {
       db
@@ -278,7 +356,7 @@ class BackupArchiveWriter implements BackupArchiveBuilder {
         for (final b in books) {
           stmt.execute([
             b.id,
-            b.bookUid,
+            b.itemUid,
             b.title,
             b.titleTransliteration,
             b.author,

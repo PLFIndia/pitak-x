@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/import_export/domain/pdf_column.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 
 /// Minimal labels for resolving cells in tests (English, fixed date).
 PdfColumnLabels _labels() => PdfColumnLabels(
@@ -72,13 +72,13 @@ void main() {
         merged.weight,
         PdfColumn.source.weight + PdfColumn.sourceDetail.weight,
       );
-      const book = Book(
+      const book = CatalogueItem(
         title: 'X',
-        sourceType: BookSourceType.gift,
+        sourceType: ItemSourceType.gift,
         sourceDetail: 'from a friend',
       );
       // Two logical lines: type then detail.
-      expect(merged.cell(book), [BookSourceType.gift.name, 'from a friend']);
+      expect(merged.cell(book), [ItemSourceType.gift.name, 'from a friend']);
     });
 
     test('Source alone is a single-line column (no merge)', () {
@@ -95,7 +95,7 @@ void main() {
         PdfColumn.title,
         PdfColumn.author,
       ], _labels());
-      const book = Book(title: 'Only');
+      const book = CatalogueItem(title: 'Only');
       final author = cols.firstWhere((c) => c.key == PdfColumn.author);
       expect(author.cell(book), isEmpty);
     });

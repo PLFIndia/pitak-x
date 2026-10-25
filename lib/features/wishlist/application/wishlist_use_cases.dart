@@ -11,8 +11,8 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/catalogue_rules.dart';
-import 'package:pitaka/features/library/domain/entities/book.dart';
-import 'package:pitaka/features/library/domain/repositories/book_repository.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -127,13 +127,13 @@ final class MarkPurchasedAlreadyPurchased extends MarkPurchasedOutcome {
 /// [MarkPurchasedAlreadyInLibrary] (the D2 dialog hook) without duplicating.
 ///
 /// **Atomicity (M13).** The move runs inside ONE database transaction via
-/// [BookRepository.runInTransaction] — both repositories sit on the same
-/// database, and Drift transactions are zone-scoped, so the wishlist update
-/// issued inside the callback joins it. Any `Left` (lookup error, insert
-/// error, row vanished) rolls everything back: the entry is left exactly as
-/// it was, so the user can simply retry. This replaces the old sequence
-/// "mark purchased, then insert", which could leave a purchased row with no
-/// library book and no way to retry.
+/// [CatalogueItemRepository.runInTransaction] — both repositories sit on the
+/// same database, and Drift transactions are zone-scoped, so the wishlist
+/// update issued inside the callback joins it. Any `Left` (lookup error, insert
+/// error, row vanished) rolls everything back: the entry is left exactly as it
+/// was, so the user can simply retry. This replaces the old sequence "mark
+/// purchased, then insert", which could leave a purchased row with no library
+/// book and no way to retry.
 ///
 /// **Idempotency (M13, D1 = a).** The row is re-read *inside* the transaction
 /// and an already-purchased row is refused with [MarkPurchasedAlreadyPurchased]
@@ -141,14 +141,16 @@ final class MarkPurchasedAlreadyPurchased extends MarkPurchasedOutcome {
 /// so a second concurrent tap waits, then sees the first tap's commit.
 class MarkWishlistPurchasedUseCase {
   /// Creates the use case over its collaborators.
-  const MarkWishlistPurchasedUseCase(this._repository, {BookRepository? books})
-    : _books = books;
+  const MarkWishlistPurchasedUseCase(
+    this._repository, {
+    CatalogueItemRepository? books,
+  }) : _books = books;
 
   final WishlistRepository _repository;
-  final BookRepository? _books;
+  final CatalogueItemRepository? _books;
 
   /// Flags the entry [id] purchased at [now]; promotes to the library when
-  /// [moveToLibrary] is set and a [BookRepository] was provided.
+  /// [moveToLibrary] is set and a [CatalogueItemRepository] was provided.
   Future<Either<Failure, MarkPurchasedOutcome>> call(
     int id, {
     bool moveToLibrary = false,
@@ -186,7 +188,7 @@ class MarkWishlistPurchasedUseCase {
   Future<Either<Failure, MarkPurchasedOutcome>> _markAndMove(
     int id,
     int stamp,
-    BookRepository books,
+    CatalogueItemRepository books,
   ) async {
     final found = await _loadWanted(id);
     if (found.isLeft()) {
@@ -201,7 +203,7 @@ class MarkWishlistPurchasedUseCase {
     if (isbn != null && isbn.isNotEmpty) {
       final existing = await books.findByIsbn(isbn);
       if (existing.isLeft()) {
-        return left((existing as Left<Failure, Book?>).value);
+        return left((existing as Left<Failure, CatalogueItem?>).value);
       }
       final hit = existing.toNullable();
       if (hit != null) {
@@ -215,8 +217,11 @@ class MarkWishlistPurchasedUseCase {
     // it is inserted. A Left refuses the move INSIDE the transaction, so the
     // wishlist purchase rolls back with it. The returned entity is the
     // normalised one (e.g. a hostile cover is dropped, not copied).
-    final checked = Book.validate(_toLibraryBook(book, stamp));
-    final toInsert = checked.fold<Book?>((errors) => null, (valid) => valid);
+    final checked = CatalogueItem.validate(_toLibraryBook(book, stamp));
+    final toInsert = checked.fold<CatalogueItem?>(
+      (errors) => null,
+      (valid) => valid,
+    );
     if (toInsert == null) {
       return left(
         ValidationFailure(checked.getLeft().toNullable()!.first.userMessage),
@@ -224,7 +229,7 @@ class MarkWishlistPurchasedUseCase {
     }
     final inserted = await books.insert(toInsert);
     if (inserted.isLeft()) {
-      return left((inserted as Left<Failure, Book>).value);
+      return left((inserted as Left<Failure, CatalogueItem>).value);
     }
     final stamped = await _stampPurchased(book, stamp);
     return stamped.map(MarkPurchasedSuccess.new);
@@ -247,7 +252,7 @@ class MarkWishlistPurchasedUseCase {
 
   /// Maps a purchased wishlist entry to a fresh library book (Kotlin
   /// `toLibraryBook`): new acquisition date, single copy.
-  static Book _toLibraryBook(WishlistBook w, int now) => Book(
+  static CatalogueItem _toLibraryBook(WishlistBook w, int now) => CatalogueItem(
     title: w.title,
     titleTransliteration: w.titleTransliteration,
     author: w.author,
