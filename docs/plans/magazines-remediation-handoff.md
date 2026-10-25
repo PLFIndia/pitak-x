@@ -1,9 +1,9 @@
-# Magazines remediation — handoff after S8
+# Magazines remediation — handoff after S9
 
-- **Date:** 2026-10-24
+- **Date:** 2026-10-25
 - **Branch:** `magazines`
-- **Status:** S8 complete. S9 has **not** started.
-- **Remediation HEAD:** `8d4aa1f` (this handoff is a documentation-only follow-up)
+- **Status:** S9 complete. S10 has **not** started.
+- **Remediation HEAD:** `518960c` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
 ## 1. Commits and current state
@@ -20,8 +20,9 @@
 | S6 — distinct-ISSN merge identity | `ea3ccf3` | H5 fixed by suppressing exact-title fallback only for different valid ISSNs, with planner/review controls and real-Drift issue-link coverage. |
 | S7 — cover ownership and async forms | `1aecff0` | H7, M7, M8, M11, and L2 fixed with structural owner/URL dedup, fresh-owner materialization, race-safe forms, detail fallback, and generation-guarded prefill. |
 | S8 — publish redaction and total hashing | `8d4aa1f` | M5 and M13 fixed with exact Other redaction, UTF-8 cover keys, canonical link refusal, and real viewer runtime coverage. |
+| S9 — shared refresh and kind-neutral UI | `518960c` | L1, L3, and L4 fixed with live magazine refresh, recoverable filtered-empty states, neutral generic item wording, and synchronized guide/mockup/native copy. |
 
-The working tree was clean immediately after `8d4aa1f`. The database remains at **schema v7** (S8 adds no schema change). No release version bump, tag, or publish step has been performed.
+The working tree was clean immediately after `518960c`. The database remains at **schema v7** (S9 adds no schema change). No release version bump, tag, or publish step has been performed.
 
 ## 2. Completed work
 
@@ -107,6 +108,14 @@ The working tree was clean immediately after `8d4aa1f`. The database remains at 
 - The real inline viewer runs under a dependency-free Node DOM harness in table, card, and grid modes. Checks cover sparse Other fields without null/undefined placeholders, book behavior, series grouping/order, and hostile text/attribute escaping. Node 22 is documented in the README and provisioned in CI through a SHA-pinned `actions/setup-node`; no npm or app dependency was added.
 - Structure: `PublishResult` moved to `publish_result.dart` and is re-exported for existing callers, keeping the use case at 466 lines with no ratchet entry. Schema v7 and all S1–S7 contracts are unchanged.
 
+### S9 — L1, L3, L4
+
+- `PeriodicalsController.build` watches `libraryControllerProvider` as well as `nowTickProvider`. Import, merge, restore and the real issue hard-delete action therefore refresh a kept-alive Magazines list's title, count and latest date without a minute tick or route recreation; the tick remains only for time-derived subscription badges.
+- `LibraryPage` is a `ConsumerStatefulWidget` with a page-owned, disposed search controller. Query-only, facet-only and combined empty results say "No items match these filters." Clear search empties the visible field and preserves facets; Clear filters resets only kind/language and preserves query text. Add/Import appears only for a genuinely empty unfiltered library.
+- Generic detail, scan, remove/delete, lending, missing-row and error copy uses Item/item, including `Item #id`. Borrower-deletion pre-checks and the authoritative native fallback share the same "items out" sentence with no persisted-name or Rust/FRB API change. Book-specific add/ISBN/lookup screens and wishlist wording are unchanged.
+- The vault guide and all three mockups mirror the neutral wording. The unfiltered empty hint is now "Items you add will appear here." Its Linux golden still needs the planned S11 regeneration; no macOS golden was produced.
+- Structure: generated output changed only the expected `periodicals_controller.g.dart` hash. `LibraryPage` is 447 lines and `EmptyLibraryState` 124, so no ratchet entry was needed. Schema v7 and the S1–S8 persistence/interchange/date/transaction/backup/publish contracts are unchanged.
+
 ## 3. Verification evidence
 
 | Gate | Result |
@@ -161,27 +170,32 @@ The working tree was clean immediately after `8d4aa1f`. The database remains at 
 | S8 sufficiency gates | Generation left no committed diffs; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**; use case 466 lines with no schema or ratchet change. |
 | S8 `fvm flutter test --exclude-tags golden` | **3,027 tests passed.** |
 | S8 commit checks | Pre-commit generated-code check passed; `git diff --check` clean; working tree clean at `8d4aa1f`. |
+| S9 pre-edit baseline | Clean `c391f96`; analysis/formatting clean and **3,027 non-golden tests** passed before editing. |
+| S9 red-first regressions | Shared title/count/latest refresh plus real import, merge, restore and hard-delete producer paths failed on unfixed code, then passed. Filtered-empty/recovery, Issue/Other wording, `Item #id`, guide and borrower-deletion/native-copy checks also failed for the intended reasons before the fixes. |
+| S9 focused and independent review | **199 focused tests passed**, including accessibility checks and the real delete button. Review found the remaining borrower-deletion wording gap; Dart/Rust neutral copy and Issue/Other regressions resolved it, and re-review reported no concrete finding. |
+| S9 sufficiency gates | Generation changed only the expected provider hash; `dart analyze` clean; `dart format --set-exit-if-changed` clean; **30 architecture/migration tests passed**; no schema or ratchet change. |
+| S9 full and Rust gates | `fvm flutter test --exclude-tags golden`: **3,046 tests passed.** Rust fmt, clippy and `cargo deny check` passed; **35 release tests passed, 2 environment-gated ignored.** |
+| S9 commit checks | Pre-commit generated-code and Rust-format checks passed; `git diff --check` clean; working tree clean at `518960c`. |
 
-Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed.
+Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed. S11 must include the changed unfiltered empty-library image.
 
-## 4. Resume with S9 only
+## 4. Resume with S10 only
 
-Start with `magazineIssues.md` **S9 — Refresh magazine state and finish kind-neutral UI behavior** (L1, L3, L4). Its S8 dependency is complete.
+Start with `magazineIssues.md` **S10 — Reconcile contracts, changelog, and release instructions** (L6 and documentation for S1–S9). Its S1–S9 dependency is complete.
 
-1. Confirm `git switch magazines && git status --short` is empty and HEAD is `8d4aa1f` (or the docs commit that follows it).
-2. Read S9 and its three scopes: one shared mutation signal for live magazine summaries, truthful filtered-empty recovery, and kind-neutral wording on generic item flows.
-3. Run the S9 baseline, including `full`, before editing; stop on any pre-existing failure.
-4. Add red-first provider regressions proving import, merge, restore, and issue hard-delete refresh a kept-alive Magazines list without waiting for the minute tick or recreating the route.
-5. Make `PeriodicalsController.build` watch `libraryControllerProvider` in addition to `nowTickProvider`; keep the tick only for time-derived subscription badges and avoid duplicate imperative invalidations.
-6. Add LibraryPage tests for query/facet/combined empty states and recovery. Use a page-owned, disposed search controller; Clear search preserves facets, Clear filters preserves query text, and Add/Import appears only for a genuinely empty unfiltered library.
-7. Change generic detail/actions/lending/missing-row/error copy to Item/item, including `Item #id`, while preserving book-specific screens, wishlist wording, vault persisted names, and Rust/FRB APIs. Update intentional guide/mockup/golden expectations and accessibility tests.
-8. Preserve every S1–S8 contract. Do not start S10 or R1.
+1. Confirm `git switch magazines && git status --short` is empty and HEAD is `518960c` (or the docs commit that follows it).
+2. Read S10 and the final behavior in ADR 0013/0014, `docs/ARCHITECTURE.md`, the changelog, `magazines-progress.md`, and `docs/plans/otherDetails.md`; this is a reconciliation session, not an opportunity to redesign completed contracts.
+3. Run the S10 baseline, including `full`, before editing; stop on any pre-existing failure.
+4. Amend the ADRs and architecture documentation for the implemented identity, interchange, transaction, calendar-day, D6, backup, cover and publish decisions, preserving the rationale for already shipped behavior.
+5. Reconcile `[Unreleased]`, progress notes and release instructions through current HEAD. Include the Tokio security update, N1 and S1–S9 user-visible changes; leave only genuinely outstanding S11/R1 work.
+6. Replace the Fastlane byte check with the specified UTF-8 character-count check (maximum 500, not an exact count), run it, and mark plan sessions Done only with their actual commit/test evidence.
+7. Preserve every S1–S9 contract. Do not start S11 or R1.
 
 ## 5. Handoff notes
 
-- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S7" text.
-- S0–S8 are Done. S9–S11 remain Pending.
-- The original 26-finding release hold is unchanged. Completing S8 does not make the branch release-ready.
+- `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S8" text.
+- S0–S9 are Done. S10–S11 remain Pending.
+- The original 26-finding release hold is unchanged. Completing S9 does not make the branch release-ready.
 - Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5/S7/S8 did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
 - Publish linkage uses one validating resolver before any cover or artifact work. Do not replace it with an unchecked map: a missing/ambiguous link must fail closed, while a removed series stays available for its live issues' cover fallback.
 - The viewer syntax/runtime tests require Node 22 or newer on PATH, with no npm install. CI provisions it explicitly; do not skip these tests when Node is missing.
