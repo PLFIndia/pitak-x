@@ -1,10 +1,10 @@
 # Magazines branch — actionable findings remediation plan
 
 > **Status:** S0–S10 complete; S11 next
-> **Review baseline:** `magazines@e2dd25004b0ccd6d1c8b006b11724c019e41abb2`  
-> **Merge base:** `main@84cff872877372c99ca7f52aa13f4487d1a0a699`  
-> **Date:** 2026-10-24  
-> **Scope:** all 26 findings from the branch review: 7 High, 13 Medium, 6 Low/documentation  
+> **Review baseline:** `magazines@e2dd25004b0ccd6d1c8b006b11724c019e41abb2`
+> **Merge base:** `main@84cff872877372c99ca7f52aa13f4487d1a0a699`
+> **Date:** 2026-10-24
+> **Scope:** all 26 findings from the branch review: 7 High, 13 Medium, 6 Low/documentation
 > **Release rule:** `docs/plans/otherDetails.md` R1 is blocked until S1–S11 below are Done and every finding has a passing regression test.
 
 ---
@@ -136,8 +136,8 @@ These choices remove ambiguity without introducing a parallel pattern or a new d
 
 ## S1 — Canonical identity and raw-kind persistence integrity
 
-**Findings:** M4, H6, M6  
-**Depends on:** S0  
+**Findings:** M4, H6, M6
+**Depends on:** S0
 **Schema:** v5 → v6 (UID canonicalization migration; snapshot + generated helpers + matrix row required)
 
 ### 1. Canonicalize periodical and issue UIDs once
@@ -201,8 +201,8 @@ These choices remove ambiguity without introducing a parallel pattern or a new d
 
 ## S2 — Calendar-day semantics for issue and subscription dates
 
-**Findings:** M10, M12  
-**Depends on:** S1  
+**Findings:** M10, M12
+**Depends on:** S1
 **Schema:** v6 → v7 (date-value normalization migration; snapshot + generated helpers + matrix row required)
 
 ### 1. Introduce one calendar-date value object
@@ -259,7 +259,7 @@ These choices remove ambiguity without introducing a parallel pattern or a new d
 
 ## S3 — Atomic issue writes and removed-series guard
 
-**Findings:** M1, M9  
+**Findings:** M1, M9
 **Depends on:** S2
 
 ### 1. Make the whole issue write one transaction
@@ -303,7 +303,7 @@ These choices remove ambiguity without introducing a parallel pattern or a new d
 
 ## S4 — Reconcile periodicals and issue identity in plain JSON import
 
-**Findings:** H1, H2, H3, M3  
+**Findings:** H1, H2, H3, M3
 **Depends on:** S1, S2, S3
 
 ### 1. Build one series-resolution map before item writes
@@ -361,7 +361,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S5 — Complete v4 bundle and bounded backup round-trips
 
-**Findings:** H4, M2, L5  
+**Findings:** H4, M2, L5
 **Depends on:** S4
 
 ### 1. Make ZIP validation lossless for v4
@@ -412,7 +412,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S6 — Keep same-title series with different ISSNs distinct in merge
 
-**Findings:** H5  
+**Findings:** H5
 **Depends on:** S1, S2, S4
 
 ### Steps
@@ -440,7 +440,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S7 — Correct cover ownership, form races, and async prefill
 
-**Findings:** H7, M7, M8, M11, L2  
+**Findings:** H7, M7, M8, M11, L2
 **Depends on:** S4
 
 ### 1. Model cover ownership explicitly
@@ -496,7 +496,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S8 — Enforce publish redaction and total cover hashing
 
-**Findings:** M5, M13  
+**Findings:** M5, M13
 **Depends on:** S1, S2, S7
 
 ### 1. Make Other redaction exact
@@ -533,7 +533,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S9 — Refresh magazine state and finish kind-neutral UI behavior
 
-**Findings:** L1, L3, L4  
+**Findings:** L1, L3, L4
 **Depends on:** S8
 
 ### 1. Refresh summaries on the shared mutation signal
@@ -574,7 +574,7 @@ Use real Drift for link and rollback assertions, not only fakes.
 
 ## S10 — Reconcile contracts, changelog, and release instructions
 
-**Findings:** L6, plus documentation for every behavior changed above  
+**Findings:** L6, plus documentation for every behavior changed above
 **Depends on:** S1–S9
 
 ### Steps
