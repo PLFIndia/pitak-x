@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
+import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
@@ -63,7 +64,8 @@ class _PublishedCataloguePageState
       ..invalidate(publishedCatalogueControllerProvider(_siteUrl))
       ..invalidate(publishedCatalogueQueryControllerProvider(_siteUrl))
       ..invalidate(publishedCatalogueLanguagesProvider(_siteUrl))
-      ..invalidate(publishedCatalogueViewProvider(_siteUrl));
+      ..invalidate(publishedCatalogueViewProvider(_siteUrl))
+      ..invalidate(publishedCatalogueCoverControllerProvider(_siteUrl));
   }
 
   void _reload() {

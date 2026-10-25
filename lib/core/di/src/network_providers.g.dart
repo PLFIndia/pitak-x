@@ -781,5 +781,165 @@ final publishedCatalogueQueryRunnerProvider =
 // ignore: unused_element
 typedef PublishedCatalogueQueryRunnerRef =
     AutoDisposeProviderRef<PublishedCatalogueQueryRunner>;
+String _$publishedCoverFetcherHash() =>
+    r'b040e467ec466cb90af2cf1fd7cc40fbc93c6360';
+
+/// The bounded cover fetcher for the library saved at [siteUrl].
+///
+/// Shares the viewer-scoped client (so closing the route closes any remaining
+/// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+/// downscaled JPEG bytes or null — never a raw download, never a file.
+///
+/// Copied from [publishedCoverFetcher].
+@ProviderFor(publishedCoverFetcher)
+const publishedCoverFetcherProvider = PublishedCoverFetcherFamily();
+
+/// The bounded cover fetcher for the library saved at [siteUrl].
+///
+/// Shares the viewer-scoped client (so closing the route closes any remaining
+/// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+/// downscaled JPEG bytes or null — never a raw download, never a file.
+///
+/// Copied from [publishedCoverFetcher].
+class PublishedCoverFetcherFamily extends Family<PublishedCoverFetcher> {
+  /// The bounded cover fetcher for the library saved at [siteUrl].
+  ///
+  /// Shares the viewer-scoped client (so closing the route closes any remaining
+  /// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+  /// downscaled JPEG bytes or null — never a raw download, never a file.
+  ///
+  /// Copied from [publishedCoverFetcher].
+  const PublishedCoverFetcherFamily();
+
+  /// The bounded cover fetcher for the library saved at [siteUrl].
+  ///
+  /// Shares the viewer-scoped client (so closing the route closes any remaining
+  /// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+  /// downscaled JPEG bytes or null — never a raw download, never a file.
+  ///
+  /// Copied from [publishedCoverFetcher].
+  PublishedCoverFetcherProvider call(String siteUrl) {
+    return PublishedCoverFetcherProvider(siteUrl);
+  }
+
+  @override
+  PublishedCoverFetcherProvider getProviderOverride(
+    covariant PublishedCoverFetcherProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedCoverFetcherProvider';
+}
+
+/// The bounded cover fetcher for the library saved at [siteUrl].
+///
+/// Shares the viewer-scoped client (so closing the route closes any remaining
+/// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+/// downscaled JPEG bytes or null — never a raw download, never a file.
+///
+/// Copied from [publishedCoverFetcher].
+class PublishedCoverFetcherProvider
+    extends AutoDisposeProvider<PublishedCoverFetcher> {
+  /// The bounded cover fetcher for the library saved at [siteUrl].
+  ///
+  /// Shares the viewer-scoped client (so closing the route closes any remaining
+  /// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+  /// downscaled JPEG bytes or null — never a raw download, never a file.
+  ///
+  /// Copied from [publishedCoverFetcher].
+  PublishedCoverFetcherProvider(String siteUrl)
+    : this._internal(
+        (ref) =>
+            publishedCoverFetcher(ref as PublishedCoverFetcherRef, siteUrl),
+        from: publishedCoverFetcherProvider,
+        name: r'publishedCoverFetcherProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedCoverFetcherHash,
+        dependencies: PublishedCoverFetcherFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedCoverFetcherFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedCoverFetcherProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    PublishedCoverFetcher Function(PublishedCoverFetcherRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedCoverFetcherProvider._internal(
+        (ref) => create(ref as PublishedCoverFetcherRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<PublishedCoverFetcher> createElement() {
+    return _PublishedCoverFetcherProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedCoverFetcherProvider && other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedCoverFetcherRef
+    on AutoDisposeProviderRef<PublishedCoverFetcher> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedCoverFetcherProviderElement
+    extends AutoDisposeProviderElement<PublishedCoverFetcher>
+    with PublishedCoverFetcherRef {
+  _PublishedCoverFetcherProviderElement(super.provider);
+
+  @override
+  String get siteUrl => (origin as PublishedCoverFetcherProvider).siteUrl;
+}
+
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

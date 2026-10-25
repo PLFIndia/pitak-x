@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
@@ -18,11 +19,13 @@ void main() {
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(
-        home: PublishedCatalogueItemPage(
-          item: item,
-          siteUrl: site,
-          series: series,
+      ProviderScope(
+        child: MaterialApp(
+          home: PublishedCatalogueItemPage(
+            item: item,
+            siteUrl: site,
+            series: series,
+          ),
         ),
       ),
     );

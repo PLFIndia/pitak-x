@@ -395,6 +395,10 @@ to false** (the `hasX` forward-compat pattern):
 | Published catalogue origin | canonical Pages site root; same origin AND same site directory on the initial URL and every redirect hop | `PublishedSiteUrlPolicy` |
 | Published catalogue rows | ≤ 100 000 per collection (`books`, `periodicals`), truncated and reported | `PublishedCatalogueCodec` |
 | Published catalogue JSON depth | ≤ 32 (string-aware scan, shared with the descriptor) | `JsonNestingDepth` |
+| Published cover body | ≤ 8 MiB, streamed, aborted over cap | `BoundedHttpFetcher` |
+| Published cover deadline | 15 s whole request, abortable — including on reload/close | `BoundedPublishedCoverFetcher` |
+| Published cover origin | same-site: saved origin AND directory; third-party: the cover allow-list; both re-checked on every redirect hop | `PublishedCoverResolver` |
+| Published cover cache | ≤ 100 images / 16 MiB, memory only, LRU eviction, cleared on reload and on route close | `PublishedCatalogueCoverController` |
 | Redirect hops | ≤ 3, each re-validated | `BoundedHttpFetcher` |
 | URL | https, no userinfo, host suffix `github.io` / `pages.dev`, ≤ 2048 chars | `BookmarkUrl` |
 | Name | 1–80 chars after trim; reject code units < 0x20, 0x7F, U+202A–U+202E, U+2066–U+2069 | `NetworkName` |
@@ -420,6 +424,18 @@ saved library into another library. The request carries the fixed app
 User-Agent plus `Cache-Control: no-cache`, never cookies or auth; decoding and
 querying run off the UI isolate; the catalogue and its decoded object graph
 live only in auto-dispose providers and disappear when the route closes.
+
+**Covers in that viewer (S5)** are a second, separately gated pipeline. They
+are never written to disk or Drift and never enter the local `ItemCover`
+materialisation path. Both origin classes — the library's own relative
+`covers/…` files and the allow-listed third-party hosts — require
+`AppSettings.loadRemoteCovers == true`; unknown/failed settings mean no
+request. A same-site cover stays inside the saved site's origin and directory
+on every hop; a third-party cover re-checks the cover allow-list on every hop
+(preserving Open Library's Internet Archive redirects). Bodies are capped at
+8 MiB / 15 s, decoded in a worker isolate with the existing header/pixel
+guards and FRAME 0 only, and only the resulting 400×600 JPEG reaches the
+image widget: no `Image.network`, no raw fallback, no local persistence.
 
 ### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
 

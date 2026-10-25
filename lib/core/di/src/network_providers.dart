@@ -26,6 +26,7 @@ import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query_runner.dart';
+import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
@@ -34,6 +35,7 @@ import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
+import 'package:pitaka/features/network/infrastructure/bounded_published_cover_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_query_runner.dart';
@@ -277,3 +279,19 @@ LoadPublishedCatalogueUseCase loadPublishedCatalogueUseCase(
 PublishedCatalogueQueryRunner publishedCatalogueQueryRunner(
   PublishedCatalogueQueryRunnerRef ref,
 ) => const IsolatePublishedCatalogueQueryRunner().run;
+
+/// The bounded cover fetcher for the library saved at [siteUrl].
+///
+/// Shares the viewer-scoped client (so closing the route closes any remaining
+/// cover socket) and the shared `BoundedHttpFetcher` defences. Returns
+/// downscaled JPEG bytes or null — never a raw download, never a file.
+@riverpod
+PublishedCoverFetcher publishedCoverFetcher(
+  PublishedCoverFetcherRef ref,
+  String siteUrl,
+) {
+  final fetcher = BoundedPublishedCoverFetcher(
+    client: ref.watch(publishedViewerHttpClientProvider(siteUrl)),
+  );
+  return fetcher.fetch;
+}

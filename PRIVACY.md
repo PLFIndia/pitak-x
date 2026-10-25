@@ -1,6 +1,6 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-10-18 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-10-25 · Publisher: Parallel Line Foundation_
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -12,8 +12,10 @@ analytics, no advertising, and no tracking of any kind.**
 - **Your library catalogue** (books, wishlist, covers, notes) in a database
   in the app's private storage. Never uploaded anywhere by itself.
 - **Your borrowers vault** (borrower names/contact details and loans), if you
-  use it, in a separate database encrypted with AES-256-GCM. It is unlocked
-  by a passphrase you choose (strengthened with Argon2id). Your passphrase is
+  use it, in a separate SQLCipher-encrypted database. Argon2id strengthens
+  your chosen passphrase into a key-encryption key, and AES-256-GCM uses that
+  key to wrap the vault key. It is unlocked by your passphrase. Your
+  passphrase is
   never stored and never leaves the app. If you enable biometric unlock, a
   randomly generated vault-wrapping secret is stored only in encrypted form,
   under a key inside your phone's secure hardware (Android Keystore) that the
@@ -49,13 +51,15 @@ produces a file you control.
 - **Camera** — used only on screens you open deliberately: scanning ISBN
   barcodes to add books, and photographing book covers. Photos are processed
   and stored on-device.
-- **Internet** — used only for the explicit actions listed below. The app
-  makes no background or silent network connections.
+- **Internet** — used for the actions listed below. Google Play builds also
+  check for updates on launch and, after you accept Play's update dialog,
+  download in the background (item 7); the F-Droid flavor has no Play
+  Core/update library and cannot run that check.
 
 ## When anything leaves your device
 
 Network activity happens only when you explicitly ask for it, with one
-passive exception (item 5, Google Play builds only):
+passive exception (item 8, Google Play builds only):
 
 1. **ISBN lookup.** When you scan or type an ISBN and tap Lookup, that ISBN
    (and, if the first attempt finds nothing, its equivalent ISBN-10/ISBN-13
@@ -80,7 +84,9 @@ passive exception (item 5, Google Play builds only):
    your library, is included in backups, and no request is made for that book
    again. Your catalogue is never uploaded; only cover image files are
    fetched. A cover you photographed yourself is never replaced by a
-   downloaded one.
+   downloaded one. The same switch also governs the covers of a saved
+   library's published catalogue; those are memory-only and are covered in
+   item 5.
 3. **Publish to web.** If you use Publish, a read-only viewer of your library
    is uploaded to a GitHub repository *you* own, via GitHub's device-flow
    sign-in. The permission you grant ("public_repo") is GitHub's narrowest
@@ -98,7 +104,8 @@ passive exception (item 5, Google Play builds only):
    published page and in the machine-readable `library.json` descriptor that
    the library network reads. During publishing your device also downloads
    book covers from the same fixed cover hosts listed above and, afterwards,
-   checks the public site URL once to confirm it is live. You can delete the
+   makes up to 12 cache-busted `books.json` requests, five seconds apart, to
+    verify that the public site serves the bytes just published. You can delete the
    published site at any time from GitHub. Signing out in the app forgets the
    token on your device; to revoke the app's access on GitHub's side, remove
    "Pitak" under GitHub → Settings → Applications (the app cannot do this
@@ -120,7 +127,25 @@ passive exception (item 5, Google Play builds only):
    when you ask for it; there is no background polling. If you used the old
    bookmarks feature, its entries move into this list automatically the first
    time you open the screen — that move happens entirely on your device.
-5. **Network map** (optional, off until you allow it). The first time you
+5. **Opening a saved library's published catalogue.** Tapping a library in
+   Library network opens its published catalogue (`books.json`) inside Pitak:
+   one https request, only when you tap, only to that library's own site
+   directory (a redirect to another host, or to a different library on the
+   same host, is refused), with the same fixed User-Agent and a "no-cache"
+   hint. That site sees your device's IP address for the request, as any web
+   server does. `books.json` is never stored on your device: leaving the
+   screen discards it, and opening the same library again fetches it again
+   (there is no background refresh, no cached copy and no offline mode).
+   Covers shown in that catalogue are SEPARATE requests and obey the
+   remote-cover switch in item 2: with it off (the default) the catalogue
+   shows placeholders; with it on, covers load only while you view that
+   catalogue — either from the library's own site (its relative `covers/…`
+   files, under the same directory rule) or from the fixed cover hosts in
+   item 2 — and are held in memory only. They are not added to your library,
+   your backups or your device's storage, and they disappear when you leave.
+   Viewing a public catalogue never changes your own catalogue, your saved
+   libraries or their fingerprints.
+6. **Network map** (optional, off until you allow it). The first time you
    open the Library network › Map tab, the app asks before showing the map.
    If you accept, map images are downloaded from OpenStreetMap
    (tile.openstreetmap.org) while the map is open — OpenStreetMap's servers
@@ -129,31 +154,37 @@ passive exception (item 5, Google Play builds only):
    everywhere else. Declining keeps the list view, which works fully offline;
    you can change your mind later in Settings. The map never sends your list
    of libraries anywhere.
-6. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
+7. **Exports and backups.** JSON/CSV/PDF exports and `.pitabak` backups are
    files the app hands to your device's share sheet; you choose where they
    go. Backups you restore are read locally and never transmitted. Note:
-   `.pitabak` backups are **not fully encrypted** — the books, wishlist and
-   cover images inside are stored plainly; only the borrowers vault (when
-   you have one) remains encrypted inside the archive. The backup also
-   carries your library identity (library name and ID) and your
-   saved-libraries list as plain, unencrypted JSON, so a restored phone
-   stays recognisable to your hubs. Anyone who receives your backup file can
-   read those fields, so share backups only with people you trust with that
-   data. Restoring writes the new catalogue, covers and vault into a fresh
+   `.pitabak` backups are **not fully encrypted** — books, magazine titles and
+   issues, other items, wishlist and cover images inside are stored plainly;
+   only the borrowers vault and its wrapped key blob remain encrypted inside
+   the archive. `item_kinds.json` records the stable UID and kind of every non-book
+   item (an unlisted UID means a book). `periodicals.json` contains full
+   magazine-series records and issue details, including subscription dates,
+   notes, physical location, source, addedBy/addedDate, removal metadata and
+   bound-volume end dates. The backup
+   also carries your library identity (library name and ID) and your
+   saved-libraries list as plain, unencrypted JSON, so a restored phone stays
+   recognisable to your hubs. Anyone who receives your backup file can read
+   those fields, so share backups only with people you trust with that data.
+   Restoring writes the new catalogue, covers and vault into a fresh
    app-private folder and switches to it in one step; the previous folder is
    deleted immediately after a successful switch (and any half-built folder
    is removed on the next launch), so no second copy of your data lingers on
    the device.
-7. **Update check (Google Play builds only).** When the app starts, the
+8. **Update check (Google Play builds only).** When the app starts, the
    Play-distributed build asks the Google Play Store whether a newer version
-   of Pitak is available; if one is, it downloads in the background through
-   the Play Store and the app offers a restart once it is ready. The query
+   of Pitak is available for the flexible flow, Play shows its update dialog;
+   after you accept, the Store downloads in the background and the app offers
+   a restart
+   once it is ready. The query
    is made by Google's Play Store component — which installed the app and
    already knows its package name and version — and Pitak itself sends
    nothing: no catalogue data, no identifiers, no server of its own is
-   involved. The F-Droid build does not contain this code at all — the
-   Play update component is compiled only into the Play build — so there
-   the check cannot run (F-Droid's own client handles updates there).
+   involved. The F-Droid flavor has no Play Core/update library, so the check
+   cannot run there (F-Droid's own client handles updates).
 
 ## What Pitak does NOT do
 
@@ -161,8 +192,11 @@ passive exception (item 5, Google Play builds only):
 - No analytics, crash beacons, advertising, or tracking SDKs
 - No sale or sharing of your data with anyone (there is no "we" holding your
   data — the developer operates no servers for this app)
-- No access to your contacts, files, location, microphone, or any data
-  outside the app's own storage
+- No access to your contacts, microphone, or device location sensors
+- No broad or shared-storage access: Pitak reads only files or images you
+  explicitly choose (for example imports, merges, backup restores, event
+  posters and the library logo); exports and backups go through the OS share
+  sheet to a destination you choose
 
 ## Children's privacy
 
