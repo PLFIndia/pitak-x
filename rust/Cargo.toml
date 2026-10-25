@@ -17,7 +17,7 @@ crate-type = ["cdylib", "staticlib", "lib"]
 [dependencies]
 flutter_rust_bridge = "=2.12.0"
 argon2 = "0.5"
-aes-gcm = "0.10"
+aes-gcm = "0.11"
 zeroize = { version = "1", features = ["zeroize_derive"] }
 subtle = "2"
 base64 = "0.22"
