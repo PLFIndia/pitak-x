@@ -8,36 +8,35 @@ every session; commit it with the session's commit.**
 
 - Original magazines plan: **S0–S22 complete**. Post-plan **G1, N1, N2 and
   N3 are complete**; their logs remain below and in `otherDetails.md`.
-- Magazine remediation (`magazineIssues.md`): **S0–S10 complete; S11 next**.
-  The latest production commit is `518960c` (S9); S10 is documentation-only.
-- Branch: `magazines` — working tree clean after the S10 documentation commit:
-  **yes**. The pre-S10 documentation HEAD was `f072698`.
-- S10 baseline: scoped analysis and formatting clean; **3,046 non-golden tests
-  passed**. S10 changes no production code, tests, schema, or generated files.
+- Magazine remediation (`magazineIssues.md`): **S0–S11 complete**. The latest
+  production commit is `d5a915c`; the Linux-only golden commit is `c07de67`.
+- Branch: `magazines` — working tree clean after the S11 documentation commit:
+  **yes**.
+- S11 local gates: generated output clean; scoped analysis and formatting
+  clean; **30 architecture/migration tests**, **68 explicit schema/identity
+  tests**, and **3,066 non-golden Flutter tests** passed. Rust fmt, Clippy and
+  `cargo deny` passed with **35 release tests passed, 2 environment-gated
+  ignored**. The exact four-file Fastlane gate passed all four files and six
+  Unicode/file-set tests. Both F-Droid forbidden-dependency greps were empty.
 - Current Rust delta from `main`: `rust/Cargo.lock` carries the Tokio security
   update and `rust/src/vault.rs` carries S9's native presentation-copy change.
   The older S22 statement that the Rust diff was empty is historical only.
-- Release state: **R1 remains blocked** until every remediation session S1–S11
-  is Done with its evidence. No release version bump, tag, or publish step has
+- Release state: **R1 is next**, with its own merge, TalkBack, signing, purity
+  and store gates. No release version bump, tag, upload, or publish step has
   been performed.
 
 ## Next session
 
-**Run `magazineIssues.md` S11 only — full verification and release handoff.**
-Its dependency on S1–S10 is now complete. Do not treat the earlier G1/N3 runs
-as evidence for the remediated tree.
+**Resume `docs/plans/otherDetails.md` R1 only.** S11 is complete, including
+Linux goldens, exact-SHA CI, both Android journeys twice, a real v5→v7 upgrade,
+and a different-timezone legacy restore. Do not repeat remediation.
 
-1. Run generation, analysis, formatting, architecture/migration, the full
-   non-golden suite, Rust and dependency/purity gates required by S11.
-2. Regenerate goldens on Linux from the current pushed SHA, including S9's
-   changed unfiltered empty-library image; never commit macOS-rendered PNGs.
-3. Push every resulting commit and require the PR checks to be green at the
-   exact final SHA, including OSV and the Linux golden step.
-4. Repeat both Android journeys twice from a cleared install and add the S11
-   focused remediation coverage, plus the real v5→v7 upgrade and
-   different-timezone legacy-restore checks. Record device and run evidence.
-5. Only after S11 is Done, resume `otherDetails.md` **R1**. Until then do not
-   merge, bump the release version, tag, upload, or publish.
+1. Read R1's *Read first* list and confirm its baseline at the exact current
+   HEAD, including green PR checks and a clean tree.
+2. An LLM may perform only R1 steps 1–6: merge, prepare `1.6.0+29`, rerun
+   release gates and both purity checks, and stop before signing/publishing.
+3. The maintainer owns TalkBack, signed AAB verification, Play upload, signed
+   tag, and F-Droid follow-up. No release step is implied by S11's completion.
 
 ## Historical S22 handoff (superseded as current guidance)
 
@@ -1122,9 +1121,13 @@ Rename technique (learned in S1–S4):
 
 ## Open issues / blocked
 
-- **Remediation S11 final verification (current):** Pending. The changed
-  empty-library golden, exact-final-SHA CI, focused Android journeys, real
-  v5→v7 upgrade, and different-timezone restore checks must pass before R1.
+- **Remediation S11 final verification (closed):** `d5a915c` plus the S11
+  handoff commit. Linux goldens came from run `40162055693`; only
+  `library_empty_light.png` changed. On the Android 16 API 36 arm64-v8a
+  emulator, both journeys passed twice (159 s and 163 s). The real v5 fixture
+  seeded in 38 s, v5→v7 verification passed in 94 s, and the
+  Kiritimati→New York legacy restore passed in 28 s. Exact-SHA CI run IDs and
+  the final handoff check are recorded in `magazineIssues.md` Part D.
 
 ### Historical G1 / N1 / N3 closures
 

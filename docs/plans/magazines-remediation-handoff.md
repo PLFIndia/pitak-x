@@ -1,9 +1,10 @@
 # Magazines remediation — handoff after S9
 
-> **Historical snapshot, superseded as active handoff on 2026-10-25:** S10 is
-> complete. Resume with `magazineIssues.md` **S11**; current status lives in
-> that file's Part D and in `magazines-progress.md`. This document preserves
-> the after-S9 evidence and the original S10 restart instructions.
+> **Historical snapshot, superseded as active handoff on 2026-10-25:** S11 is
+> complete. Remediation S0–S11 is Done; proceed to `docs/plans/otherDetails.md`
+> **R1**. Current status and final evidence live in `magazineIssues.md` Part D
+> and in `magazines-progress.md`. This document preserves the after-S9 evidence
+> and the original S10 restart instructions.
 
 - **Date:** 2026-10-25
 - **Branch:** `magazines`

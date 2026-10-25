@@ -3,8 +3,9 @@
 - **Branch:** `magazines` (base `main`; remote `origin` =
   `https://github.com/PLFIndia/pitak-x.git`)
 - **Status (2026-10-25):** G1, N1, N2 and N3 are Done. The separate magazine
-  remediation plan has S0–S10 Done and **S11 next**; **R1 remains blocked**
-  until `magazineIssues.md` S1–S11 are all Done. This plan picks up everything
+  remediation plan has S0–S11 Done and **R1 next**; the remediation release hold
+  is closed. R1 still has its own merge, TalkBack, signing, purity and store
+  gates. This plan picks up everything
   `docs/plans/magazines-progress.md` left under *Next session* and *Open
   issues* after S22 (`efa5d06`). Structured like `docs/plans/magazines.md`:
   **discrete sessions**, each executable by an LLM or a human in isolation,
@@ -877,8 +878,10 @@ record it (Part D) rather than improvising.
      and new in this release. The `.aab` sha256 line is added after step 8.
    - `README.md` line 11: `**1.6.0**` and tag `1.6.0`.
    - Fastlane: nothing — `29.txt`, `291.txt`, `292.txt`, `293.txt` exist.
-     Run the UTF-8 character-count check in `docs/RELEASING.md` §6.1 step 3
-     with versionCode `29`. All four files currently contain 495 characters; the
+     Run `python3 tool/check_fastlane_changelog_chars.py 29` (the checked-in
+      UTF-8 character-count check in `docs/RELEASING.md` §6.1 step 3).
+     Its Unicode/boundary unit tests also run in CI. All four files currently
+      contain 495 characters; the
      requirement is at most 500, not an exact count and never a byte count.
 
 3. **Gates on the release commit:** `gen` (no diff), `analyze`, `arch` and
@@ -956,7 +959,7 @@ record it (Part D) rather than improvising.
 
 # Part D — Session log (update as the LAST action of every session)
 
-State ∈ Done · Partial · Blocked. Hash = the session's commit on
+State ∈ Pending · Done · Partial · Blocked. Hash = the session's commit on
 `magazines` (R1: on `main`). Keep one row per session; put details in
 *Notes*, deviations and open issues in the two lists below the table.
 
@@ -967,7 +970,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
 | N3 | Done | `95163d8` | 2026-10-24 | Pixel 8a, Android 17 (API 37), arm64-v8a; both journeys passed twice from a cleared install (155 s and 159 s), catalogue kinds first and vault second each time. Test-only fixes: bounded launch wait for the 2 s splash Timer, Drawer-scoped entry finder, `Add borrower` as the persistent vault page's unlocked proof. Analyze/format clean. Debug-only Drift multiple-database warning appeared in the existing restore path; no journey failed |
-| R1 | Blocked | — | 2026-10-25 | Blocked by remediation S11. Historical pre-run 2026-10-24: PR #18 was green at `372ad3b` and an fdroid arm64 APK dex pre-check found 0 forbidden hits; neither is final-SHA evidence, so repeat every check after S11 and on the release commit |
+| R1 | Pending | — | 2026-10-25 | Ready after `d5a915c` and the S11 handoff commit; no R1 step has started. Historical pre-run 2026-10-24: PR #18 was green at `372ad3b` and an fdroid arm64 APK dex pre-check found 0 forbidden hits; repeat every check on the release commit |
 
 ## Deviations from plan
 
@@ -983,9 +986,9 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 
 ## Open issues / blocked
 
-- **Current release hold:** remediation S11 remains Pending after S10. R1 is
-  blocked until S1–S11 are Done and all final-SHA local, CI, golden, device,
-  upgrade, timezone and purity evidence exists.
+- **Remediation release hold (closed):** S1–S11 are Done with final-SHA local,
+  CI, golden, device, upgrade, timezone and purity evidence. R1 is the only
+  remaining session; its own release gates are not claimed here.
 - **Original G1–N3 sessions:** no open items; the N3 device block was cleared
   on 2026-10-24. Those closures and the Tokio advisory fix are preserved, but
   they do not discharge S11's checks on the remediated tree.

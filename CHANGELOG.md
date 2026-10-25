@@ -15,12 +15,11 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 _Branch `magazines` — ADR 0013/0014. The original S0–S22 plan and post-plan
-G1, N1, N2 and N3 are complete. Magazine remediation S0–S10 is complete;
-S11 final verification remains pending in `magazineIssues.md`. Before tagging,
-complete S11 on the exact final SHA: regenerate the changed empty-library
-golden on Linux, require green final-SHA CI, and repeat the device journeys
-plus the remediation upgrade/timezone checks. The earlier G1 golden and N3
-smoke results are completed evidence, not substitutes for this final pass._
+G1, N1, N2 and N3 are complete. Magazine remediation S0–S11 is complete,
+including Linux goldens, exact-SHA CI, both Android journeys twice, a real
+v5→v7 upgrade, and a different-timezone legacy restore. R1 release work remains
+in `docs/plans/otherDetails.md`; no release version bump, tag, upload, or
+publish step has been performed._
 
 ### Added
 - **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —
@@ -219,7 +218,8 @@ smoke results are completed evidence, not substitutes for this final pass._
 - Updated Tokio 1.52.3 → **1.54.1** for **RUSTSEC-2026-0386** (`372ad3b`).
   No Rust source changed in that commit; Rust format, clippy,
   dependency/advisory checks and release tests passed, followed by green PR
-  OSV and Rust-core checks at `372ad3b`. S11 must rescan the final HEAD.
+  OSV and Rust-core checks at `372ad3b`. S11 re-scanned the remediation HEAD
+  in CI (run `40185782934`).
 
 ### Removed
 - `FindByIsbnUseCase`, `findByIsbnUseCaseProvider` and the library page's

@@ -1,6 +1,6 @@
 # Magazines branch — actionable findings remediation plan
 
-> **Status:** S0–S10 complete; S11 next
+> **Status:** S0–S11 complete; R1 next
 > **Review baseline:** `magazines@e2dd25004b0ccd6d1c8b006b11724c019e41abb2`
 > **Merge base:** `main@84cff872877372c99ca7f52aa13f4487d1a0a699`
 > **Date:** 2026-10-24
@@ -54,34 +54,34 @@ cargo test --release
 
 ## 2. Finding index and session routing
 
-| ID | Severity | Finding | Session |
-|---|---|---|---|
-| H1 | High | Same-ISSN/different-UID import leaves issues linked to a nonexistent series | S4 |
-| H2 | High | Same-UID series re-import clears cover/metadata and skips issue reprojection | S4 |
-| H3 | High | Same-UID cross-kind import silently deletes issue identity/details | S4 |
-| H4 | High | v4 ZIP bundle validation drops periodicals and series-cover handling | S5 |
-| H5 | High | Exact-title merge conflates series with different valid ISSNs | S6 |
-| H6 | High | Unknown/corrupt stored kinds are serialized as canonical books | S1 |
-| H7 | High | Edit forms overwrite a newer cover with a stale snapshot | S7 |
-| M1 | Medium | Issue writes are not atomic with series lookup/projection | S3 |
-| M2 | Medium | Backup writer can exceed its own reader's byte/row limits | S5 |
-| M3 | Medium | Additive import does not deduplicate D6 issue identities | S4 |
-| M4 | Medium | Trim-equivalent periodical UIDs persist as different soft-link keys | S1 |
-| M5 | Medium | Non-ASCII periodical UID aborts cover hashing and the whole publish | S8 |
-| M6 | Medium | A detail-less magazine issue can be written back as `kind=book` | S1 |
-| M7 | Medium | Save can race cover processing and discard the selected cover | S7 |
-| M8 | Medium | Remote series covers never materialize; inherited requests hit the wrong owner | S7 |
-| M9 | Medium | Barcode scanning permits new issues under a removed series | S3 |
-| M10 | Medium | Subscription becomes Lapsed at the start of its stated end date | S2 |
-| M11 | Medium | Out-of-order prefill responses populate another series' form | S7 |
-| M12 | Medium | Issue title/year and weekly cadence depend on timezone/DST | S2 |
-| M13 | Medium | Other-item publishing contradicts ADR O2 and the guide | S8 |
-| L1 | Low | Import/merge/restore/delete leave visible magazine summaries stale | S9 |
-| L2 | Low | Issue detail ignores the local series-cover fallback | S7 |
-| L3 | Low | A facet with zero results is presented as an empty library | S9 |
-| L4 | Low | Generic detail/actions/lending call every kind “Book” | S9 |
-| L5 | Low | Restore can double-count one malformed issue link | S5 |
-| L6 | Low | Release documentation is stale and its character-count check is wrong | S10 |
+| ID | Severity | Finding | Session | Regression evidence | Status |
+|---|---|---|---|---|---|
+| H1 | High | Same-ISSN/different-UID import leaves issues linked to a nonexistent series | S4 | `import_library_reconciliation_test.dart`: same-ISSN re-anchor/projection and same-UID missing-series guard | Passing |
+| H2 | High | Same-UID series re-import clears cover/metadata and skips issue reprojection | S4 | `import_library_reconciliation_test.dart`: local cover/metadata preservation and every-issue rename reprojection | Passing |
+| H3 | High | Same-UID cross-kind import silently deletes issue identity/details | S4 | `import_library_reconciliation_test.dart`: v3 book/stored issue and every same-UID cross-kind pair | Passing |
+| H4 | High | v4 ZIP bundle validation drops periodicals and series-cover handling | S5 | `bundle_periodical_roundtrip_test.dart`: real ZIP and complete S11 matrix; `bundle_import_lifecycle_test.dart`: newer-bundle update guidance | Passing |
+| H5 | High | Exact-title merge conflates series with different valid ISSNs | S6 | `periodical_merge_test.dart`: distinct-ISSN planner; `merge_periodical_issn_test.dart`: two series/four issues in real Drift | Passing |
+| H6 | High | Unknown/corrupt stored kinds are serialized as canonical books | S1 | `backup_s11_round_trip_test.dart` and `publish_library_use_case_test.dart`: real raw `hologram` refusal before scratch/artifact work | Passing |
+| H7 | High | Edit forms overwrite a newer cover with a stale snapshot | S7 | `catalogue_item_detail_page_test.dart`: capture/edit/save keeps new cover; `add_issue_page_test.dart`: untouched cover follows replacement | Passing |
+| M1 | Medium | Issue writes are not atomic with series lookup/projection | S3 | `issue_write_race_test.dart`: add/delete, add/rename and move/destination-delete real-Drift interleavings | Passing |
+| M2 | Medium | Backup writer can exceed its own reader's byte/row limits | S5 | `backup_archive_writer_test.dart`: item-kinds byte/row caps; `backup_periodical_writer_bounds_test.dart`: periodicals byte cap before file work | Passing |
+| M3 | Medium | Additive import does not deduplicate D6 issue identities | S4 | `import_library_reconciliation_test.dart`: numbered/bound and in-file D6 duplicates skip while valid rows import | Passing |
+| M4 | Medium | Trim-equivalent periodical UIDs persist as different soft-link keys | S1 | `drift_periodical_repository_test.dart`: canonical soft links; `migration_test.dart`: v5 padding repair/collision rollback | Passing |
+| M5 | Medium | Non-ASCII periodical UID aborts cover hashing and the whole publish | S8 | `publish_library_use_case_test.dart`: Unicode covered-series commit; `publish_cover_ids_test.dart`: ASCII compatibility and UTF-8 digest | Passing |
+| M6 | Medium | A detail-less magazine issue can be written back as `kind=book` | S1 | `drift_catalogue_item_kinds_test.dart`: write-back refusal preserves raw evidence; `merge_library_use_case_test.dart`: refusal before planning/writes | Passing |
+| M7 | Medium | Save can race cover processing and discard the selected cover | S7 | `add_issue_page_test.dart` and `other_item_form_page_test.dart`: Save gated through picker/crop/storage | Passing |
+| M8 | Medium | Remote series covers never materialize; inherited requests hit the wrong owner | S7 | `materialize_remote_cover_use_case_test.dart`: periodical-only materialization; `catalogue_item_detail_page_test.dart`: inherited cover stays periodical-owned | Passing |
+| M9 | Medium | Barcode scanning permits new issues under a removed series | S3 | `add_issue_use_case_test.dart`: removed-series write refusal; `route_scanned_barcode_use_case_test.dart`: removed ISSN opens restore flow | Passing |
+| M10 | Medium | Subscription becomes Lapsed at the start of its stated end date | S2 | `subscription_status_test.dart`: midnight/noon/23:59, following-day and 30/31-day matrices | Passing |
+| M11 | Medium | Out-of-order prefill responses populate another series' form | S7 | `add_issue_page_test.dart`: A→B, ABA and explicit-copies prefill guards | Passing |
+| M12 | Medium | Issue title/year and weekly cadence depend on timezone/DST | S2 | `issue_title_test.dart` and `issue_cadence_test.dart`: canonical-day/DST stability; CI runs both host timezones | Passing |
+| M13 | Medium | Other-item publishing contradicts ADR O2 and the guide | S8 | `publish_redaction_test.dart`: exact Other key set; `viewer_runtime_test.dart`: all layouts omit excluded fields/placeholders | Passing |
+| L1 | Low | Import/merge/restore/delete leave visible magazine summaries stale | S9 | `periodicals_controller_test.dart`: shared-signal refresh; `catalogue_item_actions_test.dart`: real hard-delete refresh | Passing |
+| L2 | Low | Issue detail ignores the local series-cover fallback | S7 | `catalogue_item_detail_page_test.dart`: local fallback and own-cover precedence | Passing |
+| L3 | Low | A facet with zero results is presented as an empty library | S9 | `library_page_test.dart`: query/facet/combined empty states and independent recovery | Passing |
+| L4 | Low | Generic detail/actions/lending call every kind “Book” | S9 | `catalogue_item_detail_page_test.dart` and `item_wording_test.dart`: Issue/Other actions and Item #id fallbacks | Passing |
+| L5 | Low | Restore can double-count one malformed issue link | S5 | `restore_item_details_test.dart`: entry/row counter matrix; `restore_page_test.dart`: separate sentences | Passing |
+| L6 | Low | Release documentation is stale and its character-count check is wrong | S10 | `tool/test_check_fastlane_changelog_chars.py`: Unicode, 500/501 and missing-file cases; CI checks all four release files | Passing |
 
 ---
 
@@ -687,35 +687,35 @@ Do not start R1 until every answer is “yes.”
 
 ## Identity and persistence
 
-- [ ] Canonical UIDs behave identically in import, merge, restore, lookup, joins, delete guards, and publish.
-- [ ] Unknown kinds and detail-less issues remain usable for fail-soft display but cannot be silently serialized or updated.
-- [ ] Every issue write and its series lookup/projection/identity check commit atomically.
-- [ ] v6/v7 migrations preserve valid data and fail before writing on ambiguous collisions.
+- [x] Canonical UIDs behave identically in import, merge, restore, lookup, joins, delete guards, and publish.
+- [x] Unknown kinds and detail-less issues remain usable for fail-soft display but cannot be silently serialized or updated.
+- [x] Every issue write and its series lookup/projection/identity check commit atomically.
+- [x] v6/v7 migrations preserve valid data and fail before writing on ambiguous collisions.
 
 ## Import, merge, backup, publish
 
-- [ ] Same-ISSN/different-UID imports re-anchor issues; same-UID imports preserve cover/metadata and reproject all issues.
-- [ ] Cross-kind same-UID imports fail without changing the original row.
-- [ ] D6 duplicates are skipped/reported, while unrelated valid rows still import.
-- [ ] v4 ZIP bundles preserve series, issues, warnings, and cover ownership through commit/rollback.
-- [ ] Backup creation cannot exceed reader limits; restore counters count each entry once.
-- [ ] Different valid ISSNs are never conflated by title fallback.
-- [ ] Other publish emits exactly its allowed key set; Unicode cover keys cannot abort publish.
+- [x] Same-ISSN/different-UID imports re-anchor issues; same-UID imports preserve cover/metadata and reproject all issues.
+- [x] Cross-kind same-UID imports fail without changing the original row.
+- [x] D6 duplicates are skipped/reported, while unrelated valid rows still import.
+- [x] v4 ZIP bundles preserve series, issues, warnings, and cover ownership through commit/rollback.
+- [x] Backup creation cannot exceed reader limits; restore counters count each entry once.
+- [x] Different valid ISSNs are never conflated by title fallback.
+- [x] Other publish emits exactly its allowed key set; Unicode cover keys cannot abort publish.
 
 ## Dates and covers
 
-- [ ] New canonical titles, years, bound ranges, and cadence produce the same calendar result across supported timezones and DST transitions; legacy migration/restore behavior is internally consistent and documents the unrecoverable-original-timezone limit.
-- [ ] Subscriptions remain active/expiring throughout their stated end date.
-- [ ] Form saves cannot restore a stale cover or outrun a pending capture.
-- [ ] Remote materialization updates the cover owner, never the fallback consumer.
-- [ ] Issue detail, rows, grid, and publish implement the same own-then-series cover rule.
+- [x] New canonical titles, years, bound ranges, and cadence produce the same calendar result across supported timezones and DST transitions; legacy migration/restore behavior is internally consistent and documents the unrecoverable-original-timezone limit.
+- [x] Subscriptions remain active/expiring throughout their stated end date.
+- [x] Form saves cannot restore a stale cover or outrun a pending capture.
+- [x] Remote materialization updates the cover owner, never the fallback consumer.
+- [x] Issue detail, rows, grid, and publish implement the same own-then-series cover rule.
 
 ## UI and documentation
 
-- [ ] Import/merge/restore/delete immediately refresh a live Magazines list.
-- [ ] Empty facets are not mislabeled as an empty library; generic copy is kind-neutral.
-- [ ] ADR, architecture, progress notes, changelog, and release commands describe the code as it actually behaves.
-- [ ] Every finding above maps to at least one meaningful regression test.
+- [x] Import/merge/restore/delete immediately refresh a live Magazines list.
+- [x] Empty facets are not mislabeled as an empty library; generic copy is kind-neutral.
+- [x] ADR, architecture, progress notes, changelog, and release commands describe the code as it actually behaves.
+- [x] Every finding above maps to at least one meaningful regression test.
 
 ---
 
@@ -748,7 +748,7 @@ State values: **Pending · In progress · Blocked · Done**. A session is Done o
 | S8 | Done | `8d4aa1f` | 2026-10-24 | M5/M13 fixed. Other redaction is an exhaustive details switch emitting exactly title/kind/resolved cover/language/ageGroup; availability and every book-specific/transliteration field are omitted, while book/issue/periodical behavior is preserved. Cover keys hash salt + UTF-8(key), with independent exact ASCII and non-ASCII fixtures and an end-to-end Unicode covered-series publish. Pure-Dart `PublishPeriodicalLinks` rejects missing/blank/noncanonical/duplicate series UIDs and unresolved/noncanonical live-issue links before cover IO, viewer/books.json encoding or commit; the failure is a safe `PublishFailure`, and removed-series cover fallback remains intact. Nine red-first regressions failed for the intended reasons, then passed; 49 focused tests, 413 publish tests, 30 architecture/migration tests and 3,027 non-golden tests passed. Independent review closed removed-series and test-isolation gaps; re-review found no concrete issue. Generation, analyze, format, diff and pre-commit checks clean. `PublishResult` extraction keeps the use case at 466 lines; schema and ratchet unchanged. Real Node syntax/runtime checks cover table/card/grid, sparse Other fields, grouping/order and escaping; CI provisions Node 22 through a SHA-pinned action. |
 | S9 | Done | `518960c` | 2026-10-25 | L1/L3/L4 fixed. `PeriodicalsController` watches the shared library mutation signal while the minute tick remains only for subscription badges; kept-alive import/merge/restore/issue-hard-delete paths refresh title/count/latest without route recreation. `LibraryPage` owns and disposes its search controller; query/facet/combined empty states have independent Clear search/Clear filters recovery, and Add/Import appears only for a genuinely empty unfiltered library. Generic detail/actions/lending/missing-row/error and borrower-deletion copy uses Item/item, including `Item #id`; guide/mockups are synchronized, while book-specific screens, wishlist wording, persisted names and Rust/FRB APIs are unchanged. Refresh, filtered-recovery, Issue/Other wording and native-fallback regressions were verified red-first. Independent review found the remaining borrower-deletion wording gap; the Dart/Rust fix was re-reviewed with no concrete finding. 199 focused tests, 30 architecture/migration tests and 3,046 non-golden tests passed; generation, analyze, format and diff checks clean. Rust fmt/clippy/deny passed with 35 release tests passed and 2 environment-gated ignored. Schema stays v7; Linux golden regeneration and device journeys remain S11. |
 | S10 | Done | `(this commit)` | 2026-10-25 | L6 closed. ADR 0013/0014 and ARCHITECTURE now match the implemented canonical-UID/v6, strict-interchange, atomic-write, calendar-day/v7, import/D6, bounded-backup/counter, cover and publish contracts. CHANGELOG, progress and R1 instructions include Tokio, N1 and S1–S9, distinguish historical G1/N3 evidence from pending S11, and record the S9 native-copy-only deviation. The Fastlane byte command was replaced by the parameterized UTF-8 character check; all four `29*.txt` files passed at 495 characters (maximum 500). Pre-edit baseline: analyze/format clean and 3,046 non-golden tests passed. Post-edit: analyze/format clean, 30 architecture/migration tests passed, Markdown fences balanced, Fastlane check repeated, independent contract/release findings resolved, and `git diff --check` clean. Documentation only: no production, test, schema, generated or Fastlane content changed. S11 remains Pending and R1 remains Blocked. |
-| S11 | Pending | — | — | Full verification and R1 handoff |
+| S11 | Done | `(this commit)` | 2026-10-25 | All 26 findings are mapped to passing regressions. `d5a915c` fixes newer-artifact refusal across plain JSON and malformed/newer ZIP bundles with typed update guidance and no partial import; seven red-first regressions proved the failures, then 138 focused import tests passed. Rich JSON/ZIP matrices passed 27 tests, merge/publish 80, and the new backup round-trip/overflow tests 4. The full schema/identity matrix passed 68 tests; architecture/migration 30; non-golden Flutter 3,066; Rust 35 with 2 environment-gated ignored; Fastlane file-set/Unicode tests 6. Generation, analysis, formatting, diff, and both F-Droid purity greps were clean. Linux `library_empty_light.png` came from run `40162055693` (`c07de67`); all other PNGs were byte-identical. CI at `d5a915c` was green (`40185782934`), including OSV, both host timezones, coverage, secret scan and Linux goldens; update-goldens `40185782799` also passed. Android 16 API 36 arm64-v8a: both journeys passed twice (159 s, 163 s), real v5 seed 38 s, v5→v7 verification 94 s, and Kiritimati→New York legacy restore 28 s. Same-device projections/FTS, v7 columns, covers, links and loans survived; cross-zone restore immediately produced the required Dec-2025 projection. The final documentation commit was pushed and its PR checks verified. R1 is next. |
 
 ## Open questions / deviations
 
@@ -760,4 +760,16 @@ State values: **Pending · In progress · Blocked · Done**. A session is Done o
   crypto, the encrypted vault schema, persisted names, `loans.book_id`, FRB or
   any API. The S9 Rust format, clippy, dependency and release-test gates passed;
   the no-Rust rule otherwise remains in force.
+- **S11 verification harness deviation (2026-10-25):** Flutter's default
+  integration-test uninstall removes app data after a run, so the one-off real
+  v5 upgrade used `--no-uninstall` for its seed and both verification modes.
+  The required two journeys still used the documented command from cleared
+  installs. Their restore helper uses the production `RestoreController` so the
+  real library invalidation is covered; no production behavior changed.
+- **S11 writer row-cap deviation (2026-10-25):** `periodicalsTooManyRows` is not
+  independently reachable with current constants: minimal periodical JSON hits
+  the byte cap first, and excessive keyed issues hit `itemKindsTooManyRows`
+  first. The direct periodicals byte-cap refusal, item-kind row cap and reader
+  boundaries are tested; no artificial production seam or misleading row-cap
+  test was added.
 - No other question is open. All other implementation choices are fixed in Part 3 so agents do not silently select incompatible alternatives.
