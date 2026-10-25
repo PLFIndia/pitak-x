@@ -115,9 +115,9 @@ Magazines and issues (D1–D11):
 Others (O1–O4): `ItemKind.other` has **no fields and no detail table**; what
 the item *is* goes in the existing `notes` field (labelled "Description" on
 the Others form), which becomes searchable (D10). `notes` stays private, so
-an Other item publishes title, cover, language and age group only (trigger
-for a public description: a library asks for one on its site). The generic
-add/update use cases validate any `details`; merge identity is
+an Other item publishes only its kind, title, cover, language and age group
+(trigger for a public description: a library asks for one on its site). The
+generic add/update use cases validate any `details`; merge identity is
 `itemUid` → fuzzy title.
 
 ## Amendment 2026-10-24 — UTC calendar-day semantics (S2)
@@ -152,6 +152,54 @@ If a value already moved from another timezone, its original zone cannot be
 recovered. The conversion preserves the day visible in the zone performing
 the migration/ingress; it does not claim to reconstruct the original day.
 
+## Amendment 2026-10-25 — final identity, write and cover rules
+
+The magazine remediation (S1–S9) preserved the base-row design and clarified
+these implementation contracts. The interchange-side rules are in ADR 0014.
+
+### Canonical series identity and atomic issue writes (S1, S3, S6)
+
+- D2's `periodicalUid` is a UUID when the app mints it, but an external
+  identity may contain non-ASCII text. `canonicalPeriodicalUid` is the one
+  canonicalization rule for series and issue soft links: trim surrounding
+  whitespace only. Domain gates, JSON/archive ingress, D6 lookups,
+  repositories and persistence companions all use it. A trim-created
+  collision is refused; it is never silently merged.
+- Schema **v6** changes no table shape. Its atomic repair precomputes the
+  canonical periodical UIDs and final numbered/bound D6 keys and refuses
+  collisions before its first write, then trims the stored soft links.
+  Ambiguity aborts the migration with the old rows untouched.
+- D6's exact-title merge fallback does not apply when both series have valid,
+  different ISSNs. Those are distinct series even if their titles match. UID
+  and canonical-ISSN identity still win first, and title fallback remains when
+  either side lacks a valid ISSN.
+- An add/update issue operation is ONE item-repository transaction: stored-row
+  lookup (for update), series lookup and projection, domain validation, D6
+  pre-check and the final base/detail write. A typed `Left` rolls the whole
+  operation back, so a concurrent series rename/delete cannot interleave
+  between preparation and write.
+- Creating an issue under a soft-removed series is refused before any write.
+  Editing a historical issue remains allowed so existing records stay
+  maintainable. Scanning a removed series' ISSN opens its existing detail /
+  restore flow rather than the add-issue form.
+
+### Structural cover ownership and fresh writes (S7)
+
+- A cover has a structural `CoverOwner`: a catalogue item (per-device integer
+  id) or a periodical (stable UID). `IssueCover.resolve` may DISPLAY a series
+  cover on an issue, but ownership stays with the series. Download dedup uses
+  `(owner, coverUrl)`, not object identity or the item displaying the cover.
+- Remote materialization reads the owner before downloading and again after
+  storing the JPEG, immediately before the row update. The first read refuses
+  before any download. After storage, a missing owner, changed URL, already
+  local cover, second-read failure, or failed update deletes the new file and
+  leaves the newer row alone. A successful update builds on the latest entity
+  and releases only the reference validated by that read.
+- Forms distinguish an untouched cover from a deliberate capture/removal and
+  disable Save while cover processing is pending. Add Issue prefill also
+  checks its generation and selected UID after every await, so a late response
+  cannot populate a different series' form or overwrite user input.
+
 ## Consequences
 
 - **Easier:** every list, facet, export, viewer and backup is kind-aware
@@ -164,9 +212,10 @@ the migration/ingress; it does not claim to reconstruct the original day.
     cascade (verified: no existing table declares a FK).
   - Every `CatalogueItem(` / `Periodical(` construction site is gated
     (`test/architecture/catalogue_item_validation_gate_test.dart`).
-  - A row written by a newer build with an unknown `kind` reads as a book
-    (logged once) and is **refused on write-back** — the app never
-    silently rewrites a kind it does not understand.
+  - On a fail-soft display read, a row written by a newer build with an
+    unknown `kind` reads as a book (logged once) and is **refused on
+    write-back**. Strict interchange reads refuse it too (ADR 0014) — the app
+    never silently rewrites or serializes a kind it does not understand.
   - The startup cover sweep must count periodical covers as live
     references (the M11 bug class) — enforced by a janitor test.
 - **Forbidden:** per-kind tables for shared columns; a second lendable unit;

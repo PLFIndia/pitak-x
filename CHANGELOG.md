@@ -14,12 +14,13 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
-_Branch `magazines` — ADR 0013/0014, planned as sessions S0–S22 in
-`docs/plans/magazines.md` and logged in `docs/plans/magazines-progress.md`.
-Reconciled against what shipped (S22). Before tagging: regenerate the
-Linux-pinned golden PNGs on CI (`update-goldens`) — the Library screen
-golden changed in S14 and the series-row golden is still to be added — and
-run both on-device smoke journeys (`integration_test/`)._
+_Branch `magazines` — ADR 0013/0014. The original S0–S22 plan and post-plan
+G1, N1, N2 and N3 are complete. Magazine remediation S0–S10 is complete;
+S11 final verification remains pending in `magazineIssues.md`. Before tagging,
+complete S11 on the exact final SHA: regenerate the changed empty-library
+golden on Linux, require green final-SHA CI, and repeat the device journeys
+plus the remediation upgrade/timezone checks. The earlier G1 golden and N3
+smoke results are completed evidence, not substitutes for this final pass._
 
 ### Added
 - **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —
@@ -47,9 +48,15 @@ run both on-device smoke journeys (`integration_test/`)._
   issues newest-first, "Add issue", hard delete), the magazine-title form
   and the add-issue form (series picker, bound-volume switch, cadence
   prefill from the latest issue, live title preview), an issue block on the
-  item detail page with "Open series". A magazine barcode (`977…`, D11)
-  routes to the add-issue form — or to the title form with the ISSN filled
-  in — via `RouteScannedBarcodeUseCase` (sealed `ScanRoute`).
+  item detail page with "Open series". A magazine barcode (`977…`, D11) routes
+  through `RouteScannedBarcodeUseCase` (sealed `ScanRoute`) to Add Issue for an
+  active existing series, the existing detail/restore flow for a removed
+  series (`OpenPeriodical`), or the title form with the ISSN filled in when the
+  series is unknown.
+- **Magazine remove/restore (N1):** the series overflow offers **Remove from
+  library** and **Restore to library** without changing its issues. The hard
+  delete refusal now correctly says to delete remaining issues first or mark
+  the title as removed; soft-removed issues still count toward that guard.
 - **Others:** a built-in catch-all kind (a DVD, a board game, a map) with a
   Description field — the existing notes column, which is now searchable
   (FTS gains `notes`, D10). No kind-specific fields or table (O1); saved
@@ -58,12 +65,13 @@ run both on-device smoke journeys (`integration_test/`)._
   a "+" sheet with one entry per kind, row and grid-card badges for issues,
   bound volumes and others; issues without a cover show the series cover
   (W4; the cover janitor counts series covers as live references).
-- **Merge** understands v4 files: periodicals are merged first (uid → ISSN →
-  exact title, add-only; a series kept locally is reported, not resolved),
-  incoming issues are re-anchored to the winning series, issue identity (D6)
-  drives matching, and merged series' issues are re-projected after the
-  apply. Take-theirs is refused across kinds (D8); keep-both keeps the
-  row's kind; overwrite replaces series too.
+- **Merge** understands v4 files: periodicals are merged first (UID →
+  canonical ISSN → exact title, add-only; title fallback is suppressed when
+  both sides have valid, different ISSNs), incoming issues are re-anchored to
+  the winning series, issue identity (D6) drives matching, and merged series'
+  issues are
+  re-projected after the apply. Take-theirs is refused across kinds (D8);
+  keep-both keeps the row's kind; overwrite replaces and reprojects series too.
 - **Guides:** a sixth "How Pitak works" guide, *Books, magazines and other
   items*, first in the index, ending on the Magazines screen.
 - `integration_test/catalogue_kinds_smoke_test.dart` (magazine title →
@@ -71,23 +79,39 @@ run both on-device smoke journeys (`integration_test/`)._
   smoke, over shared `integration_test/smoke_support.dart`.
 - `docs/adr/0013-catalogue-item-kinds.md`,
   `docs/adr/0014-catalogue-interchange-and-backup.md`; ARCHITECTURE §3,
-  §5.4, §5.5, §5.7 and §6 describe the kinds, the v5 schema and the three
-  formats.
+  §5.4, §5.5, §5.7 and §6 describe the kinds, the unreleased v5–v7 schema
+  history and the three formats.
 
 ### Changed
-- **Schema v5** (`lib/core/database/app_database.dart`): `books.kind`
+- **Schema v5 (unreleased feature origin; current schema is v7)**
+  (`lib/core/database/app_database.dart`): `books.kind`
   (default `'book'`), new `magazine_issues` (FK cascade to `books`;
   `PRAGMA foreign_keys = ON` — the first real FK in the schema) and
   `periodicals` tables; raw-SQL partial UNIQUE indexes for the issue keys;
   the FTS index is dropped on upgrade and rebuilt once in `beforeOpen` with
   `notes` added to its columns (timed: 5 000 rows well under a second).
+- **Schema v6** (remediation S1) canonicalizes periodical/issue soft-link UIDs
+  with one surrounding-whitespace-only trim rule. Its atomic repair precomputes
+  canonical UIDs/final D6 keys and refuses collisions before writing instead of
+  silently merging series; external non-ASCII identities remain supported.
+- **Schema v7** (remediation S2) gives issue/subscription dates calendar-day
+  semantics at 00:00 UTC through the shared pure-Dart `CalendarDate` rule.
+  Titles, years, cadence and subscription status are timezone/DST-stable; a
+  subscription remains `expiringSoon` throughout its stated end date and
+  becomes `lapsed` the next local day. Legacy conversion is idempotent and
+  preflights D6 collisions; restore and overwrite immediately reproject every
+  series.
+  Added/removed/loan/export timestamps remain instants.
 - **Pitaka-JSON schema 3 → 4** (W1): per-row `kind` + nested `issue{}`,
   top-level `periodicals[]` (omitted when empty). Older builds refuse a v4
-  file ("update the app"); v3 files still import. Unknown kinds are skipped
+  file ("update the app"); v3 remains accepted with absent kind defaulting to
+  book, subject to the cross-kind UID refusal below. Unknown kinds are skipped
   and counted; an issue whose series is not in the file imports as a book
-  with a warning; same-uid series update in place, same-ISSN series skip.
-  Export and import require the periodical repository — a read failure
-  fails the export (no partial file).
+  with a warning. Same-UID series merge in place without blindly clearing
+  covers/metadata; same-canonical-ISSN series under another UID reconcile to
+  the stored row. Issues re-anchor to the winning series, and every updated
+  series is reprojected last. Export and import require the periodical
+  repository — a read failure fails the export (no partial file).
 - **`books.json`** (publish, W3) stays schema 1 and gains additive `kind` /
   `issue{}` per entry and `periodicals[]` with public fields only (the
   subscription window, notes, location and source never leave the device);
@@ -109,6 +133,11 @@ run both on-device smoke journeys (`integration_test/`)._
 - `CatalogueItem.validate` and `Periodical.validate` are the two ingress
   gates; `test/architecture/catalogue_item_validation_gate_test.dart` scans
   every construction site of both (AGENTS §3.3).
+- **Display versus interchange reads** (remediation S1): paged Library mapping
+  and the vault/cover-janitor reads retain fail-soft behavior. Export, backup,
+  publish and merge use `getAllForInterchange()`, which refuses an unknown
+  stored kind or a known issue missing its detail row instead of serializing it
+  as a book. Detail-less issue write-back also fails before mutation.
 - **Rename (no behaviour change):** `Book` → `CatalogueItem`, `bookUid` →
   `itemUid`, `BookSourceType` → `ItemSourceType`, `BookSort` → `LibrarySort`,
   `BookRepository` → `CatalogueItemRepository` (+ Drift impl, mapper, use
@@ -130,6 +159,60 @@ run both on-device smoke journeys (`integration_test/`)._
   which has none. Rewritten over the shared helpers, which also scroll to
   below-the-fold buttons (a form's lazy list does not build them) and
   tolerate a vault created by a sibling smoke file in the same run.
+- **Atomic issue writes and removed-series scans** (remediation S3): series
+  lookup/projection, stored-row validation, D6 pre-check and issue write now
+  commit in one transaction. New issues under a removed series fail before
+  writing; historical issue edits remain allowed, and a removed ISSN scan opens
+  the existing series detail/restore flow instead of the add-issue form.
+- **Import reconciliation and D6 integrity** (remediation S4): same-ISSN /
+  different-UID imports keep their issues linked to the stored series; same-UID
+  imports preserve local identity and reproject every issue. Same-UID
+  cross-kind updates refuse the import and roll back without deleting the
+  original kind/details. D6 duplicates between different item UIDs are skipped
+  and counted after re-anchoring, including earlier claims in the same file;
+  repeated same-UID, same-kind rows update instead. Trim-created UID ambiguity
+  is file-level fatal: plain import refuses before catalogue reads/writes, and
+  merge refuses before namespace/planning/repository IO.
+- **Lossless bundles and bounded backups** (remediation S5): v4 ZIP import keeps
+  periodicals, wishlist and warnings, validates series collections/covers, and
+  stages shared cover leaves once. The writer checks both W2 entries against
+  the reader's byte/row caps before scratch-directory, SQLite, or ZIP creation
+  and returns a safe `BackupTooLargeFailure` (“This catalogue is too large for
+  this backup format. Nothing was exported.”) rather than creating an
+  unreadable archive. Restore reports raw dropped issue entries separately from
+  unique detached item rows.
+- **Distinct-ISSN merge identity** (remediation S6): exact-title fallback no
+  longer conflates series when both sides have valid, different ISSNs; their
+  issues remain attached to the correct series after apply.
+- **Cover ownership and async form safety** (remediation S7): scheduler dedup
+  uses structural `(owner, URL)` identity, remote series covers materialize on
+  the series rather than an issue displaying its fallback, and issue detail
+  uses the same own-then-series rule as lists and publish. Materialization
+  re-reads immediately before writing so mid-download edits survive. Forms
+  preserve untouched current covers, block Save during cover work, and reject
+  stale Add Issue prefill responses after series changes or user input.
+- **Publish redaction and linkage** (remediation S8): an Other allows exactly
+  `title`, `kind`, resolved `coverUrl`, `language` and `ageGroup` (null
+  optionals omitted), never availability or book/private data. Cover IDs
+  use SHA-256(salt + UTF-8(key)), truncated to 16 lowercase hex characters, so
+  canonical non-ASCII series UIDs no longer abort publish. Missing, duplicate,
+  noncanonical or unresolved series links fail safely before cover IO or
+  artifact creation; removed-series cover fallback remains available to live
+  issues.
+- **Magazine and Library UI correctness** (remediation S9): import, merge,
+  restore and real issue hard-delete immediately refresh a kept-alive
+  Magazines list. Filtered-empty results say “No items match these filters.”
+  with independent Clear search / Clear filters recovery; Add/Import appears
+  only for a genuinely empty unfiltered library. Generic detail, scan,
+  remove/delete, lending, missing-row, error and native fallback copy uses
+  Item/item (including `Item #id`), while book-specific and wishlist wording
+  remains unchanged.
+
+### Security
+- Updated Tokio 1.52.3 → **1.54.1** for **RUSTSEC-2026-0386** (`372ad3b`).
+  No Rust source changed in that commit; Rust format, clippy,
+  dependency/advisory checks and release tests passed, followed by green PR
+  OSV and Rust-core checks at `372ad3b`. S11 must rescan the final HEAD.
 
 ### Removed
 - `FindByIsbnUseCase`, `findByIsbnUseCaseProvider` and the library page's

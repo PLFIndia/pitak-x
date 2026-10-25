@@ -2,7 +2,9 @@
 
 - **Branch:** `magazines` (base `main`; remote `origin` =
   `https://github.com/PLFIndia/pitak-x.git`)
-- **Status:** Plan, revision 1 (2026-10-24). Picks up everything
+- **Status (2026-10-25):** G1, N1, N2 and N3 are Done. The separate magazine
+  remediation plan has S0–S10 Done and **S11 next**; **R1 remains blocked**
+  until `magazineIssues.md` S1–S11 are all Done. This plan picks up everything
   `docs/plans/magazines-progress.md` left under *Next session* and *Open
   issues* after S22 (`efa5d06`). Structured like `docs/plans/magazines.md`:
   **discrete sessions**, each executable by an LLM or a human in isolation,
@@ -10,12 +12,13 @@
   file** (there is no separate progress file for this plan).
 - **Authority:** `AGENTS.md` first, then this plan. If a step would violate
   AGENTS.md, stop and record a *Deviation* in Part D instead of complying.
-- **Who can run what:** G1, N1, N2 need only this repository and GitHub
-  Actions. **N3 needs a physical Android device or an Android emulator**
-  (none exists on the maintainer's Mac today — only an iOS simulator).
-  **R1 needs the maintainer** (upload keystore, Play Console, signing key).
-  An LLM runs G1, N1, N2 end to end; for N3 and R1 it prepares and verifies
-  everything up to the step that needs the human, then stops and says so.
+- **Who can run what:** G1, N1 and N2 needed only this repository and GitHub
+  Actions. N3 needed a physical Android device or emulator; at plan-writing
+  time none was available, but N3 later passed on a physical Pixel 8a. The
+  separate remediation S11 has its own Android device requirements. **R1 needs
+  the maintainer** (upload keystore, Play Console, signing key). An LLM can
+  prepare and verify up to a step that needs the human, then must stop and say
+  so.
 
 ---
 
@@ -29,7 +32,9 @@
 2. Read Part D (the log). The first session whose State is not `Done` is
    the one to run, in the order G1 → N1 → N2 → N3 → R1 (G1, N1, N2 are
    independent of each other; N3 depends on nothing in this plan; R1
-   depends on all of them).
+   depends on all of them). Before R1, also confirm every remediation session
+   S1–S11 in `magazineIssues.md` is Done. While that separate plan is
+   incomplete, resume its next session instead of starting R1.
 3. Read `AGENTS.md`, the session's **Read first** list, and the matching
    notes in `docs/plans/magazines-progress.md` (*Next session* and *Open
    issues* — they are the record of why each item exists). Do not read the
@@ -830,9 +835,11 @@ record it (Part D) rather than improvising.
 
 - **Goal:** `main` carries the magazines work and a signed tag feeds both
   stores (RELEASING §6). **The maintainer decides the version**; the plan
-  proposes **`1.6.0+29`** — a minor bump: new user-facing features, schema
-  v5, Pitaka-JSON v4 (`versionCode` 29 is fixed: the fastlane blurbs
-  `29.txt`/`291–293.txt` already exist, and 29 > every code Play has seen).
+  proposes **`1.6.0+29`** — a minor bump: new user-facing features, database
+  schema v7 (v5 introduced kinds on this unreleased branch; v6/v7 are repair
+  migrations), and Pitaka-JSON v4 (`versionCode` 29 is fixed: the fastlane
+  blurbs `29.txt`/`291–293.txt` already exist, and 29 > every code Play has
+  seen).
 - **Depends on:** G1, N1, N2, N3 Done (N3 may be waived by the maintainer
   only in writing in Part D — it is the RELEASING §6.1 step 7 gate), and every
   session S1–S11 in `magazineIssues.md` Done with its regression-test evidence.
@@ -841,38 +848,44 @@ record it (Part D) rather than improvising.
   the steps below only pin values), `tool/release_build.sh` header
   (lines 1–60), `CHANGELOG.md` `[Unreleased]` and the `[1.5.2]` heading
   format, `README.md` lines 9–13.
-- **Baseline:** `full` green on `magazines`; the PR `magazines → main` has
-  every check green (`gh pr checks magazines`).
+- **Baseline:** `magazineIssues.md` S11 is Done; `full` is green on
+  `magazines`; the PR `magazines → main` has every check green at the exact
+  current HEAD (`gh pr checks magazines`), not at `372ad3b` or another earlier
+  pre-remediation commit.
 
 ### Steps (an LLM does 1–6 and stops; the maintainer does 7–11)
 
 1. **Merge to `main` first** (the tag must be on `main`; RELEASING §6.3
    pushes `main` and the tag together). Merge the PR with a merge commit
-   (keeps the S0–S22 history readable) — `gh pr merge <number> --merge`
-   — or `git switch main && git pull --ff-only && git merge --no-ff
-   magazines`. Then `git switch main`. Every following step is on `main`.
+   (keeps the original-plan and remediation history readable) —
+   `gh pr merge <number> --merge` — or `git switch main && git pull --ff-only
+   && git merge --no-ff magazines`. Then `git switch main`. Every following
+   step is on `main`.
 
 2. **Prepare the release commit** (RELEASING §6.1, one commit):
    - `pubspec.yaml`: `version: 1.6.0+29`.
    - `CHANGELOG.md`: rename `## [Unreleased]` to
-     `## [1.6.0] - 2026-10 (tag `1.6.0`, versionCode 29)`; **delete** the
-     italic lead note (its two obligations — goldens, smoke — are done by
-     G1/N3; say so in one line: "Goldens regenerated on Linux (G1); on-device
-     smoke journeys run on <device> (N3)."); keep a fresh, empty
-     `## [Unreleased]` heading above it. Add the line `Release sentinel
+     ``## [1.6.0] - 2026-10 (tag `1.6.0`, versionCode 29)``; **delete** the
+     italic lead note only after S11 is Done. Replace it with one line: "G1
+     Linux goldens and N3 device journeys completed; final remediation golden,
+     device, upgrade and timezone verification completed (S11) at <final SHA>."
+     Keep a fresh, empty `## [Unreleased]` heading above it. Add the line
+     `Release sentinel
      (`tool/release_build.sh --sentinel`): `New magazine title`.` under the
      new heading — the sentinel is the Magazines FAB tooltip / form title
      (`periodicals_page.dart`, `periodical_form_page.dart`), ASCII-only,
      and new in this release. The `.aab` sha256 line is added after step 8.
    - `README.md` line 11: `**1.6.0**` and tag `1.6.0`.
-   - Fastlane: nothing — `29.txt`, `291.txt`, `292.txt`, `293.txt` exist
-     (verify: `wc -c fastlane/metadata/android/en-US/changelogs/29*.txt` →
-     four files, 495 chars each).
+   - Fastlane: nothing — `29.txt`, `291.txt`, `292.txt`, `293.txt` exist.
+     Run the UTF-8 character-count check in `docs/RELEASING.md` §6.1 step 3
+     with versionCode `29`. All four files currently contain 495 characters; the
+     requirement is at most 500, not an exact count and never a byte count.
 
-3. **Gates on the release commit:** `gen` (no diff), `analyze`, `arch`,
-   `full`, and `cargo fmt --check && cargo clippy --all-targets -- -D
-   warnings` in `rust/` (untouched by this work, so they pass as on
-   `main`).
+3. **Gates on the release commit:** `gen` (no diff), `analyze`, `arch` and
+   `full`. From `rust/`, run `cargo fmt --check`, `cargo clippy --all-targets
+   -- -D warnings`, `cargo deny check` and `cargo test --release`. Do not
+   assume Rust matches `main`: the branch contains the Tokio lockfile update
+   and S9's native presentation-copy change.
 
 4. **Purity, both commands** (RELEASING §2; both must print nothing):
 
@@ -884,10 +897,10 @@ record it (Part D) rather than improvising.
      | strings -n 8 | grep -E 'google/android/(play|gms)|firebase|mlkit'
    ```
 
-   The first printed nothing on 2026-10-24 (S22). The second takes minutes
-   (Rust + AOT) and needs the Android NDK r28c the recipe assumes; "inert
-   string constants inside AndroidX CameraX" are the only tolerated hits
-   (RELEASING §2).
+   Earlier S22 / `372ad3b` purity results are historical, not evidence for the
+   release HEAD; rerun both commands now. The second takes minutes (Rust + AOT)
+   and needs the Android NDK r28c the recipe assumes; "inert string constants
+   inside AndroidX CameraX" are the only tolerated hits (RELEASING §2).
 
 5. Commit: `chore(release): 1.6.0+29`. Do **not** tag yet.
 
@@ -954,7 +967,7 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
 | N3 | Done | `95163d8` | 2026-10-24 | Pixel 8a, Android 17 (API 37), arm64-v8a; both journeys passed twice from a cleared install (155 s and 159 s), catalogue kinds first and vault second each time. Test-only fixes: bounded launch wait for the 2 s splash Timer, Drawer-scoped entry finder, `Add borrower` as the persistent vault page's unlocked proof. Analyze/format clean. Debug-only Drift multiple-database warning appeared in the existing restore path; no journey failed |
-| R1 | — | — | — | pre-run 2026-10-24: PR #18 every check green at `372ad3b`; fdroid arm64 release APK built and its dex purity scan found 0 forbidden hits (pre-check only — repeat step 4 on the release commit) |
+| R1 | Blocked | — | 2026-10-25 | Blocked by remediation S11. Historical pre-run 2026-10-24: PR #18 was green at `372ad3b` and an fdroid arm64 APK dex pre-check found 0 forbidden hits; neither is final-SHA evidence, so repeat every check after S11 and on the release commit |
 
 ## Deviations from plan
 
@@ -970,4 +983,9 @@ State ∈ Done · Partial · Blocked. Hash = the session's commit on
 
 ## Open issues / blocked
 
-(none — the N3 device block was cleared on 2026-10-24; see its log row)
+- **Current release hold:** remediation S11 remains Pending after S10. R1 is
+  blocked until S1–S11 are Done and all final-SHA local, CI, golden, device,
+  upgrade, timezone and purity evidence exists.
+- **Original G1–N3 sessions:** no open items; the N3 device block was cleared
+  on 2026-10-24. Those closures and the Tokio advisory fix are preserved, but
+  they do not discharge S11's checks on the remediated tree.

@@ -168,11 +168,33 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
 1. Bump `version: x.y.z+N` in `pubspec.yaml`.
 2. Move the `## [Unreleased]` entries in `CHANGELOG.md` under
    `## [x.y.z] - YYYY-MM (tag x.y.z, versionCode N)`.
-3. Add `fastlane/metadata/android/en-US/changelogs/N.txt` (Play, ≤ 500 chars)
-   and `N1.txt`, `N2.txt`, `N3.txt` (F-Droid, one per ABI).
+3. Add `fastlane/metadata/android/en-US/changelogs/N.txt` (Play, ≤ 500
+   characters) and `N1.txt`, `N2.txt`, `N3.txt` (F-Droid, one per ABI).
+   Verify the limit as UTF-8 text characters, not bytes and not an exact
+   count. Pass the release versionCode as the command's only argument (`29`
+   below; change it for a later release):
+
+   ```bash
+   python3 - 29 <<'PY'
+   from pathlib import Path
+   import sys
+   failed = False
+   changelog_dir = Path('fastlane/metadata/android/en-US/changelogs')
+   for path in sorted(changelog_dir.glob(f'{sys.argv[1]}*.txt')):
+       count = len(path.read_text(encoding='utf-8').rstrip('\n'))
+       print(f'{path}: {count} characters')
+       failed |= count > 500
+   raise SystemExit(1 if failed else 0)
+   PY
+   ```
+
+   The check prints every count, accepts exactly 500, and exits nonzero above
+   500. It must pass all four files.
 4. Update the version in the status note at the top of `README.md`.
 5. Run the quality gates (`CONTRIBUTING.md`) and the purity check (§2).
-6. Walk Library → Vault → Settings once with TalkBack on (5 minutes).
+6. Walk Library → Magazines → Vault → Settings once with TalkBack on
+   (5 minutes), including the series detail, magazine forms, Others form and
+   add sheet.
 7. On-device smoke test on a **cleared** install (it creates the vault, so
    it needs an empty app):
    `adb uninstall dev.khoj.pitaka.fdroid`, then

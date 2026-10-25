@@ -136,6 +136,89 @@ keep serialized projections consistent with normalized details, `.pitabak`
 restore and merge OVERWRITE run shared issue reprojection after series and
 details are written and before commit; unresolved links never invent a series.
 
+## Amendment 2026-10-25 — strict interchange and fail-closed remediation
+
+The remediation kept the W1–W4 format versions and wire keys. It clarified how
+those formats behave when data is ambiguous, corrupt, too large, or non-ASCII.
+
+### Authoritative reads and import reconciliation (S1, S4, S5, S6)
+
+- Display reads remain fail-soft: the Library uses paged fail-soft mapping,
+  while the vault and cover janitor use `getAll()`. Export, backup, publish and
+  merge instead use `getAllForInterchange()`: an unknown stored kind or a known
+  issue missing its detail row returns a typed failure before that corrupt row
+  can become serialization truth. Detail-less issue write-back likewise fails
+  before mutation; it never converts the row into a canonical book.
+- The original W1 / required-test shorthand "v3 files still import unchanged"
+  means the v3 shape remains accepted and an absent kind defaults to book. It
+  does NOT permit a cross-kind replacement: a v3 book whose UID matches a
+  stored issue or Other now refuses the whole import and rolls back.
+- Plain JSON import builds one incoming-canonical-UID → stored-series map
+  inside the existing transaction. Earlier rows in the same file claim their
+  identity first. Same-UID series merge in place using `resolveIncomingCover`
+  and preserve stored `addedDate` / `addedBy` when the file omits them. The
+  same canonical ISSN under another UID resolves to the stored series. New
+  series keep the actual returned row: an existing incoming UID is retained,
+  while an absent one uses the repository-minted UID on that returned row.
+- Every incoming issue is validated, re-anchored to the winning series and
+  validated again. A same-UID cross-kind update is a typed `ValidationFailure`
+  that rolls back the import, not an item merge or an implicit kind change.
+  D6 duplicates between DIFFERENT item UIDs are skipped and counted after
+  re-anchoring, including claims made earlier in the file. A repeated same-UID,
+  same-kind row takes the update branch instead and releases its previous D6
+  claim. Date-only issues retain their additive behavior.
+- Every updated stored series is reprojected LAST, including issues absent
+  from the file. Any failure rolls back series, items, wishlist and staged
+  covers together. Trim-created UID ambiguity is a file-level fatal error in
+  the parser. The shared guard repeats that check for hand-built payloads:
+  plain import checks inside its already-open transaction before catalogue
+  reads/writes, while merge checks before namespace/planning/repository IO.
+- A v4 bundle preserves `items`, `periodicals`, `wishlist` and `warnings` as
+  unmodifiable data. `periodicals` is a third validated top-level collection:
+  a titles-only document is valid, while a malformed or null collection is
+  refused rather than treated as empty. Series covers are validated, staged
+  once per source leaf and retained like item covers; an already-on-device
+  cover kept by a merge does not require a fictitious bundle leaf.
+
+### Writer bounds and truthful restore counters (S5)
+
+- The W2 writer encodes and bound-checks BOTH `item_kinds.json` and
+  `periodicals.json` before scratch-directory, SQLite, or ZIP creation,
+  against the reader's own `ItemDetailsArchiveCodec.maxBytes` and `maxRows`.
+  Equality is accepted; one byte or row more is refused. There is no chunking
+  and no new archive format.
+  The isolate returns plain bytes or a `BackupEntryOverflow` code, and the
+  calling isolate returns `BackupTooLargeFailure` with a safe user message.
+- `issueEntriesDropped` counts raw `issues[]` entries dropped at decode time
+  (malformed, duplicate, or over-cap) and decoded entries never consulted
+  because their UID is absent from `books.db` or belongs to a non-issue row.
+- `issuesDetached` independently counts unique catalogue rows declared as
+  issues but restored as books because no usable detail entry or matching
+  series exists, deduplicated by `bookUid`. Parse-time drops do not seed this
+  row counter. One malformed entry plus its declared row can therefore produce
+  one of each; the units are reported separately, never summed.
+- This supersedes the original W2 shorthand "an issue entry whose uid is not in
+  `books.db` ⇒ detached and counted": that case is an ENTRY drop and creates no
+  detached row. A detachment belongs to a declared issue ROW, not to an entry
+  that never joined one.
+
+### Publish redaction, hashing and linkage (S8)
+
+- W3's Other redaction allows exactly `title`, `kind`, resolved `coverUrl`,
+  `language` and `ageGroup`; null optional values are omitted. Availability,
+  issue data, transliteration and every book-specific/private field are
+  excluded. Book, issue and periodical public-field behavior is unchanged.
+- Cover paths use SHA-256 of `salt || UTF-8(key)`, truncated to the first 16
+  lowercase hexadecimal characters. Periodical keys are domain-separated as
+  `periodical:<uid>`; decimal item ids and other ASCII keys retain their old
+  input bytes and digests. Canonical non-ASCII periodical UIDs are valid input
+  instead of aborting the whole publish.
+- `PublishPeriodicalLinks` builds the one series lookup before cover IO,
+  viewer construction, JSON encoding, manifest save or commit. Missing,
+  blank, noncanonical or duplicate series UIDs and noncanonical/unresolved
+  live-issue links fail closed with a safe `PublishFailure`. Removed series
+  stay in this lookup for D8 cover fallback but publish no top-level entry.
+
 ## Consequences
 
 - **Easier:** every format carries kinds with its existing extension

@@ -1,8 +1,13 @@
 # Magazines remediation — handoff after S9
 
+> **Historical snapshot, superseded as active handoff on 2026-10-25:** S10 is
+> complete. Resume with `magazineIssues.md` **S11**; current status lives in
+> that file's Part D and in `magazines-progress.md`. This document preserves
+> the after-S9 evidence and the original S10 restart instructions.
+
 - **Date:** 2026-10-25
 - **Branch:** `magazines`
-- **Status:** S9 complete. S10 has **not** started.
+- **Status at this snapshot:** S9 complete; S10 had **not** started.
 - **Remediation HEAD:** `518960c` (this handoff is a documentation-only follow-up)
 - **Release state:** R1 remains blocked until `magazineIssues.md` S1–S11 are Done.
 
@@ -179,7 +184,10 @@ The working tree was clean immediately after `518960c`. The database remains at 
 
 Linux golden regeneration, CI-at-final-SHA checks, and Android device journeys are **not claimed here**; they remain S11 work. No macOS golden images were generated or committed. S11 must include the changed unfiltered empty-library image.
 
-## 4. Resume with S10 only
+## 4. Historical restart instruction — S10 (completed)
+
+Do not rerun this session. The following was the restart instruction at the
+after-S9 snapshot:
 
 Start with `magazineIssues.md` **S10 — Reconcile contracts, changelog, and release instructions** (L6 and documentation for S1–S9). Its S1–S9 dependency is complete.
 
@@ -194,7 +202,8 @@ Start with `magazineIssues.md` **S10 — Reconcile contracts, changelog, and rel
 ## 5. Handoff notes
 
 - `magazineIssues.md` Part D is the authoritative session log; this document is the human-readable restart summary. It supersedes the earlier "after S8" text.
-- S0–S9 are Done. S10–S11 remain Pending.
+- Snapshot state: S0–S9 were Done and S10–S11 were Pending. See the banner
+  above and `magazineIssues.md` Part D for current status.
 - The original 26-finding release hold is unchanged. Completing S9 does not make the branch release-ready.
 - Two conventions worth reusing: (a) when a file hits the 500-line guideline, extract a cohesive collaborator instead of adding a ratchet entry (S4/S5/S7/S8 did this); (b) a file-level refusal belongs in `ImportPayload.fatalErrors` / `BackupEntryOverflow`, never in a silently skipped row.
 - Publish linkage uses one validating resolver before any cover or artifact work. Do not replace it with an unchecked map: a missing/ambiguous link must fail closed, while a removed series stays available for its live issues' cover fallback.

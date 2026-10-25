@@ -6,6 +6,43 @@ every session; commit it with the session's commit.**
 
 ## State
 
+- Original magazines plan: **S0–S22 complete**. Post-plan **G1, N1, N2 and
+  N3 are complete**; their logs remain below and in `otherDetails.md`.
+- Magazine remediation (`magazineIssues.md`): **S0–S10 complete; S11 next**.
+  The latest production commit is `518960c` (S9); S10 is documentation-only.
+- Branch: `magazines` — working tree clean after the S10 documentation commit:
+  **yes**. The pre-S10 documentation HEAD was `f072698`.
+- S10 baseline: scoped analysis and formatting clean; **3,046 non-golden tests
+  passed**. S10 changes no production code, tests, schema, or generated files.
+- Current Rust delta from `main`: `rust/Cargo.lock` carries the Tokio security
+  update and `rust/src/vault.rs` carries S9's native presentation-copy change.
+  The older S22 statement that the Rust diff was empty is historical only.
+- Release state: **R1 remains blocked** until every remediation session S1–S11
+  is Done with its evidence. No release version bump, tag, or publish step has
+  been performed.
+
+## Next session
+
+**Run `magazineIssues.md` S11 only — full verification and release handoff.**
+Its dependency on S1–S10 is now complete. Do not treat the earlier G1/N3 runs
+as evidence for the remediated tree.
+
+1. Run generation, analysis, formatting, architecture/migration, the full
+   non-golden suite, Rust and dependency/purity gates required by S11.
+2. Regenerate goldens on Linux from the current pushed SHA, including S9's
+   changed unfiltered empty-library image; never commit macOS-rendered PNGs.
+3. Push every resulting commit and require the PR checks to be green at the
+   exact final SHA, including OSV and the Linux golden step.
+4. Repeat both Android journeys twice from a cleared install and add the S11
+   focused remediation coverage, plus the real v5→v7 upgrade and
+   different-timezone legacy-restore checks. Record device and run evidence.
+5. Only after S11 is Done, resume `otherDetails.md` **R1**. Until then do not
+   merge, bump the release version, tag, upload, or publish.
+
+## Historical S22 handoff (superseded as current guidance)
+
+### State at S22 (historical)
+
 - Last completed session: **S22** (Release hygiene and final verification)
   — **the plan is complete**; every session S0–S22 is Done.
 - Branch: `magazines` — working tree clean: **yes**
@@ -45,7 +82,7 @@ every session; commit it with the session's commit.**
   `full` on macOS is `flutter test --exclude-tags golden`; the golden-only run
   writes diffs to the git-ignored `test/golden/failures/`.
 
-## Next session
+### Original post-S22 next-session notes (historical)
 
 **None — ready for review/merge.** The plan is complete (S0–S22 Done). What
 the reviewer / the `chore(release): x.y.z+29` commit still owes is listed
@@ -1085,6 +1122,12 @@ Rename technique (learned in S1–S4):
 
 ## Open issues / blocked
 
+- **Remediation S11 final verification (current):** Pending. The changed
+  empty-library golden, exact-final-SHA CI, focused Android journeys, real
+  v5→v7 upgrade, and different-timezone restore checks must pass before R1.
+
+### Historical G1 / N1 / N3 closures
+
 - **Golden PNGs pending the Linux reference renderer (verify in CI):**
   Closed by G1 of `docs/plans/otherDetails.md` (commit `e629686`, run
   `40061299190`; PR #18's Linux golden step green).
@@ -1096,6 +1139,9 @@ Rename technique (learned in S1–S4):
   by N1 of `docs/plans/otherDetails.md` (commit `fd40c4e`).
 
 ## Session log
+
+This is the original S0–S22 log. The separate remediation S0–S11 execution log
+is authoritative in `magazineIssues.md` Part D.
 
 | Session | State | Commit | Date | Notes |
 |---------|-------|--------|------|-------|

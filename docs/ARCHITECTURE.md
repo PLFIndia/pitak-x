@@ -6,8 +6,9 @@
 > this file). Individual decisions live in `docs/adr/`. Release mechanics live
 > in `docs/RELEASING.md`.
 >
-> Every fact here was checked against the code on 2026-10-19. When the code
-> changes, change this file in the same PR.
+> The original facts were checked against the code on 2026-10-19; the catalogue
+> contracts were reconciled with the remediation implementation on 2026-10-25.
+> When the code changes, change this file in the same PR.
 
 ---
 
@@ -304,6 +305,28 @@ PARTIAL unique indexes on `magazine_issues`; drift cannot express those, so
 they — and the `periodicals` UNIQUE indexes — are raw SQL in
 `_createIndexesAndFts`, covered by the migration test's raw-object census.
 
+**v6** (ADR 0013, remediation S1) changes no table shape. It canonicalizes
+`periodicals.periodical_uid` and `magazine_issues.periodical_uid` with the
+shared surrounding-whitespace-only trim rule. The repair runs in one
+transaction, precomputes canonical UIDs/final D6 keys, and refuses collisions
+before its first update. A trim-created collision aborts before any write;
+the migration never silently merges identities.
+
+**v7** (ADR 0013/0014, remediation S2) also changes no table shape. It defines
+`magazine_issues.issue_date` / `bound_until` and
+`periodicals.subscription_start` / `subscription_end` as calendar days at
+00:00 UTC. Existing integer columns and wire values remain epoch milliseconds;
+`addedDate`, `removedAt`, loan dates and `exportedAt` remain instants. The
+migration precomputes every conversion and final D6 key before writing and
+aborts on an unrepresentable value or conversion-created collision. A legacy
+value already at UTC midnight is canonical; otherwise its calendar fields in
+the reading device zone are preserved at UTC midnight. This is idempotent, but
+a value that already crossed timezones cannot have its original zone
+recovered. Same-device base projections and FTS are not mass-rebuilt because
+the visible local day is unchanged. `.pitabak` restore and merge/direct
+OVERWRITE instead reproject every stored series before commit, including
+artifacts read in a different timezone.
+
 ### 5.5 `.pitabak` backup archive (manifest schema 1)
 
 A ZIP with Room-shaped SQLite databases (the Kotlin-era format — the writer
@@ -330,9 +353,26 @@ to false** (the `hasX` forward-compat pattern):
   item kind in the Room shape, so a build older than ADR 0013 restores
   magazine issues and other items as plain books (it ignores the two
   kind entries above); a flag-less archive restores exactly as before.
-- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009), 4 MiB per
-  JSON entry, 5000 network rows, every row re-validated, invalid rows dropped
-  and counted in the restore summary.
+- Hostile-input bounds on read: bounded ZIP extraction (ADR 0009); W2
+  `item_kinds.json` / `periodicals.json` entries are capped at 4 MiB of UTF-8
+  bytes and 100,000 rows in each `kinds`, `periodicals`, or `issues`
+  collection (the codec constants are authoritative; equality is accepted).
+  `identity.json` has its own 4 KiB cap; `network.json` has its own 4 MiB /
+  5000-row caps. Rows are revalidated, with invalid rows dropped and counted.
+- The writer mirrors the W2 reader's `maxBytes` / `maxRows`: it encodes and
+  checks both W2 entries before creating a scratch directory, SQLite file, or
+  archive bytes. An entry exactly at a cap is readable; anything larger fails
+  creation with `BackupTooLargeFailure`, never a backup that its own reader
+  would silently downgrade. The worker OUTCOME is plain data only (`Uint8List`
+  or a `BackupEntryOverflow` code), which the calling isolate maps to `Either`.
+- Restore adjustment counters preserve units. `issueEntriesDropped` counts
+  decode-time raw-entry drops and decoded entries left unconsulted because
+  their UID is absent from `books.db` or belongs to a non-issue row.
+  `issuesDetached` independently counts unique rows declared as issues but
+  restored as books for lack of a usable detail entry or matching series,
+  deduplicated by `bookUid`. Parse drops do not seed the row counter, so one
+  malformed entry plus its declared row can yield one of each; the UI reports
+  the different units separately and never sums them.
 
 ### 5.6 Validation bounds for everything fetched or scanned
 
@@ -356,19 +396,69 @@ Refusal reasons are coarse enums that never carry URLs or exception text
 
 ### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
 
-- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**
-  (shipped in the magazines run, S18). Every row in `books[]` gains `kind`
-  (`book` | `magazine-issue` | `other`; absent ⇒ `book`); an issue row
-  carries a nested `issue{}`; the document gains a top-level
-  `periodicals[]`. The keys `books` and `bookUid` keep their names. Older
-  builds refuse a v4 file with the existing "update the app" message (a
-  silent import would drop kinds, P1). An unknown `kind` is skipped and
-  reported, never imported as a book. CSV export gains `Kind`, `Series`,
-  `Volume`, `Issue`, `Issue date`, `Bound until`, `Issue label`.
-- **`books.json`** (published): stays schema **1** — additive `kind` per
-  entry (+ `issue{}`), top-level `periodicals[]` with public fields only
-  (shipped in the magazines run, S20). Older viewers ignore the new keys.
-  The v7 viewer adds the kind facet and groups issues under their series.
+- **Display and interchange reads are deliberately different.** The Library
+  uses paged fail-soft mapping; the vault and cover janitor use fail-soft
+  `getAll()`. Export, backup, publish and merge require
+  `getAllForInterchange()`: an unknown stored kind or a known issue without its
+  detail row returns a typed failure instead of becoming a serialized book.
+  Write-back of such a detail-less issue also fails before mutation, preserving
+  the raw evidence.
+- **Pitaka-JSON** (export / import / merge): `schemaVersion` 3 → **4**. Every
+  row in `books[]` gains `kind` (`book` | `magazine-issue` | `other`; absent
+  ⇒ `book`); an issue row carries a nested `issue{}`; the document gains a
+  top-level `periodicals[]`. The keys `books` and `bookUid` keep their names.
+  Older builds refuse a v4 file with the existing "update the app" message
+  (a silent import would drop kinds, P1). The v3 shape remains accepted and
+  absent kind defaults to book, subject to the cross-kind refusal below. An
+  unknown `kind` is skipped and reported, never imported as a book. CSV export
+  gains `Kind`, `Series`, `Volume`, `Issue`, `Issue date`, `Bound until` and
+  `Issue label`. Issue and subscription dates on these existing integer keys
+  are UTC-midnight calendar days (§5.4); instant fields keep their old meaning.
+- **Plain JSON import reconciles before writing issues.** One transaction
+  builds an incoming-canonical-UID → stored-series map: earlier in-file claims
+  win; same UID merges in place; the same canonical ISSN under another UID
+  maps to the stored series; a new series uses its actual returned row,
+  retaining an incoming UID or using a repository-minted one when absent.
+  Covers use `resolveIncomingCover`; omitted added metadata does not erase
+  local values. Issues are re-anchored and revalidated; every updated series is
+  reprojected LAST. A same-UID cross-kind update refuses
+  the whole import with `ValidationFailure`. D6 duplicates between different
+  item UIDs skip and count, including earlier in-file claims; a repeated
+  same-UID, same-kind row updates instead and releases its previous claim.
+  Date-only issues stay additive. Trim-created UID ambiguity is file-level
+  fatal: plain import checks inside its already-open transaction before
+  catalogue reads/writes, while merge checks before namespace/planning/
+  repository IO.
+- **Merge keeps distinct series distinct.** UID and canonical-ISSN identity
+  precede exact-title fallback, and that fallback is suppressed when both
+  sides have valid, different ISSNs. Re-anchoring and final reprojection use
+  the same issue relationships as import; overwrite revalidates and reprojects
+  the replacement before commit.
+- **`books.json`** (published) stays schema **1**. Older viewers ignore
+  additive keys, and null optional values are omitted. The exact public key
+  sets are:
+  - book: `title`, `kind`, optional `titleTransliteration`, `author`, `isbn`,
+    `publisher`, `publishedYear`, `genre`, `language`, `coverUrl`, `ageGroup`
+    and coarse `availability`;
+  - issue: that same item set plus `issue{periodicalUid, volume, issueNumber,
+    issueDate, boundUntil, label}` (the nested nulls are omitted too);
+  - other: only `title`, `kind`, resolved `coverUrl`, `language` and `ageGroup`
+    — never availability, issue data, transliteration, notes, source, or any
+    book-specific field;
+  - top-level `periodicals[]`: `periodicalUid`, `title`, optional
+    `titleTransliteration`, `issn`, `publisher`, `language`, `coverUrl`,
+    `frequency` and `ageGroup`. Subscription windows, notes, location,
+    source, added metadata, removal metadata and per-device ids stay private.
+- **Publish validates linkage before producing artifacts.** One canonical
+  resolver refuses missing, blank, noncanonical or duplicate series UIDs and
+  noncanonical/unresolved live-issue links before cover IO, viewer/JSON
+  construction, manifest save or commit. Removed series have no top-level
+  entry but remain available to their live issues for cover fallback. Cover
+  paths use SHA-256 of `salt || UTF-8(key)`, truncated to its first 16
+  lowercase hexadecimal characters; periodical keys are domain-separated as
+  `periodical:<uid>`, ASCII digests remain compatible, and non-ASCII UIDs are
+  valid. The v7 viewer adds the kind facet and groups issues under their
+  series when a public series entry is present.
 
 ---
 
@@ -388,6 +478,32 @@ Refusal reasons are coarse enums that never carry URLs or exception text
   ASCII-only).
 - **Merge** is add-only, removal-as-conflict, identity order uid → ISBN →
   fuzzy, single-transaction apply; the plan runs on a worker isolate.
+- **Periodical soft links have one canonical identity.** External UIDs may be
+  non-ASCII; only surrounding whitespace is trimmed. Domain gates, codecs, D6
+  lookups, repositories and companions share that rule, and collisions fail
+  closed rather than silently combining series.
+- **Issue writes are atomic.** Stored-row lookup, series lookup/projection,
+  validation, D6 pre-check and the base/detail write run in one item
+  transaction. Series update/reprojection uses the same shared transaction;
+  periodical hard delete repeats its issue-count guard inside the repository
+  transaction. New issues under a removed series are refused; historical issue
+  edits remain possible, and a removed-series scan routes to detail/restore.
+- **Calendar days are not instants.** Issue/subscription dates use the pure
+  `CalendarDate` rule and UTC calendar fields for arithmetic and display;
+  weekly cadence counts days, monthly cadence clamps calendar months, and a
+  subscription remains `expiringSoon` throughout its stated local end date.
+  `addedDate`, removal/loan timestamps and `exportedAt` remain instants.
+- **Cover display does not transfer cover ownership.** A structural
+  `CoverOwner` is either a catalogue item or a periodical, and downloads dedup
+  by `(owner, URL)`. Materialization re-reads the owner immediately before the
+  write and deletes a newly stored file on a mismatch, read failure, or failed
+  update instead of overwriting newer data. Forms track deliberate cover edits
+  and pending work so Save cannot resurrect a stale cover.
+- **Magazine summaries react to the shared library mutation signal.** Import,
+  merge, restore and issue hard-delete refresh a live Magazines list without a
+  route rebuild; the minute tick exists only for time-derived subscription
+  badges. Filtered-empty and genuinely empty libraries are different states,
+  and generic item flows use kind-neutral Item wording.
 - **PDF text is rendered as shaped images** (correct Devanagari conjuncts;
   consequence: not selectable). Cancel discards — a partial catalogue must
   never pass for a complete one.
@@ -395,7 +511,9 @@ Refusal reasons are coarse enums that never carry URLs or exception text
   https-only cover allow-list mirroring the viewer CSP.
 - **Lookup order:** Open Library → Google Books → in-memory cache; ISBN-10↔13
   retry on double not-found.
-- **Hard delete stays vault-gated**; lending on removed books is refused.
+- **Catalogue-item hard delete stays vault-gated**; periodical-title hard
+  delete uses the issue-count guard instead. Lending on removed items is
+  refused.
 - **One base row per catalogue item of any kind** (`books` table,
   `CatalogueItem`, `kind` column + sealed `ItemDetails`); kind-specific data
   in a per-kind detail table; **the base row is the lendable unit** and **a
