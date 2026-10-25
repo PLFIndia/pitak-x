@@ -30,6 +30,8 @@ import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository
 
 import '../../support/raw_catalogue_rows.dart';
 import '../periodicals/application/periodical_fakes.dart';
+import 'bundle_test_fixture.dart';
+import 's11_interchange_roundtrip_fixture.dart';
 
 class _Books implements CatalogueItemRepository {
   _Books(this._all);
@@ -765,6 +767,75 @@ void main() {
         startsWith("'"),
         reason: 'the series cell must never open as a formula: $row',
       );
+    });
+  });
+
+  group('S11 interchange evidence', () {
+    test('v3 JSON imports books and removed state into real Drift', () async {
+      final fixture = BundleTestFixture();
+      addTearDown(fixture.dispose);
+
+      final summary = await importS11Json(
+        fixture,
+        jsonEncode({
+          'schemaVersion': 3,
+          'exportedAt': 1,
+          'books': [
+            {
+              'bookUid': 'v3-active',
+              'title': 'Legacy active book',
+              'author': 'Legacy Author',
+              'addedDate': 10,
+            },
+            {
+              'bookUid': 'v3-removed',
+              'title': 'Legacy removed book',
+              'addedDate': 20,
+              'removed': true,
+              'removedAt': 21,
+            },
+          ],
+          'wishlist': <dynamic>[],
+        }),
+      );
+      expect(summary.parseErrors, isEmpty);
+      expect(summary.booksAdded, 2);
+
+      final items = (await fixture.books.getAll()).getOrElse(
+        (failure) => fail('item read failed: $failure'),
+      );
+      final byUid = {for (final item in items) item.itemUid!: item};
+      expect(byUid, hasLength(2));
+      expect(byUid['v3-active']!.kind, ItemKind.book);
+      expect(byUid['v3-active']!.details, isNull);
+      expect(byUid['v3-active']!.author, 'Legacy Author');
+      expect(byUid['v3-active']!.removed, isFalse);
+      expect(byUid['v3-removed']!.kind, ItemKind.book);
+      expect(byUid['v3-removed']!.removed, isTrue);
+      expect(byUid['v3-removed']!.removedAt, 21);
+    });
+
+    test('v4 JSON round-trips the complete periodical matrix', () async {
+      final source = BundleTestFixture();
+      final target = BundleTestFixture();
+      addTearDown(source.dispose);
+      addTearDown(target.dispose);
+      await seedS11InterchangeSource(source);
+
+      final exported = await exportS11InterchangeJson(source);
+      expect(
+        (jsonDecode(exported) as Map<String, dynamic>)['schemaVersion'],
+        4,
+      );
+      final summary = await importS11Json(
+        target,
+        padS11LegacyIdentities(exported),
+      );
+      expect(summary.parseErrors, isEmpty);
+      expect(summary.periodicalsAdded, 2);
+      expect(summary.booksAdded, 4);
+
+      await expectS11InterchangeState(target, localCoverPreserved: false);
     });
   });
 }

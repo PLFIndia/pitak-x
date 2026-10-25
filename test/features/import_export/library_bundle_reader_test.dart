@@ -48,7 +48,6 @@ void main() {
     '{"books":"bad"}',
     '{"books":[7]}',
     '{"books":[],"wishlist":[null]}',
-    '{"schemaVersion":999,"books":[]}',
     '{"books":[{"title":"A","coverUrl":"covers/missing.jpg"}]}',
     '{"wishlist":[{"title":"A","coverUrl":"file:///old/missing.jpg"}]}',
     '{"books":[{"title":"A","coverUrl":"covers/../bad.jpg"}]}',
@@ -59,6 +58,34 @@ void main() {
       );
       expect(result.swap().toNullable(), isA<BackupCorruptFailure>());
     });
+  }
+
+  test('a too-new catalogue schema remains a typed update failure', () async {
+    final result = await reader.read(
+      _zip({'library.json': utf8.encode('{"schemaVersion":999,"books":[]}')}),
+    );
+
+    final failure = result.swap().toNullable();
+    expect(failure, isA<SchemaTooNewFailure>());
+    expect((failure! as SchemaTooNewFailure).schemaVersion, 999);
+  });
+
+  for (final json in [
+    '{"schemaVersion":999}',
+    '{"schemaVersion":999,"books":[7]}',
+  ]) {
+    test(
+      'too-new schema takes precedence over malformed collections: $json',
+      () async {
+        final result = await reader.read(
+          _zip({'library.json': utf8.encode(json)}),
+        );
+
+        final failure = result.swap().toNullable();
+        expect(failure, isA<SchemaTooNewFailure>());
+        expect((failure! as SchemaTooNewFailure).schemaVersion, 999);
+      },
+    );
   }
 
   // S5 (H4): `periodicals` is a third valid top-level collection.

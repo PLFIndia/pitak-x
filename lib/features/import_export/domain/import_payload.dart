@@ -6,6 +6,7 @@
 /// ingested (Kotlin D26: no terminal dead-ends).
 library;
 
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
@@ -21,6 +22,7 @@ class ImportPayload {
     this.parseErrors = const [],
     this.fatalErrors = const [],
     this.warnings = const [],
+    this.tooNewSchemaVersion,
   });
 
   /// Catalogue items to import (ids not yet assigned). The Pitaka-JSON key
@@ -56,6 +58,20 @@ class ImportPayload {
   /// refuses a bundle with ANY parse error — a warning must not sink a
   /// bundle.
   final List<String> warnings;
+
+  /// Declared schema version when the file is newer than this build supports.
+  ///
+  /// Typed metadata lets bundle validation preserve the update-required
+  /// refusal instead of inspecting the human-readable parse error or
+  /// misclassifying it as generic corruption.
+  final int? tooNewSchemaVersion;
+
+  /// The typed update-required refusal, or null when the schema is supported.
+  SchemaTooNewFailure? get schemaTooNewFailure {
+    final version = tooNewSchemaVersion;
+    if (version == null) return null;
+    return SchemaTooNewFailure(version);
+  }
 
   /// True when nothing parseable was found.
   bool get isEmpty => items.isEmpty && periodicals.isEmpty && wishlist.isEmpty;

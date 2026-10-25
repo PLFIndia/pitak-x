@@ -23,8 +23,15 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/backup/application/restore_controller.dart';
+import 'package:pitaka/features/library/application/form_cover_controller.dart';
+import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/library/presentation/widgets/form_cover_field.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
+import 'package:pitaka/features/periodicals/domain/value_objects/issn.dart';
 
 /// The vault passphrase every smoke journey uses. Test data on a test
 /// device, not a secret — the point is that the vault round-trips.
@@ -36,6 +43,36 @@ const String smokePassphrase = 'correct horse battery staple';
 /// "Vol 1 No 1" would be refused as a duplicate).
 String smokeStamp() =>
     DateTime.now().millisecondsSinceEpoch.toRadixString(36).toUpperCase();
+
+/// A valid ISSN and matching EAN-13 unique to this [smokeStamp] run.
+///
+/// A fixed ISSN would collide when a developer reruns the suite without
+/// clearing the previous run's soft-removed series. Deriving both values from
+/// the same stamp preserves the existing same-install rerun guarantee.
+({String issn, String barcode}) magazineIdentityForSmoke(String stamp) {
+  final body = (int.parse(stamp, radix: 36) % 10000000).toString().padLeft(
+    7,
+    '0',
+  );
+  var issnSum = 0;
+  for (var i = 0; i < 7; i++) {
+    issnSum += (body.codeUnitAt(i) - 0x30) * (8 - i);
+  }
+  final issnCheckValue = (11 - (issnSum % 11)) % 11;
+  final issnCheck = issnCheckValue == 10 ? 'X' : '$issnCheckValue';
+  final issn = '${body.substring(0, 4)}-${body.substring(4)}$issnCheck';
+
+  final eanBody = '977${body}00';
+  var eanSum = 0;
+  for (var i = 0; i < 12; i++) {
+    final digit = eanBody.codeUnitAt(i) - 0x30;
+    eanSum += i.isEven ? digit : digit * 3;
+  }
+  final barcode = '$eanBody${(10 - (eanSum % 10)) % 10}';
+  expect(Issn.isValid(issn), isTrue);
+  expect(Issn.fromEan13(barcode), issn);
+  return (issn: issn, barcode: barcode);
+}
 
 /// Waits until the Library is visible after `app.main()`.
 ///
@@ -60,19 +97,153 @@ Future<void> waitForLibrary(WidgetTester tester) async {
 /// Scrolls the page's outer list until the widget [finder] describes is
 /// built, then brings it fully on screen. A no-op when it is already there.
 ///
-/// `find.byType(Scrollable).first` is the OUTER list on every page the
-/// journeys scroll (forms, detail pages): a page's own scroll view comes
-/// before the `Scrollable` inside each multi-line `TextField` in tree order.
-Future<void> reveal(WidgetTester tester, Finder finder) async {
+/// By default, `find.byType(Scrollable).first` is the OUTER list on forms and
+/// detail pages: a page's own scroll view comes before the `Scrollable` inside
+/// each multi-line `TextField` in tree order. Pass [scrollable] when another
+/// page (notably Library) has a different primary list.
+Future<void> reveal(
+  WidgetTester tester,
+  Finder finder, {
+  Finder? scrollable,
+}) async {
   if (finder.evaluate().isEmpty) {
-    await tester.scrollUntilVisible(
-      finder,
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
+    final targetScrollable = scrollable ?? find.byType(Scrollable);
+    // A restore can leave the newly pushed page on a loading scaffold for a
+    // few frames. Such a scaffold has no Scrollable yet, so scrolling now
+    // would throw StateError instead of giving the async body time to build.
+    // Keep the candidate finder un-narrowed while waiting: evaluating .first
+    // on an empty finder throws too, so narrow only after the wait succeeds.
+    for (
+      var attempt = 0;
+      attempt < 10 &&
+          finder.evaluate().isEmpty &&
+          targetScrollable.evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+    if (finder.evaluate().isEmpty) {
+      expect(
+        targetScrollable,
+        findsWidgets,
+        reason:
+            'After 10 seconds, no scrollable was available to reveal '
+            '$finder. The target is also absent; the page may still be '
+            'loading or may be in an empty/error state.',
+      );
+      await tester.scrollUntilVisible(
+        finder,
+        200,
+        scrollable: targetScrollable.first,
+      );
+    }
   }
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
+}
+
+Finder _libraryScrollable() => find.descendant(
+  of: find.byType(LibraryPage),
+  matching: find.byType(CustomScrollView),
+);
+
+Future<Finder> _visibleSmokeText(
+  WidgetTester tester,
+  String text, {
+  required bool useLibraryList,
+}) async {
+  final finder = find.text(text);
+  await reveal(
+    tester,
+    finder,
+    scrollable: useLibraryList ? _libraryScrollable() : null,
+  );
+  return finder;
+}
+
+/// Reveals [text] in the current lazy list and asserts that it exists.
+///
+/// Set [useLibraryList] on LibraryPage: its search field is a Scrollable
+/// before the catalogue CustomScrollView, so the default target cannot build
+/// an off-screen catalogue row. Vault borrower/profile lists use the default.
+Future<void> expectSmokeTextVisible(
+  WidgetTester tester,
+  String text, {
+  bool useLibraryList = false,
+}) async {
+  final finder = await _visibleSmokeText(
+    tester,
+    text,
+    useLibraryList: useLibraryList,
+  );
+  expect(finder, findsWidgets);
+}
+
+/// Reveals [text] in the current lazy list, taps it, and lets navigation
+/// settle.
+///
+/// [useLibraryList] has the same Library-specific meaning as in
+/// [expectSmokeTextVisible].
+Future<void> tapSmokeTextVisible(
+  WidgetTester tester,
+  String text, {
+  bool useLibraryList = false,
+}) async {
+  final finder = await _visibleSmokeText(
+    tester,
+    text,
+    useLibraryList: useLibraryList,
+  );
+  await tester.tap(finder.first);
+  await tester.pumpAndSettle();
+}
+
+/// Reveals and asserts [text] in Library's catalogue CustomScrollView.
+Future<void> expectLibraryTextVisible(WidgetTester tester, String text) =>
+    expectSmokeTextVisible(tester, text, useLibraryList: true);
+
+/// Reveals and taps [text] in Library's catalogue CustomScrollView.
+Future<void> tapLibraryTextVisible(WidgetTester tester, String text) =>
+    tapSmokeTextVisible(tester, text, useLibraryList: true);
+
+/// Waits for the automatic Magazines refresh to expose [expectedId] for
+/// [title].
+///
+/// Restore can replace per-device ids while an old summary remains visible
+/// during reload. Tapping that stale row opens a detail page for a row that no
+/// longer exists. Waiting for the new id proves the shared refresh completed;
+/// it does not force a refresh or bypass the production behavior under test.
+Future<void> waitForMagazineRowId(
+  WidgetTester tester,
+  String title,
+  int expectedId,
+) async {
+  final container = appContainer(tester);
+  for (var attempt = 0; attempt < 10; attempt++) {
+    final entries = container.read(periodicalsControllerProvider).valueOrNull;
+    if (entries != null) {
+      for (final entry in entries) {
+        if (entry.periodical.title == title &&
+            entry.periodical.id == expectedId) {
+          await tester.pumpAndSettle();
+          return;
+        }
+      }
+    }
+    await tester.pump(const Duration(seconds: 1));
+  }
+  final entries = container.read(periodicalsControllerProvider).valueOrNull;
+  final idsByTitle = <String, int>{
+    if (entries != null)
+      for (final entry in entries) entry.periodical.title: entry.periodical.id,
+  };
+  expect(
+    idsByTitle[title],
+    expectedId,
+    reason:
+        'Magazines did not refresh $title to id $expectedId; '
+        'visible ids were $idsByTitle',
+  );
 }
 
 /// Types [text] into the first field labelled [label], scrolling to it first.
@@ -153,19 +324,41 @@ ProviderContainer appContainer(WidgetTester tester) {
   return ProviderScope.containerOf(element, listen: false);
 }
 
-/// Builds a `.pitabak` through the app's own use case and restores it.
+/// Stores a real local cover and selects it in the visible [FormCoverField].
+///
+/// Camera and crop are separate Android activities, so an unattended widget
+/// test cannot complete them. This enters at the same post-crop boundary as
+/// the real field: the production controller downscales and writes valid image
+/// bytes, then the field's own callback gives the reference to the parent
+/// form. Form save, backup and rendering therefore still run end to end.
+Future<String> attachSmokeCover(WidgetTester tester) async {
+  final fieldFinder = find.byType(FormCoverField);
+  await reveal(tester, fieldFinder);
+  final rawPng = Uint8List.fromList(
+    img.encodePng(img.Image(width: 60, height: 90)),
+  );
+  final result = await appContainer(
+    tester,
+  ).read(formCoverControllerProvider.notifier).storeCapture(rawPng);
+  final coverRef = result.getOrElse(
+    (failure) => fail('cover storage failed on device: $failure'),
+  );
+  tester.widget<FormCoverField>(fieldFinder).onChanged(coverRef);
+  await tester.pumpAndSettle();
+  expect(tester.widget<FormCoverField>(fieldFinder).coverRef, coverRef);
+  return coverRef;
+}
+
+/// Builds a complete `.pitabak` through the app's own backup use case.
 ///
 /// The Create-backup PAGE ends in the OS share sheet, which an integration
-/// test cannot complete; the point here is that FFI, SQLCipher and real
-/// file IO run end to end, so the archive is built and restored through the
-/// providers the pages themselves use. The archive carries the vault, so the
-/// restore needs [smokePassphrase] (in a wipeable buffer — `utf8.encode`
-/// returns a fresh, writable `Uint8List`).
-Future<void> backupAndRestore(WidgetTester tester) async {
-  final container = appContainer(tester);
-  final createUseCase = await container.read(
-    createBackupUseCaseProvider.future,
-  );
+/// test cannot complete. Calling the provider still exercises FFI, SQLCipher
+/// and real file IO, and returns bytes that can be restored after a deliberate
+/// destructive interval.
+Future<Uint8List> createSmokeBackup(WidgetTester tester) async {
+  final createUseCase = await appContainer(
+    tester,
+  ).read(createBackupUseCaseProvider.future);
   final backupResult = await createUseCase();
   // The use case returns the archive bytes plus honest content flags
   // (identity / network list included or not); only the bytes matter here.
@@ -175,23 +368,41 @@ Future<void> backupAndRestore(WidgetTester tester) async {
     isNotNull,
     reason: 'backup creation failed on device: $backupResult',
   );
+  return backup!.bytes;
+}
 
-  final restorer = await container.read(restoreBackupProvider.future);
+/// Restores [archiveBytes] through the production RestoreController.
+///
+/// The controller applies the real post-success invalidations and owns/wipes
+/// the passphrase. Holding a listener keeps its terminal state readable long
+/// enough to assert success; without it an autoDispose idle state could look
+/// like a successful restore.
+Future<void> restoreSmokeBackup(
+  WidgetTester tester,
+  Uint8List archiveBytes,
+) async {
+  final container = appContainer(tester);
+  final subscription = container.listen(restoreControllerProvider, (_, _) {});
+  final controller = container.read(restoreControllerProvider.notifier);
   final secret = SecretBytes(Uint8List.fromList(utf8.encode(smokePassphrase)));
   try {
-    final restoreResult = await restorer.restore(
-      archiveBytes: backup!.bytes,
-      passphrase: secret,
-    );
+    await controller.restore(archiveBytes: archiveBytes, passphrase: secret);
+    final state = container.read(restoreControllerProvider);
     expect(
-      restoreResult.isRight(),
+      state.hasValue && state.valueOrNull != null,
       isTrue,
-      reason: 'restore failed on device: $restoreResult',
+      reason: 'restore failed on device: $state',
     );
   } finally {
-    secret.dispose();
+    subscription.close();
   }
-  // Restore switched the active data generation; let every provider that
-  // watched the old one rebuild before the journey reads the screens again.
+  // Restore switched the active data generation; let every invalidated
+  // provider rebuild before the journey reads the screens again.
   await tester.pumpAndSettle();
+}
+
+/// Creates and immediately restores a backup for the original smoke journeys.
+Future<void> backupAndRestore(WidgetTester tester) async {
+  final backup = await createSmokeBackup(tester);
+  await restoreSmokeBackup(tester, backup);
 }

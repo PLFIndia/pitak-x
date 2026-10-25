@@ -24,6 +24,7 @@ import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 
+import '../../support/raw_catalogue_rows.dart';
 import '../library/replacement_harness.dart';
 import '../library/replacement_test_guard.dart';
 import '../periodicals/application/periodical_fakes.dart';
@@ -358,6 +359,79 @@ void main() {
     expect(repo.updateCalls, 0);
     expect(periodicals.rows.values.single.title, 'Local series');
     expect(periodicals.calls, isEmpty, reason: 'planner never starts');
+  });
+
+  group('S11 — real-Drift interchange corruption at the merge boundary', () {
+    for (final rawKind in ['hologram', 'magazine-issue']) {
+      final description = rawKind == 'hologram'
+          ? 'an unknown kind'
+          : 'a detail-less issue';
+      test('$description fails before planning or writing any rows', () async {
+        final fixture = BundleTestFixture();
+        addTearDown(fixture.dispose);
+        final rawId = await seedRawCatalogueRow(
+          fixture.database,
+          title: 'Raw $rawKind evidence',
+          kind: rawKind,
+          coverUrl: 'covers/raw.jpg',
+        );
+        var plannerCalls = 0;
+        final useCase = MergeLibraryUseCase(
+          jsonParser: const PitakaJsonImporter(),
+          bookRepo: fixture.books,
+          periodicalRepo: fixture.periodicals,
+          namespace: _FakeNamespace(libraryId: matchingId),
+          replacementGuard: FakeReplacementGuard(),
+          planner: (local, incoming, localPeriodicals, incomingPeriodicals) {
+            plannerCalls++;
+            return planMergeInline(
+              local,
+              incoming,
+              localPeriodicals,
+              incomingPeriodicals,
+            );
+          },
+        );
+
+        final result = await useCase.call(
+          exportJson(
+            libraryId: matchingId,
+            books: [
+              {'bookUid': 'incoming-book', 'title': 'Must not land'},
+            ],
+            periodicals: [
+              {'periodicalUid': 'incoming-series', 'title': 'Must not land'},
+            ],
+          ),
+        );
+
+        final failure = result.getLeft().toNullable();
+        expect(
+          failure,
+          rawKind == 'hologram'
+              ? isA<UnsupportedItemKindFailure>()
+              : isA<StorageFailure>(),
+        );
+        expect(plannerCalls, 0, reason: 'the corrupt read stops the merge');
+        final stored = await (fixture.database.select(
+          fixture.database.books,
+        )..where((row) => row.id.equals(rawId))).getSingle();
+        expect(stored.kind, rawKind);
+        expect(stored.title, 'Raw $rawKind evidence');
+        expect(stored.coverUrl, 'covers/raw.jpg');
+        expect(await fixture.database.select(fixture.database.books).get(), [
+          stored,
+        ]);
+        expect(
+          await fixture.database.select(fixture.database.magazineIssues).get(),
+          isEmpty,
+        );
+        expect(
+          await fixture.database.select(fixture.database.periodicals).get(),
+          isEmpty,
+        );
+      });
+    }
   });
 
   group('N10-c — the plan is computed through the injected planner', () {

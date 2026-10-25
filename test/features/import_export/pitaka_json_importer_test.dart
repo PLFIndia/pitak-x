@@ -122,6 +122,10 @@ void main() {
       final payload = importer.parse(json);
       expect(payload.isEmpty, isTrue);
       expect(payload.parseErrors.single, contains('newer version'));
+      expect(
+        payload.parseErrors.single,
+        contains('Update the app before importing'),
+      );
     });
 
     test('tolerant legacy age token (age_11_16 → above-10)', () {
@@ -609,6 +613,10 @@ void main() {
         );
         expect(payload.isEmpty, isTrue);
         expect(payload.parseErrors.single, contains('newer version'));
+        expect(
+          payload.parseErrors.single,
+          contains('Update the app before importing'),
+        );
       });
 
       test('a v3 file carries no periodicals and parses as before', () {

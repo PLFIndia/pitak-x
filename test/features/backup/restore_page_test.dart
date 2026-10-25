@@ -209,9 +209,13 @@ Uint8List _vaultArchive() {
   return Uint8List.fromList(ZipEncoder().encode(a)!);
 }
 
-Uint8List _archive({required bool withVault, int exportedAt = 123}) {
+Uint8List _archive({
+  required bool withVault,
+  int exportedAt = 123,
+  int schemaVersion = 1,
+}) {
   final manifest = jsonEncode({
-    'schemaVersion': 1,
+    'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
     'hasBooks': true,
     'hasWishlist': true,
@@ -381,6 +385,28 @@ void main() {
       isFalse,
     );
     expect(find.text('Passphrase'), findsNothing);
+  });
+
+  testWidgets('a newer backup schema asks for an update before any restore', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      wrap(_archive(withVault: false, schemaVersion: 99)),
+    );
+    await pick(tester);
+
+    expect(
+      find.text(
+        'This backup was made by a newer version of the app and can’t be '
+        'restored here. Please update first.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining('valid Pitak backup'), findsNothing);
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).enabled,
+      isFalse,
+    );
   });
 
   testWidgets('M05: an oversized pick is refused before it is read', (

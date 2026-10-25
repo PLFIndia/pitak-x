@@ -26,6 +26,10 @@ final class ImportBundle {
     ImportPayload payload,
     Map<String, Uint8List> covers,
   ) {
+    final schemaTooNewFailure = payload.schemaTooNewFailure;
+    if (schemaTooNewFailure != null) {
+      return left(schemaTooNewFailure);
+    }
     if (payload.parseErrors.isNotEmpty || payload.fatalErrors.isNotEmpty) {
       return left(const BackupCorruptFailure('Invalid bundle catalogue.'));
     }

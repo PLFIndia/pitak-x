@@ -1,10 +1,16 @@
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
+import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -13,6 +19,10 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+
+import '../../support/raw_catalogue_rows.dart';
+import '../import_export/bundle_test_fixture.dart';
+import '../library/replacement_harness.dart';
 
 class _FakeCreds implements PublishCredentialReader {
   _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
@@ -105,6 +115,33 @@ class _CapturingApi implements GitHubGitDataApi {
   }
 }
 
+/// The aggregate DI port needs the auth/admin methods too. They are not part
+/// of these tests, so any unexpected call fails instead of hitting the network.
+final class _ControllerApi extends _CapturingApi implements GitHubApi {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected GitHub operation: $invocation');
+}
+
+final class _ControllerCredentials extends _FakeCreds
+    implements PublishCredentialStore {
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected credential write: $invocation');
+}
+
+final class _EmptyNetworkRepository implements NetworkRepository {
+  @override
+  Future<List<NetworkLibrary>> loadAll() async => const [];
+
+  @override
+  Future<int> count() async => 0;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected network write: $invocation');
+}
+
 void main() {
   CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
@@ -138,19 +175,24 @@ void main() {
     removed: removed,
   );
 
-  CatalogueItem issue({int id = 2, String? cover, String uid = 'uid-1'}) =>
-      CatalogueItem(
-        id: id,
-        title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
-        publisher: 'Chandamama Publications',
-        coverUrl: cover,
-        details: IssueOf(
-          periodicalUid: uid,
-          volume: 249,
-          issueNumber: 10,
-          issueDate: 1759276800000,
-        ),
-      );
+  CatalogueItem issue({
+    int id = 2,
+    String? cover,
+    String uid = 'uid-1',
+    bool removed = false,
+  }) => CatalogueItem(
+    id: id,
+    title: 'Chandamama — Vol 249 No 10 (Oct 2026)',
+    publisher: 'Chandamama Publications',
+    coverUrl: cover,
+    removed: removed,
+    details: IssueOf(
+      periodicalUid: uid,
+      volume: 249,
+      issueNumber: 10,
+      issueDate: 1759276800000,
+    ),
+  );
 
   List<int> encode(PublishExport e) =>
       utf8.encode(const JsonEncoder().convert(e.toJson()));
@@ -324,11 +366,15 @@ void main() {
     expect(json, isNot(contains('Shelf')));
   });
 
-  test('removed books are excluded entirely', () async {
+  test('removed books and issues are excluded entirely', () async {
     final api = _CapturingApi();
     const removed = CatalogueItem(id: 9, title: 'Gone', removed: true);
+    final removedIssue = issue(
+      id: 10,
+      removed: true,
+    ).copyWith(title: 'Removed issue');
     await makeUseCase(api, _MemManifest()).call(
-      books: [book(), removed],
+      books: [book(), removed, removedIssue],
       periodicals: const [],
       activeLoanCounts: const {},
       encodeBooksJson: encode,
@@ -338,6 +384,7 @@ void main() {
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
     );
     expect(json, isNot(contains('Gone')));
+    expect(json, isNot(contains('Removed issue')));
   });
 
   test('unchanged files are not re-uploaded (incremental)', () async {
@@ -642,6 +689,16 @@ void main() {
             title: 'Carrom board',
             details: OtherItemOf(),
           ),
+          const CatalogueItem(
+            id: 4,
+            title: 'Chandamama — Jan–Feb 2026',
+            details: IssueOf(
+              periodicalUid: 'uid-1',
+              issueDate: 1767225600000,
+              boundUntil: 1769904000000,
+              label: 'Winter bound volume',
+            ),
+          ),
         ],
         periodicals: [series()],
         activeLoanCounts: const {},
@@ -661,6 +718,13 @@ void main() {
         'issueDate': 1759276800000,
       });
       expect(books[2]['kind'], 'other');
+      expect(books[3]['kind'], 'magazine-issue');
+      expect(books[3]['issue'], {
+        'periodicalUid': 'uid-1',
+        'issueDate': 1767225600000,
+        'boundUntil': 1769904000000,
+        'label': 'Winter bound volume',
+      });
     });
 
     test(
@@ -784,6 +848,57 @@ void main() {
         covers.single.path,
       );
     });
+
+    test(
+      'a remote series cover is fetched once and shared with its issue',
+      () async {
+        const source = 'https://covers.openlibrary.org/x.jpg';
+        final api = _CapturingApi();
+        final requested = <String>[];
+        final result =
+            await makeUseCase(
+              api,
+              _MemManifest(),
+              fetchRemoteCover: (url) async {
+                requested.add(url);
+                return utf8.encode('REMOTE-SERIES-IMG');
+              },
+            ).call(
+              books: [issue()],
+              periodicals: [series(cover: source)],
+              activeLoanCounts: const {},
+              encodeBooksJson: encode,
+              libraryJson: null,
+            );
+
+        expect(result, isA<PublishSuccess>());
+        expect(requested, [source]);
+        final covers = api.committed!
+            .where((file) => file.path.startsWith('covers/'))
+            .toList();
+        expect(covers, hasLength(1));
+        expect(covers.single.bytes, utf8.encode('REMOTE-SERIES-IMG'));
+        expect(covers.single.upload, isTrue);
+        final salt = ascii.encode('salt-1234567890');
+        expect(
+          covers.single.path,
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg',
+        );
+        final payload = committedPayload(api);
+        expect(
+          (payload['periodicals'] as List<dynamic>)
+              .cast<Map<String, dynamic>>()
+              .single['coverUrl'],
+          covers.single.path,
+        );
+        expect(
+          (payload['books'] as List<dynamic>)
+              .cast<Map<String, dynamic>>()
+              .single['coverUrl'],
+          covers.single.path,
+        );
+      },
+    );
 
     test('an issue with its own cover publishes its own salted path', () async {
       final api = _CapturingApi();
@@ -1007,5 +1122,122 @@ void main() {
         privateDiagnostic: 'duplicate-private-uid',
       );
     });
+  });
+
+  group('S11 — real-Drift interchange corruption at the publish boundary', () {
+    for (final rawKind in ['hologram', 'magazine-issue']) {
+      final description = rawKind == 'hologram'
+          ? 'an unknown kind'
+          : 'a detail-less issue';
+      test('$description refuses before artifact IO or commit', () async {
+        final fixture = BundleTestFixture();
+        addTearDown(fixture.dispose);
+        final rawId = await seedRawCatalogueRow(
+          fixture.database,
+          title: 'Raw $rawKind evidence',
+          kind: rawKind,
+          coverUrl: 'covers/raw.jpg',
+        );
+        final integrityRead = await fixture.books.getAllForInterchange();
+        final integrityFailure = integrityRead.getLeft().toNullable();
+        expect(
+          integrityFailure,
+          rawKind == 'hologram'
+              ? isA<UnsupportedItemKindFailure>()
+              : isA<StorageFailure>(),
+          reason:
+              'the raw fixture must exercise the intended strict-read guard',
+        );
+
+        final api = _ControllerApi();
+        final manifest = _MemManifest();
+        final settings = ReplacementSettings()
+          ..id = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+        var localCoverReads = 0;
+        var remoteCoverFetches = 0;
+        var viewerBuilds = 0;
+        var publishedFileFetches = 0;
+        final container = ProviderContainer(
+          overrides: [
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => fixture.books,
+            ),
+            periodicalRepositoryProvider.overrideWith(
+              (ref) async => fixture.periodicals,
+            ),
+            gitHubApiProvider.overrideWithValue(api),
+            publishCredentialStoreProvider.overrideWithValue(
+              _ControllerCredentials(),
+            ),
+            publishManifestStoreProvider.overrideWith((ref) async => manifest),
+            publishCoverIdsProvider.overrideWithValue(
+              PublishCoverIds(_FixedSalt()),
+            ),
+            settingsRepositoryProvider.overrideWith((ref) async => settings),
+            networkRepositoryProvider.overrideWith(
+              (ref) async => _EmptyNetworkRepository(),
+            ),
+            activeLoanCountsProvider.overrideWith((ref) => null),
+            publishLocalCoverReaderProvider.overrideWith(
+              (ref) async => (source) async {
+                localCoverReads++;
+                return utf8.encode('LOCAL-IMG');
+              },
+            ),
+            remoteCoverFetcherProvider.overrideWithValue((_) async {
+              remoteCoverFetches++;
+              return null;
+            }),
+            publishedFileFetcherProvider.overrideWithValue((_) async {
+              publishedFileFetches++;
+              return null;
+            }),
+            viewerHtmlFactoryProvider.overrideWithValue(({
+              required libraryName,
+              required contact,
+              required sharing,
+            }) async {
+              viewerBuilds++;
+              return utf8.encode('<html></html>');
+            }),
+            clockProvider.overrideWithValue(() => 1000),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final result = await container
+            .read(publishControllerProvider.notifier)
+            .publish();
+
+        expect(result, isA<PublishFailure>());
+        expect(
+          (result as PublishFailure).reason,
+          'Could not read the library. Nothing was published. '
+          'Please try again.',
+        );
+        expect(localCoverReads, 0);
+        expect(remoteCoverFetches, 0);
+        expect(viewerBuilds, 0);
+        expect(publishedFileFetches, 0);
+        expect(api.committed, isNull);
+        expect(manifest.saved, isNull);
+        expect(container.exists(appDocsDirProvider), isFalse);
+
+        final stored = await (fixture.database.select(
+          fixture.database.books,
+        )..where((row) => row.id.equals(rawId))).getSingle();
+        expect(stored.kind, rawKind);
+        expect(stored.title, 'Raw $rawKind evidence');
+        expect(stored.coverUrl, 'covers/raw.jpg');
+        expect(
+          await fixture.database.select(fixture.database.books).get(),
+          hasLength(1),
+        );
+        expect(
+          await fixture.database.select(fixture.database.magazineIssues).get(),
+          isEmpty,
+        );
+      });
+    }
   });
 }

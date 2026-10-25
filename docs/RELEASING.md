@@ -175,21 +175,14 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    below; change it for a later release):
 
    ```bash
-   python3 - 29 <<'PY'
-   from pathlib import Path
-   import sys
-   failed = False
-   changelog_dir = Path('fastlane/metadata/android/en-US/changelogs')
-   for path in sorted(changelog_dir.glob(f'{sys.argv[1]}*.txt')):
-       count = len(path.read_text(encoding='utf-8').rstrip('\n'))
-       print(f'{path}: {count} characters')
-       failed |= count > 500
-   raise SystemExit(1 if failed else 0)
-   PY
+   python3 tool/check_fastlane_changelog_chars.py 29
    ```
 
-   The check prints every count, accepts exactly 500, and exits nonzero above
-   500. It must pass all four files.
+   The checked-in check prints every count, accepts exactly 500, and exits
+   nonzero above 500, when any of the four required files is missing, or when
+   an unexpected prefix-matching file is present. Its unit tests cover those
+   file-set cases, the boundary, and multibyte text whose byte count exceeds
+   its character count; CI runs the tests and checks all four release files.
 4. Update the version in the status note at the top of `README.md`.
 5. Run the quality gates (`CONTRIBUTING.md`) and the purity check (§2).
 6. Walk Library → Magazines → Vault → Settings once with TalkBack on

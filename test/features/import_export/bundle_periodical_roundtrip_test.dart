@@ -12,6 +12,7 @@ import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 
 import 'bundle_test_fixture.dart';
+import 's11_interchange_roundtrip_fixture.dart';
 
 /// Magazine remediation S5: a v4 bundle must round-trip its series, their
 /// issues and their cover bytes. Every test here uses the REAL reader, the
@@ -264,4 +265,35 @@ void main() {
     expect(row.kind, ItemKind.book);
     expect(row.details, isNot(isA<IssueOf>()));
   });
+
+  test(
+    'S11 v4 ZIP round-trips the complete matrix and cover ownership',
+    () async {
+      final source = BundleTestFixture();
+      addTearDown(source.dispose);
+      await seedS11InterchangeSource(source);
+      final exported = await exportS11InterchangeJson(source);
+      expect(
+        (jsonDecode(exported) as Map<String, dynamic>)['schemaVersion'],
+        4,
+      );
+
+      final bytes = _zip({
+        'library.json': utf8.encode(padS11LegacyIdentities(exported)),
+        s11LocalSeriesCoverEntry: s11LocalSeriesCoverBytes,
+      });
+      final bundle = (await const LibraryBundleReader().read(
+        bytes,
+      )).getOrElse((failure) => fail('reader refused the v4 ZIP: $failure'));
+      final summary = (await fixture.apply(
+        bundle.payload,
+        images: bundle.covers,
+      )).getOrElse((failure) => fail('ZIP import failed: $failure'));
+      expect(summary.parseErrors, isEmpty);
+      expect(summary.periodicalsAdded, 2);
+      expect(summary.booksAdded, 4);
+
+      await expectS11InterchangeState(fixture, localCoverPreserved: true);
+    },
+  );
 }

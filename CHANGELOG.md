@@ -207,6 +207,13 @@ smoke results are completed evidence, not substitutes for this final pass._
   remove/delete, lending, missing-row, error and native fallback copy uses
   Item/item (including `Item #id`), while book-specific and wishlist wording
   remains unchanged.
+- **Actionable newer-artifact refusal** (verification S11): plain JSON and v4
+  ZIP files from a newer Pitak schema return a typed refusal with “Update the
+  app before importing”, including malformed newer bundles. They can no longer
+  fall through to a false Import complete or an unexplained generic corrupt-file
+  message. The Fastlane character check is now a checked-in tool with CI coverage
+  for Unicode text, the exact 500-character boundary, over-limit input, and
+  incomplete or unexpected file sets.
 
 ### Security
 - Updated Tokio 1.52.3 → **1.54.1** for **RUSTSEC-2026-0386** (`372ad3b`).

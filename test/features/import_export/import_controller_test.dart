@@ -154,6 +154,43 @@ void main() {
   });
 
   test(
+    'controller surfaces SchemaTooNewFailure for too-new JSON bytes',
+    () async {
+      final books = _MemBookRepo();
+      final periodicals = FakePeriodicals();
+      final useCase = ImportLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: books,
+        wishlistRepo: _MemWishlistRepo(),
+        periodicalRepo: periodicals,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final json = jsonEncode({
+        'schemaVersion': 99,
+        'books': [
+          {'bookUid': 'new-book', 'title': 'New book'},
+        ],
+        'wishlist': <dynamic>[],
+      });
+      await container
+          .read(importControllerProvider.notifier)
+          .importBytes(Uint8List.fromList(utf8.encode(json)));
+
+      final state = container.read(importControllerProvider);
+      expect(state.error, isA<SchemaTooNewFailure>());
+      expect((state.error! as SchemaTooNewFailure).schemaVersion, 99);
+      expect(books.stored, isEmpty);
+      expect(periodicals.rows, isEmpty);
+    },
+  );
+
+  test(
     'ImportController surfaces AsyncError on a unrecognized failure path',
     () async {
       // Unrecognized format returns a Right(summary with null format), not an

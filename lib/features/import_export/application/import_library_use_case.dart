@@ -195,7 +195,13 @@ final class ImportLibraryUseCase {
   Future<Either<Failure, ImportSummary>> _applyPayload(
     ImportPayload payload,
     ImportFormat format,
-  ) => _bookRepo.runInTransaction(() => _applyInside(payload, format));
+  ) async {
+    final schemaTooNewFailure = payload.schemaTooNewFailure;
+    if (schemaTooNewFailure != null) {
+      return left<Failure, ImportSummary>(schemaTooNewFailure);
+    }
+    return _bookRepo.runInTransaction(() => _applyInside(payload, format));
+  }
 
   Future<Either<Failure, ImportSummary>> _applyInside(
     ImportPayload payload,

@@ -187,6 +187,41 @@ void main() {
   });
 
   group('ImportLibraryUseCase', () {
+    test('typed too-new JSON refusal precedes summary and writes', () async {
+      final periodicals = FakePeriodicals()
+        ..seed(const Periodical(title: 'Keep series'));
+      bookRepo.stored.add(const CatalogueItem(title: 'Keep book'));
+      wishlistRepo.stored.add(const WishlistBook(title: 'Keep wish'));
+      final scopedUseCase = ImportLibraryUseCase(
+        jsonParser: const PitakaJsonImporter(),
+        bookRepo: bookRepo,
+        wishlistRepo: wishlistRepo,
+        periodicalRepo: periodicals,
+      );
+
+      final result = await scopedUseCase.importText(
+        jsonEncode({
+          'schemaVersion': 99,
+          'periodicals': [
+            {'periodicalUid': 'new-series', 'title': 'New series'},
+          ],
+          'books': [
+            {'bookUid': 'new-book', 'title': 'New book'},
+          ],
+          'wishlist': [
+            {'title': 'New wish'},
+          ],
+        }),
+      );
+
+      final failure = result.getLeft().toNullable();
+      expect(failure, isA<SchemaTooNewFailure>());
+      expect((failure! as SchemaTooNewFailure).schemaVersion, 99);
+      expect(bookRepo.stored.single.title, 'Keep book');
+      expect(wishlistRepo.stored.single.title, 'Keep wish');
+      expect(periodicals.rows.values.single.title, 'Keep series');
+    });
+
     test('unrecognized format is a failure summary', () async {
       final s = ok(await useCase.importText('random text'));
       expect(s.format, isNull);

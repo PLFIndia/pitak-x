@@ -11,6 +11,7 @@ import 'dart:typed_data';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/bounded_file_read.dart';
 import 'package:pitaka/features/import_export/application/import_controller.dart';
 import 'package:pitaka/features/import_export/application/import_library_use_case.dart';
@@ -18,6 +19,14 @@ import 'package:pitaka/features/import_export/domain/bounded_zip_extractor.dart'
     show ZipLimits, hasZipLocalFileHeader;
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/domain/import_limits.dart';
+
+String _importErrorMessage(Object error) {
+  if (error is SchemaTooNewFailure) {
+    return 'This file was created by a newer version of Pitak. '
+        'Update the app before importing.';
+  }
+  return "Couldn't import that. Please check the file and try again.";
+}
 
 /// Screen to import a library/wishlist from pasted text or a chosen file.
 class ImportPage extends ConsumerStatefulWidget {
@@ -168,8 +177,8 @@ class _ImportPageState extends ConsumerState<ImportPage> {
             ),
           state.when(
             loading: () => const SizedBox.shrink(),
-            error: (_, _) => Text(
-              "Couldn't import that. Please check the file and try again.",
+            error: (error, _) => Text(
+              _importErrorMessage(error),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
             data: (summary) =>

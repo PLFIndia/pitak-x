@@ -272,6 +272,36 @@ void main() {
     expect(find.text('Books added: 1'), findsOneWidget);
   });
 
+  testWidgets(
+    'too-new pasted JSON shows update guidance, not Import complete',
+    (tester) async {
+      final books = _MemBookRepo();
+      await tester.pumpWidget(page(useCaseWith(books)));
+      await tester.pumpAndSettle();
+
+      final json = jsonEncode({
+        'schemaVersion': 99,
+        'books': [
+          {'bookUid': 'new-book', 'title': 'New book'},
+        ],
+        'wishlist': <dynamic>[],
+      });
+      await tester.enterText(find.byType(TextField), json);
+      await tester.tap(find.text('Import text'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Import complete'), findsNothing);
+      expect(
+        find.text(
+          'This file was created by a newer version of Pitak. '
+          'Update the app before importing.',
+        ),
+        findsOneWidget,
+      );
+      expect(books.stored, isEmpty);
+    },
+  );
+
   testWidgets('N11: leaving the page mid-import neither crashes nor loses '
       'the import', (tester) async {
     // The import outlives the page (the controller keep-alives the run and

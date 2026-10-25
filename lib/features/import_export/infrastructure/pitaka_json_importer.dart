@@ -87,7 +87,10 @@ final class PitakaJsonImporter implements Importer, LibraryJsonParser {
       final msg =
           'This file was created by a newer version of Pitak '
           '(schema v$schemaVersion). Update the app before importing.';
-      return ImportPayload(parseErrors: [msg]);
+      return ImportPayload(
+        parseErrors: [msg],
+        tooNewSchemaVersion: schemaVersion,
+      );
     }
 
     final books = <CatalogueItem>[];
