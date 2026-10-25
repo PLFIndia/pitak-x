@@ -40,6 +40,7 @@ library;
 import 'dart:convert';
 
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/text/json_nesting_depth.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
@@ -64,8 +65,9 @@ abstract final class LibraryDescriptorCodec {
   /// Max JSON nesting accepted. A legitimate descriptor nests 3 deep
   /// (root → members array → entry); 32 is generous headroom that still
   /// stops a `[[[[…` stack-overflow bomb. The scan is string-aware (see
-  /// [_maxDepth]): brackets inside a quoted name must not count, or a
-  /// library named "Books {{{{" would be refused as a bomb (review Lows).
+  /// [JsonNestingDepth.maxDepthOf]): brackets inside a quoted name must not
+  /// count, or a library named "Books {{{{" would be refused as a bomb
+  /// (review Lows).
   static const int maxJsonDepth = 32;
 
   /// Parses descriptor bytes, enforcing every §3.1 rule. Never throws.
@@ -77,7 +79,7 @@ abstract final class LibraryDescriptorCodec {
     final Object? parsed;
     try {
       final text = utf8.decode(bytes);
-      if (_maxDepth(text) > maxJsonDepth) {
+      if (JsonNestingDepth.maxDepthOf(text) > maxJsonDepth) {
         return const Left(DescriptorRefusal.invalid);
       }
       parsed = jsonDecode(text);
@@ -134,45 +136,6 @@ abstract final class LibraryDescriptorCodec {
   }
 
   static String? _asNullableString(Object? v) => v is String ? v : null;
-
-  /// Deepest open-bracket nesting in [text], skipping string contents.
-  /// `_maxDepth` tracks in-string/escaped state so a `[` inside a quoted
-  /// value (a name, a URL) never moves the depth counter; a malformed,
-  /// never-terminated string simply stops the count — jsonDecode rejects
-  /// the document right after, so the scan stays conservative.
-  static int _maxDepth(String text) {
-    var depth = 0;
-    var max = 0;
-    var inString = false;
-    var escaped = false;
-    for (var i = 0; i < text.length; i++) {
-      final c = text.codeUnitAt(i);
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (c == 0x5C) {
-          // backslash: the next code unit is escaped
-          escaped = true;
-        } else if (c == 0x22) {
-          // closing quote
-          inString = false;
-        }
-        continue;
-      }
-      if (c == 0x22) {
-        // opening quote
-        inString = true;
-      } else if (c == 0x5B || c == 0x7B) {
-        // '[' or '{'
-        depth++;
-        if (depth > max) max = depth;
-      } else if (c == 0x5D || c == 0x7D) {
-        // ']' or '}'
-        if (depth > 0) depth--;
-      }
-    }
-    return max;
-  }
 
   static (GeoPoint?, LocationPrecision?) _decodeLocation(Object? raw) {
     if (raw == null) return (null, null); // absent ⇒ no pin, not invalid

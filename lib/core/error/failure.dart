@@ -212,3 +212,47 @@ final class UnexpectedFailure extends Failure {
   /// Internal-only reason; never surface to the user.
   final String debugReason;
 }
+
+/// Why reading one published `books.json` catalogue failed (ADR 0015).
+///
+/// Coarse on purpose (AGENTS §6.2): the reason carries no URL, host, HTTP
+/// status, response text, item title, or raw exception. The UI maps each value
+/// to one plain, safe sentence; a developer diagnostic that needs more detail
+/// goes to the debug log, never into this failure.
+enum PublishedCatalogueFailureReason {
+  /// The site URL failed the `BookmarkUrl` allow-list (scheme, userinfo, host).
+  disallowedUrl,
+
+  /// A redirect pointed outside the saved library's origin or directory.
+  redirectRefused,
+
+  /// More redirect hops than the viewer follows.
+  tooManyRedirects,
+
+  /// The host answered, but not with a 2xx catalogue.
+  httpStatus,
+
+  /// The body exceeded the bounded catalogue cap.
+  tooLarge,
+
+  /// The whole request exceeded its abortable deadline.
+  timedOut,
+
+  /// Connection reset, DNS failure, TLS error, or any other transport fault.
+  transport,
+
+  /// Bytes arrived but were not a readable catalogue.
+  invalid,
+}
+
+/// A published catalogue could not be read (network domain, ADR 0015).
+///
+/// A *newer declared schema is not a failure*: those bytes decode into a
+/// `PublishedCatalogue` with `hasNewerSchema` set and a visible warning.
+final class PublishedCatalogueFailure extends Failure {
+  /// Creates the failure for [reason].
+  const PublishedCatalogueFailure(this.reason);
+
+  /// Coarse, safe-to-map cause.
+  final PublishedCatalogueFailureReason reason;
+}

@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": 1760000000000,
+  "books": [
+    {
+      "title": "The Water Margin",
+      "kind": "book",
+      "titleTransliteration": "Shuihu Zhuan",
+      "author": "Shi Nai'an",
+      "isbn": "9780140447194",
+      "publisher": "Penguin",
+      "publishedYear": 1976,
+      "genre": "Classics",
+      "language": "English",
+      "coverUrl": "covers/water-margin.jpg",
+      "ageGroup": "above-15",
+      "availability": "available"
+    },
+    {
+      "title": "Chandamama — Vol 249 No 10 (Oct 2026)",
+      "kind": "magazine-issue",
+      "issue": {
+        "periodicalUid": "chandamama",
+        "volume": 249,
+        "issueNumber": 10,
+        "issueDate": 1791072000000,
+        "label": "Dasara special"
+      },
+      "language": "Telugu",
+      "coverUrl": "https://covers.openlibrary.org/b/id/123-L.jpg",
+      "ageGroup": "above-6",
+      "availability": "out"
+    },
+    {
+      "title": "Chandamama — 2025 bound volume",
+      "kind": "magazine-issue",
+      "issue": {
+        "periodicalUid": "chandamama",
+        "volume": 248,
+        "issueDate": 1735689600000,
+        "boundUntil": 1767139200000
+      },
+      "language": "Telugu"
+    },
+    {
+      "title": "Kannada-English Picture Dictionary",
+      "kind": "other",
+      "language": "Kannada",
+      "coverUrl": "covers/dictionary.jpg",
+      "ageGroup": "AGE_6_10"
+    }
+  ],
+  "periodicals": [
+    {
+      "periodicalUid": "chandamama",
+      "title": "Chandamama",
+      "publisher": "Chandamama",
+      "language": "Telugu",
+      "frequency": "monthly",
+      "issn": "0009-4838",
+      "coverUrl": "covers/chandamama.jpg",
+      "ageGroup": "above-6"
+    }
+  ]
+}
