@@ -3,11 +3,13 @@
 /// Three tabs:
 ///  - **Libraries** — every library you care about (migrated bookmarks, card
 ///    scans, discoveries), distance-sorted when this library publishes a pin
-///    of its own, each row tappable to open its published site externally.
-///    Refresh (button or pull) is the ONLY thing that reads other libraries'
-///    descriptors — nothing happens in the background (D11). Two buttons sit
-///    bottom-right: "Add bookmark" saves a library by its web address, and
-///    "Add member" scans another library's card in person.
+///    of its own. Tapping a row opens that library's published catalogue in a
+///    native, read-only page (ADR 0015); the browser is only reached from the
+///    viewer's explicit "Open in browser" action. Refresh (button or pull) is
+///    the ONLY thing that reads other libraries' descriptors — nothing happens
+///    in the background (D11). Two buttons sit bottom-right: "Add bookmark"
+///    saves a library by its web address, and "Add member" scans another
+///    library's card in person.
 ///  - **Map** — the saved libraries as pins (§5.9). Gated behind the OSM
 ///    tiles consent: no tile request ever leaves the device until the user
 ///    accepts. The map body lives in `network_map_page.dart`.
@@ -26,19 +28,30 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/add_member_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
+import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/add_library_dialog.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_refresh_bar.dart';
+import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 
 /// The library-network screen.
 class NetworkPage extends ConsumerWidget {
   /// Creates the page. [initialTab] selects the opening tab — the home
   /// screen's map button lands straight on the Map tab (1).
-  const NetworkPage({super.key, this.initialTab = 0});
+  /// [publishedSiteOpener] is the viewer's injectable browser seam (tests
+  /// record launches).
+  const NetworkPage({
+    super.key,
+    this.initialTab = 0,
+    this.publishedSiteOpener = const PublishedSiteOpener(),
+  });
 
   /// The tab to open on (0 = Libraries, 1 = Map, 2 = My card).
   final int initialTab;
+
+  /// The browser hand-off seam forwarded to the published-catalogue viewer.
+  final PublishedSiteOpener publishedSiteOpener;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -56,8 +69,12 @@ class NetworkPage extends ConsumerWidget {
             ],
           ),
         ),
-        body: const TabBarView(
-          children: [_LibrariesTab(), NetworkMapGate(), _MyCardTab()],
+        body: TabBarView(
+          children: [
+            _LibrariesTab(opener: publishedSiteOpener),
+            const NetworkMapGate(),
+            const _MyCardTab(),
+          ],
         ),
       ),
     );
@@ -66,7 +83,20 @@ class NetworkPage extends ConsumerWidget {
 
 /// The saved-libraries list.
 class _LibrariesTab extends ConsumerWidget {
-  const _LibrariesTab();
+  const _LibrariesTab({required this.opener});
+
+  /// The browser seam forwarded to the viewer route.
+  final PublishedSiteOpener opener;
+
+  /// Opens the native published-catalogue viewer for [row]. Deliberately NOT
+  /// `launchUrl`: the row tap must never leave the app (ADR 0015 V1).
+  void _openRow(BuildContext context, NetworkLibrary row) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => PublishedCataloguePage(row: row, opener: opener),
+      ),
+    );
+  }
 
   /// Opens the scan flow. Nothing to do on return: `AddMemberController`
   /// re-reads the window the moment a member is saved, so the list is fresh
@@ -204,6 +234,7 @@ class _LibrariesTab extends ConsumerWidget {
                         final row = rows[i];
                         return NetworkLibraryTile(
                           row: row,
+                          onOpen: () => _openRow(context, row),
                           onRemove: () => _remove(context, ref, row),
                           onConfirmMembership: () => _decide(
                             context,
@@ -282,7 +313,7 @@ class _InfoNote extends StatelessWidget {
               "until you tap Refresh, which reads each library's published "
               'details (name, optional map pin, hub links). A hub adds '
               'members by scanning their library card in person; tapping a '
-              'library opens its published catalogue in your browser.',
+              'library opens its published catalogue inside Pitak.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),

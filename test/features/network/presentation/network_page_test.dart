@@ -8,12 +8,16 @@ import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
+import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../support/a11y.dart';
 
@@ -34,6 +38,8 @@ void main() {
     WidgetTester tester, {
     String? publishedUrl,
     Map<String, Object> prefs = const {},
+    PublishedSiteOpener? opener,
+    Map<String, PublishedCatalogue> catalogues = const {},
   }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3;
@@ -47,8 +53,23 @@ void main() {
           descriptorFetcherProvider.overrideWithValue(
             (url) async => fetchScript(url),
           ),
+          for (final entry in catalogues.entries)
+            publishedCatalogueFetcherProvider(entry.key).overrideWithValue(
+              (url, {abortTrigger}) async => Right(entry.value),
+            ),
+          // The viewer's engine pass runs in an isolate in production; a
+          // widget test cannot settle an animating spinner while a real
+          // isolate is still starting, so run the pure engine inline.
+          publishedCatalogueQueryRunnerProvider.overrideWithValue(
+            (catalogue, query) async =>
+                PublishedQueryEngine.apply(catalogue, query),
+          ),
         ],
-        child: const MaterialApp(home: NetworkPage()),
+        child: MaterialApp(
+          home: NetworkPage(
+            publishedSiteOpener: opener ?? const PublishedSiteOpener(),
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -546,6 +567,90 @@ void main() {
       expect(find.text('Row 199'), findsOneWidget);
     });
   });
+
+  group('native viewer navigation (ADR 0015 V1)', () {
+    PublishedCatalogue tinyCatalogue() => PublishedCatalogue(
+      declaredSchemaVersion: 1,
+      items: const [
+        PublishedCatalogueItem(
+          sourceIndex: 0,
+          title: 'Published Book',
+          kind: PublishedItemKind.book,
+        ),
+      ],
+      periodicals: const [],
+    );
+
+    for (final source in NetworkSource.values) {
+      testWidgets(
+        'a ${source.name} row opens the native viewer and launches nothing',
+        (tester) async {
+          const rowUrl = 'https://a.github.io/one/';
+          repo.rows = [
+            NetworkLibrary(
+              id: 1,
+              siteUrl: rowUrl,
+              name: 'First Library',
+              source: source,
+            ),
+          ];
+          final launcher = _RecordingLauncher();
+          await pumpPage(
+            tester,
+            opener: PublishedSiteOpener(launch: launcher.launch),
+            catalogues: {rowUrl: tinyCatalogue()},
+          );
+
+          await tester.tap(
+            find.widgetWithText(NetworkLibraryTile, 'First Library'),
+          );
+          await tester.pumpAndSettle();
+
+          // The viewer, not the browser.
+          expect(find.byTooltip('Reload catalogue'), findsOneWidget);
+          expect(find.text('Published Book'), findsOneWidget);
+          expect(launcher.calls, isEmpty, reason: 'normal tap never launches');
+
+          // Only the explicit action leaves the app.
+          await tester.tap(find.byTooltip('Open in browser'));
+          await tester.pump();
+          expect(launcher.calls, hasLength(1));
+          expect(launcher.calls.single.toString(), rowUrl);
+          expect(launcher.modes.single, LaunchMode.externalApplication);
+        },
+      );
+    }
+
+    testWidgets('back returns to the saved list', (tester) async {
+      const rowUrl = 'https://a.github.io/one/';
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: rowUrl, name: 'First Library'),
+      ];
+      await pumpPage(tester, catalogues: {rowUrl: tinyCatalogue()});
+      await tester.tap(
+        find.widgetWithText(NetworkLibraryTile, 'First Library'),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Reload catalogue'), findsOneWidget);
+
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Reload catalogue'), findsNothing);
+      expect(find.text('First Library'), findsOneWidget);
+    });
+  });
+}
+
+/// A browser-launch recorder shared by the viewer-navigation tests.
+final class _RecordingLauncher {
+  final List<Uri> calls = [];
+  final List<LaunchMode> modes = [];
+
+  Future<bool> launch(Uri url, LaunchMode mode) async {
+    calls.add(url);
+    modes.add(mode);
+    return true;
+  }
 }
 
 /// In-memory repository fake; mutations really mutate so every invalidation
