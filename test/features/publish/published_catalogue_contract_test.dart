@@ -1,10 +1,12 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_kind.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
@@ -197,5 +199,40 @@ void main() {
     final json = export.toJson();
     final row = (json['books']! as List).single as Map<String, dynamic>;
     expect(row['kind'], ItemKind.book.token);
+  });
+
+  test('the bundled web viewer and the native engine agree on the SHARED '
+      'fixture (grouping, order, titles)', () async {
+    // The compatibility contract users actually see: the same payload rendered
+    // by the published site and by the native viewer must show the same rows,
+    // groups and order. The fixture is `test/fixtures/published_catalogue/
+    // full_v1.json`; the Node harness executes the REAL inline viewer script.
+    final fixture = File('test/fixtures/published_catalogue/full_v1.json');
+    final decoded = codec.decode(fixture.readAsBytesSync()).toNullable()!;
+    final native = PublishedQueryEngine.apply(
+      decoded,
+      const PublishedCatalogueQuery(),
+    );
+    final nativeRows = [
+      for (final entry in native.entries)
+        switch (entry) {
+          PublishedItemEntry(:final item) => {'item': item.title},
+          PublishedSeriesGroup(:final series, :final issues) => {
+            'group': series.title,
+            'issues': [for (final issue in issues) issue.title],
+          },
+        },
+    ];
+
+    final result = await Process.run('node', [
+      'test/features/publish/published_catalogue_parity_harness.js',
+      fixture.path,
+    ]);
+    expect(
+      result.exitCode,
+      0,
+      reason: 'viewer harness failed:\n${result.stdout}\n${result.stderr}',
+    );
+    expect(jsonDecode(result.stdout as String), nativeRows);
   });
 }
