@@ -527,6 +527,64 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('a large catalogue builds rows lazily as they scroll', (
+      tester,
+    ) async {
+      final many = <PublishedCatalogueItem>[
+        for (var i = 0; i < 200; i++) item(i, title: 'Bulk Row $i'),
+      ];
+      makeContainer(_immediate(catalogueOf(many)));
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      final built = tester
+          .widgetList<Text>(find.textContaining('Bulk Row '))
+          .length;
+      expect(
+        built,
+        lessThan(60),
+        reason: 'an eager list would build all 200 rows at once',
+      );
+
+      final scrollable = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Bulk Row 199'),
+        600,
+        scrollable: scrollable.first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Bulk Row 199'), findsOneWidget);
+    });
+
+    testWidgets('background/resume causes zero additional fetches', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      makeContainer(pending.call);
+      await pumpViewer(tester);
+      pending.completeLatest(catalogue);
+      await tester.pumpAndSettle();
+      expect(pending.calls, hasLength(1));
+
+      // The app-lock gate paints over the route; the route itself stays
+      // mounted, so a pause/resume cycle must not refetch anything.
+      // Flutter's lifecycle machine requires the full walked sequence.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(pending.calls, hasLength(1));
+      expect(find.text('The Water Margin'), findsOneWidget);
+    });
+
     testWidgets('meets accessibility guidelines', (tester) async {
       makeContainer(_immediate(catalogue));
       await pumpViewer(tester);

@@ -126,8 +126,11 @@ class PublishedCatalogueItemPage extends StatelessWidget {
   }
 }
 
-/// One "Label: value" line. Uses `SelectableText` for values so a user can
-/// copy an ISBN without any edit affordance.
+/// One "Label: value" line.
+///
+/// Plain `Text`, deliberately: a `SelectableText` becomes a read-only text
+/// field in the semantics tree (28 dp tall), which fails the 48 dp tap-target
+/// accessibility guideline without adding an action this read-only page needs.
 class _DetailField extends StatelessWidget {
   const _DetailField({required this.label, required this.value});
 
@@ -138,7 +141,7 @@ class _DetailField extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -151,9 +154,7 @@ class _DetailField extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(
-            child: SelectableText(value, style: theme.textTheme.bodyMedium),
-          ),
+          Expanded(child: Text(value, style: theme.textTheme.bodyMedium)),
         ],
       ),
     );

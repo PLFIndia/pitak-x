@@ -5,6 +5,8 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_item_page.dart';
 
+import '../../../support/a11y.dart';
+
 /// The read-only detail page (ADR 0015 V2, viewer plan S4): every decoded
 /// public field is shown, and there is NO action that would mutate local data.
 void main() {
@@ -146,5 +148,44 @@ void main() {
     expect(find.text('2025-01-01'), findsOneWidget);
     expect(find.text('Last issue'), findsOneWidget);
     expect(find.text('2025-12-31'), findsOneWidget);
+  });
+
+  testWidgets('meets accessibility guidelines', (tester) async {
+    await pumpItem(
+      tester,
+      const PublishedCatalogueItem(
+        sourceIndex: 0,
+        title: 'The Water Margin',
+        kind: PublishedItemKind.book,
+        author: "Shi Nai'an",
+        language: 'English',
+        ageGroup: AgeGroup.above10,
+        availability: PublishedAvailability.available,
+      ),
+    );
+    await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('meets accessibility guidelines in dark theme', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          theme: ThemeData.dark(),
+          home: const PublishedCatalogueItemPage(
+            item: PublishedCatalogueItem(
+              sourceIndex: 0,
+              title: 'The Water Margin',
+              kind: PublishedItemKind.book,
+            ),
+            siteUrl: 'https://kadugodi.github.io/pitak/',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await expectMeetsA11yGuidelines(tester);
   });
 }
