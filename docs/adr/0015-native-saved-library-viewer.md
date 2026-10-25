@@ -104,6 +104,13 @@ library's current published `books.json`.** Concretely (plan
   plain immutable class with a small `copyWith`, so no new generated-file
   class enters the tree. Immutability — the actual requirement — is
   unchanged, and `select`-based rebuild scoping still applies.
+- **Golden PNGs are a release blocker, not part of the code change.** The
+  viewer's two goldens must be rendered by the Linux `update_goldens`
+  workflow; a macOS-rendered PNG is forbidden, so the names/renders land with
+  the PNGs rather than leaving the always-on existence guard red.
+- **Device evidence is tracked, not faked.** The 20 000-row decode/query
+  budget and the lazy-list assertion are automated; the real-device
+  measurement and TalkBack walk are steps in `docs/RELEASING.md` §6.1.
 
 ## Consequences
 

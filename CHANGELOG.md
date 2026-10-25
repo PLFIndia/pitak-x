@@ -14,6 +14,26 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Native published-catalogue viewer** (ADR 0015, plan `appViewer_plan.md`):
+  tapping any saved Library-network row (bookmark, card or discovered) opens
+  that library's published `books.json` in a read-only Flutter page instead of
+  the browser. A defensive schema-1 reader (`PublishedCatalogueCodec`,
+  `PublishedItemReader`) treats every byte as hostile: byte/depth/row caps,
+  exact kind and age tokens, sparse `other`/unknown projections, last-wins
+  duplicate series handling with visible counts. Origin + directory policy
+  (`PublishedSiteUrlPolicy`) applies to the catalogue and same-site covers on
+  every redirect hop; a viewer-owned, caller-abortable HTTP client (64 MiB
+  typed cap inside a 66 MiB outer guard) fetches once per explicit open; JSON
+  decode and the filter/sort/group pass run in worker isolates. UI: search
+  (120 ms debounce), kind/language facets, three stable sorts (published order
+  is the default — never "Recently added"), series grouping, read-only detail,
+  persistent newer-schema and identity-conflict warnings, and an explicit
+  **Open in browser** fallback. Covers are memory-only (100 entries / 16 MiB
+  LRU), consent-gated for BOTH origin classes, downscaled off the UI isolate,
+  and discarded on reload/exit. No new dependency, no schema/backup/manifest
+  change, no WebView, no import. `NetworkMapPage`'s "Open site" stays external.
+
 ## [1.6.0] - 2026-10 (tag `1.6.0`, versionCode 29)
 
 G1 Linux goldens and N3 device journeys completed; final remediation golden,

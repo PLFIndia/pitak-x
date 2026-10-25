@@ -149,7 +149,9 @@ What it refuses, in order (each is a hard check that fails closed):
    (`pub get --enforce-lockfile` — the gate CI and the F-Droid recipe run).
 3. A `CHANGELOG.md` without a `## [x.y.z]` heading for the version being built.
 4. A missing `android/key.properties`.
-5. A non-clean tree: it runs `flutter clean` itself, then `pub get` again.
+5. Stale Flutter build outputs: it runs `flutter clean` itself, then `pub get`
+   again. This is **not** a Git-worktree check — uncommitted source changes are
+   not refused, so build only from the reviewed release commit (§6.1).
 6. After the build, the **artefact**: signature valid; signer certificate
    equals the upload keystore's; bundled package/versionCode/versionName
    equal `pubspec.yaml`; the `--sentinel` string is present in the arm64
@@ -185,13 +187,19 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    its character count; CI runs the tests and checks all four release files.
 4. Update the version in the status note at the top of `README.md`.
 5. Run the quality gates (`CONTRIBUTING.md`) and the purity check (§2).
-6. Walk Library → Magazines → Vault → Settings once with TalkBack on
-   (5 minutes), including the series detail, magazine forms, Others form and
-   add sheet.
+6. Walk Library → Magazines → Vault → Settings → Library network once with
+   TalkBack on (5 minutes), including the series detail, magazine forms,
+   Others form, add sheet, and the native published-catalogue viewer (search,
+   filter, sort, detail, browser fallback).
 7. On-device smoke test on a **cleared** install (it creates the vault, so
    it needs an empty app):
    `adb uninstall dev.khoj.pitaka.fdroid`, then
    `fvm flutter test integration_test --flavor fdroid -d <device>`.
+   The suite includes `published_catalogue_smoke_test.dart` (ADR 0015): it
+   adds a uniquely named bookmark through the real dialog/Drift, opens the
+   native viewer, searches/filters, opens the read-only detail, returns,
+   reloads once, checks the injected browser hand-off and removes the row.
+   It uses fake catalogue/cover ports, so it needs **no** live network.
 8. Commit.
 
 ### 6.2 Google Play
@@ -241,14 +249,16 @@ Recipe facts worth knowing:
   precompiled-binary key, so cargokit's download path is disabled and the
   Rust core is cross-compiled on the build server (`Precompiled binaries are
   disabled` in the log). No prebuilt `.so`/`.a` is committed.
-- **Rust lives in `/opt/rust`.** F-Droid runs `sudo:` as root and
-  `prebuild:`/`build:` as the unprivileged build user; a `rustup` in root's
-  `$HOME` would be invisible. The recipe installs to `/opt/rust`
-  (`RUSTUP_HOME`, `CARGO_HOME`, `--no-modify-path`), `chmod`s it, and
-  re-exports the vars in `build:`.
+- **Rust comes from the distribution's `rustup` package.** The current recipe
+  installs it with `apt-get` and runs `rustup default 1.96.0` in each
+  split-ABI Flutter/Rust build entry's `prebuild:` block, then adds the
+  Android target. It does **not**
+  install under `/opt/rust`, set `RUSTUP_HOME` or `CARGO_HOME`, or chmod a
+  shared toolchain; those older instructions were removed when the recipe
+  changed.
 - Toolchain the recipe assumes — keep the app in sync: Flutter from `.fvmrc`
   (checked out from the `flutter@stable` srclib at that exact version),
-  NDK r28c, Gradle 8.14, Kotlin 2.2.20, Rust stable (`rust-version` in
+  NDK r28c, Gradle 8.14, Kotlin 2.2.20, Rust 1.96.0 (`rust-version` in
   `rust/Cargo.toml`), Android targets
   `armv7-linux-androideabi aarch64-linux-android x86_64-linux-android`.
 - Output paths are `build/app/outputs/apk/fdroid/release/app-fdroid-<abi>-release.apk`.

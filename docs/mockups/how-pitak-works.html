@@ -12,7 +12,6 @@
     --surface:#FBF8FF; --surface-low:#F5F2FA; --surface-high:#E9E7EF; --surface-highest:#E3E1EC;
     --on-surface:#1B1B21; --on-surface-variant:#46464F; --outline:#767680; --outline-variant:#C7C5D0;
     --error:#BA1A1A; --error-container:#FFDAD6; --on-error-container:#410002; --green:#2E7D32;
-    --annot:#B3261E;
   }
   *{box-sizing:border-box}
   html,body{margin:0;min-height:100%;background:#ECE9F1;font-family:Roboto,"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--on-surface)}
@@ -118,12 +117,6 @@
   .logo{width:48px;height:48px;border-radius:12px;background:var(--primary-container);display:grid;place-items:center;font-size:22px;color:var(--on-primary-container)}
   .dhead .name{font-size:22px}
   .dlist{flex:1;overflow-y:auto}
-  .pill{font-size:10px;font-weight:700;color:#fff;background:var(--annot);border-radius:6px;padding:2px 6px;letter-spacing:.5px}
-  /* annotation pills: hidden unless <body> carries show-annot (a different
-     class name on purpose — `.annot` on <body> hid the whole page) */
-  .annot{display:none}
-  body.show-annot .annot{display:inline-block}
-
   /* dialogs */
   .dlg{position:absolute;inset:0;background:rgba(0,0,0,.32);display:none;z-index:30;align-items:center;justify-content:center;padding:24px}
   .dlg.on{display:flex}
@@ -143,19 +136,9 @@
   .book .cover{width:40px;height:56px;border-radius:4px;background:linear-gradient(135deg,#c5cae9,#7986cb);flex:none}
   .book .t{font-size:15px}.book .a{font-size:13px;color:var(--on-surface-variant)}
 
-  /* ---------- reviewer notes panel ---------- */
-  .notes{width:360px;background:#fff;border-radius:16px;padding:20px 22px;font-size:14px;line-height:1.5;box-shadow:0 6px 24px rgba(0,0,0,.08)}
-  .notes h2{font-size:18px;margin:0 0 10px;font-weight:600}
-  .notes h3{font-size:14px;margin:18px 0 6px;font-weight:600;color:var(--primary)}
-  .notes ol,.notes ul{padding-left:18px;margin:0}
-  .notes li{margin:6px 0}
-  .notes label{display:flex;gap:8px;align-items:center;margin:8px 0;cursor:pointer}
-  .notes select,.notes input[type=text]{font:inherit;padding:4px 6px;border:1px solid var(--outline-variant);border-radius:6px}
-  .notes .muted{color:var(--on-surface-variant);font-size:13px}
-  kbd{border:1px solid #bbb;border-bottom-width:2px;border-radius:4px;padding:0 5px;font-size:12px;background:#f7f7f7}
 </style>
 </head>
-<body class="show-annot">
+<body>
 <div class="stage">
 
 <!-- =============================== PHONE =============================== -->
@@ -175,9 +158,9 @@
       <div class="book"><div class="cover" style="background:linear-gradient(135deg,#f8bbd0,#e91e63)"></div><div><div class="t">Train to Pakistan</div><div class="a">Khushwant Singh</div></div></div>
       <div class="book"><div class="cover" style="background:linear-gradient(135deg,#b3e5fc,#039be5)"></div><div><div class="t">Samskara</div><div class="a">U. R. Ananthamurthy</div></div></div>
       <div class="book"><div class="cover" style="background:linear-gradient(135deg,#d7ccc8,#795548)"></div><div><div class="t">The Guide</div><div class="a">R. K. Narayan</div></div></div>
-      <p class="small" style="padding:16px 16px 0">Tap <b>☰</b> (top-left) to open the drawer. The new entry is marked.</p>
+      <p class="small" style="padding:16px 16px 0">Tap <b>☰</b> (top-left), then choose <b>How Pitak works</b>.</p>
     </div>
-    <div class="fabs"><button class="fab" onclick="toast('Add book — exists in the app')">＋ &nbsp;Add book</button></div>
+    <div class="fabs"><button class="fab" title="Add to library" onclick="toast('Add to library: Add book · Add magazine issue · Add other item · New magazine title')">＋</button></div>
   </section>
 
   <!-- ---------- GUIDES INDEX ---------- -->
@@ -188,22 +171,73 @@
     </header>
     <div class="content">
       <p class="small" style="margin-bottom:16px">Short guides, one per job. Each ends with a button to the right screen.</p>
+      <div class="card tap" onclick="go('v-g-catalogue')"><div class="glyph">📚</div><div style="flex:1"><div class="t">Books, magazines and other items</div><div class="s">Three kinds of item, one library — which form to use</div></div><div class="chev">›</div></div>
       <div class="card tap" onclick="go('v-g-publish')"><div class="glyph">☁️</div><div style="flex:1"><div class="t">Put your catalogue online</div><div class="s">A free public web page of your books — in 6 steps</div></div><div class="chev">›</div></div>
       <div class="card tap" onclick="go('v-g-map')"><div class="glyph">📍</div><div style="flex:1"><div class="t">Put your library on the map</div><div class="s">Let nearby libraries find you — you choose how exact</div></div><div class="chev">›</div></div>
       <div class="card tap" onclick="go('v-g-backup')"><div class="glyph">💾</div><div style="flex:1"><div class="t">Backup, restore, export, import</div><div class="s">Which one when</div></div><div class="chev">›</div></div>
-      <div class="card tap" onclick="go('v-g-vault')"><div class="glyph">🔒</div><div style="flex:1"><div class="t">Lending and the borrowers vault</div><div class="s">Who has what, when it's due, and keeping that private</div></div><div class="chev">›</div></div>
-      <div class="card tap fifth" onclick="go('v-g-network')"><div class="glyph">⬡</div><div style="flex:1"><div class="t">Hubs, members and library cards <span class="pill annot">OPTIONAL</span></div><div class="s">Associations, main libraries with branches — who lists whom</div></div><div class="chev">›</div></div>
+      <div class="card tap" onclick="go('v-g-vault')"><div class="glyph">🔒</div><div style="flex:1"><div class="t">Lending and the borrowers vault</div><div class="s">Who borrowed which item, when it is due — encrypted on this phone</div></div><div class="chev">›</div></div>
+      <div class="card tap" onclick="go('v-g-network')"><div class="glyph">⬡</div><div style="flex:1"><div class="t">Hubs, members and library cards</div><div class="s">Your list of other Pitak libraries — and what a hub is</div></div><div class="chev">›</div></div>
     </div>
   </section>
 
-  <!-- ---------- GUIDE 1: PUBLISH ---------- -->
+  <!-- ---------- GUIDE 1: CATALOGUE ---------- -->
+  <section class="view" id="v-g-catalogue">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Books, magazines and other items</h1></header>
+    <div class="content">
+      <p>Your library holds three kinds of item: <b>books</b>, <b>magazine issues</b> (grouped under their magazine title) and <b>other items</b> — a DVD, a board game, a map. One list, one search, one way of lending; the kind only decides which form you fill in.</p>
+      <table class="pick">
+        <tr><td class="small">I want to…</td><td class="small">Use</td></tr>
+        <tr><td>Add a book</td><td><b>+</b> → <b>Add book</b>, or <b>Scan to add</b> its barcode</td></tr>
+        <tr><td>Add a magazine</td><td><b>+</b> → <b>New magazine title</b> once, then <b>Add magazine issue</b> per issue</td></tr>
+        <tr><td>Add something else</td><td><b>+</b> → <b>Add other item</b>; describe it in <b>Description</b></td></tr>
+      </table>
+      <h2>Catalogue a magazine</h2>
+      <ol class="steps">
+        <li>On the Library screen tap <b>+</b>, then <b>New magazine title</b>.</li>
+        <li>Type the title (ISSN, publisher and frequency are optional) and tap <b>Add magazine title</b>.</li>
+        <li>Open <b>☰ → Magazines</b>, tap the magazine, then <b>Add issue</b>.</li>
+        <li>Type the <b>Issue number</b> or pick a <b>Cover date</b>; <b>Title preview</b> shows the name the issue will get.</li>
+        <li>Tap <b>Add issue</b>. The issue is listed under its magazine and in the Library.</li>
+      </ol>
+      <h2>How magazines behave</h2>
+      <ul class="plain">
+        <li>An issue takes its title, publisher and language from its magazine title; edit the title once and every issue follows.</li>
+        <li><b>Bound volume</b> (a switch on the issue form): several issues bound as one physical item, identified by its first and last issue dates. One item, one loan.</li>
+        <li><b>Track subscription</b> on a magazine title makes the <b>Magazines</b> list warn <b>Expiring soon</b> 30 days before the end date, then <b>Lapsed</b>.</li>
+      </ul>
+      <h2>The same for every kind</h2>
+      <ul class="plain">
+        <li>Lend any item — a book, an issue, a board game — with <b>Lend</b> on its page.</li>
+        <li>The chips <b>Books</b>, <b>Magazines</b>, <b>Others</b> show one kind; tap again for everything. Search reads notes too, so a <b>Description</b> is searchable.</li>
+        <li>Backups, exports, merges and your published page carry every kind.</li>
+      </ul>
+      <div class="callout"><h3>Good to know</h3><ul>
+        <li>An item keeps its kind — a book cannot later become a magazine issue. <b>Delete permanently</b>, then add it again with the right form.</li>
+        <li>A magazine title cannot be deleted while it still has issues; delete those first.</li>
+        <li>An other item's <b>Description</b> stays on this phone; the published page shows only its title, cover, language and age group.</li>
+      </ul></div>
+      <button class="btn filled wide deeplink" onclick="go('v-magazines')">Open Magazines →</button>
+    </div>
+  </section>
+
+  <!-- ---------- STUB: MAGAZINES ---------- -->
+  <section class="view" id="v-magazines">
+    <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Magazines</h1></header>
+    <div class="content">
+      <p>No magazine titles yet</p>
+      <p class="small">Add a magazine title to start cataloguing its issues.</p>
+      <button class="btn filled" onclick="toast('New magazine title form — exists in the app')">＋ &nbsp;New magazine title</button>
+    </div>
+  </section>
+
+  <!-- ---------- GUIDE 2: PUBLISH ---------- -->
   <section class="view" id="v-g-publish">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Put your catalogue online</h1></header>
     <div class="content">
       <p>Pitak can turn your book list into a simple public web page that anyone can open and search. It is free — the page is hosted by GitHub.</p>
-      <p><b>What goes online:</b> titles, authors, covers, and — if your vault is unlocked when you publish — whether a book is available.<br><b>Never goes online:</b> borrowers, loans, notes, shelf locations.</p>
       <div class="small">You need</div>
-      <div class="chips"><span class="chip">A free GitHub account (github.com — two minutes)</span><span class="chip">Internet</span></div>
+      <div class="chips"><span class="chip">A free GitHub account (github.com — sign-up takes two minutes)</span><span class="chip">Internet</span></div>
+      <p><b>What goes online:</b> titles, authors, covers, and — if your vault is unlocked when you publish — whether a book is available.<br><b>Never goes online:</b> borrowers, loans, notes, shelf locations.</p>
 
       <h2>First time</h2>
       <ol class="steps">
@@ -228,7 +262,7 @@
     </div>
   </section>
 
-  <!-- ---------- GUIDE 2: MAP ---------- -->
+  <!-- ---------- GUIDE 3: MAP ---------- -->
   <section class="view" id="v-g-map">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Put your library on the map</h1></header>
     <div class="content">
@@ -257,21 +291,22 @@
     </div>
   </section>
 
-  <!-- ---------- GUIDE 3: BACKUP ---------- -->
+  <!-- ---------- GUIDE 4: BACKUP ---------- -->
   <section class="view" id="v-g-backup">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Backup, restore, export, import</h1></header>
     <div class="content">
       <p>All of these live under <b>☰ → Settings → Data</b>. Pick by what you want to do:</p>
       <table class="pick">
-        <tr><td>Keep a complete copy, or move to a new phone</td><td>Create backup</td></tr>
+        <tr><td class="small">I want to…</td><td class="small">Use</td></tr>
+        <tr><td>Keep a complete copy, or move to a new phone</td><td><b>Create backup</b> → a <code>.pitabak</code> file</td></tr>
         <tr><td>Bring that copy back</td><td>Restore backup</td></tr>
-        <tr><td>Share or print my book list</td><td>Export</td></tr>
+        <tr><td>Share or print my book list</td><td><b>Export</b> → JSON, CSV or PDF</td></tr>
         <tr><td>Add books from a file (a Pitak export, a Goodreads CSV)</td><td>Import</td></tr>
         <tr><td>Combine another maintainer's Pitak library with mine</td><td>Merge from a file</td></tr>
       </table>
 
       <h2>Backup — what is inside</h2>
-      <p>Your books, wishlist, cover images, library identity and saved-libraries list, plus the borrowers vault if you have one (it stays encrypted and opens with the same passphrase).</p>
+      <p>Your whole catalogue — books, magazine titles and issues, other items — plus wishlist, cover images, library identity and saved-libraries list, and the borrowers vault if you have one (it stays encrypted and opens with the same passphrase).</p>
       <p><b>Not inside:</b> events and posters, logo, contact details, publishing setup, app settings — set those up again after a restore.</p>
       <p>Keep the file somewhere private (your Drive, a computer) — it is your data in plain form, except the vault.</p>
 
@@ -291,7 +326,8 @@
 
       <h2>Export vs backup</h2>
       <p>Export is for <i>sharing</i>: JSON keeps every detail and can be imported again; CSV opens in a spreadsheet; PDF is a printable catalogue (you pick the columns). A backup is for <i>you</i>: it is the only file that carries the vault and the covers.</p>
-      <p><b>Import</b> adds to your library — nothing is deleted. A book that is already here is updated if it is the same Pitak book, or skipped if it has the same ISBN.</p>
+      <h2>Import</h2>
+      <p>Import adds to your library — nothing is deleted. A book that is already here is updated if it is the same Pitak book, or skipped if it has the same ISBN.</p>
 
       <div class="callout"><h3>Good to know</h3><ul>
         <li>Make a backup before a restore or a merge.</li>
@@ -301,7 +337,7 @@
     </div>
   </section>
 
-  <!-- ---------- GUIDE 4: VAULT ---------- -->
+  <!-- ---------- GUIDE 5: VAULT ---------- -->
   <section class="view" id="v-g-vault">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Lending and the borrowers vault</h1></header>
     <div class="content">
@@ -337,7 +373,7 @@
     </div>
   </section>
 
-  <!-- ---------- GUIDE 5: NETWORK (optional) ---------- -->
+  <!-- ---------- GUIDE 6: NETWORK ---------- -->
   <section class="view" id="v-g-network">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Hubs, members and library cards</h1></header>
     <div class="content">
@@ -349,7 +385,6 @@
         <li><b>A library association.</b> The association sets up Pitak and publishes a page. At each meeting it scans a member library's card (<b>Add member</b>). The association's page lists every member; each member is asked once whether to show the membership, and after it says yes and publishes, its page points back to the association.</li>
         <li><b>A main library with branches.</b> Each branch runs its own Pitak with its own page. The main library scans each branch's card. Its page lists all the branches; each branch's page points back to the main library.</li>
       </ol>
-      <h2>The buttons</h2>
       <ul class="plain">
         <li><b>Add bookmark</b> saves a library by its web address.</li>
         <li><b>Add member</b> scans another library's card, in person. That makes you a <i>hub</i> and lists them on your page as your member.</li>
@@ -459,7 +494,7 @@
     </div>
     <div class="content">
       <div class="pane on" data-tab="list">
-        <div class="info"><span>ℹ️</span><span>Libraries you save appear here. Nothing leaves your device until you tap Refresh, which reads each library's published details (name, optional map pin, hub links). A hub adds members by scanning their library card in person; tapping a library opens its published catalogue in your browser.</span></div>
+        <div class="info"><span>ℹ️</span><span>Libraries you save appear here. Nothing leaves your device until you tap Refresh, which reads each library's published details (name, optional map pin, hub links). A hub adds members by scanning their library card in person; tapping a library opens its published catalogue inside Pitak, with an "Open in browser" action when you need the full site.</span></div>
         <div class="card"><div class="row" style="justify-content:space-between"><span class="small">Never refreshed</span><button class="btn tonal" onclick="toast('Runs one Refresh — bounded, user-initiated')">⟳ Refresh</button></div></div>
         <p class="small" style="text-align:center;padding:24px 8px">No libraries saved yet.<br><br>Tap "Add bookmark" to save a library by its web address, or "Add member" to scan their library card, in person.</p>
       </div>
@@ -474,16 +509,17 @@
   <nav class="drawer" id="drawer">
     <div class="dhead"><div class="logo">📚</div><div class="name libname">Kadugodi Library</div></div>
     <div class="divider"></div>
-    <div class="dlist" id="dlist">
+    <div class="dlist">
       <div class="tile" onclick="drawerGo('v-vault')"><span class="glyph">🔒</span><div class="t">Borrowers vault</div></div>
       <div class="tile" onclick="drawerGo('v-publish')"><span class="glyph">☁️</span><div class="t">Publish to web</div></div>
       <div class="tile" onclick="closeDrawer();toast('Wishlist — exists in the app')"><span class="glyph">🔖</span><div class="t">Wishlist</div></div>
+      <div class="tile" onclick="drawerGo('v-magazines')"><span class="glyph">📰</span><div class="t">Magazines</div></div>
       <div class="tile" onclick="drawerGo('v-network')"><span class="glyph">⬡</span><div class="t">Library network</div></div>
       <div class="tile" onclick="closeDrawer();toast('Share sheet: card + link, or link only')"><span class="glyph">↗</span><div class="t">Share Library Website</div></div>
-      <div class="tile" id="tile-guides" onclick="drawerGo('v-guides')"><span class="glyph">❔</span><div class="t"><span class="glabel">How Pitak works</span> &nbsp;<span class="pill annot">NEW</span></div></div>
+      <div class="tile" onclick="drawerGo('v-guides')"><span class="glyph">❔</span><div class="t">How Pitak works</div></div>
     </div>
     <div class="divider"></div>
-    <div id="dbottom">
+    <div>
       <div class="tile" onclick="drawerGo('v-settings')"><span class="glyph">⚙</span><div class="t">Settings</div></div>
     </div>
   </nav>
@@ -510,38 +546,6 @@
   <div class="snack" id="snack"></div>
 </div>
 
-<!-- =============================== NOTES PANEL =============================== -->
-<aside class="notes">
-  <h2>Clickable mockup — "How Pitak works"</h2>
-  <p class="muted">Nothing here is implemented. Tap ☰ in the phone, open the new drawer entry, walk the guides, and press the button at the bottom of each guide to land on a stub of the real screen. The Publish stub simulates sign-in → repository → publish. <kbd>Esc</kbd> = back.</p>
-
-  <h3>Try the variants</h3>
-  <label><input type="checkbox" id="opt-bottom" onchange="applyOpts()"> Pin the entry at the bottom, next to Settings</label>
-  <label><input type="checkbox" id="opt-fifth" checked onchange="applyOpts()"> Include the 5th card (hubs, members, cards)</label>
-  <label><input type="checkbox" id="opt-deep" checked onchange="applyOpts()"> Show the deep-link buttons on guides</label>
-  <label><input type="checkbox" id="opt-annot" checked onchange="applyOpts()"> Show mockup annotations (NEW / OPTIONAL pills)</label>
-  <label>Drawer label:
-    <select id="opt-label" onchange="applyOpts()">
-      <option>How Pitak works</option>
-      <option>Help &amp; guides</option>
-      <option>Information</option>
-    </select>
-  </label>
-  <label>Library name: <input type="text" id="opt-name" value="Kadugodi Library" oninput="applyOpts()"></label>
-
-  <h3>Things to decide</h3>
-  <ol>
-    <li><b>Label</b> — "How Pitak works" says what you get; "Information" does not.</li>
-    <li><b>Cards → pages</b> (shown) vs one accordion page. Pages keep the index scannable and give each guide a deep-link button.</li>
-    <li><b>Deep-link buttons</b> — cheap (screens exist); Basic info needs Publish opened on tab 2.</li>
-    <li><b>5th card</b> — the map guide mentions "My card" and "Add member"; without it those are unexplained.</li>
-    <li><b>Coordinates step</b> — add "or type your address in Library address — that becomes a map search link, not a pin"?</li>
-    <li>Later: a <b>?</b> icon in the Publish and Vault app bars opening the same guide.</li>
-  </ol>
-
-  <h3>Copy facts</h3>
-  <p class="muted">Every button name and claim in the guides was checked against the current screens (branch <code>libNetwork</code>). The source table is in <code>how-pitak-works.md</code> next to this file. One existing inconsistency to settle before shipping: Create backup says the logo is <i>not</i> included; Restore says covers "including the library logo" are replaced.</p>
-</aside>
 </div>
 
 <script>
@@ -641,20 +645,7 @@
   }
   function seg(btn) { document.querySelectorAll('#seg button').forEach(b => b.classList.toggle('on', b === btn)); }
 
-  // ---------- reviewer options ----------
-  function applyOpts() {
-    const bottom = document.getElementById('opt-bottom').checked;
-    const tile = document.getElementById('tile-guides');
-    (bottom ? document.getElementById('dbottom') : document.getElementById('dlist')).insertBefore(tile, bottom ? document.getElementById('dbottom').firstElementChild : null);
-    document.querySelectorAll('.fifth').forEach(el => el.style.display = document.getElementById('opt-fifth').checked ? '' : 'none');
-    document.querySelectorAll('.deeplink').forEach(el => el.style.display = document.getElementById('opt-deep').checked ? '' : 'none');
-    document.body.classList.toggle('show-annot', document.getElementById('opt-annot').checked);
-    const label = document.getElementById('opt-label').value;
-    document.querySelectorAll('.glabel').forEach(el => el.textContent = label);
-    const name = document.getElementById('opt-name').value.trim() || 'Pitak';
-    document.querySelectorAll('.libname').forEach(el => el.textContent = name);
-  }
-  applyOpts(); render();
+  render();
 </script>
 </body>
 </html>

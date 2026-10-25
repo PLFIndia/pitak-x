@@ -1,28 +1,15 @@
 # Mockup — "How Pitak works" (information page in the drawer)
 
-> **Status: approved and implemented (2026-10-19).** This file is the design
-> and copy record; the copy the app ships is
-> `lib/features/guides/domain/guide_catalog.dart` — edit both together.
-> Every step below was checked against the current screens and button labels
-> (branch `libNetwork`, 2026-10-19). The "Facts behind the copy" section at the
-> end lists what each claim rests on, so a wording change in the app can be
-> matched here.
+> **Status: approved and implemented; verified against branch `appViewer`,
+> 2026-10-25.** This file is the design and copy record; the copy the app ships
+> is `lib/features/guides/domain/guide_catalog.dart` — edit both together. The
+> six guides below follow the shipped catalog order. The “Facts behind the
+> copy” section lists the code behind each claim.
 >
-> Differences between this draft and the shipped catalog (all structural, no
-> claim changed): Markdown italics (`*…*`) are plain text — the in-app markup
-> has only `**bold**` and `` `code` ``; the "What goes online / Never goes
-> online" lines render after the "You need" chips; the fourth and fifth cards
-> carry one-line subtitles taken from their intros; the decisions in §4 were
-> all taken as proposed (label "How Pitak works", cards → pages, deep-link
-> buttons, fifth card included).
->
-> **Amendment 2026-10-23 (catalogue item kinds, ADR 0013):** a sixth guide,
-> §3.6 "Books, magazines and other items", is the FIRST card (adding items
-> is the first job; the other guides assume a catalogue exists). The backup
-> guide's "what is inside" paragraph now says "your whole catalogue — books,
-> magazine titles and issues, other items" (the `.pitabak` carries kinds and
-> magazine titles since ADR 0014 W2). Everything else in §3.1–§3.5 is
-> unchanged.
+> Markdown italics render as plain text in the app; inline markup supports only
+> `**bold**` and `` `code` ``. Every card opens a separate guide page and every
+> guide ends with its destination button. All six guides are included; none is
+> optional.
 
 Goal: a librarian who has never used GitHub, never heard of "JSON" and does
 not want to read a manual can follow each guide top-to-bottom in under a
@@ -45,20 +32,21 @@ minute. Rules used for the copy:
 │ 🔒  Borrowers vault          │
 │ ☁️   Publish to web           │
 │ 🔖  Wishlist                 │
+│ 📰  Magazines                │
 │ ⬡   Library network          │
-│ ↗   Share Library Website    │   (only once published — unchanged)
-│ ❔  How Pitak works          │   ← NEW (icon: help_outline)
+│ ↗   Share Library Website    │   (only once published)
+│ ❔  How Pitak works          │
 ├──────────────────────────────┤
 │ ⚙   Settings                 │
 └──────────────────────────────┘
 ```
 
-Alternative: pin it at the bottom next to Settings. I'd keep it in the list —
-Settings is the only "pinned" item today and the drawer comment says so.
+The primary destinations scroll; Settings stays pinned at the bottom. How
+Pitak works remains in the primary list.
 
 ## 2. Page layout
 
-**Page: "How Pitak works"** — a short intro line and five cards. Tapping a
+**Page: "How Pitak works"** — a short intro line and six cards. Tapping a
 card opens that guide as its own page (not an accordion: an open accordion
 pushes the other topics off-screen, and a page gets a back button + a deep
 link button at the bottom).
@@ -70,32 +58,27 @@ link button at the bottom).
 │ Short guides, one per job. Each ends │
 │ with a button to the right screen.   │
 │                                      │
-│ ┌──────────────────────────────────┐ │
-│ │ ☁️  Put your catalogue online     │ │
-│ │     A free public web page of    │ │
-│ │     your books — in 6 steps    ��� │ │
-│ └──────────────────────────────────┘ │
-│ ┌──────────────────────────────────┐ │
-│ │ 📍 Put your library on the map   │ │
-│ │     Let nearby libraries find    │ │
-│ │     you — you choose how exact › │ │
-│ └──────────────────────────────────┘ │
-│ ┌──────────────────────────────────┐ │
-│ │ 💾 Backup, restore, export,      │ │
-│ │     import — which one when    › │ │
-│ └──────────────────────────────────┘ │
-│ ┌──────────────────────────────────┐ │
-│ │ 🔒 Lending and the borrowers     │ │
-│ │     vault                      › │ │
-│ └──────────────────────────────────┘ │
-│ ┌──────────────────────────────────┐ │
-│ │ ⬡  Hubs, members and library     │ │
-│ │     cards (optional 5th card)  › │ │
-│ └──────────────────────────────────┘ │
+│ 📚 Books, magazines and other items  │
+│    Three kinds of item, one library  │
+│    — which form to use               │
+│ ☁️ Put your catalogue online         │
+│    A free public web page of your    │
+│    books — in 6 steps                │
+│ 📍 Put your library on the map       │
+│    Let nearby libraries find you —   │
+│    you choose how exact              │
+│ 💾 Backup, restore, export, import   │
+│    Which one when                    │
+│ 🔒 Lending and the borrowers vault   │
+│    Who borrowed which item, when it  │
+│    is due — encrypted on this phone  │
+│ ⬡ Hubs, members and library cards    │
+│    Your list of other Pitak          │
+│    libraries — and what a hub is     │
 └──────────────────────────────────────┘
 ```
 
-**Guide page anatomy** (same skeleton for all five):
+**Guide page anatomy** (same skeleton for all six):
 
 ```
 ┌──────────────────────────────────────┐
@@ -121,231 +104,7 @@ link button at the bottom).
 
 ## 3. Copy
 
-### 3.1 Put your catalogue online
-
-**Intro.** Pitak can turn your book list into a simple public web page that
-anyone can open and search. It is free — the page is hosted by GitHub.
-
-**What goes online:** titles, authors, covers, and — if your vault is
-unlocked when you publish — whether a book is available.
-**Never goes online:** borrowers, loans, notes, shelf locations.
-
-**You need:** a free GitHub account (github.com — sign-up takes two
-minutes) · internet.
-
-**First time**
-
-1. Open **☰ → Publish to web**.
-2. Tap **Sign in to GitHub**. Pitak shows a short code.
-3. Open the link shown (github.com/login/device) — on this phone or on a
-   computer — log in to GitHub and type the code. Come back to Pitak; it
-   continues by itself.
-4. Tap **Set up a repository**, give it a short name like `my-library`, tap
-   **Create**. (A repository is just the folder on GitHub that holds your
-   page. Pitak creates it and switches the page on.)
-5. Tap **Publish catalogue now**.
-6. Your web address appears under **Your site**. Tap **Copy link** or
-   **Share**. The first time, the page can take a minute or two to go live.
-
-**Every time after that**
-
-Added or lent books? Open **Publish to web** and tap **Publish catalogue
-now** again. Only what changed is uploaded, so it takes seconds.
-
-**Good to know**
-
-- The **Basic info** tab adds your library's name, address, email and phone
-  to the page. Every field is optional.
-- Signing out of GitHub does not take your page down.
-- Sign-in not finishing? Keep the code screen open and type the code in a
-  browser on a computer instead.
-
-`[ Open Publish to web → ]`
-
----
-
-### 3.2 Put your library on the map
-
-**Intro.** Other Pitak libraries that bookmark yours — by adding your web
-address (the GitHub Pages link Pitak created) to their **Library network**
-list — see it as a pin on their **Library network › Map**. Nothing is shown
-until you switch it on and publish — and you choose how exact the pin is.
-
-**Steps**
-
-1. Find your coordinates: in Google Maps (or OpenStreetMap) press and hold
-   on your library's spot. Two numbers appear, like `12.9716, 77.5946` —
-   copy them.
-2. Open **☰ → Publish to web → Basic info** and tap **Edit**.
-3. Paste the numbers into **GPS location**.
-4. Under **Share my location on the network map** pick **Approximate
-   (~1 km)** or **Exact**. Tap **Save**.
-5. Back on **Connection**, tap **Publish catalogue now**. The pin travels
-   with your page.
-6. Let other libraries save you: send them your site link (**☰ → Share
-   Library Website**) or show them your card (**☰ → Library network → My
-   card**). When they tap **Refresh**, your pin appears on their map.
-
-**How the map works**
-
-- Your map shows only the libraries on your own **Library network** list —
-  the ones you bookmarked, added as members, or that Pitak found through
-  your hubs — and only those that publish a location.
-- Only web addresses made by Pitak can be bookmarked (they end in
-  `github.io` or `pages.dev`). Other websites are not accepted.
-- Pin positions come from each library's published page, read when you tap
-  **Refresh**. Nobody's location is sent anywhere else.
-
-**Good to know**
-
-- Pitak never reads your phone's location. It publishes only the numbers
-  you type.
-- **Approximate** rounds the pin to about 1 km — your neighbourhood, not
-  your door.
-- To take the pin down, choose **Not shared** and publish again.
-
-`[ Open Basic info → ]`
-
----
-
-### 3.3 Backup, restore, export, import
-
-**Intro.** All of these live under **☰ → Settings → Data**. Pick by what you
-want to do:
-
-| I want to… | Use |
-|---|---|
-| Keep a complete copy, or move to a new phone | **Create backup** → a `.pitabak` file |
-| Bring that copy back | **Restore backup** |
-| Share or print my book list | **Export** → JSON, CSV or PDF |
-| Add books from a file (a Pitak export, a Goodreads CSV) | **Import** |
-| Combine another maintainer's Pitak library with mine | **Merge from a file** |
-
-**Backup — what is inside.** Your books, wishlist, cover images, library
-identity and saved-libraries list, plus the borrowers vault if you have one
-(it stays encrypted and opens with the same passphrase).
-**Not inside:** events and posters, logo, contact details, publishing setup,
-app settings — set those up again after a restore.
-Keep the file somewhere private (your Drive, a computer) — it is your data in
-plain form, except the vault.
-
-**Make a backup**
-
-1. **☰ → Settings → Data → Create backup**.
-2. Tap **Create backup** and choose where to save the file.
-
-**Restore on a new phone**
-
-1. Install Pitak → **☰ → Settings → Data → Restore backup**.
-2. Tap **Choose .pitabak file** and pick it. Pitak shows what the file
-   contains.
-3. If it contains a vault, enter that vault's passphrase. Tap **Restore**.
-
-Restoring **replaces** this phone's books, wishlist, covers, identity and
-saved libraries with the backup's. It is all-or-nothing: if anything goes
-wrong, nothing changes.
-
-**Export vs backup.** Export is for *sharing*: JSON keeps every detail and can
-be imported again; CSV opens in a spreadsheet; PDF is a printable catalogue
-(you pick the columns). A backup is for *you*: it is the only file that
-carries the vault and the covers.
-
-**Import** adds to your library — nothing is deleted. A book that is already
-here is updated if it is the same Pitak book, or skipped if it has the same
-ISBN.
-
-**Good to know**
-
-- Make a backup before a restore or a merge.
-- A backup that contains a vault replaces your current vault when restored.
-
-`[ Open Settings → Data → ]`
-
----
-
-### 3.4 Lending and the borrowers vault
-
-**Intro.** The vault is Pitak's locked drawer: who borrowed which item, when
-it is due, and how to reach them. It is encrypted on this phone and opens
-only with your passphrase. Your catalogue is never locked — you can catalogue
-without opening the vault.
-
-**Set up once**
-
-1. **☰ → Borrowers vault**.
-2. Choose a passphrase of at least 8 characters and type it twice.
-   **Write it down somewhere safe** — it is the only key. Pitak never stores
-   it and cannot reset it.
-3. Optional: **☰ → Settings → Security → Biometric unlock** to open the
-   vault with your fingerprint or face from then on.
-
-**Lend an item**
-
-1. Open the item and tap **Lend**. (Locked vault? Unlock it first.)
-2. Pick an **Existing borrower**, or type a **New borrower name**.
-3. Set a **Due date** if you want a reminder. Tap **Lend**.
-
-**Returns and reminders**
-
-- **☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** next
-  to the item.
-- The bell icon (**Pending**) on the vault screen lists overdue loans, loans
-  due soon, and items missing details.
-- Add a phone or email on a borrower's page and you get **Call**,
-  **WhatsApp** and **Email** buttons there.
-
-**Good to know**
-
-- The vault stays open until you tap the lock icon or close the app — there
-  is no timer. Lock it before handing your phone to someone.
-- **Require biometric to open Pitak** (Settings → Security) is a different
-  thing: it covers the whole app with a prompt but does not encrypt
-  anything. The vault is the encrypted part.
-- Your published page can show "available / on loan" — never who borrowed.
-  It only does so if the vault was unlocked when you published.
-
-`[ Open Borrowers vault → ]`
-
----
-
-### 3.5 Hubs, members and library cards (optional fifth card)
-
-Worth having because the map guide sends people here. Shortest honest
-version:
-
-**Intro.** **☰ → Library network** is your list of other Pitak libraries.
-Nothing leaves your phone until you tap **Refresh**, which reads each
-library's published page.
-
-**What a hub is.** A hub is a Pitak library that lists other libraries as
-its members — picture a wheel: the hub in the middle, the members as the
-spokes. Any library can be a hub; it only needs a published page, and it can
-have no books of its own.
-
-**Two examples**
-
-1. **A library association.** The association sets up Pitak and publishes a
-   page. At each meeting it scans a member library's card (**Add member**).
-   The association's page lists every member; each member is asked once
-   whether to show the membership, and after it says yes and publishes, its
-   page points back to the association.
-2. **A main library with branches.** Each branch runs its own Pitak with its
-   own page. The main library scans each branch's card. Its page lists all
-   the branches; each branch's page points back to the main library.
-
-- **Add bookmark** saves a library by its web address.
-- **Add member** scans another library's card, in person. That makes you a
-  *hub* and lists them on your page as your member.
-- If a hub lists *you*, Pitak asks once: "show that you're a member of X?"
-  Say yes and it appears on your page; say no and you are not asked again.
-- **My card** is your own card to show — it is your site address plus a
-  public fingerprint, never your private library ID.
-
-`[ Open Library network → ]`
-
----
-
-### 3.6 Books, magazines and other items (first card, added 2026-10-23)
+### 3.1 Books, magazines and other items
 
 Card subtitle: *Three kinds of item, one library — which form to use*.
 
@@ -399,40 +158,257 @@ decides which form you fill in.
 
 `[ Open Magazines → ]`
 
-Left out on purpose (the guide must stay within the backup guide's length
-budget — `guide_page_test.dart` renders every guide on a 3000 dp surface):
-the magazine-barcode scan route (a `977…` barcode opens the issue form, or the
-title form with the ISSN filled in — ADR 0013 D11). It needs no instruction;
-the scan simply does the right thing.
+---
+
+### 3.2 Put your catalogue online
+
+**Intro.** Pitak can turn your book list into a simple public web page that
+anyone can open and search. It is free — the page is hosted by GitHub.
+
+**You need:** a free GitHub account (github.com — sign-up takes two
+minutes) · internet.
+
+**What goes online:** titles, authors, covers, and — if your vault is
+unlocked when you publish — whether a book is available.
+**Never goes online:** borrowers, loans, notes, shelf locations.
+
+**First time**
+
+1. Open **☰ → Publish to web**.
+2. Tap **Sign in to GitHub**. Pitak shows a short code.
+3. Open the link shown (github.com/login/device) — on this phone or on a
+   computer — log in to GitHub and type the code. Come back to Pitak; it
+   continues by itself.
+4. Tap **Set up a repository**, give it a short name like `my-library`, tap
+   **Create**. (A repository is just the folder on GitHub that holds your
+   page. Pitak creates it and switches the page on.)
+5. Tap **Publish catalogue now**.
+6. Your web address appears under **Your site**. Tap **Copy link** or
+   **Share**. The first time, the page can take a minute or two to go live.
+
+**Every time after that**
+
+Added or lent books? Open **Publish to web** and tap **Publish catalogue
+now** again. Only what changed is uploaded, so it takes seconds.
+
+**Good to know**
+
+- The **Basic info** tab adds your library's name, address, email and phone
+  to the page. Every field is optional.
+- Signing out of GitHub does not take your page down.
+- Sign-in not finishing? Keep the code screen open and type the code in a
+  browser on a computer instead.
+
+`[ Open Publish to web → ]`
 
 ---
 
-## 4. Things to decide
+### 3.3 Put your library on the map
 
-1. **Drawer label:** "How Pitak works" vs "Help & guides" vs "Information".
-   I'd avoid "Information" — it does not say what you get.
-2. **Cards → pages** (proposed) vs an accordion on one page. Pages give each
-   guide a deep-link button and keep the first screen scannable.
-3. **Deep-link buttons:** worth it? They turn a guide into a "do it now"
-   flow and are cheap (the pages already exist). Basic info needs the
-   Publish page opened on tab 2.
-4. **Include the fifth card** (hubs/members)? The map guide references
-   "My card" and "Add member", so without it those words are unexplained.
-5. **Coordinates help:** step 1 of the map guide assumes Google Maps'
-   press-and-hold. If you prefer, add a one-line "or type your address in
-   the Library address field instead — that becomes a map search link on
-   your page, not a pin". That is already true today.
-6. **Wording check on "repository":** kept once, explained in brackets.
-   Alternative is to hide the word completely ("Tap **Set up a
-   repository**" is the real button label, so it has to appear at least
-   once).
-7. Later: should the four guides be reachable from the screens themselves
-   (a `?` icon in the Publish and Vault app bars)? Same pages, two doors.
+**Intro.** Other Pitak libraries that bookmark yours — by adding your web
+address (the GitHub Pages link Pitak created) to their **Library network**
+list — see it as a pin on their **Library network › Map**. Nothing is shown
+until you switch it on and publish — and you choose how exact the pin is.
 
-## 5. Facts behind the copy (verified in code, for whoever edits this later)
+**Steps**
+
+1. Find your coordinates: in Google Maps (or OpenStreetMap) press and hold
+   on your library's spot. Two numbers appear, like `12.9716, 77.5946` —
+   copy them.
+2. Open **☰ → Publish to web → Basic info** and tap **Edit**.
+3. Paste the numbers into **GPS location**.
+4. Under **Share my location on the network map** pick **Approximate
+   (~1 km)** or **Exact**. Tap **Save**.
+5. Back on **Connection**, tap **Publish catalogue now**. The pin travels
+   with your page.
+6. Let other libraries save you: send them your site link (**☰ → Share
+   Library Website**) or show them your card (**☰ → Library network → My
+   card**). When they tap **Refresh**, your pin appears on their map.
+
+**How the map works**
+
+- Your map shows only the libraries on your own **Library network** list —
+  the ones you bookmarked, added as members, or that Pitak found through
+  your hubs — and only those that publish a location.
+- Only web addresses made by Pitak can be bookmarked (they end in
+  `github.io` or `pages.dev`). Other websites are not accepted.
+- Pin positions come from each library's published page, read when you tap
+  **Refresh**. Nobody's location is sent anywhere else.
+
+**Good to know**
+
+- Pitak never reads your phone's location. It publishes only the numbers
+  you type.
+- **Approximate** rounds the pin to about 1 km — your neighbourhood, not
+  your door.
+- To take the pin down, choose **Not shared** and publish again.
+
+`[ Open Basic info → ]`
+
+---
+
+### 3.4 Backup, restore, export, import
+
+**Intro.** All of these live under **☰ → Settings → Data**. Pick by what you
+want to do:
+
+| I want to… | Use |
+|---|---|
+| Keep a complete copy, or move to a new phone | **Create backup** → a `.pitabak` file |
+| Bring that copy back | **Restore backup** |
+| Share or print my book list | **Export** → JSON, CSV or PDF |
+| Add books from a file (a Pitak export, a Goodreads CSV) | **Import** |
+| Combine another maintainer's Pitak library with mine | **Merge from a file** |
+
+**Backup — what is inside.** Your whole catalogue — books, magazine titles
+and issues, other items — plus wishlist, cover images, library identity and
+saved-libraries list, and the borrowers vault if you have one (it stays
+encrypted and opens with the same passphrase).
+**Not inside:** events and posters, logo, contact details, publishing setup,
+app settings — set those up again after a restore.
+Keep the file somewhere private (your Drive, a computer) — it is your data in
+plain form, except the vault.
+
+**Make a backup**
+
+1. **☰ → Settings → Data → Create backup**.
+2. Tap **Create backup** and choose where to save the file.
+
+**Restore on a new phone**
+
+1. Install Pitak → **☰ → Settings → Data → Restore backup**.
+2. Tap **Choose .pitabak file** and pick it. Pitak shows what the file
+   contains.
+3. If it contains a vault, enter that vault's passphrase. Tap **Restore**.
+
+Restoring **replaces** this phone's books, wishlist, covers, identity and
+saved libraries with the backup's. It is all-or-nothing: if anything goes
+wrong, nothing changes.
+
+**Export vs backup.** Export is for *sharing*: JSON keeps every detail and can
+be imported again; CSV opens in a spreadsheet; PDF is a printable catalogue
+(you pick the columns). A backup is for *you*: it is the only file that
+carries the vault and the covers.
+
+**Import** adds to your library — nothing is deleted. A book that is already
+here is updated if it is the same Pitak book, or skipped if it has the same
+ISBN.
+
+**Good to know**
+
+- Make a backup before a restore or a merge.
+- A backup that contains a vault replaces your current vault when restored.
+
+`[ Open Settings → Data → ]`
+
+---
+
+### 3.5 Lending and the borrowers vault
+
+**Intro.** The vault is Pitak's locked drawer: who borrowed which item, when
+it is due, and how to reach them. It is encrypted on this phone and opens
+only with your passphrase. Your catalogue is never locked — you can catalogue
+without opening the vault.
+
+**Set up once**
+
+1. **☰ → Borrowers vault**.
+2. Choose a passphrase of at least 8 characters and type it twice.
+   **Write it down somewhere safe** — it is the only key. Pitak never stores
+   it and cannot reset it.
+3. Optional: **☰ → Settings → Security → Biometric unlock** to open the
+   vault with your fingerprint or face from then on.
+
+**Lend an item**
+
+1. Open the item and tap **Lend**. (Locked vault? Unlock it first.)
+2. Pick an **Existing borrower**, or type a **New borrower name**.
+3. Set a **Due date** if you want a reminder. Tap **Lend**.
+
+**Returns and reminders**
+
+- **☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** next
+  to the item.
+- The bell icon (**Pending**) on the vault screen lists overdue loans, loans
+  due soon, and items missing details.
+- Add a phone or email on a borrower's page and you get **Call**,
+  **WhatsApp** and **Email** buttons there.
+
+**Good to know**
+
+- The vault stays open until you tap the lock icon or close the app — there
+  is no timer. Lock it before handing your phone to someone.
+- **Require biometric to open Pitak** (Settings → Security) is a different
+  thing: it covers the whole app with a prompt but does not encrypt
+  anything. The vault is the encrypted part.
+- Your published page can show "available / on loan" — never who borrowed.
+  It only does so if the vault was unlocked when you published.
+
+`[ Open Borrowers vault → ]`
+
+---
+
+### 3.6 Hubs, members and library cards
+
+**Intro.** **☰ → Library network** is your list of other Pitak libraries.
+Nothing leaves your phone until you tap **Refresh**, which reads each
+library's published page, or you open a library to browse its published
+catalogue inside Pitak.
+
+**What a hub is.** A hub is a Pitak library that lists other libraries as
+its members — picture a wheel: the hub in the middle, the members as the
+spokes. Any library can be a hub; it only needs a published page, and it can
+have no books of its own.
+
+**Two examples**
+
+1. **A library association.** The association sets up Pitak and publishes a
+   page. At each meeting it scans a member library's card (**Add member**).
+   The association's page lists every member; each member is asked once
+   whether to show the membership, and after it says yes and publishes, its
+   page points back to the association.
+2. **A main library with branches.** Each branch runs its own Pitak with its
+   own page. The main library scans each branch's card. Its page lists all
+   the branches; each branch's page points back to the main library.
+
+- **Add bookmark** saves a library by its web address.
+- Tap a saved library to browse its published catalogue inside Pitak —
+  search, filter and sort it without leaving the app. Needing the full
+  website? Use **Open in browser** on that screen.
+- **Add member** scans another library's card, in person. That makes you a
+  *hub* and lists them on your page as your member.
+- If a hub lists *you*, Pitak asks once: "show that you're a member of X?"
+  Say yes and it appears on your page; say no and you are not asked again.
+- **My card** is your own card to show — it is your site address plus a
+  public fingerprint, never your private library ID.
+
+`[ Open Library network → ]`
+
+---
+
+## 4. Decisions (implemented)
+
+1. **Drawer:** use **How Pitak works** in the scrolling destination list;
+   **Settings** remains pinned at the bottom.
+2. **Index:** six cards open separate pages, not an accordion; catalogue is
+   first and the network guide is included.
+3. **Deep links:** every guide has a destination button; **Open Basic info**
+   selects Publish's Basic info tab and **Open Magazines** opens the
+   magazine-titles page.
+4. **Coordinates:** keep the Google Maps / OpenStreetMap press-and-hold
+   instruction; the optional address sentence was not added.
+5. **Repository wording:** keep the real **Set up a repository** label and
+   explain "repository" once.
+6. **Contextual help:** no `?` guide icons currently ship in Publish or
+   Vault; the drawer is the guide entry point.
+
+## 5. Facts behind the copy (verified on appViewer, 2026-10-25)
 
 | Claim | Where it comes from |
 |---|---|
+| Six cards in catalogue → publish → map → backup → vault → network order; subtitles and destinations | `guide_catalog.dart`; `guides_page.dart`; `guide_destinations.dart` |
+| Magazines sits between Wishlist and Library network; Settings is pinned | `app_drawer.dart` |
+| Tapping a saved library opens its published catalogue in a native, read-only page; the browser is only the explicit **Open in browser** action | `published_catalogue_page.dart` (`PublishedSiteOpener` → `LaunchMode.externalApplication`); `network_page.dart` info note |
 | Sign-in is a code + github.com/login/device, works from another device | `github_connection_dialogs.dart` ("Authorize in your browser", tip text) |
 | "Set up a repository" creates a public repo and enables Pages itself | `publish_page.dart` target-repo section; `setup_github_repo.dart` |
 | Site "can take a minute to update" | `github_connection_controller.dart` success message |
@@ -442,7 +418,7 @@ the scan simply does the right thing.
 | Phone GPS is never read; coordinates are typed as "lat, lng" | `BuildOwnDescriptor.ownLocation` (D6); GPS field hint |
 | Approximate = rounded to 2 decimals ≈ 1.1 km | `GeoPoint.coarsen()` |
 | Others see the pin after saving you and tapping Refresh | `RefreshNetworkUseCase`; map page |
-| Backup contents / exclusions | `create_backup_page.dart` copy; ARCHITECTURE §5.5 |
+| Backup carries the whole catalogue, including magazine titles/issues and item kinds; events/posters, logo, contact details, publishing setup and app settings are excluded | `create_backup_page.dart`; `create_backup_use_case.dart`; `backup_manifest.dart`; `restore_page.dart`; ADR 0014 W2 |
 | Restore is all-or-nothing; shows contents first; passphrase only if vault | `restore_page.dart`; `RestoreController` |
 | Export formats JSON/CSV/PDF; import adds, updates same-identity, skips same-ISBN | `export_page.dart`, `import_page.dart` |
 | Passphrase ≥ 8 chars, never stored, no reset | `VaultSessionController.minPassphraseLength`; vault page copy |
