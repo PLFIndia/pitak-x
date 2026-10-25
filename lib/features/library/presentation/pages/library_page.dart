@@ -24,6 +24,7 @@ import 'package:pitaka/core/widgets/library_logo.dart';
 import 'package:pitaka/features/app_update/presentation/widgets/app_update_banner.dart';
 import 'package:pitaka/features/import_export/presentation/pages/import_page.dart';
 import 'package:pitaka/features/library/application/library_controller.dart';
+import 'package:pitaka/features/library/application/library_filter_controller.dart';
 import 'package:pitaka/features/library/application/library_window.dart';
 import 'package:pitaka/features/library/application/route_scanned_barcode_use_case.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -45,29 +46,65 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/vault/domain/availability.dart';
 
 /// The library list screen with a debounced search field.
-class LibraryPage extends ConsumerWidget {
+class LibraryPage extends ConsumerStatefulWidget {
   /// Creates the library page.
   const LibraryPage({super.key});
+
+  @override
+  ConsumerState<LibraryPage> createState() => _LibraryPageState();
+}
+
+class _LibraryPageState extends ConsumerState<LibraryPage> {
+  /// The page owns the visible field's value so Clear search can empty it
+  /// immediately. Disposing it here avoids leaking one controller per visit.
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _clearSearch() {
+    _searchController.clear();
+    // TextEditingController.clear does not call TextField.onChanged, so emit
+    // the empty query explicitly while leaving both facet providers intact.
+    ref.read(libraryControllerProvider.notifier).onQueryChanged('');
+  }
+
+  void _clearFilters() {
+    // Independent of Clear search: only the two facets reset; the visible
+    // query and LibraryController's debounced query remain untouched.
+    ref.read(libraryLanguageFilterProvider.notifier).clear();
+    ref.read(libraryKindFilterProvider.notifier).clear();
+  }
 
   /// Quick-add (Q2=A): scan a barcode, then route it (S34, ADR 0013 D11).
   /// Scanning never creates a row on its own — the route decides which
   /// existing row, form, or placeholder the scan leads to.
-  Future<void> _quickAddByScan(BuildContext context, WidgetRef ref) async {
+  Future<void> _quickAddByScan() async {
     // Resolve the use case BEFORE the camera flow: no `ref` use after an
     // async gap that could outlive this widget instance.
     final route = await ref.read(routeScannedBarcodeUseCaseProvider.future);
-    if (!context.mounted) return;
+    if (!mounted) return;
     final scanned = await Navigator.of(context).push<String>(
       MaterialPageRoute<String>(builder: (_) => const ScannerPage()),
     );
-    if (scanned == null || !context.mounted) return;
+    if (scanned == null || !mounted) return;
     await routeScannedBarcode(context, route, scanned);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final controller = ref.watch(libraryControllerProvider.notifier);
     final booksAsync = ref.watch(libraryControllerProvider);
+    final hasQuery = controller.query.trim().isNotEmpty;
+    // Facets are independent provider state (the same source as the chips).
+    // Watching them here keeps the empty-state explanation and recovery
+    // buttons truthful immediately after a chip is tapped or cleared.
+    final hasKindFilter = ref.watch(libraryKindFilterProvider) != null;
+    final hasLanguageFilter = ref.watch(libraryLanguageFilterProvider) != null;
+    final hasFilters = hasKindFilter || hasLanguageFilter;
     // Use the user's library name as the title (select: only that field
     // rebuilds this page, §8), falling back to 'Library'.
     final libraryName = ref.watch(
@@ -111,7 +148,7 @@ class LibraryPage extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Scan to add',
-            onPressed: () => _quickAddByScan(context, ref),
+            onPressed: _quickAddByScan,
           ),
           IconButton(
             icon: const Icon(Icons.campaign_outlined),
@@ -136,6 +173,7 @@ class LibraryPage extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: TextField(
+              controller: _searchController,
               onChanged: controller.onQueryChanged,
               decoration: const InputDecoration(
                 hintText: 'Search title, author, ISBN, notes…',
@@ -150,13 +188,15 @@ class LibraryPage extends ConsumerWidget {
               loading: () =>
                   const Center(child: CircularProgressIndicator.adaptive()),
               error: (error, _) => _LibraryError(
-                isSearching: controller.query.trim().isNotEmpty,
+                isSearching: hasQuery,
                 onRetry: controller.refresh,
               ),
               data: (window) => window.books.isEmpty
                   ? EmptyLibraryState(
-                      isSearching: controller.query.trim().isNotEmpty,
-                      query: controller.query,
+                      hasQuery: hasQuery,
+                      hasFilters: hasFilters,
+                      onClearSearch: _clearSearch,
+                      onClearFilters: _clearFilters,
                       onAdd: () => Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => const AddBookPage(),
@@ -340,7 +380,7 @@ Future<void> routeScannedBarcode(
             ),
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('View book'),
+              child: const Text('View item'),
             ),
           ],
         ),

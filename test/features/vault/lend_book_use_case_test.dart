@@ -5,6 +5,7 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/lending_policy.dart';
@@ -140,6 +141,42 @@ void main() {
       final d = LendDecision.forItem(removed, const []);
       expect(d, isA<LendRefusedRemoved>());
       expect(d.reason, contains('marked as removed'));
+    });
+
+    test('S9: issue and Other refusal reasons use neutral item wording', () {
+      const items = [
+        CatalogueItem(
+          id: 5,
+          title: 'Frontline — No 5',
+          removed: true,
+          details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+        ),
+        CatalogueItem(
+          id: 6,
+          title: 'Chess set',
+          removed: true,
+          details: OtherItemOf(),
+        ),
+      ];
+
+      for (final item in items) {
+        final removedDecision = LendDecision.forItem(item, const []);
+        expect(removedDecision.reason, contains('This item'));
+        expect(removedDecision.reason, isNot(contains('book')));
+
+        final available = item.copyWith(removed: false);
+        final outDecision = LendDecision.forItem(available, [out(item.id)]);
+        expect(outDecision.reason, contains('This item'));
+        expect(outDecision.reason, isNot(contains('book')));
+
+        final twoCopies = available.copyWith(copyCount: 2);
+        final pluralDecision = LendDecision.forItem(twoCopies, [
+          out(item.id),
+          out(item.id),
+        ]);
+        expect(pluralDecision.reason, contains('copies of this item'));
+        expect(pluralDecision.reason, isNot(contains('book')));
+      }
     });
 
     test('a malformed copyCount of 0 behaves like 1', () {

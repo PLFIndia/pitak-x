@@ -13,10 +13,12 @@ import 'package:pitaka/features/import_export/application/import_library_use_cas
 import 'package:pitaka/features/import_export/domain/import_format_sniffer.dart';
 import 'package:pitaka/features/import_export/infrastructure/library_bundle_reader.dart';
 import 'package:pitaka/features/import_export/infrastructure/pitaka_json_importer.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/wishlist/domain/entities/wishlist_book.dart';
 import 'package:pitaka/features/wishlist/domain/repositories/wishlist_repository.dart';
 
@@ -262,5 +264,67 @@ void main() {
     expect(state.hasValue, isTrue);
     expect(state.value!.format, ImportFormat.pitakaBundle);
     expect(state.value!.booksAdded, 1);
+  });
+
+  test('S9: import refreshes a kept-alive Magazines list through the shared '
+      'library signal', () async {
+    final books = _MemBookRepo();
+    final periodicals = FakePeriodicals();
+    final useCase = ImportLibraryUseCase(
+      jsonParser: const PitakaJsonImporter(),
+      bookRepo: books,
+      wishlistRepo: _MemWishlistRepo(),
+      periodicalRepo: periodicals,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        importLibraryUseCaseProvider.overrideWith((ref) async => useCase),
+        catalogueItemRepositoryProvider.overrideWith((ref) async => books),
+        periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+        settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        nowTickProvider.overrideWith((ref) => 0),
+      ],
+    );
+    addTearDown(container.dispose);
+    final librarySub = container.listen(libraryControllerProvider, (_, _) {});
+    addTearDown(librarySub.close);
+    var periodicalEvents = 0;
+    final sub = container.listen(
+      periodicalsControllerProvider,
+      (_, _) => periodicalEvents++,
+      fireImmediately: true,
+    );
+    addTearDown(sub.close);
+    await container.read(libraryControllerProvider.future);
+    expect(await container.read(periodicalsControllerProvider.future), isEmpty);
+    await container.pump();
+    final baseline = periodicalEvents;
+
+    await container
+        .read(importControllerProvider.notifier)
+        .importText(
+          jsonEncode({
+            'schemaVersion': 4,
+            'exportedAt': 0,
+            'periodicals': [
+              {'periodicalUid': 'p1', 'title': 'Chandamama'},
+            ],
+            'books': [
+              {
+                'bookUid': 'u1',
+                'title': 'Chandamama — No 3',
+                'kind': 'magazine-issue',
+                'issue': {'periodicalUid': 'p1', 'issueNumber': 3},
+              },
+            ],
+            'wishlist': <Object>[],
+          }),
+        );
+    expect(container.read(importControllerProvider).hasValue, isTrue);
+    await container.pump();
+
+    final entries = await container.read(periodicalsControllerProvider.future);
+    expect(periodicalEvents, greaterThan(baseline));
+    expect(entries.map((entry) => entry.periodical.title), ['Chandamama']);
   });
 }

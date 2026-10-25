@@ -115,7 +115,7 @@ class _LoanTitle extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final title = ref.watch(bookTitleProvider(bookId: bookId)).valueOrNull;
     final text = (title == null || title.trim().isEmpty)
-        ? 'Book #$bookId'
+        ? 'Item #$bookId'
         : title;
     return Text(text, overflow: TextOverflow.ellipsis);
   }
@@ -154,7 +154,7 @@ class _ActiveLoanTileState extends ConsumerState<_ActiveLoanTile> {
       final failure = result.swap().toNullable();
       final message = failure is NotFoundFailure
           ? 'That loan no longer exists.'
-          : 'Could not return this book. Please try again.';
+          : 'Could not return this item. Please try again.';
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(message)));

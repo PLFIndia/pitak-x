@@ -86,7 +86,7 @@ class CatalogueItemDetailPage extends ConsumerWidget {
   }
 }
 
-/// The plain "Book" app bar shared by the loading / gone / failed states.
+/// The plain "Item" app bar shared by the loading / gone / failed states.
 class _DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
   const _DetailAppBar();
 
@@ -94,7 +94,7 @@ class _DetailAppBar extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 
   @override
-  Widget build(BuildContext context) => AppBar(title: const Text('Book'));
+  Widget build(BuildContext context) => AppBar(title: const Text('Item'));
 }
 
 /// Shown when the observed row no longer exists (deleted from another screen
@@ -112,7 +112,7 @@ class _ItemGoneScaffold extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'This book is no longer in your library.',
+            'This item is no longer in your library.',
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
@@ -138,7 +138,7 @@ class _ItemLoadFailedScaffold extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            "Couldn't load this book. Please go back and try again.",
+            "Couldn't load this item. Please go back and try again.",
             textAlign: TextAlign.center,
             style: Theme.of(
               context,
@@ -171,7 +171,7 @@ class _ItemDetailBody extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Book'),
+        title: const Text('Item'),
         actions: [CatalogueItemActions(book: book)],
       ),
       body: ListView(

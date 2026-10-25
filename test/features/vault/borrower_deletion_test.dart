@@ -55,8 +55,12 @@ void main() {
     expect((plan as BorrowerDeletionAllowed).returnedLoanCount, 1);
   });
 
-  test('the blocked message is a sentence, not a SQL diagnostic', () {
+  test('S9: the blocked message is neutral and not a SQL diagnostic', () {
+    expect(
+      activeLoansBlockDeleteMessage,
+      'This borrower still has items out. Mark those loans returned first.',
+    );
     expect(activeLoansBlockDeleteMessage, isNot(contains('FOREIGN KEY')));
-    expect(activeLoansBlockDeleteMessage, endsWith('.'));
+    expect(activeLoansBlockDeleteMessage, isNot(contains('books out')));
   });
 }

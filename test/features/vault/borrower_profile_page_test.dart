@@ -1,5 +1,5 @@
 /// Review finding N06 widget tests: the borrower profile must resolve
-/// book titles through a read model (not "Book #id"), surface per-return
+/// book titles through a read model (not "Item #id"), surface per-return
 /// progress and typed failures, and treat repeat returns as no-ops.
 library;
 
@@ -140,16 +140,16 @@ void main() {
     await pumpUnlocked(tester, vault);
 
     expect(find.text('Godaan'), findsOneWidget);
-    expect(find.textContaining('Book #7'), findsNothing);
+    expect(find.textContaining('Item #7'), findsNothing);
   });
 
-  testWidgets('N06: a missing book falls back to "Book #id"', (tester) async {
+  testWidgets('N06: a missing book falls back to "Item #id"', (tester) async {
     final vault = _ScriptedVault(
       const VaultData(borrowers: [borrower], loans: [loan]),
     );
     await pumpUnlocked(tester, vault, books: const {});
 
-    expect(find.text('Book #7'), findsOneWidget);
+    expect(find.text('Item #7'), findsOneWidget);
   });
 
   testWidgets('N06: Return writes the loan and moves it to History', (
@@ -201,7 +201,7 @@ void main() {
     await tester.tap(find.text('Return'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('Could not return this book'), findsOneWidget);
+    expect(find.textContaining('Could not return this item'), findsOneWidget);
     // The raw failure reason never reaches the UI (§5).
     expect(find.textContaining('db locked'), findsNothing);
     // Still an active loan: the button stays available for a retry.

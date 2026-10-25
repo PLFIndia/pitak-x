@@ -231,7 +231,7 @@ class _LoansSection extends ConsumerWidget {
         for (final loan in loans)
           ListTile(
             contentPadding: EdgeInsets.zero,
-            title: Text('Book #${loan.itemId}'),
+            title: Text('Item #${loan.itemId}'),
             subtitle: Text(loan.isReturned ? 'Returned' : 'Out'),
             trailing: loan.isReturned
                 ? const Icon(Icons.check_circle_outline)

@@ -1,49 +1,57 @@
 /// Empty-state for the library list (presentation layer).
 ///
-/// Parity with Kotlin `LibraryScreen.EmptyLibraryState` + the D17 onboarding
-/// card: a "no matches" variant while searching, and a first-run "library is
-/// empty" state otherwise with Add / Import actions so it is never a dead-end
-/// (Kotlin D26). The decorative animated welcome splash is intentionally not
-/// ported (§3a — branding gold-plating, no functional value).
+/// S9/L3 distinguishes a genuinely empty library from an empty RESULT caused
+/// by search text or kind/language facets. The first-run state offers Add /
+/// Import; a filtered-empty state instead offers independent recovery actions
+/// so the user never mistakes a filter for having no catalogue rows.
 library;
 
 import 'package:flutter/material.dart';
 
 /// Centered placeholder shown when the list has no rows.
 class EmptyLibraryState extends StatelessWidget {
-  /// Creates the empty state. [isSearching] picks the "no matches" copy and
-  /// [query] is echoed back to the user. On the first-run (non-searching)
-  /// variant, [onAdd] / [onImport] surface action buttons when provided.
+  /// Creates the empty state. [hasQuery] and [hasFilters] describe the active
+  /// read intent, not whether any rows happen to be stored. Recovery callbacks
+  /// clear only their own part of that intent.
   const EmptyLibraryState({
-    required this.isSearching,
-    required this.query,
+    required this.hasQuery,
+    required this.hasFilters,
+    this.onClearSearch,
+    this.onClearFilters,
     this.onAdd,
     this.onImport,
     super.key,
   });
 
-  /// Whether the empty list is the result of an active search.
-  final bool isSearching;
+  /// Whether non-blank search text is active.
+  final bool hasQuery;
 
-  /// The current query text (echoed in the "no matches" message).
-  final String query;
+  /// Whether a kind or language facet is active.
+  final bool hasFilters;
 
-  /// Opens the add-a-book flow (first-run variant only).
+  /// Clears only the search text, preserving kind/language facets.
+  final VoidCallback? onClearSearch;
+
+  /// Clears only kind/language facets, preserving search text.
+  final VoidCallback? onClearFilters;
+
+  /// Opens the add-a-book flow (genuinely empty-library variant only).
   final VoidCallback? onAdd;
 
-  /// Opens the import flow (first-run variant only).
+  /// Opens the import flow (genuinely empty-library variant only).
   final VoidCallback? onImport;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final headline = isSearching
-        ? 'No matches for "${query.trim()}"'
+    final isFiltered = hasQuery || hasFilters;
+    final headline = isFiltered
+        ? 'No items match these filters.'
         : 'Your library is empty';
-    final hint = isSearching
-        ? 'Try a different title, author, or ISBN.'
-        : 'Books you add will appear here.';
+    final hint = isFiltered
+        ? 'Adjust or clear the active filters to see your items.'
+        : 'Items you add will appear here.';
 
     return Center(
       child: Column(
@@ -59,14 +67,36 @@ class EmptyLibraryState extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             hint,
+            textAlign: TextAlign.center,
             style: textTheme.bodyMedium?.copyWith(
               color: scheme.onSurfaceVariant,
             ),
           ),
-          if (!isSearching && (onAdd != null || onImport != null)) ...[
+          if (isFiltered) ...[
             const SizedBox(height: 20),
-            // Wrap (not Row) so the two buttons stack onto a second line on
-            // narrow widths or large text scales instead of overflowing.
+            // Wrap keeps the independent actions reachable on narrow screens
+            // and at large text scales. Both appear when both intents apply.
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                if (hasQuery && onClearSearch != null)
+                  OutlinedButton(
+                    onPressed: onClearSearch,
+                    child: const Text('Clear search'),
+                  ),
+                if (hasFilters && onClearFilters != null)
+                  OutlinedButton(
+                    onPressed: onClearFilters,
+                    child: const Text('Clear filters'),
+                  ),
+              ],
+            ),
+          ] else if (onAdd != null || onImport != null) ...[
+            const SizedBox(height: 20),
+            // Add / Import belong ONLY to a genuinely empty unfiltered
+            // library; they must not imply that a facet deleted the rows.
             Wrap(
               alignment: WrapAlignment.center,
               spacing: 12,

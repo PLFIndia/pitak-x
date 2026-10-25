@@ -1,6 +1,6 @@
 /// Widget tests: the vault loan row resolves book titles
 /// through `bookTitleProvider` — the widget itself does no repository IO —
-/// and falls back to "Book #id" (fail-soft, no raw error text) when the
+/// and falls back to "Item #id" (fail-soft, no raw error text) when the
 /// read fails or the book is missing.
 library;
 
@@ -76,23 +76,23 @@ void main() {
     await pumpPage(tester, _TitleBooks(const {7: 'Godaan'}));
 
     expect(find.text('Godaan'), findsOneWidget);
-    expect(find.textContaining('Book #7'), findsNothing);
+    expect(find.textContaining('Item #7'), findsNothing);
   });
 
-  testWidgets('a missing book falls back to "Book #id"', (tester) async {
+  testWidgets('a missing book falls back to "Item #id"', (tester) async {
     await pumpPage(tester, _TitleBooks(const {}));
 
-    expect(find.text('Book #7'), findsOneWidget);
+    expect(find.text('Item #7'), findsOneWidget);
   });
 
-  testWidgets('a failed read falls back to "Book #id" — fail-soft, no raw '
+  testWidgets('a failed read falls back to "Item #id" — fail-soft, no raw '
       'error text (§5)', (tester) async {
     await pumpPage(
       tester,
       _TitleBooks(const {}, failure: const StorageFailure('private-detail')),
     );
 
-    expect(find.text('Book #7'), findsOneWidget);
+    expect(find.text('Item #7'), findsOneWidget);
     expect(find.textContaining('private-detail'), findsNothing);
   });
 

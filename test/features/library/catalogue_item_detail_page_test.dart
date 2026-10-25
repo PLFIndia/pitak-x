@@ -186,7 +186,11 @@ Widget _host(
 Future<void> _openDetail(WidgetTester tester) async {
   await tester.tap(find.text('open detail'));
   await tester.pumpAndSettle();
-  expect(find.text('Book'), findsOneWidget, reason: 'detail app bar');
+  expect(
+    find.text('Item'),
+    findsOneWidget,
+    reason: 'kind-neutral detail app bar',
+  );
 }
 
 /// Scrolls the lazy edit form until the save button is built + visible, then
@@ -312,7 +316,7 @@ void main() {
     },
   );
 
-  testWidgets('N03: a book deleted underneath shows a safe empty state', (
+  testWidgets('N03 + S9: an item deleted underneath shows a safe empty state', (
     tester,
   ) async {
     final repo = _MemBookRepo([_seed]);
@@ -323,7 +327,11 @@ void main() {
     _signalLibraryChanged(tester);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining('no longer'), findsOneWidget);
+    expect(
+      find.text('This item is no longer in your library.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('book'), findsNothing);
     expect(find.text('Dune'), findsNothing);
     // No actions that would write to a missing row.
     expect(find.byTooltip('Edit'), findsNothing);
@@ -666,7 +674,11 @@ void main() {
     await tester.tap(find.text('open detail'));
     await tester.pumpAndSettle();
 
-    expect(find.textContaining("Couldn't load"), findsOneWidget);
+    expect(
+      find.text("Couldn't load this item. Please go back and try again."),
+      findsOneWidget,
+    );
+    expect(find.textContaining('book'), findsNothing);
     expect(find.textContaining('SQLITE_IOERR'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -739,7 +751,7 @@ void main() {
         reason: 'disabled while locked',
       );
       expect(
-        find.text('Unlock the borrowers vault to lend this book.'),
+        find.text('Unlock the borrowers vault to lend this item.'),
         findsOneWidget,
       );
       expect(
@@ -800,6 +812,81 @@ void main() {
       expect(lendButton(tester).onPressed, isNotNull);
       expect(find.textContaining('borrowers vault to'), findsNothing);
     });
+
+    const genericItems = [
+      CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Frontline — No 5',
+        details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+      ),
+      CatalogueItem(
+        id: 7,
+        itemUid: 'uid-7',
+        title: 'Chess set',
+        details: OtherItemOf(),
+      ),
+    ];
+    for (final item in genericItems) {
+      testWidgets('S9: ${item.kind} detail, actions and lending use Item '
+          'wording', (tester) async {
+        final repo = _MemBookRepo([item]);
+        final periodicals = FakePeriodicals()
+          ..seed(
+            const Periodical(id: 1, periodicalUid: 'per-1', title: 'Frontline'),
+          );
+        await tester.pumpWidget(
+          _host(
+            repo,
+            tmp.path,
+            initialBook: item,
+            extraOverrides: [
+              ...vaultOverrides(vaultStore(initialized: true)),
+              periodicalRepositoryProvider.overrideWith(
+                (ref) async => periodicals,
+              ),
+              nowTickProvider.overrideWith((ref) => 0),
+            ],
+          ),
+        );
+        await openLendSection(tester);
+
+        expect(find.text('Item'), findsOneWidget);
+        expect(find.text('Book'), findsNothing);
+        expect(
+          find.text('Unlock the borrowers vault to lend this item.'),
+          findsOneWidget,
+        );
+        await expectMeetsA11yGuidelines(tester);
+
+        await tester.tap(find.byTooltip('Remove from library'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'The item stays in your records but is marked removed. '
+            'You can restore it later.',
+          ),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Cancel'));
+        await tester.pumpAndSettle();
+
+        await tester.scrollUntilVisible(
+          find.text('Delete permanently'),
+          300,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await tester.tap(find.text('Delete permanently'));
+        await tester.pumpAndSettle();
+        expect(
+          find.text(
+            'This removes the item for good, along with any of its lending '
+            'records in the vault. This cannot be undone.',
+          ),
+          findsOneWidget,
+        );
+      });
+    }
 
     testWidgets('the unlock hint opens the vault screen', (tester) async {
       final repo = _MemBookRepo([_seed]);

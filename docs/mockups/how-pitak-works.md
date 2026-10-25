@@ -265,9 +265,9 @@ ISBN.
 
 ### 3.4 Lending and the borrowers vault
 
-**Intro.** The vault is Pitak's locked drawer: who borrowed which book, when
+**Intro.** The vault is Pitak's locked drawer: who borrowed which item, when
 it is due, and how to reach them. It is encrypted on this phone and opens
-only with your passphrase. Your book list is never locked — you can catalogue
+only with your passphrase. Your catalogue is never locked — you can catalogue
 without opening the vault.
 
 **Set up once**
@@ -279,18 +279,18 @@ without opening the vault.
 3. Optional: **☰ → Settings → Security → Biometric unlock** to open the
    vault with your fingerprint or face from then on.
 
-**Lend a book**
+**Lend an item**
 
-1. Open the book and tap **Lend**. (Locked vault? Unlock it first.)
+1. Open the item and tap **Lend**. (Locked vault? Unlock it first.)
 2. Pick an **Existing borrower**, or type a **New borrower name**.
 3. Set a **Due date** if you want a reminder. Tap **Lend**.
 
 **Returns and reminders**
 
 - **☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** next
-  to the book.
+  to the item.
 - The bell icon (**Pending**) on the vault screen lists overdue loans, loans
-  due soon, and books missing details.
+  due soon, and items missing details.
 - Add a phone or email on a borrower's page and you get **Call**,
   **WhatsApp** and **Email** buttons there.
 

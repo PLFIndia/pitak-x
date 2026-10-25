@@ -17,6 +17,7 @@ import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -28,6 +29,7 @@ import 'package:pitaka/features/wishlist/application/wishlist_controller.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../library/replacement_test_guard.dart';
+import '../periodicals/application/periodical_fakes.dart';
 import '../vault/vault_repository_write_stub.dart';
 import 'generation_fixture.dart';
 
@@ -121,11 +123,15 @@ void main() {
   ProviderContainer makeContainer({
     SettingsRepository? settings,
     NetworkRepository? network,
+    FakePeriodicals? periodicals,
   }) {
     final container = ProviderContainer(
       overrides: [
         appDocsDirProvider.overrideWith((ref) async => tmp),
         vaultRepositoryProvider.overrideWithValue(_FakeVault()),
+        nowTickProvider.overrideWith((ref) => 0),
+        if (periodicals != null)
+          periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         if (settings != null)
           settingsRepositoryProvider.overrideWith((ref) async => settings),
         // §5.10 failure-path seam: skip the real Drift repository (and its
@@ -494,13 +500,17 @@ void main() {
       expect(() => passphrase.use((b) => b), throwsStateError);
     });
 
-    test('a successful restore invalidates the library and wishlist '
-        'controllers', () async {
+    test('S9: a successful restore invalidates the library, wishlist and '
+        'kept-alive Magazines controllers', () async {
       // N04 behaviour, N11 ownership: the refresh used to be the page's job
       // (lost when the page was popped mid-restore); the controller owns it.
-      final container = makeContainer(settings: _LogoSettingsRepo());
+      final container = makeContainer(
+        settings: _LogoSettingsRepo(),
+        periodicals: FakePeriodicals(),
+      );
       var libraryBuilds = 0;
       var wishlistBuilds = 0;
+      var periodicalBuilds = 0;
       container
         ..listen(
           libraryControllerProvider,
@@ -511,11 +521,19 @@ void main() {
           wishlistControllerProvider,
           (_, __) => wishlistBuilds++,
           fireImmediately: true,
+        )
+        ..listen(
+          periodicalsControllerProvider,
+          (_, __) => periodicalBuilds++,
+          fireImmediately: true,
         );
       await container.read(libraryControllerProvider.future);
       await container.read(wishlistControllerProvider.future);
+      await container.read(periodicalsControllerProvider.future);
+      await container.pump();
       final libraryBaseline = libraryBuilds;
       final wishlistBaseline = wishlistBuilds;
+      final periodicalBaseline = periodicalBuilds;
 
       await container
           .read(restoreControllerProvider.notifier)
@@ -525,9 +543,11 @@ void main() {
           );
       expect(container.read(restoreControllerProvider).hasValue, isTrue);
       await container.pump(); // flush the invalidations into rebuilds
+      await container.read(periodicalsControllerProvider.future);
 
       expect(libraryBuilds, greaterThan(libraryBaseline));
       expect(wishlistBuilds, greaterThan(wishlistBaseline));
+      expect(periodicalBuilds, greaterThan(periodicalBaseline));
     });
   });
 

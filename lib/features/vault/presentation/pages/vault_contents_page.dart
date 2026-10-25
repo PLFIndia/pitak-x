@@ -2,7 +2,7 @@
 ///
 /// Read-only: lists each borrower with their loans. Loans carry a `bookId`
 /// (a library book id); the title is resolved through the existing loan-row
-/// read model (`bookTitleProvider`, N06) with a "Book #id" fallback when it
+/// read model (`bookTitleProvider`, N06) with a "Item #id" fallback when it
 /// can't be found (e.g. the matching library book wasn't restored). The
 /// vault itself is never mutated.
 library;
@@ -100,12 +100,12 @@ class _LoanRow extends ConsumerWidget {
 
     // Title resolution lives behind a provider (S2 — the row only watches
     // it; no repository IO in presentation). Null (missing/unreadable book,
-    // or still loading) falls back to the "Book #id" label — fail-soft for
+    // or still loading) falls back to the "Item #id" label — fail-soft for
     // a cosmetic label. The provider watches libraryControllerProvider, so a
     // rename while this page is open re-reads the row (N06).
     final title =
         ref.watch(bookTitleProvider(bookId: loan.itemId)).valueOrNull ??
-        'Book #${loan.itemId}';
+        'Item #${loan.itemId}';
 
     return ListTile(
       dense: true,

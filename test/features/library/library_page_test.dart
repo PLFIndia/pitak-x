@@ -57,9 +57,18 @@ class _FakeBookRepo implements CatalogueItemRepository {
     pagesSeen.add((offset, limit));
     if (failWith != null) return left(failWith!);
     final q = query.text.toLowerCase();
-    final rows = query.isSearch
-        ? _all.where((b) => b.title.toLowerCase().contains(q)).toList()
-        : _all;
+    final rows = _all.where((item) {
+      if (query.isSearch && !item.title.toLowerCase().contains(q)) {
+        return false;
+      }
+      if (query.kind != null && item.kind != query.kind) return false;
+      final language = query.language;
+      if (language != null &&
+          item.language?.toLowerCase() != language.toLowerCase()) {
+        return false;
+      }
+      return true;
+    }).toList();
     final start = offset.clamp(0, rows.length);
     final end = (start + limit).clamp(start, rows.length);
     return right(
@@ -81,8 +90,15 @@ class _FakeBookRepo implements CatalogueItemRepository {
       ? left(failWith!)
       : right(_all.where((b) => b.id == id).firstOrNull);
   @override
-  Future<Either<Failure, List<String>>> distinctLanguages() async =>
-      right(const []);
+  Future<Either<Failure, List<String>>> distinctLanguages() async {
+    final languages = <String>{};
+    for (final item in _all) {
+      final language = item.language?.trim();
+      if (language != null && language.isNotEmpty) languages.add(language);
+    }
+    return right(languages.toList()..sort());
+  }
+
   @override
   Future<Either<Failure, List<String>>> distinctSourceDetails(
     ItemSourceType type,
@@ -138,6 +154,19 @@ Widget _app(CatalogueItemRepository repo) {
   );
 }
 
+Future<void> _enterQuery(WidgetTester tester, String query) async {
+  await tester.enterText(find.byType(TextField), query);
+  // Let the 120ms debounce elapse and the asynchronous reload settle.
+  await tester.pump(const Duration(milliseconds: 200));
+  await tester.pumpAndSettle();
+}
+
+String _visibleQuery(WidgetTester tester) =>
+    tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+FilterChip _filterChip(WidgetTester tester, String label) =>
+    tester.widget<FilterChip>(find.widgetWithText(FilterChip, label));
+
 void main() {
   // Distinct ids: rows are opened by id (N03), and three books sharing the
   // `emptyId` sentinel would be indistinguishable to the detail page.
@@ -172,17 +201,103 @@ void main() {
     expect(find.text('Dune'), findsNothing);
   });
 
-  testWidgets('shows no-matches empty state for a query that hits nothing', (
+  testWidgets('S9: a query-only empty result clears its visible search', (
     tester,
   ) async {
     await tester.pumpWidget(_app(_FakeBookRepo(books)));
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextField), 'zzzz');
+    await _enterQuery(tester, 'zzzz');
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsNothing);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsNothing);
+    expect(find.text('Add a book'), findsNothing);
+    expect(find.text('Import'), findsNothing);
+
+    await tester.tap(find.text('Clear search'));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pumpAndSettle();
 
-    expect(find.text('No matches for "zzzz"'), findsOneWidget);
+    expect(_visibleQuery(tester), isEmpty);
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+  });
+
+  testWidgets('S9: a facet-only empty result is not an empty library', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Magazines'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsNothing);
+    expect(find.text('Clear filters'), findsOneWidget);
+    expect(find.text('Clear search'), findsNothing);
+    expect(find.text('Add a book'), findsNothing);
+    expect(find.text('Import'), findsNothing);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsOneWidget);
+    expect(_filterChip(tester, 'Magazines').selected, isFalse);
+  });
+
+  testWidgets('S9: Clear filters preserves the query in a combined empty '
+      'result', (tester) async {
+    await tester.pumpWidget(_app(_FakeBookRepo(books)));
+    await tester.pumpAndSettle();
+
+    await _enterQuery(tester, 'hobbit');
+    await tester.tap(find.text('Magazines'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsOneWidget);
+    await expectMeetsA11yGuidelines(tester);
+
+    await tester.tap(find.text('Clear filters'));
+    await tester.pumpAndSettle();
+
+    expect(_visibleQuery(tester), 'hobbit');
+    expect(_filterChip(tester, 'Magazines').selected, isFalse);
+    expect(find.text('The Hobbit'), findsOneWidget);
+    expect(find.text('Dune'), findsNothing);
+  });
+
+  testWidgets('S9: Clear search preserves facets in a combined empty result', (
+    tester,
+  ) async {
+    const facetedBooks = [
+      CatalogueItem(id: 1, title: 'Dune', language: 'English'),
+      CatalogueItem(id: 2, title: 'Godaan', language: 'Hindi'),
+    ];
+    await tester.pumpWidget(_app(_FakeBookRepo(facetedBooks)));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    await _enterQuery(tester, 'zzzz');
+
+    expect(find.text('No items match these filters.'), findsOneWidget);
+    expect(find.text('Clear search'), findsOneWidget);
+    expect(find.text('Clear filters'), findsOneWidget);
+
+    await tester.tap(find.text('Clear search'));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+
+    expect(_visibleQuery(tester), isEmpty);
+    expect(_filterChip(tester, 'English').selected, isTrue);
+    expect(find.text('Dune'), findsOneWidget);
+    expect(find.text('Godaan'), findsNothing);
   });
 
   testWidgets('shows empty-library state when there are no books', (
@@ -226,8 +341,8 @@ void main() {
     await tester.tap(find.text('The Hobbit'));
     await tester.pumpAndSettle();
 
-    // Detail page app bar + a labeled row unique to detail.
-    expect(find.text('Book'), findsOneWidget);
+    // Generic detail uses kind-neutral wording, even though this row is a book.
+    expect(find.text('Item'), findsOneWidget);
     expect(find.text('Quantity'), findsOneWidget);
   });
 

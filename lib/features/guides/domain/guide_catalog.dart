@@ -330,11 +330,11 @@ const Guide _vault = Guide(
   id: GuideId.vault,
   title: 'Lending and the borrowers vault',
   cardSubtitle:
-      'Who borrowed which book, when it is due — encrypted on this phone',
+      'Who borrowed which item, when it is due — encrypted on this phone',
   intro:
-      "The vault is Pitak's locked drawer: who borrowed which book, when it "
+      "The vault is Pitak's locked drawer: who borrowed which item, when it "
       'is due, and how to reach them. It is encrypted on this phone and '
-      'opens only with your passphrase. Your book list is never locked — you '
+      'opens only with your passphrase. Your catalogue is never locked — you '
       'can catalogue without opening the vault.',
   needs: [],
   sections: [
@@ -350,9 +350,9 @@ const Guide _vault = Guide(
       ],
     ),
     GuideSteps(
-      title: 'Lend a book',
+      title: 'Lend an item',
       steps: [
-        'Open the book and tap **Lend**. (Locked vault? Unlock it first.)',
+        'Open the item and tap **Lend**. (Locked vault? Unlock it first.)',
         'Pick an **Existing borrower**, or type a **New borrower name**.',
         'Set a **Due date** if you want a reminder. Tap **Lend**.',
       ],
@@ -361,9 +361,9 @@ const Guide _vault = Guide(
       title: 'Returns and reminders',
       bullets: [
         '**☰ → Borrowers vault**, tap the borrower, tap **Edit** → **Return** '
-            'next to the book.',
+            'next to the item.',
         'The bell icon (**Pending**) on the vault screen lists overdue loans, '
-            'loans due soon, and books missing details.',
+            'loans due soon, and items missing details.',
         "Add a phone or email on a borrower's page and you get **Call**, "
             '**WhatsApp** and **Email** buttons there.',
       ],

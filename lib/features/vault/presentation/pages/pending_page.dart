@@ -120,7 +120,7 @@ class _LoanTile extends StatelessWidget {
         emphasize ? Icons.warning_amber : Icons.schedule,
         color: emphasize ? scheme.error : null,
       ),
-      title: Text('Book #$bookId'),
+      title: Text('Item #$bookId'),
       subtitle: Text(
         dueDate == null ? 'No due date' : 'Due ${_date(dueDate!)}',
       ),

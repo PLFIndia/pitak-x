@@ -38,6 +38,19 @@ void main() {
     ]);
   });
 
+  test('S9: the vault guide uses kind-neutral lending copy', () {
+    final text = guideById(GuideId.vault).allText.join('\n');
+
+    expect(text, contains('who borrowed which item'));
+    expect(text, contains('Your catalogue is never locked'));
+    expect(text, contains('Lend an item'));
+    expect(text, contains('Open the item'));
+    expect(text, contains('next to the item'));
+    expect(text, contains('items missing details'));
+    expect(text, isNot(contains('which book')));
+    expect(text, isNot(contains('Lend a book')));
+  });
+
   test('every GuideSteps section has 2–7 steps', () {
     for (final guide in guideCatalog) {
       for (final section in guide.sections.whereType<GuideSteps>()) {

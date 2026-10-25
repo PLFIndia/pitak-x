@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/application/library_controller.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -39,6 +40,15 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
+        // S9: the Magazines list also watches the library mutation signal.
+        // Keep that provider on explicit in-memory dependencies in unit tests.
+        catalogueItemRepositoryProvider.overrideWith(
+          (ref) async => FakeItems(),
+        ),
+        settingsRepositoryProvider.overrideWith((ref) async => FakeSettings()),
+        // A fixed value except in the tick test, which advances `now` before
+        // invalidating so the watched value actually changes.
+        nowTickProvider.overrideWith((ref) => now),
         clockProvider.overrideWithValue(() => now),
         deletePeriodicalUseCaseProvider.overrideWith(
           (ref) async => DeletePeriodicalUseCase(
@@ -134,6 +144,63 @@ void main() {
     },
   );
 
+  test('S9: the shared library signal refreshes title, count and latest date '
+      'without a tick or route recreation', () async {
+    final series = periodicals.seed(const Periodical(title: 'Frontline'));
+    periodicals.issues[series.periodicalUid!] = [
+      CatalogueItem(
+        id: 1,
+        title: 'Frontline — No 1',
+        details: IssueOf(
+          periodicalUid: series.periodicalUid!,
+          issueNumber: 1,
+          issueDate: dayFromToday(-30),
+        ),
+      ),
+    ];
+    final container = makeContainer();
+    final before = await load(container);
+    final notifier = container.read(periodicalsControllerProvider.notifier);
+    await container.read(libraryControllerProvider.future);
+    await container.pump();
+    expect(before.single.periodical.title, 'Frontline');
+    expect(before.single.issueCount, 1);
+    expect(before.single.latestIssueDate, dayFromToday(-30));
+
+    // This is the shared signal emitted by import, merge, restore and the
+    // issue-delete action. The store changes first; no minute tick fires and
+    // the PeriodicalsController listener stays open throughout.
+    periodicals.rows[series.id] = series.copyWith(title: 'Frontline Weekly');
+    periodicals.issues[series.periodicalUid!] = [
+      ...periodicals.issues[series.periodicalUid!]!,
+      CatalogueItem(
+        id: 2,
+        title: 'Frontline Weekly — No 2',
+        details: IssueOf(
+          periodicalUid: series.periodicalUid!,
+          issueNumber: 2,
+          issueDate: dayFromToday(-2),
+        ),
+      ),
+    ];
+    container.invalidate(libraryControllerProvider);
+    await container.read(libraryControllerProvider.future);
+    await container.pump();
+
+    final after = await container.read(periodicalsControllerProvider.future);
+    expect(after.single.periodical.title, 'Frontline Weekly');
+    expect(after.single.issueCount, 2);
+    expect(after.single.latestIssueDate, dayFromToday(-2));
+    expect(
+      identical(
+        notifier,
+        container.read(periodicalsControllerProvider.notifier),
+      ),
+      isTrue,
+      reason: 'the kept-alive route/provider was not recreated',
+    );
+  });
+
   test('a failed read surfaces AsyncError(Failure), never raw text', () async {
     periodicals.listAllFailure = const StorageFailure('disk gone');
     final container = makeContainer();
@@ -175,6 +242,9 @@ void main() {
       periodicals.markRemovedFailure = const StorageFailure('disk full');
       final container = makeContainer();
       await load(container);
+      await container.read(libraryControllerProvider.future);
+      await container.pump();
+      final readsBefore = periodicals.calls.where((c) => c == 'listAll').length;
 
       await container
           .read(periodicalsControllerProvider.notifier)
@@ -183,7 +253,11 @@ void main() {
       final state = container.read(periodicalsControllerProvider);
       expect(state, isA<AsyncError<List<PeriodicalListEntry>>>());
       expect(state.error, isA<StorageFailure>());
-      expect(periodicals.calls.where((c) => c == 'listAll').length, 1);
+      expect(
+        periodicals.calls.where((c) => c == 'listAll').length,
+        readsBefore,
+        reason: 'a failed write must not trigger a success refresh',
+      );
     });
 
     test('restoreRemoved clears the flag, then refreshes', () async {

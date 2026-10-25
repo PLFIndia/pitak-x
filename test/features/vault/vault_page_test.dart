@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +8,9 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
+import 'package:pitaka/features/vault/application/vault_session_controller.dart';
 import 'package:pitaka/features/vault/domain/entities/borrower.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
@@ -14,6 +18,7 @@ import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 
 import '../../support/a11y.dart';
+import '../periodicals/application/periodical_fakes.dart';
 import 'vault_repository_write_stub.dart';
 
 /// Read-only fake: unlock returns a fixed snapshot; writes aren't exercised by
@@ -43,7 +48,11 @@ void main() {
     child: const MaterialApp(home: VaultPage()),
   );
 
-  ProviderContainer container({required bool initialized}) {
+  ProviderContainer container({
+    required bool initialized,
+    VaultData? data,
+    FakeItems? items,
+  }) {
     final store = VaultStore(baseDir: tmp.path);
     if (initialized) {
       File(store.dbPath).writeAsBytesSync([0]);
@@ -53,13 +62,16 @@ void main() {
       overrides: [
         vaultRepositoryProvider.overrideWithValue(
           _StubVault(
-            const VaultData(
-              borrowers: [Borrower(id: 1, name: 'Asha')],
-              loans: [],
-            ),
+            data ??
+                const VaultData(
+                  borrowers: [Borrower(id: 1, name: 'Asha')],
+                  loans: [],
+                ),
           ),
         ),
         vaultStoreProvider.overrideWith((ref) async => store),
+        if (items != null)
+          catalogueItemRepositoryProvider.overrideWith((ref) async => items),
       ],
     );
     addTearDown(c.dispose);
@@ -148,6 +160,48 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Create vault'), findsOneWidget);
     expect(VaultStore(baseDir: tmp.path).isInitialized(), isFalse);
   });
+
+  const genericItems = [
+    CatalogueItem(
+      title: 'Frontline — No 5',
+      details: IssueOf(periodicalUid: 'per-1', issueNumber: 5),
+    ),
+    CatalogueItem(title: 'Chess set', details: OtherItemOf()),
+  ];
+  for (final item in genericItems) {
+    testWidgets('S9: an active ${item.kind} loan uses neutral delete copy', (
+      tester,
+    ) async {
+      final items = FakeItems();
+      final storedItem = items.seed(item);
+      final c = container(
+        initialized: true,
+        items: items,
+        data: VaultData(
+          borrowers: const [Borrower(id: 1, name: 'Asha')],
+          loans: [Loan(itemId: storedItem.id, borrowerId: 1, lentDate: 1)],
+        ),
+      );
+      await c.read(vaultSessionControllerProvider.future);
+      final unlocked = await c
+          .read(vaultSessionControllerProvider.notifier)
+          .unlock(SecretBytes(Uint8List.fromList([1, 2, 3, 4, 5, 6, 7, 8])));
+      expect(unlocked.isRight(), isTrue);
+      await tester.pumpWidget(host(c));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.delete_outline));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(
+          'This borrower still has items out. Mark those loans returned first.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('books out'), findsNothing);
+    });
+  }
 
   testWidgets('meets accessibility guidelines', (tester) async {
     await tester.pumpWidget(host(container(initialized: false)));

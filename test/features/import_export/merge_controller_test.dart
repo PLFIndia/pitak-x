@@ -21,6 +21,7 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/periodicals/application/periodicals_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -209,11 +210,13 @@ void main() {
   ProviderContainer makeContainer({
     _FakeBooks? books,
     _FakeSettings? settings,
+    FakePeriodicals? periodicals,
     FakeReplacementGuard? guard,
     Completer<void>? gate,
     Future<MergeLibraryUseCase> Function()? useCaseOverride,
   }) {
     final repo = settings ?? _FakeSettings(libraryId: matchingId);
+    final sharedPeriodicals = periodicals ?? FakePeriodicals();
     final container = ProviderContainer(
       overrides: [
         mergeLibraryUseCaseProvider.overrideWith((ref) async {
@@ -221,7 +224,7 @@ void main() {
           if (useCaseOverride != null) return useCaseOverride();
           return MergeLibraryUseCase(
             bookRepo: books ?? _FakeBooks([]),
-            periodicalRepo: FakePeriodicals(),
+            periodicalRepo: sharedPeriodicals,
             namespace: ref.read(settingsControllerProvider.notifier),
             jsonParser: const PitakaJsonImporter(),
             replacementGuard: guard ?? FakeReplacementGuard(),
@@ -233,7 +236,11 @@ void main() {
         catalogueItemRepositoryProvider.overrideWith(
           (ref) async => _FakeBooks([]),
         ),
+        periodicalRepositoryProvider.overrideWith(
+          (ref) async => sharedPeriodicals,
+        ),
         settingsRepositoryProvider.overrideWith((ref) async => repo),
+        nowTickProvider.overrideWith((ref) => 0),
       ],
     );
     addTearDown(container.dispose);
@@ -273,6 +280,53 @@ void main() {
       expect(libraryBuilds, greaterThan(baseline));
     },
   );
+
+  test('S9: merge refreshes a kept-alive Magazines list through the shared '
+      'library signal', () async {
+    final periodicals = FakePeriodicals();
+    final container = makeContainer(periodicals: periodicals);
+    final librarySub = container.listen(libraryControllerProvider, (_, _) {});
+    addTearDown(librarySub.close);
+    var periodicalEvents = 0;
+    final sub = container.listen(
+      periodicalsControllerProvider,
+      (_, _) => periodicalEvents++,
+      fireImmediately: true,
+    );
+    addTearDown(sub.close);
+    await container.read(libraryControllerProvider.future);
+    expect(await container.read(periodicalsControllerProvider.future), isEmpty);
+    await container.pump();
+    final baseline = periodicalEvents;
+
+    await container
+        .read(mergeControllerProvider.notifier)
+        .mergeText(
+          jsonEncode({
+            'schemaVersion': 4,
+            'libraryId': matchingId,
+            'libraryName': 'Other',
+            'periodicals': [
+              {'periodicalUid': 'p1', 'title': 'Chandamama'},
+            ],
+            'books': [
+              {
+                'bookUid': 'u1',
+                'title': 'Chandamama — No 3',
+                'kind': 'magazine-issue',
+                'issue': {'periodicalUid': 'p1', 'issueNumber': 3},
+              },
+            ],
+            'wishlist': <Object>[],
+          }),
+        );
+    expect(container.read(mergeControllerProvider), isA<MergeDone>());
+    await container.pump();
+
+    final entries = await container.read(periodicalsControllerProvider.future);
+    expect(periodicalEvents, greaterThan(baseline));
+    expect(entries.map((entry) => entry.periodical.title), ['Chandamama']);
+  });
 
   test('a different-ID file surfaces the decision; applyJoin merges and '
       'adopts the incoming ID', () async {

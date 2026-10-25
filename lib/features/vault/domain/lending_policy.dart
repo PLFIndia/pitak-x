@@ -53,7 +53,7 @@ final class LendRefusedRemoved extends LendDecision {
 
   @override
   String get reason =>
-      'This book is marked as removed from the library, so it cannot be '
+      'This item is marked as removed from the library, so it cannot be '
       'lent. Restore it to the library first.';
 }
 
@@ -70,8 +70,8 @@ final class LendRefusedAllCopiesOut extends LendDecision {
 
   @override
   String get reason => copies == 1
-      ? 'This book is already out on loan. Mark it returned before lending '
+      ? 'This item is already out on loan. Mark it returned before lending '
             'it again.'
-      : 'All $copies copies of this book are already out on loan. Mark one '
+      : 'All $copies copies of this item are already out on loan. Mark one '
             'returned before lending it again.';
 }

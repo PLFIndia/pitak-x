@@ -92,7 +92,7 @@ class CatalogueItemActions extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         title: const Text('Remove from library?'),
         content: const Text(
-          'The book stays in your records but is marked removed. '
+          'The item stays in your records but is marked removed. '
           'You can restore it later.',
         ),
         actions: [
@@ -185,7 +185,7 @@ class LendSection extends StatelessWidget {
         const SizedBox(height: 6),
         Text(
           session is VaultLocked
-              ? 'Unlock the borrowers vault to lend this book.'
+              ? 'Unlock the borrowers vault to lend this item.'
               : 'Set up the borrowers vault to start lending.',
           style: textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
         ),
@@ -231,7 +231,7 @@ class _DeleteForeverButtonState extends ConsumerState<DeleteForeverButton> {
       builder: (ctx) => AlertDialog(
         title: const Text('Delete permanently?'),
         content: const Text(
-          'This removes the book for good, along with any of its lending '
+          'This removes the item for good, along with any of its lending '
           'records in the vault. This cannot be undone.',
         ),
         actions: [
@@ -254,7 +254,7 @@ class _DeleteForeverButtonState extends ConsumerState<DeleteForeverButton> {
     if (!mounted) return;
     setState(() => _busy = false);
 
-    result.match((_) => _snack('Could not delete this book.'), (outcome) {
+    result.match((_) => _snack('Could not delete this item.'), (outcome) {
       switch (outcome) {
         case DeleteBookOutcome.deleted:
           ref.invalidate(libraryControllerProvider);

@@ -305,7 +305,7 @@
   <section class="view" id="v-g-vault">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Lending and the borrowers vault</h1></header>
     <div class="content">
-      <p>The vault is Pitak's locked drawer: who borrowed which book, when it is due, and how to reach them. It is encrypted on this phone and opens only with your passphrase. Your book list is never locked — you can catalogue without opening the vault.</p>
+      <p>The vault is Pitak's locked drawer: who borrowed which item, when it is due, and how to reach them. It is encrypted on this phone and opens only with your passphrase. Your catalogue is never locked — you can catalogue without opening the vault.</p>
 
       <h2>Set up once</h2>
       <ol class="steps">
@@ -314,17 +314,17 @@
         <li>Optional: <b>☰ → Settings → Security → Biometric unlock</b> to open the vault with your fingerprint or face from then on.</li>
       </ol>
 
-      <h2>Lend a book</h2>
+      <h2>Lend an item</h2>
       <ol class="steps">
-        <li>Open the book and tap <b>Lend</b>. (Locked vault? Unlock it first.)</li>
+        <li>Open the item and tap <b>Lend</b>. (Locked vault? Unlock it first.)</li>
         <li>Pick an <b>Existing borrower</b>, or type a <b>New borrower name</b>.</li>
         <li>Set a <b>Due date</b> if you want a reminder. Tap <b>Lend</b>.</li>
       </ol>
 
       <h2>Returns and reminders</h2>
       <ul class="plain">
-        <li><b>☰ → Borrowers vault</b>, tap the borrower, tap <b>Edit</b> → <b>Return</b> next to the book.</li>
-        <li>The bell icon (<b>Pending</b>) on the vault screen lists overdue loans, loans due soon, and books missing details.</li>
+        <li><b>☰ → Borrowers vault</b>, tap the borrower, tap <b>Edit</b> → <b>Return</b> next to the item.</li>
+        <li>The bell icon (<b>Pending</b>) on the vault screen lists overdue loans, loans due soon, and items missing details.</li>
         <li>Add a phone or email on a borrower's page and you get <b>Call</b>, <b>WhatsApp</b> and <b>Email</b> buttons there.</li>
       </ul>
 
@@ -436,13 +436,13 @@
   <!-- ---------- STUB: BORROWERS VAULT (first-run) ---------- -->
   <section class="view" id="v-vault">
     <header class="appbar"><button class="icon" onclick="back()"><svg viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button><h1>Borrowers vault</h1>
-      <button class="icon" title="Pending" onclick="toast('Pending: overdue, due soon, books missing details')">🔔</button>
+      <button class="icon" title="Pending" onclick="toast('Pending: overdue, due soon, items missing details')">🔔</button>
       <button class="icon" title="Lock" onclick="toast('Locks the vault')">🔒</button></header>
     <div class="content">
       <p>Set up an encrypted vault for your borrowers and loans. Choose a passphrase you can remember — it is the ONLY way to open the vault, and it is never stored on this device. At least 8 characters.</p>
       <div class="field"><label>Passphrase</label><input type="password" placeholder="At least 8 characters"></div>
       <div class="field"><label>Confirm passphrase</label><input type="password" placeholder="Type it again"></div>
-      <button class="btn filled wide" onclick="toast('Creates the vault; next: Add borrower / lend from a book')">Create vault</button>
+      <button class="btn filled wide" onclick="toast('Creates the vault; next: Add borrower / lend from an item')">Create vault</button>
       <div style="height:10px"></div>
       <button class="btn outlined wide" onclick="toast('Biometric prompt (opt-in, after first unlock)')">Unlock with biometrics</button>
       <p class="small" style="margin-top:16px">After unlocking you see the borrower list, <b>Add borrower</b>, the bell (Pending) and the lock icon — as in the app today.</p>

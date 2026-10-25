@@ -223,7 +223,7 @@ void main() {
     );
     expect(find.byType(AddBookPage), findsNothing);
 
-    await tester.tap(find.text('View book'));
+    await tester.tap(find.text('View item'));
     await tester.pumpAndSettle();
     expect(find.byType(CatalogueItemDetailPage), findsOneWidget);
     expect(find.text('Dune'), findsWidgets, reason: 'detail header rendered');
