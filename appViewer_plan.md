@@ -60,6 +60,7 @@ a security, compatibility or privacy rule.
 | D3 | Device evidence for the large-fixture check and TalkBack | The 20 000-row decode/query budget test and a lazy-build widget test ship here; device measurement and TalkBack walk are documented in `docs/RELEASING.md` §6.1 | No Android device is attached to this environment; the automated guards are in place and the manual steps are tracked in the release checklist. |
 | D4 | Cover decode off the UI isolate in the adapter | `ImageDownscaler.downscaleJpegAsync` is the production default and injectable for tests | Unchanged behaviour; the injection seam keeps the "only downscaled bytes" test cheap. |
 | D5 | "Read the existing publish schema 1; do not change the writer" | `PublishedCatalogueCodec` is instance-based with constructor caps (defaults = production values) | Lets boundary tests inject tiny caps instead of allocating 64 MiB; production always uses the defaults. |
+| D6 | Stage invalidation in `PublishedCataloguePage.initState` | The first `didChangeDependencies` performs the same one-shot invalidation | Riverpod 2.6.1 resolves the `ProviderScope` through an inherited widget, which is illegal in `initState`. `didChangeDependencies` runs before the first build, so "new mount = new session, one GET" is identical (tested). |
 
 ---
 

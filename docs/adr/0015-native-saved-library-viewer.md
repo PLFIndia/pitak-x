@@ -108,6 +108,10 @@ library's current published `books.json`.** Concretely (plan
   viewer's two goldens must be rendered by the Linux `update_goldens`
   workflow; a macOS-rendered PNG is forbidden, so the names/renders land with
   the PNGs rather than leaving the always-on existence guard red.
+- **New-mount invalidation runs in `didChangeDependencies`, not `initState`.**
+  Riverpod 2.6.1 reaches the `ProviderScope` through an inherited widget, which
+  `initState` may not touch. The first `didChangeDependencies` fires before the
+  first build, so the session guarantee is unchanged.
 - **Device evidence is tracked, not faked.** The 20 000-row decode/query
   budget and the lazy-list assertion are automated; the real-device
   measurement and TalkBack walk are steps in `docs/RELEASING.md` §6.1.
