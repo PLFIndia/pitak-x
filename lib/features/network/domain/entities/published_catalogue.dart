@@ -250,14 +250,17 @@ final class PublishedCatalogueWarnings {
   /// `exportedAt` was present but not a usable epoch-millis value.
   final bool invalidExportedAt;
 
-  /// True when at least one row/field was refused, so the UI must say so.
+  /// True when at least one ROW or FIELD was refused, so the UI must say so.
+  ///
+  /// [invalidExportedAt] is deliberately excluded: a bad publish timestamp
+  /// means the date is simply not shown, not that entries are missing, and the
+  /// banner's wording ("Some entries couldn't be displayed") must stay honest.
   bool get hasPartialRead =>
       droppedItems > 0 ||
       droppedPeriodicals > 0 ||
       invalidOptionalFields > 0 ||
       itemsTruncated ||
-      periodicalsTruncated ||
-      invalidExportedAt;
+      periodicalsTruncated;
 
   /// True when at least one row's kind was not understood.
   bool get hasUnknownKinds => unknownKindItems > 0;

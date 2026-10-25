@@ -257,8 +257,7 @@ class _PublishedCataloguePageState
               if (catalogue.warnings.hasUnknownKinds) ...[
                 const SizedBox(height: 4),
                 Text(
-                  'Some entries are from a newer Pitak and show fewer '
-                  'details.',
+                  'Some entries are shown with fewer details.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ],
