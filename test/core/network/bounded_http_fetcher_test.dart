@@ -605,4 +605,84 @@ void main() {
       );
     });
   });
+
+  group('caller abort (viewer plan S2)', () {
+    test('a caller abort tears the request down mid-body', () async {
+      final probe = _BodyProbe();
+      final fetcher = _fetcher(
+        _streaming(
+          tenChunks(),
+          chunkDelay: const Duration(milliseconds: 30),
+          probe: probe,
+        ),
+      );
+      final caller = Completer<void>();
+      final pending = fetcher.fetch(allowed, abortTrigger: caller.future);
+      // Let a couple of chunks arrive, then abandon the screen.
+      await Future<void>.delayed(const Duration(milliseconds: 45));
+      caller.complete();
+
+      // A caller abort is deliberately mapped to the coarse transport reason
+      // (the route is gone; the controller discards the result anyway).
+      expect(_reasonOf(await pending), FetchRefusal.transport);
+      expect(probe.aborted, isTrue, reason: 'the server saw the abort');
+      final pulledAtAbort = probe.chunksPulled;
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(probe.chunksPulled, pulledAtAbort, reason: 'body stopped');
+      expect(probe.bodyClosed, isTrue);
+    });
+
+    test(
+      'a caller abort during a hanging send aborts the connection',
+      () async {
+        var abortReachedServer = false;
+        final hanging = MockClient.streaming((request, _) {
+          final pending = Completer<http.StreamedResponse>();
+          if (request case http.Abortable(:final abortTrigger?)) {
+            unawaited(
+              abortTrigger.whenComplete(() {
+                abortReachedServer = true;
+                if (!pending.isCompleted) {
+                  pending.completeError(
+                    http.RequestAbortedException(request.url),
+                  );
+                }
+              }),
+            );
+          }
+          return pending.future;
+        });
+        final caller = Completer<void>();
+        final pending = _fetcher(
+          hanging,
+        ).fetch(allowed, abortTrigger: caller.future);
+        caller.complete();
+        expect(_reasonOf(await pending), FetchRefusal.transport);
+        expect(abortReachedServer, isTrue);
+      },
+    );
+
+    test('a caller abort after a successful fetch changes nothing', () async {
+      final caller = Completer<void>();
+      final outcome = await _fetcher(
+        _streaming([
+          [1, 2, 3],
+        ]),
+      ).fetch(allowed, abortTrigger: caller.future);
+      expect(_bytesOf(outcome), [1, 2, 3]);
+      caller.complete(); // late signal: the request already finished
+      await Future<void>.delayed(Duration.zero);
+    });
+
+    test('no caller trigger keeps the existing behaviour', () async {
+      // Every other test in this file already calls `fetch(url)` with no
+      // trigger; this one states the compatibility requirement explicitly.
+      final outcome = await _fetcher(
+        _streaming([
+          [9],
+        ]),
+      ).fetch(allowed);
+      expect(_bytesOf(outcome), [9]);
+    });
+  });
 }

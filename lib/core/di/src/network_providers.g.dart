@@ -178,7 +178,7 @@ final osmTileDiskCacheProvider = AutoDisposeProvider<bool>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef OsmTileDiskCacheRef = AutoDisposeProviderRef<bool>;
-String _$osmTileHttpClientHash() => r'f1a0433953d14102f932aaebc4ae352d26f56385';
+String _$osmTileHttpClientHash() => r'323e6d7723bd41e5bc000aaf3ec4f940a54dd924';
 
 /// The HTTP client that backs the network map's tile provider (§5.9).
 ///
@@ -198,7 +198,7 @@ String _$osmTileHttpClientHash() => r'f1a0433953d14102f932aaebc4ae352d26f56385';
 ///
 /// Copied from [osmTileHttpClient].
 @ProviderFor(osmTileHttpClient)
-final osmTileHttpClientProvider = AutoDisposeProvider<Client>.internal(
+final osmTileHttpClientProvider = AutoDisposeProvider<http.Client>.internal(
   osmTileHttpClient,
   name: r'osmTileHttpClientProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -210,6 +210,551 @@ final osmTileHttpClientProvider = AutoDisposeProvider<Client>.internal(
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef OsmTileHttpClientRef = AutoDisposeProviderRef<Client>;
+typedef OsmTileHttpClientRef = AutoDisposeProviderRef<http.Client>;
+String _$publishedViewerClientFactoryHash() =>
+    r'1422e4490b9901d90ef1b3432af626e729549b5c';
+
+/// The production factory: a plain platform client, wrapped by
+/// [publishedViewerHttpClient] in the deadline/byte decorator.
+///
+/// Copied from [publishedViewerClientFactory].
+@ProviderFor(publishedViewerClientFactory)
+final publishedViewerClientFactoryProvider =
+    Provider<ViewerHttpClientFactory>.internal(
+      publishedViewerClientFactory,
+      name: r'publishedViewerClientFactoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedViewerClientFactoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedViewerClientFactoryRef = ProviderRef<ViewerHttpClientFactory>;
+String _$publishedViewerHttpClientHash() =>
+    r'7f13b1cb23ac9cb7ea4e74f5efcf8d528d819645';
+
+/// Copied from Dart SDK
+class _SystemHash {
+  _SystemHash._();
+
+  static int combine(int hash, int value) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + value);
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x0007ffff & hash) << 10));
+    return hash ^ (hash >> 6);
+  }
+
+  static int finish(int hash) {
+    // ignore: parameter_assignments
+    hash = 0x1fffffff & (hash + ((0x03ffffff & hash) << 3));
+    // ignore: parameter_assignments
+    hash = hash ^ (hash >> 11);
+    return 0x1fffffff & (hash + ((0x00003fff & hash) << 15));
+  }
+}
+
+/// The HTTP client owned by ONE published-catalogue viewer session.
+///
+/// A separate inner client on purpose (V12): the viewer aborts individual
+/// requests with a caller signal, but closing its own client is the final
+/// backstop when the route disposes. Closing the shared Refresh/Publish client
+/// would break unrelated screens, so the viewer never touches it.
+///
+/// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+/// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+/// Auto-dispose: the final watcher leaving closes the client.
+///
+/// Copied from [publishedViewerHttpClient].
+@ProviderFor(publishedViewerHttpClient)
+const publishedViewerHttpClientProvider = PublishedViewerHttpClientFamily();
+
+/// The HTTP client owned by ONE published-catalogue viewer session.
+///
+/// A separate inner client on purpose (V12): the viewer aborts individual
+/// requests with a caller signal, but closing its own client is the final
+/// backstop when the route disposes. Closing the shared Refresh/Publish client
+/// would break unrelated screens, so the viewer never touches it.
+///
+/// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+/// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+/// Auto-dispose: the final watcher leaving closes the client.
+///
+/// Copied from [publishedViewerHttpClient].
+class PublishedViewerHttpClientFamily extends Family<http.Client> {
+  /// The HTTP client owned by ONE published-catalogue viewer session.
+  ///
+  /// A separate inner client on purpose (V12): the viewer aborts individual
+  /// requests with a caller signal, but closing its own client is the final
+  /// backstop when the route disposes. Closing the shared Refresh/Publish client
+  /// would break unrelated screens, so the viewer never touches it.
+  ///
+  /// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+  /// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+  /// Auto-dispose: the final watcher leaving closes the client.
+  ///
+  /// Copied from [publishedViewerHttpClient].
+  const PublishedViewerHttpClientFamily();
+
+  /// The HTTP client owned by ONE published-catalogue viewer session.
+  ///
+  /// A separate inner client on purpose (V12): the viewer aborts individual
+  /// requests with a caller signal, but closing its own client is the final
+  /// backstop when the route disposes. Closing the shared Refresh/Publish client
+  /// would break unrelated screens, so the viewer never touches it.
+  ///
+  /// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+  /// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+  /// Auto-dispose: the final watcher leaving closes the client.
+  ///
+  /// Copied from [publishedViewerHttpClient].
+  PublishedViewerHttpClientProvider call(String siteUrl) {
+    return PublishedViewerHttpClientProvider(siteUrl);
+  }
+
+  @override
+  PublishedViewerHttpClientProvider getProviderOverride(
+    covariant PublishedViewerHttpClientProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedViewerHttpClientProvider';
+}
+
+/// The HTTP client owned by ONE published-catalogue viewer session.
+///
+/// A separate inner client on purpose (V12): the viewer aborts individual
+/// requests with a caller signal, but closing its own client is the final
+/// backstop when the route disposes. Closing the shared Refresh/Publish client
+/// would break unrelated screens, so the viewer never touches it.
+///
+/// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+/// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+/// Auto-dispose: the final watcher leaving closes the client.
+///
+/// Copied from [publishedViewerHttpClient].
+class PublishedViewerHttpClientProvider
+    extends AutoDisposeProvider<http.Client> {
+  /// The HTTP client owned by ONE published-catalogue viewer session.
+  ///
+  /// A separate inner client on purpose (V12): the viewer aborts individual
+  /// requests with a caller signal, but closing its own client is the final
+  /// backstop when the route disposes. Closing the shared Refresh/Publish client
+  /// would break unrelated screens, so the viewer never touches it.
+  ///
+  /// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+  /// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+  /// Auto-dispose: the final watcher leaving closes the client.
+  ///
+  /// Copied from [publishedViewerHttpClient].
+  PublishedViewerHttpClientProvider(String siteUrl)
+    : this._internal(
+        (ref) => publishedViewerHttpClient(
+          ref as PublishedViewerHttpClientRef,
+          siteUrl,
+        ),
+        from: publishedViewerHttpClientProvider,
+        name: r'publishedViewerHttpClientProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedViewerHttpClientHash,
+        dependencies: PublishedViewerHttpClientFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedViewerHttpClientFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedViewerHttpClientProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    http.Client Function(PublishedViewerHttpClientRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedViewerHttpClientProvider._internal(
+        (ref) => create(ref as PublishedViewerHttpClientRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<http.Client> createElement() {
+    return _PublishedViewerHttpClientProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedViewerHttpClientProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedViewerHttpClientRef on AutoDisposeProviderRef<http.Client> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedViewerHttpClientProviderElement
+    extends AutoDisposeProviderElement<http.Client>
+    with PublishedViewerHttpClientRef {
+  _PublishedViewerHttpClientProviderElement(super.provider);
+
+  @override
+  String get siteUrl => (origin as PublishedViewerHttpClientProvider).siteUrl;
+}
+
+String _$publishedCatalogueFetcherHash() =>
+    r'45d2e662cfabc1c8813f169c6af9d53d5f90555b';
+
+/// The bounded `books.json` fetcher for the library saved at [siteUrl].
+///
+/// Watches the viewer-scoped client, so the dependency chain is explicit:
+/// catalogue load → this fetcher → the viewer client. Disposing the viewer
+/// disposes the client (and any socket it still owns).
+///
+/// Copied from [publishedCatalogueFetcher].
+@ProviderFor(publishedCatalogueFetcher)
+const publishedCatalogueFetcherProvider = PublishedCatalogueFetcherFamily();
+
+/// The bounded `books.json` fetcher for the library saved at [siteUrl].
+///
+/// Watches the viewer-scoped client, so the dependency chain is explicit:
+/// catalogue load → this fetcher → the viewer client. Disposing the viewer
+/// disposes the client (and any socket it still owns).
+///
+/// Copied from [publishedCatalogueFetcher].
+class PublishedCatalogueFetcherFamily
+    extends Family<PublishedCatalogueFetcher> {
+  /// The bounded `books.json` fetcher for the library saved at [siteUrl].
+  ///
+  /// Watches the viewer-scoped client, so the dependency chain is explicit:
+  /// catalogue load → this fetcher → the viewer client. Disposing the viewer
+  /// disposes the client (and any socket it still owns).
+  ///
+  /// Copied from [publishedCatalogueFetcher].
+  const PublishedCatalogueFetcherFamily();
+
+  /// The bounded `books.json` fetcher for the library saved at [siteUrl].
+  ///
+  /// Watches the viewer-scoped client, so the dependency chain is explicit:
+  /// catalogue load → this fetcher → the viewer client. Disposing the viewer
+  /// disposes the client (and any socket it still owns).
+  ///
+  /// Copied from [publishedCatalogueFetcher].
+  PublishedCatalogueFetcherProvider call(String siteUrl) {
+    return PublishedCatalogueFetcherProvider(siteUrl);
+  }
+
+  @override
+  PublishedCatalogueFetcherProvider getProviderOverride(
+    covariant PublishedCatalogueFetcherProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedCatalogueFetcherProvider';
+}
+
+/// The bounded `books.json` fetcher for the library saved at [siteUrl].
+///
+/// Watches the viewer-scoped client, so the dependency chain is explicit:
+/// catalogue load → this fetcher → the viewer client. Disposing the viewer
+/// disposes the client (and any socket it still owns).
+///
+/// Copied from [publishedCatalogueFetcher].
+class PublishedCatalogueFetcherProvider
+    extends AutoDisposeProvider<PublishedCatalogueFetcher> {
+  /// The bounded `books.json` fetcher for the library saved at [siteUrl].
+  ///
+  /// Watches the viewer-scoped client, so the dependency chain is explicit:
+  /// catalogue load → this fetcher → the viewer client. Disposing the viewer
+  /// disposes the client (and any socket it still owns).
+  ///
+  /// Copied from [publishedCatalogueFetcher].
+  PublishedCatalogueFetcherProvider(String siteUrl)
+    : this._internal(
+        (ref) => publishedCatalogueFetcher(
+          ref as PublishedCatalogueFetcherRef,
+          siteUrl,
+        ),
+        from: publishedCatalogueFetcherProvider,
+        name: r'publishedCatalogueFetcherProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedCatalogueFetcherHash,
+        dependencies: PublishedCatalogueFetcherFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedCatalogueFetcherFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedCatalogueFetcherProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    PublishedCatalogueFetcher Function(PublishedCatalogueFetcherRef provider)
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedCatalogueFetcherProvider._internal(
+        (ref) => create(ref as PublishedCatalogueFetcherRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<PublishedCatalogueFetcher> createElement() {
+    return _PublishedCatalogueFetcherProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedCatalogueFetcherProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedCatalogueFetcherRef
+    on AutoDisposeProviderRef<PublishedCatalogueFetcher> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedCatalogueFetcherProviderElement
+    extends AutoDisposeProviderElement<PublishedCatalogueFetcher>
+    with PublishedCatalogueFetcherRef {
+  _PublishedCatalogueFetcherProviderElement(super.provider);
+
+  @override
+  String get siteUrl => (origin as PublishedCatalogueFetcherProvider).siteUrl;
+}
+
+String _$loadPublishedCatalogueUseCaseHash() =>
+    r'599029b61884479fefee02759545f0cbc7301fd7';
+
+/// Loads one saved library's published catalogue (ADR 0015).
+///
+/// Copied from [loadPublishedCatalogueUseCase].
+@ProviderFor(loadPublishedCatalogueUseCase)
+const loadPublishedCatalogueUseCaseProvider =
+    LoadPublishedCatalogueUseCaseFamily();
+
+/// Loads one saved library's published catalogue (ADR 0015).
+///
+/// Copied from [loadPublishedCatalogueUseCase].
+class LoadPublishedCatalogueUseCaseFamily
+    extends Family<LoadPublishedCatalogueUseCase> {
+  /// Loads one saved library's published catalogue (ADR 0015).
+  ///
+  /// Copied from [loadPublishedCatalogueUseCase].
+  const LoadPublishedCatalogueUseCaseFamily();
+
+  /// Loads one saved library's published catalogue (ADR 0015).
+  ///
+  /// Copied from [loadPublishedCatalogueUseCase].
+  LoadPublishedCatalogueUseCaseProvider call(String siteUrl) {
+    return LoadPublishedCatalogueUseCaseProvider(siteUrl);
+  }
+
+  @override
+  LoadPublishedCatalogueUseCaseProvider getProviderOverride(
+    covariant LoadPublishedCatalogueUseCaseProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'loadPublishedCatalogueUseCaseProvider';
+}
+
+/// Loads one saved library's published catalogue (ADR 0015).
+///
+/// Copied from [loadPublishedCatalogueUseCase].
+class LoadPublishedCatalogueUseCaseProvider
+    extends AutoDisposeProvider<LoadPublishedCatalogueUseCase> {
+  /// Loads one saved library's published catalogue (ADR 0015).
+  ///
+  /// Copied from [loadPublishedCatalogueUseCase].
+  LoadPublishedCatalogueUseCaseProvider(String siteUrl)
+    : this._internal(
+        (ref) => loadPublishedCatalogueUseCase(
+          ref as LoadPublishedCatalogueUseCaseRef,
+          siteUrl,
+        ),
+        from: loadPublishedCatalogueUseCaseProvider,
+        name: r'loadPublishedCatalogueUseCaseProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$loadPublishedCatalogueUseCaseHash,
+        dependencies: LoadPublishedCatalogueUseCaseFamily._dependencies,
+        allTransitiveDependencies:
+            LoadPublishedCatalogueUseCaseFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  LoadPublishedCatalogueUseCaseProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    LoadPublishedCatalogueUseCase Function(
+      LoadPublishedCatalogueUseCaseRef provider,
+    )
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LoadPublishedCatalogueUseCaseProvider._internal(
+        (ref) => create(ref as LoadPublishedCatalogueUseCaseRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<LoadPublishedCatalogueUseCase> createElement() {
+    return _LoadPublishedCatalogueUseCaseProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LoadPublishedCatalogueUseCaseProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LoadPublishedCatalogueUseCaseRef
+    on AutoDisposeProviderRef<LoadPublishedCatalogueUseCase> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _LoadPublishedCatalogueUseCaseProviderElement
+    extends AutoDisposeProviderElement<LoadPublishedCatalogueUseCase>
+    with LoadPublishedCatalogueUseCaseRef {
+  _LoadPublishedCatalogueUseCaseProviderElement(super.provider);
+
+  @override
+  String get siteUrl =>
+      (origin as LoadPublishedCatalogueUseCaseProvider).siteUrl;
+}
+
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

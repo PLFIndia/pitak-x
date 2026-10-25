@@ -4,6 +4,8 @@ import 'package:drift/native.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -172,6 +174,124 @@ void main() {
       expect(printed.join('\n'), isNot(contains('not cleared')));
     });
   });
+
+  group('published-catalogue viewer lifetime (ADR 0015 V12)', () {
+    const site = 'https://kadugodi.github.io/pitak/';
+    const catalogueUrl = 'https://kadugodi.github.io/pitak/books.json';
+
+    String payload() => jsonEncode({
+      'schemaVersion': 1,
+      'books': [
+        {'title': 'A Book'},
+      ],
+    });
+
+    test(
+      'each site gets its OWN client; disposal closes only that client',
+      () async {
+        final viewers = <_RecordingClient>[];
+        final shared = _RecordingClient(
+          MockClient((_) async => http.Response('shared', 200)),
+        );
+        final container = ProviderContainer(
+          overrides: [
+            publishedViewerClientFactoryProvider.overrideWithValue(() {
+              final client = _RecordingClient(
+                MockClient((_) async => http.Response(payload(), 200)),
+              );
+              viewers.add(client);
+              return client;
+            }),
+            httpClientProvider.overrideWithValue(shared),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final keepA = container.listen(
+          publishedViewerHttpClientProvider(site),
+          (_, _) {},
+          fireImmediately: true,
+        );
+        final keepB = container.listen(
+          publishedViewerHttpClientProvider('https://other.github.io/'),
+          (_, _) {},
+          fireImmediately: true,
+        );
+        expect(viewers, hasLength(2));
+        expect(identical(viewers[0], viewers[1]), isFalse);
+
+        keepA.close();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(viewers[0].closed, isTrue, reason: 'the first session closed');
+        expect(
+          viewers[1].closed,
+          isFalse,
+          reason: 'the other session is alive',
+        );
+        expect(
+          shared.closed,
+          isFalse,
+          reason: 'the shared client is untouched',
+        );
+
+        keepB.close();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(viewers[1].closed, isTrue);
+        expect(shared.closed, isFalse);
+      },
+    );
+
+    test(
+      'the fetcher provider reads books.json through the viewer client',
+      () async {
+        final viewers = <_RecordingClient>[];
+        final container = ProviderContainer(
+          overrides: [
+            publishedViewerClientFactoryProvider.overrideWithValue(() {
+              final client = _RecordingClient(
+                MockClient((request) async {
+                  expect(request.url.toString(), catalogueUrl);
+                  expect(request.headers['User-Agent'], isNotNull);
+                  return http.Response(payload(), 200);
+                }),
+              );
+              viewers.add(client);
+              return client;
+            }),
+          ],
+        );
+        addTearDown(container.dispose);
+
+        final fetcher = container.read(publishedCatalogueFetcherProvider(site));
+        final result = await fetcher(catalogueUrl);
+        expect(result.isRight(), isTrue);
+        expect(result.toNullable()!.items.single.title, 'A Book');
+        expect(viewers.single.requests.single.url.toString(), catalogueUrl);
+      },
+    );
+
+    test('the use case provider resolves the sibling catalogue URL', () async {
+      final container = ProviderContainer(
+        overrides: [
+          publishedViewerClientFactoryProvider.overrideWithValue(
+            () => _RecordingClient(
+              MockClient((request) async {
+                expect(request.url.toString(), catalogueUrl);
+                return http.Response(payload(), 200);
+              }),
+            ),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final useCase = container.read(
+        loadPublishedCatalogueUseCaseProvider(site),
+      );
+      final result = await useCase(site);
+      expect(result.isRight(), isTrue);
+    });
+  });
 }
 
 /// A plugin store whose `remove` never succeeds — the only deterministic way
@@ -185,4 +305,26 @@ class _NoRemoveStore extends InMemorySharedPreferencesStore {
 
   @override
   Future<bool> remove(String key) async => false;
+}
+
+/// An [http.Client] that records what was requested and whether it was closed,
+/// so a test can prove WHICH client a provider owns.
+class _RecordingClient extends http.BaseClient {
+  _RecordingClient(this._inner);
+
+  final http.Client _inner;
+  final List<http.BaseRequest> requests = [];
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    requests.add(request);
+    return _inner.send(request);
+  }
+
+  @override
+  void close() {
+    closed = true;
+    _inner.close();
+  }
 }

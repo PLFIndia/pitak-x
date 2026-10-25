@@ -1,10 +1,13 @@
 /// Network-feature DI bindings (AGENTS.md §4; one DI module per feature).
 ///
 /// What lives here: the one-time legacy-bookmarks migration, the Drift-backed
-/// row repository, the bounded descriptor fetcher (the ONLY thing that reads
-/// other libraries' `library.json`), the map's tile HTTP client + disk-cache
-/// switch (§5.9 — owned here so the client lifecycle is DI's, never the
-/// widget's; review M4), and the use cases built on those ports.
+/// row repository, the bounded descriptor fetcher (the Refresh path that reads
+/// other libraries' `library.json`), the bounded published-catalogue fetcher
+/// plus its viewer-scoped HTTP client (the native viewer that reads a saved
+/// library's `books.json` on an explicit row tap — ADR 0015), the map's tile
+/// HTTP client + disk-cache switch (§5.9 — owned here so the client lifecycle
+/// is DI's, never the widget's; review M4), and the use cases built on those
+/// ports.
 ///
 /// Cross-feature note: this module imports the platform + database base
 /// modules only (the tile client is built from `package:http` directly — a
@@ -14,18 +17,22 @@
 library;
 
 import 'package:fpdart/fpdart.dart';
-import 'package:http/http.dart';
+import 'package:http/http.dart' as http;
 import 'package:http/retry.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
+import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
+import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -176,8 +183,86 @@ bool osmTileDiskCache(OsmTileDiskCacheRef ref) => true;
 /// retried); closing it closes the inner client. Tests override this with a
 /// `MockClient` — no real HTTP ever happens in a test.
 @riverpod
-Client osmTileHttpClient(OsmTileHttpClientRef ref) {
-  final client = RetryClient(Client());
+http.Client osmTileHttpClient(OsmTileHttpClientRef ref) {
+  final client = RetryClient(http.Client());
   ref.onDispose(client.close);
   return client;
 }
+
+/// The largest body the VIEWER's outer transport guard accepts: 66 MiB.
+///
+/// Why 2 MiB above the catalogue adapter's 64 MiB cap (V12): the adapter must
+/// be the component that reports "too large" — a typed, user-facing
+/// `PublishedCatalogueFailureReason.tooLarge`. If the outer client's generic
+/// transport limit were the first to trip, the user would get a confusing
+/// connection error instead. The extra 2 MiB is headroom only; no catalogue
+/// between 64 and 66 MiB is ever accepted (`BoundedHttpFetcher` refuses it).
+const int publishedViewerTransportMaxBytes = 66 * 1024 * 1024;
+
+/// Creates the inner `http.Client` for one viewer session.
+///
+/// A factory rather than a client: each viewer session must own its own
+/// connection pool (closing it must never affect another screen), and a test
+/// must be able to observe `close()` without opening a real socket. Production
+/// returns `http.Client()`; tests override it.
+typedef ViewerHttpClientFactory = http.Client Function();
+
+/// The production factory: a plain platform client, wrapped by
+/// [publishedViewerHttpClient] in the deadline/byte decorator.
+@Riverpod(keepAlive: true)
+ViewerHttpClientFactory publishedViewerClientFactory(
+  PublishedViewerClientFactoryRef ref,
+) => http.Client.new;
+
+/// The HTTP client owned by ONE published-catalogue viewer session.
+///
+/// A separate inner client on purpose (V12): the viewer aborts individual
+/// requests with a caller signal, but closing its own client is the final
+/// backstop when the route disposes. Closing the shared Refresh/Publish client
+/// would break unrelated screens, so the viewer never touches it.
+///
+/// Outer guard: 30 s per phase, 60 s total (the adapter's 30 s abortable
+/// deadline fires first and produces the typed `timedOut`), 66 MiB body.
+/// Auto-dispose: the final watcher leaving closes the client.
+@riverpod
+http.Client publishedViewerHttpClient(
+  PublishedViewerHttpClientRef ref,
+  String siteUrl,
+) {
+  final inner = ref.watch(publishedViewerClientFactoryProvider)();
+  final client = TimeoutHttpClient(
+    inner,
+    timeout: const Duration(seconds: 30),
+    totalDeadline: const Duration(seconds: 60),
+    maxResponseBytes: publishedViewerTransportMaxBytes,
+  );
+  ref.onDispose(client.close);
+  return client;
+}
+
+/// The bounded `books.json` fetcher for the library saved at [siteUrl].
+///
+/// Watches the viewer-scoped client, so the dependency chain is explicit:
+/// catalogue load → this fetcher → the viewer client. Disposing the viewer
+/// disposes the client (and any socket it still owns).
+@riverpod
+PublishedCatalogueFetcher publishedCatalogueFetcher(
+  PublishedCatalogueFetcherRef ref,
+  String siteUrl,
+) {
+  final fetcher = BoundedPublishedCatalogueFetcher(
+    client: ref.watch(publishedViewerHttpClientProvider(siteUrl)),
+    siteUrl: siteUrl,
+  );
+  // The port is a function type — hand out the fetch method, not the class.
+  return fetcher.fetch;
+}
+
+/// Loads one saved library's published catalogue (ADR 0015).
+@riverpod
+LoadPublishedCatalogueUseCase loadPublishedCatalogueUseCase(
+  LoadPublishedCatalogueUseCaseRef ref,
+  String siteUrl,
+) => LoadPublishedCatalogueUseCase(
+  fetch: ref.watch(publishedCatalogueFetcherProvider(siteUrl)),
+);
