@@ -756,5 +756,30 @@ class _LoadPublishedCatalogueUseCaseProviderElement
       (origin as LoadPublishedCatalogueUseCaseProvider).siteUrl;
 }
 
+String _$publishedCatalogueQueryRunnerHash() =>
+    r'c3a0f032cea35c691b7ae8dc6ede053db3f88d5c';
+
+/// The pure query engine, run in a worker isolate (V12/S3).
+///
+/// A stateless port: the page's filter/sort/group pass over a large catalogue
+/// must never block frames. Tests override it with a synchronous closure.
+///
+/// Copied from [publishedCatalogueQueryRunner].
+@ProviderFor(publishedCatalogueQueryRunner)
+final publishedCatalogueQueryRunnerProvider =
+    AutoDisposeProvider<PublishedCatalogueQueryRunner>.internal(
+      publishedCatalogueQueryRunner,
+      name: r'publishedCatalogueQueryRunnerProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedCatalogueQueryRunnerHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedCatalogueQueryRunnerRef =
+    AutoDisposeProviderRef<PublishedCatalogueQueryRunner>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

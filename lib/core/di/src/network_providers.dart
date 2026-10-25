@@ -25,6 +25,7 @@ import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_catalogue_query_runner.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
@@ -35,6 +36,7 @@ import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetche
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
+import 'package:pitaka/features/network/infrastructure/published_catalogue_query_runner.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_providers.g.dart';
@@ -266,3 +268,12 @@ LoadPublishedCatalogueUseCase loadPublishedCatalogueUseCase(
 ) => LoadPublishedCatalogueUseCase(
   fetch: ref.watch(publishedCatalogueFetcherProvider(siteUrl)),
 );
+
+/// The pure query engine, run in a worker isolate (V12/S3).
+///
+/// A stateless port: the page's filter/sort/group pass over a large catalogue
+/// must never block frames. Tests override it with a synchronous closure.
+@riverpod
+PublishedCatalogueQueryRunner publishedCatalogueQueryRunner(
+  PublishedCatalogueQueryRunnerRef ref,
+) => const IsolatePublishedCatalogueQueryRunner().run;
