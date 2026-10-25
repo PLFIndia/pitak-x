@@ -124,7 +124,7 @@ Rules, all enforced by `tool/release_build.sh`:
    new class name (they survive AOT). Dart stores any literal containing a
    non-ASCII char (an em dash, Indic text) as UTF-16, so pick an **ASCII-only**
    sentinel.
-3. **Tell-tale:** a real release build takes minutes (Rust × 4 ABIs + Dart
+3. **Tell-tale:** a real release build takes minutes (Rust × 3 ABIs + Dart
    AOT). A "release" that finishes in ~25 s is a repackage. Do not upload it.
 4. Sideload the matching APK and look at the new feature on a phone (the APK
    shares `libapp.so` with the `.aab`).
@@ -250,7 +250,7 @@ Recipe facts worth knowing:
   (checked out from the `flutter@stable` srclib at that exact version),
   NDK r28c, Gradle 8.14, Kotlin 2.2.20, Rust stable (`rust-version` in
   `rust/Cargo.toml`), Android targets
-  `armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android`.
+  `armv7-linux-androideabi aarch64-linux-android x86_64-linux-android`.
 - Output paths are `build/app/outputs/apk/fdroid/release/app-fdroid-<abi>-release.apk`.
 - A version that must be skipped on F-Droid (as 1.3.4 was, for a non-free
   dependency) stays in the recipe as `disable: <reason>`, never silently

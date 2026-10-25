@@ -1,11 +1,12 @@
 # Post-plan work on `magazines` — golden PNGs, nits, smoke run, release
 
-- **Branch:** `magazines` (base `main`; remote `origin` =
+- **Branch:** `main` for R1 (`magazines` is merged; remote `origin` =
   `https://github.com/PLFIndia/pitak-x.git`)
 - **Status (2026-10-25):** G1, N1, N2 and N3 are Done. The separate magazine
-  remediation plan has S0–S11 Done and **R1 next**; the remediation release hold
-  is closed. R1 still has its own merge, TalkBack, signing, purity and store
-  gates. This plan picks up everything
+  remediation plan has S0–S11 Done and **R1 steps 1–6 and 8 complete on `main`**;
+  the remediation release hold is closed. Maintainer-owned R1 steps 7 and 9–11
+  remain: TalkBack, Play rollout, signed tag/push and F-Droid follow-up. The
+  signed AAB and its sha256 are ready. This plan picks up everything
   `docs/plans/magazines-progress.md` left under *Next session* and *Open
   issues* after S22 (`efa5d06`). Structured like `docs/plans/magazines.md`:
   **discrete sessions**, each executable by an LLM or a human in isolation,
@@ -916,9 +917,11 @@ record it (Part D) rather than improvising.
    Others form, the add sheet).
 
 8. *(Maintainer)* `tool/release_build.sh --sentinel 'New magazine title'`.
-   Expect MINUTES (Rust × 4 ABIs + AOT); a ~25 s "build" is a repackage —
-   do not upload it (RELEASING §4). Record the printed AAB sha256 in the
-   CHANGELOG under `[1.6.0]`, amend the release commit.
+   Expect MINUTES (Rust × 3 ABIs + AOT); a ~25 s "build" is a repackage —
+   do not upload it (RELEASING §4). Record the AAB sha256 from
+   `shasum -a 256 build/app/outputs/bundle/playRelease/app-play-release.aab`
+   (the script verifies but does not print this digest) in the CHANGELOG under
+   `[1.6.0]`, amend the release commit.
 
 9. *(Maintainer)* Play Console → Production → discard any stale in-review
    release → upload the verified `.aab` → notes from `changelogs/29.txt` →
@@ -970,7 +973,7 @@ State ∈ Pending · Done · Partial · Blocked. Hash = the session's commit on
 | N1 | Done | `fd40c4e` | 2026-10-24 | overflow = typed `_SeriesAction` popup (Remove / Restore / Delete permanently); refusal now says "Delete them first"; +3 tests, `full` green 2884; `periodical_detail_sections.dart` 296 lines; `git grep "Remove them first" -- lib test` empty; headers + how-pitak-works §5 row updated |
 | N2 | Done | `34817d8` | 2026-10-24 | README-only diff (16+/8−): tagline, the Library bullet (three kinds, chips, 977… scan routing) and the backup honest-limit sentence; the 1.5.2 status note untouched (R1's) |
 | N3 | Done | `95163d8` | 2026-10-24 | Pixel 8a, Android 17 (API 37), arm64-v8a; both journeys passed twice from a cleared install (155 s and 159 s), catalogue kinds first and vault second each time. Test-only fixes: bounded launch wait for the 2 s splash Timer, Drawer-scoped entry finder, `Add borrower` as the persistent vault page's unlocked proof. Analyze/format clean. Debug-only Drift multiple-database warning appeared in the existing restore path; no journey failed |
-| R1 | Pending | — | 2026-10-25 | Ready after `d5a915c` and the S11 handoff commit; no R1 step has started. Historical pre-run 2026-10-24: PR #18 was green at `372ad3b` and an fdroid arm64 APK dex pre-check found 0 forbidden hits; repeat every check on the release commit |
+| R1 | Partial | `(this commit)` | 2026-10-25 | Steps 1–6 and 8 complete. PR #18 merged as `29a3483` after exact-`5351034` PR checks and a green 3,066-test baseline; `1.6.0+29` prepared on `main`. Fastlane 4 × 495 characters + 6 unit tests; gen wrote 0 outputs; analyze/format clean; architecture/migration 30; non-golden Flutter 3,066; Rust 35 passed, 2 environment-gated ignored; both F-Droid forbidden-reference greps empty. Step 8 clean signed Play AAB build took 194 s; upload-key certificate, package/version, ZIP/signature, fresh timestamp and all three store-ABI Dart sentinels verified; AAB sha256 `58e64873c2109dd053f22a4428335fd5d455a1b5f120dee3236fe8a89926a633`. TalkBack step 7 and store/tag steps 9–11 remain; no tag, upload, release-commit push or publish performed. The historical `372ad3b` pre-check is superseded by these release-tree checks |
 
 ## Deviations from plan
 
@@ -984,11 +987,19 @@ State ∈ Pending · Done · Partial · Blocked. Hash = the session's commit on
   `40064347421` also passed. This resolved the advisory previously recorded
   under Open issues.
 
+- `R1 step 8 (user-directed, 2026-10-25)` — the maintainer explicitly requested
+  the signed AAB build before TalkBack step 7 evidence was recorded; step 7
+  remains open. The script's `flutter clean` and artifact checks passed. Its
+  current output does not include an AAB digest, so the sha256 was computed
+  independently with `shasum -a 256`. The build-time guidance now names the
+  three actual store ABIs instead of four.
+
 ## Open issues / blocked
 
 - **Remediation release hold (closed):** S1–S11 are Done with final-SHA local,
   CI, golden, device, upgrade, timezone and purity evidence. R1 is the only
-  remaining session; its own release gates are not claimed here.
+  remaining session; steps 1–6 and 8 are complete, while TalkBack step 7 and
+  the maintainer's store/tag steps 9–11 remain open.
 - **Original G1–N3 sessions:** no open items; the N3 device block was cleared
   on 2026-10-24. Those closures and the Tokio advisory fix are preserved, but
   they do not discharge S11's checks on the remediated tree.

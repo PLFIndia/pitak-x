@@ -14,12 +14,14 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
-_Branch `magazines` — ADR 0013/0014. The original S0–S22 plan and post-plan
-G1, N1, N2 and N3 are complete. Magazine remediation S0–S11 is complete,
-including Linux goldens, exact-SHA CI, both Android journeys twice, a real
-v5→v7 upgrade, and a different-timezone legacy restore. R1 release work remains
-in `docs/plans/otherDetails.md`; no release version bump, tag, upload, or
-publish step has been performed._
+## [1.6.0] - 2026-10 (tag `1.6.0`, versionCode 29)
+
+G1 Linux goldens and N3 device journeys completed; final remediation golden,
+device, upgrade and timezone verification completed (S11) at `5351034`.
+
+Release sentinel (`tool/release_build.sh --sentinel`): `New magazine title`.
+
+AAB sha256: `58e64873c2109dd053f22a4428335fd5d455a1b5f120dee3236fe8a89926a633`.
 
 ### Added
 - **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —

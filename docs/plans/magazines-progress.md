@@ -10,33 +10,36 @@ every session; commit it with the session's commit.**
   N3 are complete**; their logs remain below and in `otherDetails.md`.
 - Magazine remediation (`magazineIssues.md`): **S0–S11 complete**. The latest
   production commit is `d5a915c`; the Linux-only golden commit is `c07de67`.
-- Branch: `magazines` — working tree clean after the S11 documentation commit:
-  **yes**.
+- Branch: `main` — PR #18 merged as `29a3483`; the R1 release commit is
+  prepared on top. The `magazines` branch remains at `5351034`.
 - S11 local gates: generated output clean; scoped analysis and formatting
   clean; **30 architecture/migration tests**, **68 explicit schema/identity
   tests**, and **3,066 non-golden Flutter tests** passed. Rust fmt, Clippy and
   `cargo deny` passed with **35 release tests passed, 2 environment-gated
   ignored**. The exact four-file Fastlane gate passed all four files and six
   Unicode/file-set tests. Both F-Droid forbidden-dependency greps were empty.
-- Current Rust delta from `main`: `rust/Cargo.lock` carries the Tokio security
+- Rust changes merged to `main`: `rust/Cargo.lock` carries the Tokio security
   update and `rust/src/vault.rs` carries S9's native presentation-copy change.
   The older S22 statement that the Rust diff was empty is historical only.
-- Release state: **R1 is next**, with its own merge, TalkBack, signing, purity
-  and store gates. No release version bump, tag, upload, or publish step has
-  been performed.
+- Release state: **R1 steps 1–6 and 8 complete**. The `1.6.0+29` metadata,
+  release gates and both purity checks are green. A clean, signed Play AAB was
+  built and verified; its sha256 is recorded in `CHANGELOG.md`. Maintainer
+  steps 7 and 9–11 remain: TalkBack, Play rollout, signed tag/push and F-Droid
+  follow-up. No tag, upload, push of the release commit, or publish performed.
 
 ## Next session
 
-**Resume `docs/plans/otherDetails.md` R1 only.** S11 is complete, including
-Linux goldens, exact-SHA CI, both Android journeys twice, a real v5→v7 upgrade,
-and a different-timezone legacy restore. Do not repeat remediation.
+**Resume `docs/plans/otherDetails.md` R1 steps 7 and 9–11 only, with the
+maintainer.** S11 is complete, including Linux goldens, exact-SHA CI, both
+Android journeys twice, a real v5→v7 upgrade, and a different-timezone legacy
+restore. Do not repeat remediation, the completed release gates, or the AAB
+build unless the source changes or the verified artifact is missing.
 
-1. Read R1's *Read first* list and confirm its baseline at the exact current
-   HEAD, including green PR checks and a clean tree.
-2. An LLM may perform only R1 steps 1–6: merge, prepare `1.6.0+29`, rerun
-   release gates and both purity checks, and stop before signing/publishing.
-3. The maintainer owns TalkBack, signed AAB verification, Play upload, signed
-   tag, and F-Droid follow-up. No release step is implied by S11's completion.
+1. Complete the TalkBack walk through Library → Magazines → Vault → Settings,
+   including the new magazine and Others screens and the add sheet.
+2. Roll out the verified AAB on Play using the R1 step 9 procedure.
+3. Create and verify the signed tag, push `main` with the tag, and follow the
+   F-Droid update as R1 steps 10–11 specify.
 
 ## Historical S22 handoff (superseded as current guidance)
 
