@@ -16,9 +16,15 @@ heading as part of the `chore(release):` commit.
 
 ## [1.7.0] - 2026-10 (tag `1.7.0`, versionCode 30)
 
-Linux viewer goldens and the complete CI matrix passed in run `40270852722`.
+Linux golden images came from run `40270124772`; the complete release CI
+matrix passed in run `40272137572`.
 
 Release sentinel (`tool/release_build.sh --sentinel`): `Share Apps`.
+
+AAB sha256: `25e9fa8012d636f387ee9ad7251fc70f6117b45111bc10e6ef7b08fd51b94f26`.
+The clean 231-second build from `1c58a8a` passed upload-signature,
+package/version, ZIP-integrity, fresh-timestamp, all-ABI Dart-sentinel,
+64-bit ELF-alignment and `PAGE_ALIGNMENT_16K` verification.
 
 ### Added
 - **Share Apps:** a drawer entry above Settings opens a scrollable panel that

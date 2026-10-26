@@ -279,8 +279,13 @@ Recipe facts worth knowing:
   the Gradle build. After editing `rust/src/api.rs`:
   `flutter_rust_bridge_codegen generate`, then confirm
   `llvm-nm -D libpitak_crypto.so | grep -c frb_pde_ffi_dispatcher` prints 2.
-- **16 KB pages:** NDK 28 defaults to 16 KB-aligned loads; every `.so` in the
-  bundle must show `LOAD` alignment ≥ `0x4000` under `llvm-readelf -l`.
+- **16 KB pages:** Google Play's requirement targets 64-bit devices. NDK 28
+  defaults to 16 KB-aligned loads there; every `arm64-v8a` and `x86_64` `.so`
+  in the bundle must show `LOAD` alignment ≥ `0x4000` under `llvm-readelf -l`
+  or `llvm-objdump -p`. The 32-bit `armeabi-v7a` ABI may remain `0x1000`
+  aligned — check it separately instead of misclassifying it as a 64-bit
+  failure. Also confirm `bundletool dump config` reports `PAGE_ALIGNMENT_16K`
+  for uncompressed native libraries.
 - Fat APK ≈ 97 MB (fonts ≈ 4 MB); per-ABI split ≈ 40 MB. Expected.
 - Flutter 3.44 warns that the app and six plugins still apply the Kotlin
   Gradle Plugin the old way; a future Flutter will refuse. Track it.
