@@ -23,9 +23,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 
@@ -106,10 +108,75 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, 'Add'));
     await tester.pumpAndSettle();
 
-    expect(find.text(name), findsOneWidget);
+    // ONE local finder for this run's row, used by every step below and by
+    // both cleanup paths, so "the row this journey created" can never drift
+    // from "the row that gets removed".
+    final generatedTile = find.widgetWithText(NetworkLibraryTile, name);
+    final networkScrollable = find.descendant(
+      of: find.byType(NetworkPage),
+      matching: find.byType(CustomScrollView),
+    );
+
+    // The list builds tiles lazily, so a newly added row below the fold is not
+    // in the element tree yet.
+    await reveal(tester, generatedTile, scrollable: networkScrollable);
+
+    var rowRemoved = false;
+
+    /// Removes ONLY this run's row, and is safe to call twice.
+    ///
+    /// Why it looks at the provider first (beginner note): a failed journey can
+    /// leave a pushed route on top, and a row that scrolled away is not in the
+    /// widget tree at all. Asking "is this exact site/name still saved?" is
+    /// unambiguous, while a bare tooltip finder may match ANOTHER saved
+    /// library's Remove button — the bug this replaced.
+    Future<void> removeGeneratedRow() async {
+      if (rowRemoved) return;
+      // A failed journey can end before the tree exists at all; there is then
+      // no row on screen to clean up.
+      if (find.byType(MaterialApp).evaluate().isEmpty) return;
+      // Leave any pushed route (viewer or item detail). Bounded: a broken
+      // navigator must not turn cleanup into an infinite loop.
+      for (var attempt = 0; attempt < 3; attempt++) {
+        if (find.byType(PublishedCataloguePage).evaluate().isEmpty) break;
+        await tester.pageBack();
+        await tester.pumpAndSettle();
+      }
+      final view = appContainer(tester).read(networkListViewProvider);
+      final stillSaved =
+          view.valueOrNull?.rows.any(
+            (row) => row.siteUrl == site && row.name == name,
+          ) ??
+          // An unresolved list is abnormal here; assume the row is present and
+          // let the reveal below fail loudly instead of silently skipping.
+          true;
+      if (!stillSaved) {
+        // The normal path already removed it.
+        rowRemoved = true;
+        return;
+      }
+      await reveal(tester, generatedTile, scrollable: networkScrollable);
+      // Scoped to the tile: never tap an unscoped Remove tooltip, which is
+      // ambiguous as soon as another saved library is visible.
+      await tester.tap(
+        find.descendant(of: generatedTile, matching: find.byTooltip('Remove')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        generatedTile,
+        findsNothing,
+        reason: 'cleanup removed only the generated row',
+      );
+      rowRemoved = true;
+    }
+
+    // Registered AFTER the container teardown above, so LIFO teardown runs this
+    // while the provider container is still alive. It covers every failure
+    // between "row created" and "row removed".
+    addTearDown(removeGeneratedRow);
 
     // --- open the native viewer -------------------------------------------
-    await tester.tap(find.widgetWithText(NetworkLibraryTile, name));
+    await tester.tap(generatedTile);
     await tester.pumpAndSettle();
 
     expect(find.text('Smoke Book One'), findsOneWidget);
@@ -155,11 +222,10 @@ void main() {
     // --- leave and remove the test row --------------------------------------
     await tester.pageBack();
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('Remove'));
-    await tester.pumpAndSettle();
-    expect(find.text(name), findsNothing);
+    await removeGeneratedRow();
+    expect(generatedTile, findsNothing);
 
-    // A sibling journey must not inherit this row; the app install keeps the
-    // rest of its data untouched.
+    // A sibling journey must not inherit this row; every OTHER saved library
+    // (and the rest of the app install) is left untouched.
   });
 }
