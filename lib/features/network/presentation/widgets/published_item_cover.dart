@@ -101,6 +101,14 @@ class _PublishedItemCoverState extends ConsumerState<PublishedItemCover> {
   PublishedCoverRequest? _resolve() =>
       PublishedCoverResolver.resolve(widget.siteUrl, widget.item.coverUrl);
 
+  /// The consent gate, read (never watched) at the moment of the request.
+  ///
+  /// Fail closed: while settings are loading, failed, or off, this is false and
+  /// nothing is requested — and nothing is queued for "later" either.
+  bool get _consentGranted =>
+      ref.read(settingsControllerProvider).valueOrNull?.loadRemoteCovers ??
+      false;
+
   /// Requests the cover once the frame that decided it is visible is done.
   ///
   /// Called from `initState`, from a consent flip, and from `build` whenever
@@ -112,21 +120,17 @@ class _PublishedItemCoverState extends ConsumerState<PublishedItemCover> {
   void _scheduleRequest() {
     final request = _request;
     if (request == null) return;
+    if (_scheduled || !_consentGranted) return;
     if (widget.coverRequestsPaused) return;
-    final consent =
-        ref.read(settingsControllerProvider).valueOrNull?.loadRemoteCovers ??
-        false;
-    // Fail closed: while consent is off/unknown nothing is requested — and
-    // nothing is queued for "later" either.
-    if (!consent || _scheduled) return;
     _scheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _scheduled = false;
-      // A post-frame callback can outlive the row: do not send an old key.
+      // Everything the decision depended on is re-checked against the widget
+      // as it is NOW: a post-frame callback can outlive the row, the intent can
+      // change, and consent can be revoked in between.
       if (!mounted || !identical(_request, request)) return;
-      // Re-check the pause flag too: the reload may have started in the frame
-      // this request was scheduled from.
       if (widget.coverRequestsPaused) return;
+      if (!_consentGranted) return;
       ref
           .read(
             publishedCatalogueCoverControllerProvider(widget.siteUrl).notifier,
