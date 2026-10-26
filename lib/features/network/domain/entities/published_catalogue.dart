@@ -250,15 +250,24 @@ final class PublishedCatalogueWarnings {
   /// `exportedAt` was present but not a usable epoch-millis value.
   final bool invalidExportedAt;
 
-  /// True when at least one ROW or FIELD was refused, so the UI must say so.
+  /// True when at least one ROW or FIELD was changed or refused, so the UI must
+  /// say so.
   ///
-  /// [invalidExportedAt] is deliberately excluded: a bad publish timestamp
-  /// means the date is simply not shown, not that entries are missing, and the
-  /// banner's wording ("Some entries couldn't be displayed") must stay honest.
+  /// A duplicate canonical series uid belongs here: last-valid-wins means the
+  /// EARLIER representation of that series is not displayed, which is the same
+  /// story as a dropped row or an omitted field. Leaving it out (as this getter
+  /// used to) let a payload replace a series silently, with no visible warning
+  /// at all (review finding 8).
+  ///
+  /// [invalidExportedAt] is deliberately still excluded: a bad publish
+  /// timestamp means the date is simply not shown, not that entries are
+  /// missing, and the banner's wording ("Some entries couldn't be displayed")
+  /// must stay honest.
   bool get hasPartialRead =>
       droppedItems > 0 ||
       droppedPeriodicals > 0 ||
       invalidOptionalFields > 0 ||
+      duplicateSeriesUids > 0 ||
       itemsTruncated ||
       periodicalsTruncated;
 

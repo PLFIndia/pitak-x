@@ -959,6 +959,24 @@ void main() {
       ]);
       expect(decoded.periodicals.first.title, 'Last');
       expect(decoded.warnings.duplicateSeriesUids, 1);
+      // Review finding 8: a replaced series must reach the VISIBLE warning.
+      // This payload has no other defect, so the counter is the only source.
+      expect(decoded.warnings.hasPartialRead, isTrue);
+      expect(decoded.warnings.hasUnknownKinds, isFalse);
+    });
+
+    test('a duplicate is the only defect that sets hasPartialRead', () {
+      final canonicalEquivalent = decodeOk(
+        catalogue(
+          periodicals: [series('alpha', 'First'), series(' alpha ', 'Last')],
+        ),
+      );
+      expect(canonicalEquivalent.warnings.invalidOptionalFields, 0);
+      expect(canonicalEquivalent.warnings.droppedPeriodicals, 0);
+      expect(canonicalEquivalent.warnings.duplicateSeriesUids, 1);
+      expect(canonicalEquivalent.warnings.itemsTruncated, isFalse);
+      expect(canonicalEquivalent.warnings.periodicalsTruncated, isFalse);
+      expect(canonicalEquivalent.warnings.hasPartialRead, isTrue);
     });
 
     test('a duplicate whose later row is invalid keeps the valid entry', () {
@@ -972,6 +990,7 @@ void main() {
       );
       expect(decoded.periodicals.single.title, 'First');
       expect(decoded.warnings.droppedPeriodicals, 1);
+      // Not counted as a duplicate: the later row never became a valid entry.
       expect(decoded.warnings.duplicateSeriesUids, 0);
     });
 

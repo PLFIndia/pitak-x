@@ -96,6 +96,10 @@ void main() {
     test(
       'typing updates the visible text immediately, the term after 120 ms',
       () async {
+        // Baseline: mounting the query controller subscribes to the derived
+        // facet list, which reads the loaded catalogue. The contract here is
+        // that a KEYSTROKE (not the mount) issues no request at all.
+        final callsBefore = fetch.calls.length;
         queryController().search('hindi');
         expect(queryState().search, 'hindi');
         expect(
@@ -109,7 +113,7 @@ void main() {
         );
         expect(queryState().activeSearch, 'hindi');
         // A typed search is a filter, never IO.
-        expect(fetch.calls, isEmpty);
+        expect(fetch.calls, hasLength(callsBefore));
       },
     );
 
@@ -135,6 +139,7 @@ void main() {
     });
 
     test('filters and sort apply without debounce or IO', () {
+      final callsBefore = fetch.calls.length;
       queryController()
         ..setKind(PublishedKindFilter.books)
         ..setLanguage('English')
@@ -150,7 +155,7 @@ void main() {
             .having((q) => q.language, 'language', 'English')
             .having((q) => q.sort, 'sort', PublishedSortOrder.language),
       );
-      expect(fetch.calls, isEmpty);
+      expect(fetch.calls, hasLength(callsBefore), reason: 'filters are not IO');
     });
 
     test('setting the same value does not change the state instance', () {
@@ -238,6 +243,90 @@ void main() {
     });
   });
 
+  group('language reconciliation', () {
+    PublishedCatalogue withLanguages(List<String> languages) =>
+        PublishedCatalogue(
+          declaredSchemaVersion: 1,
+          items: [
+            for (var i = 0; i < languages.length; i++)
+              item(i, title: 'Item $i', language: languages[i]),
+          ],
+          periodicals: const [],
+        );
+
+    Future<void> reloadWith(List<String> languages) async {
+      fetch.catalogue = withLanguages(languages);
+      await container
+          .read(publishedCatalogueControllerProvider(site).notifier)
+          .refresh();
+      // Let the facet listener run on the new payload.
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    test('a case-only change adopts the new spelling', () async {
+      await container.read(publishedCatalogueControllerProvider(site).future);
+      queryController()
+        ..search('book')
+        ..setKind(PublishedKindFilter.books)
+        ..setSort(PublishedSortOrder.language)
+        ..setLanguage('English');
+      await Future<void>.delayed(
+        publishedSearchDebounce + const Duration(milliseconds: 40),
+      );
+
+      await reloadWith(const ['ENGLISH', 'Hindi']);
+
+      final state = queryState();
+      expect(state.language, 'ENGLISH');
+      // Everything else is preserved: reconciliation is not a reset.
+      expect(state.search, 'book');
+      expect(state.activeSearch, 'book');
+      expect(state.kind, PublishedKindFilter.books);
+      expect(state.sort, PublishedSortOrder.language);
+      expect(fetch.calls, hasLength(2), reason: 'one reload, one GET');
+    });
+
+    test('an unchanged facet list is a no-op', () async {
+      await container.read(publishedCatalogueControllerProvider(site).future);
+      queryController().setLanguage('English');
+      final before = queryState();
+
+      await reloadWith(const ['English', 'French', 'Hindi']);
+
+      expect(
+        identical(queryState(), before),
+        isTrue,
+        reason: 'no state churn when the spelling did not change',
+      );
+    });
+
+    test('a vanished selection is cleared, not left invisible', () async {
+      await container.read(publishedCatalogueControllerProvider(site).future);
+      queryController().setLanguage('French');
+
+      await reloadWith(const ['English', 'Hindi']);
+
+      expect(queryState().language, isNull);
+      // "All languages" is a real value: the filter no longer hides rows.
+      expect(
+        PublishedQueryEngine.apply(
+          fetch.catalogue,
+          queryState().activeQuery,
+        ).shownItems,
+        2,
+      );
+    });
+
+    test('"All languages" is never touched by a reload', () async {
+      await container.read(publishedCatalogueControllerProvider(site).future);
+      expect(queryState().language, isNull);
+
+      await reloadWith(const ['French']);
+
+      expect(queryState().language, isNull);
+    });
+  });
+
   group('derived view', () {
     Future<PublishedCatalogueView> view() async {
       final sub = container.listen(
@@ -317,10 +406,13 @@ void main() {
 }
 
 /// A fetcher that answers immediately with [catalogue].
+///
+/// [catalogue] is mutable so a test can simulate a RELOAD that ships a
+/// different payload (the only way the language facet list changes).
 final class _ImmediateCatalogueFetch {
   _ImmediateCatalogueFetch(this.catalogue);
 
-  final PublishedCatalogue catalogue;
+  PublishedCatalogue catalogue;
   final List<String> calls = [];
 
   Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> call(

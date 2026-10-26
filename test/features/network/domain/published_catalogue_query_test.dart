@@ -484,6 +484,41 @@ void main() {
     });
   });
 
+  /// Review finding 3: the pure answer to "what is this selection called in
+  /// the LATEST facet list?", used by both the query controller (repair) and
+  /// the controlled dropdown (render).
+  group('canonicalLanguageSelection', () {
+    String? canonical(String? current, List<String> facets) =>
+        PublishedQueryEngine.canonicalLanguageSelection(current, facets);
+
+    test('a null or blank selection stays "All languages"', () {
+      expect(canonical(null, const ['English']), isNull);
+      expect(canonical('', const ['English']), isNull);
+      expect(canonical('   ', const ['English']), isNull);
+    });
+
+    test('an exact match returns the facet unchanged', () {
+      expect(canonical('English', const ['English', 'Hindi']), 'English');
+      expect(canonical('  Hindi  ', const ['English', 'Hindi']), 'Hindi');
+    });
+
+    test('a case-only change adopts the facet spelling', () {
+      expect(canonical('english', const ['English', 'Hindi']), 'English');
+      expect(canonical('ENGLISH', const ['English']), 'English');
+      // The engine keeps the FIRST spelling of a case-insensitive duplicate.
+      expect(canonical('english', const ['English', 'ENGLISH']), 'English');
+    });
+
+    test('an absent selection has no canonical value', () {
+      expect(canonical('French', const ['English', 'Hindi']), isNull);
+      expect(canonical('English', const []), isNull);
+    });
+
+    test('a blank facet never matches a real selection', () {
+      expect(canonical('English', const ['  ', '']), isNull);
+    });
+  });
+
   group('immutability', () {
     test('the source list and the view are never mutated', () {
       final source = [item(2), item(0)];

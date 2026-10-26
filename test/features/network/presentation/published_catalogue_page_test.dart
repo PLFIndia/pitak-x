@@ -17,6 +17,7 @@ import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -258,6 +259,33 @@ void main() {
 
       expect(find.text('No readable items.'), findsOneWidget);
       expect(find.text('This published catalogue is empty.'), findsNothing);
+    });
+
+    testWidgets('a duplicate-only catalogue still shows the safe warning', (
+      tester,
+    ) async {
+      // Review finding 8: the visible gate, not merely the counter.
+      makeContainer(
+        _immediate(catalogueOf(catalogueItems(), duplicateSeriesUids: 1)),
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text("Some entries couldn't be displayed."), findsOneWidget);
+      // The same safe sentence as every other partial read: no UID, title or
+      // count from the hostile payload is printed.
+      expect(find.textContaining('chandamama'), findsNothing);
+      expect(find.textContaining('duplicate'), findsNothing);
+    });
+
+    testWidgets('a clean catalogue shows no partial-read warning', (
+      tester,
+    ) async {
+      makeContainer(_immediate(catalogueOf(catalogueItems())));
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text("Some entries couldn't be displayed."), findsNothing);
     });
 
     testWidgets('partial reads warn without printing remote values', (
@@ -536,6 +564,241 @@ void main() {
       expect(find.text('1 of 3 items'), findsOneWidget);
       expect(find.text('water'), findsOneWidget);
       expect(pending.calls, hasLength(1), reason: 'no refetch on return');
+    });
+  });
+
+  group('derived query failure', () {
+    testWidgets('a failed query is a safe retryable state, never a spinner', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      var calls = 0;
+      var failNext = true;
+      makeContainer(
+        pending.call,
+        queryRunner: (loaded, query) async {
+          calls++;
+          if (failNext) {
+            failNext = false;
+            throw StateError('sentinel-worker-detail');
+          }
+          return PublishedQueryEngine.apply(loaded, query);
+        },
+      );
+      await pumpViewer(tester);
+      pending.completeLatest(catalogue);
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(PublishedCatalogueQueryErrorSliver.message),
+        findsOneWidget,
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      // No endless spinner, no stale rows, no stale count, no raw error text.
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.text('The Water Margin'), findsNothing);
+      expect(find.textContaining('of 3 items'), findsNothing);
+      expect(find.textContaining('sentinel-worker-detail'), findsNothing);
+      expect(find.textContaining('StateError'), findsNothing);
+      expect(pending.calls, hasLength(1), reason: 'the catalogue is loaded');
+
+      // A query-intent change while the results area is failed must not make
+      // the state worse, and must survive the retry.
+      failNext = true;
+      await tester.enterText(find.byType(TextField), 'water');
+      await tester.pump(
+        publishedSearchDebounce + const Duration(milliseconds: 60),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.text(PublishedCatalogueQueryErrorSliver.message),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(calls, 3, reason: 'retry runs the derived query again');
+      expect(
+        pending.calls,
+        hasLength(1),
+        reason: 'never refetches the payload',
+      );
+      expect(find.text('1 of 3 items'), findsOneWidget);
+      expect(find.text('The Water Margin'), findsOneWidget);
+      final state = container.read(
+        publishedCatalogueQueryControllerProvider(site),
+      );
+      expect(state.search, 'water');
+      expect(state.activeSearch, 'water');
+      expect(
+        find.text(PublishedCatalogueQueryErrorSliver.message),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a failure after a rendered view hides the stale rows', (
+      tester,
+    ) async {
+      // `valueOrNull` keeps the previous view during a new pass; an error must
+      // not be presented as "this filter succeeded".
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30));
+      var calls = 0;
+      var failNext = false;
+      makeContainer(
+        pending.call,
+        coverPort: covers,
+        queryRunner: (loaded, query) async {
+          calls++;
+          if (failNext) {
+            failNext = false;
+            throw StateError('sentinel-worker-detail');
+          }
+          return PublishedQueryEngine.apply(loaded, query);
+        },
+      );
+      await pumpViewer(tester);
+      pending.completeLatest(
+        catalogueOf([
+          item(
+            0,
+            title: 'The Water Margin',
+            kind: PublishedItemKind.other,
+            language: 'English',
+            coverUrl: 'covers/water.jpg',
+          ),
+          item(1, title: 'Kannada Picture Dictionary', language: 'Kannada'),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('The Water Margin'), findsOneWidget);
+      expect(find.text('2 of 2 items'), findsOneWidget);
+      expect(covers.calls, hasLength(1));
+
+      failNext = true;
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Others'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text(PublishedCatalogueQueryErrorSliver.message),
+        findsOneWidget,
+      );
+      expect(find.text('The Water Margin'), findsNothing);
+      expect(find.textContaining('of 2 items'), findsNothing);
+      expect(find.textContaining('No matches'), findsNothing);
+
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+
+      expect(calls, 3);
+      expect(pending.calls, hasLength(1), reason: 'retry is query-only');
+      // The "Others" filter is still in force: the book is gone, the other item
+      // (the covered one) is back.
+      expect(find.text('The Water Margin'), findsOneWidget);
+      expect(find.text('Kannada Picture Dictionary'), findsNothing);
+      // The cover session was never reset, so the visible row reuses its
+      // cached image instead of downloading it again.
+      expect(covers.calls, hasLength(1));
+      expect(find.byType(Image), findsOneWidget);
+      // The kind filter that exposed the failure is still in force.
+      expect(
+        container.read(publishedCatalogueQueryControllerProvider(site)).kind,
+        PublishedKindFilter.others,
+      );
+    });
+  });
+
+  group('language facet across a reload', () {
+    /// Two items, one per language, so the row count proves the real filter.
+    PublishedCatalogue englishAndHindi(String englishSpelling) => catalogueOf([
+      item(0, title: 'English Book', language: englishSpelling),
+      item(1, title: 'Hindi Book', language: 'Hindi'),
+    ]);
+
+    Future<void> selectLanguage(WidgetTester tester, String label) async {
+      expect(find.text('All languages'), findsOneWidget);
+      await tester.tap(find.text('All languages'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label).last);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('a case-only facet change remaps the real selection', (
+      tester,
+    ) async {
+      // Review finding 3: the dropdown is controlled, so keeping a selection
+      // the new facet list does not contain asserted in debug and left an
+      // invisible filter in release.
+      final pending = _PendingFetcher();
+      makeContainer(pending.call);
+      await pumpViewer(tester);
+      pending.completeLatest(englishAndHindi('English'));
+      await tester.pumpAndSettle();
+
+      await selectLanguage(tester, 'English');
+      expect(
+        container
+            .read(publishedCatalogueQueryControllerProvider(site))
+            .language,
+        'English',
+      );
+      expect(find.text('1 of 2 items'), findsOneWidget);
+
+      // The same language, re-spelled by the new payload.
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+      expect(pending.calls, hasLength(2), reason: 'one deliberate reload');
+      pending.completeLatest(englishAndHindi('ENGLISH'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: 'no dropdown assertion');
+      final state = container.read(
+        publishedCatalogueQueryControllerProvider(site),
+      );
+      expect(state.language, 'ENGLISH');
+      // The filter is real: the Hindi row stays hidden and no GET was added by
+      // the reconciliation itself.
+      expect(find.text('1 of 2 items'), findsOneWidget);
+      expect(find.text('Hindi Book'), findsNothing);
+      expect(pending.calls, hasLength(2));
+    });
+
+    testWidgets('a removed facet clears the selection and the filter', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      makeContainer(pending.call);
+      await pumpViewer(tester);
+      pending.completeLatest(englishAndHindi('English'));
+      await tester.pumpAndSettle();
+      await selectLanguage(tester, 'English');
+      expect(find.text('1 of 2 items'), findsOneWidget);
+
+      // The reloaded payload no longer offers that language at all.
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+      pending.completeLatest(
+        catalogueOf([
+          item(0, title: 'Hindi Book', language: 'Hindi'),
+          item(1, title: 'Tamil Book', language: 'Tamil'),
+        ]),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull, reason: 'no dropdown assertion');
+      expect(
+        container
+            .read(publishedCatalogueQueryControllerProvider(site))
+            .language,
+        isNull,
+      );
+      expect(find.text('All languages'), findsOneWidget);
+      // No invisible filter survives: both rows are visible again.
+      expect(find.text('2 of 2 items'), findsOneWidget);
+      expect(find.text('Hindi Book'), findsOneWidget);
+      expect(find.text('Tamil Book'), findsOneWidget);
+      expect(pending.calls, hasLength(2));
     });
   });
 

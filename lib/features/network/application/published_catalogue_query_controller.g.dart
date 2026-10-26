@@ -354,7 +354,7 @@ class _PublishedCatalogueLanguagesProviderElement
 }
 
 String _$publishedCatalogueQueryControllerHash() =>
-    r'670a12c1c9d5c9c14c7d8b0753c40b5cf6981613';
+    r'1fd4f144154e306d1e1499d9fba5dd4c2f0be83b';
 
 abstract class _$PublishedCatalogueQueryController
     extends BuildlessAutoDisposeNotifier<PublishedCatalogueQueryState> {

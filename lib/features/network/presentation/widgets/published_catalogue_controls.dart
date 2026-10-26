@@ -68,6 +68,18 @@ class _PublishedCatalogueControlsState
         );
       },
     );
+    // The API can change the facet list under a live selection. The controller
+    // REPAIRS the real query state (PublishedCatalogueQueryController
+    // .reconcileLanguages); this is only the transient render invariant for the
+    // frame between the facet update and that notification, so a controlled
+    // DropdownButton never gets a value with no matching item.
+    final selectedLanguage = state.language == null
+        ? ''
+        : PublishedQueryEngine.canonicalLanguageSelection(
+                state.language,
+                widget.languages,
+              ) ??
+              '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -110,7 +122,7 @@ class _PublishedCatalogueControlsState
               // "clear filters" reset).
               child: _LabeledDropdown<String>(
                 label: 'Language',
-                value: state.language ?? '',
+                value: selectedLanguage,
                 items: [
                   const DropdownMenuItem(
                     value: '',

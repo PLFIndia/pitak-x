@@ -34,12 +34,44 @@ class PublishedCatalogueQueryController
 
   @override
   PublishedCatalogueQueryState build(String siteUrl) {
-    ref.onDispose(() {
-      _disposed = true;
-      _debounce?.cancel();
-      _debounce = null;
-    });
+    // The facet list is derived from the PAYLOAD, so a reload can re-spell or
+    // remove the selected language. `listen` (never `watch`): watching would
+    // re-run `build` and reset search/kind/sort whenever the catalogue changed.
+    // The listener repairs the real query state, not just what is painted
+    // (review finding 3).
+    ref
+      ..onDispose(() {
+        _disposed = true;
+        _debounce?.cancel();
+        _debounce = null;
+      })
+      ..listen<List<String>>(
+        publishedCatalogueLanguagesProvider(siteUrl),
+        (previous, next) => reconcileLanguages(next),
+      );
     return const PublishedCatalogueQueryState();
+  }
+
+  /// Re-aligns the selected language with the latest [facets].
+  ///
+  /// Three outcomes, all driven by the pure engine helper so the widget can use
+  /// the same decision:
+  ///  - "All languages" (null) is never touched;
+  ///  - the same spelling is a no-op — importantly, a reload that merely
+  ///    re-emits an unchanged facet list must not disturb the intent;
+  ///  - a case-only change adopts the facet's canonical spelling (so the
+  ///    visible dropdown and the filter agree), and a vanished selection is
+  ///    CLEARED
+  ///    rather than left as an invisible filter that hides every row.
+  void reconcileLanguages(List<String> facets) {
+    final current = state.language;
+    if (current == null) return;
+    final canonical = PublishedQueryEngine.canonicalLanguageSelection(
+      current,
+      facets,
+    );
+    if (canonical == current) return;
+    setLanguage(canonical);
   }
 
   /// Updates the visible search text immediately and applies it after the

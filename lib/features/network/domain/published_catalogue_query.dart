@@ -152,8 +152,7 @@ abstract final class PublishedQueryEngine {
     for (final item in catalogue.items) {
       if (!_matchesKind(item, query.kind)) continue;
       if (language != null && language.isNotEmpty) {
-        final itemLanguage = item.language?.trim().toLowerCase() ?? '';
-        if (itemLanguage != language) continue;
+        if (!_matchesLanguage(item, language)) continue;
       }
       if (needle.isNotEmpty && !_matchesSearch(item, needle)) continue;
       filtered.add(item);
@@ -186,6 +185,40 @@ abstract final class PublishedQueryEngine {
         return byLower != 0 ? byLower : a.compareTo(b);
       });
     return List<String>.unmodifiable(values);
+  }
+
+  /// The facet's canonical spelling for [current], or null when [current]
+  /// matches no facet at all.
+  ///
+  /// Why this exists (beginner note): the facet list is derived from the
+  /// payload, so a reload can re-spell a language ("english" → "English") or
+  /// drop it entirely. The dropdown is a CONTROLLED widget: showing a value
+  /// that has no matching item asserts in debug and silently misrepresents the
+  /// active filter in release. One pure helper answers "what is this selection
+  /// called now?" so the query controller (which repairs the REAL filter) and
+  /// the widget (which paints the transition) cannot disagree.
+  ///
+  /// `null`/blank means "All languages" and stays null. A match is trimmed and
+  /// case-insensitive — the same rule [_matchesLanguage] applies to items, so
+  /// the label the UI shows is the label the filter uses.
+  static String? canonicalLanguageSelection(
+    String? current,
+    List<String> facets,
+  ) {
+    final label = current?.trim() ?? '';
+    if (label.isEmpty) return null;
+    final needle = label.toLowerCase();
+    for (final facet in facets) {
+      if (facet.trim().toLowerCase() == needle) return facet;
+    }
+    return null;
+  }
+
+  /// One case-insensitive, trimmed language rule for both the facet labels and
+  /// the actual filter, so they can never drift.
+  static bool _matchesLanguage(PublishedCatalogueItem item, String language) {
+    final itemLanguage = item.language?.trim().toLowerCase() ?? '';
+    return itemLanguage == language;
   }
 
   static bool _matchesKind(PublishedCatalogueItem item, PublishedKindFilter f) {

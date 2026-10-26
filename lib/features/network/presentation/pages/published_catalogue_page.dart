@@ -15,7 +15,6 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
@@ -25,6 +24,7 @@ import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_controls.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_list.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_cover_image_cache_cleanup.dart';
 
 /// The viewer screen for one saved [NetworkLibrary] row.
@@ -112,6 +112,14 @@ class _PublishedCataloguePageState
   Future<void> _openBrowser() =>
       openPublishedSiteInBrowser(context, _siteUrl, widget.opener);
 
+  /// Re-runs ONLY the derived query, against the catalogue already in memory.
+  ///
+  /// Deliberately not `refresh()`: the payload loaded fine. The narrowing also
+  /// keeps the user's query intent, the cover session, the facet list and the
+  /// viewer's HTTP client untouched (review finding 5).
+  void _retryQuery() =>
+      ref.invalidate(publishedCatalogueViewProvider(_siteUrl));
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(publishedCatalogueControllerProvider(_siteUrl));
@@ -190,67 +198,12 @@ class _PublishedCataloguePageState
     );
   }
 
-  Widget _errorBody(BuildContext context, Object? error) {
-    final reason = error is PublishedCatalogueFailure ? error.reason : null;
-    final message = _messageFor(reason);
-    final canRetry = switch (reason) {
-      null ||
-      PublishedCatalogueFailureReason.disallowedUrl ||
-      PublishedCatalogueFailureReason.tooLarge ||
-      PublishedCatalogueFailureReason.invalid => false,
-      _ => true,
-    };
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.cloud_off_outlined,
-              size: 40,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 12,
-              alignment: WrapAlignment.center,
-              children: [
-                if (canRetry)
-                  FilledButton(onPressed: _reload, child: const Text('Retry')),
-                TextButton(
-                  onPressed: _openBrowser,
-                  child: const Text('Open in browser'),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// One plain sentence per typed failure. Never a URL, status code, raw
-  /// exception, or an unsupported claim such as "not found".
-  static String _messageFor(PublishedCatalogueFailureReason? reason) =>
-      switch (reason) {
-        PublishedCatalogueFailureReason.httpStatus ||
-        PublishedCatalogueFailureReason.redirectRefused ||
-        PublishedCatalogueFailureReason.tooManyRedirects =>
-          "The site didn't serve this catalogue.",
-        PublishedCatalogueFailureReason.timedOut ||
-        PublishedCatalogueFailureReason.transport =>
-          "Couldn't reach this library. Check your connection and try again.",
-        PublishedCatalogueFailureReason.tooLarge =>
-          'This catalogue is too large to open in Pitak.',
-        PublishedCatalogueFailureReason.invalid =>
-          "Pitak couldn't read this published catalogue.",
-        PublishedCatalogueFailureReason.disallowedUrl =>
-          "This library's address can't be opened in Pitak.",
-        null => "Couldn't open this published catalogue.",
-      };
+  Widget _errorBody(BuildContext context, Object? error) =>
+      PublishedCatalogueErrorView(
+        error: error,
+        onRetry: _reload,
+        onOpenBrowser: _openBrowser,
+      );
 
   Widget _buildCatalogue(
     BuildContext context,
@@ -260,9 +213,12 @@ class _PublishedCataloguePageState
     final viewAsync = ref.watch(publishedCatalogueViewProvider(_siteUrl));
     final languages = ref.watch(publishedCatalogueLanguagesProvider(_siteUrl));
     // `valueOrNull` keeps the previous rows visible while a new engine pass
-    // runs, so a keystroke never blanks the list.
+    // runs, so a keystroke never blanks the list — but a FAILURE must never be
+    // hidden behind those stale rows, so `hasError` is read explicitly
+    // (review finding 5).
+    final queryFailed = viewAsync.hasError;
     final view = viewAsync.valueOrNull;
-    final loadingView = viewAsync.isLoading && view == null;
+    final loadingView = viewAsync.isLoading && view == null && !queryFailed;
     final isConflict = widget.row.fetchStatus == FetchStatus.identityConflict;
 
     return CustomScrollView(
@@ -274,7 +230,7 @@ class _PublishedCataloguePageState
               _headerLine(context, catalogue),
               if (catalogue.hasNewerSchema) ...[
                 const SizedBox(height: 8),
-                const _Banner(
+                const PublishedCatalogueBanner(
                   icon: Icons.info_outline,
                   message:
                       'This catalogue was published by a newer Pitak. Some '
@@ -284,7 +240,7 @@ class _PublishedCataloguePageState
               ],
               if (isConflict) ...[
                 const SizedBox(height: 8),
-                const _Banner(
+                const PublishedCatalogueBanner(
                   icon: Icons.warning_amber_outlined,
                   message:
                       "This library's published identity has changed since you "
@@ -317,7 +273,7 @@ class _PublishedCataloguePageState
                 languages: languages,
               ),
               const SizedBox(height: 8),
-              if (view != null)
+              if (view != null && !queryFailed)
                 Text(
                   '${view.shownItems} of ${view.totalItems} items',
                   style: Theme.of(context).textTheme.bodySmall,
@@ -331,6 +287,7 @@ class _PublishedCataloguePageState
           catalogue,
           view,
           loadingView,
+          queryFailed: queryFailed,
           coverRequestsPaused: coverRequestsPaused,
         ),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
@@ -343,25 +300,30 @@ class _PublishedCataloguePageState
     PublishedCatalogue catalogue,
     PublishedCatalogueView? view,
     bool loadingView, {
+    required bool queryFailed,
     required bool coverRequestsPaused,
   }) {
+    // A failed query outranks every other result message: the empty/no-match
+    // wording would be a claim the app cannot make when the pass never
+    // finished. The header and controls stay available above it.
+    if (queryFailed) {
+      return [PublishedCatalogueQueryErrorSliver(onRetry: _retryQuery)];
+    }
     // Order matters: rows that were PRESENT but unreadable are a different
     // story from a genuinely empty catalogue (V9/B.2).
     if (catalogue.hasNoReadableItems) {
       return [
-        _messageSliver(
-          context,
+        PublishedCatalogueMessageSliver(
           message: 'No readable items.',
-          browserAction: true,
+          onOpenBrowser: _openBrowser,
         ),
       ];
     }
     if (catalogue.items.isEmpty) {
       return [
-        _messageSliver(
-          context,
+        PublishedCatalogueMessageSliver(
           message: 'This published catalogue is empty.',
-          browserAction: true,
+          onOpenBrowser: _openBrowser,
         ),
       ];
     }
@@ -377,10 +339,9 @@ class _PublishedCataloguePageState
     }
     if (view.hasNoMatches) {
       return [
-        _messageSliver(
-          context,
+        PublishedCatalogueMessageSliver(
           message: 'No matches.',
-          clearAction: () => ref
+          onClearFilters: () => ref
               .read(
                 publishedCatalogueQueryControllerProvider(_siteUrl).notifier,
               )
@@ -417,77 +378,5 @@ class _PublishedCataloguePageState
     final month = date.month.toString().padLeft(2, '0');
     final day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
-  }
-
-  Widget _messageSliver(
-    BuildContext context, {
-    required String message,
-    bool browserAction = false,
-    VoidCallback? clearAction,
-  }) => SliverToBoxAdapter(
-    child: Padding(
-      padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-      child: Column(
-        children: [
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            alignment: WrapAlignment.center,
-            children: [
-              if (clearAction != null)
-                TextButton(
-                  onPressed: clearAction,
-                  child: const Text('Clear filters'),
-                ),
-              if (browserAction)
-                TextButton(
-                  onPressed: _openBrowser,
-                  child: const Text('Open in browser'),
-                ),
-            ],
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
-/// One inline information banner (newer schema, identity conflict).
-class _Banner extends StatelessWidget {
-  const _Banner({required this.icon, required this.message});
-
-  final IconData icon;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 18, color: scheme.onSecondaryContainer),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: scheme.onSecondaryContainer,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
