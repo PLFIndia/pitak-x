@@ -2,6 +2,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 
 // Transitive dependency of file_selector; imported only for the picker seam
 // (same pattern as restore_page_test.dart). Deliberately NOT added to
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:image/image.dart' as img;
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
@@ -25,12 +27,18 @@ import 'package:pitaka/features/library/domain/value_objects/calendar_date.dart'
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
+import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:pitaka/features/vault/domain/entities/vault_data.dart';
 import 'package:pitaka/features/vault/domain/repositories/vault_repository.dart';
 import 'package:pitaka/features/vault/infrastructure/vault_store.dart';
@@ -110,6 +118,98 @@ void main() {
         child: themedApp(const LibraryPage(), dark: dark),
       );
 
+  const publishedSite = 'https://kadugodi.github.io/pitak/';
+  const publishedSeriesUid = 'series-chandamama';
+
+  /// One fixed book, grouped issue and Other row. Every value that could
+  /// otherwise depend on a clock, locale, HTTP response or isolate is pinned.
+  PublishedCatalogue goldenPublishedCatalogue() => PublishedCatalogue(
+    declaredSchemaVersion: 1,
+    exportedAt: 1760000000000,
+    periodicals: const [
+      PublishedPeriodical(
+        periodicalUid: publishedSeriesUid,
+        title: 'Chandamama',
+        publisher: 'Chandamama India',
+        language: 'Telugu',
+      ),
+    ],
+    items: const [
+      PublishedCatalogueItem(
+        sourceIndex: 0,
+        title: 'The Water Margin',
+        kind: PublishedItemKind.book,
+        author: "Shi Nai'an",
+        language: 'English',
+        ageGroup: AgeGroup.above10,
+        coverUrl: 'covers/golden-book.jpg',
+      ),
+      PublishedCatalogueItem(
+        sourceIndex: 1,
+        title: 'Chandamama — Vol 249 No 10',
+        kind: PublishedItemKind.magazineIssue,
+        language: 'Telugu',
+        issue: PublishedIssueDetails(
+          periodicalUid: publishedSeriesUid,
+          volume: 249,
+          issueNumber: 10,
+        ),
+      ),
+      PublishedCatalogueItem(
+        sourceIndex: 2,
+        title: 'Kannada Picture Dictionary',
+        kind: PublishedItemKind.other,
+        language: 'Kannada',
+        ageGroup: AgeGroup.above6,
+      ),
+    ],
+  );
+
+  /// Real, tiny JPEG bytes: the golden exercises the production memory-image
+  /// path without a network URL or a platform image picker.
+  Uint8List goldenCoverBytes() => Uint8List.fromList(
+    img.encodeJpg(
+      img.Image(width: 4, height: 6)..clear(img.ColorRgb8(32, 96, 160)),
+    ),
+  );
+
+  Widget publishedCatalogueApp({required bool dark}) {
+    final catalogue = goldenPublishedCatalogue();
+    final coverBytes = goldenCoverBytes();
+    return ProviderScope(
+      overrides: [
+        publishedCatalogueFetcherProvider(
+          publishedSite,
+        ).overrideWithValue((url, {abortTrigger}) async => right(catalogue)),
+        // The production query engine, synchronously. Its isolate adapter is
+        // tested separately and must not introduce timing into this image.
+        publishedCatalogueQueryRunnerProvider.overrideWithValue(
+          (catalogue, query) async =>
+              PublishedQueryEngine.apply(catalogue, query),
+        ),
+        publishedCoverFetcherProvider(publishedSite).overrideWithValue(
+          (request, {abortTrigger}) async => Uint8List.fromList(coverBytes),
+        ),
+        settingsRepositoryProvider.overrideWith(
+          (ref) async => const _GoldenPublishedSettings(),
+        ),
+      ],
+      child: themedApp(
+        PublishedCataloguePage(
+          row: const NetworkLibrary(
+            siteUrl: publishedSite,
+            name: 'Kadugodi Library',
+          ),
+          opener: PublishedSiteOpener(
+            launch: (url, mode) =>
+                throw StateError('Golden tests must not launch a browser'),
+          ),
+        ),
+        dark: dark,
+      ),
+    );
+  }
+
   Future<void> expectGolden(
     WidgetTester tester,
     Widget widget,
@@ -147,6 +247,22 @@ void main() {
 
   testWidgets('library page, empty, light', (tester) async {
     await expectGolden(tester, libraryApp(const []), 'library_empty_light');
+  });
+
+  testWidgets('published catalogue, populated, light', (tester) async {
+    await expectGolden(
+      tester,
+      publishedCatalogueApp(dark: false),
+      'published_catalogue_populated_light',
+    );
+  });
+
+  testWidgets('published catalogue, populated, dark', (tester) async {
+    await expectGolden(
+      tester,
+      publishedCatalogueApp(dark: true),
+      'published_catalogue_populated_dark',
+    );
   });
 
   group('vault unlock', () {
@@ -365,6 +481,19 @@ void main() {
       );
     });
   });
+}
+
+/// Explicit cover consent for the viewer golden; no SharedPreferences plugin.
+class _GoldenPublishedSettings implements SettingsRepository {
+  const _GoldenPublishedSettings();
+
+  @override
+  Future<AppSettings> load() async =>
+      AppSettings.defaults.copyWith(loadRemoteCovers: true);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected settings call in viewer golden');
 }
 
 /// In-memory series store: no series — the row cover-fallback map (S14) only

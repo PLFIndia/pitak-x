@@ -23,4 +23,6 @@ const kGoldenNames = <String>[
   'vault_unlock',
   'network_library_tiles',
   'periodicals_badge_states',
+  'published_catalogue_populated_light',
+  'published_catalogue_populated_dark',
 ];
