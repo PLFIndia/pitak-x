@@ -2,13 +2,14 @@
 
 - **Branch:** `main` for R1 (`magazines` is merged; remote `origin` =
   `https://github.com/PLFIndia/pitak-x.git`)
-- **Status (2026-10-25):** G1, N1, N2 and N3 are Done. The separate magazine
-  remediation plan has S0–S11 Done and **R1 steps 1–6 and 8 complete on `main`**;
-  the remediation release hold is closed. Maintainer-owned R1 steps 7 and 9–11
-  remain: TalkBack, Play rollout, signed tag/push and F-Droid follow-up. The
-  signed AAB and its sha256 are ready. This plan picks up everything
+- **Status (superseded 2026-10-26):** G1, N1, N2 and N3 are Done. The separate
+  magazine remediation plan has S0–S11 Done and **R1 steps 1–6 and 8 complete
+  on `main`**; the remediation release hold is closed. The 1.6.0-specific
+  maintainer checklist below is historical: later releases superseded that
+  candidate, and `docs/RELEASING.md` is now the only procedure to resume. This
+  plan picks up everything
   `docs/plans/magazines-progress.md` left under *Next session* and *Open
-  issues* after S22 (`efa5d06`). Structured like `docs/plans/magazines.md`:
+  issues* after S22 (`efa5d06`). Structured like the completed original plan:
   **discrete sessions**, each executable by an LLM or a human in isolation,
   each ending in a green, committed state, each logged in **Part D of this
   file** (there is no separate progress file for this plan).
@@ -28,15 +29,16 @@
 
 ## A.1 Start-of-session checklist
 
-1. `git switch magazines && git status --short` — the tree must be clean.
+1. `git switch main && git status --short` — the remaining R1 work runs on
+   `main`, and the tree must be clean.
    If not, stop and read Part D: a previous session may have left a `wip`
    commit or notes.
 2. Read Part D (the log). The first session whose State is not `Done` is
    the one to run, in the order G1 → N1 → N2 → N3 → R1 (G1, N1, N2 are
    independent of each other; N3 depends on nothing in this plan; R1
-   depends on all of them). Before R1, also confirm every remediation session
-   S1–S11 in `magazineIssues.md` is Done. While that separate plan is
-   incomplete, resume its next session instead of starting R1.
+   depends on all of them). Before R1, confirm remediation S0–S11 is marked
+   complete in `docs/plans/magazines-progress.md`. Do not repeat that completed
+   remediation unless the underlying source changes.
 3. Read `AGENTS.md`, the session's **Read first** list, and the matching
    notes in `docs/plans/magazines-progress.md` (*Next session* and *Open
    issues* — they are the record of why each item exists). Do not read the
@@ -843,17 +845,20 @@ record it (Part D) rather than improvising.
   blurbs `29.txt`/`291–293.txt` already exist, and 29 > every code Play has
   seen).
 - **Depends on:** G1, N1, N2, N3 Done (N3 may be waived by the maintainer
-  only in writing in Part D — it is the RELEASING §6.1 step 7 gate), and every
-  session S1–S11 in `magazineIssues.md` Done with its regression-test evidence.
-  R1 remains blocked while any remediation session or finding is incomplete.
+  only in writing in Part D — it is the RELEASING §6.1 step 7 gate), and
+  remediation S0–S11 marked complete with regression-test evidence in
+  `docs/plans/magazines-progress.md`. R1 remains blocked while any remediation
+  session or finding is incomplete.
 - **Read first:** `docs/RELEASING.md` (all of it — it is the procedure;
   the steps below only pin values), `tool/release_build.sh` header
   (lines 1–60), `CHANGELOG.md` `[Unreleased]` and the `[1.5.2]` heading
   format, `README.md` lines 9–13.
-- **Baseline:** `magazineIssues.md` S11 is Done; `full` is green on
-  `magazines`; the PR `magazines → main` has every check green at the exact
-  current HEAD (`gh pr checks magazines`), not at `372ad3b` or another earlier
-  pre-remediation commit.
+- **Baseline (historical, already satisfied):** remediation S0–S11 is complete
+  per `docs/plans/magazines-progress.md`; `full` and every PR check were green
+  on the merged `magazines` branch at exact `5351034`, not at `372ad3b` or
+  another earlier pre-remediation commit. This is pre-merge evidence, not an
+  instruction to run `gh pr checks magazines` against the release HEAD on
+  `main`.
 
 ### Steps (an LLM does 1–6 and stops; the maintainer does 7–11)
 
