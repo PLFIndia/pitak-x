@@ -2,10 +2,11 @@
 ///
 /// Layout: the library header (logo + name) is pinned at the top, the primary
 /// destinations (Vault, Publish, Wishlist, Magazines, Library network, Share
-/// once a site exists, How Pitak works) scroll in the middle, and Settings is
-/// pinned to the bottom edge. Data operations (import/export/backup/restore) live under
-/// Settings → Data, so the drawer stays a short, stable list of top-level
-/// places. Each tile closes the drawer and pushes the page.
+/// once a site exists, How Pitak works) scroll in the middle. Share Apps and
+/// Settings are pinned to the bottom edge, in that order. Data operations
+/// (import/export/backup/restore) live under Settings → Data, so the drawer
+/// stays a short, stable list of top-level places. Navigation tiles close the
+/// drawer and push their page; share tiles close it and open their sheet.
 library;
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
+import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
 
@@ -129,8 +131,21 @@ class AppDrawer extends ConsumerWidget {
                 ],
               ),
             ),
-            // Pinned bottom: Settings.
+            // Pinned bottom: Share Apps sits immediately above Settings.
             const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.share_outlined),
+              title: const Text('Share Apps'),
+              onTap: () {
+                // Keep the host context before closing the drawer, just as the
+                // library-website share above does. The drawer's own context
+                // is deactivated as soon as its route is popped.
+                final navigator = Navigator.of(context);
+                final hostContext = navigator.context;
+                navigator.pop();
+                showShareAppsSheet(hostContext);
+              },
+            ),
             ListTile(
               leading: const Icon(Icons.settings_outlined),
               title: const Text('Settings'),

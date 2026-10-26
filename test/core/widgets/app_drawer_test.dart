@@ -10,19 +10,22 @@ import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
+import 'package:pitaka/features/share_apps/presentation/widgets/share_apps_sheet.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/periodicals/application/periodical_fakes.dart';
 
 class _FakeShare implements FileShareService {
   String? sharedText;
+  ShareOutcome outcome = ShareOutcome.success;
+
   @override
   Future<ShareOutcome> shareText(
     String text, {
     Rect? sharePositionOrigin,
   }) async {
     sharedText = text;
-    return ShareOutcome.success;
+    return outcome;
   }
 
   @override
@@ -166,6 +169,75 @@ void main() {
       expect(share.sharedText, 'https://user.github.io/my-library/');
     },
   );
+
+  testWidgets(
+    'Share Apps sits immediately above Settings and shares only Pitak',
+    (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final share = _FakeShare();
+      await tester.pumpWidget(await _app(share: share));
+      tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+      await tester.pumpAndSettle();
+
+      final shareTile = tester.getRect(
+        find.ancestor(
+          of: find.text('Share Apps'),
+          matching: find.byType(ListTile),
+        ),
+      );
+      final settingsTile = tester.getRect(
+        find.ancestor(
+          of: find.text('Settings'),
+          matching: find.byType(ListTile),
+        ),
+      );
+      expect(shareTile.bottom, closeTo(settingsTile.top, 0.01));
+
+      await tester.tap(find.text('Share Apps'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ShareAppsSheet), findsOneWidget);
+      expect(find.text('Share Apps'), findsOneWidget);
+      expect(find.text('Pitak'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(ShareAppsSheet),
+          matching: find.byType(ListTile),
+        ),
+        findsOneWidget,
+        reason: 'Future apps must not appear as empty placeholder rows',
+      );
+
+      await tester.tap(find.byTooltip('Share Pitak'));
+      await tester.pumpAndSettle();
+
+      expect(
+        share.sharedText,
+        'https://play.google.com/store/apps/details?id=dev.khoj.pitaka',
+      );
+      expect(find.byType(ShareAppsSheet), findsOneWidget);
+    },
+  );
+
+  testWidgets('Share Apps reports unavailable sharing with safe copy', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final share = _FakeShare()..outcome = ShareOutcome.unavailable;
+    await tester.pumpWidget(await _app(share: share));
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Share Apps'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Share Pitak'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Sharing is not available on this device.'),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('Settings is pinned below the primary destinations', (
     tester,
