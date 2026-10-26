@@ -7,9 +7,11 @@
 ///    Pitak publisher. It resolves against the saved site root and must stay
 ///    inside that site's origin AND directory, including on every redirect.
 ///  - **Third-party** — an absolute https URL, accepted ONLY when it is on the
-///    existing cover allow-list (`CoverUrlAllowList.remoteHttpsOf`), and every
-///    redirect hop must pass `CoverUrlAllowList.sanitize` again (that keeps the
-///    Open Library → Internet Archive path working).
+///    existing cover allow-list (`CoverUrlAllowList.remoteHttpsOf`), with no
+///    explicit port other than 443, and every redirect hop must pass the same
+///    rule again (that keeps the Open Library → Internet Archive path working).
+///    Fragments are discarded before the URL is requested or used as a cache
+///    key, so `#a`/`#b` variants collapse into one request.
 ///
 /// A Pages URL does NOT become an allowed absolute cover merely because it is
 /// on a Pages host: an absolute reference is always classified as third-party
@@ -64,7 +66,36 @@ final class ThirdPartyCoverRequest extends PublishedCoverRequest {
   final Uri uri;
 
   @override
-  String? sanitize(String? candidate) => CoverUrlAllowList.sanitize(candidate);
+  String? sanitize(String? candidate) => _sanitizeThirdPartyCover(candidate);
+}
+
+/// The ONE policy for a third-party cover URL — the initial reference and
+/// every redirect hop, so the two can never drift apart.
+///
+/// Three steps, in this order:
+///  1. the shared publish allow-list answers "may this URL be requested at
+///     all?": https only, no userinfo, host on [CoverUrlAllowList.allowedHosts]
+///     (or an Internet Archive storage node);
+///  2. the VIEWER's extra rule: a cover needs no port, so any explicit port
+///     other than 443 is refused. This deliberately stays here — putting it in
+///     the shared list would silently change publishing and local covers;
+///  3. canonicalisation: the fragment is REMOVED (not rejected) and the
+///     fragment-free URL is both requested and used as the cache key.
+///
+/// Why discard rather than reject the fragment (beginner note): an HTTP client
+/// never sends the bit after `#`, so `cover.jpg#a` and `cover.jpg#b` would
+/// download the same bytes under two cache keys — one wasted download and a
+/// duplicate entry. Discarding makes them one request, one key, one image.
+String? _sanitizeThirdPartyCover(String? candidate) {
+  final allowListed = CoverUrlAllowList.remoteHttpsOf(candidate);
+  if (allowListed == null) return null;
+  final uri = Uri.tryParse(allowListed);
+  if (uri == null) return null;
+  if (uri.hasPort && uri.port != 443) return null;
+  // Path and query are preserved: the Internet Archive redirect needs its
+  // `?…` parameters, so `removeFragment` (not "rebuild from host") is the
+  // only safe canonicalisation.
+  return uri.removeFragment().toString();
 }
 
 /// Classifies a published cover reference, or returns null when it must never
@@ -103,14 +134,11 @@ abstract final class PublishedCoverResolver {
       return SameSiteCoverRequest(Uri.parse(safe), siteUrl);
     }
 
-    // Everything absolute must be on the existing third-party cover list.
-    final absolute = CoverUrlAllowList.remoteHttpsOf(trimmed);
-    if (absolute == null) return null;
-    final uri = Uri.tryParse(absolute);
-    if (uri == null) return null;
-    // The shared cover allow-list does not police ports; a cover does not need
-    // one, so a non-default port is refused (fail closed).
-    if (uri.hasPort && uri.port != 443) return null;
-    return ThirdPartyCoverRequest(uri);
+    // Everything absolute must be on the existing third-party cover list. The
+    // SAME helper the redirects use decides the initial request too, so an
+    // initial URL can never be more permissive than a later hop.
+    final canonical = _sanitizeThirdPartyCover(trimmed);
+    if (canonical == null) return null;
+    return ThirdPartyCoverRequest(Uri.parse(canonical));
   }
 }

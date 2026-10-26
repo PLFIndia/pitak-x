@@ -666,6 +666,128 @@ void main() {
     });
   });
 
+  /// Review finding 9: the 8,000-character retained-field contract applies to
+  /// the SANITIZED cover reference too, for both row kinds.
+  ///
+  /// Cases are identified by label, never by echoing the generated string: a
+  /// failure message must not print an 8,000-character hostile value.
+  group('cover field cap', () {
+    const cap = CatalogueRules.maxFieldChars;
+
+    /// An allow-listed absolute cover reference of exactly [length] characters
+    /// after trimming/sanitization.
+    String absoluteCoverOfLength(int length) {
+      const prefix = 'https://covers.openlibrary.org/b/id/';
+      const suffix = '.jpg';
+      final leafLength = length - prefix.length - suffix.length;
+      return '$prefix${'a' * leafLength}$suffix';
+    }
+
+    /// A same-site `covers/<leaf>` reference of exactly [length] characters.
+    String sameSiteCoverOfLength(int length) =>
+        'covers/${'b' * (length - 'covers/'.length)}';
+
+    Map<String, Object?> seriesRow(String uid, Object? cover) => {
+      'periodicalUid': uid,
+      'title': 'Series',
+      'coverUrl': cover,
+    };
+
+    test('an absolute cover exactly at the cap is retained silently', () {
+      final atCap = absoluteCoverOfLength(cap);
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'coverUrl': '  $atCap  '}),
+          ],
+        ),
+      );
+      expect(decoded.items.single.coverUrl, atCap);
+      expect(decoded.warnings.invalidOptionalFields, 0);
+      expect(decoded.warnings.hasPartialRead, isFalse);
+    });
+
+    test('an absolute cover one over the cap is dropped once', () {
+      final overCap = absoluteCoverOfLength(cap + 1);
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'coverUrl': overCap}),
+          ],
+        ),
+      );
+      expect(decoded.items.single.coverUrl, isNull);
+      expect(decoded.warnings.invalidOptionalFields, 1);
+      expect(decoded.warnings.hasPartialRead, isTrue);
+    });
+
+    test('a same-site cover is held to the same boundary', () {
+      final atCap = sameSiteCoverOfLength(cap);
+      final overCap = sameSiteCoverOfLength(cap + 1);
+
+      final kept = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'coverUrl': atCap}),
+          ],
+        ),
+      );
+      expect(kept.items.single.coverUrl, atCap);
+      expect(kept.warnings.invalidOptionalFields, 0);
+
+      final dropped = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'coverUrl': overCap}),
+          ],
+        ),
+      );
+      // Without the cap this would survive the reader and only be refused much
+      // later by the resolver, silently and without a warning.
+      expect(dropped.items.single.coverUrl, isNull);
+      expect(dropped.warnings.invalidOptionalFields, 1);
+    });
+
+    test('periodical rows obey the same boundary', () {
+      final atCap = absoluteCoverOfLength(cap);
+      final overCap = absoluteCoverOfLength(cap + 1);
+
+      final kept = decodeOk(catalogue(periodicals: [seriesRow('kept', atCap)]));
+      expect(kept.periodicals.single.coverUrl, atCap);
+      expect(kept.warnings.invalidOptionalFields, 0);
+
+      final dropped = decodeOk(
+        catalogue(periodicals: [seriesRow('dropped', overCap)]),
+      );
+      expect(dropped.periodicals.single.coverUrl, isNull);
+      expect(dropped.warnings.invalidOptionalFields, 1);
+      expect(dropped.warnings.hasPartialRead, isTrue);
+    });
+
+    test('a same-site periodical reference is capped too', () {
+      final overCap = sameSiteCoverOfLength(cap + 1);
+      final decoded = decodeOk(
+        catalogue(periodicals: [seriesRow('dropped', '  $overCap  ')]),
+      );
+      expect(decoded.periodicals.single.coverUrl, isNull);
+      expect(decoded.warnings.invalidOptionalFields, 1);
+    });
+
+    test('an unsafe value that is also over-cap is counted once', () {
+      // Both defects at once must not double-count the one dropped field.
+      final hostile = 'http://evil.example/${'c' * (cap + 10)}';
+      final decoded = decodeOk(
+        catalogue(
+          books: [
+            bookRow({'coverUrl': hostile}),
+          ],
+        ),
+      );
+      expect(decoded.items.single.coverUrl, isNull);
+      expect(decoded.warnings.invalidOptionalFields, 1);
+    });
+  });
+
   group('issue details', () {
     Map<String, Object?> issueRow(Object? issue) =>
         bookRow({'kind': 'magazine-issue', 'issue': issue});

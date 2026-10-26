@@ -160,6 +160,81 @@ void main() {
         expect(request.sanitize('https://kadugodi.github.io/a.jpg'), isNull);
       },
     );
+
+    test('initial URL and redirect hops refuse the same four bypasses', () {
+      // Review finding 6: the initial URL used to be stricter than the hops,
+      // so an allow-listed endpoint could redirect the device to a non-default
+      // port on the same host. Both sides now call ONE helper.
+      final request =
+          PublishedCoverResolver.resolve(
+                github,
+                'https://covers.openlibrary.org/b/id/1-L.jpg',
+              )!
+              as ThirdPartyCoverRequest;
+
+      for (final bad in <String>[
+        'https://covers.openlibrary.org:8443/b/id/2-L.jpg', // port bypass
+        'http://covers.openlibrary.org/b/id/2-L.jpg', // downgraded scheme
+        'https://user@covers.openlibrary.org/b/id/2-L.jpg', // userinfo
+        'https://evil.example/a.jpg', // host not on the list
+        'https://covers.openlibrary.org.evil.example/a.jpg', // suffix trap
+      ]) {
+        expect(
+          PublishedCoverResolver.resolve(github, bad),
+          isNull,
+          reason: 'initial URL must refuse "$bad"',
+        );
+        expect(
+          request.sanitize(bad),
+          isNull,
+          reason: 'redirect hop must refuse "$bad"',
+        );
+      }
+
+      // An explicit default port is not a bypass: it normalises to the same
+      // canonical URL, so the canonical key is shared.
+      final explicit443 = PublishedCoverResolver.resolve(
+        github,
+        'https://covers.openlibrary.org:443/b/id/3-L.jpg',
+      );
+      expect(explicit443, isA<ThirdPartyCoverRequest>());
+      expect(explicit443!.url, 'https://covers.openlibrary.org/b/id/3-L.jpg');
+      expect(
+        request.sanitize('https://covers.openlibrary.org:443/b/id/3-L.jpg'),
+        'https://covers.openlibrary.org/b/id/3-L.jpg',
+      );
+    });
+
+    test('fragment variants resolve to ONE canonical request', () {
+      final withA = PublishedCoverResolver.resolve(
+        github,
+        'https://covers.openlibrary.org/b/id/1-L.jpg#a',
+      )!;
+      final withB = PublishedCoverResolver.resolve(
+        github,
+        'https://covers.openlibrary.org/b/id/1-L.jpg#b',
+      )!;
+      expect(withA.url, 'https://covers.openlibrary.org/b/id/1-L.jpg');
+      expect(withB.url, withA.url, reason: 'the fragment is not a key');
+      // The scheduler keys on `url`, so equal URLs are one download.
+      expect(withA.url, withB.url);
+    });
+
+    test('redirect sanitization strips a fragment and keeps the query', () {
+      final request =
+          PublishedCoverResolver.resolve(
+                github,
+                'https://covers.openlibrary.org/b/id/1-L.jpg',
+              )!
+              as ThirdPartyCoverRequest;
+      // The Internet Archive hop needs its query; the fragment must go.
+      expect(
+        request.sanitize(
+          'https://ia800000.us.archive.org/view_archive.php?x=1&y=2#page=3',
+        ),
+        'https://ia800000.us.archive.org/view_archive.php?x=1&y=2',
+      );
+    });
   });
 
   group('blank input', () {

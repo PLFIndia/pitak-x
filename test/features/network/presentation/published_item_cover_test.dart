@@ -87,6 +87,28 @@ void main() {
     expect(fetch.calls, isEmpty);
   });
 
+  testWidgets('invalid percent-encoded UTF-8 renders a placeholder', (
+    tester,
+  ) async {
+    // Review finding 1: these two same-site leaves pass the "malformed escape
+    // syntax" check but decode to bytes that are not UTF-8. Before the fix the
+    // resolver threw and took the whole list down with it.
+    for (final leaf in <String>['covers/%FF.jpg', 'covers/%C0%AF.jpg']) {
+      await pumpCover(tester, coverUrl: leaf);
+      expect(
+        find.byIcon(Icons.menu_book_outlined),
+        findsOneWidget,
+        reason: '$leaf must fall back to the placeholder',
+      );
+      expect(fetch.calls, isEmpty, reason: '$leaf must not be requested');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '$leaf must not escape as an exception',
+      );
+    }
+  });
+
   testWidgets('consent OFF shows a placeholder and makes no request', (
     tester,
   ) async {

@@ -153,6 +153,47 @@ void main() {
       }
     });
 
+    test('escapes that decode to invalid UTF-8 are refused, never thrown', () {
+      // Syntactically valid `%XX` escapes whose BYTES are not UTF-8. The old
+      // code validated only the syntax and then let the decoder throw, which
+      // crashed cover rendering for a hostile payload.
+      for (final raw in <String>[
+        // A lone continuation-style byte: never valid UTF-8.
+        'https://kadugodi.github.io/pitak/%FF.jpg',
+        // The classic overlong encoding of '/'.
+        'https://kadugodi.github.io/pitak/%C0%AF.jpg',
+        // A truncated multibyte sequence (first two bytes of a 3-byte char).
+        'https://kadugodi.github.io/pitak/%E2%82.jpg',
+        'https://kadugodi.github.io/pitak/books%FF.json',
+        'https://kadugodi.github.io/pitak/%C0%AF/secret.json',
+      ]) {
+        String? result;
+        expect(
+          () => result = PublishedSiteUrlPolicy.sanitizeForSite(github, raw),
+          returnsNormally,
+          reason: 'decoding "$raw" must not throw',
+        );
+        expect(result, isNull, reason: 'must refuse "$raw"');
+      }
+    });
+
+    test('a valid multibyte escape still resolves inside the library', () {
+      // The refusal above must be about INVALID UTF-8 only: a well-formed
+      // sequence keeps working (the same one the publisher writes for Indic
+      // cover leaves).
+      const candidate =
+          'https://kadugodi.github.io/pitak/%E0%B2%9A%E0%B2%82%E0%B2%A6.jpg';
+      expect(
+        PublishedSiteUrlPolicy.sanitizeForSite(github, candidate),
+        candidate,
+      );
+      expect(
+        Uri.parse(candidate).pathSegments.last,
+        'ಚಂದ.jpg',
+        reason: 'the bytes really are a valid UTF-8 file name',
+      );
+    });
+
     test('a traversal that lands back inside is allowed', () {
       // `pitak/x/../books.json` == `pitak/books.json`: still this library.
       allowed('https://kadugodi.github.io/pitak/x/../books.json');

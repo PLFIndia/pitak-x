@@ -302,6 +302,29 @@ void main() {
       },
     );
 
+    test('a third-party redirect to port 8443 is never requested', () async {
+      // Review finding 6: same host, allow-listed, different service — the hop
+      // must be refused BEFORE the socket opens, so the mock client records
+      // exactly the initial request.
+      final requested = <String>[];
+      final adapter = fetcher(
+        MockClient.streaming((request, _) async {
+          requested.add(request.url.toString());
+          return http.StreamedResponse(
+            const Stream<List<int>>.empty(),
+            302,
+            headers: {
+              'location': 'https://covers.openlibrary.org:8443/b/id/2-L.jpg',
+            },
+            request: request,
+          );
+        }),
+      );
+      expect(await adapter.fetch(thirdParty()), isNull);
+      expect(requested, hasLength(1));
+      expect(requested.single, contains('covers.openlibrary.org/b/id/1-L'));
+    });
+
     test('a Pages cover is not requestable as an absolute third-party URL', () {
       expect(
         PublishedCoverResolver.resolve(

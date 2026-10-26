@@ -249,6 +249,13 @@ abstract final class PublishedItemReader {
 
   /// Sanitizes the cover reference at DECODE time: an unusable reference
   /// becomes null and can never produce a request (V11).
+  ///
+  /// The retained-value cap applies to the SANITIZED, trimmed reference — that
+  /// is the string the model would hold and the resolver would later parse, so
+  /// untrimmed input padding cannot smuggle a longer value past the contract.
+  /// An over-cap reference is dropped (never truncated: a shortened URL could
+  /// name a different file) and counted exactly once, in the same
+  /// "omitted optional field" bucket as every other over-cap field.
   static String? _readCover(Object? raw, PublishedReadTally tally) {
     if (raw == null) return null;
     if (raw is! String) {
@@ -256,7 +263,17 @@ abstract final class PublishedItemReader {
       return null;
     }
     final safe = CoverUrlAllowList.sanitize(raw);
-    if (safe == null && raw.trim().isNotEmpty) tally.invalidOptionalFields++;
+    if (safe == null) {
+      // A blank/absent value stays silent; a nonblank-but-unsafe one is a
+      // defect worth warning about.
+      if (raw.trim().isNotEmpty) tally.invalidOptionalFields++;
+      return null;
+    }
+    if (safe.length > CatalogueRules.maxFieldChars) {
+      // Counted once: `safe != null`, so the unsafe branch above did not run.
+      tally.invalidOptionalFields++;
+      return null;
+    }
     return safe;
   }
 

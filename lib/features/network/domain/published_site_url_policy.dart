@@ -111,11 +111,23 @@ abstract final class PublishedSiteUrlPolicy {
         if (i == raw.length - 1) continue;
         return null;
       }
-      // Validate the escapes BEFORE decoding: `Uri.decodeComponent` throws an
-      // ArgumentError (an Error, not an Exception) on a malformed `%` escape,
-      // and a domain parser must never rely on catching an Error.
+      // Two different kinds of bad escape, both refused:
+      //  1. malformed SYNTAX (`%`, `%2`, `%zz`) — checked here so it never
+      //     reaches a decoder at all;
+      //  2. syntactically valid escapes whose BYTES are not valid UTF-8
+      //     (`%FF`, overlong `%C0%AF`, a truncated multibyte sequence) — the
+      //     decoder throws a `FormatException` for those, which we turn into a
+      //     refusal. A path we cannot decode safely is not requestable.
       if (!_hasValidEscapes(part)) return null;
-      final decoded = Uri.decodeComponent(part);
+      final String decoded;
+      try {
+        decoded = Uri.decodeComponent(part);
+      } on FormatException {
+        // Narrow on purpose: only "these bytes are not UTF-8" is a refusal.
+        // `Error`s and unexpected exceptions stay uncaught so a real bug is
+        // never disguised as hostile input.
+        return null;
+      }
       if (decoded.isEmpty) return null;
       if (decoded == '.') continue;
       if (decoded == '..') {

@@ -101,6 +101,32 @@ void main() {
     sub.close();
   });
 
+  test('fragment variants share one key and one fetch', () async {
+    // Review finding 10: HTTP never sends the fragment, so `#a` and `#b` are
+    // the same download. The resolver canonicalises them into one key; this is
+    // the behavioural gate (a string-only resolver assertion could pass while
+    // the scheduler still saw two keys).
+    makeContainer();
+    final sub = listen();
+    await container.read(settingsControllerProvider.future);
+    const base = 'https://covers.openlibrary.org/b/id/1-L.jpg';
+    final withA = PublishedCoverResolver.resolve(site, '$base#a')!;
+    final withB = PublishedCoverResolver.resolve(site, '$base#b')!;
+    coverNotifier()
+      ..request(withA)
+      ..request(withB);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(fetch.calls, hasLength(1));
+    expect(fetch.calls.single.url, base);
+    final session = container.read(
+      publishedCatalogueCoverControllerProvider(site),
+    );
+    expect(session.length, 1);
+    expect(session.bytesFor(base), isNotNull);
+    sub.close();
+  });
+
   test('a failure is remembered (no hammering on scroll)', () async {
     fetch.failAll = true;
     makeContainer();
