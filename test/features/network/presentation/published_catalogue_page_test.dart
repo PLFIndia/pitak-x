@@ -1,18 +1,24 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../support/a11y.dart';
@@ -32,6 +38,7 @@ void main() {
     String? language,
     AgeGroup? ageGroup,
     PublishedIssueDetails? issue,
+    String? coverUrl,
   }) => PublishedCatalogueItem(
     sourceIndex: index,
     title: title,
@@ -40,6 +47,7 @@ void main() {
     language: language,
     ageGroup: ageGroup,
     issue: issue,
+    coverUrl: coverUrl,
   );
 
   PublishedCatalogue catalogueOf(
@@ -47,13 +55,20 @@ void main() {
     int schemaVersion = 1,
     int? exportedAt,
     int droppedItems = 0,
+    int duplicateSeriesUids = 0,
+    PublishedCatalogueWarnings? warnings,
     List<PublishedPeriodical> periodicals = const [],
   }) => PublishedCatalogue(
     declaredSchemaVersion: schemaVersion,
     exportedAt: exportedAt,
     items: items,
     periodicals: periodicals,
-    warnings: PublishedCatalogueWarnings(droppedItems: droppedItems),
+    warnings:
+        warnings ??
+        PublishedCatalogueWarnings(
+          droppedItems: droppedItems,
+          duplicateSeriesUids: duplicateSeriesUids,
+        ),
   );
 
   final catalogue = catalogueOf([
@@ -95,16 +110,38 @@ void main() {
       String url, {
       Future<void>? abortTrigger,
     })
-    fetch,
-  ) {
+    fetch, {
+    _CoverPort? coverPort,
+    bool coverConsent = true,
+    bool coverSettingsFail = false,
+    Future<PublishedCatalogueView> Function(
+      PublishedCatalogue catalogue,
+      PublishedCatalogueQuery query,
+    )?
+    queryRunner,
+    void Function(PublishedCatalogueQuery query)? onQuery,
+  }) {
     container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue(fetch),
         // The real engine, synchronously: the isolate adapter has its own
         // suite; page tests must be deterministic.
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
-          (catalogue, query) async =>
-              PublishedQueryEngine.apply(catalogue, query),
+          queryRunner ??
+              (catalogue, query) async {
+                onQuery?.call(query);
+                return PublishedQueryEngine.apply(catalogue, query);
+              },
+        ),
+        // Covers are off the network here too: the port is a fake and the
+        // consent switch is explicit, so no test depends on shared prefs.
+        publishedCoverFetcherProvider(
+          site,
+        ).overrideWithValue((coverPort ?? _CoverPort(_jpeg(10, 20, 30))).call),
+        settingsRepositoryProvider.overrideWith(
+          (ref) async => coverSettingsFail
+              ? _FailingSettings()
+              : _SettingsRepo(loadRemoteCovers: coverConsent),
         ),
       ],
     );
@@ -502,6 +539,247 @@ void main() {
     });
   });
 
+  group('cover session', () {
+    /// A catalogue whose only covered row is the first item, so exactly one
+    /// `Image` can appear on screen.
+    PublishedCatalogue coveredCatalogue() => catalogueOf([
+      item(0, title: 'The Water Margin', coverUrl: 'covers/water.jpg'),
+      item(
+        1,
+        title: 'Kannada Picture Dictionary',
+        kind: PublishedItemKind.other,
+      ),
+    ]);
+
+    Uint8List renderedCoverBytes(WidgetTester tester) {
+      final images = tester.widgetList<Image>(find.byType(Image)).toList();
+      expect(images, hasLength(1), reason: 'one covered row is visible');
+      final provider = images.single.image;
+      expect(provider, isA<MemoryImage>());
+      return (provider as MemoryImage).bytes;
+    }
+
+    testWidgets('a reload re-fetches an unchanged cover URL', (tester) async {
+      // Review finding 2: keeping the URL as the cache key means an image that
+      // changed behind the same URL would otherwise stay stale forever.
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30));
+      makeContainer(pending.call, coverPort: covers);
+      await pumpViewer(tester);
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+
+      expect(covers.calls, hasLength(1));
+      expect(renderedCoverBytes(tester), same(covers.served.single));
+
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+      expect(pending.calls, hasLength(2), reason: 'the reload started');
+      // While the catalogue GET is pending, the visible rows belong to the OLD
+      // payload: no replacement cover request may start.
+      expect(covers.calls, hasLength(1), reason: 'covers are paused');
+
+      covers.bytes = _jpeg(200, 210, 220);
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+
+      expect(covers.calls, hasLength(2), reason: 'one new fetch');
+      expect(
+        covers.calls.last.url,
+        covers.calls.first.url,
+        reason: 'the URL did not change — only the image did',
+      );
+      final rendered = renderedCoverBytes(tester);
+      expect(rendered, same(covers.served.last), reason: 'B is on screen');
+      expect(rendered, isNot(same(covers.served.first)), reason: 'not A');
+    });
+
+    testWidgets('a reload aborts old cover work and discards late bytes', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30))..manual = true;
+      makeContainer(pending.call, coverPort: covers);
+      await pumpViewer(tester);
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+      expect(covers.calls, hasLength(1));
+      var aborted = false;
+      unawaited(covers.aborts.single.then((_) => aborted = true));
+
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+      expect(aborted, isTrue, reason: 'reset completes the caller abort');
+
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+      // The old socket's late result must not be cached in the new session;
+      // completing it is what releases the single FIFO worker.
+      covers.completeCall(0, _jpeg(1, 2, 3));
+      await tester.pumpAndSettle();
+      expect(
+        container.read(publishedCatalogueCoverControllerProvider(site)).isEmpty,
+        isTrue,
+        reason: 'the old payload never lands in the new session',
+      );
+      expect(find.byType(Image), findsNothing);
+
+      // The new generation then refreshes the visible row normally.
+      expect(covers.calls, hasLength(2));
+      covers.completeCall(1, _jpeg(4, 5, 6));
+      await tester.pumpAndSettle();
+      expect(renderedCoverBytes(tester), same(covers.served.last));
+    });
+
+    testWidgets('a double Reload tap is one GET and one cover reset', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30));
+      makeContainer(pending.call, coverPort: covers);
+      await pumpViewer(tester);
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+      expect(covers.calls, hasLength(1));
+
+      final resets = <PublishedCoverSession>[];
+      final sub = container.listen(
+        publishedCatalogueCoverControllerProvider(site),
+        (previous, next) {
+          if (previous != null && !previous.isEmpty && next.isEmpty) {
+            resets.add(next);
+          }
+        },
+      );
+      addTearDown(sub.close);
+
+      // Two taps in the SAME frame: the second must see `canRefresh == false`.
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pump();
+
+      expect(pending.calls, hasLength(2), reason: 'exactly one extra GET');
+      expect(resets, hasLength(1), reason: 'exactly one cover reset cycle');
+      expect(covers.calls, hasLength(1), reason: 'no cover work from the tap');
+
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+      expect(
+        covers.calls,
+        hasLength(2),
+        reason: 'one refresh after the reload',
+      );
+    });
+
+    testWidgets('an off-screen session image is released on reset', (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30));
+      makeContainer(pending.call, coverPort: covers);
+      await pumpViewer(tester);
+      pending.completeLatest(
+        catalogueOf([
+          item(0, title: 'First Covered', coverUrl: 'covers/first.jpg'),
+          for (var i = 1; i < 40; i++) item(i, title: 'Plain Row $i'),
+        ]),
+      );
+      await tester.pumpAndSettle();
+      expect(covers.calls, hasLength(1));
+
+      final cache = PaintingBinding.instance.imageCache;
+      final key = MemoryImage(covers.served.single);
+      addTearDown(() => cache.evict(key));
+      expect(cache.statusForKey(key).tracked, isTrue);
+
+      // Scroll the covered row out of the tree: its widget is disposed but the
+      // session (and therefore the global cache entry) still holds the image.
+      final scrollable = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Plain Row 39'),
+        600,
+        scrollable: scrollable.first,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('First Covered'), findsNothing);
+      expect(
+        cache.statusForKey(key).tracked,
+        isTrue,
+        reason: 'the bytes are still in the Riverpod session',
+      );
+
+      container
+          .read(publishedCatalogueCoverControllerProvider(site).notifier)
+          .reset();
+      await tester.pumpAndSettle();
+      expect(
+        cache.statusForKey(key).tracked,
+        isFalse,
+        reason: 'reset releases images no widget owns any more',
+      );
+    });
+
+    testWidgets("reset and teardown untrack only this session's images", (
+      tester,
+    ) async {
+      final pending = _PendingFetcher();
+      final covers = _CoverPort(_jpeg(10, 20, 30));
+      makeContainer(pending.call, coverPort: covers);
+      await pumpViewer(tester);
+      pending.completeLatest(coveredCatalogue());
+      await tester.pumpAndSettle();
+
+      final cache = PaintingBinding.instance.imageCache;
+      final firstKey = MemoryImage(covers.served.single);
+      // An unrelated image belongs to another screen: it must survive.
+      final unrelatedKey = MemoryImage(Uint8List.fromList(const [7, 7, 7]));
+      cache.putIfAbsent(
+        unrelatedKey,
+        () => OneFrameImageStreamCompleter(Completer<ImageInfo>().future),
+      );
+      addTearDown(() {
+        cache
+          ..evict(firstKey)
+          ..evict(unrelatedKey);
+      });
+      expect(cache.statusForKey(firstKey).tracked, isTrue);
+      expect(cache.statusForKey(unrelatedKey).tracked, isTrue);
+
+      covers.bytes = _jpeg(200, 210, 220);
+      container
+          .read(publishedCatalogueCoverControllerProvider(site).notifier)
+          .reset();
+      await tester.pumpAndSettle();
+      expect(
+        cache.statusForKey(firstKey).tracked,
+        isFalse,
+        reason: 'the reset session released its old image',
+      );
+      expect(
+        cache.statusForKey(unrelatedKey).tracked,
+        isTrue,
+        reason: 'cleanup is session-scoped, never a global clear',
+      );
+
+      // The visible row rendered the new generation, so a second key exists…
+      final secondKey = MemoryImage(covers.served.last);
+      expect(secondKey, isNot(firstKey));
+      expect(cache.statusForKey(secondKey).tracked, isTrue);
+
+      // …and unmounting the whole viewer route releases it.
+      await tester.pumpWidget(const MaterialApp(home: Scaffold()));
+      await tester.pumpAndSettle();
+      expect(
+        cache.statusForKey(secondKey).tracked,
+        isFalse,
+        reason: 'route teardown evicts the session images',
+      );
+    });
+  });
+
   group('layout and accessibility', () {
     testWidgets('long Indic titles wrap instead of overflowing', (
       tester,
@@ -647,6 +925,94 @@ final class _PendingFetcher {
 
   void failLatest(PublishedCatalogueFailure failure) =>
       _pending.last.complete(Left(failure));
+}
+
+/// A small valid JPEG of one colour: real decodable bytes for `Image.memory`.
+Uint8List _jpeg(int r, int g, int b) => Uint8List.fromList(
+  img.encodeJpg(img.Image(width: 4, height: 6)..clear(img.ColorRgb8(r, g, b))),
+);
+
+/// A controllable cover port. Each success hands back a FRESH buffer, exactly
+/// like the real adapter (which decodes into new bytes on every request), so a
+/// reload under the same URL really is a new `MemoryImage` key.
+final class _CoverPort {
+  _CoverPort(this.bytes);
+
+  /// The payload the next successful request returns.
+  Uint8List bytes;
+
+  /// Every request the scheduler made, in order.
+  final List<PublishedCoverRequest> calls = [];
+
+  /// The caller-abort signals, in call order.
+  final List<Future<void>> aborts = [];
+
+  /// The exact buffers this port produced, in completion order (the discarded
+  /// late result included — that is what the abort test needs to prove).
+  final List<Uint8List> served = [];
+
+  final List<Completer<Uint8List?>> _pending = [];
+
+  /// When true, requests stay pending until the test completes them.
+  bool manual = false;
+
+  Future<Uint8List?> call(
+    PublishedCoverRequest request, {
+    Future<void>? abortTrigger,
+  }) {
+    calls.add(request);
+    if (abortTrigger != null) aborts.add(abortTrigger);
+    if (manual) {
+      final completer = Completer<Uint8List?>();
+      _pending.add(completer);
+      return completer.future;
+    }
+    final copy = Uint8List.fromList(bytes);
+    served.add(copy);
+    return Future<Uint8List?>.value(copy);
+  }
+
+  /// Completes the [index]th request. An aborted one is still completable: that
+  /// is how a test proves obsolete bytes are discarded rather than cached.
+  void completeCall(int index, Uint8List value) {
+    final copy = Uint8List.fromList(value);
+    served.add(copy);
+    _pending[index].complete(copy);
+  }
+}
+
+/// A settings repository with only the cover switch meaningful.
+class _SettingsRepo implements SettingsRepository {
+  _SettingsRepo({required this.loadRemoteCovers});
+
+  final bool loadRemoteCovers;
+
+  @override
+  Future<AppSettings> load() async =>
+      AppSettings.defaults.copyWith(loadRemoteCovers: loadRemoteCovers);
+
+  @override
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({
+    required bool enabled,
+  }) async => right(unit);
+
+  @override
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) async =>
+      right(unit);
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected settings call');
+}
+
+/// A settings repository that never loads (fail closed).
+class _FailingSettings implements SettingsRepository {
+  @override
+  Future<AppSettings> load() async => throw StateError('settings unavailable');
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected settings call');
 }
 
 /// Records every browser hand-off attempt.

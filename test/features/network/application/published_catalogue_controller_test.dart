@@ -150,6 +150,58 @@ void main() {
     },
   );
 
+  test('canRefresh is the one reload decision (V12)', () async {
+    final sub = listen();
+    final notifier = container.read(
+      publishedCatalogueControllerProvider(site).notifier,
+    );
+
+    // The initial load owns the GET.
+    expect(notifier.canRefresh, isFalse);
+
+    fake.completeLatest(catalogueWith('First'));
+    await container.read(publishedCatalogueControllerProvider(site).future);
+    expect(notifier.canRefresh, isTrue, reason: 'idle after data');
+
+    // …and a manual reload closes the door again, synchronously.
+    final refresh = notifier.refresh();
+    expect(notifier.canRefresh, isFalse, reason: 'reload in flight');
+    fake.completeLatest(catalogueWith('Second'));
+    await refresh;
+    expect(notifier.canRefresh, isTrue);
+
+    // A typed error leaves the Retry path available.
+    final failed = notifier.refresh();
+    fake.failLatest(failure);
+    await failed;
+    expect(
+      container.read(publishedCatalogueControllerProvider(site)).hasError,
+      isTrue,
+    );
+    expect(notifier.canRefresh, isTrue, reason: 'a typed error is retryable');
+    sub.close();
+  });
+
+  test('refresh() refuses exactly when canRefresh is false', () async {
+    final sub = listen();
+    final notifier = container.read(
+      publishedCatalogueControllerProvider(site).notifier,
+    );
+    // Initial load: refresh must not add a GET.
+    expect(notifier.canRefresh, isFalse);
+    await notifier.refresh();
+    expect(fake.calls, hasLength(1));
+
+    fake.completeLatest(catalogueWith('First'));
+    await container.read(publishedCatalogueControllerProvider(site).future);
+    expect(notifier.canRefresh, isTrue);
+    final refresh = notifier.refresh();
+    expect(fake.calls, hasLength(2));
+    fake.completeLatest(catalogueWith('Second'));
+    await refresh;
+    sub.close();
+  });
+
   test('disposal completes the caller abort so the socket closes', () async {
     final sub = listen();
     final abort = fake.aborts.single;

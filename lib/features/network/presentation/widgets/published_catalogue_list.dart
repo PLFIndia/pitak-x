@@ -45,9 +45,14 @@ final class PublishedItemDisplayRow extends PublishedDisplayRow {
 /// The list for one computed view.
 class PublishedCatalogueList extends StatelessWidget {
   /// Creates the list for [view]; [siteUrl] is the saved site root (covers).
+  ///
+  /// [coverRequestsPaused] is set while an accepted reload is in flight: the
+  /// rows still paint the OLD payload, so they must not start cover downloads
+  /// for it (review finding 2).
   const PublishedCatalogueList({
     required this.view,
     required this.siteUrl,
+    this.coverRequestsPaused = false,
     super.key,
   });
 
@@ -56,6 +61,9 @@ class PublishedCatalogueList extends StatelessWidget {
 
   /// The saved site root, used by the cover slot.
   final String siteUrl;
+
+  /// When true, visible rows paint but never request a cover.
+  final bool coverRequestsPaused;
 
   /// Flattens a grouped view into one row per widget, keeping display order.
   ///
@@ -84,6 +92,7 @@ class PublishedCatalogueList extends StatelessWidget {
           item: item,
           series: series,
           siteUrl: siteUrl,
+          coverRequestsPaused: coverRequestsPaused,
         ),
       },
     );
@@ -132,11 +141,13 @@ class _ItemRow extends StatelessWidget {
     required this.item,
     required this.series,
     required this.siteUrl,
+    required this.coverRequestsPaused,
   });
 
   final PublishedCatalogueItem item;
   final PublishedPeriodical? series;
   final String siteUrl;
+  final bool coverRequestsPaused;
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +176,11 @@ class _ItemRow extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                PublishedItemCover(item: item, siteUrl: siteUrl),
+                PublishedItemCover(
+                  item: item,
+                  siteUrl: siteUrl,
+                  coverRequestsPaused: coverRequestsPaused,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

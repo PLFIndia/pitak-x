@@ -7,6 +7,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:image/image.dart' as img;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_item_cover.dart';
@@ -42,6 +43,7 @@ void main() {
     required String? coverUrl,
     bool consent = true,
     bool settingsFail = false,
+    bool paused = false,
   }) async {
     final container = ProviderContainer(
       overrides: [
@@ -63,6 +65,7 @@ void main() {
               child: PublishedItemCover(
                 item: itemWith(coverUrl),
                 siteUrl: site,
+                coverRequestsPaused: paused,
               ),
             ),
           ),
@@ -176,20 +179,77 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
   });
+
+  testWidgets('a visible row requests again after a session reset', (
+    tester,
+  ) async {
+    // Review finding 4: the placeholder must be able to become an image again
+    // without the row being recreated (scroll back, or the new cover
+    // generation after a reload).
+    final container = await pumpCover(tester, coverUrl: 'covers/a.jpg');
+    expect(fetch.calls, hasLength(1));
+    expect(find.byIcon(Icons.menu_book_outlined), findsNothing);
+
+    container
+        .read(publishedCatalogueCoverControllerProvider(site).notifier)
+        .reset();
+    await tester.pumpAndSettle();
+
+    expect(fetch.calls, hasLength(2), reason: 'the same row asked again');
+    expect(find.byIcon(Icons.menu_book_outlined), findsNothing);
+    expect(fetch.calls.last.url, fetch.calls.first.url);
+  });
+
+  testWidgets('a remembered failure is never retried on rebuild', (
+    tester,
+  ) async {
+    fetch = _FakeFetcher(const [1, 2, 3, 4])..fail = true;
+    final container = await pumpCover(tester, coverUrl: 'covers/a.jpg');
+    await tester.pumpAndSettle();
+    expect(fetch.calls, hasLength(1));
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+
+    // Force several rebuilds of the SAME row: the controller's failure
+    // memory must keep this from becoming repeated traffic.
+    final element = tester.element(find.byType(PublishedItemCover));
+    for (var i = 0; i < 3; i++) {
+      element.markNeedsBuild();
+      await tester.pumpAndSettle();
+    }
+    expect(fetch.calls, hasLength(1), reason: 'no hammering a broken cover');
+    expect(
+      container.read(publishedCatalogueCoverControllerProvider(site)).isEmpty,
+      isTrue,
+    );
+  });
+
+  testWidgets('paused rows paint but never request', (tester) async {
+    // Used by the catalogue page while an accepted reload is in flight: the
+    // rows still on screen belong to the old payload.
+    await pumpCover(tester, coverUrl: 'covers/a.jpg', paused: true);
+    await tester.pumpAndSettle();
+    expect(fetch.calls, isEmpty);
+    expect(find.byIcon(Icons.menu_book_outlined), findsOneWidget);
+  });
 }
 
-/// A cover port returning fixed bytes.
+/// A cover port returning fixed bytes, or null when [fail] is set.
 final class _FakeFetcher {
   _FakeFetcher(this.bytes);
 
   final List<int> bytes;
   final List<PublishedCoverRequest> calls = [];
 
+  /// Simulates every expected failure of the real port (refused, timeout,
+  /// oversize, undecodable) — all of which are a null result.
+  bool fail = false;
+
   Future<Uint8List?> call(
     PublishedCoverRequest request, {
     Future<void>? abortTrigger,
   }) async {
     calls.add(request);
+    if (fail) return null;
     return Uint8List.fromList(bytes);
   }
 }

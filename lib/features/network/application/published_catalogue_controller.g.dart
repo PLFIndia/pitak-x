@@ -7,7 +7,7 @@ part of 'published_catalogue_controller.dart';
 // **************************************************************************
 
 String _$publishedCatalogueControllerHash() =>
-    r'1457d5d0c1d0f0a66138d1a71130db4edb0b9700';
+    r'352b43d933d90b099bbe684dbcfd674e49041ffb';
 
 /// Copied from Dart SDK
 class _SystemHash {

@@ -13,7 +13,10 @@
 ///  - one FIFO worker: a long scroll cannot open dozens of sockets or start
 ///    dozens of isolates at once;
 ///  - duplicates (including failures) are remembered for the session, so
-///    scrolling past a broken cover cannot hammer its host.
+///    scrolling past a broken cover cannot hammer its host;
+///  - LRU eviction releases ONLY the dedupe entry of the evicted SUCCESS, so a
+///    row that scrolls back into view can be fetched again; failures stay
+///    remembered for the whole session.
 ///
 /// Lifecycle: the catalogue page's manual reload calls `reset()` BEFORE the new
 /// payload loads, and route disposal aborts the in-flight request, empties the
@@ -45,6 +48,15 @@ final class PublishedCoverSession {
 
   /// The downscaled JPEG for [url], or null while absent/failed.
   Uint8List? bytesFor(String url) => _images[url];
+
+  /// The cached cover URLs, in insertion order.
+  ///
+  /// Read-only access on purpose (ADR 0015 V11): presentation needs to know
+  /// exactly which Flutter `ImageCache` entries belong to THIS session so it
+  /// can evict those and nothing else. The application layer must not import
+  /// Flutter's painting APIs, so it exposes the keys and lets presentation own
+  /// the global-cache cleanup.
+  Iterable<String> get keys => _images.keys;
 
   /// How many covers are cached right now (tests/diagnostics).
   int get length => _images.length;
@@ -201,7 +213,19 @@ class PublishedCatalogueCoverController
 
   void _remove(String key) {
     final bytes = _images.remove(key);
-    if (bytes != null) _cachedBytes -= bytes.length;
+    if (bytes != null) {
+      _cachedBytes -= bytes.length;
+      // Only SUCCESSFUL downloads ever reach `_images`, so this is exactly the
+      // "evicted a cached success" case: forget the dedupe entry too, or the
+      // row that scrolls back into view would be rejected as a duplicate and
+      // keep its placeholder for the rest of the session (review finding 4).
+      //
+      // Failures are deliberately NOT touched here: they never entered
+      // `_images`, so they stay remembered and a broken cover is still fetched
+      // at most once. Reset keeps its own, broader rule (it forgets
+      // everything), because that creates a new cover generation.
+      _remembered.remove(key);
+    }
     _usedAt.remove(key);
   }
 

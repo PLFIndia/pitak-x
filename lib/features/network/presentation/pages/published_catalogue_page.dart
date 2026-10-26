@@ -25,6 +25,7 @@ import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_controls.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_list.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_cover_image_cache_cleanup.dart';
 
 /// The viewer screen for one saved [NetworkLibrary] row.
 class PublishedCataloguePage extends ConsumerStatefulWidget {
@@ -51,6 +52,9 @@ class _PublishedCataloguePageState
   late final String _siteUrl = widget.row.siteUrl;
   bool _sessionStarted = false;
 
+  /// Owns the Flutter-global image-cache cleanup for this whole route.
+  PublishedCoverImageCacheCleanup? _coverCleanup;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -66,10 +70,43 @@ class _PublishedCataloguePageState
       ..invalidate(publishedCatalogueLanguagesProvider(_siteUrl))
       ..invalidate(publishedCatalogueViewProvider(_siteUrl))
       ..invalidate(publishedCatalogueCoverControllerProvider(_siteUrl));
+    // After the invalidation, so the subscription follows the NEW cover
+    // session. Presentation owns the global cache cleanup because the
+    // application layer must never import Flutter's painting APIs.
+    _coverCleanup = PublishedCoverImageCacheCleanup.attach(
+      ref: ref,
+      siteUrl: _siteUrl,
+    );
+  }
+
+  @override
+  void dispose() {
+    // Evict this session's images before the element goes away: the Riverpod
+    // controller only clears its own byte maps.
+    _coverCleanup?.dispose();
+    _coverCleanup = null;
+    super.dispose();
   }
 
   void _reload() {
-    ref.read(publishedCatalogueControllerProvider(_siteUrl).notifier).refresh();
+    final catalogue = ref.read(
+      publishedCatalogueControllerProvider(_siteUrl).notifier,
+    );
+    // ONE decision drives both halves of a reload. Asking the catalogue
+    // controller first means an ignored tap — during the initial load, or while
+    // a reload is already running — cannot clear the covers of the payload that
+    // is still on screen (review finding 2).
+    if (!catalogue.canRefresh) return;
+    // Deliberately no `await` between the check, the reset and the refresh:
+    // this whole sequence runs on the single UI isolate, so a second tap in the
+    // same frame cannot see a stale `canRefresh` and reset a second time.
+    ref
+        .read(publishedCatalogueCoverControllerProvider(_siteUrl).notifier)
+        .reset();
+    // The new generation starts empty; the rows stay visible with placeholders
+    // and are PAUSED (below) until this load publishes the new payload, so no
+    // cover of the old payload is requested while the GET is in flight.
+    catalogue.refresh();
   }
 
   Future<void> _openBrowser() =>
@@ -111,7 +148,16 @@ class _PublishedCataloguePageState
       return Column(
         children: [
           if (state.isLoading) const LinearProgressIndicator(minHeight: 2),
-          Expanded(child: _buildCatalogue(context, state.requireValue)),
+          Expanded(
+            child: _buildCatalogue(
+              context,
+              state.requireValue,
+              // While an accepted reload runs, the rows on screen belong to the
+              // OLD payload: they may keep painting, but they must not start
+              // cover requests for it (review finding 2, step 5).
+              coverRequestsPaused: state.isLoading,
+            ),
+          ),
         ],
       );
     }
@@ -206,7 +252,11 @@ class _PublishedCataloguePageState
         null => "Couldn't open this published catalogue.",
       };
 
-  Widget _buildCatalogue(BuildContext context, PublishedCatalogue catalogue) {
+  Widget _buildCatalogue(
+    BuildContext context,
+    PublishedCatalogue catalogue, {
+    required bool coverRequestsPaused,
+  }) {
     final viewAsync = ref.watch(publishedCatalogueViewProvider(_siteUrl));
     final languages = ref.watch(publishedCatalogueLanguagesProvider(_siteUrl));
     // `valueOrNull` keeps the previous rows visible while a new engine pass
@@ -276,7 +326,13 @@ class _PublishedCataloguePageState
             ]),
           ),
         ),
-        ..._contentSlivers(context, catalogue, view, loadingView),
+        ..._contentSlivers(
+          context,
+          catalogue,
+          view,
+          loadingView,
+          coverRequestsPaused: coverRequestsPaused,
+        ),
         const SliverToBoxAdapter(child: SizedBox(height: 24)),
       ],
     );
@@ -286,8 +342,9 @@ class _PublishedCataloguePageState
     BuildContext context,
     PublishedCatalogue catalogue,
     PublishedCatalogueView? view,
-    bool loadingView,
-  ) {
+    bool loadingView, {
+    required bool coverRequestsPaused,
+  }) {
     // Order matters: rows that were PRESENT but unreadable are a different
     // story from a genuinely empty catalogue (V9/B.2).
     if (catalogue.hasNoReadableItems) {
@@ -334,7 +391,11 @@ class _PublishedCataloguePageState
     return [
       SliverPadding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        sliver: PublishedCatalogueList(view: view, siteUrl: _siteUrl),
+        sliver: PublishedCatalogueList(
+          view: view,
+          siteUrl: _siteUrl,
+          coverRequestsPaused: coverRequestsPaused,
+        ),
       ),
     ];
   }

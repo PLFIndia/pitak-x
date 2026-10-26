@@ -65,13 +65,24 @@ class PublishedCatalogueController extends _$PublishedCatalogueController {
     return _load(abort.future);
   }
 
-  /// Reloads the catalogue deliberately. Returns the in-flight future when a
-  /// load is already running (one request maximum) and does nothing while the
-  /// initial load still owns the request.
+  /// True when a deliberate reload would actually start now.
+  ///
+  /// Exposed because the page must coordinate two pieces of session state with
+  /// one decision: it resets the cover session and then calls [refresh]. If the
+  /// page guessed with its own conditions, the two could drift apart — that is
+  /// exactly how a duplicate Reload tap could clear covers without adding a
+  /// request (review finding 2). [refresh] enforces the SAME getter.
+  bool get canRefresh => !_disposed && _refreshing == null && !state.isLoading;
+
+  /// Reloads the catalogue deliberately.
+  ///
+  /// Returns the in-flight future when a manual reload is already running (one
+  /// request maximum) and does nothing while the initial load still owns the
+  /// request — see [canRefresh].
   Future<void> refresh() {
     final running = _refreshing;
     if (running != null) return running;
-    if (state.isLoading) return Future<void>.value();
+    if (!canRefresh) return Future<void>.value();
     final future = _refresh();
     _refreshing = future;
     return future.whenComplete(() {

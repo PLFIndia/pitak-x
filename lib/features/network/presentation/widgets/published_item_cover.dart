@@ -10,6 +10,9 @@
 ///    nothing requested while it was off is queued for later;
 ///  - the request leaves from a post-frame callback and is re-checked against
 ///    the current widget, so a rebuild storm cannot become a request storm;
+///  - a VISIBLE cache miss asks again (after an LRU eviction or a reload), but
+///    only through that post-frame path: the scheduler still owns dedupe, so a
+///    remembered failure never turns a rebuild into repeated traffic;
 ///  - only the scheduler's downscaled JPEG reaches `Image.memory`. The widget
 ///    never receives a network URL, never uses `Image.network`, and nothing is
 ///    written to disk.
@@ -25,9 +28,15 @@ import 'package:pitaka/features/settings/application/settings_controller.dart';
 /// A bounded cover slot: the real downscaled image, or a neutral placeholder.
 class PublishedItemCover extends ConsumerStatefulWidget {
   /// Creates the cover slot for [item] of the library saved at [siteUrl].
+  ///
+  /// [coverRequestsPaused] lets the catalogue page stop requests while a reload
+  /// is in flight: the rows then belong to the OLD payload, so starting a
+  /// download for them would be obsolete work. Item-detail pages keep the
+  /// default (`false`).
   const PublishedItemCover({
     required this.item,
     required this.siteUrl,
+    this.coverRequestsPaused = false,
     this.width = 44,
     this.height = 64,
     super.key,
@@ -38,6 +47,9 @@ class PublishedItemCover extends ConsumerStatefulWidget {
 
   /// The saved site root (the relative-cover resolution base).
   final String siteUrl;
+
+  /// When true, never request a cover this frame.
+  final bool coverRequestsPaused;
 
   /// Slot width.
   final double width;
@@ -90,9 +102,17 @@ class _PublishedItemCoverState extends ConsumerState<PublishedItemCover> {
       PublishedCoverResolver.resolve(widget.siteUrl, widget.item.coverUrl);
 
   /// Requests the cover once the frame that decided it is visible is done.
+  ///
+  /// Called from `initState`, from a consent flip, and from `build` whenever
+  /// the resolved request has no cached bytes. That last case is what makes an
+  /// LRU-evicted cover (or the new generation after a reload) fetchable again
+  /// without recreating the row (review finding 4): the controller stays the
+  /// authoritative deduplicator, so a remembered failure and an already-queued
+  /// key never produce a second request.
   void _scheduleRequest() {
     final request = _request;
     if (request == null) return;
+    if (widget.coverRequestsPaused) return;
     final consent =
         ref.read(settingsControllerProvider).valueOrNull?.loadRemoteCovers ??
         false;
@@ -104,6 +124,9 @@ class _PublishedItemCoverState extends ConsumerState<PublishedItemCover> {
       _scheduled = false;
       // A post-frame callback can outlive the row: do not send an old key.
       if (!mounted || !identical(_request, request)) return;
+      // Re-check the pause flag too: the reload may have started in the frame
+      // this request was scheduled from.
+      if (widget.coverRequestsPaused) return;
       ref
           .read(
             publishedCatalogueCoverControllerProvider(widget.siteUrl).notifier,
@@ -121,7 +144,14 @@ class _PublishedItemCoverState extends ConsumerState<PublishedItemCover> {
         widget.siteUrl,
       ).select((session) => session.bytesFor(request.url)),
     );
-    if (bytes == null) return _placeholder(context);
+    if (bytes == null) {
+      // A visible cache miss asks again on the next frame. Scheduling from a
+      // post-frame callback (never directly in build) keeps a rebuild storm
+      // from becoming a request storm: `_scheduled` coalesces the frame and the
+      // controller rejects anything already queued or already failed.
+      _scheduleRequest();
+      return _placeholder(context);
+    }
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: Image.memory(

@@ -194,6 +194,28 @@ void main() {
     expect(session.length, PublishedCatalogueCoverController.maxEntries);
     expect(session.bytesFor(coverFor(0).url), isNull, reason: 'oldest evicted');
     expect(session.bytesFor(coverFor(100).url), isNotNull);
+    expect(fetch.calls, hasLength(101));
+
+    // Review finding 4: an EVICTED success is fetchable again, otherwise the
+    // row that scrolls back into view keeps its placeholder for the session.
+    coverNotifier().request(coverFor(0));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(fetch.calls, hasLength(102), reason: 'evicted success re-fetched');
+    expect(
+      container
+          .read(publishedCatalogueCoverControllerProvider(site))
+          .bytesFor(coverFor(0).url),
+      isNotNull,
+    );
+
+    // A STILL-cached success stays deduplicated.
+    coverNotifier().request(coverFor(100));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(
+      fetch.calls,
+      hasLength(102),
+      reason: 'cached success is not refetched',
+    );
     sub.close();
   });
 
@@ -212,6 +234,43 @@ void main() {
     );
     expect(session.length, 5, reason: '6 × 3 MiB must drop to ≤ 16 MiB');
     expect(session.bytesFor(coverFor(0).url), isNull);
+
+    // Byte-driven eviction releases the dedupe entry just like count eviction.
+    coverNotifier().request(coverFor(0));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(fetch.calls, hasLength(7));
+    expect(
+      container
+          .read(publishedCatalogueCoverControllerProvider(site))
+          .bytesFor(coverFor(0).url),
+      isNotNull,
+    );
+    sub.close();
+  });
+
+  test('a failed cover stays deduplicated after any eviction', () async {
+    // 101 successes push the LRU cache, while cover 999 always fails. Failures
+    // never enter `_images`, so eviction must not forget them: a scrolled-back
+    // broken cover must not be downloaded again.
+    fetch.failForUrls.add(coverFor(999).url);
+    makeContainer();
+    final sub = listen();
+    await container.read(settingsControllerProvider.future);
+    coverNotifier().request(coverFor(999));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    for (var i = 0; i < 101; i++) {
+      coverNotifier().request(coverFor(i));
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    final callsAfterEviction = fetch.calls.length;
+
+    coverNotifier().request(coverFor(999));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(
+      fetch.calls,
+      hasLength(callsAfterEviction),
+      reason: 'a remembered failure is never retried in the same session',
+    );
     sub.close();
   });
 
@@ -294,6 +353,9 @@ final class _FakeCoverFetcher {
   bool manual = false;
   Uint8List? bytesOverride;
 
+  /// URLs that always fail, even when [failAll] is false.
+  final Set<String> failForUrls = {};
+
   Uint8List bytesFor(String url) => Uint8List.fromList(url.codeUnits);
 
   Future<Uint8List?> call(
@@ -306,7 +368,9 @@ final class _FakeCoverFetcher {
       aborts.add(abort);
       unawaited(abortTrigger.whenComplete(abort.complete));
     }
-    if (failAll) return Future<Uint8List?>.value();
+    if (failAll || failForUrls.contains(request.url)) {
+      return Future<Uint8List?>.value();
+    }
     if (bytesOverride != null) return Future<Uint8List?>.value(bytesOverride);
     final completer = Completer<Uint8List?>();
     pending.add(completer);
