@@ -214,7 +214,10 @@ final class BoundedHttpFetcher {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       _discard(response);
-      return const FetchRefused(FetchRefusal.httpStatus);
+      return FetchRefused(
+        FetchRefusal.httpStatus,
+        statusCode: response.statusCode,
+      );
     }
 
     // Early reject on an honest Content-Length; still verified byte-by-byte

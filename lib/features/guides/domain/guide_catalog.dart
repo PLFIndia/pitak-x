@@ -181,7 +181,7 @@ const Guide _map = Guide(
   cardSubtitle: 'Let nearby libraries find you — you choose how exact',
   intro:
       'Other Pitak libraries that bookmark yours — by adding your web address '
-      '(the GitHub Pages link Pitak created) to their **Library network** '
+      '(the GitHub Pages link Pitak created) to their **Library Bookmarks** '
       'list — see it as a pin on their **Library network › Map**. Nothing is '
       'shown until you switch it on and publish — and you choose how exact '
       'the pin is.',
@@ -421,7 +421,8 @@ const Guide _network = Guide(
     GuideBullets(
       title: '',
       bullets: [
-        '**Add bookmark** saves a library by its web address.',
+        '**☰ → Library Bookmarks → Add Bookmark** saves a library by its web '
+            'address.',
         'Tap a saved library to browse its published catalogue inside Pitak '
             '(search, filter and sort it without leaving the app). If you '
             'need the full website, use **Open in browser** on that screen.',

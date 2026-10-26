@@ -145,10 +145,11 @@ class _AppearanceTab extends ConsumerWidget {
             'Off by default. When on, a book with a web cover link downloads '
             'that image once (only from Open Library, the Internet Archive '
             'that stores its covers, or Google Books) and keeps it like a '
-            'cover you photographed. This also covers the catalogue you open '
-            'from Library network: those covers load only while you view that '
-            'catalogue and disappear when you leave. Your own photos are '
-            'never replaced.',
+            'cover you photographed. This also covers images in a published '
+            'catalogue you open from Library Bookmarks or Library network, '
+            'including event posters: they load only while you view that '
+            'library and disappear when you leave. Your own photos are never '
+            'replaced.',
           ),
           value: settings.loadRemoteCovers,
           onChanged: (v) => controller.setLoadRemoteCovers(enabled: v),

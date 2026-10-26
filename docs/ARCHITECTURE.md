@@ -152,9 +152,10 @@ lib/
                           (Open Library → Google Books, cached)
     publish/              GitHub Pages: device-flow auth + git data API; PII redaction
     events/               event posters for the published site
-    network/              library network (ADR 0012): network_libraries table,
-                          library.json codec + bounded fetcher, card QR, bounded
-                          Refresh/discovery, membership, consent-gated OSM map
+    network/              library network/bookmarks (ADR 0012): network_libraries
+                          table, library.json codec + bounded fetcher, card QR,
+                          Refresh/discovery, membership, native catalogue/events
+                          viewers (ADR 0015/0016), consent-gated images/OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
     import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
     settings/             Appearance · Data · Security (SettingsPage.initialTab)
@@ -179,8 +180,8 @@ tool/                     release_build.sh (the only way to build a Play .aab)
 
 **Navigation:** `main.dart` → `AppGate` (splash → app-lock if enabled →
 Library). Drawer: Borrowers vault · Publish · Wishlist · Magazines · Library
-network · Share · How Pitak works · Settings. The Library FAB opens an add
-sheet with one entry per item kind (ADR 0013 U1).
+network · Library Bookmarks · Share · How Pitak works · Settings/Share Apps.
+The Library FAB opens an add sheet with one entry per item kind (ADR 0013 U1).
 
 **Guides (`features/guides/`).** The copy of the six guides lives in
 `domain/guide_catalog.dart` as a typed, immutable model (`Guide` → sealed

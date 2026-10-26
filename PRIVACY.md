@@ -84,8 +84,8 @@ passive exception (item 8, Google Play builds only):
    your library, is included in backups, and no request is made for that book
    again. Your catalogue is never uploaded; only cover image files are
    fetched. A cover you photographed yourself is never replaced by a
-   downloaded one. The same switch also governs the covers of a saved
-   library's published catalogue; those are memory-only and are covered in
+   downloaded one. The same switch also governs covers and event posters in a saved
+   library's published viewer; those are memory-only and are covered in
    item 5.
 3. **Publish to web.** If you use Publish, a read-only viewer of your library
    is uploaded to a GitHub repository *you* own, via GitHub's device-flow
@@ -128,21 +128,22 @@ passive exception (item 8, Google Play builds only):
    bookmarks feature, its entries move into this list automatically the first
    time you open the screen — that move happens entirely on your device.
 5. **Opening a saved library's published catalogue.** Tapping a library in
-   Library network opens its published catalogue (`books.json`) inside Pitak:
-   one https request, only when you tap, only to that library's own site
-   directory (a redirect to another host, or to a different library on the
-   same host, is refused), with the same fixed User-Agent and a "no-cache"
-   hint. That site sees your device's IP address for the request, as any web
-   server does. `books.json` is never stored on your device: leaving the
-   screen discards it, and opening the same library again fetches it again
-   (there is no background refresh, no cached copy and no offline mode).
-   Covers shown in that catalogue are SEPARATE requests and obey the
-   remote-cover switch in item 2: with it off (the default) the catalogue
-   shows placeholders; with it on, covers load only while you view that
-   catalogue — either from the library's own site (its relative `covers/…`
-   files, under the same directory rule) or from the fixed cover hosts in
-   item 2 — and are held in memory only. They are not added to your library,
-   your backups or your device's storage, and they disappear when you leave.
+   Library Bookmarks or Library network opens its catalogue and events inside
+   Pitak: requests for `books.json` and optional `events.json` happen only
+   when you tap, and only to that library's own site directory (a redirect
+   to another host or library is refused), with the fixed User-Agent and
+   "no-cache" hint. The site sees your device's IP address for each request.
+   `books.json` and `events.json` are never stored on your device: leaving
+   the screen discards both snapshots; opening the library again fetches them.
+   There is no background refresh, cached copy or offline mode.
+   Covers and event posters are SEPARATE requests and obey the
+   remote-cover switch in item 2: with it off (the default) the viewer
+   shows placeholders and offers a Load covers button; with it on, images load
+   only while you view — covers come either from the library's `covers/…`
+   files or the fixed cover hosts in item 2; posters come only from the
+   library's `posters/…` files — all under the same directory rule and held in
+   memory only. They are not added to your library, backups or device storage,
+    and they disappear when you leave.
    Viewing a public catalogue never changes your own catalogue, your saved
    libraries or their fingerprints.
 6. **Network map** (optional, off until you allow it). The first time you

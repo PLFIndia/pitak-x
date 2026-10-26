@@ -3,8 +3,8 @@
 ///
 /// What lives here: the GitHub API client + device flow + repo setup, the
 /// encrypted credential/cover-salt stores, the bounded cover download and its
-/// publish-side view, the HTML builder factories, the publish manifest, and
-/// the share-card style store.
+/// publish-side view, the published-file builder factories, the publish
+/// manifest, and the share-card style store.
 ///
 /// Cross-feature note (beginner): `materializeRemoteCoverUseCase` is a
 /// LIBRARY use case (M09), but it is wired over the publish cover-download
@@ -28,10 +28,12 @@ import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
+import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
@@ -179,6 +181,12 @@ ViewerHtmlFactory viewerHtmlFactory(ViewerHtmlFactoryRef ref) =>
 EventsHtmlFactory eventsHtmlFactory(EventsHtmlFactoryRef ref) =>
     ({required libraryName, required posters}) =>
         EventsHtmlBuilder(libraryName: libraryName, posters: posters).build();
+
+/// Events-JSON factory port: keeps serialization in infrastructure while the
+/// application receives only a pure byte-producing function.
+@riverpod
+EventsJsonFactory eventsJsonFactory(EventsJsonFactoryRef ref) =>
+    (posters) => const EventsJsonBuilder().build(posters);
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
 @riverpod

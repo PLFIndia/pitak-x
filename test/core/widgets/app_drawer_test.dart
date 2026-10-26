@@ -7,6 +7,9 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/platform/file_share.dart';
 import 'package:pitaka/core/widgets/app_drawer.dart';
 import 'package:pitaka/features/guides/presentation/pages/guides_page.dart';
+import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/presentation/pages/library_bookmarks_page.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
 import 'package:pitaka/features/publish/presentation/widgets/library_share_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
@@ -38,12 +41,28 @@ class _FakeShare implements FileShareService {
   }) => throw UnimplementedError();
 }
 
-Future<Widget> _app({String? publishedUrl, FileShareService? share}) async {
+class _EmptyNetworkRepository implements NetworkRepository {
+  @override
+  Future<List<NetworkLibrary>> loadAll() async => [];
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnsupportedError('Unexpected repository operation');
+}
+
+Future<Widget> _app({
+  String? publishedUrl,
+  FileShareService? share,
+  NetworkRepository? networkRepository,
+}) async {
   // The drawer reads settings, which load from shared_preferences.
+  final repository = networkRepository;
   return ProviderScope(
     overrides: [
       publishedSiteUrlProvider.overrideWith((ref) async => publishedUrl),
       if (share != null) fileShareServiceProvider.overrideWithValue(share),
+      if (repository != null)
+        networkRepositoryProvider.overrideWith((ref) async => repository),
     ],
     child: const MaterialApp(
       home: Scaffold(drawer: AppDrawer(), body: SizedBox()),
@@ -85,9 +104,32 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Wishlist'), findsOneWidget);
-    // ADR 0012: the bookmarks destination became the library network.
+    // Library network remains distinct from standalone Library Bookmarks.
     expect(find.text('Library network'), findsOneWidget);
     expect(find.text('Bookmarks'), findsNothing);
+  });
+
+  testWidgets('Library Bookmarks opens its standalone saved-libraries page', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      await _app(networkRepository: _EmptyNetworkRepository()),
+    );
+    tester.firstState<ScaffoldState>(find.byType(Scaffold)).openDrawer();
+    await tester.pumpAndSettle();
+
+    expect(find.text('Library Bookmarks'), findsOneWidget);
+    await tester.tap(find.text('Library Bookmarks'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(LibraryBookmarksPage), findsOneWidget);
+    expect(find.text('Library Bookmarks'), findsOneWidget);
+    expect(
+      find.widgetWithText(FloatingActionButton, 'Add Bookmark'),
+      findsOneWidget,
+    );
+    expect(find.text('Add member'), findsNothing);
   });
 
   testWidgets('Magazines sits between Wishlist and Library network and opens '
@@ -171,7 +213,7 @@ void main() {
   );
 
   testWidgets(
-    'Share Apps sits immediately above Settings and shares only Pitak',
+    'Share Apps sits immediately right of Settings and shares only Pitak',
     (tester) async {
       SharedPreferences.setMockInitialValues({});
       final share = _FakeShare();
@@ -191,7 +233,13 @@ void main() {
           matching: find.byType(ListTile),
         ),
       );
-      expect(shareTile.bottom, closeTo(settingsTile.top, 0.01));
+      expect(settingsTile.right, closeTo(shareTile.left, 0.01));
+      expect(settingsTile.top, closeTo(shareTile.top, 0.01));
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'The two pinned actions must fit a normal drawer width',
+      );
 
       await tester.tap(find.text('Share Apps'));
       await tester.pumpAndSettle();
@@ -253,6 +301,7 @@ void main() {
       'Borrowers vault',
       'Wishlist',
       'Library network',
+      'Library Bookmarks',
       'How Pitak works',
     ]) {
       expect(
@@ -281,6 +330,11 @@ void main() {
     );
     expect(tester.getTopLeft(find.text('Settings')).dy, greaterThan(guidesY));
 
+    // The added Bookmarks destination makes Guides scrollable on a short
+    // viewport; reveal it before tapping instead of tapping through the pinned
+    // bottom actions.
+    await tester.ensureVisible(find.text('How Pitak works'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('How Pitak works'));
     await tester.pumpAndSettle();
 

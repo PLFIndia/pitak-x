@@ -7,9 +7,8 @@
 ///    native, read-only page (ADR 0015); the browser is only reached from the
 ///    viewer's explicit "Open in browser" action. Refresh (button or pull) is
 ///    the ONLY thing that reads other libraries' descriptors — nothing happens
-///    in the background (D11). Two buttons sit bottom-right: "Add bookmark"
-///    saves a library by its web address, and "Add member" scans another
-///    library's card in person.
+///    in the background (D11). "Add member" scans another library's card in
+///    person; adding by URL lives on the standalone Library Bookmarks page.
 ///  - **Map** — the saved libraries as pins (§5.9). Gated behind the OSM
 ///    tiles consent: no tile request ever leaves the device until the user
 ///    accepts. The map body lives in `network_map_page.dart`.
@@ -22,17 +21,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/network/application/my_library_card_controller.dart';
-import 'package:pitaka/features/network/application/network_controller.dart';
-import 'package:pitaka/features/network/application/network_refresh_controller.dart';
-import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/add_member_page.dart';
 import 'package:pitaka/features/network/presentation/pages/network_map_page.dart';
-import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
-import 'package:pitaka/features/network/presentation/widgets/add_library_dialog.dart';
-import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
-import 'package:pitaka/features/network/presentation/widgets/network_refresh_bar.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/network/presentation/widgets/saved_libraries_view.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 
 /// The library-network screen.
@@ -81,243 +74,34 @@ class NetworkPage extends ConsumerWidget {
   }
 }
 
-/// The saved-libraries list.
-class _LibrariesTab extends ConsumerWidget {
+/// The network tab keeps the shared list and only the in-person add action.
+class _LibrariesTab extends StatelessWidget {
   const _LibrariesTab({required this.opener});
 
   /// The browser seam forwarded to the viewer route.
   final PublishedSiteOpener opener;
 
-  /// Opens the native published-catalogue viewer for [row]. Deliberately NOT
-  /// `launchUrl`: the row tap must never leave the app (ADR 0015 V1).
-  void _openRow(BuildContext context, NetworkLibrary row) {
-    Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => PublishedCataloguePage(row: row, opener: opener),
-      ),
-    );
-  }
-
-  /// Opens the scan flow. Nothing to do on return: `AddMemberController`
-  /// re-reads the window the moment a member is saved, so the list is fresh
-  /// whether the user tapped Done or pressed back (review M10).
+  /// AddMemberController refreshes the shared window after a member is saved,
+  /// so there is nothing to patch in the list when this route returns.
   Future<void> _addMember(BuildContext context) => Navigator.of(
     context,
   ).push<void>(MaterialPageRoute(builder: (_) => const AddMemberPage()));
 
-  /// Saves a library by its web address (the "Add bookmark" button).
-  Future<void> _addByUrl(BuildContext context, WidgetRef ref) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final result = await showDialog<({String name, String url})>(
-      context: context,
-      builder: (_) => const AddLibraryDialog(),
-    );
-    if (result == null) return;
-    final outcome = await ref
-        .read(networkControllerProvider.notifier)
-        .addByUrl(url: result.url, name: result.name);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(switch (outcome) {
-          NetworkAddOutcome.added =>
-            'Library added. Tap Refresh to fetch its details.',
-          NetworkAddOutcome.alreadySaved => 'That library is already saved.',
-          NetworkAddOutcome.invalidUrl =>
-            'That link was not accepted. Use a GitHub Pages or Cloudflare '
-                'Pages address.',
-          NetworkAddOutcome.storageFailed => "Couldn't add that library.",
-        }),
-      ),
-    );
-  }
-
-  Future<void> _remove(
-    BuildContext context,
-    WidgetRef ref,
-    NetworkLibrary row,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await ref.read(networkControllerProvider.notifier).remove(row);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(ok ? 'Removed.' : "Couldn't remove that library."),
-      ),
-    );
-  }
-
-  Future<void> _decide(
-    BuildContext context,
-    WidgetRef ref,
-    NetworkLibrary row,
-    MembershipState decision,
-  ) async {
-    final messenger = ScaffoldMessenger.of(context);
-    final ok = await ref
-        .read(networkControllerProvider.notifier)
-        .setMembership(rowId: row.id, decision: decision);
-    if (!ok) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Could not save that choice.')),
-      );
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // One snapshot: the window (for the refresh bar) plus the rows already
-    // in display order — the sort lives in the derived provider, recomputed
-    // when its inputs change, not on every build (review M12).
-    final view = ref.watch(networkListViewProvider);
-    return Scaffold(
-      body: view.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator.adaptive()),
-        error: (_, _) =>
-            const Center(child: Text("Couldn't load your saved libraries.")),
-        data: (data) {
-          final rows = data.rows;
-          return RefreshIndicator(
-            // Pull-to-refresh runs the same single user-initiated refresh
-            // (D11); the indicator settles when the run finishes or cancels.
-            onRefresh: () =>
-                ref.read(networkRefreshControllerProvider.notifier).refresh(),
-            // CustomScrollView + SliverList.builder: tiles build LAZILY as
-            // they scroll into view, so a restored network of hundreds of
-            // rows does not build/layout every tile on each rebuild (review
-            // L6; AGENTS §8). The header and empty state stay box-identical.
-            child: CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-                  sliver: SliverList(
-                    delegate: SliverChildListDelegate([
-                      const _InfoNote(),
-                      const SizedBox(height: 12),
-                      NetworkRefreshBar(window: data.window),
-                    ]),
-                  ),
-                ),
-                if (rows.isEmpty)
-                  SliverPadding(
-                    // Bottom padding clears the two stacked buttons (was 88
-                    // for one FAB).
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 150),
-                    sliver: SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 32),
-                        child: Center(
-                          child: Text(
-                            // Same words as before the sliver migration (L6)
-                            // — the empty-state tests look this text up.
-                            'No libraries saved yet.\n\n'
-                            'Tap "Add bookmark" to save a library by its web '
-                            'address, or "Add member" to scan their library '
-                            'card, in person.',
-                            textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurfaceVariant,
-                                ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 150),
-                    sliver: SliverList.builder(
-                      itemCount: rows.length,
-                      itemBuilder: (context, i) {
-                        final row = rows[i];
-                        return NetworkLibraryTile(
-                          row: row,
-                          onOpen: () => _openRow(context, row),
-                          onRemove: () => _remove(context, ref, row),
-                          onConfirmMembership: () => _decide(
-                            context,
-                            ref,
-                            row,
-                            MembershipState.confirmed,
-                          ),
-                          onDeclineMembership: () => _decide(
-                            context,
-                            ref,
-                            row,
-                            MembershipState.declined,
-                          ),
-                          onReconsiderMembership: () => _decide(
-                            context,
-                            ref,
-                            row,
-                            MembershipState.pending,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          );
-        },
-      ),
-      // Two stacked actions: bookmark by URL, or scan a member's card. Each
-      // needs its own heroTag — two extended FABs share the default one.
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          FloatingActionButton.extended(
-            heroTag: 'networkAddBookmark',
-            onPressed: () => _addByUrl(context, ref),
-            icon: const Icon(Icons.bookmark_add_outlined),
-            label: const Text('Add bookmark'),
-          ),
-          const SizedBox(height: 12),
-          FloatingActionButton.extended(
-            heroTag: 'networkAddMember',
-            onPressed: () => _addMember(context),
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('Add member'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Plain-words explainer of what this list is (and what leaves the device:
-/// nothing until the user taps Refresh — D11).
-class _InfoNote extends StatelessWidget {
-  const _InfoNote();
-
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
+    return Scaffold(
+      body: SavedLibrariesView(
+        opener: opener,
+        emptyStateHint:
+            'Tap "Add member" to scan a library card in person. Use Library '
+            'Bookmarks in the main drawer to save a library by its web '
+            'address.',
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline, size: 20, color: scheme.primary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              'Libraries you save appear here. Nothing leaves your device '
-              "until you tap Refresh, which reads each library's published "
-              'details (name, optional map pin, hub links). A hub adds '
-              'members by scanning their library card in person; tapping a '
-              'library opens its published catalogue inside Pitak.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        ],
+      floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'networkAddMember',
+        onPressed: () => _addMember(context),
+        icon: const Icon(Icons.qr_code_scanner),
+        label: const Text('Add member'),
       ),
     );
   }

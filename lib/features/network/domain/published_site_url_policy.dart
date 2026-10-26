@@ -28,9 +28,17 @@ import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 abstract final class PublishedSiteUrlPolicy {
   /// The exact `books.json` address for [siteUrl], or null when [siteUrl] is
   /// not an already-canonical, usable site root.
-  static String? catalogueUrl(String siteUrl) {
+  static String? catalogueUrl(String siteUrl) =>
+      _fileUrl(siteUrl, 'books.json');
+
+  /// The exact `events.json` address for [siteUrl], or null under the same
+  /// canonical-site rule as [catalogueUrl]. Events publish independently, so
+  /// this is a sibling file rather than part of the catalogue payload.
+  static String? eventsUrl(String siteUrl) => _fileUrl(siteUrl, 'events.json');
+
+  static String? _fileUrl(String siteUrl, String fileName) {
     if (!_isCanonicalSiteRoot(siteUrl)) return null;
-    return Uri.parse(siteUrl).resolve('books.json').toString();
+    return Uri.parse(siteUrl).resolve(fileName).toString();
   }
 
   /// Returns [candidate] (trimmed, verbatim) when it may be requested on

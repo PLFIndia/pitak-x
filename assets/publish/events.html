@@ -2,9 +2,10 @@
 <!--
   Pitak events page (#events).
   Self-contained single file: no CDN, no build step, no runtime fetch. Poster
-  markup is BAKED in at publish time (the library caps at 2 posters, so there is
-  no separate events.json to fetch). Uploaded to the user's repo as events.html
-  alongside the catalogue index.html.
+  markup is BAKED in at publish time (the library caps at 2 posters). Uploaded
+  to the user's repo as events.html alongside the catalogue index.html. The same
+  redacted poster list is published separately as events.json for native
+  readers; this HTML page does not fetch it.
 
   Placeholders substituted by EventsHtmlBuilder:
     {{LIBRARY_NAME}}  — HTML-escaped page title/header

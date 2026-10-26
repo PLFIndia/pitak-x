@@ -115,6 +115,11 @@ library's current published `books.json`.** Concretely (plan
 - **Device evidence is tracked, not faked.** The 20 000-row decode/query
   budget and the lazy-list assertion are automated; the real-device
   measurement and TalkBack walk are steps in `docs/RELEASING.md` §6.1.
+- **Consent is discoverable without being weakened (2026-10-26).** When a
+  loaded catalogue or its events contain images and the setting is off, the
+  viewer explains the existing choice and offers **Load covers**. The action
+  persists the same opt-in; decision 11 still applies equally to same-site and
+  third-party images. Native events themselves are specified by ADR 0016.
 
 ## Consequences
 

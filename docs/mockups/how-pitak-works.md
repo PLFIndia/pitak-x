@@ -371,7 +371,7 @@ have no books of its own.
    own page. The main library scans each branch's card. Its page lists all
    the branches; each branch's page points back to the main library.
 
-- **Add bookmark** saves a library by its web address.
+- **☰ → Library Bookmarks → Add Bookmark** saves a library by its web address.
 - Tap a saved library to browse its published catalogue inside Pitak —
   search, filter and sort it without leaving the app. Needing the full
   website? Use **Open in browser** on that screen.

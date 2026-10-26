@@ -27,15 +27,18 @@ import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query_runner.dart';
 import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_events_fetcher.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/load_published_events_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_cover_fetcher.dart';
+import 'package:pitaka/features/network/infrastructure/bounded_published_events_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_query_runner.dart';
@@ -269,6 +272,29 @@ LoadPublishedCatalogueUseCase loadPublishedCatalogueUseCase(
   String siteUrl,
 ) => LoadPublishedCatalogueUseCase(
   fetch: ref.watch(publishedCatalogueFetcherProvider(siteUrl)),
+);
+
+/// The bounded optional `events.json` fetcher for this saved site. It shares
+/// the viewer client, so route disposal also closes any events socket.
+@riverpod
+PublishedEventsFetcher publishedEventsFetcher(
+  PublishedEventsFetcherRef ref,
+  String siteUrl,
+) {
+  final fetcher = BoundedPublishedEventsFetcher(
+    client: ref.watch(publishedViewerHttpClientProvider(siteUrl)),
+    siteUrl: siteUrl,
+  );
+  return fetcher.fetch;
+}
+
+/// Loads the independently-published public events for one saved library.
+@riverpod
+LoadPublishedEventsUseCase loadPublishedEventsUseCase(
+  LoadPublishedEventsUseCaseRef ref,
+  String siteUrl,
+) => LoadPublishedEventsUseCase(
+  fetch: ref.watch(publishedEventsFetcherProvider(siteUrl)),
 );
 
 /// The pure query engine, run in a worker isolate (V12/S3).

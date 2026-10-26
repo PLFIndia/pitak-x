@@ -13,8 +13,10 @@ import 'package:pitaka/features/network/application/published_catalogue_cover_co
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/entities/published_events.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
+import 'package:pitaka/features/network/domain/published_events_fetcher.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
@@ -112,6 +114,7 @@ void main() {
       Future<void>? abortTrigger,
     })
     fetch, {
+    PublishedEventsFetcher? eventsFetcher,
     _CoverPort? coverPort,
     bool coverConsent = true,
     bool coverSettingsFail = false,
@@ -125,6 +128,9 @@ void main() {
     container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue(fetch),
+        publishedEventsFetcherProvider(site).overrideWithValue(
+          eventsFetcher ?? (url, {abortTrigger}) async => const Right(null),
+        ),
         // The real engine, synchronously: the isolate adapter has its own
         // suite; page tests must be deterministic.
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
@@ -1041,6 +1047,103 @@ void main() {
         reason: 'route teardown evicts the session images',
       );
     });
+  });
+
+  group('announcements and events', () {
+    PublishedEvents events() => PublishedEvents(
+      declaredSchemaVersion: 1,
+      posters: const [
+        PublishedEventPoster(
+          imageRef: 'posters/story.jpg',
+          description: 'Story hour on Saturday',
+        ),
+      ],
+    );
+
+    testWidgets('shows native posters and Reload refreshes events.json', (
+      tester,
+    ) async {
+      var eventFetches = 0;
+      final covers = _CoverPort(_jpeg(20, 30, 40));
+      makeContainer(
+        _immediate(catalogue),
+        eventsFetcher: (url, {abortTrigger}) async {
+          eventFetches++;
+          expect(url, 'https://kadugodi.github.io/pitak/events.json');
+          return Right(events());
+        },
+        coverPort: covers,
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Announcements & Events'), findsOneWidget);
+      expect(find.text('Story hour on Saturday'), findsOneWidget);
+      expect(eventFetches, 1);
+      expect(
+        covers.calls.map((request) => request.url),
+        contains('https://kadugodi.github.io/pitak/posters/story.jpg'),
+      );
+
+      await tester.tap(find.byTooltip('Reload catalogue'));
+      await tester.pumpAndSettle();
+      expect(eventFetches, 2);
+    });
+
+    testWidgets('poster-only catalogue offers the same explicit image opt-in', (
+      tester,
+    ) async {
+      final covers = _CoverPort(_jpeg(20, 30, 40));
+      makeContainer(
+        _immediate(catalogue),
+        eventsFetcher: (url, {abortTrigger}) async => Right(events()),
+        coverPort: covers,
+        coverConsent: false,
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Load covers'), findsOneWidget);
+      expect(covers.calls, isEmpty);
+      await tester.tap(find.text('Load covers'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Load covers'), findsNothing);
+      expect(
+        covers.calls.map((request) => request.url),
+        contains('https://kadugodi.github.io/pitak/posters/story.jpg'),
+      );
+    });
+
+    testWidgets(
+      'an events failure is retryable without blocking the catalogue',
+      (tester) async {
+        var attempts = 0;
+        makeContainer(
+          _immediate(catalogue),
+          eventsFetcher: (url, {abortTrigger}) async {
+            attempts++;
+            if (attempts == 1) return const Left(NetworkFailure());
+            return const Right(null);
+          },
+        );
+        await pumpViewer(tester);
+        await tester.pumpAndSettle();
+
+        expect(find.text('The Water Margin'), findsOneWidget);
+        expect(
+          find.text('Couldn’t load announcements and events.'),
+          findsOneWidget,
+        );
+        await tester.tap(find.text('Retry events'));
+        await tester.pumpAndSettle();
+        expect(attempts, 2);
+        expect(
+          find.text('Couldn’t load announcements and events.'),
+          findsNothing,
+        );
+      },
+    );
   });
 
   group('layout and accessibility', () {

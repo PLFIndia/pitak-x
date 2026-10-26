@@ -56,9 +56,14 @@ final class FetchedBytes extends BoundedFetchOutcome {
 
 /// The fetch was refused or failed; no bytes.
 final class FetchRefused extends BoundedFetchOutcome {
-  /// Creates a refusal for [reason].
-  const FetchRefused(this.reason);
+  /// Creates a refusal for [reason]. An HTTP refusal may carry its numeric
+  /// [statusCode] so optional sibling files can distinguish 404 (absent) from
+  /// 500 (failed). It is diagnostic data only, never response text or a URL.
+  const FetchRefused(this.reason, {this.statusCode});
 
   /// Which defence (or fault) refused the fetch.
   final FetchRefusal reason;
+
+  /// The non-2xx HTTP status, when the host returned one.
+  final int? statusCode;
 }

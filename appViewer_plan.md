@@ -1,7 +1,9 @@
 # Native saved-library viewer — implementation plan
 
 - **Branch:** `appViewer` (created from `main` on 2026-10-25)
-- **Status:** Ready for implementation; this planning step deliberately changes no feature code
+- **Status:** Implementation complete, including review remediation, Linux
+  goldens and the native-events follow-up (ADR 0016). Manual device/TalkBack
+  evidence remains a release-checklist item in `docs/RELEASING.md`.
 - **Scope:** **Option 1 only** — tapping an already-saved Library network row opens that library's published catalogue inside Pitak
 - **Product promises protected:** P1 (no silent data downgrade), P2 (hostile input and privacy), P3 (no new F-Droid risk), P5 (one maintainable Riverpod/Clean Architecture path); P4 is protected by the documentation and release gates
 - **Authoritative contracts:** `AGENTS.md`, `docs/ARCHITECTURE.md`, ADR 0012, ADR 0013, ADR 0014, and the existing `books.json` writer/web viewer
@@ -78,6 +80,12 @@ a security, compatibility or privacy rule.
 - Changes to `books.json`, `library.json`, QR/card payloads, publish redaction, or the HTML viewer, except shared contract tests that prove the native reader agrees with them.
 
 Deferred work needs a new trigger and, where architectural, a new ADR. In particular, persistent caching requires an explicit freshness/eviction/delete-on-remove/restore policy before any table is added.
+
+**Follow-up (2026-10-26):** a new user request supplies the trigger for native
+Announcements & Events. ADR 0016 adds an independent `events.json` contract;
+it does not relax V11's image consent, scrape HTML, add a WebView, or change
+`books.json`. The same follow-up makes the existing consent choice visible with
+an explicit **Load covers** action in the viewer.
 
 ---
 

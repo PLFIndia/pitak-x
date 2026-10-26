@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_cover_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
+import 'package:pitaka/features/network/application/published_events_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
@@ -25,7 +26,9 @@ import 'package:pitaka/features/network/presentation/widgets/open_published_site
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_controls.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_list.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_cover_consent_banner.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_cover_image_cache_cleanup.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_events_section.dart';
 
 /// The viewer screen for one saved [NetworkLibrary] row.
 class PublishedCataloguePage extends ConsumerStatefulWidget {
@@ -69,7 +72,8 @@ class _PublishedCataloguePageState
       ..invalidate(publishedCatalogueQueryControllerProvider(_siteUrl))
       ..invalidate(publishedCatalogueLanguagesProvider(_siteUrl))
       ..invalidate(publishedCatalogueViewProvider(_siteUrl))
-      ..invalidate(publishedCatalogueCoverControllerProvider(_siteUrl));
+      ..invalidate(publishedCatalogueCoverControllerProvider(_siteUrl))
+      ..invalidate(publishedEventsControllerProvider(_siteUrl));
     // After the invalidation, so the subscription follows the NEW cover
     // session. Presentation owns the global cache cleanup because the
     // application layer must never import Flutter's painting APIs.
@@ -103,6 +107,10 @@ class _PublishedCataloguePageState
     ref
         .read(publishedCatalogueCoverControllerProvider(_siteUrl).notifier)
         .reset();
+    // Events publish independently, so Reload refreshes their sibling file in
+    // the same deliberate action. Each controller still owns its own revision
+    // and duplicate-request guard.
+    ref.read(publishedEventsControllerProvider(_siteUrl).notifier).refresh();
     // The new generation starts empty; the rows stay visible with placeholders
     // and are PAUSED (below) until this load publishes the new payload, so no
     // cover of the old payload is requested while the GET is in flight.
@@ -219,6 +227,14 @@ class _PublishedCataloguePageState
     final view = viewAsync.valueOrNull;
     final loadingView = viewAsync.isLoading && view == null && !queryFailed;
     final isConflict = widget.row.fetchStatus == FetchStatus.identityConflict;
+    // Watching here starts the optional events load alongside the catalogue
+    // header and also lets the image-consent prompt account for poster-only
+    // sites. The section itself watches the full state for rendering/retry.
+    final hasEventPosters = ref.watch(
+      publishedEventsControllerProvider(
+        _siteUrl,
+      ).select((s) => s.valueOrNull?.posters.isNotEmpty ?? false),
+    );
 
     return CustomScrollView(
       slivers: [
@@ -246,6 +262,14 @@ class _PublishedCataloguePageState
                       'saved it. Nothing was merged or changed here.',
                 ),
               ],
+              PublishedCoverConsentBanner(
+                catalogue: catalogue,
+                hasEventPosters: hasEventPosters,
+              ),
+              PublishedEventsSection(
+                siteUrl: _siteUrl,
+                coverRequestsPaused: coverRequestsPaused,
+              ),
               const SizedBox(height: 4),
               Text(
                 'Availability is the snapshot from publish time, not a live '

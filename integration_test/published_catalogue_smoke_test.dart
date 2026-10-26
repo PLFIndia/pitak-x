@@ -6,7 +6,7 @@
 ///     --flavor fdroid -d <device>
 ///
 /// Real SQLite, real preferences, real navigation and real settings; only the
-/// catalogue and cover PORTS are fakes, because the automated suite must never
+/// catalogue, events and cover PORTS are fakes, because the suite must never
 /// depend on the public internet. The journey:
 ///
 ///   add a uniquely named bookmark through the UI → open it → search, filter,
@@ -26,7 +26,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
-import 'package:pitaka/features/network/presentation/pages/network_page.dart';
+import 'package:pitaka/features/network/presentation/pages/library_bookmarks_page.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
@@ -73,6 +73,9 @@ void main() {
           catalogueFetches++;
           return Right(catalogue);
         }),
+        publishedEventsFetcherProvider(
+          site,
+        ).overrideWithValue((url, {abortTrigger}) async => const Right(null)),
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
           (loaded, query) async => PublishedQueryEngine.apply(loaded, query),
         ),
@@ -84,7 +87,7 @@ void main() {
       UncontrolledProviderScope(
         container: container,
         child: MaterialApp(
-          home: NetworkPage(
+          home: LibraryBookmarksPage(
             publishedSiteOpener: PublishedSiteOpener(
               launch: (url, mode) async {
                 launches.add(url);
@@ -98,7 +101,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // --- add the bookmark through the real dialog + Drift rows -------------
-    await tester.tap(find.widgetWithText(FloatingActionButton, 'Add bookmark'));
+    await tester.tap(find.widgetWithText(FloatingActionButton, 'Add Bookmark'));
     await tester.pumpAndSettle();
     final fields = find.byType(TextField);
     expect(fields, findsNWidgets(2));
@@ -113,7 +116,7 @@ void main() {
     // from "the row that gets removed".
     final generatedTile = find.widgetWithText(NetworkLibraryTile, name);
     final networkScrollable = find.descendant(
-      of: find.byType(NetworkPage),
+      of: find.byType(LibraryBookmarksPage),
       matching: find.byType(CustomScrollView),
     );
 

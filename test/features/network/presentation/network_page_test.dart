@@ -8,27 +8,22 @@ import 'package:pitaka/core/widgets/qr_view.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/library_descriptor.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
-import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
-import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/network_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
-import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
+import 'package:pitaka/features/network/presentation/widgets/saved_libraries_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../support/a11y.dart';
 
-/// Page tests for the Library network screen (docs/ARCHITECTURE.md §3 network+S4): the
-/// Libraries list over the real provider chain (fake repository + fake
-/// descriptor fetcher at the edges), removal, add-by-URL, the membership
-/// prompt, the refresh flow, distance sorting, the My-card tab, and the
-/// a11y trio.
+/// Page tests for the Library network screen: the shared Libraries list over
+/// the real provider chain, removal, membership, refresh, distance sorting,
+/// the My-card tab, and accessibility. Bookmark addition and standalone native
+/// viewer navigation are covered by library_bookmarks_page_test.dart.
 void main() {
   const rawId = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
-  const fp = 'adb28b53d57009ce04d4e0b28563ebcd395375c0d719fd53986908233687f664';
   final fpB = 'b' * 64; // a second valid fingerprint, readable in tests
 
   late _FakeRepo repo;
@@ -38,8 +33,6 @@ void main() {
     WidgetTester tester, {
     String? publishedUrl,
     Map<String, Object> prefs = const {},
-    PublishedSiteOpener? opener,
-    Map<String, PublishedCatalogue> catalogues = const {},
   }) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3;
@@ -53,23 +46,8 @@ void main() {
           descriptorFetcherProvider.overrideWithValue(
             (url) async => fetchScript(url),
           ),
-          for (final entry in catalogues.entries)
-            publishedCatalogueFetcherProvider(entry.key).overrideWithValue(
-              (url, {abortTrigger}) async => Right(entry.value),
-            ),
-          // The viewer's engine pass runs in an isolate in production; a
-          // widget test cannot settle an animating spinner while a real
-          // isolate is still starting, so run the pure engine inline.
-          publishedCatalogueQueryRunnerProvider.overrideWithValue(
-            (catalogue, query) async =>
-                PublishedQueryEngine.apply(catalogue, query),
-          ),
         ],
-        child: MaterialApp(
-          home: NetworkPage(
-            publishedSiteOpener: opener ?? const PublishedSiteOpener(),
-          ),
-        ),
+        child: const MaterialApp(home: NetworkPage()),
       ),
     );
     await tester.pumpAndSettle();
@@ -81,101 +59,25 @@ void main() {
     fetchScript = (_) => const DescriptorRefused(DescriptorRefusal.httpStatus);
   });
 
-  testWidgets('empty state explains both add paths', (tester) async {
+  testWidgets('empty state offers Add member and no bookmark action', (
+    tester,
+  ) async {
     await pumpPage(tester);
+    expect(find.byType(SavedLibrariesView), findsOneWidget);
     expect(find.textContaining('No libraries saved yet.'), findsOneWidget);
+    expect(find.textContaining('Tap "Add member" to scan'), findsOneWidget);
     expect(
-      find.textContaining('Tap "Add bookmark" to save a library'),
+      find.textContaining('Library Bookmarks in the main drawer'),
       findsOneWidget,
     );
-    expect(find.textContaining('"Add member" to scan'), findsOneWidget);
     expect(
       find.widgetWithText(FloatingActionButton, 'Add member'),
       findsOneWidget,
     );
-    expect(
-      find.widgetWithText(FloatingActionButton, 'Add bookmark'),
-      findsOneWidget,
-    );
-    // The old app-bar icon is gone — the button replaced it.
+    expect(find.textContaining('Add Bookmark'), findsNothing);
+    expect(find.textContaining('Add bookmark'), findsNothing);
     expect(find.byTooltip('Add by URL'), findsNothing);
     expect(find.text('Never refreshed yet.'), findsOneWidget);
-  });
-
-  testWidgets('rows render with their badges', (tester) async {
-    repo.rows = [
-      const NetworkLibrary(
-        id: 1,
-        siteUrl: 'https://m.github.io/x/',
-        name: 'Member Library',
-        fingerprint: fp,
-        source: NetworkSource.card,
-        isMember: true,
-        memberVerified: true,
-      ),
-      const NetworkLibrary(
-        id: 2,
-        siteUrl: 'https://u.github.io/y/',
-        name: 'Unverified One',
-        source: NetworkSource.card,
-        isMember: true,
-      ),
-      const NetworkLibrary(
-        id: 3,
-        siteUrl: 'https://c.github.io/z/',
-        name: 'Clashing',
-        fingerprint: fp,
-        fetchStatus: FetchStatus.identityConflict,
-      ),
-      // Hub-listed AND its own site links back: the reciprocal-consent chip.
-      const NetworkLibrary(
-        id: 4,
-        siteUrl: 'https://d.github.io/w/',
-        name: 'Confirmed Member',
-        listedByHubUrl: 'https://m.github.io/x/',
-        confirmedByMember: true,
-      ),
-      // Hub-listed but NOT linked back: no chip — the claim alone is not
-      // consent.
-      const NetworkLibrary(
-        id: 5,
-        siteUrl: 'https://e.github.io/v/',
-        name: 'Claimed Only',
-        listedByHubUrl: 'https://m.github.io/x/',
-      ),
-    ];
-    await pumpPage(tester);
-    expect(find.text('Member Library'), findsOneWidget);
-    expect(find.text('Verified'), findsOneWidget);
-    expect(find.text('Identity conflict'), findsOneWidget);
-    expect(find.text('https://m.github.io/x/'), findsOneWidget);
-
-    // Off-screen rows need scrollUntilVisible, not ensureVisible: the lazy
-    // sliver list has not BUILT them yet, so their finder matches nothing
-    // (600 dp test surface). The scrollable must be the LIST's own —
-    // find.byType(Scrollable).first would grab the tab view's horizontal
-    // PageView and drag us onto another tab.
-    final listScrollable = find.descendant(
-      of: find.byType(CustomScrollView),
-      matching: find.byType(Scrollable),
-    );
-    await tester.scrollUntilVisible(
-      find.text('Unverified One'),
-      150,
-      scrollable: listScrollable,
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Unverified'), findsOneWidget);
-
-    await tester.scrollUntilVisible(
-      find.text('Confirmed Member'),
-      -150, // scroll back up
-      scrollable: listScrollable,
-    );
-    await tester.pumpAndSettle();
-    // Exactly one row earns the reciprocal-consent chip ("Claimed Only"
-    // lacks the memberOf link-back, so it shows none).
-    expect(find.text('Confirmed by member'), findsOneWidget);
   });
 
   testWidgets('removing a row asks the repository and refreshes the list', (
@@ -193,86 +95,6 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Removed.'), findsOneWidget);
     expect(find.text('Doomed'), findsNothing);
-  });
-
-  group('add by URL (the "Add bookmark" button)', () {
-    testWidgets('a valid link saves a bookmark row and joins the list', (
-      tester,
-    ) async {
-      await pumpPage(tester);
-      await tester.tap(
-        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('Add a library by URL'), findsOneWidget);
-
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Link'),
-        'https://new.github.io/lib/',
-      );
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Name (optional)'),
-        '  New Library  ',
-      );
-      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
-      await tester.pumpAndSettle();
-
-      expect(
-        find.text('Library added. Tap Refresh to fetch its details.'),
-        findsOneWidget,
-      );
-      expect(find.text('New Library'), findsOneWidget);
-      final saved = repo.upserts.single;
-      expect(saved.siteUrl, 'https://new.github.io/lib/');
-      expect(saved.name, 'New Library'); // trimmed
-      expect(saved.source, NetworkSource.bookmark);
-    });
-
-    testWidgets('a non-Pages link is refused inside the dialog', (
-      tester,
-    ) async {
-      await pumpPage(tester);
-      await tester.tap(
-        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
-      );
-      await tester.pumpAndSettle();
-
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Link'),
-        'https://evil.example.com/',
-      );
-      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
-      await tester.pumpAndSettle();
-
-      // The dialog stays open with the plain-words hint; nothing was saved.
-      expect(find.text('Add a library by URL'), findsOneWidget);
-      expect(
-        find.textContaining('Enter a GitHub Pages (github.io)'),
-        findsOneWidget,
-      );
-      expect(repo.upserts, isEmpty);
-    });
-
-    testWidgets('an already-saved link collapses with a clear message', (
-      tester,
-    ) async {
-      repo.rows = [
-        const NetworkLibrary(id: 1, siteUrl: 'https://dup.github.io/x/'),
-      ];
-      await pumpPage(tester);
-      await tester.tap(
-        find.widgetWithText(FloatingActionButton, 'Add bookmark'),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Link'),
-        'https://dup.github.io/x/',
-      );
-      await tester.tap(find.widgetWithText(FilledButton, 'Add'));
-      await tester.pumpAndSettle();
-      expect(find.text('That library is already saved.'), findsOneWidget);
-      expect(repo.rows, hasLength(1));
-    });
   });
 
   group('membership prompt (§5.6 step 4)', () {
@@ -293,7 +115,7 @@ void main() {
         findsOneWidget,
       );
 
-      // Scroll the button clear of the stacked FABs (600 dp test surface).
+      // Scroll the button clear of the FAB (600 dp test surface).
       await tester.ensureVisible(
         find.widgetWithText(FilledButton, 'Show membership'),
       );
@@ -567,90 +389,6 @@ void main() {
       expect(find.text('Row 199'), findsOneWidget);
     });
   });
-
-  group('native viewer navigation (ADR 0015 V1)', () {
-    PublishedCatalogue tinyCatalogue() => PublishedCatalogue(
-      declaredSchemaVersion: 1,
-      items: const [
-        PublishedCatalogueItem(
-          sourceIndex: 0,
-          title: 'Published Book',
-          kind: PublishedItemKind.book,
-        ),
-      ],
-      periodicals: const [],
-    );
-
-    for (final source in NetworkSource.values) {
-      testWidgets(
-        'a ${source.name} row opens the native viewer and launches nothing',
-        (tester) async {
-          const rowUrl = 'https://a.github.io/one/';
-          repo.rows = [
-            NetworkLibrary(
-              id: 1,
-              siteUrl: rowUrl,
-              name: 'First Library',
-              source: source,
-            ),
-          ];
-          final launcher = _RecordingLauncher();
-          await pumpPage(
-            tester,
-            opener: PublishedSiteOpener(launch: launcher.launch),
-            catalogues: {rowUrl: tinyCatalogue()},
-          );
-
-          await tester.tap(
-            find.widgetWithText(NetworkLibraryTile, 'First Library'),
-          );
-          await tester.pumpAndSettle();
-
-          // The viewer, not the browser.
-          expect(find.byTooltip('Reload catalogue'), findsOneWidget);
-          expect(find.text('Published Book'), findsOneWidget);
-          expect(launcher.calls, isEmpty, reason: 'normal tap never launches');
-
-          // Only the explicit action leaves the app.
-          await tester.tap(find.byTooltip('Open in browser'));
-          await tester.pump();
-          expect(launcher.calls, hasLength(1));
-          expect(launcher.calls.single.toString(), rowUrl);
-          expect(launcher.modes.single, LaunchMode.externalApplication);
-        },
-      );
-    }
-
-    testWidgets('back returns to the saved list', (tester) async {
-      const rowUrl = 'https://a.github.io/one/';
-      repo.rows = [
-        const NetworkLibrary(id: 1, siteUrl: rowUrl, name: 'First Library'),
-      ];
-      await pumpPage(tester, catalogues: {rowUrl: tinyCatalogue()});
-      await tester.tap(
-        find.widgetWithText(NetworkLibraryTile, 'First Library'),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Reload catalogue'), findsOneWidget);
-
-      await tester.pageBack();
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Reload catalogue'), findsNothing);
-      expect(find.text('First Library'), findsOneWidget);
-    });
-  });
-}
-
-/// A browser-launch recorder shared by the viewer-navigation tests.
-final class _RecordingLauncher {
-  final List<Uri> calls = [];
-  final List<LaunchMode> modes = [];
-
-  Future<bool> launch(Uri url, LaunchMode mode) async {
-    calls.add(url);
-    modes.add(mode);
-    return true;
-  }
 }
 
 /// In-memory repository fake; mutations really mutate so every invalidation

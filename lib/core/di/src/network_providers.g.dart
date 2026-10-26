@@ -756,6 +756,289 @@ class _LoadPublishedCatalogueUseCaseProviderElement
       (origin as LoadPublishedCatalogueUseCaseProvider).siteUrl;
 }
 
+String _$publishedEventsFetcherHash() =>
+    r'dbab3b3c8002a93b6337ff51ea4901e00a9aa3d4';
+
+/// The bounded optional `events.json` fetcher for this saved site. It shares
+/// the viewer client, so route disposal also closes any events socket.
+///
+/// Copied from [publishedEventsFetcher].
+@ProviderFor(publishedEventsFetcher)
+const publishedEventsFetcherProvider = PublishedEventsFetcherFamily();
+
+/// The bounded optional `events.json` fetcher for this saved site. It shares
+/// the viewer client, so route disposal also closes any events socket.
+///
+/// Copied from [publishedEventsFetcher].
+class PublishedEventsFetcherFamily extends Family<PublishedEventsFetcher> {
+  /// The bounded optional `events.json` fetcher for this saved site. It shares
+  /// the viewer client, so route disposal also closes any events socket.
+  ///
+  /// Copied from [publishedEventsFetcher].
+  const PublishedEventsFetcherFamily();
+
+  /// The bounded optional `events.json` fetcher for this saved site. It shares
+  /// the viewer client, so route disposal also closes any events socket.
+  ///
+  /// Copied from [publishedEventsFetcher].
+  PublishedEventsFetcherProvider call(String siteUrl) {
+    return PublishedEventsFetcherProvider(siteUrl);
+  }
+
+  @override
+  PublishedEventsFetcherProvider getProviderOverride(
+    covariant PublishedEventsFetcherProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'publishedEventsFetcherProvider';
+}
+
+/// The bounded optional `events.json` fetcher for this saved site. It shares
+/// the viewer client, so route disposal also closes any events socket.
+///
+/// Copied from [publishedEventsFetcher].
+class PublishedEventsFetcherProvider
+    extends AutoDisposeProvider<PublishedEventsFetcher> {
+  /// The bounded optional `events.json` fetcher for this saved site. It shares
+  /// the viewer client, so route disposal also closes any events socket.
+  ///
+  /// Copied from [publishedEventsFetcher].
+  PublishedEventsFetcherProvider(String siteUrl)
+    : this._internal(
+        (ref) =>
+            publishedEventsFetcher(ref as PublishedEventsFetcherRef, siteUrl),
+        from: publishedEventsFetcherProvider,
+        name: r'publishedEventsFetcherProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$publishedEventsFetcherHash,
+        dependencies: PublishedEventsFetcherFamily._dependencies,
+        allTransitiveDependencies:
+            PublishedEventsFetcherFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  PublishedEventsFetcherProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    PublishedEventsFetcher Function(PublishedEventsFetcherRef provider) create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: PublishedEventsFetcherProvider._internal(
+        (ref) => create(ref as PublishedEventsFetcherRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<PublishedEventsFetcher> createElement() {
+    return _PublishedEventsFetcherProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is PublishedEventsFetcherProvider && other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin PublishedEventsFetcherRef
+    on AutoDisposeProviderRef<PublishedEventsFetcher> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _PublishedEventsFetcherProviderElement
+    extends AutoDisposeProviderElement<PublishedEventsFetcher>
+    with PublishedEventsFetcherRef {
+  _PublishedEventsFetcherProviderElement(super.provider);
+
+  @override
+  String get siteUrl => (origin as PublishedEventsFetcherProvider).siteUrl;
+}
+
+String _$loadPublishedEventsUseCaseHash() =>
+    r'8d351375d632ec460d7cc25b6770b8d23ce6bf70';
+
+/// Loads the independently-published public events for one saved library.
+///
+/// Copied from [loadPublishedEventsUseCase].
+@ProviderFor(loadPublishedEventsUseCase)
+const loadPublishedEventsUseCaseProvider = LoadPublishedEventsUseCaseFamily();
+
+/// Loads the independently-published public events for one saved library.
+///
+/// Copied from [loadPublishedEventsUseCase].
+class LoadPublishedEventsUseCaseFamily
+    extends Family<LoadPublishedEventsUseCase> {
+  /// Loads the independently-published public events for one saved library.
+  ///
+  /// Copied from [loadPublishedEventsUseCase].
+  const LoadPublishedEventsUseCaseFamily();
+
+  /// Loads the independently-published public events for one saved library.
+  ///
+  /// Copied from [loadPublishedEventsUseCase].
+  LoadPublishedEventsUseCaseProvider call(String siteUrl) {
+    return LoadPublishedEventsUseCaseProvider(siteUrl);
+  }
+
+  @override
+  LoadPublishedEventsUseCaseProvider getProviderOverride(
+    covariant LoadPublishedEventsUseCaseProvider provider,
+  ) {
+    return call(provider.siteUrl);
+  }
+
+  static const Iterable<ProviderOrFamily>? _dependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get dependencies => _dependencies;
+
+  static const Iterable<ProviderOrFamily>? _allTransitiveDependencies = null;
+
+  @override
+  Iterable<ProviderOrFamily>? get allTransitiveDependencies =>
+      _allTransitiveDependencies;
+
+  @override
+  String? get name => r'loadPublishedEventsUseCaseProvider';
+}
+
+/// Loads the independently-published public events for one saved library.
+///
+/// Copied from [loadPublishedEventsUseCase].
+class LoadPublishedEventsUseCaseProvider
+    extends AutoDisposeProvider<LoadPublishedEventsUseCase> {
+  /// Loads the independently-published public events for one saved library.
+  ///
+  /// Copied from [loadPublishedEventsUseCase].
+  LoadPublishedEventsUseCaseProvider(String siteUrl)
+    : this._internal(
+        (ref) => loadPublishedEventsUseCase(
+          ref as LoadPublishedEventsUseCaseRef,
+          siteUrl,
+        ),
+        from: loadPublishedEventsUseCaseProvider,
+        name: r'loadPublishedEventsUseCaseProvider',
+        debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+            ? null
+            : _$loadPublishedEventsUseCaseHash,
+        dependencies: LoadPublishedEventsUseCaseFamily._dependencies,
+        allTransitiveDependencies:
+            LoadPublishedEventsUseCaseFamily._allTransitiveDependencies,
+        siteUrl: siteUrl,
+      );
+
+  LoadPublishedEventsUseCaseProvider._internal(
+    super._createNotifier, {
+    required super.name,
+    required super.dependencies,
+    required super.allTransitiveDependencies,
+    required super.debugGetCreateSourceHash,
+    required super.from,
+    required this.siteUrl,
+  }) : super.internal();
+
+  final String siteUrl;
+
+  @override
+  Override overrideWith(
+    LoadPublishedEventsUseCase Function(LoadPublishedEventsUseCaseRef provider)
+    create,
+  ) {
+    return ProviderOverride(
+      origin: this,
+      override: LoadPublishedEventsUseCaseProvider._internal(
+        (ref) => create(ref as LoadPublishedEventsUseCaseRef),
+        from: from,
+        name: null,
+        dependencies: null,
+        allTransitiveDependencies: null,
+        debugGetCreateSourceHash: null,
+        siteUrl: siteUrl,
+      ),
+    );
+  }
+
+  @override
+  AutoDisposeProviderElement<LoadPublishedEventsUseCase> createElement() {
+    return _LoadPublishedEventsUseCaseProviderElement(this);
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is LoadPublishedEventsUseCaseProvider &&
+        other.siteUrl == siteUrl;
+  }
+
+  @override
+  int get hashCode {
+    var hash = _SystemHash.combine(0, runtimeType.hashCode);
+    hash = _SystemHash.combine(hash, siteUrl.hashCode);
+
+    return _SystemHash.finish(hash);
+  }
+}
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+mixin LoadPublishedEventsUseCaseRef
+    on AutoDisposeProviderRef<LoadPublishedEventsUseCase> {
+  /// The parameter `siteUrl` of this provider.
+  String get siteUrl;
+}
+
+class _LoadPublishedEventsUseCaseProviderElement
+    extends AutoDisposeProviderElement<LoadPublishedEventsUseCase>
+    with LoadPublishedEventsUseCaseRef {
+  _LoadPublishedEventsUseCaseProviderElement(super.provider);
+
+  @override
+  String get siteUrl => (origin as LoadPublishedEventsUseCaseProvider).siteUrl;
+}
+
 String _$publishedCatalogueQueryRunnerHash() =>
     r'c3a0f032cea35c691b7ae8dc6ede053db3f88d5c';
 

@@ -187,6 +187,9 @@ void main() {
           (catalogue, query) async =>
               PublishedQueryEngine.apply(catalogue, query),
         ),
+        publishedEventsFetcherProvider(
+          publishedSite,
+        ).overrideWithValue((url, {abortTrigger}) async => const Right(null)),
         publishedCoverFetcherProvider(publishedSite).overrideWithValue(
           (request, {abortTrigger}) async => Uint8List.fromList(coverBytes),
         ),
