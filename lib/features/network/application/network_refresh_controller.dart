@@ -9,6 +9,7 @@
 library;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_fingerprint.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
@@ -92,6 +93,21 @@ class NetworkRefreshController extends _$NetworkRefreshController {
       // No explicit window invalidation here: `NetworkController` LISTENS to
       // this provider and re-reads the rows itself when a run settles (one
       // direction between the two controllers — no import cycle).
+    }
+  }
+
+  /// Settles one move offer for good: the user chose (or dismissed) it, so it
+  /// must not be shown again from the OLD report. No-op when the offer is
+  /// already gone or another report has replaced it.
+  void forgetMoveCandidate(LibraryMoveCandidate candidate) {
+    final report = _lastReport;
+    if (report == null) return;
+    if (!report.moveCandidates.any((c) => c.sameAs(candidate))) return;
+    _lastReport = report.withoutMoveCandidate(candidate);
+    // Only a settled (data) state is updated; a run in flight keeps its
+    // loading state and will replace the report when it finishes.
+    if (state is AsyncData<RefreshReport?>) {
+      state = AsyncData<RefreshReport?>(_lastReport);
     }
   }
 

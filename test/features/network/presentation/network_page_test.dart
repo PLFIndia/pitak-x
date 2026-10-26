@@ -389,6 +389,92 @@ void main() {
       expect(find.text('Row 199'), findsOneWidget);
     });
   });
+  group('move offers (C10/R17)', () {
+    const oldSite = 'https://old.github.io/lib/';
+    const newSite = 'https://new.github.io/lib/';
+    final fingerprint = 'a' * 64;
+
+    _FakeRepo seedPair() => _FakeRepo([
+      NetworkLibrary(
+        id: 1,
+        siteUrl: oldSite,
+        name: 'Saved Library',
+        fingerprint: fingerprint,
+        sortOrder: 1,
+      ),
+      const NetworkLibrary(id: 2, siteUrl: newSite, sortOrder: 2),
+    ]);
+
+    DescriptorFetchResult offerScript(String url) =>
+        url.contains('new.github.io')
+        ? DescriptorFetched(
+            LibraryDescriptor(
+              fingerprint: fingerprint,
+              name: 'Moved Library',
+              siteUrl: newSite,
+              updatedAt: 1,
+            ),
+          )
+        : const DescriptorRefused(DescriptorRefusal.httpStatus);
+
+    testWidgets('a refresh that finds the same identity at another user-added '
+        'address offers both, and writes nothing until chosen', (tester) async {
+      repo = seedPair();
+      fetchScript = offerScript;
+
+      await pumpPage(tester);
+      await tester.tap(find.text('Refresh'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('These addresses may identify the same library.'),
+        findsOneWidget,
+      );
+      expect(find.text(oldSite), findsOneWidget);
+      expect(find.text(newSite), findsOneWidget);
+      expect(repo.rows, hasLength(2), reason: 'ephemeral offer only');
+
+      await tester.ensureVisible(find.text('Use new.github.io'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Use new.github.io'));
+      await tester.pumpAndSettle();
+
+      expect(repo.rows, hasLength(1));
+      expect(repo.rows.single.siteUrl, newSite);
+      expect(repo.rows.single.id, 1, reason: 'canonical row survives');
+      expect(
+        find.text('These addresses may identify the same library.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('"Not the same library" settles the offer and writes nothing', (
+      tester,
+    ) async {
+      repo = seedPair();
+      fetchScript = offerScript;
+
+      await pumpPage(tester);
+      await tester.tap(find.text('Refresh'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('These addresses may identify the same library.'),
+        findsOneWidget,
+      );
+
+      await tester.ensureVisible(find.text('Not the same library'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Not the same library'));
+      await tester.pumpAndSettle();
+
+      expect(repo.rows, hasLength(2), reason: 'declining writes nothing');
+      expect(repo.rows.map((r) => r.siteUrl), containsAll([oldSite, newSite]));
+      expect(
+        find.text('These addresses may identify the same library.'),
+        findsNothing,
+      );
+    });
+  });
 }
 
 /// In-memory repository fake; mutations really mutate so every invalidation
@@ -444,6 +530,25 @@ class _FakeRepo implements NetworkRepository {
     }
     return right(
       RefreshApplyResult(applied: updated.length, inserted: discovered.length),
+    );
+  }
+
+  @override
+  Future<Either<Failure, LibraryMoveApplyResult>> acceptLibraryMove({
+    required NetworkLibrary canonicalBaseline,
+    required NetworkLibrary canonicalNext,
+    NetworkLibrary? placeholderBaseline,
+  }) async {
+    if (placeholderBaseline != null) {
+      rows.removeWhere((r) => r.id == placeholderBaseline.id);
+    }
+    final index = rows.indexWhere((r) => r.id == canonicalBaseline.id);
+    rows[index] = canonicalNext;
+    return right(
+      LibraryMoveApplyResult(
+        repointed: canonicalNext.siteUrl != canonicalBaseline.siteUrl,
+        deletedPlaceholder: placeholderBaseline != null,
+      ),
     );
   }
 

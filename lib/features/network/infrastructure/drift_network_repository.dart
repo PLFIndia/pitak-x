@@ -172,6 +172,67 @@ class DriftNetworkRepository implements NetworkRepository {
   }
 
   @override
+  Future<Either<Failure, LibraryMoveApplyResult>> acceptLibraryMove({
+    required NetworkLibrary canonicalBaseline,
+    required NetworkLibrary canonicalNext,
+    NetworkLibrary? placeholderBaseline,
+  }) async {
+    var repointed = false;
+    var deletedPlaceholder = false;
+    Failure? refusal;
+    try {
+      await _db.transaction(() async {
+        final stored = await _findById(canonicalBaseline.id);
+        if (stored == null || !stored.sameAs(canonicalBaseline)) {
+          // Edited or deleted on this device since the user was shown the
+          // choice: their newer action wins (C10/R17). Nothing is written.
+          refusal = const StaleStateFailure('canonical row changed');
+          return;
+        }
+        if (placeholderBaseline != null) {
+          final storedPlaceholder = await _findById(placeholderBaseline.id);
+          if (storedPlaceholder == null ||
+              !storedPlaceholder.sameAs(placeholderBaseline)) {
+            refusal = const StaleStateFailure('duplicate row changed');
+            return;
+          }
+          // Delete FIRST: the canonical row may be about to take this exact
+          // site_url, and UNIQUE(site_url) is enforced per statement.
+          await (_db.delete(
+            _db.networkLibraries,
+          )..where((t) => t.id.equals(placeholderBaseline.id))).go();
+          deletedPlaceholder = true;
+        }
+        if (canonicalNext.siteUrl != stored.siteUrl) {
+          // A row added concurrently at the target address must not be
+          // silently shadowed; report a stale state instead of letting the
+          // UNIQUE index surface as an opaque storage error.
+          if (await _findBySiteUrl(canonicalNext.siteUrl) != null) {
+            refusal = const StaleStateFailure('target address taken');
+            return;
+          }
+          repointed = true;
+        }
+        await (_db.update(_db.networkLibraries)
+              ..where((t) => t.id.equals(canonicalBaseline.id)))
+            .write(_updateCompanion(canonicalNext));
+      });
+    } on Object {
+      // No `$e` in the Failure: a SqliteException message can carry the
+      // statement's bound parameters (site URLs) — typed failure, fixed
+      // label (AGENTS §6.2).
+      return left(const StorageFailure('network move failed'));
+    }
+    if (refusal case final failure?) return left(failure);
+    return right(
+      LibraryMoveApplyResult(
+        repointed: repointed,
+        deletedPlaceholder: deletedPlaceholder,
+      ),
+    );
+  }
+
+  @override
   Future<int> count() async {
     // COUNT(*), not a full row load: callers only need the number (review
     // Lows — `select().get()` materialised every row to throw it away).

@@ -67,11 +67,13 @@ a **library network** (pins on a map, hub/member cards).
   `events.json` sibling for native readers (republish once for an older site).
 - **Library network and Bookmarks** — save *other* Pitak libraries by URL under
   **Library Bookmarks**, or scan a library's card QR under **Library network**;
-  see them on an opt-in map, and refresh their
-  public details on demand. Sites are validated strictly (https only; GitHub
-  Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
-  published `library.json` descriptors — nothing happens in the background —
-  and identities are checked by fingerprint, never by trusting a name.
+  see them on an opt-in map, and refresh their public details on demand.
+  Sites are validated strictly (https only; GitHub Pages, Cloudflare Pages and
+  strict Cloudflare Workers host forms). Refresh is the only thing that reads
+  their published `library.json` descriptors — nothing happens in the
+  background — and identities are checked by fingerprint, never by trusting a
+  name. If a library moves address, the app offers both addresses for you to
+  choose between; it never switches automatically.
   Tapping a saved library opens its published catalogue and events **inside
   Pitak** in a read-only native viewer (posters, search, filters, sort, item
   detail) — no WebView,

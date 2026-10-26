@@ -7,6 +7,8 @@
 /// (file-size ratchet, docs/ARCHITECTURE.md §2.1) is a budget, not a target.
 library;
 
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
+
 /// What one refresh run did (§5.6 step 5). Plain counts + flags — enough for
 /// an honest one-line summary; refusal DETAILS stay coarse enums (§6) and
 /// never carry response text. [noLongerListed] holds the siteUrls of hubs the
@@ -26,6 +28,7 @@ final class RefreshReport {
     this.cancelled = false,
     this.noLongerListed = const [],
     this.keptLocalChanges = 0,
+    this.moveCandidates = const [],
   });
 
   /// Descriptors that arrived valid (including ones that then conflicted).
@@ -59,6 +62,33 @@ final class RefreshReport {
   /// SiteUrls of CONFIRMED hubs whose descriptor no longer lists me.
   final List<String> noLongerListed;
 
+  /// Possible "the same library now lives at this other address" findings
+  /// (Cloudflare plan C10/R17). EPHEMERAL: derived from this run's evidence
+  /// and never persisted. Each one needs an explicit user decision — nothing
+  /// changes automatically, and a declined offer writes nothing.
+  final List<LibraryMoveCandidate> moveCandidates;
+
+  /// This report without [candidate] — the controller calls it once the user
+  /// has settled that offer, so a stale prompt cannot come back.
+  RefreshReport withoutMoveCandidate(LibraryMoveCandidate candidate) =>
+      RefreshReport(
+        fetched: fetched,
+        unreachable: unreachable,
+        invalid: invalid,
+        schemaTooNew: schemaTooNew,
+        discovered: discovered,
+        truncated: truncated,
+        pendingMemberships: pendingMemberships,
+        conflicts: conflicts,
+        cancelled: cancelled,
+        noLongerListed: noLongerListed,
+        keptLocalChanges: keptLocalChanges,
+        moveCandidates: [
+          for (final c in moveCandidates)
+            if (!c.sameAs(candidate)) c,
+        ],
+      );
+
   /// Rows whose refresh write was SKIPPED because the user edited them on
   /// this device while the run was fetching (review M1 — the membership
   /// decision or card scan made mid-run always wins; the fetched data
@@ -72,5 +102,6 @@ final class RefreshReport {
       'invalid: $invalid, schemaTooNew: $schemaTooNew, '
       'discovered: $discovered, conflicts: $conflicts, '
       'pending: $pendingMemberships, truncated: $truncated, '
-      'cancelled: $cancelled, keptLocal: $keptLocalChanges)';
+      'cancelled: $cancelled, keptLocal: $keptLocalChanges, '
+      'moves: ${moveCandidates.length})';
 }

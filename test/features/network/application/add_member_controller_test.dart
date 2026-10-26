@@ -85,9 +85,12 @@ void main() {
 
     final state = container.read(addMemberControllerProvider);
     expect(state.hasValue, isTrue);
-    expect(state.value!.siteUrl, site);
-    expect(state.value!.isMember, isTrue);
-    expect(state.value!.memberVerified, isTrue);
+    final added = state.value!;
+    expect(added, isA<MemberAdded>());
+    final row = (added as MemberAdded).row;
+    expect(row.siteUrl, site);
+    expect(row.isMember, isTrue);
+    expect(row.memberVerified, isTrue);
 
     // The window was invalidated by the controller: a fresh read sees the
     // new row. Before M10 this only happened when the page popped `true`.

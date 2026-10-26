@@ -10,9 +10,11 @@
 ///     existing row ⇒ flip `isMember`; a fingerprint CONTRADICTION between
 ///     card and saved row is a typed failure — never overwrite an identity
 ///     (fail closed). The card's fingerprint already saved under a
-///     DIFFERENT address is refused up front too, with a plain sentence:
-///     the table's UNIQUE(fingerprint) would otherwise refuse the write as a
-///     generic "storage failed" that retrying can never fix (review M5);
+///     DIFFERENT address is no longer a dead end (Cloudflare plan C10/R17):
+///     the scan returns a [MemberMoveDetected] offer, and NOTHING is written
+///     until the user chooses which address to keep. When the card's address
+///     is itself already saved, the two-rows case stays a plain refusal
+///     (that is an identity conflict, and the refresh flow offers the merge);
 ///  3. one immediate bounded descriptor fetch to cross-check the published
 ///     fingerprint against the scanned one. Success sets `memberVerified`;
 ///     any refusal leaves it false with a visible "unverified" badge — a
@@ -25,6 +27,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/descriptor_fetcher.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 
@@ -49,27 +52,56 @@ final class AddMemberUseCase {
       "This card's identity does not match the saved library at this address.";
 
   /// The message shown when the card's fingerprint is already saved under
-  /// another address (the same library at an old or alternative URL).
+  /// another address AND the card's own address is also saved — a genuine
+  /// identity conflict, not a clean move offer.
   static const String identityAlreadySavedMessage =
       "This card's identity is already saved under a different address. "
       'If that library moved, remove the old entry first.';
 
-  /// Runs the add. Right carries the saved row (verified or not); Left is
-  /// only ever an identity contradiction or a storage failure.
-  Future<Either<Failure, NetworkLibrary>> call(LibraryCard card) async {
+  /// Runs the add. Right carries either the saved row (verified or not) or a
+  /// move offer when the same identity is already saved at another address;
+  /// Left is only ever an identity contradiction or a storage failure.
+  Future<Either<Failure, AddMemberResult>> call(LibraryCard card) async {
     final rows = await _repository.loadAll();
     NetworkLibrary? existing;
+    NetworkLibrary? fingerprintOwner;
     var maxSort = 0;
     for (final row in rows) {
       if (row.siteUrl == card.siteUrl) {
         existing = row;
       } else if (row.fingerprint == card.fingerprint) {
-        // One identity, one row (UNIQUE(fingerprint)): say so in words
-        // BEFORE any write or fetch instead of surfacing the constraint as
-        // an opaque storage error.
-        return const Left(ValidationFailure(identityAlreadySavedMessage));
+        fingerprintOwner = row;
       }
       if (row.sortOrder > maxSort) maxSort = row.sortOrder;
+    }
+
+    if (fingerprintOwner != null) {
+      // One identity, one row (UNIQUE(fingerprint)).
+      if (existing != null) {
+        // The card's address is already saved TOO: two rows claim one
+        // identity. Not a clean move — say so in words before any write.
+        return const Left(ValidationFailure(identityAlreadySavedMessage));
+      }
+      // C10/R17: the card (shown in person, the trust anchor) names the same
+      // fingerprint as a saved row at another address. Offer the choice and
+      // write NOTHING now; an accepted choice goes through
+      // ReconcileLibraryMoveUseCase.
+      return right(
+        MemberMoveDetected(
+          LibraryMoveCandidate(
+            savedRowId: fingerprintOwner.id,
+            savedSiteUrl: fingerprintOwner.siteUrl,
+            savedName: fingerprintOwner.name,
+            fetchedSiteUrl: card.siteUrl,
+            fetchedName: card.name,
+            fingerprint: card.fingerprint,
+            fetchedSource: NetworkSource.card,
+            // A card proves the address and identity in person; it says
+            // nothing about the library's name, pin or fetch status.
+            hasFetchedFacts: false,
+          ),
+        ),
+      );
     }
 
     final NetworkLibrary target;
@@ -99,7 +131,7 @@ final class AddMemberUseCase {
 
     final saved = await _repository.upsertBySiteUrl(target);
     final row = saved.toNullable();
-    if (row == null) return saved;
+    if (row == null) return saved.map(MemberAdded.new);
 
     // The verification fetch: bounded (allow-list + 15 s + 64 KiB inside the
     // injected DescriptorFetcher) and strictly best-effort.
@@ -108,25 +140,51 @@ final class AddMemberUseCase {
       case DescriptorFetched(:final descriptor):
         if (descriptor.fingerprint == row.fingerprint) {
           // The published identity agrees with the scanned card.
-          return _repository.upsertBySiteUrl(
+          final verified = await _repository.upsertBySiteUrl(
             row.copyWith(
               memberVerified: true,
               fetchStatus: FetchStatus.ok,
               fetchedAt: _clock(),
             ),
           );
+          return verified.map(MemberAdded.new);
         }
         // The site publishes a DIFFERENT fingerprint than the card showed in
         // person: do not merge, do not verify — flag it visibly (D12 shape)
         // and let the user decide. The member row itself stays (it was added
         // in person; failing closed here means "warn", not "delete").
-        return _repository.upsertBySiteUrl(
+        final flagged = await _repository.upsertBySiteUrl(
           row.copyWith(fetchStatus: FetchStatus.identityConflict),
         );
+        return flagged.map(MemberAdded.new);
       case DescriptorRefused():
         // Offline, no descriptor, hostile host — all the same outcome: the
         // member stays unverified with a badge. Never an error (§5.7).
-        return right(row);
+        return right(MemberAdded(row));
     }
   }
+}
+
+/// What one card scan produced.
+sealed class AddMemberResult {
+  const AddMemberResult();
+}
+
+/// The member row was saved (verified or not — the page shows the badge).
+final class MemberAdded extends AddMemberResult {
+  /// Creates the added result carrying the stored [row].
+  const MemberAdded(this.row);
+
+  /// The saved member row.
+  final NetworkLibrary row;
+}
+
+/// The scanned card publishes an identity that is already saved at ANOTHER
+/// address (C10/R17). Nothing was written: the user must choose.
+final class MemberMoveDetected extends AddMemberResult {
+  /// Creates the offer carrying the evidence.
+  const MemberMoveDetected(this.candidate);
+
+  /// The two addresses and the shared fingerprint.
+  final LibraryMoveCandidate candidate;
 }

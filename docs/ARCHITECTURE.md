@@ -401,7 +401,7 @@ to false** (the `hasX` forward-compat pattern):
 | Published cover origin | same-site: saved origin AND directory; third-party: the cover allow-list; both re-checked on every redirect hop | `PublishedCoverResolver` |
 | Published cover cache | ≤ 100 images / 16 MiB, memory only, LRU eviction, cleared on reload and on route close | `PublishedCatalogueCoverController` |
 | Redirect hops | ≤ 3, each re-validated | `BoundedHttpFetcher` |
-| URL | https, no userinfo, host suffix `github.io` / `pages.dev`, ≤ 2048 chars | `BookmarkUrl` |
+| URL | https, no userinfo, ≤ 2048 chars; host suffix `github.io` / `pages.dev`, OR the strict `<worker>.<account-subdomain>.workers.dev` root form (exactly two leading labels, no other path) | `BookmarkUrl`, `WorkersDevUrl` |
 | Name | 1–80 chars after trim; reject code units < 0x20, 0x7F, U+202A–U+202E, U+2066–U+2069 | `NetworkName` |
 | Fingerprint | exactly 64 `[0-9a-f]` | `LibraryFingerprint.isValid` |
 | lat / lng | finite, [−90, 90] / [−180, 180] | `GeoPoint.tryCreate` |
@@ -513,6 +513,17 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
   `library.json`. Existing GPS publishers read as `exact` once (first-read rule).
 - **Identity conflicts** (a fetched fingerprint already belongs to another
   saved row) are marked with a badge, never auto-merged.
+- **A possible library move is an offer, not a decision** (ADR 0017, C10/R17):
+  when the SAME fingerprint a saved row already holds as a fact is published by
+  a descriptor at a DIFFERENT canonical address that the user added by URL or
+  scanned from a card in person, the refresh (and the card scan) offers both
+  addresses neutrally instead of flagging a conflict. The offer is ephemeral —
+  nothing is written until the user chooses. Accepting is ONE transactional
+  merge/delete-plus-repoint that keeps the canonical row's id, local order and
+  consent/membership decisions, applies the fresh remote fields, deletes the
+  duplicate and preserves both UNIQUE(site_url) and UNIQUE(fingerprint).
+  Declining writes nothing. Discovered/hostile rows keep the conflict badge,
+  and reachability alone never selects an address.
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
 - **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,

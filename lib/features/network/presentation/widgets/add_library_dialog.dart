@@ -40,8 +40,8 @@ class _AddLibraryDialogState extends State<AddLibraryDialog> {
     if (!BookmarkUrl.isValid(url)) {
       setState(
         () => _error =
-            'Enter a GitHub Pages (github.io) or Cloudflare Pages '
-            '(pages.dev) https link.',
+            'Enter a GitHub Pages (github.io), Cloudflare Pages '
+            '(pages.dev) or Cloudflare Workers (workers.dev) https link.',
       );
       return;
     }

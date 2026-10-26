@@ -109,6 +109,29 @@ final addMemberUseCaseProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AddMemberUseCaseRef = AutoDisposeFutureProviderRef<AddMemberUseCase>;
+String _$reconcileLibraryMoveUseCaseHash() =>
+    r'9bc17a05f2bc12419664ce09fe5eb2370580ac47';
+
+/// Accepts one user-confirmed library move (C10/R17), run by the add-member
+/// controller and the saved-libraries list.
+///
+/// Copied from [reconcileLibraryMoveUseCase].
+@ProviderFor(reconcileLibraryMoveUseCase)
+final reconcileLibraryMoveUseCaseProvider =
+    AutoDisposeFutureProvider<ReconcileLibraryMoveUseCase>.internal(
+      reconcileLibraryMoveUseCase,
+      name: r'reconcileLibraryMoveUseCaseProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$reconcileLibraryMoveUseCaseHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef ReconcileLibraryMoveUseCaseRef =
+    AutoDisposeFutureProviderRef<ReconcileLibraryMoveUseCase>;
 String _$refreshNetworkUseCaseHash() =>
     r'de0392bcdbe32fd06ca99a8fd6c360a5aac5f66f';
 

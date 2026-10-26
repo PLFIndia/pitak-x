@@ -34,6 +34,7 @@ import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_c
 import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_events_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/migrate_legacy_bookmarks_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/reconcile_library_move_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_descriptor_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
@@ -138,6 +139,19 @@ Future<AddMemberUseCase> addMemberUseCase(AddMemberUseCaseRef ref) async {
   return AddMemberUseCase(
     repository: repo,
     fetchDescriptor: ref.watch(descriptorFetcherProvider),
+    clock: ref.watch(clockProvider),
+  );
+}
+
+/// Accepts one user-confirmed library move (C10/R17), run by the add-member
+/// controller and the saved-libraries list.
+@riverpod
+Future<ReconcileLibraryMoveUseCase> reconcileLibraryMoveUseCase(
+  ReconcileLibraryMoveUseCaseRef ref,
+) async {
+  final repo = await ref.watch(networkRepositoryProvider.future);
+  return ReconcileLibraryMoveUseCase(
+    repository: repo,
     clock: ref.watch(clockProvider),
   );
 }

@@ -186,6 +186,22 @@ final class BiometricInvalidatedFailure extends Failure {
   const BiometricInvalidatedFailure();
 }
 
+/// The state a write was based on changed (or vanished) before it ran.
+///
+/// Why this exists (Cloudflare plan C10/R17, reader reconciliation): a
+/// refresh reads rows, the user is shown a decision, and the write lands
+/// later. If the same row was edited or deleted on THIS device in between (a
+/// membership decision, a card scan, a removal), the user's newer action must
+/// win — so the repository refuses the stale write instead of overwriting it.
+/// The UI maps this to one plain sentence asking the user to try again.
+final class StaleStateFailure extends Failure {
+  /// Creates a stale-state failure with a short, never-displayed [reason].
+  const StaleStateFailure(this.reason);
+
+  /// Short diagnostic for logs/tests; never shown verbatim to users.
+  final String reason;
+}
+
 /// A persistence/storage operation failed (Drift, file IO, secure storage).
 final class StorageFailure extends Failure {
   /// Creates a storage failure with a short diagnostic [reason].

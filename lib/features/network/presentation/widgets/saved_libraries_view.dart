@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
+import 'package:pitaka/features/network/presentation/widgets/library_move_prompt.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_refresh_bar.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
@@ -53,6 +55,31 @@ class SavedLibrariesView extends ConsumerWidget {
     );
   }
 
+  /// Applies (or drops) one move offer. Keeping the saved address still
+  /// merges away the duplicate row; "not the same library" writes nothing.
+  Future<void> _settleMove(
+    BuildContext context,
+    WidgetRef ref,
+    LibraryMoveCandidate candidate,
+    LibraryMoveChoice? choice,
+  ) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final controller = ref.read(networkControllerProvider.notifier);
+    if (choice == null) {
+      controller.dismissMove(candidate);
+      return;
+    }
+    final ok = await controller.resolveMove(
+      candidate: candidate,
+      choice: choice,
+    );
+    if (!ok) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text(NetworkController.moveFailedMessage)),
+      );
+    }
+  }
+
   Future<void> _decide(
     BuildContext context,
     WidgetRef ref,
@@ -95,6 +122,31 @@ class SavedLibrariesView extends ConsumerWidget {
                     const _InfoNote(),
                     const SizedBox(height: 12),
                     NetworkRefreshBar(window: data.window),
+                    // C10/R17: possible moves found by the last run. Neutral
+                    // copy, an explicit choice, and no automatic change.
+                    for (final candidate
+                        in data.window.lastReport?.moveCandidates ??
+                            const <LibraryMoveCandidate>[])
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: LibraryMovePrompt(
+                          candidate: candidate,
+                          onKeepSaved: () => _settleMove(
+                            context,
+                            ref,
+                            candidate,
+                            LibraryMoveChoice.keepSavedAddress,
+                          ),
+                          onUseNew: () => _settleMove(
+                            context,
+                            ref,
+                            candidate,
+                            LibraryMoveChoice.useNewAddress,
+                          ),
+                          onNotSame: () =>
+                              _settleMove(context, ref, candidate, null),
+                        ),
+                      ),
                   ]),
                 ),
               ),

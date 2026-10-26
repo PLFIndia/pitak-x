@@ -11,9 +11,13 @@
 /// Now the controller owns the whole outcome as ONE `AsyncValue`:
 ///  - `AsyncData(null)` — idle, nothing scanned yet;
 ///  - `AsyncLoading`    — the use case is running (the page disables Scan);
-///  - `AsyncData(row)`  — the member was saved; `row` is what the repository
-///                        returned, so the page shows the real verified /
-///                        unverified badge;
+///  - `AsyncData(result)` — the scan was handled: [MemberAdded] carries the
+///                          stored row (the page shows the real verified /
+///                          unverified badge), [MemberMoveDetected] carries
+///                          the two addresses when the same identity is
+///                          already saved elsewhere (C10/R17 — nothing was
+///                          written; `resolveMove` applies the user's
+///                          choice);
 ///  - `AsyncError(f)`   — the use case refused; `f` is the typed [Failure]
 ///                        the page turns into one plain sentence.
 /// On success it invalidates [networkControllerProvider] immediately, so the
@@ -27,7 +31,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
-import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
+import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -46,7 +51,7 @@ class AddMemberController extends _$AddMemberController {
   bool _running = false;
 
   @override
-  FutureOr<NetworkLibrary?> build() {
+  FutureOr<AddMemberResult?> build() {
     ref.onDispose(() => _disposed = true);
     // Idle until a card is scanned; the page's Scan button drives [add].
     return null;
@@ -69,24 +74,69 @@ class AddMemberController extends _$AddMemberController {
     }
   }
 
-  void _applyResult(Either<Failure, NetworkLibrary> result) {
+  void _applyResult(Either<Failure, AddMemberResult> result) {
     state = result.fold(
-      (failure) => AsyncError<NetworkLibrary?>(failure, StackTrace.current),
-      (row) {
-        // One truth (docs/ARCHITECTURE.md §3 network): the Libraries tab re-reads the
-        // repository now — not when, or if, the user taps Done.
-        ref.invalidate(networkControllerProvider);
-        return AsyncData<NetworkLibrary?>(row);
+      (failure) => AsyncError<AddMemberResult?>(failure, StackTrace.current),
+      (value) {
+        // One truth (docs/ARCHITECTURE.md §3 network): the Libraries tab
+        // re-reads the repository now — not when, or if, the user taps Done.
+        // A move offer wrote nothing, so there is nothing new to read; the
+        // accept path invalidates instead.
+        if (value is MemberAdded) ref.invalidate(networkControllerProvider);
+        return AsyncData<AddMemberResult?>(value);
       },
     );
   }
 
+  /// Applies the user's choice for the [MemberMoveDetected] offer in the
+  /// current state. Keeps the saved address ⇒ NO write at all (the scan is
+  /// simply dropped, D.5); the new address ⇒ one transactional
+  /// merge/delete-plus-repoint. A stale/changed row surfaces as a typed
+  /// error the page renders as one plain sentence.
+  Future<void> resolveMove(LibraryMoveChoice choice) async {
+    final current = state.valueOrNull;
+    if (current is! MemberMoveDetected || _running || _disposed) return;
+    if (choice == LibraryMoveChoice.keepSavedAddress) {
+      // Declining is a UI decision only: clear the offer, write nothing.
+      state = const AsyncData<AddMemberResult?>(null);
+      return;
+    }
+    _running = true;
+    state = const AsyncLoading();
+    try {
+      final useCase = await ref.read(
+        reconcileLibraryMoveUseCaseProvider.future,
+      );
+      final result = await useCase(
+        candidate: current.candidate,
+        choice: choice,
+      );
+      if (_disposed) return;
+      state = result.fold(
+        (failure) => AsyncError<AddMemberResult?>(failure, StackTrace.current),
+        (row) {
+          ref.invalidate(networkControllerProvider);
+          return AsyncData<AddMemberResult?>(MemberAdded(row));
+        },
+      );
+    } finally {
+      _running = false;
+    }
+  }
+
   /// The plain sentence for a refused add. `ValidationFailure.message` is
   /// written for the user by the use case (identity mismatch / already
-  /// saved); anything else is a storage diagnostic that must stay out of
-  /// the UI (AGENTS §5).
+  /// saved); a concurrent edit or a storage fault maps to one plain
+  /// sentence — raw diagnostics never reach the UI (AGENTS §5).
   static String messageFor(Object failure) => switch (failure) {
     ValidationFailure(:final message) => message,
+    StaleStateFailure() => _changedMessage,
     _ => 'Could not add that library. Please try again.',
   };
+
+  /// Shown when the rows changed under the decision (the user's newer edit
+  /// wins, so the honest advice is to look again).
+  static const String _changedMessage =
+      'Your saved libraries changed while you were deciding. '
+      'Please try the scan again.';
 }

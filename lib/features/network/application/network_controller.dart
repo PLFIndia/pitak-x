@@ -18,6 +18,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/network_library_sort.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
@@ -181,6 +182,41 @@ class NetworkController extends _$NetworkController {
     ref.invalidateSelf();
     return true;
   }
+
+  /// Applies the user's choice for a move offer (C10/R17): ONE transactional
+  /// merge/delete-plus-repoint, at whichever of the two addresses the user
+  /// kept. Dismissing the offer (they are different libraries) is
+  /// [dismissMove] and writes nothing. False means "nothing was written".
+  Future<bool> resolveMove({
+    required LibraryMoveCandidate candidate,
+    required LibraryMoveChoice choice,
+  }) async {
+    final useCase = await ref.read(reconcileLibraryMoveUseCaseProvider.future);
+    final result = await useCase(candidate: candidate, choice: choice);
+    if (result.isLeft()) return false;
+    // The offer is answered: settle it so it is not shown again.
+    ref
+        .read(networkRefreshControllerProvider.notifier)
+        .forgetMoveCandidate(candidate);
+    ref.invalidateSelf(); // one truth: re-read what the repository stored
+    return true;
+  }
+
+  /// Dismisses a move offer WITHOUT any write: the user says these are two
+  /// different libraries (D.5 "declining makes no write"). The offer is
+  /// remembered as answered for this session; if the evidence persists, the
+  /// next refresh offers it again.
+  void dismissMove(LibraryMoveCandidate candidate) {
+    ref
+        .read(networkRefreshControllerProvider.notifier)
+        .forgetMoveCandidate(candidate);
+    ref.invalidateSelf();
+  }
+
+  /// The plain sentence for a failed move decision (never a raw diagnostic).
+  static const String moveFailedMessage =
+      "Couldn't update that library. Your saved list was not changed. "
+      'Try refresh and decide again.';
 
   /// Records the user's membership decision for the row with [rowId]
   /// (`confirmed` / `declined`, or `pending` for "Reconsider").

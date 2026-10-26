@@ -56,6 +56,10 @@ class NetworkRefreshBar extends ConsumerWidget {
         '${report.pendingMemberships} membership questions below',
       if (report.noLongerListed.isNotEmpty)
         '${report.noLongerListed.length} no longer list you',
+      if (report.moveCandidates.isNotEmpty)
+        report.moveCandidates.length == 1
+            ? '1 address to check'
+            : '${report.moveCandidates.length} addresses to check',
       if (report.keptLocalChanges > 0)
         '${report.keptLocalChanges} kept your edits made during refresh',
       // "refresh", not "discovery": the 500-row cap covers the saved rows

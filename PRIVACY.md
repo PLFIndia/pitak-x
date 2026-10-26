@@ -114,9 +114,11 @@ passive exception (item 8, Google Play builds only):
    of other Pitak libraries you save (by web address, or by scanning a
    library's card in person). Nothing about it leaves your device until you
    tap Refresh; Refresh then downloads the `library.json` descriptor from
-   each saved site — only from GitHub Pages or Cloudflare Pages addresses
-   that the app validated when you saved them — to update names, optional map
-   pins and hub/member links. A downloaded descriptor can itself list other
+   each saved site — only from GitHub Pages, Cloudflare Pages or Cloudflare
+   Workers addresses that the app validated when you saved them — to update
+   names, optional map pins and hub/member links. When a saved library appears
+   to have moved to another address, both addresses are shown and only your
+   explicit choice changes anything. A downloaded descriptor can itself list other
    libraries (a hub's members, or the hubs a library belongs to); Refresh
    also fetches the descriptors of those libraries, even though you never
    saved them yourself, so that they can appear in your list and on the map.

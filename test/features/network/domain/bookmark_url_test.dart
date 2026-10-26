@@ -170,6 +170,67 @@ void main() {
     });
   });
 
+  group('BookmarkUrl — Cloudflare Workers addresses (plan R15)', () {
+    test('normalizes the strict two-label root form', () {
+      expect(
+        BookmarkUrl.normalize('https://kadugodi-library.kadugodi.workers.dev'),
+        'https://kadugodi-library.kadugodi.workers.dev/',
+      );
+      expect(
+        BookmarkUrl.normalize('https://Kadugodi.Kadugodi.WORKERS.dev/'),
+        'https://kadugodi.kadugodi.workers.dev/',
+      );
+      // `/index.html` is the same page as the directory (existing rule).
+      expect(
+        BookmarkUrl.normalize('https://w.s.workers.dev/index.html'),
+        'https://w.s.workers.dev/',
+      );
+    });
+
+    test('refuses a non-root Workers path (a file is not a library)', () {
+      expect(
+        BookmarkUrl.normalize('https://w.s.workers.dev/books.json'),
+        isNull,
+      );
+      expect(BookmarkUrl.normalize('https://w.s.workers.dev/list/'), isNull);
+    });
+
+    test('refuses the apex, one-label and extra-label Workers forms', () {
+      for (final url in [
+        'https://workers.dev/',
+        'https://name.workers.dev/',
+        'https://a.b.c.workers.dev/',
+        'https://a.b.workers.dev.evil.com/',
+        'https://evilworkers.dev/',
+        'https://a.b.workers.dev./',
+      ]) {
+        expect(BookmarkUrl.normalize(url), isNull, reason: url);
+        expect(BookmarkUrl.sanitize(url), isNull, reason: url);
+      }
+    });
+
+    test('sanitize still accepts files under a valid Workers host', () {
+      // The viewer resolves `books.json`/`events.json`/posters against the
+      // saved root; those are FILES, which sanitize must allow verbatim.
+      const file = 'https://w.s.workers.dev/books.json';
+      expect(BookmarkUrl.sanitize(file), file);
+      expect(
+        BookmarkUrl.sanitize('https://w.s.workers.dev/posters/a.jpg'),
+        'https://w.s.workers.dev/posters/a.jpg',
+      );
+    });
+
+    test('Workers hosts keep the shared https/userinfo/port rules', () {
+      for (final url in [
+        'http://w.s.workers.dev/',
+        'https://user@w.s.workers.dev/',
+        'https://w.s.workers.dev:8443/',
+      ]) {
+        expect(BookmarkUrl.normalize(url), isNull, reason: url);
+      }
+    });
+  });
+
   group('BookmarkUrl.sanitize — allow-list only, verbatim (the fetcher)', () {
     test('returns an allowed URL exactly as given (trimmed)', () {
       const file = 'https://a.github.io/pitak/library.json';

@@ -1,7 +1,8 @@
 # ADR 0012: Library network replaces bookmarks
 
 - **Status:** Accepted
-- **Date:** 2026-10-17
+- **Date:** 2026-10-17 (amended 2026-10-26: `workers.dev` URL policy and the
+  stable-fingerprint / mutable-address reconciliation, ADR 0017 C10/R17)
 
 ## Context
 
@@ -41,6 +42,24 @@ feature is deleted, and the prefs list migrates once into the new Drift table
   fetched fingerprint that contradicts a saved row is flagged
   `identityConflict` and never auto-merged (D12, fail closed). Signed
   descriptors are deferred until spoofing is observed.
+
+**Amendment (2026-10-26) — identity is stable, addresses are mutable.**
+Publishing to Cloudflare Workers (ADR 0017) makes an address change a normal
+event, so D13's "the URL is the identity" needs one clarification:
+
+- **The fingerprint is the stable identity; the address is mutable.** Both
+  are still enforced as UNIQUE keys of the row, but they no longer have to
+  disagree in silence: when the fingerprint a saved row already holds as a
+  FACT is published by a descriptor at a DIFFERENT canonical address that the
+  user added by URL or scanned in person, the app OFFERS both addresses and
+  lets the user choose (C10/R17). Nothing is followed automatically, and a
+  discovered/hostile row never produces that offer.
+- **`workers.dev` joins the URL policy under a strict grammar.**
+  `BookmarkUrl` accepts exactly `<worker>.<account-subdomain>.workers.dev`
+  as a site root (shared `WorkersDevUrl` grammar: two leading labels, valid
+  worker/subdomain labels, no userinfo/port/query/fragment, no other path).
+  The apex, one-label, extra-label and look-alike suffixes stay refused, and
+  `pages.dev`/`github.io` keep their existing rules.
 
 ## Consequences
 

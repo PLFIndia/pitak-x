@@ -39,7 +39,7 @@ typedef NetworkListViewRef =
     AutoDisposeFutureProviderRef<
       ({NetworkWindow window, List<NetworkLibrary> rows})
     >;
-String _$networkControllerHash() => r'6ddd21a061c4d5bf793612c1a43b97daf5849166';
+String _$networkControllerHash() => r'7b7d2b618651a80e053d5339aba78c6b2c07013f';
 
 /// Loads the network window and runs its mutations.
 ///

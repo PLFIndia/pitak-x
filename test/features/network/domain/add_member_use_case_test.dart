@@ -29,6 +29,12 @@ void main() {
     return repo;
   }
 
+  /// The row a successful scan saved (the tests below assert on its fields).
+  NetworkLibrary? addedRow(Either<Failure, AddMemberResult> result) {
+    final value = result.toNullable();
+    return value is MemberAdded ? value.row : null;
+  }
+
   LibraryCard card({String fingerprint = fpCard}) => LibraryCard.tryCreate(
     siteUrl: site,
     fingerprint: fingerprint,
@@ -55,7 +61,7 @@ void main() {
     );
 
     final result = await useCase(card());
-    final row = result.toNullable()!;
+    final row = addedRow(result)!;
     expect(row.id, isNot(0));
     expect(row.source, NetworkSource.card);
     expect(row.isMember, isTrue);
@@ -82,7 +88,7 @@ void main() {
           const DescriptorRefused(DescriptorRefusal.httpStatus),
       clock: () => 7,
     );
-    final row = (await useCase(card())).toNullable()!;
+    final row = addedRow(await useCase(card()))!;
     expect(row.sortOrder, 5);
     expect(row.createdAt, 7);
   });
@@ -110,7 +116,7 @@ void main() {
       clock: () => 1000,
     );
 
-    final row = (await useCase(card())).toNullable()!;
+    final row = addedRow(await useCase(card()))!;
     expect(repo.rows, hasLength(1), reason: 'no second row for one URL');
     expect(row.isMember, isTrue);
     expect(row.fingerprint, fpCard); // null ⇒ set
@@ -129,7 +135,7 @@ void main() {
           const DescriptorRefused(DescriptorRefusal.transport),
       clock: () => 1,
     );
-    final row = (await useCase(card())).toNullable()!;
+    final row = addedRow(await useCase(card()))!;
     expect(row.name, 'Member Library');
   });
 
@@ -170,11 +176,12 @@ void main() {
     },
   );
 
-  test('SECURITY (M5): the card fingerprint saved under ANOTHER address is '
-      'refused in words, before any write or fetch', () async {
+  test('C10/R17: the card fingerprint saved at ANOTHER address offers a move '
+      'and writes nothing', () async {
+    const oldSite = 'https://old-address.github.io/lib/';
     final repo = repoWith([
       const NetworkLibrary(
-        siteUrl: 'https://old-address.github.io/lib/',
+        siteUrl: oldSite,
         name: 'Same library, old URL',
         fingerprint: fpCard, // the very identity the card carries
       ),
@@ -190,15 +197,44 @@ void main() {
     );
 
     final result = await useCase(card());
+    final offer = result.toNullable();
+    expect(offer, isA<MemberMoveDetected>());
+    final candidate = (offer! as MemberMoveDetected).candidate;
+    expect(candidate.savedSiteUrl, oldSite);
+    expect(candidate.fetchedSiteUrl, site);
+    expect(candidate.fingerprint, fpCard);
+    expect(candidate.hasFetchedFacts, isFalse, reason: 'a card is not a fetch');
+    expect(repo.rows.keys, [
+      oldSite,
+    ], reason: 'nothing written, no new row at the card address');
+    expect(fetches, 0, reason: 'the offer writes/fetches nothing');
+    expect(repo.rows[oldSite]!.isMember, isFalse);
+  });
+
+  test('SECURITY: the card address is saved TOO — a genuine two-row identity '
+      'conflict stays a plain refusal', () async {
+    final repo = repoWith([
+      const NetworkLibrary(
+        siteUrl: 'https://old-address.github.io/lib/',
+        fingerprint: fpCard,
+      ),
+      const NetworkLibrary(siteUrl: site),
+    ]);
+    final useCase = AddMemberUseCase(
+      repository: repo,
+      fetchDescriptor: (_) async =>
+          const DescriptorRefused(DescriptorRefusal.httpStatus),
+      clock: () => 1,
+    );
+
+    final result = await useCase(card());
     final failure = result.swap().toNullable();
     expect(failure, isA<ValidationFailure>());
     expect(
       (failure! as ValidationFailure).message,
       AddMemberUseCase.identityAlreadySavedMessage,
     );
-    expect(repo.rows.containsKey(site), isFalse, reason: 'nothing written');
-    expect(repo.rows, hasLength(1));
-    expect(fetches, 0);
+    expect(repo.rows, hasLength(2), reason: 'nothing written');
   });
 
   test(
@@ -213,7 +249,7 @@ void main() {
             const DescriptorRefused(DescriptorRefusal.timedOut),
         clock: () => 1,
       );
-      final row = (await useCase(card())).toNullable()!;
+      final row = addedRow(await useCase(card()))!;
       expect(row.fingerprint, fpCard);
       expect(row.isMember, isTrue);
     },
@@ -230,7 +266,7 @@ void main() {
       );
       final result = await useCase(card());
       expect(result.isRight(), isTrue, reason: 'offline is NOT an error');
-      final row = result.toNullable()!;
+      final row = addedRow(result)!;
       expect(row.isMember, isTrue);
       expect(row.memberVerified, isFalse);
       expect(row.fetchStatus, FetchStatus.never);
@@ -255,7 +291,7 @@ void main() {
           ),
           clock: () => 5,
         );
-        final row = (await useCase(card())).toNullable()!;
+        final row = addedRow(await useCase(card()))!;
         expect(row.memberVerified, isFalse);
         expect(row.fetchStatus, FetchStatus.identityConflict);
         expect(row.fingerprint, fpCard, reason: 'the scanned identity stays');
