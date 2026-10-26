@@ -11,8 +11,10 @@
 /// the wrong shas.
 library;
 
+import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+
 /// What was last published, for incremental diffing.
-final class PublishManifest {
+final class PublishManifest implements PreviousPublication {
   /// Creates a manifest.
   const PublishManifest({
     this.repo,
@@ -49,7 +51,17 @@ final class PublishManifest {
   final Map<String, String> coverUrlByBookId;
 
   /// The last-published sha for [path], or null.
+  @override
   String? shaFor(String path) => fileShas[path];
+
+  /// The cover source URL recorded for [key] (the decider's
+  /// `<itemId>` / `periodical:<uid>` key), or null.
+  @override
+  String? coverSourceFor(String key) => coverUrlByBookId[key];
+
+  /// Every app-owned path this manifest knows.
+  @override
+  Iterable<String> get ownedPaths => fileShas.keys;
 
   /// JSON map.
   Map<String, dynamic> toJson() => {

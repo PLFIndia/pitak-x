@@ -4,25 +4,26 @@
 /// catalogue publish (Q5=A): the library can update/clear its posters without
 /// re-publishing the book list, and vice versa. It pushes `events.html`, the
 /// machine-readable `events.json`, and the poster images as ONE atomic
-/// incremental commit via [GitHubGitDataApi]
-/// (the git-data role of the GitHub port, S5), reusing the same credential +
-/// target repo a prior catalogue publish established.
+/// incremental commit via [GitHubGitDataApi] (the git-data role of the GitHub
+/// port, S5), reusing the same credential + target repo a prior catalogue
+/// publish established.
 ///
 /// Gate (Q8=A): refuses unless the on-device publish manifest proves the
 /// catalogue was already published to the CURRENT target repo (it contains an
 /// `index.html` entry for that repo). This keeps "the website exists" true
 /// before we add a second page to it.
 ///
-/// Posters are tiny (max 2), so there is no incremental cover-style diffing:
-/// every published file's bytes are git-sha'd and only uploaded when changed
-/// vs the manifest — cheap and correct.
+/// The section itself is built by the SHARED [EventsSectionBuilder] (Cloudflare
+/// plan R3) and merged into the publication record with [mergeSection] (R7),
+/// so publishing events can never drop the catalogue's file shas and publishing
+/// the catalogue can never drop a poster.
 library;
 
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
-import 'package:pitaka/features/publish/domain/events_posters_html.dart';
-import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
+import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
@@ -30,13 +31,16 @@ import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
-/// Reads a poster image's bytes for its relative ref, or null when missing.
-typedef PosterBytesReader = Future<List<int>?> Function(String imageRef);
-
-/// Builds the events page HTML for the given published posters.
-typedef EventsHtmlBuilderFn =
-    Future<List<int>> Function(List<PublishPoster> posters);
+/// Built once per call so the same poster-reader/html/json ports are used for
+/// every poster.
+///
+/// Re-exported ports keep the existing imports working (see
+/// `publish_library_use_case.dart` for the same compatibility rule).
+export 'site/events_section_builder.dart'
+    show EventsHtmlBuilderFn, PosterBytesReader;
 
 /// Outcome of an events publish.
 sealed class PublishEventsResult {
@@ -81,24 +85,31 @@ final class PublishEventsUseCase {
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
-       _readPoster = readPoster,
-       _buildEventsHtml = buildEventsHtml,
-       _buildEventsJson = buildEventsJson,
+       _section = EventsSectionBuilder(
+         readPoster: readPoster,
+         buildEventsHtml: buildEventsHtml,
+         buildEventsJson: buildEventsJson,
+       ),
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
-  final PosterBytesReader _readPoster;
-  final EventsHtmlBuilderFn _buildEventsHtml;
-  final EventsJsonFactory _buildEventsJson;
+  final EventsSectionBuilder _section;
   final int Function() _clock;
 
   /// Repo path of the catalogue page whose presence proves "already published".
   static const String _catalogueMarker = 'index.html';
 
   /// Runs the events publish for [content].
-  Future<PublishEventsResult> call(EventsContent content) async {
+  ///
+  /// [mode] is [PublishMode.complete] for a move or a whole-site replacement:
+  /// a poster whose local bytes are unreadable then fails typed BEFORE any
+  /// write instead of being dropped.
+  Future<PublishEventsResult> call(
+    EventsContent content, {
+    PublishMode mode = PublishMode.incremental,
+  }) async {
     final token = await _credentials.token();
     if (token == null) {
       return const PublishEventsFailure('Not signed in to GitHub.');
@@ -139,63 +150,23 @@ final class PublishEventsUseCase {
       return const PublishEventsFailure(gitHubNetworkErrorMessage);
     }
 
-    // Resolve poster bytes + their published repo paths. A poster whose local
-    // image is missing is dropped (never publishes a broken <img>).
-    final published = <PublishPoster>[];
-    final posterFiles = <DesiredFile>[];
-    for (final poster in content.posters) {
-      final bytes = await _readPoster(poster.imageRef);
-      if (bytes == null) continue;
-      final path = poster.imageRef; // already `posters/<id>.jpg`
-      final sha = GitBlobSha.of(bytes);
-      posterFiles.add(
-        DesiredFile(
-          path: path,
-          bytes: bytes,
-          gitSha: sha,
-          upload: manifest.shaFor(path) != sha,
-        ),
-      );
-      published.add(
-        PublishPoster(imagePath: path, description: poster.description),
-      );
+    // Build the section with the SHARED builder: one filtered poster list
+    // feeds HTML, JSON and the uploads, so unreadable posters can never
+    // appear in one representation but not another.
+    final built = await _section.build(
+      content: content,
+      previous: manifest,
+      mode: mode,
+    );
+    final failure = built.swap().toNullable();
+    if (failure != null) {
+      return PublishEventsFailure(switch (failure) {
+        ValidationFailure(:final message) => message,
+        _ => 'Something went wrong. Nothing was published.',
+      });
     }
-
-    // Both public representations come from the SAME filtered list: a poster
-    // whose local bytes were unreadable is absent from HTML, JSON and uploads.
-    final eventsHtml = await _buildEventsHtml(published);
-    final eventsJson = _buildEventsJson(published);
-    final htmlSha = GitBlobSha.of(eventsHtml);
-    final jsonSha = GitBlobSha.of(eventsJson);
-    final files = <DesiredFile>[
-      DesiredFile(
-        path: 'events.html',
-        bytes: eventsHtml,
-        gitSha: htmlSha,
-        upload: manifest.shaFor('events.html') != htmlSha,
-      ),
-      DesiredFile(
-        path: 'events.json',
-        bytes: eventsJson,
-        gitSha: jsonSha,
-        upload: manifest.shaFor('events.json') != jsonSha,
-      ),
-      ...posterFiles,
-    ];
-
-    // M14: posters the manifest knows about but this publish no longer
-    // carries are OBSOLETE — deleted from the branch in the same commit.
-    // Only app-owned `posters/*` paths are ever touched; catalogue files
-    // (index.html, books.json, covers/*) are never candidates. Publishing
-    // with ZERO posters therefore clears the live page and writes an empty
-    // machine-readable poster list.
-    final livePosterPaths = {for (final f in posterFiles) f.path};
-    final obsolete = manifest.fileShas.keys
-        .where(
-          (path) =>
-              path.startsWith('posters/') && !livePosterPaths.contains(path),
-        )
-        .toList();
+    final section = built.toNullable()!;
+    final merge = mergeSection(previous: manifest, section: section);
 
     final now = _clock();
     final PublishCommitResult result;
@@ -205,8 +176,16 @@ final class PublishEventsUseCase {
         repo: repo,
         branch: branch,
         token: token,
-        files: files,
-        deletePaths: obsolete,
+        files: [
+          for (final f in merge.files)
+            DesiredFile(
+              path: f.path,
+              bytes: f.bytes,
+              gitSha: f.gitSha,
+              upload: f.upload,
+            ),
+        ],
+        deletePaths: merge.deletePaths,
         commitMessage: 'Pitak events publish $now',
       );
     } on GitHubApiException {
@@ -216,18 +195,13 @@ final class PublishEventsUseCase {
 
     switch (result) {
       case PublishCommitSuccess(:final uploadedPaths):
-        // Merge the new file shas into the existing manifest (preserve the
-        // catalogue's entries so a later catalogue publish still diffs
-        // right), and DROP the deleted poster paths (M14) so a later publish
-        // does not try to reuse their shas.
+        // Merge the new file shas into the existing record (preserve the
+        // catalogue's entries) and DROP the deleted poster paths (M14) so a
+        // later publish does not try to reuse their shas.
         _manifest.save(
           PublishManifest(
             repo: ownerRepo,
-            fileShas: {
-              for (final entry in manifest.fileShas.entries)
-                if (!obsolete.contains(entry.key)) entry.key: entry.value,
-              for (final f in files) f.path: f.gitSha,
-            },
+            fileShas: merge.fileShas,
             coverUrlByBookId: manifest.coverUrlByBookId,
           ),
         );

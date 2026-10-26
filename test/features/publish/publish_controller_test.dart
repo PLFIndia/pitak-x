@@ -731,7 +731,11 @@ class _Settings implements SettingsRepository {
 
 class _Events implements EventsRepository {
   @override
-  Future<EventsContent> load() async => EventsContent.empty;
+  Future<EventsContent> loadForEditor() async => EventsContent.empty;
+
+  @override
+  Future<Either<Failure, EventsContent>> loadStrict() async =>
+      right(EventsContent.empty);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

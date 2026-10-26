@@ -26,7 +26,10 @@ class _FakeEventsRepo implements EventsRepository {
   bool failNextSave = false;
 
   @override
-  Future<EventsContent> load() async => _content;
+  Future<EventsContent> loadForEditor() async => _content;
+
+  @override
+  Future<Either<Failure, EventsContent>> loadStrict() async => right(_content);
 
   @override
   Future<Either<Failure, EventsContent>> save(EventsContent content) async {
