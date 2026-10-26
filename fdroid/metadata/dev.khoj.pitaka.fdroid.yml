@@ -1196,7 +1196,7 @@ Builds:
 
   - versionName: 1.5.1
     versionCode: 271
-    commit: '1.5.1'
+    commit: 75eea9bfe58147facbc10963d827d8bb5ce7e5e1
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -1229,7 +1229,7 @@ Builds:
 
   - versionName: 1.5.1
     versionCode: 272
-    commit: '1.5.1'
+    commit: 75eea9bfe58147facbc10963d827d8bb5ce7e5e1
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup
@@ -1262,7 +1262,7 @@ Builds:
 
   - versionName: 1.5.1
     versionCode: 273
-    commit: '1.5.1'
+    commit: 75eea9bfe58147facbc10963d827d8bb5ce7e5e1
     sudo:
       - apt-get update
       - apt-get install -y clang cmake make ninja-build pkg-config gcc libc-dev rustup

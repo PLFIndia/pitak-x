@@ -12,6 +12,8 @@ read it first; it wins over anything else.
 2. Enable the tracked pre-commit hook once per clone:
    `git config core.hooksPath .githooks`
 3. Rust toolchain (stable) for the crypto crate under `rust/`.
+4. Node.js 22 or newer on PATH for the published-viewer JavaScript tests; no
+   npm packages are required.
 
 ## The flavor rule (F-Droid purity)
 
@@ -25,12 +27,19 @@ automatically.
 ## Quality gates (run before pushing)
 
 ```bash
+fvm flutter pub get --enforce-lockfile
 fvm dart run build_runner build --delete-conflicting-outputs   # no diff allowed
-fvm flutter analyze lib test                                   # zero issues
-fvm dart format --set-exit-if-changed lib test
-fvm flutter test                                               # green; coverage floor not lowered
+git diff --quiet -- '*.g.dart' '*.freezed.dart'                # generated files are current
+fvm flutter analyze lib test integration_test                  # zero issues
+fvm dart format --set-exit-if-changed lib test integration_test
+fvm flutter test --coverage --exclude-tags golden              # green; produces lcov.info
 ( cd rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo deny check && cargo test --release )
 ```
+
+CI additionally checks the coverage floor, Fastlane files, both host
+timezones, secrets and dependencies, and F-Droid purity. Golden tests run
+separately on Linux; exclude them for local macOS runs as above and regenerate
+PNGs only through the Linux `update-goldens` workflow.
 
 ## Commits & PRs
 

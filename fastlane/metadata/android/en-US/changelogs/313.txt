@@ -1,0 +1,5 @@
+* View announcements and event posters inside saved libraries.
+* Add and open Library Bookmarks directly from the main drawer.
+* Share Apps now sits beside Settings.
+* Use Load covers to allow catalogue covers and event posters.
+* Library owners: republish Events once to enable native event viewing.

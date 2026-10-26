@@ -14,6 +14,35 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `Announcements & Events`.
+
+AAB sha256: `f7b7025cabc69f761c28a06f07d1e836eb429d0048b63bc145410dd0b78ef428`.
+The delivered 216-second clean rebuild (after explicit `build/` + `.dart_tool/`
+removal) passed upload-signature, package/version, Bundletool/ZIP-integrity,
+fresh-timestamp, all-ABI Dart-sentinel, 64-bit ELF-alignment and
+`PAGE_ALIGNMENT_16K` verification.
+
+### Added
+- **Native Announcements & Events (ADR 0016):** Events publishing now writes an
+  independent, versioned `events.json` beside the unchanged HTML page and
+  posters in the same atomic commit. The saved-library viewer reads it through
+  the same bounded same-site policy and displays native read-only posters.
+  Existing sites need one Events republish; a missing file stays quiet, while
+  real failures are retryable and never block the catalogue.
+
+### Changed
+- **Library Bookmarks and drawer actions:** the main drawer now opens a
+  standalone Library Bookmarks page owning Add Bookmark and the shared saved
+  library list; Library network retains Add member. Settings and Share Apps
+  share the pinned bottom row, with Share Apps on the right.
+- **Discoverable viewer image consent:** when covers or event posters are
+  present but the default-off remote-image setting is disabled, the viewer
+  explains the choice and offers Load covers. This persists the existing
+  opt-in; same-site and third-party gates, memory-only caching and disposal
+  rules are unchanged.
+
 ## [1.7.0] - 2026-10 (tag `1.7.0`, versionCode 30)
 
 Linux golden images came from run `40270124772`; the complete release CI

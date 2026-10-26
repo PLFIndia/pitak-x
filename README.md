@@ -9,11 +9,10 @@ to GitHub Pages with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.7.0+30**
-> (`pubspec.yaml`). The 1.7.0 release candidate is prepared; manual
-> device/TalkBack and store/tag/F-Droid follow-up remain.
-> F-Droid builds from signed tags on its own schedule, so its index may lag by
-> a release.
+> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.8.0+31**
+> (`pubspec.yaml`). The signed 1.8.0 tag is the source release for both stores.
+> F-Droid builds from that tag on its own schedule, so its index may lag.
+> Manual device/TalkBack and store-rollout follow-up remain maintainer-owned.
 >
 > **Where things are documented:** `AGENTS.md` — the engineering rules;
 > `docs/ARCHITECTURE.md` — the shape of the app and its data contracts;
@@ -63,15 +62,19 @@ a **library network** (pins on a map, hub/member cards).
   approximate ~1 km / exact) and feeds both the page pin and the network
   descriptor.
 - **Events** — attach a small set of event posters (image + optional short
-  description) to the published site; images stay on-device as ordinary files.
-- **Library network** — save *other* Pitak libraries (by URL, or by scanning a
-  library's card QR in person), see them on an opt-in map, and refresh their
+  description) to the published site and the native saved-library viewer;
+  images stay on-device as ordinary files. Publishing also writes a public
+  `events.json` sibling for native readers (republish once for an older site).
+- **Library network and Bookmarks** — save *other* Pitak libraries by URL under
+  **Library Bookmarks**, or scan a library's card QR under **Library network**;
+  see them on an opt-in map, and refresh their
   public details on demand. Sites are validated strictly (https only; GitHub
   Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
   published `library.json` descriptors — nothing happens in the background —
   and identities are checked by fingerprint, never by trusting a name.
-  Tapping a saved library opens its published catalogue **inside Pitak** in a
-  read-only native viewer (search, filters, sort, item detail) — no WebView,
+  Tapping a saved library opens its published catalogue and events **inside
+  Pitak** in a read-only native viewer (posters, search, filters, sort, item
+  detail) — no WebView,
   no import, no persistent cache: the catalogue is fetched once per explicit
   open and discarded when you leave. Every hop must stay on that library's own
   site directory, and covers (both the library's own and the fixed public
