@@ -25,7 +25,7 @@ Please do **not** open a public issue for a suspected vulnerability.
 - The published-catalogue reader (`PublishedCatalogueCodec`, its bounded
   fetch/query adapters and the cover resolver) — remote JSON/image parsing
   from untrusted public sites and the viewer's origin/directory policy
-- Publish flow token handling (GitHub credentials)
+- Publish flow token handling (GitHub and Cloudflare credentials)
 - The optional biometric app-lock
 
 ## Known limits — by design, not vulnerabilities
@@ -43,9 +43,20 @@ notes (honest limits)"). Please do not report them as vulnerabilities:
   plus the old passphrase still opens that copy.
 - **App-lock ≠ vault lock** — the optional app gate is a screen cover; it
   does not lock or encrypt the vault.
-- **`String` tokens for GitHub / ISBN APIs** — their HTTP/plugin APIs are
-  `String`-typed, so those two tokens transit as immutable strings and
-  cannot be wiped from memory like the vault passphrase is.
+- **`String` tokens for GitHub / ISBN / Cloudflare APIs** — their
+  HTTP/plugin APIs are `String`-typed, so those three tokens transit as
+  immutable strings and cannot be wiped from memory like the vault passphrase
+  is (ADR 0007). The exception is exactly those three persisted tokens: vault
+  secrets remain wipeable bytes end to end.
+- **Ephemeral Cloudflare upload/completion JWTs are also strings** — they are
+  bearer secrets (lifetime ≤ 1 hour) that exist only inside one publish
+  operation, are never persisted, never placed in UI state, never logged and
+  never written to the publish spool (ADR 0007). Their short-lived string
+  interval is the same accepted limitation as above.
+- **No certificate pinning for publishing APIs** — GitHub and Cloudflare
+  rotate certificates; pinning would be an availability/privacy trade-off
+  worse than the MitM risk (ADR 0010). TLS with the system trust store, a
+  fixed API origin, refused redirects and bounded responses are the mitigations.
 
 ## Response
 

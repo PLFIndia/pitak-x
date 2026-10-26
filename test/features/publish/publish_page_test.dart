@@ -201,14 +201,14 @@ void main() {
     expect(find.text('Events'), findsWidgets); // tab label
   });
 
-  testWidgets('Connection tab shows sign-in + a disabled Cloudflare card', (
+  testWidgets('Connection tab shows sign-in + an unavailable Cloudflare card', (
     tester,
   ) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
 
     expect(find.text('Sign in to GitHub'), findsOneWidget);
-    expect(find.text('Cloudflare Pages'), findsOneWidget);
+    expect(find.text('Cloudflare Workers'), findsOneWidget);
     expect(find.text('Coming soon'), findsOneWidget);
   });
 
@@ -737,16 +737,22 @@ void main() {
     ) async {
       await pumpCreds(tester, _FakeCreds());
 
-      expect(find.text('Cloudflare Pages'), findsOneWidget);
+      expect(find.text('Cloudflare Workers'), findsOneWidget);
       expect(find.text('Coming soon'), findsOneWidget);
       // Collapsed: the body note is not built; the old fake disabled fields
       // are gone for good.
-      expect(find.textContaining('Direct upload from the app'), findsNothing);
+      expect(
+        find.textContaining('Publishing your catalogue straight to Cloudflare'),
+        findsNothing,
+      );
       expect(find.text('Cloudflare API token'), findsNothing);
 
-      await tester.tap(find.text('Cloudflare Pages'));
+      await tester.tap(find.text('Cloudflare Workers'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Direct upload from the app'), findsOneWidget);
+      expect(
+        find.textContaining('Publishing your catalogue straight to Cloudflare'),
+        findsOneWidget,
+      );
     });
   });
 

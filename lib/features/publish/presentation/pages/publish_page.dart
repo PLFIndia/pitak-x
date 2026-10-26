@@ -2,15 +2,15 @@
 ///
 /// A 3-tab home for everything that lands on the published site:
 ///   1. Connection — the hosting providers as collapsible tiles (S35):
-///      GitHub Pages (account + target repo) and Cloudflare Pages (a
-///      "coming soon" placeholder; real upload is a later stage). With both
-///      tiles collapsed the tab fits one screen; each header carries its
+///      GitHub Pages (account + target repo) and Cloudflare (a "coming soon"
+///      placeholder until the Workers integration lands). With both tiles
+///      collapsed the tab fits one screen; each header carries its
 ///      configuration status (green/amber/red, D3) and the GitHub tile
 ///      auto-expands unless fully configured (D4). Both ways of getting a
 ///      target — one-tap create and the advanced picker — run through
 ///      `SetupGitHubRepo`, so a stored target is always owned by the
-///      signed-in account and serves GitHub Pages from a branch root
-///      (N09). Sign-out forgets the target with the token.
+///      signed-in account and serves GitHub Pages from a branch root (N09).
+///      Sign-out forgets the target with the token.
 ///   2. Basic Info — library name + public address / GPS / email / phone (the
 ///      info shown on the published page). These moved here from Settings.
 ///   3. Events — the poster editor (embedded EventsView); the library campaign
@@ -18,9 +18,13 @@
 ///
 /// Pure presentation (render-only, AGENTS §7): all Connection-tab
 /// orchestration — the device flow, token persistence, repo setup,
-/// publishing — lives in
-/// `GitHubConnectionController`. This widget only renders the controller's
-/// state, forwards intents to it, and owns the dialogs (which are UI).
+/// publishing — lives in `GitHubConnectionController`. This widget only
+/// renders the controller's state, forwards intents to it, and owns the
+/// dialogs (which are UI).
+///
+/// Size note (Cloudflare plan S0): the provider tiles and the section card
+/// moved to their own widget files before any Cloudflare behavior is added,
+/// so this page stays a thin renderer well under the 500-line ratchet.
 library;
 
 import 'dart:async' show unawaited;
@@ -31,8 +35,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/events/presentation/pages/events_page.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
 import 'package:pitaka/features/publish/presentation/widgets/basic_info_tab.dart';
+import 'package:pitaka/features/publish/presentation/widgets/cloudflare_tile.dart';
 import 'package:pitaka/features/publish/presentation/widgets/github_connection_dialogs.dart';
-import 'package:pitaka/features/publish/presentation/widgets/provider_tile.dart';
+import 'package:pitaka/features/publish/presentation/widgets/github_tile.dart';
+import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
 
 /// Tabs of the publish hub, in order.
@@ -240,120 +246,6 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
 
   // --- Renderers -----------------------------------------------------------
 
-  /// The GitHub tile's status (D3): green only when fully configured
-  /// (signed in AND a target repo set — ready to publish), amber when
-  /// signed in but the repo is missing, red when not signed in.
-  ProviderConfig _githubStatus(GitHubConnectionUi ui) {
-    if (!ui.signedIn) return ProviderConfig.notConfigured;
-    return ui.targetRepo == null
-        ? ProviderConfig.partial
-        : ProviderConfig.configured;
-  }
-
-  /// The GitHub account section of the tile body.
-  Widget _githubAccountSection(GitHubConnectionUi ui, {required bool idle}) {
-    return ui.signedIn
-        ? Row(
-            children: [
-              // Success state must read as CONFIRMED at a glance, not
-              // as a plain label. Green isn't in the Material scheme,
-              // so pick a brightness-aware shade: 400 on dark surfaces
-              // (700 is too dim there), 700 on light (400 fails
-              // contrast on white). N12: Flexible + ellipsis keep this
-              // row from overflowing at 320px / large text.
-              Expanded(
-                child: Builder(
-                  builder: (ctx) {
-                    final green = Theme.of(ctx).brightness == Brightness.dark
-                        ? Colors.green.shade400
-                        : Colors.green.shade700;
-                    return Row(
-                      children: [
-                        Icon(Icons.check_circle, size: 18, color: green),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            'Signed in',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: green,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    );
-                  },
-                ),
-              ),
-              TextButton(
-                onPressed: idle ? _signOut : null,
-                child: const Text('Sign out'),
-              ),
-            ],
-          )
-        : FilledButton.icon(
-            onPressed: idle ? _signIn : null,
-            icon: const Icon(Icons.login),
-            label: const Text('Sign in to GitHub'),
-          );
-  }
-
-  /// The target-repository section; rendered only while signed in.
-  Widget _targetRepoSection(GitHubConnectionUi ui, {required bool idle}) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (ui.targetRepo != null) ...[
-          Text('Current: ${ui.targetRepo}'),
-          const SizedBox(height: 8),
-        ],
-        // Always available: create (or adopt) a public repo by name,
-        // Pages enabled automatically — no GitHub dashboard needed.
-        FilledButton.icon(
-          onPressed: idle ? _requestRepoSetup : null,
-          icon: const Icon(Icons.add),
-          label: Text(
-            ui.targetRepo == null
-                ? 'Set up a repository'
-                : 'Create a new repository',
-          ),
-        ),
-        const SizedBox(height: 8),
-        // Advanced path: pick one of your existing repos instead.
-        OutlinedButton(
-          onPressed: idle ? _loadRepos : null,
-          child: const Text('Choose an existing repo (advanced)'),
-        ),
-        for (final r in ui.repos)
-          ListTile(
-            dense: true,
-            enabled: idle,
-            leading: Icon(
-              r.fullName == ui.targetRepo
-                  ? Icons.radio_button_checked
-                  : Icons.radio_button_unchecked,
-            ),
-            title: Text(r.fullName),
-            subtitle: r.isPrivate
-                ? const Text('private (Pages needs a paid plan)')
-                : null,
-            onTap: () => _selectRepo(r.fullName),
-          ),
-        if (ui.reposTruncated)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Showing your ${ui.repos.length} most recently updated '
-              'repositories. If yours is not listed, use "Create a '
-              'new repository" instead.',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-      ],
-    );
-  }
-
   Widget _buildTab(GitHubConnectionUi ui) {
     final idle = ui.phase == GitHubConnectionPhase.idle;
     return ListView(
@@ -371,31 +263,18 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
         // badge (D3) reads configured / partial / not at a glance, and the
         // GitHub tile auto-expands unless fully configured (D4) so sign-in
         // and repo setup are never hidden behind a tap.
-        ProviderTile(
-          title: 'GitHub Pages',
-          status: _githubStatus(ui),
+        GitHubTile(
+          ui: ui,
           initiallyExpanded: _githubInitiallyExpanded ?? true,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _githubAccountSection(ui, idle: idle),
-              if (ui.signedIn) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Target repository',
-                  style: Theme.of(
-                    context,
-                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 8),
-                _targetRepoSection(ui, idle: idle),
-              ],
-            ],
-          ),
+          onSignIn: _signIn,
+          onSignOut: _signOut,
+          onRequestRepoSetup: _requestRepoSetup,
+          onLoadRepos: _loadRepos,
+          onSelectRepo: _selectRepo,
         ),
         const CloudflareTile(),
         if (ui.signedIn)
-          _SectionCard(
+          SectionCard(
             title: 'Publish',
             child: FilledButton.icon(
               onPressed: (!idle || ui.targetRepo == null) ? null : _publish,
@@ -410,7 +289,7 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
             ),
           ),
         if (ui.publishedUrl != null)
-          _SectionCard(
+          SectionCard(
             title: 'Your site',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -440,33 +319,6 @@ class _ConnectionTabState extends ConsumerState<_ConnectionTab> {
           Text(ui.statusMessage!),
         ],
       ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-
-class _SectionCard extends StatelessWidget {
-  const _SectionCard({required this.title, required this.child});
-
-  final String title;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            child,
-          ],
-        ),
-      ),
     );
   }
 }

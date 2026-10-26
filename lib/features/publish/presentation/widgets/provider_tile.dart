@@ -8,31 +8,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-/// The Cloudflare Pages tile (S35): always "Not configured" + a "Coming
-/// soon" subtitle until the real Direct-Upload integration lands. Collapsed
-/// by default (D4 applies to GitHub only — auto-expanding an unimplemented
-/// provider would defeat the one-screen goal); the body keeps the honest
-/// explanation and the dashboard workaround, minus the old fake disabled
-/// fields that made the card needlessly tall.
-class CloudflareTile extends StatelessWidget {
-  /// Creates the Cloudflare placeholder tile.
-  const CloudflareTile({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const ProviderTile(
-      title: 'Cloudflare Pages',
-      subtitle: 'Coming soon',
-      status: ProviderConfig.notConfigured,
-      body: Text(
-        'Direct upload from the app is on the way. For now, you can host '
-        'the same GitHub repo on Cloudflare Pages by connecting it in the '
-        'Cloudflare dashboard.',
-      ),
-    );
-  }
-}
-
 /// A provider's configuration state shown in its tile header (S35, D3).
 /// The text label is the primary carrier (accessibility); colour + icon
 /// reinforce at a glance. Shades follow the existing brightness-aware green
