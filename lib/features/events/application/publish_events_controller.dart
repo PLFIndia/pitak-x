@@ -46,6 +46,7 @@ class PublishEventsController extends _$PublishEventsController {
     // The HTML factory is injected via DI (domain port) — the template load
     // (rootBundle) stays in infrastructure, wired by the composition root.
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
+    final buildEventsJson = ref.read(eventsJsonFactoryProvider);
     final useCase = PublishEventsUseCase(
       api: api,
       credentials: credentials,
@@ -53,6 +54,7 @@ class PublishEventsController extends _$PublishEventsController {
       readPoster: readPoster,
       buildEventsHtml: (posters) =>
           buildEventsHtml(libraryName: settings.libraryName, posters: posters),
+      buildEventsJson: buildEventsJson,
     );
 
     return useCase.call(content);

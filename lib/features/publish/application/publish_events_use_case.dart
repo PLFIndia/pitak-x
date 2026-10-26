@@ -2,8 +2,9 @@
 ///
 /// A SELF-CONTAINED publish path for the events page, independent of the
 /// catalogue publish (Q5=A): the library can update/clear its posters without
-/// re-publishing the book list, and vice versa. It pushes only `events.html` +
-/// the poster images as ONE atomic incremental commit via [GitHubGitDataApi]
+/// re-publishing the book list, and vice versa. It pushes `events.html`, the
+/// machine-readable `events.json`, and the poster images as ONE atomic
+/// incremental commit via [GitHubGitDataApi]
 /// (the git-data role of the GitHub port, S5), reusing the same credential +
 /// target repo a prior catalogue publish established.
 ///
@@ -27,6 +28,7 @@ import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 
 /// Reads a poster image's bytes for its relative ref, or null when missing.
@@ -74,12 +76,14 @@ final class PublishEventsUseCase {
     required PublishManifestGateway manifest,
     required PosterBytesReader readPoster,
     required EventsHtmlBuilderFn buildEventsHtml,
+    required EventsJsonFactory buildEventsJson,
     int Function()? clock,
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
        _readPoster = readPoster,
        _buildEventsHtml = buildEventsHtml,
+       _buildEventsJson = buildEventsJson,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubGitDataApi _api;
@@ -87,6 +91,7 @@ final class PublishEventsUseCase {
   final PublishManifestGateway _manifest;
   final PosterBytesReader _readPoster;
   final EventsHtmlBuilderFn _buildEventsHtml;
+  final EventsJsonFactory _buildEventsJson;
   final int Function() _clock;
 
   /// Repo path of the catalogue page whose presence proves "already published".
@@ -156,14 +161,24 @@ final class PublishEventsUseCase {
       );
     }
 
+    // Both public representations come from the SAME filtered list: a poster
+    // whose local bytes were unreadable is absent from HTML, JSON and uploads.
     final eventsHtml = await _buildEventsHtml(published);
+    final eventsJson = _buildEventsJson(published);
     final htmlSha = GitBlobSha.of(eventsHtml);
+    final jsonSha = GitBlobSha.of(eventsJson);
     final files = <DesiredFile>[
       DesiredFile(
         path: 'events.html',
         bytes: eventsHtml,
         gitSha: htmlSha,
         upload: manifest.shaFor('events.html') != htmlSha,
+      ),
+      DesiredFile(
+        path: 'events.json',
+        bytes: eventsJson,
+        gitSha: jsonSha,
+        upload: manifest.shaFor('events.json') != jsonSha,
       ),
       ...posterFiles,
     ];
@@ -172,7 +187,8 @@ final class PublishEventsUseCase {
     // carries are OBSOLETE — deleted from the branch in the same commit.
     // Only app-owned `posters/*` paths are ever touched; catalogue files
     // (index.html, books.json, covers/*) are never candidates. Publishing
-    // with ZERO posters therefore clears the live events page.
+    // with ZERO posters therefore clears the live page and writes an empty
+    // machine-readable poster list.
     final livePosterPaths = {for (final f in posterFiles) f.path};
     final obsolete = manifest.fileShas.keys
         .where(

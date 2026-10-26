@@ -5,11 +5,13 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
+import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 
 class _FakeCreds implements PublishCredentialReader {
   _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
@@ -96,6 +98,11 @@ void main() {
     ],
   );
 
+  Map<String, dynamic> committedEventsJson(_CapturingApi api) {
+    final file = api.committed!.singleWhere((f) => f.path == 'events.json');
+    return jsonDecode(utf8.decode(file.bytes)) as Map<String, dynamic>;
+  }
+
   PublishEventsUseCase make({
     required GitHubGitDataApi api,
     required PublishManifestGateway manifest,
@@ -108,6 +115,7 @@ void main() {
     readPoster: readPoster ?? (ref) async => ascii.encode('img:$ref'),
     buildEventsHtml: (posters) async =>
         utf8.encode('<html>${posters.length} posters</html>'),
+    buildEventsJson: const EventsJsonBuilder().build,
     clock: () => 1000,
   );
 
@@ -146,7 +154,7 @@ void main() {
     expect(result, isA<PublishEventsFailure>());
   });
 
-  test('publishes events.html + poster files when the gate passes', () async {
+  test('publishes events.html + events.json + posters atomically', () async {
     final api = _CapturingApi();
     final manifest = _MemManifest(published());
     final result = await make(api: api, manifest: manifest).call(twoPosters());
@@ -155,8 +163,20 @@ void main() {
     final paths = api.committed!.map((f) => f.path).toList();
     expect(
       paths,
-      containsAll(['events.html', 'posters/a.jpg', 'posters/b.jpg']),
+      containsAll([
+        'events.html',
+        'events.json',
+        'posters/a.jpg',
+        'posters/b.jpg',
+      ]),
     );
+    expect(committedEventsJson(api), {
+      'schemaVersion': 1,
+      'posters': [
+        {'imageRef': 'posters/a.jpg', 'description': 'Story'},
+        {'imageRef': 'posters/b.jpg'},
+      ],
+    });
     expect(
       (result as PublishEventsSuccess).eventsUrl,
       'https://me.github.io/lib/events.html',
@@ -166,6 +186,7 @@ void main() {
     expect(manifest.saved!.shaFor('index.html'), 'abc');
     expect(manifest.saved!.shaFor('books.json'), 'def');
     expect(manifest.saved!.shaFor('events.html'), isNotNull);
+    expect(manifest.saved!.shaFor('events.json'), isNotNull);
   });
 
   test('drops a poster whose local image is missing (no broken img)', () async {
@@ -182,23 +203,37 @@ void main() {
     final paths = api.committed!.map((f) => f.path).toList();
     expect(paths, contains('posters/a.jpg'));
     expect(paths, isNot(contains('posters/b.jpg')));
+    // The machine-readable list uses the same readability-filtered list: the
+    // missing local image must not leave a broken public reference behind.
+    expect(committedEventsJson(api)['posters'], [
+      {'imageRef': 'posters/a.jpg', 'description': 'Story'},
+    ]);
   });
 
-  test('an unchanged file is not re-uploaded (sha matches manifest)', () async {
+  test('unchanged poster and events.json files are not re-uploaded', () async {
     final api = _CapturingApi();
-    // Pre-seed the manifest with a.jpg's exact git sha so it is reused.
+    // Pre-seed exact git shas so both files are reused from the manifest.
     final aBytes = ascii.encode('img:posters/a.jpg');
+    final jsonBytes = const EventsJsonBuilder().build(const [
+      PublishPoster(imagePath: 'posters/a.jpg'),
+    ]);
     final manifest = _MemManifest(
       PublishManifest(
         repo: 'me/lib',
-        fileShas: {'index.html': 'abc', 'posters/a.jpg': GitBlobSha.of(aBytes)},
+        fileShas: {
+          'index.html': 'abc',
+          'posters/a.jpg': GitBlobSha.of(aBytes),
+          'events.json': GitBlobSha.of(jsonBytes),
+        },
       ),
     );
     await make(api: api, manifest: manifest).call(
       EventsContent(posters: [EventPoster.create(imageRef: 'posters/a.jpg')!]),
     );
     final aFile = api.committed!.firstWhere((f) => f.path == 'posters/a.jpg');
-    expect(aFile.upload, isFalse); // reused, not uploaded
+    final jsonFile = api.committed!.firstWhere((f) => f.path == 'events.json');
+    expect(aFile.upload, isFalse);
+    expect(jsonFile.upload, isFalse);
   });
 
   // M14 regressions: obsolete posters must be deleted from the branch in
@@ -252,11 +287,16 @@ void main() {
     ).call(EventsContent.empty);
 
     expect(result, isA<PublishEventsSuccess>());
-    // events.html is still committed (empty-state page)…
-    expect(api.committed!.map((f) => f.path), ['events.html']);
-    // …and every previously published poster is deleted.
+    // Both public representations remain, with an explicit empty poster list.
+    expect(api.committed!.map((f) => f.path), ['events.html', 'events.json']);
+    expect(committedEventsJson(api), {
+      'schemaVersion': 1,
+      'posters': <Object?>[],
+    });
+    // Every previously published poster is deleted, but events.json is kept.
     expect(api.deleted, ['posters/a.jpg']);
     expect(manifest.saved!.shaFor('posters/a.jpg'), isNull);
+    expect(manifest.saved!.shaFor('events.json'), isNotNull);
     expect(manifest.saved!.shaFor('index.html'), 'abc');
   });
 

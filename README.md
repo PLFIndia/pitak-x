@@ -9,9 +9,10 @@ to GitHub Pages with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source release is **1.5.2**
-> (`pubspec.yaml`, tag `1.5.2`); F-Droid builds from the tag on its own
-> schedule, so its index may lag by a release.
+> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.8.0+31**
+> (`pubspec.yaml`). The signed 1.8.0 tag is the source release for both stores.
+> F-Droid builds from that tag on its own schedule, so its index may lag.
+> Manual device/TalkBack and store-rollout follow-up remain maintainer-owned.
 >
 > **Where things are documented:** `AGENTS.md` — the engineering rules;
 > `docs/ARCHITECTURE.md` — the shape of the app and its data contracts;
@@ -32,20 +33,22 @@ a **library network** (pins on a map, hub/member cards).
   delete; on-device cover capture; ISBN barcode scan + metadata lookup
   (Open Library → Google Books, chained + cached); a magazine barcode
   (`977…`) opens the issue form.
-- **Borrowers vault** — a persistent, **AES-256-GCM encrypted** store for
-  borrowers and loans, unlocked by a passphrase (Argon2id KEK). Optional
-  biometric unlock, bound to an Android Keystore key that requires a fresh
-  strong-biometric authentication per use (see security notes). The vault key
-  never crosses the Dart/Rust FFI boundary.
+- **Borrowers vault** — a persistent, **SQLCipher-encrypted** database for
+  borrowers and loans, unlocked by a passphrase (Argon2id derives the key-
+  encryption key; AES-256-GCM wraps the vault key). Optional biometric unlock,
+  bound to an Android Keystore key that requires a fresh strong-biometric
+  authentication per use (see security notes). The vault key never crosses the
+  Dart/Rust FFI boundary.
 - **Wishlist** — track books to acquire; move to the library on purchase.
 - **Import / Export** — JSON, CSV (incl. Goodreads import), and **PDF** (a
   paginated A4 library list with Indic-script support via shaped-image text).
 - **Backup / Restore** — `.pitabak` archives. Pitak restores its own archives
   **and** archives made by the original Kotlin app (one-way: Kotlin → Pitak;
   the Kotlin app is retired and is not a restore target). **Honest limit:**
-  the archive is *not* fully encrypted — the catalogue (every kind), wishlist
-  and covers are stored plainly inside it; only the borrowers vault (when
-  present) stays encrypted.
+  the archive is *not* fully encrypted — the catalogue (every kind, including
+  full magazine-series and issue records), wishlist, covers and item-kind
+  mappings are stored plainly inside it; only the borrowers vault and its
+  wrapped key blob stay encrypted.
   The archive also carries your **library identity (name + ID) and your
   saved-libraries list as plain, unencrypted JSON**, so a restored phone keeps
   the ID your hubs know. Treat backup files accordingly. Restore is
@@ -59,13 +62,24 @@ a **library network** (pins on a map, hub/member cards).
   approximate ~1 km / exact) and feeds both the page pin and the network
   descriptor.
 - **Events** — attach a small set of event posters (image + optional short
-  description) to the published site; images stay on-device as ordinary files.
-- **Library network** — save *other* Pitak libraries (by URL, or by scanning a
-  library's card QR in person), see them on an opt-in map, and refresh their
+  description) to the published site and the native saved-library viewer;
+  images stay on-device as ordinary files. Publishing also writes a public
+  `events.json` sibling for native readers (republish once for an older site).
+- **Library network and Bookmarks** — save *other* Pitak libraries by URL under
+  **Library Bookmarks**, or scan a library's card QR under **Library network**;
+  see them on an opt-in map, and refresh their
   public details on demand. Sites are validated strictly (https only; GitHub
   Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
   published `library.json` descriptors — nothing happens in the background —
-  and identities are checked by fingerprint, never by trusting a name. The map
+  and identities are checked by fingerprint, never by trusting a name.
+  Tapping a saved library opens its published catalogue and events **inside
+  Pitak** in a read-only native viewer (posters, search, filters, sort, item
+  detail) — no WebView,
+  no import, no persistent cache: the catalogue is fetched once per explicit
+  open and discarded when you leave. Every hop must stay on that library's own
+  site directory, and covers (both the library's own and the fixed public
+  cover hosts) obey the same remote-cover switch as the local library, held in
+  memory only. **Open in browser** remains the explicit fallback. The map
   downloads OpenStreetMap images only after you say yes (first tap asks;
   changeable in Settings) and only while the map is open. Replaces the old
   bookmarks feature, whose entries migrate into the network list automatically
@@ -77,17 +91,20 @@ a **library network** (pins on a map, hub/member cards).
 
 ## Privacy posture
 
-Local-first by default. Sensitive data (vault, tokens) lives in
-`flutter_secure_storage` (Keystore/Keychain). Vault secrets — the passphrase
-on its way to the Rust core and the biometric secret — are held as wipeable
-bytes and never as Dart `String`s; the GitHub token and the ISBN-lookup key are
-the honest exceptions (their HTTP/plugin APIs are `String`-typed, so they
-transit as immutable strings).
-Network calls happen only on explicit user action (ISBN lookup,
-publish, network refresh, remote covers, map tiles — the last three are
-opt-in: covers are default off, host-allow-listed, and downloaded once;
-the network map fetches OpenStreetMap tiles only after consent, and Refresh
-only reads the `library.json` of libraries you saved).
+Local-first by default. The SQLCipher vault database and already-ciphertext
+key blobs are app-private files; GitHub/ISBN tokens and the biometric secret's
+ciphertext use `flutter_secure_storage` (Keystore/Keychain). Vault secrets —
+the passphrase on its way to the Rust core and the biometric secret — are held
+as wipeable bytes and never as Dart `String`s; the GitHub token and the
+ISBN-lookup key are the documented exceptions (their HTTP/plugin APIs are
+`String`-typed, so they transit as immutable strings).
+Network calls are user-initiated except for Google Play updates: ISBN lookup,
+publish and its live-site read-back, network refresh, remote covers and map
+tiles. Covers are default off, host-allow-listed and downloaded once; map
+tiles require consent; Refresh reads `library.json` from saved and discovered
+libraries. Play builds also check for updates once per launch and, after you
+accept Play's update dialog, can download one in the background; the F-Droid
+flavor has no Play Core/update library and cannot run that check.
 
 **Platform matrix (M18):** Android is the only shipping target today.
 Screenshot/recents capture is blocked on Android (`FLAG_SECURE`) while
@@ -143,8 +160,8 @@ cover, not a vault lock (see the security notes below).
 lib/
   core/        cross-cutting: app_lock, crypto, database, DI (core/di/providers.dart), error,
                images, layout, network, platform, storage, shared widgets
-  features/    library · vault · wishlist · lookup · publish · events · network ·
-               backup · import_export · settings
+  features/    library · periodicals · vault · wishlist · lookup · publish · events · network ·
+               backup · import_export · settings · guides · app_update
   src/rust/    flutter_rust_bridge generated bindings (analyzer-excluded)
 rust/          pitak_crypto crate (crypto + vault boundary) + tests
 assets/        publish viewer, PDF fonts (Noto Sans Indic), branding
@@ -226,20 +243,24 @@ stale-artefact trap, `tool/release_build.sh` (the only way to build a Play
 ## Quality gates
 
 ```bash
-dart run build_runner build --delete-conflicting-outputs
+fvm flutter pub get --enforce-lockfile
+fvm dart run build_runner build --delete-conflicting-outputs
 git diff --quiet -- '*.g.dart' '*.freezed.dart' # expect: silent, exit 0 (no stale codegen)
-flutter analyze lib test                       # expect: No issues found!
-dart format --set-exit-if-changed lib test
-flutter test                                   # full Dart suite
+fvm flutter analyze lib test integration_test  # expect: No issues found!
+fvm dart format --set-exit-if-changed lib test integration_test
+fvm flutter test --coverage --exclude-tags golden
 ( cd rust && cargo fmt --check )               # rustfmt, zero diffs
 ( cd rust && cargo clippy --all-targets -- -D warnings )  # lints as errors
 ( cd rust && cargo deny check )                # advisories + licenses + bans + sources
 ( cd rust && cargo test --release )            # native crate tests (2 #[ignore]d — need a real vault via PITAK_* env)
 ```
 
-These mirror `.github/workflows/ci.yml` one-to-one; the first two are also what
-`.githooks/pre-commit` runs. Schema version bumps have three extra steps —
-`docs/ARCHITECTURE.md` §5.4.
+These are the main local checks; the build-runner/diff pair is also what
+`.githooks/pre-commit` runs. CI additionally checks the coverage floor,
+Fastlane files, two host timezones, secrets and dependencies, and F-Droid
+purity. Golden tests run separately on Linux; regenerate their PNGs only
+through the Linux `update-goldens` workflow. Schema version bumps have three
+extra steps — `docs/ARCHITECTURE.md` §5.4.
 
 Tip: the full widget suite can be slow under some harnesses — run by directory
 (`flutter test test/features/<area>`) to isolate a slow/hanging file.

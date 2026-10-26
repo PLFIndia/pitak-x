@@ -1,9 +1,12 @@
 /// One saved library in the network list (presentation, docs/ARCHITECTURE.md §3 network).
 ///
 /// Deliberately thin: name (or the URL when a row has no name yet), the site
-/// address, the shared [MembershipBadge] row, and tap-to-open in the external
-/// browser (the same rule the old bookmarks had: validated Pages links only,
-/// never an in-app webview).
+/// address, the shared [MembershipBadge] row, and a tap callback owned by the
+/// screen. Since ADR 0015 the normal tap opens the library's published
+/// catalogue INSIDE Pitak (a native, read-only page); the tile itself no
+/// longer touches HTTP or the browser, so opening a row can never launch an
+/// external app by accident. The viewer's explicit "Open in browser" action is
+/// the only external hand-off (and `NetworkMapPage`'s sheet keeps its own).
 ///
 /// The member→hub prompt (§5.6 step 4) lives HERE, inline under its row:
 /// a `pending` row asks "show that you're a member?" with plain Confirm /
@@ -14,15 +17,15 @@ library;
 import 'package:flutter/material.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/presentation/widgets/membership_badge.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 /// A list tile for one [NetworkLibrary] row.
 class NetworkLibraryTile extends StatelessWidget {
-  /// Creates the tile. [onRemove] null hides the remove action; the
-  /// membership callbacks null hide the prompt/Reconsider actions (e.g. in
-  /// previews and goldens).
+  /// Creates the tile. [onOpen] null renders no normal tap action (previews
+  /// and goldens); the membership callbacks null hide the prompt/Reconsider
+  /// actions; [onRemove] null hides remove.
   const NetworkLibraryTile({
     required this.row,
+    this.onOpen,
     this.onRemove,
     this.onConfirmMembership,
     this.onDeclineMembership,
@@ -32,6 +35,10 @@ class NetworkLibraryTile extends StatelessWidget {
 
   /// The row to render.
   final NetworkLibrary row;
+
+  /// Called when the user taps the row: the screen opens the native
+  /// published-catalogue viewer. Never launches the browser.
+  final VoidCallback? onOpen;
 
   /// Called when the user asks to remove the row.
   final VoidCallback? onRemove;
@@ -51,20 +58,6 @@ class NetworkLibraryTile extends StatelessWidget {
 
   /// Display title: the name when known, else the site URL.
   String get title => row.name.isEmpty ? row.siteUrl : row.name;
-
-  /// Opens the row's site in the device browser (external application —
-  /// untrusted third-party pages never render inside the app's process).
-  Future<void> openSite(BuildContext context) async {
-    final ok = await launchUrl(
-      Uri.parse(row.siteUrl),
-      mode: LaunchMode.externalApplication,
-    );
-    if (!ok && context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Couldn't open that link.")));
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,7 +92,7 @@ class NetworkLibraryTile extends StatelessWidget {
                     tooltip: 'Remove',
                     onPressed: onRemove,
                   ),
-            onTap: () => openSite(context),
+            onTap: onOpen,
           ),
           if (row.membership == MembershipState.pending &&
               onConfirmMembership != null &&

@@ -18,9 +18,10 @@ A **privacy-first, offline personal library catalogue** for Android, ported
 from a retired Kotlin app with **zero data loss** as the hard guarantee.
 
 - Books, wishlist and the library network live in **Drift/SQLite**.
-- Borrowers and loans live in an **AES-256-GCM encrypted vault** whose key
-  exists only inside a **Rust core** (`rust/`, crate `pitak_crypto`) and
-  never crosses the FFI boundary.
+- Borrowers and loans live in a **SQLCipher-encrypted vault database**.
+  Argon2id derives the key-encryption key and AES-256-GCM wraps the vault key;
+  the key exists only inside a **Rust core** (`rust/`, crate `pitak_crypto`)
+  and never crosses the FFI boundary.
 - Import/export: JSON, CSV (incl. Goodreads), PDF (Indic scripts via shaped
   images). `.pitabak` backups restore both Pitak and Kotlin-era archives.
 - Opt-in publish of a read-only site to GitHub Pages; opt-in **library
@@ -32,13 +33,19 @@ from a retired Kotlin app with **zero data loss** as the hard guarantee.
 
 Permissions: `CAMERA`, `INTERNET`, `USE_BIOMETRIC`. `allowBackup=false` +
 `data_extraction_rules.xml` keep everything out of Android Auto Backup / D2D.
-minSdk 23 (the `flutter_zxing` floor).
+minSdk 24 (`maxOf(flutter.minSdkVersion, 23)`; Flutter 3.44.2 supplies 24,
+above the `flutter_zxing` floor of 23).
 
-Network egress, **all user-initiated, never in the background**:
+Network egress is user-initiated except for the Play-only update flow:
 openlibrary.org and Google Books (ISBN lookup); api.github.com (publish,
 device-flow OAuth); remote covers (opt-in, host allow-listed); `library.json`
-fetches from saved libraries (Refresh only); tile.openstreetmap.org (map,
-remembered opt-in, only while the map is open).
+fetches from saved and discovered libraries (Refresh only);
+tile.openstreetmap.org (map, remembered opt-in, only while the map is open).
+Publishing also performs a bounded public `books.json` read-back: up to 12
+cache-busted GETs, five seconds apart, to verify the live bytes. Play builds
+check for an update once per launch and start Play's flexible-update flow;
+after the user accepts Play's dialog, the Store downloads in the background.
+The F-Droid flavor has no Play Core/update library and cannot run that check.
 
 ### 1.1 The five product promises
 
@@ -65,7 +72,7 @@ probably over-engineering.
 - **No mutation testing / continuous fuzzing / DCM** — triggers: coverage
   floor ≥ 80 % with suspicion of vacuous tests; a second Rust parser; never.
 - **No vault auto-lock** (ADR 0006); **passphrase change is rewrap, not
-  rotation** (ADR 0005); **`.pitabak` is not fully encrypted** (§5.2).
+  rotation** (ADR 0005); **`.pitabak` is not fully encrypted** (§5.5).
 
 ---
 
@@ -80,7 +87,7 @@ presentation  ->  application  ->  domain  <-  infrastructure
 
 | Layer | May depend on | Must not contain |
 |-------|---------------|------------------|
-| `domain` | nothing (pure Dart; allow-listed packages only) | Flutter, IO, JSON codecs, HTTP, DB, Riverpod |
+| `domain` | pure Dart plus the reviewed libraries/codecs allow-listed by `test/architecture/domain_purity_test.dart` (including `dart:convert`, used by `LibraryDescriptorCodec`) | Flutter, Riverpod, platform IO (`dart:io`, `dart:isolate`, HTTP, DB, plugins), unreviewed dependencies |
 | `application` | `domain` | widgets, `BuildContext`, concrete repositories, platform IO |
 | `infrastructure` | `domain` (implements its ports) | UI, business rules |
 | `presentation` | `application`, `domain` | direct DB/HTTP, business logic, `infrastructure` imports |
@@ -145,12 +152,14 @@ lib/
                           (Open Library → Google Books, cached)
     publish/              GitHub Pages: device-flow auth + git data API; PII redaction
     events/               event posters for the published site
-    network/              library network (ADR 0012): network_libraries table,
-                          library.json codec + bounded fetcher, card QR, bounded
-                          Refresh/discovery, membership, consent-gated OSM map
+    network/              library network/bookmarks (ADR 0012): network_libraries
+                          table, library.json codec + bounded fetcher, card QR,
+                          Refresh/discovery, membership, native catalogue/events
+                          viewers (ADR 0015/0016), consent-gated images/OSM map
     backup/               .pitabak writer (worker isolate) + all-or-nothing restore
     import_export/        JSON/CSV/PDF export, Goodreads import, merge UI
     settings/             Appearance · Data · Security (SettingsPage.initialTab)
+    app_update/           Play-only flexible updates; inert on F-Droid
     guides/               in-app "How Pitak works" guides (pure content model +
                           pages; deep-links only — no state, no IO)
   features/<f>/{domain,application,infrastructure,presentation}   (every feature)
@@ -171,8 +180,8 @@ tool/                     release_build.sh (the only way to build a Play .aab)
 
 **Navigation:** `main.dart` → `AppGate` (splash → app-lock if enabled →
 Library). Drawer: Borrowers vault · Publish · Wishlist · Magazines · Library
-network · Share · How Pitak works · Settings. The Library FAB opens an add
-sheet with one entry per item kind (ADR 0013 U1).
+network · Library Bookmarks · Share · How Pitak works · Settings/Share Apps.
+The Library FAB opens an add sheet with one entry per item kind (ADR 0013 U1).
 
 **Guides (`features/guides/`).** The copy of the six guides lives in
 `domain/guide_catalog.dart` as a typed, immutable model (`Guide` → sealed
@@ -342,9 +351,11 @@ to false** (the `hasX` forward-compat pattern):
 | `item_kinds.json` | `hasItemKinds` | `{ "schemaVersion": 1, "kinds": [ { "bookUid": "…", "kind": "magazine-issue" } … ] }` — every **non-book** row; a uid listed nowhere is a book (ADR 0014) — **plain** |
 | `periodicals.json` | `hasPeriodicals` | `{ "schemaVersion": 1, "periodicals": [ <the Pitaka-JSON periodical object> … ], "issues": [ { "bookUid", "periodicalUid", "volume", "issueNumber", "issueDate", "boundUntil", "label" } … ] }` (ADR 0014) — **plain** |
 
-- **Honest limit:** books, wishlist, covers, identity and network are plain
-  inside the archive; only the vault is encrypted. Whole-archive encryption is
-  deferred (trigger: a user asks, or a review flags it).
+- **Honest limit:** books, full magazine-series and issue records, other
+  items, wishlist, covers, item-kind mappings, identity and network are plain
+  inside the archive; only the vault and its wrapped key blob are encrypted.
+  Whole-archive encryption is deferred (trigger: a user asks, or a review
+  flags it).
 - Restore is **all-or-nothing**: everything is written into a new data folder
   and the app switches to it in one step; a failed restore leaves current data
   untouched.
@@ -380,6 +391,15 @@ to false** (the `hasX` forward-compat pattern):
 |-------|-------|-------------|
 | Descriptor body | ≤ 64 KiB, streamed, aborted over cap | `BoundedHttpFetcher` |
 | Descriptor fetch deadline | 15 s whole request, abortable | `BoundedHttpFetcher` |
+| Published catalogue body | ≤ 64 MiB, streamed, aborted over cap | `BoundedHttpFetcher`, re-checked by `PublishedCatalogueCodec` |
+| Published catalogue deadline | 30 s whole request, abortable — including on route close | `BoundedPublishedCatalogueFetcher` |
+| Published catalogue origin | canonical Pages site root; same origin AND same site directory on the initial URL and every redirect hop | `PublishedSiteUrlPolicy` |
+| Published catalogue rows | ≤ 100 000 per collection (`books`, `periodicals`), truncated and reported | `PublishedCatalogueCodec` |
+| Published catalogue JSON depth | ≤ 32 (string-aware scan, shared with the descriptor) | `JsonNestingDepth` |
+| Published cover body | ≤ 8 MiB, streamed, aborted over cap | `BoundedHttpFetcher` |
+| Published cover deadline | 15 s whole request, abortable — including on reload/close | `BoundedPublishedCoverFetcher` |
+| Published cover origin | same-site: saved origin AND directory; third-party: the cover allow-list; both re-checked on every redirect hop | `PublishedCoverResolver` |
+| Published cover cache | ≤ 100 images / 16 MiB, memory only, LRU eviction, cleared on reload and on route close | `PublishedCatalogueCoverController` |
 | Redirect hops | ≤ 3, each re-validated | `BoundedHttpFetcher` |
 | URL | https, no userinfo, host suffix `github.io` / `pages.dev`, ≤ 2048 chars | `BookmarkUrl` |
 | Name | 1–80 chars after trim; reject code units < 0x20, 0x7F, U+202A–U+202E, U+2066–U+2069 | `NetworkName` |
@@ -393,6 +413,30 @@ to false** (the `hasX` forward-compat pattern):
 
 Refusal reasons are coarse enums that never carry URLs or exception text
 (a URL can contain the user's API key).
+
+**The native catalogue viewer (ADR 0015)** reads a saved library's
+`books.json` only on an explicit row tap, through a viewer-owned HTTP client
+with a 66 MiB outer transport guard. The guard is deliberately 2 MiB above the
+adapter's 64 MiB cap so the adapter — not the generic client — reports
+`tooLarge`; no catalogue above 64 MiB is accepted. The initial URL and every
+redirect must stay on the saved site's origin *and* inside its directory
+(`PublishedSiteUrlPolicy`), so an allow-listed Pages host cannot redirect a
+saved library into another library. The request carries the fixed app
+User-Agent plus `Cache-Control: no-cache`, never cookies or auth; decoding and
+querying run off the UI isolate; the catalogue and its decoded object graph
+live only in auto-dispose providers and disappear when the route closes.
+
+**Covers in that viewer (S5)** are a second, separately gated pipeline. They
+are never written to disk or Drift and never enter the local `ItemCover`
+materialisation path. Both origin classes — the library's own relative
+`covers/…` files and the allow-listed third-party hosts — require
+`AppSettings.loadRemoteCovers == true`; unknown/failed settings mean no
+request. A same-site cover stays inside the saved site's origin and directory
+on every hop; a third-party cover re-checks the cover allow-list on every hop
+(preserving Open Library's Internet Archive redirects). Bodies are capped at
+8 MiB / 15 s, decoded in a worker isolate with the existing header/pixel
+guards and FRAME 0 only, and only the resulting 400×600 JPEG reaches the
+image widget: no `Image.network`, no raw fallback, no local persistence.
 
 ### 5.7 Pitaka-JSON and `books.json` carry the item kind (ADR 0014)
 

@@ -77,7 +77,7 @@ void main() {
       GuideId.map: [0, 6, 3, 3],
       GuideId.backup: [0, 5, 3, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],
-      GuideId.network: [0, 1, 2, 4, 0],
+      GuideId.network: [0, 1, 2, 5, 0],
     };
     for (final guide in guideCatalog) {
       final counts = <int>[

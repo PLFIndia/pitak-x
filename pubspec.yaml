@@ -21,7 +21,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # F-Droid ships one APK per ABI (--split-per-abi); android/app/build.gradle.kts
 # rewrites each split's versionCode to (this +number)*10 + {1,2,3}, i.e.
 # 611/612/613, matching the recipe's VercodeOperation. All stay > the live 4.
-version: 1.5.2+28
+version: 1.8.0+31
 
 environment:
   sdk: ^3.11.0
@@ -129,11 +129,14 @@ dependencies:
   # the old getSaveLocation path silently failed there. No secrets are shared;
   # the user explicitly picks the target app.
   share_plus: ^12.0.2
-  # Opens user-saved "other library" bookmarks in the device's EXTERNAL browser
-  # (Bookmarks feature). The canonical Flutter URL package. Only ever launches
-  # https links the app already validated against the GitHub/Cloudflare Pages
-  # host allow-list; no in-app webview (untrusted third-party pages stay out of
-  # the app's process).
+  # Opens user-saved "other library" links in the device's EXTERNAL browser.
+  # The canonical Flutter URL package. Only ever launches https links the app
+  # already validated against the GitHub/Cloudflare Pages host allow-list, and
+  # only from an explicit action (the published-catalogue viewer's "Open in
+  # browser" fallback, the network map's site sheet, the OSM attribution).
+  # Normal taps open the native viewer; reading public JSON/covers is not a
+  # WebView — no in-app webview anywhere, so untrusted third-party pages stay
+  # out of the app's process.
   url_launcher: ^6.3.2
   # Free-crop step after capturing a book cover photo (book-detail screen). The
   # canonical Flutter crop plugin; uses the platform-native crop UI (uCrop on

@@ -1,8 +1,8 @@
 # ADR 0014: Item kinds in the interchange, publish and backup formats
 
 - **Status:** Accepted
-- **Date:** 2026-10-21 (plan `docs/plans/magazines.md` rev 5, decisions
-  W1–W4)
+- **Date:** 2026-10-21 (original magazines implementation plan, revision 5;
+  decisions W1–W4)
 
 ## Context
 

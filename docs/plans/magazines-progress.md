@@ -1,6 +1,8 @@
 # Magazines / item kinds — progress log (session handoff)
 
-Plan: `docs/plans/magazines.md` (revision 5). Protocol: Part B of the plan.
+The original revision-5 implementation plan is complete. This file preserves
+its session history and the current release handoff; earlier session entries
+are historical evidence.
 **Read this file first in every session; update it as the last action of
 every session; commit it with the session's commit.**
 
@@ -8,35 +10,32 @@ every session; commit it with the session's commit.**
 
 - Original magazines plan: **S0–S22 complete**. Post-plan **G1, N1, N2 and
   N3 are complete**; their logs remain below and in `otherDetails.md`.
-- Magazine remediation (`magazineIssues.md`): **S0–S11 complete**. The latest
+- Magazine remediation: **S0–S11 complete**. The latest
   production commit is `d5a915c`; the Linux-only golden commit is `c07de67`.
-- Branch: `magazines` — working tree clean after the S11 documentation commit:
-  **yes**.
+- Branch: `main` — PR #18 merged as `29a3483`; the R1 release commit is
+  prepared on top. The `magazines` branch remains at `5351034`.
 - S11 local gates: generated output clean; scoped analysis and formatting
   clean; **30 architecture/migration tests**, **68 explicit schema/identity
   tests**, and **3,066 non-golden Flutter tests** passed. Rust fmt, Clippy and
   `cargo deny` passed with **35 release tests passed, 2 environment-gated
   ignored**. The exact four-file Fastlane gate passed all four files and six
   Unicode/file-set tests. Both F-Droid forbidden-dependency greps were empty.
-- Current Rust delta from `main`: `rust/Cargo.lock` carries the Tokio security
+- Rust changes merged to `main`: `rust/Cargo.lock` carries the Tokio security
   update and `rust/src/vault.rs` carries S9's native presentation-copy change.
   The older S22 statement that the Rust diff was empty is historical only.
-- Release state: **R1 is next**, with its own merge, TalkBack, signing, purity
-  and store gates. No release version bump, tag, upload, or publish step has
-  been performed.
+- Release state: **historical 1.6.0 handoff, superseded on 2026-10-26.** R1
+  steps 1–6 and 8 were completed and its signed Play AAB was verified. Later
+  releases superseded that candidate; the current source version and release
+  evidence live in `CHANGELOG.md`, and `docs/RELEASING.md` is the only current
+  release procedure. Do not resume the 1.6.0-specific checklist below.
 
-## Next session
+## Release handoff closure
 
-**Resume `docs/plans/otherDetails.md` R1 only.** S11 is complete, including
+There is no next session in this document. S11 remains complete, including
 Linux goldens, exact-SHA CI, both Android journeys twice, a real v5→v7 upgrade,
-and a different-timezone legacy restore. Do not repeat remediation.
-
-1. Read R1's *Read first* list and confirm its baseline at the exact current
-   HEAD, including green PR checks and a clean tree.
-2. An LLM may perform only R1 steps 1–6: merge, prepare `1.6.0+29`, rerun
-   release gates and both purity checks, and stop before signing/publishing.
-3. The maintainer owns TalkBack, signed AAB verification, Play upload, signed
-   tag, and F-Droid follow-up. No release step is implied by S11's completion.
+and a different-timezone legacy restore. The later 1.8.0 housekeeping does not
+claim new manual device/TalkBack or store-rollout evidence; those remain
+maintainer-owned follow-up under the current release procedure.
 
 ## Historical S22 handoff (superseded as current guidance)
 
@@ -1126,8 +1125,9 @@ Rename technique (learned in S1–S4):
   `library_empty_light.png` changed. On the Android 16 API 36 arm64-v8a
   emulator, both journeys passed twice (159 s and 163 s). The real v5 fixture
   seeded in 38 s, v5→v7 verification passed in 94 s, and the
-  Kiritimati→New York legacy restore passed in 28 s. Exact-SHA CI run IDs and
-  the final handoff check are recorded in `magazineIssues.md` Part D.
+  Kiritimati→New York legacy restore passed in 28 s. Exact-SHA CI passed in
+  run `40185782934`; update-goldens passed in run `40185782799`. The final
+  documentation commit was pushed and its PR checks verified.
 
 ### Historical G1 / N1 / N3 closures
 
@@ -1143,8 +1143,9 @@ Rename technique (learned in S1–S4):
 
 ## Session log
 
-This is the original S0–S22 log. The separate remediation S0–S11 execution log
-is authoritative in `magazineIssues.md` Part D.
+This is the original S0–S22 log. Remediation S0–S11 completion and final
+verification are summarized in *State* above; the detailed remediation log
+remains in git history.
 
 | Session | State | Commit | Date | Notes |
 |---------|-------|--------|------|-------|

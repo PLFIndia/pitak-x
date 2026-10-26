@@ -255,6 +255,27 @@ final eventsHtmlFactoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EventsHtmlFactoryRef = AutoDisposeProviderRef<EventsHtmlFactory>;
+String _$eventsJsonFactoryHash() => r'75537458090c211c6e5a95eb5851e40782b603f1';
+
+/// Events-JSON factory port: keeps serialization in infrastructure while the
+/// application receives only a pure byte-producing function.
+///
+/// Copied from [eventsJsonFactory].
+@ProviderFor(eventsJsonFactory)
+final eventsJsonFactoryProvider =
+    AutoDisposeProvider<EventsJsonFactory>.internal(
+      eventsJsonFactory,
+      name: r'eventsJsonFactoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$eventsJsonFactoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef EventsJsonFactoryRef = AutoDisposeProviderRef<EventsJsonFactory>;
 String _$publishCoverIdsHash() => r'3c5bcadbb45d7e23406191680df0ebe5e294b100';
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).

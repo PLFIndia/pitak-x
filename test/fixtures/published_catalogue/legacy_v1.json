@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "books": [
+    {
+      "title": "Old Payload Book",
+      "author": "An Author",
+      "language": "English",
+      "ageGroup": "AGE_0_5"
+    },
+    {
+      "title": "Second Legacy Book",
+      "language": "Hindi",
+      "ageGroup": "ADVANCE"
+    }
+  ]
+}

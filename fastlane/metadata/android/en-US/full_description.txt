@@ -8,8 +8,9 @@ Features:
 * Import / Export — JSON, CSV (including Goodreads import), and paginated PDF export with Indic-script support.
 * Backup / Restore — portable .pitabak archives.
 * Publish — optionally push a read-only library viewer to GitHub Pages, with PII redaction.
+* Library network — save other Pitak libraries and browse their published catalogues inside the app (search, filter, sort, read-only detail), with an explicit "Open in browser" fallback.
 * App-lock — optional biometric/device-credential gate before the library screen.
 
-Privacy posture: local-first by default. Sensitive data lives in the platform Keystore; secrets are held as wipeable bytes. Network calls happen only on explicit user action (ISBN lookup, publish, opt-in remote covers). Screenshots are blocked while sensitive data is visible.
+Privacy posture: local-first by default. Sensitive data lives in the platform Keystore; secrets are held as wipeable bytes. Network calls happen only on explicit user action (ISBN lookup, publish, Refresh, opening a saved library, opt-in remote covers). A catalogue you open is not stored on your device, and its cover images load only while you view it and only if the remote-cover switch is on. Screenshots are blocked while sensitive data is visible.
 
 The cryptographic core is written in Rust and built entirely from source.

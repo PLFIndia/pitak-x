@@ -124,7 +124,7 @@ Rules, all enforced by `tool/release_build.sh`:
    new class name (they survive AOT). Dart stores any literal containing a
    non-ASCII char (an em dash, Indic text) as UTF-16, so pick an **ASCII-only**
    sentinel.
-3. **Tell-tale:** a real release build takes minutes (Rust × 4 ABIs + Dart
+3. **Tell-tale:** a real release build takes minutes (Rust × 3 ABIs + Dart
    AOT). A "release" that finishes in ~25 s is a repackage. Do not upload it.
 4. Sideload the matching APK and look at the new feature on a phone (the APK
    shares `libapp.so` with the `.aab`).
@@ -149,7 +149,9 @@ What it refuses, in order (each is a hard check that fails closed):
    (`pub get --enforce-lockfile` — the gate CI and the F-Droid recipe run).
 3. A `CHANGELOG.md` without a `## [x.y.z]` heading for the version being built.
 4. A missing `android/key.properties`.
-5. A non-clean tree: it runs `flutter clean` itself, then `pub get` again.
+5. Stale Flutter build outputs: it runs `flutter clean` itself, then `pub get`
+   again. This is **not** a Git-worktree check — uncommitted source changes are
+   not refused, so build only from the reviewed release commit (§6.1).
 6. After the build, the **artefact**: signature valid; signer certificate
    equals the upload keystore's; bundled package/versionCode/versionName
    equal `pubspec.yaml`; the `--sentinel` string is present in the arm64
@@ -185,13 +187,19 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    its character count; CI runs the tests and checks all four release files.
 4. Update the version in the status note at the top of `README.md`.
 5. Run the quality gates (`CONTRIBUTING.md`) and the purity check (§2).
-6. Walk Library → Magazines → Vault → Settings once with TalkBack on
-   (5 minutes), including the series detail, magazine forms, Others form and
-   add sheet.
+6. Walk Library → Magazines → Vault → Settings → Library network once with
+   TalkBack on (5 minutes), including the series detail, magazine forms,
+   Others form, add sheet, and the native published-catalogue viewer (search,
+   filter, sort, detail, browser fallback).
 7. On-device smoke test on a **cleared** install (it creates the vault, so
    it needs an empty app):
    `adb uninstall dev.khoj.pitaka.fdroid`, then
    `fvm flutter test integration_test --flavor fdroid -d <device>`.
+   The suite includes `published_catalogue_smoke_test.dart` (ADR 0015): it
+   adds a uniquely named bookmark through the real dialog/Drift, opens the
+   native viewer, searches/filters, opens the read-only detail, returns,
+   reloads once, checks the injected browser hand-off and removes the row.
+   It uses fake catalogue/cover ports, so it needs **no** live network.
 8. Commit.
 
 ### 6.2 Google Play
@@ -241,16 +249,18 @@ Recipe facts worth knowing:
   precompiled-binary key, so cargokit's download path is disabled and the
   Rust core is cross-compiled on the build server (`Precompiled binaries are
   disabled` in the log). No prebuilt `.so`/`.a` is committed.
-- **Rust lives in `/opt/rust`.** F-Droid runs `sudo:` as root and
-  `prebuild:`/`build:` as the unprivileged build user; a `rustup` in root's
-  `$HOME` would be invisible. The recipe installs to `/opt/rust`
-  (`RUSTUP_HOME`, `CARGO_HOME`, `--no-modify-path`), `chmod`s it, and
-  re-exports the vars in `build:`.
+- **Rust comes from the distribution's `rustup` package.** The current recipe
+  installs it with `apt-get` and runs `rustup default 1.96.0` in each
+  split-ABI Flutter/Rust build entry's `prebuild:` block, then adds the
+  Android target. It does **not**
+  install under `/opt/rust`, set `RUSTUP_HOME` or `CARGO_HOME`, or chmod a
+  shared toolchain; those older instructions were removed when the recipe
+  changed.
 - Toolchain the recipe assumes — keep the app in sync: Flutter from `.fvmrc`
   (checked out from the `flutter@stable` srclib at that exact version),
-  NDK r28c, Gradle 8.14, Kotlin 2.2.20, Rust stable (`rust-version` in
+  NDK r28c, Gradle 8.14, Kotlin 2.2.20, Rust 1.96.0 (`rust-version` in
   `rust/Cargo.toml`), Android targets
-  `armv7-linux-androideabi aarch64-linux-android i686-linux-android x86_64-linux-android`.
+  `armv7-linux-androideabi aarch64-linux-android x86_64-linux-android`.
 - Output paths are `build/app/outputs/apk/fdroid/release/app-fdroid-<abi>-release.apk`.
 - A version that must be skipped on F-Droid (as 1.3.4 was, for a non-free
   dependency) stays in the recipe as `disable: <reason>`, never silently
@@ -269,8 +279,13 @@ Recipe facts worth knowing:
   the Gradle build. After editing `rust/src/api.rs`:
   `flutter_rust_bridge_codegen generate`, then confirm
   `llvm-nm -D libpitak_crypto.so | grep -c frb_pde_ffi_dispatcher` prints 2.
-- **16 KB pages:** NDK 28 defaults to 16 KB-aligned loads; every `.so` in the
-  bundle must show `LOAD` alignment ≥ `0x4000` under `llvm-readelf -l`.
+- **16 KB pages:** Google Play's requirement targets 64-bit devices. NDK 28
+  defaults to 16 KB-aligned loads there; every `arm64-v8a` and `x86_64` `.so`
+  in the bundle must show `LOAD` alignment ≥ `0x4000` under `llvm-readelf -l`
+  or `llvm-objdump -p`. The 32-bit `armeabi-v7a` ABI may remain `0x1000`
+  aligned — check it separately instead of misclassifying it as a 64-bit
+  failure. Also confirm `bundletool dump config` reports `PAGE_ALIGNMENT_16K`
+  for uncompressed native libraries.
 - Fat APK ≈ 97 MB (fonts ≈ 4 MB); per-ABI split ≈ 40 MB. Expected.
 - Flutter 3.44 warns that the app and six plugins still apply the Kotlin
   Gradle Plugin the old way; a future Flutter will refuse. Track it.

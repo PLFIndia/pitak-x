@@ -14,12 +14,79 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
-_Branch `magazines` — ADR 0013/0014. The original S0–S22 plan and post-plan
-G1, N1, N2 and N3 are complete. Magazine remediation S0–S11 is complete,
-including Linux goldens, exact-SHA CI, both Android journeys twice, a real
-v5→v7 upgrade, and a different-timezone legacy restore. R1 release work remains
-in `docs/plans/otherDetails.md`; no release version bump, tag, upload, or
-publish step has been performed._
+## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `Announcements & Events`.
+
+AAB sha256: `f7b7025cabc69f761c28a06f07d1e836eb429d0048b63bc145410dd0b78ef428`.
+The delivered 216-second clean rebuild (after explicit `build/` + `.dart_tool/`
+removal) passed upload-signature, package/version, Bundletool/ZIP-integrity,
+fresh-timestamp, all-ABI Dart-sentinel, 64-bit ELF-alignment and
+`PAGE_ALIGNMENT_16K` verification.
+
+### Added
+- **Native Announcements & Events (ADR 0016):** Events publishing now writes an
+  independent, versioned `events.json` beside the unchanged HTML page and
+  posters in the same atomic commit. The saved-library viewer reads it through
+  the same bounded same-site policy and displays native read-only posters.
+  Existing sites need one Events republish; a missing file stays quiet, while
+  real failures are retryable and never block the catalogue.
+
+### Changed
+- **Library Bookmarks and drawer actions:** the main drawer now opens a
+  standalone Library Bookmarks page owning Add Bookmark and the shared saved
+  library list; Library network retains Add member. Settings and Share Apps
+  share the pinned bottom row, with Share Apps on the right.
+- **Discoverable viewer image consent:** when covers or event posters are
+  present but the default-off remote-image setting is disabled, the viewer
+  explains the choice and offers Load covers. This persists the existing
+  opt-in; same-site and third-party gates, memory-only caching and disposal
+  rules are unchanged.
+
+## [1.7.0] - 2026-10 (tag `1.7.0`, versionCode 30)
+
+Linux golden images came from run `40270124772`; the complete release CI
+matrix passed in run `40272137572`.
+
+Release sentinel (`tool/release_build.sh --sentinel`): `Share Apps`.
+
+AAB sha256: `25e9fa8012d636f387ee9ad7251fc70f6117b45111bc10e6ef7b08fd51b94f26`.
+The clean 231-second build from `1c58a8a` passed upload-signature,
+package/version, ZIP-integrity, fresh-timestamp, all-ABI Dart-sentinel,
+64-bit ELF-alignment and `PAGE_ALIGNMENT_16K` verification.
+
+### Added
+- **Share Apps:** a drawer entry above Settings opens a scrollable panel that
+  starts with Pitak only — its real icon and a native OS share of the Play
+  Store listing. Future apps need one validated catalog entry each; there are
+  no placeholder rows and no new dependency.
+- **Native published-catalogue viewer** (ADR 0015, plan `appViewer_plan.md`):
+  tapping any saved Library-network row (bookmark, card or discovered) opens
+  that library's published `books.json` in a read-only Flutter page instead of
+  the browser. A defensive schema-1 reader (`PublishedCatalogueCodec`,
+  `PublishedItemReader`) treats every byte as hostile: byte/depth/row caps,
+  exact kind and age tokens, sparse `other`/unknown projections, last-wins
+  duplicate series handling with visible counts. Origin + directory policy
+  (`PublishedSiteUrlPolicy`) applies to the catalogue and same-site covers on
+  every redirect hop; a viewer-owned, caller-abortable HTTP client (64 MiB
+  typed cap inside a 66 MiB outer guard) fetches once per explicit open; JSON
+  decode and the filter/sort/group pass run in worker isolates. UI: search
+  (120 ms debounce), kind/language facets, three stable sorts (published order
+  is the default — never "Recently added"), series grouping, read-only detail,
+  persistent newer-schema and identity-conflict warnings, and an explicit
+  **Open in browser** fallback. Covers are memory-only (100 entries / 16 MiB
+  LRU), consent-gated for BOTH origin classes, downscaled off the UI isolate,
+  and discarded on reload/exit. No new dependency, no schema/backup/manifest
+  change, no WebView, no import. `NetworkMapPage`'s "Open site" stays external.
+
+## [1.6.0] - 2026-10 (tag `1.6.0`, versionCode 29)
+
+G1 Linux goldens and N3 device journeys completed; final remediation golden,
+device, upgrade and timezone verification completed (S11) at `5351034`.
+
+Release sentinel (`tool/release_build.sh --sentinel`): `New magazine title`.
+
+AAB sha256: `58e64873c2109dd053f22a4428335fd5d455a1b5f120dee3236fe8a89926a633`.
 
 ### Added
 - **Catalogue item kinds** (ADR 0013): every catalogue row has a `kind` —

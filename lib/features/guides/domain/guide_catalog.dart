@@ -181,7 +181,7 @@ const Guide _map = Guide(
   cardSubtitle: 'Let nearby libraries find you — you choose how exact',
   intro:
       'Other Pitak libraries that bookmark yours — by adding your web address '
-      '(the GitHub Pages link Pitak created) to their **Library network** '
+      '(the GitHub Pages link Pitak created) to their **Library Bookmarks** '
       'list — see it as a pin on their **Library network › Map**. Nothing is '
       'shown until you switch it on and publish — and you choose how exact '
       'the pin is.',
@@ -390,7 +390,8 @@ const Guide _network = Guide(
   intro:
       '**☰ → Library network** is your list of other Pitak libraries. Nothing '
       'leaves your phone until you tap **Refresh**, which reads each '
-      "library's published page.",
+      "library's published page or you open a library to browse its "
+      'published catalogue inside Pitak.',
   needs: [],
   sections: [
     GuideParagraphs(
@@ -420,7 +421,11 @@ const Guide _network = Guide(
     GuideBullets(
       title: '',
       bullets: [
-        '**Add bookmark** saves a library by its web address.',
+        '**☰ → Library Bookmarks → Add Bookmark** saves a library by its web '
+            'address.',
+        'Tap a saved library to browse its published catalogue inside Pitak '
+            '(search, filter and sort it without leaving the app). If you '
+            'need the full website, use **Open in browser** on that screen.',
         "**Add member** scans another library's card, in person. That makes "
             'you a hub and lists them on your page as your member.',
         'If a hub lists you, Pitak asks once: "show that you\'re a member of '

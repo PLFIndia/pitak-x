@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "exportedAt": 1760000000000,
+  "canvasAcl": "private-SENTINEL-root",
+  "books": [
+    {
+      "title": "Private Field Probe",
+      "kind": "book",
+      "author": "Public Author",
+      "notes": "SENTINEL-NOTES",
+      "location": "SENTINEL-LOCATION",
+      "sourceType": "SENTINEL-SOURCE",
+      "sourceDetail": "SENTINEL-SOURCE-DETAIL",
+      "addedBy": "SENTINEL-ADDED-BY",
+      "addedDate": 1700000000000,
+      "needsMetadata": true,
+      "copyCount": 9,
+      "id": 4242
+    },
+    {
+      "title": "Other Must Stay Sparse",
+      "kind": "other",
+      "author": "SENTINEL-AUTHOR",
+      "isbn": "SENTINEL-ISBN",
+      "publisher": "SENTINEL-PUBLISHER",
+      "publishedYear": 2020,
+      "genre": "SENTINEL-GENRE",
+      "availability": "available",
+      "notes": "SENTINEL-NOTES",
+      "language": "Tamil",
+      "ageGroup": "above-6"
+    },
+    {
+      "title": "Future Kind Probe",
+      "kind": "gramophone-record",
+      "author": "SENTINEL-AUTHOR",
+      "availability": "available",
+      "language": "Sanskrit",
+      "ageGroup": "advanced"
+    }
+  ],
+  "periodicals": [
+    {
+      "periodicalUid": "probe",
+      "title": "Probe Series",
+      "notes": "SENTINEL-PERIODICAL-NOTES",
+      "subscriptionUntil": 1700000000000,
+      "location": "SENTINEL-LOCATION",
+      "frequency": "monthly"
+    }
+  ]
+}

@@ -98,7 +98,7 @@ jobs:
       # L6: exercise the actual release files and the Unicode/boundary cases.
       - name: Fastlane changelog character limit
         run: |
-          python3 tool/check_fastlane_changelog_chars.py 29
+          python3 tool/check_fastlane_changelog_chars.py 31
           python3 -m unittest discover -s tool -p 'test_check_fastlane_changelog_chars.py'
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
       # restore) and the fail-closed restore/vault-mapping tests. Goldens run
@@ -107,9 +107,21 @@ jobs:
       - name: Test (with coverage)
         run: flutter test --coverage --exclude-tags golden
       - name: Calendar-day regressions (two host timezones)
+        # One ordered list, expanded by BOTH runs, so the two timezone matrices
+        # cannot drift apart. Every entry holds a date that a host timezone can
+        # reinterpret: local calendar days, issue dates and the published
+        # issue-date round trip (codec → native detail → publish contract).
         run: |
-          TZ=Asia/Calcutta flutter test test/features/library/domain/value_objects/calendar_date_test.dart test/features/library/domain/catalogue_item_validated_test.dart test/features/periodicals/domain test/features/periodicals/application/add_issue_use_case_test.dart
-          TZ=America/New_York flutter test test/features/library/domain/value_objects/calendar_date_test.dart test/features/library/domain/catalogue_item_validated_test.dart test/features/periodicals/domain test/features/periodicals/application/add_issue_use_case_test.dart
+          TZ_TARGETS="\
+            test/features/library/domain/value_objects/calendar_date_test.dart \
+            test/features/library/domain/catalogue_item_validated_test.dart \
+            test/features/periodicals/domain \
+            test/features/periodicals/application/add_issue_use_case_test.dart \
+            test/features/network/infrastructure/published_catalogue_codec_test.dart \
+            test/features/network/presentation/published_catalogue_item_page_test.dart \
+            test/features/publish/published_catalogue_contract_test.dart"
+          TZ=Asia/Calcutta flutter test $TZ_TARGETS
+          TZ=America/New_York flutter test $TZ_TARGETS
       # N14: coverage RATCHET — total line coverage must not regress below
       # the floor. The repo target is >=90% for domain/application
       # (AGENTS.md §10); this whole-suite floor is the enforceable minimum

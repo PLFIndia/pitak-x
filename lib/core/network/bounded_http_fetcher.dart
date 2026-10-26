@@ -23,6 +23,10 @@
 /// so a redirect can
 /// never carry the request to a non-allow-listed host.
 ///
+/// Callers may also pass their OWN abort signal (`fetch(url, abortTrigger:)`),
+/// used by the published-catalogue viewer so closing the screen closes the
+/// socket. It chains into the same single abort completer as the deadline.
+///
 /// The outcome is a sealed [BoundedFetchOutcome]: bytes, or a coarse
 /// [FetchRefusal] naming WHICH defence refused. The reason is a developer
 /// diagnostic and never carries the URL.
@@ -95,7 +99,18 @@ final class BoundedHttpFetcher {
 
   /// Fetches [rawUrl]. Never throws for expected failures: every refusal,
   /// timeout or transport fault is a [FetchRefused].
-  Future<BoundedFetchOutcome> fetch(String rawUrl) async {
+  ///
+  /// [abortTrigger] is an optional CALLER abort signal (viewer plan S2): when
+  /// the future completes, the in-flight request is torn down exactly as the
+  /// internal deadline would tear it down. A screen that closes mid-fetch
+  /// passes its disposal future here, so leaving the screen closes the socket
+  /// instead of merely ignoring the bytes that keep arriving. The caller's
+  /// trigger never completes on a normal success — the fetch finishes first —
+  /// so an uncompleted trigger has no cost beyond one listener.
+  Future<BoundedFetchOutcome> fetch(
+    String rawUrl, {
+    Future<void>? abortTrigger,
+  }) async {
     // (1) ORIGIN: allow-list first — a poisoned URL is dropped before any
     // network call, so the device never reveals that it holds such a URL.
     final safe = sanitize(rawUrl);
@@ -106,6 +121,15 @@ final class BoundedHttpFetcher {
     // also flips `expired` so the catch below can name the reason.
     final abort = Completer<void>();
     var expired = false;
+    // A caller's abort chains into the SAME completer: one signal, whichever
+    // reason fires first, and no second cancellation path to keep in sync.
+    if (abortTrigger != null) {
+      unawaited(
+        abortTrigger.whenComplete(() {
+          if (!abort.isCompleted) abort.complete();
+        }),
+      );
+    }
     final deadline = Timer(timeout, () {
       expired = true;
       abort.complete();
@@ -190,7 +214,10 @@ final class BoundedHttpFetcher {
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       _discard(response);
-      return const FetchRefused(FetchRefusal.httpStatus);
+      return FetchRefused(
+        FetchRefusal.httpStatus,
+        statusCode: response.statusCode,
+      );
     }
 
     // Early reject on an honest Content-Length; still verified byte-by-byte
