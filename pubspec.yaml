@@ -117,7 +117,7 @@ dependencies:
   # the hardware-stored secret S; the vault key (MK) never passes through it and
   # the user passphrase is never stored. Paired with flutter_secure_storage
   # (already a dep) which holds S in the Keystore/Keychain.
-  local_auth: ^2.3.0
+  local_auth: ^3.0.2
   # Local FFI plugin: cross-compiles + bundles the pitak_crypto Rust core
   # (Argon2id/AES-GCM vault unlock). cargokit runs cargo during the native build.
   rust_lib_pitaka:
