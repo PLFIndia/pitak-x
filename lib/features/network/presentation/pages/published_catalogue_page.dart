@@ -170,7 +170,7 @@ class _PublishedCataloguePageState
       );
     }
     if (state.isLoading) return _loadingBody(context);
-    return _errorBody(context, state.error);
+    return _errorBody(state.error);
   }
 
   Widget _loadingBody(BuildContext context) {
@@ -198,12 +198,11 @@ class _PublishedCataloguePageState
     );
   }
 
-  Widget _errorBody(BuildContext context, Object? error) =>
-      PublishedCatalogueErrorView(
-        error: error,
-        onRetry: _reload,
-        onOpenBrowser: _openBrowser,
-      );
+  Widget _errorBody(Object? error) => PublishedCatalogueErrorView(
+    error: error,
+    onRetry: _reload,
+    onOpenBrowser: _openBrowser,
+  );
 
   Widget _buildCatalogue(
     BuildContext context,
@@ -283,7 +282,6 @@ class _PublishedCataloguePageState
           ),
         ),
         ..._contentSlivers(
-          context,
           catalogue,
           view,
           loadingView,
@@ -296,7 +294,6 @@ class _PublishedCataloguePageState
   }
 
   List<Widget> _contentSlivers(
-    BuildContext context,
     PublishedCatalogue catalogue,
     PublishedCatalogueView? view,
     bool loadingView, {
