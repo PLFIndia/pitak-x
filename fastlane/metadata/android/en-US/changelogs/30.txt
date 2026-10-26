@@ -1,0 +1,4 @@
+* Saved libraries now open inside Pitak: search, filter, sort and read catalogue details.
+* Covers load only with your existing permission; viewing is read-only and never changes your library.
+* Share Apps in the drawer shares Pitak's Play Store link.
+* More apps will appear in the same Share Apps panel as they become available.

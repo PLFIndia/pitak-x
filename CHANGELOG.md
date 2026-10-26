@@ -14,7 +14,17 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10 (tag `1.7.0`, versionCode 30)
+
+Linux viewer goldens and the complete CI matrix passed in run `40270852722`.
+
+Release sentinel (`tool/release_build.sh --sentinel`): `Share Apps`.
+
 ### Added
+- **Share Apps:** a drawer entry above Settings opens a scrollable panel that
+  starts with Pitak only — its real icon and a native OS share of the Play
+  Store listing. Future apps need one validated catalog entry each; there are
+  no placeholder rows and no new dependency.
 - **Native published-catalogue viewer** (ADR 0015, plan `appViewer_plan.md`):
   tapping any saved Library-network row (bookmark, card or discovered) opens
   that library's published `books.json` in a read-only Flutter page instead of

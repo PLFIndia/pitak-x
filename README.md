@@ -9,9 +9,9 @@ to GitHub Pages with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
-> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.6.0+29**
-> (`pubspec.yaml`). The 1.6.0 release commit is prepared; TalkBack and the
-> store/tag/F-Droid follow-up remain (see `docs/plans/otherDetails.md`).
+> **Google Play** (`dev.khoj.pitaka`). Current source version is **1.7.0+30**
+> (`pubspec.yaml`). The 1.7.0 release candidate is prepared; manual
+> device/TalkBack and store/tag/F-Droid follow-up remain.
 > F-Droid builds from signed tags on its own schedule, so its index may lag by
 > a release.
 >

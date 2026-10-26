@@ -98,7 +98,7 @@ jobs:
       # L6: exercise the actual release files and the Unicode/boundary cases.
       - name: Fastlane changelog character limit
         run: |
-          python3 tool/check_fastlane_changelog_chars.py 29
+          python3 tool/check_fastlane_changelog_chars.py 30
           python3 -m unittest discover -s tool -p 'test_check_fastlane_changelog_chars.py'
       # Includes the migration matrix (all 25 book + 16 wishlist columns survive
       # restore) and the fail-closed restore/vault-mapping tests. Goldens run
