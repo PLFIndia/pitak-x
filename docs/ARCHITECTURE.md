@@ -41,8 +41,9 @@ openlibrary.org and Google Books (ISBN lookup); api.github.com (publish,
 device-flow OAuth); remote covers (opt-in, host allow-listed); `library.json`
 fetches from saved and discovered libraries (Refresh only);
 tile.openstreetmap.org (map, remembered opt-in, only while the map is open).
-Publishing also performs a bounded public `books.json` read-back: up to 12
-cache-busted GETs, five seconds apart, to verify the live bytes. Play builds
+Publishing also performs a bounded public read-back: up to 12 cache-busted
+GETs, five seconds apart, of the file it just wrote (`books.json` for the
+catalogue, `events.json` for the events page), to verify the live bytes. Play builds
 check for an update once per launch and start Play's flexible-update flow;
 after the user accepts Play's dialog, the Store downloads in the background.
 The F-Droid flavor has no Play Core/update library and cannot run that check.
@@ -288,6 +289,11 @@ SHA-256 of the ID. Input must pass `LibraryId.normalizeOrNull` first.
   the hub "Add member" screen with a clear message — a scan can never adopt
   someone's ID by accident.
 - QR error-correction level M.
+- The `siteUrl` in a card is the journal's **verified** target
+  (`publish_host_state`), never a manifest's `repo` and never a configured but
+  unproven address: a failed publish must not move the address a printed card
+  points at. A legacy install is migrated once by proving the site serves the
+  `books.json` sha its manifest recorded.
 
 ### 5.4 Application database (Drift; `lib/core/database/app_database.dart`)
 

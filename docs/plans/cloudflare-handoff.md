@@ -1,8 +1,8 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–44).
-- **Branch:** `cloudflare`, seven commits on top of `main` at `e8c4d8e`:
+  its Part M now carries every session's deviation rows 34–48).
+- **Branch:** `cloudflare`, nine commits on top of `main` at `e8c4d8e`:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -13,6 +13,8 @@
   | `39469e5` | S3 (docs) | Part M rows 41–42, this handoff |
   | `e8fe497` | S4 (part 1) | `core/async/serial_op_queue.dart`, `core/security/hardened_secure_storage.dart` used by all four secret stores |
   | `c3005d1` | S4 (part 2) | Sealed `PublishTarget`/`GitHubPublishTarget`; the descriptor URL comes from the operation's target |
+  | `0f509fa` | S4 (part 3) | Schema-2 publish record, typed tree reconciliation, expected-head commits, atomic typed saves, `deployed`→`live` |
+  | `f865361` | S4 (part 4) | `PublishHostState` journal + `PrefsPublishHostStore`, read-back-gated migration, the share URL comes from it |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -210,7 +212,7 @@ group, add-member page flow, network page flow (accept + dismiss).
 
 ### 4.4 S4 — what shipped, and what is deliberately still open
 
-**Shipped (two commits, `e8fe497` + `c3005d1`):**
+**Shipped (four commits: `e8fe497`, `c3005d1`, `0f509fa`, `f865361`):**
 
 1. **`core/async/serial_op_queue.dart`** — the vault's FIFO moved out of the
    vault feature (publishing must not import vault) and its doc now names both
@@ -226,25 +228,47 @@ group, add-member page flow, network page flow (accept + dismiss).
    builds the descriptor for it (C3/R1). The controller resolves it once from
    local credentials.
 
+**Shipped since (parts 3–4):**
+
+3. **Schema-2 publish record + reconciliation (R5/R6).** `PublishManifest`
+   carries `repo`, `branch`, `headSha`, `ownershipConfirmed` and `state`
+   (`deployed`/`live`/`retired`). `GitHubTreeSnapshot` replaced the
+   `headTreeShas` map: a missing branch, a malformed body or a truncated
+   listing is a typed failure, never `{}`. `GitHubPublicationReconciler` is the
+   one read step both publishes use; every claimed sha comes from the tree, a
+   record that does not describe the same repo+branch claims nothing, and tree
+   paths this phone did not write are never adopted (so a later drop cannot
+   delete a human's file).
+4. **Atomic typed saves (R9).** `FilePublishManifestStore.save` writes a temp
+   file, renames it over the record, and returns `Either`. A landed commit
+   whose record could not be saved reports `localStateSaved: false` instead of
+   "Published!".
+5. **Expected-head commits.** `commitFiles(expectedHead:)` compares the head
+   before uploading a single blob and returns `PublishCommitStale`; `force:
+   false` stays mandatory.
+6. **`publish_host_state` journal (R33).** One prefs key holds `activeHost` +
+   `verifiedTarget`; `publishedSiteUrlProvider` reads it, and both publishes
+   record the target only after their read-back proves the site. A legacy
+   install is migrated ONCE with a bounded read-back of `books.json` against
+   the sha its manifest recorded. `PrefsPublishHostStore` rebuilds the sealed
+   target from its identity parts and refuses a stored URL that disagrees with
+   the derived one (C3).
+
 **Still open in S4 (in dependency order):**
 
-1. **Schema-2 GitHub manifest + reconciliation (R5/R6).** `repo`, `branch`,
-   `headSha`, `ownershipConfirmed`, `state`, file shas and cover-source
-   metadata; legacy manifests rebuilt from a typed head/tree snapshot; branch
-   and head match required before merging. The target then gains its
-   `expectedBranch` (deviation row 43).
-2. **Atomic typed saves (R9).** Temp-then-rename with a typed result; a failed
-   save is reported, never swallowed.
-3. **Expected-head commits.** `commitFiles(expectedHead:)`; a mismatch is a
-   typed stale failure, `force: false` stays mandatory.
-4. **`publish_host_state` journal** (one prefs key, no tokens) with
-   `activeHost`, `verifiedTarget` and `pendingMove`, plus the
-   `publishedSiteUrlProvider` switch to `verifiedTarget` (R33): migrate only
-   after one bounded read-back.
-5. **The events publish still resolves `targetRepo()` itself** — give it an
+1. **F.4 step 2's pre-deploy check** (deviation row 48): a `deployed` head is
+   recorded truthfully but does not block the next publish yet. It belongs with
+   the journal's "Retry verification" command (D.3), together with the
+   unreadable-vs-contradictory rule that keeps a flaky phone from deadlocking.
+2. **`pendingMove` in the journal.** The record is schema 1 with
+   `activeHost` + `verifiedTarget`; the move's phase and the exact old/new
+   targets are added by S9 (absent field = no move, so no migration).
+3. **The events publish still resolves `targetRepo()` itself** — give it an
    explicit target when the move commands land, so both publishes are
-   target-driven.
-6. **The R4 digest** (§3.4 above) and the move/replacement commands (S9).
+   target-driven. (It already builds a `GitHubPublishTarget` from it, so the
+   descriptor/read-back/commit are all target-driven; only the *source* of the
+   repo string is still the credential store.)
+4. **The R4 digest** (§3.4 above) and the move/replacement commands (S9).
 
 ### 4.5 Still open from S3
 
@@ -285,7 +309,7 @@ behavior become load-bearing.
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
-| S4 (remainder) | — | Schema-2 GitHub manifest + legacy branch/head reconciliation, atomic typed saves, expected-head commits, `publish_host_state` journal + `verifiedTarget` migration, events publish given an explicit target. Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget` (§4.4) |
+| S4 (remainder) | — | Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget`, schema-2 record + tree reconciliation, atomic typed saves, expected-head commits, the host journal + read-back-gated migration. Left: F.4 step 2's pre-deploy check (with the journal's retry command), `pendingMove` (S9), the events publish's explicit target (§4.4) |
 | S5 | — (independent of S2) | Cloudflare pure domain: token/account/worker/subdomain/URL value objects, `SitePath`, asset hash vectors, content types, schema-2 Cloudflare manifest + `hashScheme`, marker value object, limits |
 | S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |
 | S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
@@ -320,9 +344,23 @@ goal is "as much as possible without credentials", stop after S5.
 - **One builder wiring.** `publishSnapshotBuilderProvider` is the only place
   that assembles the section builders and the `books.json` encoder. A second
   wiring is how two hosts start publishing different bytes.
+- **The record is not a cache.** `PublishManifest` schema 2 decides which
+  public files survive: shas come from the remote tree, and a path this phone
+  did not write is never adopted or deleted. Do not reintroduce a
+  "useful anyway, it only causes extra uploads" shortcut for the shas.
+- **One reconciliation step.** Both publishes read the tree through
+  `GitHubPublicationReconciler`; a second read/rebuild path is how two
+  publishes start disagreeing about which files they own.
+- **The share address comes from the journal, not the manifest.** A publish
+  must not be able to move the advertised address to a site it has not proven.
+  The journal write is lazy on purpose: a publish that fails while reading the
+  library must not open prefs.
+- **A failed save is reported.** `PublishManifestGateway.save` and the journal
+  store return `Either`; "Published!" with an unrecorded commit is the bug
+  they exist to prevent.
 - **Ratchet:** no new allow-list entry. If an addition pushes a file over 500
-  lines, split it (that is how `refresh_run.dart` and the three `site/` files
-  came to exist).
+  lines, split it (that is how `refresh_run.dart`, the three `site/` files,
+  `http_github_tree.dart` and `publish_status_copy.dart` came to exist).
 - **Domain purity:** `core/network/workers_dev_url.dart` is on the purity
   allow-list because it is pure label parsing. Do not add IO-bearing core files
   to that list.
@@ -346,7 +384,14 @@ goal is "as much as possible without credentials", stop after S5.
    from it.
 5. **The plan's `tool/cloudflare_trial/` does not exist**, so S2 cannot be
    executed today; a successor must write it first.
-6. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
+6. **F.4 step 2 is not implemented** (deviation row 48): a `deployed` record
+   does not block the next publish, so a commit whose read-back never landed can
+   still be built on. The record stays truthful (`deployed`) and the fix belongs
+   with the "Retry verification" command.
+7. **The journal has no `pendingMove` yet** — schema 1 carries `activeHost` +
+   `verifiedTarget` only. S9 adds the field; an absent field must keep meaning
+   "no move" rather than requiring a migration.
+8. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
    library ever publishes under a path (it cannot, per B.1), that assumption
    changes.
 
@@ -371,6 +416,15 @@ events_section_builder,publish_snapshot_builder}.dart`.
 `lib/core/async/serial_op_queue.dart` (moved from `features/vault/application/`),
 `lib/core/security/hardened_secure_storage.dart`,
 `lib/features/publish/domain/publish_target.dart`.
+
+**New — publish (S4, parts 3–4)**
+`lib/features/publish/application/{github_publication_reconciler,
+publish_status_copy}.dart`,
+`lib/features/publish/application/site/{published_file_read_back,
+publish_host_state_repository}.dart`,
+`lib/features/publish/domain/site/{publish_host,publish_host_state}.dart`,
+`lib/features/publish/infrastructure/{github_http_support,http_github_tree,
+prefs_publish_host_store}.dart`.
 
 **New — presentation/docs (S0)**
 `lib/features/publish/presentation/widgets/{github_tile,cloudflare_tile,
