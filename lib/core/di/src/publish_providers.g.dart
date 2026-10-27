@@ -353,13 +353,61 @@ final publishManifestStoreProvider =
 // ignore: unused_element
 typedef PublishManifestStoreRef =
     AutoDisposeFutureProviderRef<PublishManifestGateway>;
-String _$publishedSiteUrlHash() => r'b1c5668f3b27c7f3570b9d5cf877fac1410f06c7';
+String _$publishHostStateStoreHash() =>
+    r'daee9bc28bd86ab5f6674152a951164c773a6c3c';
 
-/// The live URL of the user's published library site, or null when nothing
-/// has been published yet. Derived from the publish manifest's `repo` field,
-/// which is only written AFTER a successful publish — so this is null for a
-/// repo that was created but never published. Public data (the URL is the
-/// whole point); no secrets involved.
+/// The host journal's storage (E.5): ONE prefs key, no tokens.
+///
+/// Copied from [publishHostStateStore].
+@ProviderFor(publishHostStateStore)
+final publishHostStateStoreProvider =
+    AutoDisposeFutureProvider<PublishHostStateStore>.internal(
+      publishHostStateStore,
+      name: r'publishHostStateStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishHostStateStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishHostStateStoreRef =
+    AutoDisposeFutureProviderRef<PublishHostStateStore>;
+String _$publishHostStateRepositoryHash() =>
+    r'81f8d97a4ac657d84de96bad54ac963647eb32ec';
+
+/// The journal's rules: the verified site address, its legacy migration and
+/// the write a successful publish is allowed to make (R33).
+///
+/// Copied from [publishHostStateRepository].
+@ProviderFor(publishHostStateRepository)
+final publishHostStateRepositoryProvider =
+    AutoDisposeFutureProvider<PublishHostStateRepository>.internal(
+      publishHostStateRepository,
+      name: r'publishHostStateRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishHostStateRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishHostStateRepositoryRef =
+    AutoDisposeFutureProviderRef<PublishHostStateRepository>;
+String _$publishedSiteUrlHash() => r'65d136de2503cd25c99a9aa9a567005f62d60d85';
+
+/// The address to share/QR, or null when no site of this library is VERIFIED
+/// live.
+///
+/// Deliberately not derived from the manifest (deviation 33): a manifest says
+/// what one publish wrote, and a failed publish would silently move the share
+/// address to a site that is not serving the library. The journal only gains a
+/// target after a read-back proves it, and an older install is migrated once
+/// with the same proof.
 ///
 /// Copied from [publishedSiteUrl].
 @ProviderFor(publishedSiteUrl)

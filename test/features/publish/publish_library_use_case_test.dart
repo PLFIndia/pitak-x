@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
+
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
@@ -17,6 +18,7 @@ import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
@@ -89,6 +91,19 @@ class _FakeVerifier implements PublishedSiteVerifier {
   }) {
     calls.add((siteUrl, path, cacheBuster));
     return answer(siteUrl, path);
+  }
+}
+
+/// Records the verified-target writes a publish is allowed to make (R33).
+class _Recorder implements PublishHostStateRecorder {
+  final List<PublishTarget> recorded = [];
+  bool fails = false;
+
+  @override
+  Future<Either<Failure, Unit>> recordVerified(PublishTarget target) async {
+    if (fails) return left(const StorageFailure('journal write'));
+    recorded.add(target);
+    return right(unit);
   }
 }
 
@@ -361,6 +376,7 @@ void main() {
     GitHubGitDataApi api,
     PublishManifestGateway manifest, {
     PublishedSiteVerifier? verifier,
+    PublishHostStateRecorder? hostState,
     PublishCredentialReader? credentials,
     LocalCoverReader? readLocalCover,
     RemoteCoverFetcher? fetchRemoteCover,
@@ -413,6 +429,7 @@ void main() {
             activeLoanCounts: activeLoanCounts,
             libraryJson: libraryJson,
           ),
+      hostState: hostState ?? _Recorder(),
       verifier: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,

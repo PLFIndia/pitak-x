@@ -16,6 +16,7 @@
 library;
 
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// The sealed base of every publish destination.
 sealed class PublishTarget {
@@ -24,6 +25,9 @@ sealed class PublishTarget {
   /// Canonical public root of the site (always ends in `/`), derived from the
   /// validated parts — never supplied by a caller.
   String get siteUrl;
+
+  /// Which host serves this site (`github` | `cloudflare`).
+  PublishHost get host;
 
   /// Stable identity of this destination, persisted in the host journal and
   /// the manifest. No token, no ephemeral id.
@@ -69,6 +73,9 @@ final class GitHubPublishTarget extends PublishTarget {
 
   @override
   final String siteUrl;
+
+  @override
+  PublishHost get host => PublishHost.github;
 
   @override
   String get targetId => 'github:$ownerRepo';

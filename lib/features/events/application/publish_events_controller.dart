@@ -9,6 +9,7 @@ library;
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/events/application/events_controller.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -59,6 +60,10 @@ class PublishEventsController extends _$PublishEventsController {
       buildEventsHtml: (posters) =>
           buildEventsHtml(libraryName: settings.libraryName, posters: posters),
       buildEventsJson: buildEventsJson,
+      // Lazy: opened only once a read-back proves the page is served (R33).
+      hostState: LazyPublishHostStateRecorder(
+        () => ref.read(publishHostStateRepositoryProvider.future),
+      ),
       verifier: verifier,
     );
 

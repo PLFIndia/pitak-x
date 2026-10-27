@@ -32,6 +32,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -70,6 +71,7 @@ final class PublishLibraryUseCase {
     required PublishManifestGateway manifest,
     required PublishSnapshotBuilder snapshotBuilder,
     required PublishReads reads,
+    required PublishHostStateRecorder hostState,
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
@@ -78,6 +80,7 @@ final class PublishLibraryUseCase {
        _manifest = manifest,
        _snapshotBuilder = snapshotBuilder,
        _reads = reads,
+       _hostState = hostState,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -94,6 +97,10 @@ final class PublishLibraryUseCase {
 
   /// Strict typed reads the snapshot is built from (R2).
   final PublishReads _reads;
+
+  /// Records the verified live target after a read-back proves it (R33). The
+  /// share/QR address never comes from this publish's own manifest.
+  final PublishHostStateRecorder _hostState;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
@@ -248,7 +255,7 @@ final class PublishLibraryUseCase {
           mergedShas: merge.fileShas,
           coverUrlByBookId: section.coverUrlByKey,
         );
-        final localStateSaved = _manifest.save(committed).isRight();
+        var localStateSaved = _manifest.save(committed).isRight();
 
         phase(PublishPhase.pagesBuilding);
         // Bounded read-back: poll the LIVE books.json with a cache-buster
@@ -263,10 +270,15 @@ final class PublishLibraryUseCase {
           revision: now,
         );
         if (pagesLive ?? false) {
-          // Proven live ⇒ upgrade the record (R5). A failed upgrade is not
-          // reported: the stored record stays `deployed`, which is the truth
-          // (the commit landed, its verification did not finish) and the next
-          // publish re-verifies it before building on it.
+          // Proven live ⇒ the journal may now claim this address (R33). This
+          // is the ONLY place the share/QR address is set by the catalogue
+          // path, and it happens after the proof, never before.
+          localStateSaved =
+              (await _hostState.recordVerified(target)).isRight() &&
+              localStateSaved;
+          // The manifest upgrade is not reported on its own: a failure leaves
+          // the record `deployed`, which is the truth (the commit landed, its
+          // verification did not finish) and the next publish re-verifies it.
           _manifest.save(committed.asLive());
         }
         return PublishSuccess(

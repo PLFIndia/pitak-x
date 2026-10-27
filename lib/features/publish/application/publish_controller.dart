@@ -23,6 +23,7 @@ import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -95,6 +96,11 @@ class PublishController extends _$PublishController implements PublishReads {
       manifest: manifest,
       snapshotBuilder: builder,
       reads: this,
+      // Lazy: the journal is only opened once a read-back proves the site is
+      // live (R33), never before the strict reads.
+      hostState: LazyPublishHostStateRecorder(
+        () => ref.read(publishHostStateRepositoryProvider.future),
+      ),
       verifier: verifier,
     );
 

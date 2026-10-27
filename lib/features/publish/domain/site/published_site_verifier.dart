@@ -36,3 +36,12 @@ abstract interface class PublishedSiteVerifier {
     String? cacheBuster,
   });
 }
+
+/// Byte cap for a publish read-back of the machine-readable catalogue
+/// (`books.json`).
+///
+/// Mirrors the viewer's interchange cap: a bigger body could never be a valid
+/// catalogue for any peer, so reading past it proves nothing. The value is
+/// pinned against `PublishedCatalogueCodec.defaultMaxBodyBytes` by a test, so
+/// the two copies cannot drift.
+const int publishedCatalogueReadBackMaxBytes = 64 * 1024 * 1024;

@@ -21,12 +21,14 @@ import 'package:pitaka/features/periodicals/domain/repositories/periodical_repos
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
@@ -621,6 +623,10 @@ class _Harness {
           PublishCoverIds(_Salt(coverSalt ? const [1, 2, 3, 4] : null)),
         ),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
+        // R33: the journal is in memory here. Without this override the real
+        // prefs-backed store would be built, and a widget test has no
+        // platform storage channel to answer it.
+        publishHostStateStoreProvider.overrideWith((ref) async => hostState),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         if (networkUnavailable)
           networkRepositoryProvider.overrideWith(
@@ -696,6 +702,7 @@ class _Harness {
   final api = _Api();
   final credentials = _Credentials();
   final manifest = _Manifest();
+  final hostState = _HostState();
   final settings = _Settings();
   final network = _Network();
   late final ProviderContainer container;
@@ -842,6 +849,20 @@ class _Credentials implements PublishCredentialStore {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected credential write');
+}
+
+/// In-memory host journal: records every write the publish path makes (R33).
+class _HostState implements PublishHostStateStore {
+  PublishHostState? stored;
+
+  @override
+  PublishHostState? load() => stored;
+
+  @override
+  Future<Either<Failure, Unit>> save(PublishHostState state) async {
+    stored = state;
+    return right(unit);
+  }
 }
 
 class _Manifest implements PublishManifestGateway {

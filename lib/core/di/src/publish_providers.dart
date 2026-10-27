@@ -27,10 +27,10 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -45,6 +45,7 @@ import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart'
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
+import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
@@ -261,15 +262,36 @@ Future<PublishManifestGateway> publishManifestStore(
   return FilePublishManifestStore(baseDir: dir.path);
 }
 
-/// The live URL of the user's published library site, or null when nothing
-/// has been published yet. Derived from the publish manifest's `repo` field,
-/// which is only written AFTER a successful publish — so this is null for a
-/// repo that was created but never published. Public data (the URL is the
-/// whole point); no secrets involved.
+/// The host journal's storage (E.5): ONE prefs key, no tokens.
+@riverpod
+Future<PublishHostStateStore> publishHostStateStore(
+  PublishHostStateStoreRef ref,
+) async =>
+    PrefsPublishHostStore(await ref.watch(sharedPreferencesProvider.future));
+
+/// The journal's rules: the verified site address, its legacy migration and
+/// the write a successful publish is allowed to make (R33).
+@riverpod
+Future<PublishHostStateRepository> publishHostStateRepository(
+  PublishHostStateRepositoryRef ref,
+) async => PublishHostStateRepository(
+  store: await ref.watch(publishHostStateStoreProvider.future),
+  manifest: await ref.watch(publishManifestStoreProvider.future),
+  verifier: ref.watch(publishedSiteVerifierProvider),
+);
+
+/// The address to share/QR, or null when no site of this library is VERIFIED
+/// live.
+///
+/// Deliberately not derived from the manifest (deviation 33): a manifest says
+/// what one publish wrote, and a failed publish would silently move the share
+/// address to a site that is not serving the library. The journal only gains a
+/// target after a read-back proves it, and an older install is migrated once
+/// with the same proof.
 @riverpod
 Future<String?> publishedSiteUrl(PublishedSiteUrlRef ref) async {
-  final store = await ref.watch(publishManifestStoreProvider.future);
-  return githubPagesUrlFor(store.load().repo);
+  final repository = await ref.watch(publishHostStateRepositoryProvider.future);
+  return repository.verifiedSiteUrl();
 }
 
 /// Remembers which look the user last chose for the library share card

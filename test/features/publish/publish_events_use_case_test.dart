@@ -7,6 +7,7 @@ import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -14,8 +15,22 @@ import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
+
+/// Records the verified-target writes a publish is allowed to make (R33).
+class _Recorder implements PublishHostStateRecorder {
+  final List<PublishTarget> recorded = [];
+  bool fails = false;
+
+  @override
+  Future<Either<Failure, Unit>> recordVerified(PublishTarget target) async {
+    if (fails) return left(const StorageFailure('journal write'));
+    recorded.add(target);
+    return right(unit);
+  }
+}
 
 /// Answers read-back polls from a script; records the paths it was asked for.
 class _FakeVerifier implements PublishedSiteVerifier {
@@ -166,6 +181,7 @@ void main() {
     PublishCredentialReader? creds,
     PosterBytesReader? readPoster,
     PublishedSiteVerifier? verifier,
+    PublishHostStateRecorder? hostState,
   }) {
     // R6: the fake remote starts as what this phone recorded (see the
     // catalogue suite for the same rule).
@@ -183,6 +199,7 @@ void main() {
       buildEventsHtml: (posters) async =>
           utf8.encode('<html>${posters.length} posters</html>'),
       buildEventsJson: const EventsJsonBuilder().build,
+      hostState: hostState ?? _Recorder(),
       verifier: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
@@ -535,16 +552,17 @@ void main() {
 
     test('R5: read-back upgrades the record to live', () async {
       final api = _CapturingApi();
-      late _FakeVerifier verifier;
-      verifier = _FakeVerifier(
+      final verifier = _FakeVerifier(
         (_, _) async =>
             api.committed!.firstWhere((f) => f.path == 'events.json').bytes,
       );
       final manifest = _MemManifest(published());
+      final recorder = _Recorder();
       await make(
         api: api,
         manifest: manifest,
         verifier: verifier,
+        hostState: recorder,
       ).call(twoPosters());
 
       expect(verifier.paths, everyElement('events.json'));
@@ -552,6 +570,8 @@ void main() {
         PublishManifestState.deployed,
         PublishManifestState.live,
       ]);
+      // R33: the events publish also proves the address it may claim.
+      expect(recorder.recorded.single.siteUrl, 'https://me.github.io/lib/');
     });
 
     test('R5: an unproven read-back leaves the record deployed', () async {

@@ -31,6 +31,7 @@ import 'package:pitaka/features/publish/application/github_publication_reconcile
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
@@ -95,6 +96,7 @@ final class PublishEventsUseCase {
     required PosterBytesReader readPoster,
     required EventsHtmlBuilderFn buildEventsHtml,
     required EventsJsonFactory buildEventsJson,
+    required PublishHostStateRecorder hostState,
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
@@ -106,6 +108,7 @@ final class PublishEventsUseCase {
          buildEventsHtml: buildEventsHtml,
          buildEventsJson: buildEventsJson,
        ),
+       _hostState = hostState,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -114,6 +117,9 @@ final class PublishEventsUseCase {
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final EventsSectionBuilder _section;
+
+  /// Records the verified live target after a read-back proves it (R33).
+  final PublishHostStateRecorder _hostState;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
@@ -245,7 +251,7 @@ final class PublishEventsUseCase {
           mergedShas: merge.fileShas,
           coverUrlByBookId: manifest.coverUrlByBookId,
         );
-        final localStateSaved = _manifest.save(committed).isRight();
+        var localStateSaved = _manifest.save(committed).isRight();
 
         // F.4 step 7: an accepted commit is not proof that the page is served.
         // Verify the machine-readable section (always present — a publish with
@@ -268,6 +274,10 @@ final class PublishEventsUseCase {
                 revision: now,
               );
           if (live ?? false) {
+            // Proven live ⇒ the journal may claim this address (R33).
+            localStateSaved =
+                (await _hostState.recordVerified(target)).isRight() &&
+                localStateSaved;
             // A failed upgrade leaves `deployed`, which is the truth (R5).
             _manifest.save(committed.asLive());
           }
