@@ -21,7 +21,7 @@ import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
-    show PublishManifestGateway, PublishedFileFetcher, RemoteCoverFetcher;
+    show PublishManifestGateway, RemoteCoverFetcher;
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -31,7 +31,9 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
+import 'package:pitaka/features/publish/infrastructure/bounded_published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
@@ -148,21 +150,12 @@ Future<Future<List<int>?> Function(String)> publishLocalCoverReader(
   return localCoverReader(coversDir);
 }
 
-/// Published-file fetcher for the post-publish read-back (à la Localcart
-/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
-/// failure; the read-back treats that as "not visible yet".
+/// Bounded, origin-bound read-back (R16): no auth, no token, no redirects,
+/// streamed cap, abortable deadline. Null on any refusal — the read-back
+/// treats that as "not visible yet".
 @riverpod
-PublishedFileFetcher publishedFileFetcher(PublishedFileFetcherRef ref) {
-  final client = ref.watch(httpClientProvider);
-  return (url) async {
-    try {
-      final resp = await client.get(Uri.parse(url));
-      return resp.statusCode == 200 ? resp.bodyBytes : null;
-    } on Exception {
-      return null;
-    }
-  };
-}
+PublishedSiteVerifier publishedSiteVerifier(PublishedSiteVerifierRef ref) =>
+    BoundedPublishedSiteVerifier(client: ref.watch(httpClientProvider));
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
 /// effect, so it lives behind this seam) and substitutes the library values.

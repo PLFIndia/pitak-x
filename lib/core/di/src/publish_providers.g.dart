@@ -190,29 +190,30 @@ final publishLocalCoverReaderProvider =
 // ignore: unused_element
 typedef PublishLocalCoverReaderRef =
     AutoDisposeFutureProviderRef<Future<List<int>?> Function(String)>;
-String _$publishedFileFetcherHash() =>
-    r'2e06db835520facdf9a4b173f72cea48e65d2ef4';
+String _$publishedSiteVerifierHash() =>
+    r'5df7f558016575d591ad256caa98af05dc356761';
 
-/// Published-file fetcher for the post-publish read-back (à la Localcart
-/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
-/// failure; the read-back treats that as "not visible yet".
+/// Bounded, origin-bound read-back (R16): no auth, no token, no redirects,
+/// streamed cap, abortable deadline. Null on any refusal — the read-back
+/// treats that as "not visible yet".
 ///
-/// Copied from [publishedFileFetcher].
-@ProviderFor(publishedFileFetcher)
-final publishedFileFetcherProvider =
-    AutoDisposeProvider<PublishedFileFetcher>.internal(
-      publishedFileFetcher,
-      name: r'publishedFileFetcherProvider',
+/// Copied from [publishedSiteVerifier].
+@ProviderFor(publishedSiteVerifier)
+final publishedSiteVerifierProvider =
+    AutoDisposeProvider<PublishedSiteVerifier>.internal(
+      publishedSiteVerifier,
+      name: r'publishedSiteVerifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$publishedFileFetcherHash,
+          : _$publishedSiteVerifierHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef PublishedFileFetcherRef = AutoDisposeProviderRef<PublishedFileFetcher>;
+typedef PublishedSiteVerifierRef =
+    AutoDisposeProviderRef<PublishedSiteVerifier>;
 String _$viewerHtmlFactoryHash() => r'413b4a5cb4c970060bbcf1dcc9511344c1fbc407';
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side

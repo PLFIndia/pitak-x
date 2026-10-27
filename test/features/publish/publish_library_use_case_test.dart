@@ -19,6 +19,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../../support/raw_catalogue_rows.dart';
 import '../import_export/bundle_test_fixture.dart';
@@ -42,6 +43,25 @@ class _MemManifest implements PublishManifestGateway {
   PublishManifest load() => _m;
   @override
   void save(PublishManifest m) => saved = m;
+}
+
+/// Fake read-back: answers by (siteUrl, path) and records every call so the
+/// tests can assert the origin binding and the cache-buster.
+class _FakeVerifier implements PublishedSiteVerifier {
+  _FakeVerifier(this.answer);
+  final Future<List<int>?> Function(String siteUrl, String path) answer;
+  final List<(String, String, String?)> calls = [];
+
+  @override
+  Future<List<int>?> read({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) {
+    calls.add((siteUrl, path, cacheBuster));
+    return answer(siteUrl, path);
+  }
 }
 
 class _FixedSalt implements PublishCoverSaltStore {
@@ -209,7 +229,7 @@ void main() {
   PublishLibraryUseCase makeUseCase(
     GitHubGitDataApi api,
     PublishManifestGateway manifest, {
-    PublishedFileFetcher? fetchPublishedFile,
+    PublishedSiteVerifier? verifier,
     PublishCredentialReader? credentials,
     LocalCoverReader? readLocalCover,
     RemoteCoverFetcher? fetchRemoteCover,
@@ -223,7 +243,7 @@ void main() {
     fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
     buildViewerHtml:
         buildViewerHtml ?? () async => utf8.encode('<html></html>'),
-    fetchPublishedFile: fetchPublishedFile,
+    verifier: verifier,
     sleep: (_) async {}, // no real waiting in tests
     clock: () => 1000,
   );
@@ -233,20 +253,14 @@ void main() {
       'pagesLive true once the live site serves the published bytes',
       () async {
         final api = _CapturingApi();
-        final polled = <String>[];
+        late _FakeVerifier verifier;
+        verifier = _FakeVerifier((_, _) async {
+          // Poll 1: stale content; poll 2: the bytes just committed.
+          if (verifier.calls.length == 1) return utf8.encode('old');
+          return api.committed!.firstWhere((f) => f.path == 'books.json').bytes;
+        });
         final result =
-            await makeUseCase(
-              api,
-              _MemManifest(),
-              fetchPublishedFile: (url) async {
-                polled.add(url);
-                // Poll 1: stale content; poll 2: the committed bytes.
-                if (polled.length == 1) return utf8.encode('old');
-                return api.committed!
-                    .firstWhere((f) => f.path == 'books.json')
-                    .bytes;
-              },
-            ).call(
+            await makeUseCase(api, _MemManifest(), verifier: verifier).call(
               books: [book()],
               periodicals: const [],
               activeLoanCounts: const {},
@@ -254,13 +268,13 @@ void main() {
               libraryJson: null,
             );
         expect((result as PublishSuccess).pagesLive, isTrue);
-        expect(polled, hasLength(2));
-        // Cache-busted, against the real site URL.
-        expect(
-          polled.first,
-          startsWith('https://me.github.io/lib/books.json?rb='),
-        );
-        expect(polled.first, isNot(equals(polled.last))); // unique busters
+        expect(verifier.calls, hasLength(2));
+        // Origin-bound: the exact site root and the fixed file, never a URL.
+        expect(verifier.calls.first.$1, 'https://me.github.io/lib/');
+        expect(verifier.calls.first.$2, 'books.json');
+        // Cache-busted, with a fresh buster per attempt.
+        expect(verifier.calls.first.$3, isNotNull);
+        expect(verifier.calls.first.$3, isNot(verifier.calls.last.$3));
       },
     );
 
@@ -271,10 +285,10 @@ void main() {
           await makeUseCase(
             _CapturingApi(),
             _MemManifest(),
-            fetchPublishedFile: (_) async {
+            verifier: _FakeVerifier((_, _) async {
               polls++;
               return utf8.encode('never matches');
-            },
+            }),
           ).call(
             books: [book()],
             periodicals: const [],
@@ -291,7 +305,7 @@ void main() {
           await makeUseCase(
             _CapturingApi(),
             _MemManifest(),
-            fetchPublishedFile: (_) async => null,
+            verifier: _FakeVerifier((_, _) async => null),
           ).call(
             books: [book()],
             periodicals: const [],
@@ -316,7 +330,7 @@ void main() {
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
     expect(s.pagesUrl, 'https://me.github.io/lib/');
-    // No fetchPublishedFile wired ⇒ read-back skipped ⇒ unknown liveness.
+    // No verifier wired ⇒ read-back skipped ⇒ unknown liveness.
     expect(s.pagesLive, isNull);
     // books.json + index.html both in the commit.
     final paths = api.committed!.map((f) => f.path).toSet();
@@ -561,16 +575,13 @@ void main() {
 
     test('a user site (me/me.github.io) reports the ROOT address', () async {
       final api = _CapturingApi();
-      final polled = <String>[];
+      final verifier = _FakeVerifier((_, _) async => null);
       final result =
           await makeUseCase(
             api,
             _MemManifest(),
             credentials: _FakeCreds(repo: 'me/me.github.io'),
-            fetchPublishedFile: (url) async {
-              polled.add(url);
-              return null;
-            },
+            verifier: verifier,
           ).call(
             books: [book()],
             periodicals: const [],
@@ -579,8 +590,8 @@ void main() {
             libraryJson: null,
           );
       expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
-      // The read-back polls the same resolved address.
-      expect(polled.first, startsWith('https://me.github.io/books.json?rb='));
+      // The read-back is bound to the same resolved address.
+      expect(verifier.calls.first.$1, 'https://me.github.io/');
     });
   });
 
@@ -1188,10 +1199,12 @@ void main() {
               remoteCoverFetches++;
               return null;
             }),
-            publishedFileFetcherProvider.overrideWithValue((_) async {
-              publishedFileFetches++;
-              return null;
-            }),
+            publishedSiteVerifierProvider.overrideWithValue(
+              _FakeVerifier((_, path) async {
+                publishedFileFetches++;
+                return null;
+              }),
+            ),
             viewerHtmlFactoryProvider.overrideWithValue(({
               required libraryName,
               required contact,

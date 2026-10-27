@@ -25,6 +25,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -600,23 +601,25 @@ class _Harness {
           remoteReads++;
           return null;
         }),
-        publishedFileFetcherProvider.overrideWithValue((url) async {
-          liveReads++;
-          // Routes by URL like the live site: library.json serves the last
-          // committed descriptor (null before the first publish), anything
-          // else is the read-back poll for books.json.
-          if (api.commits.isEmpty) return null;
-          final committed = api.commits.last;
-          if (url.contains('library.json')) {
-            for (final file in committed) {
-              if (file.path == 'library.json') return file.bytes;
+        publishedSiteVerifierProvider.overrideWithValue(
+          _Verifier((path) async {
+            liveReads++;
+            // Routes by PATH like the live site: library.json serves the
+            // last committed descriptor (null before the first publish),
+            // anything else is the read-back poll for books.json.
+            if (api.commits.isEmpty) return null;
+            final committed = api.commits.last;
+            if (path == 'library.json') {
+              for (final file in committed) {
+                if (file.path == 'library.json') return file.bytes;
+              }
+              return null;
             }
-            return null;
-          }
-          return committed
-              .firstWhere((file) => file.path == 'books.json')
-              .bytes;
-        }),
+            return committed
+                .firstWhere((file) => file.path == 'books.json')
+                .bytes;
+          }),
+        ),
         // A clock that ticks a minute per read: two publishes never share a
         // timestamp, so an updatedAt-reuse test is deterministic.
         clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
@@ -740,6 +743,20 @@ class _Events implements EventsRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected event operation');
+}
+
+/// Read-back fake routed by the site-relative path.
+class _Verifier implements PublishedSiteVerifier {
+  _Verifier(this.answer);
+  final Future<List<int>?> Function(String path) answer;
+
+  @override
+  Future<List<int>?> read({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) => answer(path);
 }
 
 class _Credentials implements PublishCredentialStore {

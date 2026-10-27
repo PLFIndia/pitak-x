@@ -13,7 +13,7 @@
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
   `dart format --set-exit-if-changed lib test integration_test` is clean, and
-  the full suite passes (**3511 tests**, golden excluded).
+  the full suite passes (golden excluded).
 - **Nothing Cloudflare-side is shipped yet.** No token capture, no API client,
   no Worker upload. The only Cloudflare-visible code is the reader's
   `workers.dev` URL grammar (S1) — see §5 for why that is deliberate.
@@ -157,32 +157,37 @@ group, add-member page flow, network page flow (accept + dismiss).
   `PreviousPublication` (`shaFor`, `coverSourceFor`, `ownedPaths`), and
   `PublishCoverDecider` now takes that view instead of the GitHub manifest.
 
-### 4.2 Still open in S3 (do these before S4's move work)
+### 4.2 Origin-bound read-back — done in the same session
 
-1. **`BoundedPublishedSiteVerifier`** (R16) — not written yet. It must:
-   - take an unauthenticated `http.Client`;
-   - accept only `<canonical site root><fixed SitePath>`, same origin AND
-     directory, and refuse **all** redirects (build on
-     `BoundedHttpFetcher` with `maxRedirects: 0`);
-   - allow exactly one generated `rb` cache-buster for publish read-back
-     *without* touching `PublishedSiteUrlPolicy.sanitizeForSite` (the viewer's
-     no-query rule must stay);
-   - stream with per-file caps (marker 4 KiB, descriptor 64 KiB, events 64 KiB,
-     catalogue cap) and an abortable total deadline.
-   Suggested home: `domain/site/published_site_verifier.dart` (port) +
-   `infrastructure/bounded_published_site_verifier.dart`. Then switch
-   `PublishLibraryUseCase`'s read-back and (in S4) the journal's
-   `verifiedTarget` migration to it.
-2. **Wire `PublishSnapshotBuilder` into `PublishController`.** The controller
+- `PublishedSiteUrlPolicy.readBackUrl(siteUrl, path, cacheBuster:)` builds the
+  only address a verification may fetch: canonical site root + safe relative
+  path, optionally one `?rb=<token>`. `sanitizeForSite` (the viewer's no-query
+  rule) is untouched and now has a test pinning that.
+- `PublishedSiteVerifier` (domain port) +
+  `BoundedPublishedSiteVerifier` (infrastructure) — unauthenticated client,
+  exact-URL allow-list (so **no** redirect can be followed), streamed cap,
+  abortable deadline, null on every refusal.
+- `PublishLibraryUseCase` read-back now uses it (`siteUrl` + `books.json`,
+  capped at the expected length, fresh buster per attempt), and
+  `PublishController` reads the live descriptor through it too — the previous
+  unbounded `client.get` path is gone.
+- Tests: `test/features/publish/infrastructure/
+  bounded_published_site_verifier_test.dart` (exact URL, cache-buster,
+  redirect refused, over-cap, non-2xx, refused URL never reaches the network)
+  plus the read-back suite in `publish_library_use_case_test.dart`.
+
+### 4.3 Still open in S3 (finish before S4's move work)
+
+1. **Wire `PublishSnapshotBuilder` into `PublishController`.** The controller
    still assembles inputs by hand (`_run` → `_publishBooks`) and the GitHub
    publish still runs in `incremental` mode. Implement `PublishReads` over the
    existing providers (catalogue `getAllForInterchange`, `periodical.listAll`,
    `events.loadStrict`, `libraryJson` assembly, `activeLoanCounts`) and pass
    `PublishMode.complete` for moves/replacements when those commands exist.
-3. **R4 snapshot digest** — deferred to S4 with the confirmation flow. The
-   digest must cover canonical section content + content shas but exclude
-   `exportedAt`/`publishId`, so it must not be a hash of the built bytes alone
-   (`books.json` embeds `exportedAt`).
+2. **R4 snapshot digest** — moved into S4 with the confirmation flow (deviation
+   row 40). The digest must cover canonical section content + content shas but
+   exclude `exportedAt`/`publishId`, so it must not be a hash of the built bytes
+   alone (`books.json` embeds `exportedAt`).
 
 ---
 
@@ -216,7 +221,7 @@ behavior become load-bearing.
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
-| S3 remainder | — | Verifier (§4.2), controller wiring, digest in S4 |
+| S3 remainder | — | Controller wiring to `PublishSnapshotBuilder` (§4.3); digest in S4 |
 | S4 | S3 remainder done | Sealed `PublishTarget`, schema-2 manifests (GitHub **and** Cloudflare), `SerialOpQueue` extraction (`lib/features/vault/application/serial_op_queue.dart` → `core/async/`), `publish_host_state` journal (one prefs key, no tokens), `hardenedSecureStorage()` factory shared by both credential stores, atomic typed manifest saves, expected-head GitHub commits, `verifiedTarget` migration gated on a real read-back |
 | S5 | — (independent of S2) | Cloudflare pure domain: token/account/worker/subdomain/URL value objects, `SitePath`, asset hash vectors, content types, schema-2 Cloudflare manifest + `hashScheme`, marker value object, limits |
 | S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |

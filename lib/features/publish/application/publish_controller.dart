@@ -101,7 +101,9 @@ class PublishController extends _$PublishController {
     // infrastructure directly (§3.1).
     final fetchRemoteCover = ref.read(remoteCoverFetcherProvider);
     final buildViewerHtml = ref.read(viewerHtmlFactoryProvider);
-    final fetchPublishedFile = ref.read(publishedFileFetcherProvider);
+    // Bounded, origin-bound read-back (R16) — used to prove the live site
+    // serves exactly what was published.
+    final verifier = ref.read(publishedSiteVerifierProvider);
     // N14: local-cover file IO arrives via DI (infrastructure), keeping this
     // controller free of dart:io (§3.1).
     final readLocalCover = await ref.read(
@@ -189,8 +191,14 @@ class PublishController extends _$PublishController {
       // the manifest sha and the upload is skipped. A stale/absent/undecodable
       // live copy degrades to "upload anyway" — the safe direction (the
       // manifest's shas come from GitHub's tree, not this CDN read).
-      final liveBytes = await fetchPublishedFile(
-        '${descriptor.siteUrl}${PublishLibraryUseCase.libraryJsonPath}',
+      // Read through the SAME bounded, origin-bound verifier as the publish
+      // read-back (R16): the descriptor is public, capped at its own wire
+      // limit, and never fetched through a redirect.
+      final liveBytes = await verifier.read(
+        siteUrl: descriptor.siteUrl,
+        path: PublishLibraryUseCase.libraryJsonPath,
+        maxBytes: 64 * 1024,
+        cacheBuster: '${ref.read(clockProvider)()}',
       );
       final live = liveBytes == null
           ? null
@@ -219,7 +227,7 @@ class PublishController extends _$PublishController {
       credentials: credentials,
       manifest: manifest,
       coverIds: coverIds,
-      fetchPublishedFile: fetchPublishedFile,
+      verifier: verifier,
       readLocalCover: readLocalCover,
       fetchRemoteCover: fetchRemoteCover,
       buildViewerHtml: () => buildViewerHtml(

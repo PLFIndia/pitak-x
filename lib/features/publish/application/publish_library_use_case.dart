@@ -38,6 +38,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
 // The cover-IO typedefs live with the decider since S20 (plan magazines);
@@ -63,10 +64,6 @@ enum PublishPhase {
   pagesBuilding,
 }
 
-/// Fetches a PUBLIC published file's bytes from [url] (no auth), or null on
-/// any failure. Used for the post-publish read-back only.
-typedef PublishedFileFetcher = Future<List<int>?> Function(String url);
-
 /// Orchestrates a single publish run.
 final class PublishLibraryUseCase {
   /// Creates the use case over its ports.
@@ -78,7 +75,7 @@ final class PublishLibraryUseCase {
     required LocalCoverReader readLocalCover,
     required RemoteCoverFetcher fetchRemoteCover,
     required ViewerHtmlBuilderFn buildViewerHtml,
-    PublishedFileFetcher? fetchPublishedFile,
+    PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
@@ -90,7 +87,7 @@ final class PublishLibraryUseCase {
          fetchRemoteCover: fetchRemoteCover,
        ),
        _buildViewerHtml = buildViewerHtml,
-       _fetchPublishedFile = fetchPublishedFile,
+       _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
@@ -101,7 +98,7 @@ final class PublishLibraryUseCase {
   final ViewerHtmlBuilderFn _buildViewerHtml;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
-  final PublishedFileFetcher? _fetchPublishedFile;
+  final PublishedSiteVerifier? _verifier;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
@@ -291,12 +288,19 @@ final class PublishLibraryUseCase {
     List<int> expected,
     int revision,
   ) async {
-    final fetch = _fetchPublishedFile;
-    if (fetch == null) return null;
+    final verifier = _verifier;
+    if (verifier == null) return null;
     for (var attempt = 0; attempt < readBackAttempts; attempt++) {
       await _sleep(readBackInterval);
-      // Cache-buster per attempt so a CDN can't serve a stale copy.
-      final body = await fetch('${pagesUrl}books.json?rb=$revision-$attempt');
+      // Origin-bound, redirect-free, capped at exactly the expected size (a
+      // longer body cannot be the file we wrote). A fresh cache-buster per
+      // attempt so a CDN cannot answer with a stale copy.
+      final body = await verifier.read(
+        siteUrl: pagesUrl,
+        path: 'books.json',
+        maxBytes: expected.isEmpty ? 1 : expected.length,
+        cacheBuster: '$revision-$attempt',
+      );
       if (body != null && _sameBytes(body, expected)) return true;
     }
     return null;
