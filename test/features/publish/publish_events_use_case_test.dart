@@ -16,6 +16,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
 
@@ -567,8 +568,8 @@ void main() {
 
       expect(verifier.paths, everyElement('events.json'));
       expect(manifest.saves.map((m) => m.state), [
-        PublishManifestState.deployed,
-        PublishManifestState.live,
+        PublishState.deployed,
+        PublishState.live,
       ]);
       // R33: the events publish also proves the address it may claim.
       expect(recorder.recorded.single.siteUrl, 'https://me.github.io/lib/');
@@ -582,7 +583,7 @@ void main() {
         verifier: _FakeVerifier((_, _) async => null),
       ).call(twoPosters());
 
-      expect(manifest.current.state, PublishManifestState.deployed);
+      expect(manifest.current.state, PublishState.deployed);
     });
 
     test('R9: a failed save is reported, not swallowed', () async {

@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// SPECIFICATION of the sealed publish target (Cloudflare plan R1/C3, J.1).
 ///
@@ -73,5 +74,84 @@ void main() {
       expect(target.toString(), 'GitHubPublishTarget(me/lib)');
       expect(target.siteUrl, startsWith('https://me.github.io/'));
     });
+  });
+
+  group('CloudflarePublishTarget is derived, never supplied', () {
+    final target = CloudflarePublishTarget.create(
+      accountId: '0123456789abcdef0123456789abcdef',
+      workerName: 'Kadugodi-Library',
+      accountSubdomain: 'Kadugodi',
+    )!;
+
+    test('the address comes from the parts, lower-cased for DNS', () {
+      expect(target.host, PublishHost.cloudflare);
+      expect(target.siteUrl, 'https://kadugodi-library.kadugodi.workers.dev/');
+      expect(target.workerName.value, 'Kadugodi-Library');
+      expect(target.accountSubdomain.value, 'kadugodi');
+    });
+
+    test('identity is the account plus the Worker name', () {
+      expect(
+        target.targetId,
+        'cloudflare:0123456789abcdef0123456789abcdef:Kadugodi-Library',
+      );
+      expect(
+        target.isSameTarget(
+          CloudflarePublishTarget.create(
+            accountId: '0123456789abcdef0123456789abcdef',
+            workerName: 'Kadugodi-Library',
+            accountSubdomain: 'kadugodi',
+          )!,
+        ),
+        isTrue,
+      );
+      expect(
+        target.isSameTarget(
+          CloudflarePublishTarget.create(
+            accountId: '0123456789abcdef0123456789abcdef',
+            workerName: 'other',
+            accountSubdomain: 'kadugodi',
+          )!,
+        ),
+        isFalse,
+      );
+    });
+
+    test('a target never renders a secret', () {
+      expect(
+        target.toString(),
+        'CloudflarePublishTarget('
+        'https://kadugodi-library.kadugodi.workers.dev/)',
+      );
+    });
+
+    for (final parts in <({String? account, String? worker, String? sub})>[
+      (account: null, worker: 'lib', sub: 'name'),
+      (account: '0123456789abcdef0123456789abcdef', worker: null, sub: 'name'),
+      (account: '0123456789abcdef0123456789abcdef', worker: 'lib', sub: null),
+      (account: 'not-hex', worker: 'lib', sub: 'name'),
+      (
+        account: '0123456789abcdef0123456789abcdef',
+        worker: 'li b',
+        sub: 'name',
+      ),
+      (
+        account: '0123456789abcdef0123456789abcdef',
+        worker: 'lib',
+        sub: 'na me',
+      ),
+      (account: '0123456789abcdef0123456789abcdef', worker: 'lib', sub: 'a.b'),
+    ]) {
+      test('refuses $parts', () {
+        expect(
+          CloudflarePublishTarget.create(
+            accountId: parts.account,
+            workerName: parts.worker,
+            accountSubdomain: parts.sub,
+          ),
+          isNull,
+        );
+      });
+    }
   });
 }

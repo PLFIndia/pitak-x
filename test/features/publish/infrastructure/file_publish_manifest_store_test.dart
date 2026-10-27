@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
 
 void main() {
@@ -26,7 +27,7 @@ void main() {
       branch: 'main',
       headSha: 'abc',
       ownershipConfirmed: true,
-      state: PublishManifestState.live,
+      state: PublishState.live,
       fileShas: {'books.json': 'sha'},
     );
     final saved = store().save(manifest);
@@ -36,7 +37,7 @@ void main() {
     expect(loaded.repo, 'me/lib');
     expect(loaded.branch, 'main');
     expect(loaded.headSha, 'abc');
-    expect(loaded.state, PublishManifestState.live);
+    expect(loaded.state, PublishState.live);
     expect(loaded.ownershipConfirmed, isTrue);
 
     // The temp file is not state: it must not survive a successful save.
@@ -75,7 +76,7 @@ void main() {
     final loaded = store().load();
     expect(loaded.isLegacy, isTrue);
     expect(loaded.shaFor('books.json'), 'old-sha');
-    expect(loaded.state, PublishManifestState.deployed);
+    expect(loaded.state, PublishState.deployed);
   });
 
   // R9: a silent save failure would tell the user "published" while the phone

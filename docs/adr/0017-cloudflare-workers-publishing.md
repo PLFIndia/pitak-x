@@ -97,4 +97,12 @@ consequences the product cannot hide:
 - Follow-up enforcement: session gates S0–S11 of the plan, the D1–D5
   behavioural tests, the J.1–J.6 suites, the J.7 real-host smoke matrix, and
   the documentation check in Part K. This ADR is finalized with the S2 trial
-  outcome (conditional writes, version-URL semantics) and the S10 audit.
+  outcome (conditional writes, version-URL semantics, the asset-hash formula)
+  and the S10 audit.
+- **Open until S2: the asset-hash formula.** The plan specifies
+  `hex(SHA-256(base64(bytes) + extension))[0..32]`; the reviewed Wrangler source
+  computes blake3 over the same input, and the Cloudflare docs name no
+  algorithm. The app implements the plan's formula behind a stored
+  `hashScheme`, so a change invalidates stored hashes safely instead of
+  reusing wrong ones. blake3 would require a new runtime dependency, which
+  R28 forbids without a product decision.

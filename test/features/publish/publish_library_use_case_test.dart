@@ -30,6 +30,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../../support/raw_catalogue_rows.dart';
@@ -1560,8 +1561,8 @@ void main() {
 
         expect((result as PublishSuccess).pagesLive, isTrue);
         expect(manifest.saves.map((m) => m.state), [
-          PublishManifestState.deployed,
-          PublishManifestState.live,
+          PublishState.deployed,
+          PublishState.live,
         ]);
         // Both saves describe the commit the API returned.
         expect(manifest.saves.first.headSha, 'NEWCOMMIT');
@@ -1581,7 +1582,7 @@ void main() {
         ).run();
 
         expect((result as PublishSuccess).pagesLive, isNull);
-        expect(manifest.current.state, PublishManifestState.deployed);
+        expect(manifest.current.state, PublishState.deployed);
       },
     );
 

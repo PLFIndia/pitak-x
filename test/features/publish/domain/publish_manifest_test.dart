@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// A tree with the given blobs at [head].
 GitHubTreeSnapshot tree(
@@ -25,7 +26,7 @@ void main() {
         branch: 'main',
         headSha: 'abc',
         ownershipConfirmed: true,
-        state: PublishManifestState.live,
+        state: PublishState.live,
         fileShas: {'books.json': 'sha-1'},
         coverUrlByBookId: {'1': 'https://covers.example/1.jpg'},
       );
@@ -35,7 +36,7 @@ void main() {
       expect(decoded.branch, 'main');
       expect(decoded.headSha, 'abc');
       expect(decoded.ownershipConfirmed, isTrue);
-      expect(decoded.state, PublishManifestState.live);
+      expect(decoded.state, PublishState.live);
       expect(decoded.fileShas, {'books.json': 'sha-1'});
       expect(decoded.coverUrlByBookId, {'1': 'https://covers.example/1.jpg'});
     });
@@ -66,7 +67,7 @@ void main() {
         'state': 'something-new',
         'fileShas': <String, String>{},
       });
-      expect(decoded.state, PublishManifestState.deployed);
+      expect(decoded.state, PublishState.deployed);
     });
   });
 
@@ -81,7 +82,7 @@ void main() {
       expect(decoded.isLegacy, isTrue);
       // The old app never stored a read-back result: claiming "live" would be
       // an invented fact (R5).
-      expect(decoded.state, PublishManifestState.deployed);
+      expect(decoded.state, PublishState.deployed);
       // Those paths were written by this app, so they are app-owned by
       // construction (R13).
       expect(decoded.ownershipConfirmed, isTrue);
@@ -189,7 +190,7 @@ void main() {
               branch: 'main',
             )
             .state,
-        PublishManifestState.live,
+        PublishState.live,
       );
       expect(
         live
@@ -202,7 +203,7 @@ void main() {
               branch: 'main',
             )
             .state,
-        PublishManifestState.deployed,
+        PublishState.deployed,
       );
     });
   });
@@ -216,7 +217,7 @@ void main() {
         coverUrlByBookId: {'1': 'src'},
       );
       expect(committed.headSha, 'new-head');
-      expect(committed.state, PublishManifestState.deployed);
+      expect(committed.state, PublishState.deployed);
       expect(committed.ownershipConfirmed, isTrue);
       expect(committed.fileShas, {'books.json': 'sha'});
       expect(committed.coverSourceFor('1'), 'src');
@@ -231,7 +232,7 @@ void main() {
         fileShas: {'books.json': 'sha'},
       );
       final live = committed.asLive();
-      expect(live.state, PublishManifestState.live);
+      expect(live.state, PublishState.live);
       expect(live.headSha, 'new-head');
       expect(live.fileShas, committed.fileShas);
     });

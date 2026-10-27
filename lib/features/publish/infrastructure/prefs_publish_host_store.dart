@@ -91,6 +91,11 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
   /// The parts that rebuild a sealed target; never the URL alone.
   Map<String, Object?> _identityOf(PublishTarget target) => switch (target) {
     GitHubPublishTarget() => {'repo': target.ownerRepo},
+    CloudflarePublishTarget() => {
+      'accountId': target.accountId.value,
+      'workerName': target.workerName.value,
+      'accountSubdomain': target.accountSubdomain.value,
+    },
   };
 
   static PublishHost? _hostFrom(Object? raw) {
@@ -104,13 +109,21 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
     if (raw is! Map<String, dynamic>) return null;
     final host = _hostFrom(raw['host']);
     if (host == null || host != activeHost) return null;
-    final PublishTarget? target = switch (host) {
+    final target = switch (host) {
       PublishHost.github => GitHubPublishTarget.create(
         raw['repo'] is String ? raw['repo'] as String : null,
       ),
-      // No Cloudflare adapter exists yet, so no such target can be rebuilt.
-      // (The value exists so the schema can grow without a rewrite.)
-      PublishHost.cloudflare => null,
+      PublishHost.cloudflare => CloudflarePublishTarget.create(
+        accountId: raw['accountId'] is String
+            ? raw['accountId'] as String
+            : null,
+        workerName: raw['workerName'] is String
+            ? raw['workerName'] as String
+            : null,
+        accountSubdomain: raw['accountSubdomain'] is String
+            ? raw['accountSubdomain'] as String
+            : null,
+      ),
     };
     if (target == null) return null;
     // C3: identity is derived, so a stored URL that disagrees with the

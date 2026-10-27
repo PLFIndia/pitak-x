@@ -15,6 +15,10 @@
 /// the current operation, never from a global "active host" provider.
 library;
 
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_url.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
@@ -88,4 +92,75 @@ final class GitHubPublishTarget extends PublishTarget {
 
   @override
   String toString() => 'GitHubPublishTarget($ownerRepo)';
+}
+
+/// A Cloudflare Workers destination: one account, one dedicated Worker.
+///
+/// The address is DERIVED from the three identity parts (account id, Worker
+/// name, account subdomain) — there is no constructor that takes a URL, so a
+/// target can never name a site its parts do not describe (C3/R15). The Worker
+/// is dedicated to Pitak (C1/R12): a deploy replaces its complete asset set.
+final class CloudflarePublishTarget extends PublishTarget {
+  const CloudflarePublishTarget._({
+    required this.accountId,
+    required this.workerName,
+    required this.accountSubdomain,
+    required this.siteUrl,
+  });
+
+  /// Builds the target from its identity parts, or null when any is invalid.
+  ///
+  /// [workerName] is the API name (case preserved); the address uses its
+  /// lower-case DNS label. A null here is the "finish Cloudflare setup" case,
+  /// not an error to report.
+  static CloudflarePublishTarget? create({
+    required String? accountId,
+    required String? workerName,
+    required String? accountSubdomain,
+  }) {
+    final account = CloudflareAccountId.tryParse(accountId);
+    final worker = CloudflareWorkerName.tryParse(workerName);
+    final subdomain = CloudflareSubdomain.tryParse(accountSubdomain);
+    if (account == null || worker == null || subdomain == null) return null;
+    final site = CloudflareSiteUrl.create(
+      workerName: worker.value,
+      accountSubdomain: subdomain.value,
+    );
+    if (site == null) return null;
+    return CloudflarePublishTarget._(
+      accountId: account,
+      workerName: worker,
+      accountSubdomain: subdomain,
+      siteUrl: site.siteUrl,
+    );
+  }
+
+  /// The account the Worker lives in.
+  final CloudflareAccountId accountId;
+
+  /// The Worker's API name (case preserved).
+  final CloudflareWorkerName workerName;
+
+  /// The account-wide `workers.dev` subdomain.
+  final CloudflareSubdomain accountSubdomain;
+
+  @override
+  final String siteUrl;
+
+  @override
+  PublishHost get host => PublishHost.cloudflare;
+
+  /// Identity is the account plus the Worker name — the two things an API call
+  /// needs. The subdomain is part of the ADDRESS, not of the Worker's identity:
+  /// an account subdomain change makes the site unreachable (a typed
+  /// `SiteUnavailable`), not a different Worker.
+  @override
+  String get targetId => 'cloudflare:${accountId.value}:${workerName.value}';
+
+  /// Identity comparison without overriding `==`/`hashCode` (see
+  /// [GitHubPublishTarget.isSameTarget]).
+  bool isSameTarget(PublishTarget other) => other.targetId == targetId;
+
+  @override
+  String toString() => 'CloudflarePublishTarget($siteUrl)';
 }

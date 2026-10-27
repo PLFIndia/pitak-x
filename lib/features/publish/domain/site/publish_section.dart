@@ -8,6 +8,7 @@
 library;
 
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
+import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// Which part of the site a [PublishSection] owns.
 enum SiteSection {
@@ -26,7 +27,7 @@ enum SiteSection {
 extension SiteSectionOwnership on SiteSection {
   /// True when [path] belongs to this section (and only this section).
   bool owns(String path) {
-    if (!_isSafeRelativePath(path)) return false;
+    if (!SitePath.isValid(path)) return false;
     return switch (this) {
       SiteSection.catalogue =>
         path == 'books.json' ||
@@ -55,26 +56,13 @@ extension SiteSectionOwnership on SiteSection {
   }
 }
 
-/// A publish path this file will accept: relative, non-empty, no leading
-/// slash, no backslash, no empty/`.`/`..` segment, no control characters.
-/// (S5 replaces this internal check with the single `SitePath` value object;
-/// it stays here until then so the merge cannot accept a traversal path.)
-bool _isSafeRelativePath(String path) {
-  if (path.isEmpty || path.length > 512) return false;
-  if (path.startsWith('/') || path.contains(r'\')) return false;
-  for (final unit in path.codeUnits) {
-    if (unit < 0x20 || unit == 0x7f) return false;
-  }
-  final segments = path.split('/');
-  for (final segment in segments) {
-    if (segment.isEmpty || segment == '.' || segment == '..') return false;
-  }
-  return true;
-}
-
 /// True when [path] is a safe relative publish path (exposed for the merge
 /// tests and hosts that validate before writing).
-bool isSafePublishPath(String path) => _isSafeRelativePath(path);
+///
+/// Since S5 this is the shared [SitePath] policy and nothing else: the check
+/// that used to live here was a second, weaker copy of it (Cloudflare plan
+/// R23 — one path rule for both hosts).
+bool isSafePublishPath(String path) => SitePath.isValid(path);
 
 /// One built section, ready for a host adapter.
 final class PublishSection {

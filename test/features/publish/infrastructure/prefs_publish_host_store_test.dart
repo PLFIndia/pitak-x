@@ -89,21 +89,66 @@ void main() {
     expect(loaded.verifiedTarget, isNull);
   });
 
-  test('a Cloudflare target cannot be rebuilt yet, so it is refused', () async {
+  test('a Cloudflare target round-trips through its identity parts', () async {
+    final cloudflare = CloudflarePublishTarget.create(
+      accountId: '0123456789abcdef0123456789abcdef',
+      workerName: 'kadugodi-library',
+      accountSubdomain: 'kadugodi',
+    )!;
+    final hostStore = await store();
+    await hostStore.save(
+      PublishHostState.empty.afterVerifiedPublish(cloudflare),
+    );
+
+    final loaded = (await store()).load()!;
+
+    expect(loaded.activeHost, PublishHost.cloudflare);
+    expect(
+      loaded.verifiedSiteUrl,
+      'https://kadugodi-library.kadugodi.workers.dev/',
+    );
+    expect(
+      loaded.verifiedTarget!.targetId,
+      'cloudflare:0123456789abcdef0123456789abcdef:kadugodi-library',
+    );
+  });
+
+  test('a Cloudflare record with a forged URL is refused', () async {
     SharedPreferences.setMockInitialValues({
       PrefsPublishHostStore.key: jsonEncode({
         'schema': 1,
         'activeHost': 'cloudflare',
         'verifiedTarget': {
           'host': 'cloudflare',
-          'targetId': 'cloudflare:abc',
-          'siteUrl': 'https://lib.me.workers.dev/',
+          'accountId': '0123456789abcdef0123456789abcdef',
+          'workerName': 'kadugodi-library',
+          'accountSubdomain': 'kadugodi',
+          'targetId':
+              'cloudflare:0123456789abcdef0123456789abcdef:kadugodi-library',
+          'siteUrl': 'https://evil.example/',
         },
       }),
     });
     final loaded = (await store()).load()!;
     // The configured host is a fact worth keeping; the address is not proven.
     expect(loaded.activeHost, PublishHost.cloudflare);
+    expect(loaded.verifiedTarget, isNull);
+  });
+
+  test('a Cloudflare record missing an identity part is refused', () async {
+    SharedPreferences.setMockInitialValues({
+      PrefsPublishHostStore.key: jsonEncode({
+        'schema': 1,
+        'activeHost': 'cloudflare',
+        'verifiedTarget': {
+          'host': 'cloudflare',
+          'accountId': '0123456789abcdef0123456789abcdef',
+          'workerName': 'kadugodi-library',
+          'siteUrl': 'https://kadugodi-library.kadugodi.workers.dev/',
+        },
+      }),
+    });
+    final loaded = (await store()).load()!;
     expect(loaded.verifiedTarget, isNull);
   });
 

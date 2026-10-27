@@ -30,6 +30,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -115,7 +116,7 @@ void main() {
     expect(files.map((file) => file.path), contains('index.html'));
     // R5: the commit is persisted immediately, then upgraded once the live
     // site proves it — the record ends `live`.
-    expect(h.manifest.current.state, PublishManifestState.live);
+    expect(h.manifest.current.state, PublishState.live);
     expect((result as PublishSuccess).pagesLive, isTrue);
   });
 

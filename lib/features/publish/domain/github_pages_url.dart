@@ -20,6 +20,8 @@
 /// must never turn into `https://evil.example.github.io/...`.
 library;
 
+import 'package:pitaka/features/publish/domain/site/site_path.dart';
+
 /// GitHub login charset (GitHub's own sign-up rule: letters, digits and
 /// single hyphens, not at either end, at most 39 characters). Dots are NOT
 /// allowed — which is exactly what stops an owner string from smuggling a
@@ -31,11 +33,6 @@ final RegExp _loginChars = RegExp(
 /// GitHub repository name charset (letters, digits, `.`, `_`, `-`; up to
 /// 100 characters) — the same rule `SetupGitHubRepo` enforces on input.
 final RegExp _repoChars = RegExp(r'^[A-Za-z0-9._-]{1,100}$');
-
-/// A repo-relative file path: one or more segments of safe characters
-/// joined by `/`, never starting with `/`, never containing `.` or `..`
-/// segments. Keeps a caller from escaping the site with `../`.
-final RegExp _relativePath = RegExp(r'^(?:[A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+$');
 
 /// Splits and validates an "owner/repo" string; null when it is not one.
 ({String owner, String repo})? _splitTarget(String? ownerRepo) {
@@ -67,11 +64,16 @@ String? githubPagesUrlFor(String? ownerRepo) {
 /// Built on [githubPagesUrlFor] so a user site and a project site both
 /// resolve correctly; a path that is absolute, empty, or tries to walk up
 /// with `..` is refused rather than "fixed".
+///
+/// The path rule is the shared [SitePath] (Cloudflare plan R23): the private
+/// regex this used to carry was a second copy of it, and two copies are how a
+/// path accepted by one host gets refused (or reinterpreted) by another. Every
+/// path the app actually builds is short and plain, so the swap changes no
+/// valid-input URL — only absurd input (over 512 characters) is now refused.
 String? githubPagesFileUrl(String? ownerRepo, String relativePath) {
   final site = githubPagesUrlFor(ownerRepo);
   if (site == null) return null;
-  if (!_relativePath.hasMatch(relativePath)) return null;
-  final segments = relativePath.split('/');
-  if (segments.any((s) => s == '.' || s == '..')) return null;
-  return '$site$relativePath';
+  final path = SitePath.tryParse(relativePath);
+  if (path == null) return null;
+  return '$site${path.value}';
 }

@@ -31,19 +31,7 @@ library;
 
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
-
-/// How far the recorded publication has been proven (R5).
-enum PublishManifestState {
-  /// The API accepted the commit (or the record predates this field) but this
-  /// phone has not seen the result served publicly yet.
-  deployed,
-
-  /// The live site was proven to serve what the record describes.
-  live,
-
-  /// The site now serves a moved page and nothing else (S9 writes this).
-  retired,
-}
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// What was last published, for incremental diffing and exact deletions.
 final class PublishManifest implements PreviousPublication {
@@ -54,7 +42,7 @@ final class PublishManifest implements PreviousPublication {
     this.branch,
     this.headSha,
     this.ownershipConfirmed = false,
-    this.state = PublishManifestState.deployed,
+    this.state = PublishState.deployed,
     this.fileShas = const {},
     this.coverUrlByBookId = const {},
   });
@@ -91,7 +79,7 @@ final class PublishManifest implements PreviousPublication {
       headSha: str(json['headSha']),
       ownershipConfirmed:
           json['ownershipConfirmed'] as bool? ?? fileShas.isNotEmpty,
-      state: _stateFrom(json['state']) ?? PublishManifestState.deployed,
+      state: _stateFrom(json['state']) ?? PublishState.deployed,
       fileShas: fileShas,
       coverUrlByBookId: strMap(json['coverUrlByBookId']),
     );
@@ -118,7 +106,7 @@ final class PublishManifest implements PreviousPublication {
   final bool ownershipConfirmed;
 
   /// How far the recorded publication has been proven (R5).
-  final PublishManifestState state;
+  final PublishState state;
 
   /// Published file path → git blob sha last uploaded for it.
   final Map<String, String> fileShas;
@@ -181,7 +169,7 @@ final class PublishManifest implements PreviousPublication {
     }
     final stillProven =
         sameSite &&
-        state != PublishManifestState.deployed &&
+        state != PublishState.deployed &&
         headSha != null &&
         headSha == tree.headSha;
     return PublishManifest(
@@ -190,7 +178,7 @@ final class PublishManifest implements PreviousPublication {
       headSha: tree.headSha,
       ownershipConfirmed:
           sameSite && ownershipConfirmed && confirmed.isNotEmpty,
-      state: stillProven ? state : PublishManifestState.deployed,
+      state: stillProven ? state : PublishState.deployed,
       fileShas: confirmed,
       // Cover sources describe the LIBRARY's cover identity, not the site, so
       // they survive a target change: they only tell the next publish whether
@@ -224,7 +212,7 @@ final class PublishManifest implements PreviousPublication {
     branch: branch,
     headSha: headSha,
     ownershipConfirmed: ownershipConfirmed,
-    state: PublishManifestState.live,
+    state: PublishState.live,
     fileShas: fileShas,
     coverUrlByBookId: coverUrlByBookId,
   );
@@ -241,8 +229,8 @@ final class PublishManifest implements PreviousPublication {
     'coverUrlByBookId': coverUrlByBookId,
   };
 
-  static PublishManifestState? _stateFrom(Object? raw) {
-    for (final value in PublishManifestState.values) {
+  static PublishState? _stateFrom(Object? raw) {
+    for (final value in PublishState.values) {
       if (value.name == raw) return value;
     }
     // An unknown state is not "live": the caller treats null as `deployed`.

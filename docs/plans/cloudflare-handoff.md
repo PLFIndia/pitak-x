@@ -1,8 +1,9 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–48).
-- **Branch:** `cloudflare`, nine commits on top of `main` at `e8c4d8e`:
+  its Part M now carries every session's deviation rows 34–53).
+- **Branch:** `cloudflare`, nine commits on top of `main` at `e8c4d8e`, plus
+  S5 in the working tree (not yet committed — a commit needs approval):
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -15,14 +16,16 @@
   | `c3005d1` | S4 (part 2) | Sealed `PublishTarget`/`GitHubPublishTarget`; the descriptor URL comes from the operation's target |
   | `0f509fa` | S4 (part 3) | Schema-2 publish record, typed tree reconciliation, expected-head commits, atomic typed saves, `deployed`→`live` |
   | `f865361` | S4 (part 4) | `PublishHostState` journal + `PrefsPublishHostStore`, read-back-gated migration, the share URL comes from it |
+  | *(pending)* | S5 | `SitePath`, shared `PublishState`, Cloudflare value objects, `CloudflarePublishTarget`, schema-2 Cloudflare record, publish marker + freshness classifier |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
   `dart format --set-exit-if-changed lib test integration_test` is clean, and
   the full suite passes (golden excluded).
 - **Nothing Cloudflare-side is shipped yet.** No token capture, no API client,
-  no Worker upload. The only Cloudflare-visible code is the reader's
-  `workers.dev` URL grammar (S1) — see §5 for why that is deliberate.
+  no Worker upload. The Cloudflare-visible code is the reader's `workers.dev`
+  URL grammar (S1) and the S5 pure-domain value objects — see §6 for why that
+  is deliberate.
 
 ---
 
@@ -279,7 +282,90 @@ alone (`books.json` embeds `exportedAt`).
 
 ---
 
-## 5. The S2 gate — nothing Cloudflare-side may proceed before it
+## 5. S5 — Cloudflare pure domain (in the working tree, commit pending)
+
+**Deliverable:** every Cloudflare value that can reach an API path, a public
+address or a published file is validated at construction, and the two records
+that decide what survives a deploy exist and are tested. Nothing here talks to
+the network, so S5 is independent of the S2 trial.
+
+### 5.1 The one path policy (R23)
+
+`domain/site/site_path.dart` is now the ONLY publish path rule. Before it, the
+rule existed twice — a private check in `publish_section.dart` and a regex in
+`github_pages_url.dart` — which is how a path accepted by the merge could be
+rejected mid-upload. Both delegate to `SitePath` now.
+
+Accepted: relative, non-empty, ≤512 characters, `/`-separated segments of
+`[A-Za-z0-9._-]`, no `.`/`..` segment. The allow-list charset is what refuses
+`%2F`, `%2e%2e`, spaces, control characters and non-ASCII names automatically.
+Nothing is "fixed up": a bad path is refused, because a repaired path is a
+different file than the builder asked for. The leading-slash mapping Cloudflare
+needs (`books.json` → `/books.json`) deliberately does NOT live here — only the
+Cloudflare adapter may add it (B.2).
+
+### 5.2 Value objects (`domain/cloudflare/`)
+
+| File | Rule |
+|---|---|
+| `cloudflare_api_token.dart` | `cfut_…` / `cfat_…` / legacy 40-char shapes, ≤512 chars, `[A-Za-z0-9_-]` only. No getter: the value is readable only through `use()`, and `toString()` is `CloudflareApiToken(***)` |
+| `cloudflare_account_id.dart` | exactly 32 hex characters, folded to lower case (it is an identity) |
+| `cloudflare_worker_name.dart` | 1–63 of `[A-Za-z0-9-]`, no edge hyphen; keeps the API spelling and derives `dnsLabel` |
+| `cloudflare_subdomain.dart` | DNS label, 1–63, `[a-z0-9-]`, alphanumeric edges, folded to lower case |
+| `cloudflare_site_url.dart` | the CONFIRMED address: exactly `<worker>.<sub>.workers.dev/`, HTTPS, no userinfo/port/query/fragment, root path only — via the shared `WorkersDevUrl` |
+| `unverified_cloudflare_address.dart` | a candidate for the verification fetch ONLY; no conversion to a target, descriptor, share link or move (C9) |
+| `cloudflare_content_type.dart` | exactly `html`/`json`/`jpg` → the three served headers; case-sensitive on purpose |
+| `cloudflare_asset_hash.dart` | `hex(SHA-256(base64(bytes) + extension))[0..32]`, pinned by fixed vectors (empty file, extension case) |
+| `cloudflare_limits.dart` | the documented limits plus the app's own bounds (1 MiB API body, depth 16, 4 account pages, marker 4 KiB, 30 s/60 s deadlines, fixed compatibility date) |
+
+`CloudflarePublishTarget` joins the sealed `PublishTarget`: the address is
+derived from account id + Worker name + subdomain, so no constructor takes a
+URL. `PrefsPublishHostStore` rebuilds it from those parts and refuses a stored
+URL that disagrees with the derived one.
+
+### 5.3 The two records
+
+- `domain/cloudflare/cloudflare_site_manifest.dart` — schema 2: full target
+  identity, `state`, `publishId`, optional diagnostic `liveId`, `hashScheme`,
+  path → `{sha, hash, size, type}`, cover-source metadata. It implements
+  `PreviousPublication`, so the shared builders read it exactly like the GitHub
+  record. A record that does not describe the target claims NOTHING (its file
+  map could otherwise authorise deleting another Worker's files). A different
+  `hashScheme` keeps the paths but not the hashes, and the merge reports those
+  paths in `missingHashes` instead of guessing.
+- `domain/site/publish_marker.dart` — the marker value object, the probe
+  (`absent` / `unreadable` / `present`) and `classifyFreshness`, which returns
+  `known` / `knownRetired` / `unknown` / `newSite` / `siteUnavailable`. Only
+  positive evidence produces `known`: a 404 is never retirement, a malformed
+  marker is never a fresh site, and a `verification` marker is never a live one.
+
+`PublishState` moved to `domain/site/publish_state.dart` so both manifests, the
+marker classifier and the journal share one vocabulary (deviation 51).
+
+### 5.4 Tests
+
+`test/features/publish/domain/site_path_test.dart`,
+`domain/cloudflare/cloudflare_value_objects_test.dart`,
+`cloudflare_asset_hash_test.dart`, `cloudflare_site_manifest_test.dart`,
+`domain/publish_marker_test.dart`, plus the Cloudflare groups in
+`publish_target_test.dart` and `prefs_publish_host_store_test.dart`.
+
+### 5.5 What S5 deliberately did NOT land
+
+`cloudflare_api.dart` (the account/deploy ports), the credential-store port and
+the fixed error messages land with S6/S7, where their first adapter and caller
+exist (deviation 53). A port with no adapter is dead code.
+
+### 5.6 The one open risk from S5
+
+**The asset-hash formula (deviation 49).** The plan says SHA-256; the reviewed
+Wrangler source uses blake3 over the same `base64 + extension` input. SHA-256 is
+implemented because it is the reviewed contract and blake3 would need a new
+dependency (R28). S2/T4–T5 settles it: if the API rejects these hashes, the
+formula and `hashScheme` change together, which invalidates stored hashes
+safely rather than reusing wrong ones.
+
+## 6. The S2 gate — nothing Cloudflare-side may proceed before it
 
 The plan (§I) says **S6–S9 wait for S2's outcome**, and the trial tool does not
 exist yet. It is the next Cloudflare-facing task and it **requires a human**:
@@ -305,12 +391,12 @@ behavior become load-bearing.
 
 ---
 
-## 6. Remaining sessions, in order, with entry criteria
+## 7. Remaining sessions, in order, with entry criteria
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
 | S4 (remainder) | — | Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget`, schema-2 record + tree reconciliation, atomic typed saves, expected-head commits, the host journal + read-back-gated migration. Left: F.4 step 2's pre-deploy check (with the journal's retry command), `pendingMove` (S9), the events publish's explicit target (§4.4) |
-| S5 | — (independent of S2) | Cloudflare pure domain: token/account/worker/subdomain/URL value objects, `SitePath`, asset hash vectors, content types, schema-2 Cloudflare manifest + `hashScheme`, marker value object, limits |
+| S5 | — (independent of S2) | **Done** (§5): `SitePath`, token/account/worker/subdomain/URL value objects, `CloudflarePublishTarget`, asset hash vectors, content types, schema-2 Cloudflare record + `hashScheme`, marker value object, limits. Left by design: the API/credential ports and fixed messages (S6/S7) |
 | S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |
 | S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
 | S10–S11 | S6–S9 | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
@@ -320,7 +406,7 @@ goal is "as much as possible without credentials", stop after S5.
 
 ---
 
-## 7. Decisions a successor must not silently reverse
+## 8. Decisions a successor must not silently reverse
 
 - **One builder per section, one merge.** Do not add a second file-assembly path
   for Cloudflare; feed the same `PublishSection` to the Cloudflare adapter.
@@ -364,10 +450,26 @@ goal is "as much as possible without credentials", stop after S5.
 - **Domain purity:** `core/network/workers_dev_url.dart` is on the purity
   allow-list because it is pure label parsing. Do not add IO-bearing core files
   to that list.
+- **One path policy.** `SitePath` is the only publish path rule. Do not add a
+  host-specific regex or a "fix up the path" helper: a repaired path is a
+  different file than the builder asked for, and two rules are how one host
+  accepts what the other refuses.
+- **The marker is not compare-and-swap.** `classifyFreshness` answers "what can
+  I prove?", never "am I the only writer". Only positive evidence yields
+  `known`; a 404 is never retirement and a malformed marker is never a fresh
+  site.
+- **An unverified address has no conversion.** `UnverifiedCloudflareAddress`
+  exists for the verification fetch only. Do not add a `toSiteUrl()`: C9 says a
+  candidate cannot become a target, descriptor, share link or move.
+- **A Cloudflare record that does not describe the target claims nothing.** Its
+  file map is what authorises a complete-snapshot deploy, so a mismatched
+  account/Worker/address must discard the map, not "keep what looks useful".
+- **`hashScheme` gates hashes, not paths.** A different scheme means "re-hash
+  the bytes", never "forget which files this phone wrote".
 
 ---
 
-## 8. Open questions / risks
+## 9. Open questions / risks
 
 1. **Single-writer guarantee** — unresolved until S2/T14. Do not claim the
    marker gives compare-and-swap.
@@ -394,10 +496,16 @@ goal is "as much as possible without credentials", stop after S5.
 8. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
    library ever publishes under a path (it cannot, per B.1), that assumption
    changes.
+9. **The asset-hash formula is unconfirmed (deviation 49).** The plan says
+   SHA-256; the reviewed Wrangler source uses blake3 over the same
+   `base64 + extension` input, and the docs name no algorithm. S5 implements
+   SHA-256 (the reviewed contract; blake3 would need a new dependency, R28).
+   S2/T4–T5 decides. If it changes, `hashScheme` changes with it, so stored
+   hashes are invalidated rather than reused.
 
 ---
 
-## 9. File map for the work so far
+## 10. File map for the work so far
 
 **New — network (S1)**
 `lib/core/network/workers_dev_url.dart`,
@@ -405,6 +513,13 @@ goal is "as much as possible without credentials", stop after S5.
 `lib/features/network/domain/usecases/reconcile_library_move_use_case.dart`,
 `lib/features/network/domain/usecases/refresh_run.dart`,
 `lib/features/network/presentation/widgets/library_move_prompt.dart`.
+
+**New — publish (S5)**
+`lib/features/publish/domain/site/{site_path,publish_state,publish_marker}.dart`,
+`lib/features/publish/domain/cloudflare/{cloudflare_api_token,
+cloudflare_account_id,cloudflare_worker_name,cloudflare_subdomain,
+cloudflare_site_url,unverified_cloudflare_address,cloudflare_content_type,
+cloudflare_asset_hash,cloudflare_limits,cloudflare_site_manifest}.dart`.
 
 **New — publish (S3)**
 `lib/features/publish/domain/site/{publish_file,publish_section,publish_mode,
@@ -460,7 +575,7 @@ the drift repository, refresh, controller, add-member and network-page suites.
 
 ---
 
-## 10. Secrets
+## 11. Secrets
 
 No token, JWT, account id or credential is committed anywhere in this work.
 The only Cloudflare-shaped strings in the tree are the published-address
