@@ -1,8 +1,8 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–42).
-- **Branch:** `cloudflare`, four commits on top of `main` at `e8c4d8e`:
+  its Part M now carries every session's deviation rows 34–44).
+- **Branch:** `cloudflare`, seven commits on top of `main` at `e8c4d8e`:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -10,6 +10,9 @@
   | `8c413d8` | S1 | Strict `workers.dev` reader grammar, C10/R17 library-move reconciliation |
   | `3205f37` | S3 (part 1) | Shared section builders, exact section merge, strict snapshot reads |
   | `77561ef` | S3 (part 2) | Origin-bound verifier, strict snapshot builder wired into the controller, two-phase read/build, `PublishReadFailure` |
+  | `39469e5` | S3 (docs) | Part M rows 41–42, this handoff |
+  | `e8fe497` | S4 (part 1) | `core/async/serial_op_queue.dart`, `core/security/hardened_secure_storage.dart` used by all four secret stores |
+  | `c3005d1` | S4 (part 2) | Sealed `PublishTarget`/`GitHubPublishTarget`; the descriptor URL comes from the operation's target |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -188,12 +191,14 @@ group, add-member page flow, network page flow (accept + dismiss).
    GitHub and (later) Cloudflare consume ONE wiring and one `books.json`
    encoder (`encodeBooksJsonBytes`).
 2. **Two-phase contract.** Reading and building are separate calls:
-   `read(reads:, includeEvents:)` → `PublishInputs`, then
-   `build(inputs:, previous:, now:, mode:)` → `PublishSnapshot`. The read phase
-   needs no target, so `PublishLibraryUseCase.call` runs it BEFORE the token,
-   `pagesSite` and the manifest. A library that cannot be read therefore fails
-   without a keystore read, an API call or a manifest load — the fail-fast
-   tests in `publish_controller_test.dart` still pass unchanged.
+   `read(reads:, target:, includeEvents:)` → `PublishInputs`, then
+   `build(inputs:, previous:, now:, mode:)` → `PublishSnapshot`.
+   `PublishLibraryUseCase.call` runs the read phase BEFORE the token,
+   `pagesSite` and the manifest, so a library that cannot be read fails without
+   a token read, an API call or a manifest load. (`target` arrived with S4: the
+   descriptor must be built for the operation's site, C3. The fail-fast
+   assertions therefore allow exactly one local target read — deviation 44 —
+   and still forbid the token, the API and the manifest.)
 3. **`PublishMode.complete` reaches the builder** via
    `PublishController.publish({mode})`, covered by a controller test (missing
    cover refuses in `complete`, degrades in `incremental`). The move/replacement
@@ -203,7 +208,45 @@ group, add-member page flow, network page flow (accept + dismiss).
    missing cover/poster, availability flag, counts from the snapshot) plus the
    two read-failure tests in `publish_library_use_case_test.dart`.
 
-### 4.4 Still open from S3
+### 4.4 S4 — what shipped, and what is deliberately still open
+
+**Shipped (two commits, `e8fe497` + `c3005d1`):**
+
+1. **`core/async/serial_op_queue.dart`** — the vault's FIFO moved out of the
+   vault feature (publishing must not import vault) and its doc now names both
+   callers and the no-nesting rule (M30). `core/security/hardened_secure_storage.dart`
+   is the ONE hardened `flutter_secure_storage` configuration: iOS
+   accessibility is the only per-store choice, and all four secret-bearing
+   stores (publish credentials, cover salt, lookup key, biometric vault record)
+   now use it, so the options cannot drift (deviation 12).
+2. **Sealed `PublishTarget`** (`domain/publish_target.dart`) with only
+   `GitHubPublishTarget` today. `create(ownerRepo)` derives `siteUrl` through
+   `githubPagesUrlFor`, so no constructor can take a host + URL pair; the
+   catalogue use case takes the target, and `PublishReads.libraryJson(siteUrl)`
+   builds the descriptor for it (C3/R1). The controller resolves it once from
+   local credentials.
+
+**Still open in S4 (in dependency order):**
+
+1. **Schema-2 GitHub manifest + reconciliation (R5/R6).** `repo`, `branch`,
+   `headSha`, `ownershipConfirmed`, `state`, file shas and cover-source
+   metadata; legacy manifests rebuilt from a typed head/tree snapshot; branch
+   and head match required before merging. The target then gains its
+   `expectedBranch` (deviation row 43).
+2. **Atomic typed saves (R9).** Temp-then-rename with a typed result; a failed
+   save is reported, never swallowed.
+3. **Expected-head commits.** `commitFiles(expectedHead:)`; a mismatch is a
+   typed stale failure, `force: false` stays mandatory.
+4. **`publish_host_state` journal** (one prefs key, no tokens) with
+   `activeHost`, `verifiedTarget` and `pendingMove`, plus the
+   `publishedSiteUrlProvider` switch to `verifiedTarget` (R33): migrate only
+   after one bounded read-back.
+5. **The events publish still resolves `targetRepo()` itself** — give it an
+   explicit target when the move commands land, so both publishes are
+   target-driven.
+6. **The R4 digest** (§3.4 above) and the move/replacement commands (S9).
+
+### 4.5 Still open from S3
 
 **R4 snapshot digest** — moved into S4 with the confirmation flow (deviation
 row 40). The digest must cover canonical section content + content shas but
@@ -242,7 +285,7 @@ behavior become load-bearing.
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
-| S4 | — (S3 complete) | Sealed `PublishTarget`, schema-2 manifests (GitHub **and** Cloudflare), `SerialOpQueue` extraction (`lib/features/vault/application/serial_op_queue.dart` → `core/async/`), `publish_host_state` journal (one prefs key, no tokens), `hardenedSecureStorage()` factory shared by both credential stores, atomic typed manifest saves, expected-head GitHub commits, `verifiedTarget` migration gated on a real read-back |
+| S4 (remainder) | — | Schema-2 GitHub manifest + legacy branch/head reconciliation, atomic typed saves, expected-head commits, `publish_host_state` journal + `verifiedTarget` migration, events publish given an explicit target. Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget` (§4.4) |
 | S5 | — (independent of S2) | Cloudflare pure domain: token/account/worker/subdomain/URL value objects, `SitePath`, asset hash vectors, content types, schema-2 Cloudflare manifest + `hashScheme`, marker value object, limits |
 | S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |
 | S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
@@ -258,7 +301,11 @@ goal is "as much as possible without credentials", stop after S5.
 - **One builder per section, one merge.** Do not add a second file-assembly path
   for Cloudflare; feed the same `PublishSection` to the Cloudflare adapter.
 - **Targets are sealed and explicit.** `library.json.siteUrl` must come from the
-  target passed to the operation, never from an "active host" provider.
+  target passed to the operation, never from an "active host" provider. The
+  catalogue path already does this; do not re-derive the repo inside a publish
+  step (the events path is the last one left, §4.4).
+- **One hardened secure store.** Every secret-bearing store is built by
+  `hardenedSecureStorage()`; never write a bare `FlutterSecureStorage()`.
 - **A card scan never clears a pin.** `LibraryMoveCandidate.hasFetchedFacts`
   exists for exactly that; do not treat a card's null location as "sharing off".
 - **Declining a move writes nothing.** Only an accept writes, and it writes in
@@ -320,6 +367,11 @@ previous_publication,section_merge,publish_snapshot}.dart`,
 `lib/features/publish/application/site/{catalogue_section_builder,
 events_section_builder,publish_snapshot_builder}.dart`.
 
+**New — core (S4)**
+`lib/core/async/serial_op_queue.dart` (moved from `features/vault/application/`),
+`lib/core/security/hardened_secure_storage.dart`,
+`lib/features/publish/domain/publish_target.dart`.
+
 **New — presentation/docs (S0)**
 `lib/features/publish/presentation/widgets/{github_tile,cloudflare_tile,
 section_card}.dart`, `docs/adr/0017-cloudflare-workers-publishing.md`.
@@ -343,7 +395,9 @@ infrastructure/file_events_repository.dart,application/events_controller.dart}`,
 `docs/adr/{0007,0010,0012,README}.md`.
 
 **New tests**
-`test/core` none; `test/features/network/domain/workers_dev_url_test.dart`,
+`test/core/async/serial_op_queue_test.dart` (moved),
+`test/features/publish/domain/publish_target_test.dart`,
+`test/features/network/domain/workers_dev_url_test.dart`,
 `reconcile_library_move_use_case_test.dart`;
 `test/features/publish/application/catalogue_section_builder_test.dart`,
 `events_section_builder_test.dart`, `publish_snapshot_builder_test.dart`;
