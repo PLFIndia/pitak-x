@@ -54,6 +54,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/security/hardened_secure_storage.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 
 /// Sealed store for the biometric secret S over the native
@@ -63,16 +64,9 @@ final class KeystoreBiometricSecretVault implements BiometricKeyStore {
   /// [FlutterSecureStorage]; inject a fake in tests. The native side is reached
   /// through [channel]; tests script it with `setMockMethodCallHandler`.
   KeystoreBiometricSecretVault({FlutterSecureStorage? storage})
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            // Only ciphertext lives here now, but keep the record device-bound
-            // and reachable only while the device is unlocked.
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.unlocked_this_device,
-            ),
-          );
+    // Only ciphertext lives here now, but keep the record device-bound and
+    // reachable only while the device is unlocked (the factory default).
+    : _storage = storage ?? hardenedSecureStorage();
 
   final FlutterSecureStorage _storage;
 

@@ -5,7 +5,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pitaka/features/vault/application/serial_op_queue.dart';
+import 'package:pitaka/core/async/serial_op_queue.dart';
 
 void main() {
   test('two enqueued ops run strictly in order (FIFO)', () async {
