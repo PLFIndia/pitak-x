@@ -1,0 +1,192 @@
+/// The trial's asset sets (Cloudflare plan Part L.2, T4/T5/T5b/T10).
+///
+/// Two sets, for two different questions:
+///  - a SMALL set (four unique files, one duplicated at a second path) that
+///    proves the upload contract: the manifest keys, the leading-slash mapping,
+///    the per-part content types, duplicate-hash deduplication and the
+///    completion token;
+///  - a LARGE synthetic set (T5b) that records how the API buckets ~2,000
+///    files. It is generated deterministically and hashed one file at a time,
+///    so the trial never holds 200 MB of assets in memory.
+///
+/// The hashes come from the app's own `CloudflareAssetHash`, which is the
+/// point: the trial must exercise the formula the publisher will ship, not a
+/// copy of it (deviation 49 is exactly this formula).
+library;
+
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
+
+/// One small, fully materialised asset.
+final class TrialAsset {
+  /// Creates an asset.
+  const TrialAsset({
+    required this.path,
+    required this.bytes,
+    required this.type,
+  });
+
+  /// Site-relative path, no leading slash (`books.json`).
+  final String path;
+
+  /// The file's bytes.
+  final List<int> bytes;
+
+  /// The type it is published as.
+  final CloudflareContentType type;
+
+  /// The Cloudflare asset hash of [bytes].
+  String get hash => CloudflareAssetHash.of(bytes, type.extension);
+
+  /// Byte length.
+  int get size => bytes.length;
+
+  /// The manifest key: exactly one leading slash (B.2).
+  String get manifestKey => '/$path';
+}
+
+/// The small asset set used by T4/T5/T10/T12.
+///
+/// `covers/sample-copy.jpg` is byte-identical to `covers/sample.jpg` on
+/// purpose: five paths, four unique hashes, so the session must ask for four.
+abstract final class TrialAssets {
+  /// The four unique files plus the duplicate path.
+  static List<TrialAsset> small() => [
+    TrialAsset(
+      path: 'index.html',
+      bytes: _utf8(
+        '<!doctype html><html><head><meta charset="utf-8">\n'
+        '<title>Pitak trial</title></head><body>\n'
+        '<h1>Pitak trial</h1></body></html>\n',
+      ),
+      type: CloudflareContentType.html,
+    ),
+    TrialAsset(
+      path: 'books.json',
+      bytes: _utf8('{"schema":1,"books":[]}'),
+      type: CloudflareContentType.json,
+    ),
+    TrialAsset(
+      path: 'events.json',
+      bytes: _utf8('{"schema":1,"events":[]}'),
+      type: CloudflareContentType.json,
+    ),
+    TrialAsset(
+      path: 'covers/sample.jpg',
+      bytes: _jpegLike(),
+      type: CloudflareContentType.jpeg,
+    ),
+    TrialAsset(
+      path: 'covers/sample-copy.jpg',
+      bytes: _jpegLike(),
+      type: CloudflareContentType.jpeg,
+    ),
+  ];
+
+  /// The second deploy's set: `events.json` removed, everything else unchanged.
+  static List<TrialAsset> withoutEvents() =>
+      small().where((asset) => asset.path != 'events.json').toList();
+
+  /// The third deploy's set: `books.json` changed, so one hash is new.
+  static List<TrialAsset> withChangedBooks() => [
+    for (final asset in withoutEvents())
+      if (asset.path == 'books.json')
+        TrialAsset(
+          path: asset.path,
+          bytes: _utf8('{"schema":1,"books":[{"id":1}]}'),
+          type: asset.type,
+        )
+      else
+        asset,
+  ];
+
+  /// The retired deploy's set: a moved page, a 404 page and the marker.
+  static List<TrialAsset> retired({required String markerJson}) => [
+    TrialAsset(
+      path: 'index.html',
+      bytes: _utf8(
+        '<!doctype html><html><head><meta charset="utf-8">\n'
+        '<meta http-equiv="refresh" '
+        'content="5;url=https://example.invalid/">\n'
+        '</head><body>Moved.</body></html>\n',
+      ),
+      type: CloudflareContentType.html,
+    ),
+    TrialAsset(
+      path: '404.html',
+      bytes: _utf8(
+        '<!doctype html><html><head><meta charset="utf-8">\n'
+        '</head><body>Moved.</body></html>\n',
+      ),
+      type: CloudflareContentType.html,
+    ),
+    TrialAsset(
+      path: 'pitak-publish.json',
+      bytes: _utf8(markerJson),
+      type: CloudflareContentType.json,
+    ),
+  ];
+
+  static List<int> _utf8(String value) => utf8.encode(value);
+
+  /// A tiny JPEG-shaped byte string. The served type comes from the multipart
+  /// part header, so the bytes only need to be stable and non-empty.
+  static List<int> _jpegLike() => const [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+}
+
+/// One synthetic large asset: its hash is computed once, its bytes are
+/// regenerated on demand.
+final class TrialLargeAsset {
+  const TrialLargeAsset({
+    required this.path,
+    required this.size,
+    required this.hash,
+  });
+
+  /// Site-relative path.
+  final String path;
+
+  /// Byte length.
+  final int size;
+
+  /// The Cloudflare asset hash of the generated bytes.
+  final String hash;
+
+  /// The manifest key.
+  String get manifestKey => '/$path';
+
+  /// Builds [count] deterministic assets of [size] bytes each.
+  ///
+  /// Each file is generated, hashed and discarded, so peak memory is one file.
+  static List<TrialLargeAsset> build({required int count, required int size}) {
+    final assets = <TrialLargeAsset>[];
+    for (var index = 0; index < count; index++) {
+      final bytes = generate(index, size);
+      assets.add(
+        TrialLargeAsset(
+          path: 'large/$index.bin',
+          size: size,
+          hash: CloudflareAssetHash.of(bytes, 'bin'),
+        ),
+      );
+    }
+    return assets;
+  }
+
+  /// The deterministic bytes of asset [index].
+  ///
+  /// A tiny LCG, not a CSPRNG: the bytes are test data, and the same index must
+  /// always produce the same bytes so the hash and the upload agree.
+  static Uint8List generate(int index, int size) {
+    final bytes = Uint8List(size);
+    var state = (index * 2654435761 + 1) & 0xFFFFFFFF;
+    for (var i = 0; i < size; i++) {
+      state = (state * 1664525 + 1013904223) & 0xFFFFFFFF;
+      bytes[i] = (state >> 16) & 0xFF;
+    }
+    return bytes;
+  }
+}

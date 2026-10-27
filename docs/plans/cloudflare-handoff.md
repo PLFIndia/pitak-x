@@ -367,16 +367,24 @@ safely rather than reusing wrong ones.
 
 ## 6. The S2 gate — nothing Cloudflare-side may proceed before it
 
-The plan (§I) says **S6–S9 wait for S2's outcome**, and the trial tool does not
-exist yet. It is the next Cloudflare-facing task and it **requires a human**:
+The plan (§I) says **S6–S9 wait for S2's outcome**. The tool now exists
+(`tool/cloudflare_trial/`, written in the S5 commit's follow-up); running it
+**requires a human with a disposable account**:
 
-- Write `tool/cloudflare_trial/` per plan Part L: T1–T16, token only from
-  `CF_API_TOKEN` (optional `CF_ACCOUNT_ID`, `CF_CREATE_SUBDOMAIN`), Worker
-  named `pitak-trial-<8 hex>`, deletion in `finally`, and a report of fixed
-  labels / status codes / whitelisted headers only — never tokens, JWTs,
-  authorization headers or raw bodies.
+- `tool/cloudflare_trial/` implements T1–T16 per plan Part L: token only from
+  `CF_API_TOKEN` (optional `CF_ACCOUNT_ID`, `CF_CREATE_SUBDOMAIN`,
+  `CF_TRIAL_SKIP_LARGE`), Worker named `pitak-trial-<8 hex>`, deletion in
+  `finally`, and a report of fixed labels / status codes / whitelisted headers
+  only — never tokens, JWTs, authorization headers or raw bodies. Its pure
+  parts (asset sets, multipart bodies, deterministic large set) are pinned by
+  `test/tool/cloudflare_trial_test.dart`; `dart analyze tool` and
+  `dart format --set-exit-if-changed tool/cloudflare_trial` are clean.
 - Run it on a **disposable account** with the exact
-  `Workers Scripts · Edit`, one-account token.
+  `Workers Scripts · Edit`, one-account token:
+
+  ```bash
+  CF_API_TOKEN=... fvm dart run tool/cloudflare_trial/main.dart
+  ```
 - Record the sanitized report and the two decisions it settles:
   - **T6** — does a metadata-only assets deploy succeed? If it fails, **stop**;
     shipping Worker code is a separate product decision.
@@ -397,7 +405,7 @@ behavior become load-bearing.
 |---|---|---|
 | S4 (remainder) | — | Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget`, schema-2 record + tree reconciliation, atomic typed saves, expected-head commits, the host journal + read-back-gated migration. Left: F.4 step 2's pre-deploy check (with the journal's retry command), `pendingMove` (S9), the events publish's explicit target (§4.4) |
 | S5 | — (independent of S2) | **Done** (§5): `SitePath`, token/account/worker/subdomain/URL value objects, `CloudflarePublishTarget`, asset hash vectors, content types, schema-2 Cloudflare record + `hashScheme`, marker value object, limits. Left by design: the API/credential ports and fixed messages (S6/S7) |
-| S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |
+| S2 | Tool written; needs a maintainer run | `tool/cloudflare_trial/` run on a disposable account + sanitized report + the T6/T14/T15 decisions |
 | S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
 | S10–S11 | S6–S9 | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
 
@@ -484,8 +492,10 @@ goal is "as much as possible without credentials", stop after S5.
    must not be built on it until R4's digest exists. The snapshot is otherwise
    complete: counts, empty-section warnings and `availabilityOmitted` all come
    from it.
-5. **The plan's `tool/cloudflare_trial/` does not exist**, so S2 cannot be
-   executed today; a successor must write it first.
+5. **S2 has not been run.** `tool/cloudflare_trial/` exists and is
+   analyze/format clean, but it needs a disposable account and the exact
+   restricted token. Until its report lands, no Cloudflare behavior may become
+   load-bearing.
 6. **F.4 step 2 is not implemented** (deviation row 48): a `deployed` record
    does not block the next publish, so a commit whose read-back never landed can
    still be built on. The record stays truthful (`deployed`) and the fix belongs
@@ -513,6 +523,11 @@ goal is "as much as possible without credentials", stop after S5.
 `lib/features/network/domain/usecases/reconcile_library_move_use_case.dart`,
 `lib/features/network/domain/usecases/refresh_run.dart`,
 `lib/features/network/presentation/widgets/library_move_prompt.dart`.
+
+**New — trial tool (S2)**
+`tool/cloudflare_trial/{main,trial_run,trial_http,trial_public,trial_multipart,
+trial_assets,trial_report}.dart` + `README.md`,
+`test/tool/cloudflare_trial_test.dart`.
 
 **New — publish (S5)**
 `lib/features/publish/domain/site/{site_path,publish_state,publish_marker}.dart`,
