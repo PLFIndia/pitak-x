@@ -259,10 +259,18 @@ group, add-member page flow, network page flow (accept + dismiss).
 
 **Still open in S4 (in dependency order):**
 
-1. **F.4 step 2's pre-deploy check** (deviation row 48): a `deployed` head is
-   recorded truthfully but does not block the next publish yet. It belongs with
-   the journal's "Retry verification" command (D.3), together with the
-   unreadable-vs-contradictory rule that keeps a flaky phone from deadlocking.
+1. **DONE — F.4 step 2's pre-publish check** (deviation rows 48/55), as the
+   maintainer's **Option B**. `PublishVerificationCheck` runs before either
+   publish builds: if the record is `deployed` and its anchor still matches the
+   remote head, the live anchor file is fetched and its git blob sha compared
+   with the recorded one.
+   - `matched` → the record is saved `live` and the journal claims the address.
+   - `contradicted` (the site answered with different bytes) → the publish
+     stops with `gitHubSiteChangedSincePublishMessage`; nothing is written.
+   - `unreachable` (no answer in three short polls) → the publish proceeds,
+     because a timeout is not evidence that the site changed.
+   Still open: the standalone "Retry verification" affordance of D.3 (the next
+   publish now retries automatically, so it is a convenience, not a gap).
 2. **`pendingMove` in the journal.** The record is schema 1 with
    `activeHost` + `verifiedTarget`; the move's phase and the exact old/new
    targets are added by S9 (absent field = no move, so no migration).
@@ -477,6 +485,10 @@ goal is "as much as possible without credentials", stop after S5.
   account/Worker/address must discard the map, not "keep what looks useful".
 - **`hashScheme` gates hashes, not paths.** A different scheme means "re-hash
   the bytes", never "forget which files this phone wrote".
+- **Unreachable is not contradictory.** The pre-publish check may only stop a
+  publish when the site ANSWERED with different bytes. A timeout, a 404 or an
+  oversize body is "could not check" and must let the publish proceed — that is
+  the whole reason Option B was chosen over the plan's literal wording.
 
 ---
 
@@ -499,10 +511,10 @@ goal is "as much as possible without credentials", stop after S5.
    analyze/format clean, but it needs a disposable account and the exact
    restricted token. Until its report lands, no Cloudflare behavior may become
    load-bearing.
-6. **F.4 step 2 is not implemented** (deviation row 48): a `deployed` record
-   does not block the next publish, so a commit whose read-back never landed can
-   still be built on. The record stays truthful (`deployed`) and the fix belongs
-   with the "Retry verification" command.
+6. **F.4 step 2 is implemented as Option B** (deviation rows 48/55): a
+   `deployed` record at the current head is verified before the next publish.
+   A contradiction blocks; an unreachable site does not. The standalone "Retry
+   verification" button (D.3) is still open.
 7. **The journal has no `pendingMove` yet** — schema 1 carries `activeHost` +
    `verifiedTarget` only. S9 adds the field; an absent field must keep meaning
    "no move" rather than requiring a migration.

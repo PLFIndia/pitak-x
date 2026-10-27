@@ -13,7 +13,34 @@
 /// so it is not proof of anything.
 library;
 
+import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
+
+/// What a verification of an ALREADY-published file found (F.4 step 2).
+///
+/// Three outcomes, because "could not check" and "checked and it is wrong" are
+/// different facts and must lead to different behaviour (deviation 48):
+///  - [matched] — the live site serves exactly the recorded content;
+///  - [contradicted] — the site answered, with DIFFERENT content: someone or
+///    something changed it, so a new publish must not silently overwrite it;
+///  - [unreachable] — no answer within the budget (offline, timeout, 404,
+///    oversize). That is not evidence of a conflict, so it must not block a
+///    publish on a phone with a bad connection;
+///  - [notApplicable] — there is nothing to verify (the record is already live,
+///    or the head moved, or no content sha was recorded).
+enum PublishVerificationOutcome {
+  /// The live site serves the recorded content.
+  matched,
+
+  /// The live site answered with different content.
+  contradicted,
+
+  /// The live site could not be read within the budget.
+  unreachable,
+
+  /// There is nothing to verify.
+  notApplicable,
+}
 
 /// Polls a published file until the live site serves the expected bytes.
 final class PublishedFileReadBack {
@@ -65,6 +92,41 @@ final class PublishedFileReadBack {
       if (body != null && _sameBytes(body, expected)) return true;
     }
     return null;
+  }
+
+  /// Verifies an ALREADY-published file against the content sha this phone
+  /// recorded for it (F.4 step 2).
+  ///
+  /// Why a sha and not the bytes (beginner note): the bytes of an earlier
+  /// publish are not kept — only their git blob sha is. Fetching the live file
+  /// and hashing it answers the same question ("is this the file I published?")
+  /// without storing a second copy of the library.
+  ///
+  /// The FIRST readable answer decides: a body that hashes differently is a
+  /// contradiction, not something to keep polling for. Only "no body at all"
+  /// is retried, and running out of attempts is [PublishVerificationOutcome
+  /// .unreachable] — never a silent success.
+  Future<PublishVerificationOutcome> untilMatchesSha({
+    required String siteUrl,
+    required String path,
+    required String expectedSha,
+    required int revision,
+    required int maxBytes,
+  }) async {
+    for (var attempt = 0; attempt < attempts; attempt++) {
+      await _sleep(interval);
+      final body = await _verifier.read(
+        siteUrl: siteUrl,
+        path: path,
+        maxBytes: maxBytes,
+        cacheBuster: '$revision-$attempt',
+      );
+      if (body == null) continue;
+      return GitBlobSha.of(body) == expectedSha
+          ? PublishVerificationOutcome.matched
+          : PublishVerificationOutcome.contradicted;
+    }
+    return PublishVerificationOutcome.unreachable;
   }
 
   static bool _sameBytes(List<int> a, List<int> b) {

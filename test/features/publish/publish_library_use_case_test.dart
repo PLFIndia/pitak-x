@@ -1586,6 +1586,91 @@ void main() {
       },
     );
 
+    group('F.4 step 2 — an unconfirmed publication is verified first', () {
+      final liveBooks = utf8.encode('{"books":[]}');
+      final liveSha = GitBlobSha.of(liveBooks);
+
+      PublishManifest unconfirmed() => PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'HEAD',
+        fileShas: {'index.html': 'abc', 'books.json': liveSha},
+      );
+
+      test('a site serving different bytes stops the publish', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier(
+            (_, path) async =>
+                path == 'books.json' ? utf8.encode('{"books":[1]}') : null,
+          ),
+          books: [book()],
+        ).run();
+
+        expect(
+          (result as PublishFailure).reason,
+          gitHubSiteChangedSincePublishMessage,
+        );
+        expect(api.committed, isNull);
+        expect(manifest.saves, isEmpty);
+      });
+
+      test('an unreachable site does not block the publish', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier((_, _) async => null),
+          books: [book()],
+        ).run();
+
+        expect(result, isA<PublishSuccess>());
+        expect(api.committed, isNotNull);
+      });
+
+      test(
+        'a matching site upgrades the record before the new commit',
+        () async {
+          final api = _CapturingApi();
+          final manifest = _MemManifest(unconfirmed());
+          final recorder = _Recorder();
+          final result = await makeUseCase(
+            api,
+            manifest,
+            verifier: _FakeVerifier(
+              (_, path) async => path == 'books.json' ? liveBooks : null,
+            ),
+            hostState: recorder,
+            books: [book()],
+          ).run();
+
+          expect(result, isA<PublishSuccess>());
+          expect(manifest.saves.first.state, PublishState.live);
+          expect(recorder.recorded, isNotEmpty);
+        },
+      );
+
+      test('a live record is not re-verified', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed().asLive());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier(
+            (_, path) async =>
+                path == 'books.json' ? utf8.encode('something else') : null,
+          ),
+          books: [book()],
+        ).run();
+
+        expect(result, isA<PublishSuccess>());
+      });
+    });
+
     test('R9: a failed save is reported, not swallowed', () async {
       final manifest = _MemManifest()..saveFails = true;
       final result = await makeUseCase(

@@ -36,12 +36,14 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
@@ -174,12 +176,10 @@ final class PublishEventsUseCase {
     // R6: shas and ownership come from the remote tree, never from the local
     // file. That is also what makes the catalogue gate below trustworthy: a
     // claimed `index.html` means the file really exists on the site.
-    final reconciliation = await GitHubPublicationReconciler(_api).call(
-      target: target,
-      branch: branch,
-      token: token,
-      local: _manifest.load(),
-    );
+    final localRecord = _manifest.load();
+    final reconciliation = await GitHubPublicationReconciler(
+      _api,
+    ).call(target: target, branch: branch, token: token, local: localRecord);
     final publication = reconciliation.toNullable();
     if (publication == null) {
       return PublishEventsFailure(switch (reconciliation.swap().toNullable()!) {
@@ -188,6 +188,20 @@ final class PublishEventsUseCase {
       });
     }
     final manifest = publication.manifest;
+
+    // F.4 step 2 (deviation 48): verify an unconfirmed commit at this head
+    // before building on it. Contradiction stops; unreachable does not.
+    final verification = await _verifyUnconfirmed(
+      local: localRecord,
+      reconciled: manifest,
+      remoteHead: publication.headSha,
+      target: target,
+      siteUrl: target.siteUrl,
+      revision: _clock(),
+    );
+    if (verification == PublishVerificationOutcome.contradicted) {
+      return const PublishEventsFailure(gitHubSiteChangedSincePublishMessage);
+    }
 
     // Gate (Q8=A): the catalogue must have been published to THIS repo.
     if (manifest.repo != target.ownerRepo ||
@@ -294,5 +308,39 @@ final class PublishEventsUseCase {
         // inject arbitrary text into it (§5 "safe message only").
         return PublishEventsFailure(gitHubHttpErrorMessage(code));
     }
+  }
+
+  /// Verifies an unconfirmed publication before building on it (F.4 step 2).
+  ///
+  /// A `matched` result upgrades the record to `live` and lets the journal
+  /// claim the address (R33). Both writes are best-effort: the publish
+  /// continues either way, and a failed save leaves `deployed`, which is still
+  /// the truth.
+  Future<PublishVerificationOutcome> _verifyUnconfirmed({
+    required PublishManifest local,
+    required PublishManifest reconciled,
+    required String remoteHead,
+    required GitHubPublishTarget target,
+    required String siteUrl,
+    required int revision,
+  }) async {
+    final verifier = _verifier;
+    if (verifier == null) return PublishVerificationOutcome.notApplicable;
+    final outcome =
+        await PublishVerificationCheck(verifier: verifier, sleep: _sleep).call(
+          localState: local.state,
+          localAnchor: local.headSha,
+          remoteAnchor: remoteHead,
+          expectedSha: reconciled.shaFor(EventsSectionBuilder.eventsJsonPath),
+          siteUrl: siteUrl,
+          anchorPath: EventsSectionBuilder.eventsJsonPath,
+          maxBytes: publishedEventsReadBackMaxBytes,
+          revision: revision,
+        );
+    if (outcome == PublishVerificationOutcome.matched) {
+      _manifest.save(reconciled.asLive());
+      await _hostState.recordVerified(target);
+    }
+    return outcome;
   }
 }

@@ -34,6 +34,7 @@ import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
@@ -177,18 +178,35 @@ final class PublishLibraryUseCase {
     // and a path this phone did not write is never claimed — so `mergeSection`
     // below cannot delete a human's file, and an unchanged file is compared
     // against what the site really holds.
-    final reconciliation = await GitHubPublicationReconciler(_api).call(
-      target: target,
-      branch: branch,
-      token: token,
-      local: _manifest.load(),
-    );
+    final localRecord = _manifest.load();
+    final reconciliation = await GitHubPublicationReconciler(
+      _api,
+    ).call(target: target, branch: branch, token: token, local: localRecord);
     final publication = reconciliation.toNullable();
     if (publication == null) {
       return PublishFailure(_messageFor(reconciliation.swap().toNullable()!));
     }
     final previous = publication.manifest;
     final expectedHead = publication.headSha;
+
+    // F.4 step 2 (deviation 48): if this phone has an UNCONFIRMED commit at the
+    // head we are about to build on, verify it first. A contradiction stops the
+    // publish (a new commit would silently overwrite whatever changed the
+    // site); an unreachable site does not, because a bad connection is not
+    // evidence of a conflict.
+    final verification = await _verifyUnconfirmed(
+      local: localRecord,
+      reconciled: previous,
+      remoteHead: expectedHead,
+      target: target,
+      siteUrl: pagesUrl,
+      anchorPath: CatalogueSectionBuilder.booksJsonPath,
+      maxBytes: publishedCatalogueReadBackMaxBytes,
+      revision: now,
+    );
+    if (verification == PublishVerificationOutcome.contradicted) {
+      return const PublishFailure(gitHubSiteChangedSincePublishMessage);
+    }
 
     // Phase 2: build the section through the SHARED builders (R3) against the
     // publication record that will also be merged, so change detection and
@@ -303,6 +321,42 @@ final class PublishLibraryUseCase {
     ValidationFailure(:final message) => message,
     _ => 'Something went wrong. Nothing was published.',
   };
+
+  /// Verifies an unconfirmed publication before building on it (F.4 step 2).
+  ///
+  /// A `matched` result upgrades the record to `live` and lets the journal
+  /// claim the address (R33) — the same proof the post-publish read-back gives,
+  /// just later. Both writes are best-effort: the publish continues either way,
+  /// and a failed save leaves `deployed`, which is still the truth.
+  Future<PublishVerificationOutcome> _verifyUnconfirmed({
+    required PublishManifest local,
+    required PublishManifest reconciled,
+    required String remoteHead,
+    required GitHubPublishTarget target,
+    required String siteUrl,
+    required String anchorPath,
+    required int maxBytes,
+    required int revision,
+  }) async {
+    final verifier = _verifier;
+    if (verifier == null) return PublishVerificationOutcome.notApplicable;
+    final outcome =
+        await PublishVerificationCheck(verifier: verifier, sleep: _sleep).call(
+          localState: local.state,
+          localAnchor: local.headSha,
+          remoteAnchor: remoteHead,
+          expectedSha: reconciled.shaFor(anchorPath),
+          siteUrl: siteUrl,
+          anchorPath: anchorPath,
+          maxBytes: maxBytes,
+          revision: revision,
+        );
+    if (outcome == PublishVerificationOutcome.matched) {
+      _manifest.save(reconciled.asLive());
+      await _hostState.recordVerified(target);
+    }
+    return outcome;
+  }
 
   /// Bounded origin-bound read-back of one just-published file.
   Future<bool?> _readBack({

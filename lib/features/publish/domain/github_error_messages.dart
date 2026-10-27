@@ -68,6 +68,17 @@ const String gitHubStalePublishMessage =
     'Your site was changed by something else after this phone checked it, so '
     'nothing was published. Publish again to update the newest version.';
 
+/// Fixed message when the live site serves DIFFERENT content than this phone
+/// recorded for its last unconfirmed publish (F.4 step 2, deviation 48).
+///
+/// Nothing is written: a new publish would silently overwrite whatever changed
+/// the site. The user is told what was observed, not what to guess — the site
+/// may have been edited by hand, by another device, or by another app.
+const String gitHubSiteChangedSincePublishMessage =
+    'Your site is showing something different from what this phone last '
+    'published, so nothing was changed. Check the site, then publish again '
+    'if you want to replace it.';
+
 /// Fixed message when the commit landed but the phone could not save its own
 /// record of the publish (R9).
 ///

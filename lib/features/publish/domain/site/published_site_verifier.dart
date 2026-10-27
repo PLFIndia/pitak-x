@@ -45,3 +45,11 @@ abstract interface class PublishedSiteVerifier {
 /// pinned against `PublishedCatalogueCodec.defaultMaxBodyBytes` by a test, so
 /// the two copies cannot drift.
 const int publishedCatalogueReadBackMaxBytes = 64 * 1024 * 1024;
+
+/// Byte cap for a publish read-back of the machine-readable events file
+/// (`events.json`).
+///
+/// The payload is a poster list (the app allows at most two posters), so this
+/// is far above any real file. It exists so a hostile or broken response can
+/// never be read without a bound — the same reason the catalogue has one.
+const int publishedEventsReadBackMaxBytes = 64 * 1024;

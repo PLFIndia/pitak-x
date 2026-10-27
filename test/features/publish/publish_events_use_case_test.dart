@@ -249,6 +249,49 @@ void main() {
     expect(result, isA<PublishEventsFailure>());
   });
 
+  group('F.4 step 2 — an unconfirmed events publish is verified first', () {
+    final liveEvents = utf8.encode('{"schemaVersion":1,"posters":[]}');
+    final liveSha = GitBlobSha.of(liveEvents);
+
+    PublishManifest unconfirmed() => PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'HEAD',
+      fileShas: {'index.html': 'abc', 'events.json': liveSha},
+    );
+
+    test('a site serving different events bytes stops the publish', () async {
+      final api = _CapturingApi();
+      final result = await make(
+        api: api,
+        manifest: _MemManifest(unconfirmed()),
+        verifier: _FakeVerifier(
+          (_, path) async => path == 'events.json'
+              ? utf8.encode('{"schemaVersion":1,"posters":[1]}')
+              : null,
+        ),
+      ).call(twoPosters());
+
+      expect(
+        (result as PublishEventsFailure).reason,
+        gitHubSiteChangedSincePublishMessage,
+      );
+      expect(api.committed, isNull);
+    });
+
+    test('an unreachable site does not block the events publish', () async {
+      final api = _CapturingApi();
+      final result = await make(
+        api: api,
+        manifest: _MemManifest(unconfirmed()),
+        verifier: _FakeVerifier((_, _) async => null),
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect(api.committed, isNotNull);
+    });
+  });
+
   test(
     'R1: the target comes from the caller, not the credential store',
     () async {
