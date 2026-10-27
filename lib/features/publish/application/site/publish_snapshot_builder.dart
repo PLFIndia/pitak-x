@@ -2,9 +2,9 @@
 /// layer, AGENTS.md §4; Cloudflare plan R2).
 ///
 /// Two phases, deliberately (R2/R4):
-///  - `read` gathers every input through `PublishReads`. It needs no target,
-///    so an unreadable library fails BEFORE the keystore, the network or the
-///    previous-publication record are touched.
+///  - `read` gathers every input through `PublishReads` for the operation's
+///    target. It touches no previous-publication record, so an unreadable
+///    library fails before the manifest, the Pages check and any write.
 ///  - `build` turns those inputs into the sections to write, using the
 ///    previous publication for change detection.
 /// Nothing here writes. Every failed read aborts with a typed failure, so a
@@ -18,6 +18,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -48,11 +49,14 @@ final class PublishSnapshotBuilder {
 
   /// Phase 1: reads every input strictly.
   ///
+  /// [target] is only used to build the `library.json` descriptor for the
+  /// site being published (C3) — it is never a source of "the current site".
   /// [includeEvents] false skips the events read entirely (an ordinary
   /// catalogue publish owns no poster files, so it must not depend on, or
   /// fail because of, the events file).
   Future<Either<Failure, PublishInputs>> read({
     required PublishReads reads,
+    required PublishTarget target,
     bool includeEvents = true,
   }) async {
     final items = await reads.catalogueItems();
@@ -67,7 +71,7 @@ final class PublishSnapshotBuilder {
     final countsFailure = counts.swap().toNullable();
     if (countsFailure != null) return Left(countsFailure);
 
-    final descriptor = await reads.libraryJson();
+    final descriptor = await reads.libraryJson(target.siteUrl);
     final descriptorFailure = descriptor.swap().toNullable();
     if (descriptorFailure != null) return Left(descriptorFailure);
 

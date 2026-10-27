@@ -31,9 +31,13 @@ abstract interface class PublishReads {
   /// file is a failure, not empty content (plan R2).
   Future<Either<Failure, EventsContent>> events();
 
-  /// The pre-encoded `library.json` descriptor, or null when descriptor
-  /// publication is switched off.
-  Future<Either<Failure, List<int>?>> libraryJson();
+  /// The pre-encoded `library.json` descriptor for [siteUrl], or null when
+  /// descriptor publication is switched off.
+  ///
+  /// [siteUrl] MUST be the site URL of the target passed to the current
+  /// operation (C3): a descriptor that points somewhere else would let a
+  /// stale or unverified address enter the network, a QR card or a move.
+  Future<Either<Failure, List<int>?>> libraryJson(String siteUrl);
 
   /// Active-loan counts per item id, or null when the vault is locked
   /// (availability is then omitted, honestly, from the payload).
@@ -73,8 +77,8 @@ final class PublishInputs {
   /// (availability is then omitted from the payload).
   final Map<int, int>? activeLoanCounts;
 
-  /// The pre-encoded `library.json` descriptor, or null when descriptor
-  /// publication is switched off.
+  /// The pre-encoded `library.json` descriptor for this publish's target, or
+  /// null when descriptor publication is switched off.
   final List<int>? libraryJson;
 
   /// The events content, or null when this publish carries no events section.

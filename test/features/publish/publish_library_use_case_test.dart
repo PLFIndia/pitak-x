@@ -25,6 +25,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../../support/raw_catalogue_rows.dart';
@@ -32,9 +33,13 @@ import '../import_export/bundle_test_fixture.dart';
 import '../library/replacement_harness.dart';
 
 class _FakeCreds implements PublishCredentialReader {
-  _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
+  _FakeCreds({this.tok = 'TKN'});
+
   final String? tok;
-  final String? repo;
+
+  /// The catalogue publish no longer reads this: it publishes to the sealed
+  /// target it is given (R1/C3). Kept because the port requires it.
+  final String? repo = 'me/lib';
   @override
   Future<String?> token() async => tok;
   @override
@@ -204,7 +209,8 @@ class _Reads implements PublishReads {
   Future<Either<Failure, EventsContent>> events() async => right(_events);
 
   @override
-  Future<Either<Failure, List<int>?>> libraryJson() async => right(_descriptor);
+  Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async =>
+      right(_descriptor);
 
   @override
   Future<Either<Failure, Map<int, int>?>> activeLoanCounts() async =>
@@ -222,6 +228,18 @@ final class _FailingReads extends _Reads {
   @override
   Future<Either<Failure, List<CatalogueItem>>> catalogueItems() async =>
       left(failure);
+}
+
+/// The sealed GitHub target for one test (R1/C3): `me/lib` unless a test asks
+/// for another `owner/repo`.
+GitHubPublishTarget gitHubTarget(String ownerRepo) =>
+    GitHubPublishTarget.create(ownerRepo)!;
+
+/// Runs one publish against the sealed target. Named [run] rather than [call]
+/// so tests read as "run this publish to me/lib".
+extension on PublishLibraryUseCase {
+  Future<PublishResult> run({GitHubPublishTarget? target}) =>
+      call(target: target ?? gitHubTarget('me/lib'));
 }
 
 void main() {
@@ -355,7 +373,7 @@ void main() {
         api,
         manifest,
         reads: _FailingReads(),
-      ).call();
+      ).run();
 
       // A raw failure degrades to ONE safe sentence — never the diagnostic.
       expect(
@@ -380,7 +398,7 @@ void main() {
         reads: _FailingReads(
           const PublishReadFailure('Could not read your saved libraries.'),
         ),
-      ).call();
+      ).run();
 
       expect(
         (result as PublishFailure).reason,
@@ -408,7 +426,7 @@ void main() {
           verifier: verifier,
           books: [book()],
           periodicals: const [],
-        ).call();
+        ).run();
         expect((result as PublishSuccess).pagesLive, isTrue);
         expect(verifier.calls, hasLength(2));
         // Origin-bound: the exact site root and the fixed file, never a URL.
@@ -432,7 +450,7 @@ void main() {
         }),
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect((result as PublishSuccess).pagesLive, isNull);
       expect(polls, PublishLibraryUseCase.readBackAttempts);
     });
@@ -444,7 +462,7 @@ void main() {
         verifier: _FakeVerifier((_, _) async => null),
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect((result as PublishSuccess).pagesLive, isNull);
     });
   });
@@ -457,7 +475,7 @@ void main() {
       manifest,
       books: [book()],
       periodicals: const [],
-    ).call();
+    ).run();
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
     expect(s.pagesUrl, 'https://me.github.io/lib/');
@@ -479,7 +497,7 @@ void main() {
       books: const [],
       periodicals: const [],
       activeLoanCounts: null,
-    ).call();
+    ).run();
 
     expect(result, isA<PublishSuccess>());
     final files = api.committed!;
@@ -502,7 +520,7 @@ void main() {
       _MemManifest(),
       books: [book()],
       periodicals: const [],
-    ).call();
+    ).run();
     final booksFile = api.committed!.firstWhere((f) => f.path == 'books.json');
     final json = utf8.decode(booksFile.bytes);
     expect(json, contains('The Odyssey'));
@@ -522,7 +540,7 @@ void main() {
       _MemManifest(),
       books: [book(), removed, removedIssue],
       periodicals: const [],
-    ).call();
+    ).run();
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
     );
@@ -535,7 +553,7 @@ void main() {
     // identical inputs ⇒ identical shas ⇒ nothing flagged for upload.
     final api1 = _CapturingApi();
     final m1 = _MemManifest();
-    await makeUseCase(api1, m1, books: [book()], periodicals: const []).call();
+    await makeUseCase(api1, m1, books: [book()], periodicals: const []).run();
     final seeded = _MemManifest(m1.saved!);
 
     final api2 = _CapturingApi();
@@ -544,7 +562,7 @@ void main() {
       seeded,
       books: [book()],
       periodicals: const [],
-    ).call();
+    ).run();
     // Same inputs ⇒ same shas ⇒ nothing flagged for upload.
     expect(api2.committed!.every((f) => !f.upload), isTrue);
   });
@@ -557,7 +575,7 @@ void main() {
       books: [book()],
       periodicals: const [],
       activeLoanCounts: null,
-    ).call();
+    ).run();
     expect((result as PublishSuccess).availabilityOmitted, isTrue);
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
@@ -571,7 +589,7 @@ void main() {
       _MemManifest(),
       credentials: _FakeCreds(tok: null),
       books: [book()],
-    ).call();
+    ).run();
     expect(r, isA<PublishFailure>());
   });
 
@@ -584,7 +602,7 @@ void main() {
         _MemManifest(),
         readLocalCover: (src) async => utf8.encode('IMG'),
         books: [book(cover: 'covers/abc.jpg')],
-      ).call();
+      ).run();
       final coverFile = api.committed!.firstWhere(
         (f) => f.path.startsWith('covers/'),
       );
@@ -614,7 +632,7 @@ void main() {
           _MemManifest(),
           books: [book()],
           periodicals: const [],
-        ).call();
+        ).run();
         expect(result, isA<PublishSuccess>());
         expect(api.committedBranch, 'gh-pages');
         expect(api.headTreeBranch, 'gh-pages');
@@ -629,7 +647,7 @@ void main() {
         manifest,
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('GitHub Pages'));
       expect(api.committed, isNull);
@@ -651,7 +669,7 @@ void main() {
           _MemManifest(),
           books: [book()],
           periodicals: const [],
-        ).call();
+        ).run();
         expect(result, isA<PublishFailure>());
         expect(api.committed, isNull);
       }
@@ -664,7 +682,7 @@ void main() {
         _MemManifest(),
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('connection'));
       expect(api.committed, isNull);
@@ -676,11 +694,10 @@ void main() {
       final result = await makeUseCase(
         api,
         _MemManifest(),
-        credentials: _FakeCreds(repo: 'me/me.github.io'),
         verifier: verifier,
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run(target: gitHubTarget('me/me.github.io'));
       expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
       // The read-back is bound to the same resolved address.
       expect(verifier.calls.first.$1, 'https://me.github.io/');
@@ -698,7 +715,7 @@ void main() {
         books: [book()],
         periodicals: const [],
         libraryJson: descriptor,
-      ).call();
+      ).run();
       expect(result, isA<PublishSuccess>());
       expect(api.committed!.map((f) => f.path), [
         'books.json',
@@ -717,7 +734,7 @@ void main() {
         books: [book()],
         periodicals: const [],
         libraryJson: descriptor,
-      ).call();
+      ).run();
       expect(
         api1.committed!.firstWhere((f) => f.path == 'library.json').upload,
         isTrue,
@@ -733,7 +750,7 @@ void main() {
         books: [book()],
         periodicals: const [],
         libraryJson: descriptor,
-      ).call();
+      ).run();
       expect(
         api2.committed!.firstWhere((f) => f.path == 'library.json').upload,
         isFalse,
@@ -755,7 +772,7 @@ void main() {
           manifest,
           books: [book()],
           periodicals: const [],
-        ).call();
+        ).run();
         // The opt-out deletes the stale file in the SAME commit (M14), so a
         // previously published location never outlives the switch.
         expect(api.deleted, ['library.json']);
@@ -773,7 +790,7 @@ void main() {
         _MemManifest(),
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect(api.deleted, isEmpty);
     });
   });
@@ -804,7 +821,7 @@ void main() {
           ),
         ],
         periodicals: [series()],
-      ).call();
+      ).run();
       final payload = committedPayload(api);
       final books = (payload['books'] as List<dynamic>)
           .cast<Map<String, dynamic>>();
@@ -836,7 +853,7 @@ void main() {
           _MemManifest(),
           books: [issue()],
           periodicals: [series()],
-        ).call();
+        ).run();
         final payload = committedPayload(api);
         final periodicals = (payload['periodicals'] as List<dynamic>)
             .cast<Map<String, dynamic>>();
@@ -866,7 +883,7 @@ void main() {
         _MemManifest(),
         books: [book()],
         periodicals: const [],
-      ).call();
+      ).run();
       expect(committedPayload(api).containsKey('periodicals'), isFalse);
     });
 
@@ -880,7 +897,7 @@ void main() {
           readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
           books: [issue()],
           periodicals: [series(removed: true, cover: 'covers/series.jpg')],
-        ).call();
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         final payload = committedPayload(api);
@@ -911,7 +928,7 @@ void main() {
         readLocalCover: (src) async => utf8.encode('SERIES-IMG'),
         books: [issue()],
         periodicals: [series(cover: 'covers/series.jpg')],
-      ).call();
+      ).run();
       // Exactly ONE cover file in the commit: the series' salted path.
       final covers = api.committed!
           .where((f) => f.path.startsWith('covers/'))
@@ -953,7 +970,7 @@ void main() {
           },
           books: [issue()],
           periodicals: [series(cover: source)],
-        ).call();
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         expect(requested, [source]);
@@ -992,7 +1009,7 @@ void main() {
         readLocalCover: (src) async => utf8.encode('IMG:$src'),
         books: [issue(cover: 'covers/issue.jpg')],
         periodicals: [series(cover: 'covers/series.jpg')],
-      ).call();
+      ).run();
       final salt = ascii.encode('salt-1234567890');
       final payload = committedPayload(api);
       expect(
@@ -1038,7 +1055,7 @@ void main() {
         },
         books: [issue()],
         periodicals: [series(cover: 'https://covers.openlibrary.org/x.jpg')],
-      ).call();
+      ).run();
       // URL unchanged + file already in the repo ⇒ no fetch, no upload.
       expect(fetches, 0);
       final coverFile = api.committed!.firstWhere(
@@ -1066,7 +1083,7 @@ void main() {
           readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
           books: [issue(uid: uid)],
           periodicals: [series(uid: uid, cover: 'covers/series.jpg')],
-        ).call();
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         final covers = api.committed!
@@ -1120,7 +1137,7 @@ void main() {
         },
         books: books,
         periodicals: periodicals,
-      ).call();
+      ).run();
 
       expect(result, isA<PublishFailure>());
       final reason = (result as PublishFailure).reason;

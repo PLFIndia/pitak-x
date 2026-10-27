@@ -24,7 +24,7 @@ import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -66,6 +66,15 @@ class PublishController extends _$PublishController implements PublishReads {
   }
 
   Future<PublishResult> _run(PublishMode mode) async {
+    // The operation's target is resolved ONCE, here, from local state, and is
+    // then the only source of the site URL (R1/C3). A publish with no usable
+    // target stops before any other work.
+    final target = GitHubPublishTarget.create(
+      await ref.read(publishCredentialStoreProvider).targetRepo(),
+    );
+    if (target == null) {
+      return const PublishFailure('Pick a target repo first.');
+    }
     // Side-effecting ports (bounded HTTP fetch, rootBundle template load)
     // arrive via DI as domain function types — this controller never touches
     // infrastructure directly (§3.1).
@@ -89,7 +98,7 @@ class PublishController extends _$PublishController implements PublishReads {
       verifier: verifier,
     );
 
-    return useCase.call(mode: mode);
+    return useCase.call(target: target, mode: mode);
   }
 
   // --- PublishReads -------------------------------------------------------
@@ -131,7 +140,7 @@ class PublishController extends _$PublishController implements PublishReads {
   }
 
   @override
-  Future<Either<Failure, List<int>?>> libraryJson() async {
+  Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async {
     // library.json (docs/ARCHITECTURE.md §5.1): the network descriptor. Its
     // identity is read through its single owner (N07 — `SettingsController`
     // implements `LibraryNamespace`); a failed mint/read REFUSES the whole
@@ -146,14 +155,9 @@ class PublishController extends _$PublishController implements PublishReads {
     }
 
     final settings = await ref.read(settingsControllerProvider.future);
-    // The descriptor's siteUrl is the site we are about to publish to. With
-    // no target repo chosen there is nothing to build — null here and the use
-    // case's own repo check answers with its clearer message before any file
-    // decision matters.
-    final siteUrl = githubPagesUrlFor(
-      await ref.read(publishCredentialStoreProvider).targetRepo(),
-    );
-    if (siteUrl == null) return right(null);
+    // [siteUrl] comes from the operation's sealed target (C3): it is never
+    // re-derived from "the current repo", so a move cannot publish a
+    // descriptor pointing at the old host.
 
     // members = the rows I added by card scan (§5.5): a hub publishes its
     // member list inside its own descriptor. A member row without a

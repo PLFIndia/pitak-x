@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/site/publish_snapshot_builde
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 
 /// SPECIFICATION of the snapshot builder (Cloudflare plan R2/R4, J.2).
@@ -56,6 +57,8 @@ void main() {
     ),
   );
 
+  final target = GitHubPublishTarget.create('me/lib')!;
+
   EventsContent eventsWith(String imageRef) =>
       EventsContent(posters: [EventPoster(imageRef: imageRef)]);
 
@@ -65,7 +68,7 @@ void main() {
       () async {
         final reads = _FakeReads()
           ..catalogueResult = left(const StorageFailure('private-db-detail'));
-        final result = await builder().read(reads: reads);
+        final result = await builder().read(reads: reads, target: target);
 
         expect(result.swap().toNullable(), isA<StorageFailure>());
         expect(
@@ -79,7 +82,7 @@ void main() {
     test('a failed periodical read is a failure, not "no magazines"', () async {
       final reads = _FakeReads()
         ..periodicalsResult = left(const StorageFailure('private-db-detail'));
-      final result = await builder().read(reads: reads);
+      final result = await builder().read(reads: reads, target: target);
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, ['catalogue', 'periodicals']);
@@ -88,7 +91,7 @@ void main() {
     test('a corrupt events file is a failure, not empty content', () async {
       final reads = _FakeReads()
         ..eventsResult = left(const StorageFailure('corrupt-events-json'));
-      final result = await builder().read(reads: reads);
+      final result = await builder().read(reads: reads, target: target);
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, contains('events'));
@@ -98,6 +101,7 @@ void main() {
       final reads = _FakeReads();
       final inputs = (await builder().read(
         reads: reads,
+        target: target,
         includeEvents: false,
       )).toNullable()!;
 
@@ -109,7 +113,10 @@ void main() {
       'a null descriptor read means "descriptor off", not "unreadable"',
       () async {
         final reads = _FakeReads()..descriptorResult = right(null);
-        final inputs = (await builder().read(reads: reads)).toNullable()!;
+        final inputs = (await builder().read(
+          reads: reads,
+          target: target,
+        )).toNullable()!;
 
         expect(inputs.libraryJson, isNull);
         expect(inputs.catalogueItems, isEmpty);
@@ -122,7 +129,10 @@ void main() {
       final reads = _FakeReads()
         ..books = [book(), book(id: 2), book(id: 3, cover: 'covers/gone.jpg')]
         ..eventsContent = eventsWith('posters/a.jpg');
-      final inputs = (await builder().read(reads: reads)).toNullable()!;
+      final inputs = (await builder().read(
+        reads: reads,
+        target: target,
+      )).toNullable()!;
       final snapshot =
           (await builder(
                 readPoster: (_) async => utf8.encode('JPG'),
@@ -145,7 +155,10 @@ void main() {
 
     test('an empty catalogue and no posters report both warnings', () async {
       final reads = _FakeReads()..eventsContent = EventsContent.empty;
-      final inputs = (await builder().read(reads: reads)).toNullable()!;
+      final inputs = (await builder().read(
+        reads: reads,
+        target: target,
+      )).toNullable()!;
       final snapshot = (await builder().build(
         inputs: inputs,
         previous: PublishManifest.empty,
@@ -162,7 +175,10 @@ void main() {
       'COMPLETE: an unreadable referenced cover fails before any write',
       () async {
         final reads = _FakeReads()..books = [book(cover: 'covers/gone.jpg')];
-        final inputs = (await builder().read(reads: reads)).toNullable()!;
+        final inputs = (await builder().read(
+          reads: reads,
+          target: target,
+        )).toNullable()!;
 
         final result = await builder().build(
           inputs: inputs,
@@ -184,7 +200,10 @@ void main() {
         'three representations', () async {
       final reads = _FakeReads()
         ..eventsContent = eventsWith('posters/gone.jpg');
-      final inputs = (await builder().read(reads: reads)).toNullable()!;
+      final inputs = (await builder().read(
+        reads: reads,
+        target: target,
+      )).toNullable()!;
 
       final complete = await builder().build(
         inputs: inputs,
@@ -215,7 +234,10 @@ void main() {
       final unlocked = _FakeReads()..counts = const {1: 0};
 
       for (final (reads, expected) in [(locked, true), (unlocked, false)]) {
-        final inputs = (await builder().read(reads: reads)).toNullable()!;
+        final inputs = (await builder().read(
+          reads: reads,
+          target: target,
+        )).toNullable()!;
         final snapshot = (await builder().build(
           inputs: inputs,
           previous: PublishManifest.empty,
@@ -230,6 +252,7 @@ void main() {
       final reads = _FakeReads()..books = [book()];
       final inputs = (await builder().read(
         reads: reads,
+        target: target,
         includeEvents: false,
       )).toNullable()!;
       final snapshot = (await builder().build(
@@ -293,7 +316,7 @@ final class _FakeReads implements PublishReads {
   }
 
   @override
-  Future<Either<Failure, List<int>?>> libraryJson() async {
+  Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async {
     calls.add('libraryJson');
     return descriptorResult ?? right(descriptor);
   }

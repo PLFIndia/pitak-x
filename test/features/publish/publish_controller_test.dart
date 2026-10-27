@@ -73,7 +73,10 @@ void main() {
       expect(h.states.any((state) => state.isLoading), isTrue);
       expect(h.states.any((state) => state.hasError), isFalse);
       expect(h.books.reads, 1);
-      expect(h.credentials.reads, 0);
+      // ONE local read resolves the operation's sealed target (R1/C3) before
+      // the strict reads. That is a repo-name lookup, not a token read: the
+      // token is only fetched once the library itself has been read.
+      expect(h.credentials.reads, 1);
       expect(h.api.reads, 0);
       expect(h.api.commits, isEmpty);
       expect(h.manifest.loads, 0);
@@ -258,7 +261,10 @@ void main() {
           .publish();
       await tester.pump();
       expect(h.states.last.isLoading, isTrue);
-      expect(h.credentials.reads, 0);
+      // The sealed target is resolved before the library read (R1/C3): that is
+      // the one local credential read that precedes it. The TOKEN, the API and
+      // the manifest all stay untouched while the read is pending.
+      expect(h.credentials.reads, 1);
       expect(h.api.reads, 0);
       expect(h.api.commits, isEmpty);
       expect(h.container.exists(appDocsDirProvider), isFalse);

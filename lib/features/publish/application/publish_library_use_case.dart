@@ -31,9 +31,9 @@ import 'package:pitaka/features/publish/application/site/publish_snapshot_builde
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
@@ -104,7 +104,12 @@ final class PublishLibraryUseCase {
   /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
   static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
 
-  /// Runs the publish.
+  /// Runs the publish to [target].
+  ///
+  /// [target] is the EXACT destination of this operation (R1/C3). It is the
+  /// only source of the site URL — for the descriptor, the read-back and the
+  /// success message — so a move can publish the new site while the old one is
+  /// still the active host.
   ///
   /// Phase 1 reads every input strictly through [_reads]. It runs FIRST, so a
   /// library that cannot be read fails before a token is fetched, before the
@@ -119,6 +124,7 @@ final class PublishLibraryUseCase {
   /// its own independent publish (`PublishEventsUseCase`, Q5=A), so this
   /// snapshot never carries poster files and can never delete one.
   Future<PublishResult> call({
+    required GitHubPublishTarget target,
     PublishMode mode = PublishMode.incremental,
     void Function(PublishPhase)? onPhase,
   }) async {
@@ -127,6 +133,7 @@ final class PublishLibraryUseCase {
 
     final read = await _snapshotBuilder.read(
       reads: _reads,
+      target: target,
       includeEvents: false,
     );
     final inputs = read.toNullable();
@@ -137,19 +144,13 @@ final class PublishLibraryUseCase {
 
     final token = await _credentials.token();
     if (token == null) return const PublishFailure('Not signed in to GitHub.');
-    final ownerRepo = await _credentials.targetRepo();
-    final parts = ownerRepo?.split('/');
-    if (ownerRepo == null || parts == null || parts.length != 2) {
-      return const PublishFailure('Pick a target repo first.');
-    }
-    final owner = parts[0];
-    final repo = parts[1];
-    // The address is derived by the shared resolver (user site vs project
-    // site); a target that cannot be resolved is refused before any write.
-    final pagesUrl = githubPagesUrlFor(ownerRepo);
-    if (pagesUrl == null) {
-      return const PublishFailure('Pick a target repo first.');
-    }
+    // The target carries the address (derived, never supplied): no second
+    // derivation here, so the descriptor, the commit and the read-back can
+    // never disagree about where this publish goes.
+    final owner = target.owner;
+    final repo = target.repo;
+    final ownerRepo = target.ownerRepo;
+    final pagesUrl = target.siteUrl;
 
     final now = _clock();
 
