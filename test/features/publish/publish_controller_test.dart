@@ -20,11 +20,13 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -108,6 +110,32 @@ void main() {
     expect(h.manifest.saves, 1);
     expect((result as PublishSuccess).pagesLive, isTrue);
   });
+
+  testWidgets(
+    'PublishMode.complete reaches the builder: a missing cover refuses instead '
+    'of dropping it, and an incremental publish still succeeds',
+    (tester) async {
+      final h = _Harness(coverSalt: true);
+      h.books.read = () async => right(const [
+        CatalogueItem(id: 1, title: 'Coverless', coverUrl: 'covers/gone.jpg'),
+      ]);
+
+      // COMPLETE (a move or a whole-site replacement): a referenced cover with
+      // no usable bytes is a typed failure BEFORE any write (R2).
+      final complete = await h.publish(tester, mode: PublishMode.complete);
+      expect(
+        (complete as PublishFailure).reason,
+        CatalogueSectionBuilder.missingCoverMessage,
+      );
+      expect(h.api.commits, isEmpty);
+      expect(h.manifest.saves, 0);
+
+      // INCREMENTAL (an ordinary publish) keeps the historical behaviour: the
+      // cover degrades to the sanitized reference instead of blocking.
+      expect(await h.publish(tester), isA<PublishSuccess>());
+      expect(h.api.commits, hasLength(1));
+    },
+  );
 
   testWidgets('W3: a failed periodical read refuses the publish (no commit)', (
     tester,
@@ -563,7 +591,11 @@ class _Harness {
   /// [networkUnavailable] makes the network repository provider fail the way
   /// the composition root does when the legacy-bookmarks migration cannot
   /// complete (review M14).
-  _Harness({bool observe = true, bool networkUnavailable = false}) {
+  _Harness({
+    bool observe = true,
+    bool networkUnavailable = false,
+    bool coverSalt = false,
+  }) {
     container = ProviderContainer(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
@@ -571,7 +603,9 @@ class _Harness {
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         gitHubApiProvider.overrideWithValue(api),
         publishCredentialStoreProvider.overrideWithValue(credentials),
-        publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
+        publishCoverIdsProvider.overrideWithValue(
+          PublishCoverIds(_Salt(coverSalt ? const [1, 2, 3, 4] : null)),
+        ),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         if (networkUnavailable)
@@ -589,6 +623,13 @@ class _Harness {
         // this fixture keeps its no-disk-access promise.
         coversDirProvider.overrideWith((ref) async => 'covers'),
         activeLoanCountsProvider.overrideWith((ref) => null),
+        // The snapshot wiring resolves the poster-reader handle up front (the
+        // builder is shared by every host). Stubbing it keeps this fixture's
+        // no-disk-access promise intact.
+        eventsPosterReaderProvider.overrideWith(
+          (ref) async =>
+              (_) async => null,
+        ),
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,
           required contact,
@@ -649,10 +690,13 @@ class _Harness {
   int remoteReads = 0;
   int liveReads = 0;
 
-  Future<PublishResult> publish(WidgetTester tester) async {
+  Future<PublishResult> publish(
+    WidgetTester tester, {
+    PublishMode mode = PublishMode.incremental,
+  }) async {
     final pending = container
         .read(publishControllerProvider.notifier)
-        .publish();
+        .publish(mode: mode);
     await tester.pump();
     // Advance the real use case's read-back delay on the test clock, not wall
     // time. The fake serves the committed bytes on the very first poll.
@@ -661,9 +705,16 @@ class _Harness {
   }
 }
 
+/// A cover salt that FAILS unless the harness's `coverSalt` flag is set: the
+/// fixture then proves a normal publish never touches cover IO unless it must.
 class _Salt implements PublishCoverSaltStore {
+  _Salt([this._bytes]);
+
+  final List<int>? _bytes;
+
   @override
-  Future<List<int>> salt() => throw UnsupportedError('Unexpected cover access');
+  Future<List<int>> salt() async =>
+      _bytes ?? (throw UnsupportedError('Unexpected cover access'));
 }
 
 class _Books implements CatalogueItemRepository {

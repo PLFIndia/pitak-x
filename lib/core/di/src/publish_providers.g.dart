@@ -277,6 +277,40 @@ final eventsJsonFactoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EventsJsonFactoryRef = AutoDisposeProviderRef<EventsJsonFactory>;
+String _$publishSnapshotBuilderHash() =>
+    r'0cb0517e7ba7cb5384947bdcb8c87fcb3232b00d';
+
+/// The ONE snapshot builder every publish host consumes (Cloudflare plan
+/// R2/R3/P5).
+///
+/// Why it lives in DI (beginner note): the catalogue and events sections must
+/// be byte-identical no matter which host receives them, so the four builders
+/// (covers, viewer HTML, events HTML/JSON) and the shared `books.json` encoder
+/// are wired exactly once, here. A second wiring — for example a Cloudflare
+/// adapter assembling its own builder — is how two hosts start publishing
+/// slightly different files without anyone noticing.
+///
+/// Settings are read here because the published pages carry the library's
+/// CURRENT name and public contact choices; the builder is auto-dispose, so a
+/// publish always builds against the values in force at that moment.
+///
+/// Copied from [publishSnapshotBuilder].
+@ProviderFor(publishSnapshotBuilder)
+final publishSnapshotBuilderProvider =
+    AutoDisposeFutureProvider<PublishSnapshotBuilder>.internal(
+      publishSnapshotBuilder,
+      name: r'publishSnapshotBuilderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishSnapshotBuilderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishSnapshotBuilderRef =
+    AutoDisposeFutureProviderRef<PublishSnapshotBuilder>;
 String _$publishCoverIdsHash() => r'3c5bcadbb45d7e23406191680df0ebe5e294b100';
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).

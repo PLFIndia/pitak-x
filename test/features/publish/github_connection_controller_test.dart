@@ -10,6 +10,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 
 /// In-memory credential store that COUNTS writes, so tests can assert the
 /// token landed in the store exactly once (and never in the UI state).
@@ -192,7 +193,9 @@ class _FakePublishController extends PublishController {
   FutureOr<PublishResult?> build() => null;
 
   @override
-  Future<PublishResult> publish() async {
+  Future<PublishResult> publish({
+    PublishMode mode = PublishMode.incremental,
+  }) async {
     calls++;
     return _result;
   }
@@ -834,6 +837,7 @@ class _ThrowingPublishController extends PublishController {
   FutureOr<PublishResult?> build() => null;
 
   @override
-  Future<PublishResult> publish() async =>
-      throw const GitHubApiException('private transport detail');
+  Future<PublishResult> publish({
+    PublishMode mode = PublishMode.incremental,
+  }) async => throw const GitHubApiException('private transport detail');
 }

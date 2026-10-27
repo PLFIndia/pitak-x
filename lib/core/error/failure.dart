@@ -21,6 +21,25 @@ final class ValidationFailure extends Failure {
   final String message;
 }
 
+/// A publish could not READ an input it needs, so nothing was published.
+///
+/// Why this exists (beginner note; Cloudflare plan R2/M14): a publish must
+/// never turn "I could not read your data" into "you have no data" — that
+/// would replace a live site with an empty one. The read still fails for its
+/// own reason ([StorageFailure], a migration exception, …), but several of
+/// those reasons have a *specific* sentence the user should see (for example
+/// "your saved libraries could not be read"). This variant carries that safe
+/// sentence, so the publish path can surface the real reason without ever
+/// leaking a diagnostic. It is NOT a [ValidationFailure]: the input was not
+/// invalid, it was unreadable.
+final class PublishReadFailure extends Failure {
+  /// Creates a publish-read failure whose [message] is safe to show.
+  const PublishReadFailure(this.message);
+
+  /// Fixed, user-facing sentence. Never built from exception text.
+  final String message;
+}
+
 /// A requested entity/row was not found.
 final class NotFoundFailure extends Failure {
   /// Creates a not-found failure.

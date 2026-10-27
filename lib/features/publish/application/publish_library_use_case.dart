@@ -1,7 +1,7 @@
 /// Publish-to-GitHub-Pages orchestrator (application layer, AGENTS.md §4, #32).
 ///
-/// Port of Kotlin `PublishLibraryUseCase`. Builds the world-facing bundle
-/// (books.json + index.html viewer + salted covers/) and pushes it as ONE
+/// Port of Kotlin `PublishLibraryUseCase`. Pushes the world-facing catalogue
+/// (books.json + index.html viewer + library.json + salted covers/) as ONE
 /// atomic, incremental commit via [GitHubGitDataApi] (the git-data role of
 /// the GitHub port, S5 — this use case never touches auth or repo admin).
 ///
@@ -10,9 +10,10 @@
 ///     live from the Pages configuration, never assumed to be the default
 ///     branch; Pages off or re-pointed → typed failure before any write).
 ///  2. Load (or rebuild) the incremental manifest.
-///  3. Build the catalogue section with the SHARED builder (Cloudflare plan
-///     R3) — the same code the Cloudflare adapter consumes, so the two hosts
-///     cannot drift.
+///  3. Ask the SHARED [PublishSnapshotBuilder] for the section to write
+///     (Cloudflare plan R2/R3) — the same builder the Cloudflare adapter will
+///     consume, over strict reads, so the two hosts cannot drift and a failed
+///     read aborts before any write.
 ///  4. Merge that section into the publication record (R7): only its own
 ///     paths are replaced, the events section survives.
 ///  5. Commit the changed file set + exact owned deletions; persist the merged
@@ -24,30 +25,20 @@
 library;
 
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
-import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
-import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
-// The cover-IO typedefs live with the decider since S20 (plan magazines);
-// re-exported so existing imports of this file keep resolving (one import
-// per caller, the S19 idiom). Publish results follow the same compatibility
-// rule after their S8 extraction kept this orchestrator below 500 lines.
-export 'publish_cover_decider.dart' show LocalCoverReader, RemoteCoverFetcher;
 export 'publish_result.dart';
-export 'site/catalogue_section_builder.dart' show ViewerHtmlBuilderFn;
 
 /// Coarse publish phases for the UI.
 enum PublishPhase {
@@ -71,22 +62,16 @@ final class PublishLibraryUseCase {
     required GitHubGitDataApi api,
     required PublishCredentialReader credentials,
     required PublishManifestGateway manifest,
-    required PublishCoverIds coverIds,
-    required LocalCoverReader readLocalCover,
-    required RemoteCoverFetcher fetchRemoteCover,
-    required ViewerHtmlBuilderFn buildViewerHtml,
+    required PublishSnapshotBuilder snapshotBuilder,
+    required PublishReads reads,
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
-       _covers = PublishCoverDecider(
-         coverIds: coverIds,
-         readLocalCover: readLocalCover,
-         fetchRemoteCover: fetchRemoteCover,
-       ),
-       _buildViewerHtml = buildViewerHtml,
+       _snapshotBuilder = snapshotBuilder,
+       _reads = reads,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -94,8 +79,14 @@ final class PublishLibraryUseCase {
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
-  final PublishCoverDecider _covers;
-  final ViewerHtmlBuilderFn _buildViewerHtml;
+
+  /// The ONE section builder for every host (R3). Building happens here, after
+  /// the manifest is known, so exactly one manifest load feeds the change
+  /// detection and the merge — the section is never built twice.
+  final PublishSnapshotBuilder _snapshotBuilder;
+
+  /// Strict typed reads the snapshot is built from (R2).
+  final PublishReads _reads;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
   final PublishedSiteVerifier? _verifier;
@@ -113,33 +104,36 @@ final class PublishLibraryUseCase {
   /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
   static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
 
-  /// Runs the publish. [books] are all library items of any kind (removed
-  /// ones are filtered here). [periodicals] are all magazine titles
-  /// (ADR 0014 W3): the non-removed ones publish as `periodicals[]`; a
-  /// removed series gets no entry, but its issues are still live library
-  /// rows (D8) and publish with the series-cover fallback.
-  /// [activeLoanCounts] is the active-loan count per item id, or null
-  /// when the vault is locked (availability then omitted).
+  /// Runs the publish.
   ///
-  /// [libraryJson] is the pre-encoded `library.json` network descriptor, or
-  /// null when none may be written — null REMOVES a previously published
-  /// descriptor in the same commit (M14), so a stale location never outlives
-  /// the user's opt-out.
+  /// Phase 1 reads every input strictly through [_reads]. It runs FIRST, so a
+  /// library that cannot be read fails before a token is fetched, before the
+  /// GitHub API is called and before the manifest is loaded (R2: no remote
+  /// write, and no pointless round trip, for a publish that cannot proceed).
   ///
   /// [mode] is [PublishMode.complete] for a move or a whole-site
   /// replacement: every required cover must then resolve to usable bytes, and
   /// a missing one fails typed BEFORE any write.
+  ///
+  /// This path publishes the CATALOGUE section only. The events section has
+  /// its own independent publish (`PublishEventsUseCase`, Q5=A), so this
+  /// snapshot never carries poster files and can never delete one.
   Future<PublishResult> call({
-    required List<CatalogueItem> books,
-    required List<Periodical> periodicals,
-    required Map<int, int>? activeLoanCounts,
-    required List<int> Function(PublishExport) encodeBooksJson,
-    required List<int>? libraryJson,
     PublishMode mode = PublishMode.incremental,
     void Function(PublishPhase)? onPhase,
   }) async {
     void phase(PublishPhase p) => onPhase?.call(p);
     phase(PublishPhase.preparing);
+
+    final read = await _snapshotBuilder.read(
+      reads: _reads,
+      includeEvents: false,
+    );
+    final inputs = read.toNullable();
+    if (inputs == null) {
+      // A failed read is never "empty content": nothing is built or written.
+      return PublishFailure(_messageFor(read.swap().toNullable()!));
+    }
 
     final token = await _credentials.token();
     if (token == null) return const PublishFailure('Not signed in to GitHub.');
@@ -158,7 +152,6 @@ final class PublishLibraryUseCase {
     }
 
     final now = _clock();
-    final availabilityOmitted = activeLoanCounts == null;
 
     // N09 (D2-a): commit to the branch Pages actually serves. Publishing to
     // any other branch would "succeed" without changing the live site.
@@ -189,26 +182,22 @@ final class PublishLibraryUseCase {
       }
     }
 
-    // Build the section with the shared builder (the same bytes every host
-    // publishes). A typed failure here means NOTHING was written.
-    final built =
-        await CatalogueSectionBuilder(
-          covers: _covers,
-          buildViewerHtml: _buildViewerHtml,
-          encodeBooksJson: encodeBooksJson,
-        ).build(
-          books: books,
-          periodicals: periodicals,
-          activeLoanCounts: activeLoanCounts,
-          libraryJson: libraryJson,
-          previous: manifest,
-          now: now,
-          mode: mode,
-        );
-    final section = built.fold((failure) => null, (value) => value);
-    if (section == null) {
+    // Phase 2: build the section through the SHARED builders (R3) against the
+    // publication record that will also be merged, so change detection and
+    // the merge can never disagree. A typed failure here means NOTHING was
+    // written. The catalogue section owns no poster path, so a catalogue
+    // publish can never delete one (R7).
+    final built = await _snapshotBuilder.build(
+      inputs: inputs,
+      previous: manifest,
+      now: now,
+      mode: mode,
+    );
+    final snapshot = built.toNullable();
+    if (snapshot == null) {
       return PublishFailure(_messageFor(built.swap().toNullable()!));
     }
+    final section = snapshot.catalogue;
 
     // R7: merge ONLY this section into the publication record. The events
     // section (and any other app-owned path) survives; the section's own
@@ -264,7 +253,7 @@ final class PublishLibraryUseCase {
         return PublishSuccess(
           pagesUrl: pagesUrl,
           uploadedPaths: uploadedPaths,
-          availabilityOmitted: availabilityOmitted,
+          availabilityOmitted: snapshot.availabilityOmitted,
           pagesLive: pagesLive,
         );
       case PublishCommitHttpError(:final code):
@@ -276,6 +265,9 @@ final class PublishLibraryUseCase {
 
   /// Maps a typed failure to the fixed, user-facing publish message.
   static String _messageFor(Failure failure) => switch (failure) {
+    // A read failure carries its own already-safe sentence (M14: "could not
+    // read your saved libraries" must not become a generic message).
+    PublishReadFailure(:final message) => message,
     ValidationFailure(:final message) => message,
     _ => 'Something went wrong. Nothing was published.',
   };

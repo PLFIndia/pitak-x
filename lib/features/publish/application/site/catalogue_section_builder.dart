@@ -18,6 +18,8 @@
 /// encoder is injected, so the encoders stay in one place.
 library;
 
+import 'dart:convert';
+
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -39,6 +41,16 @@ typedef ViewerHtmlBuilderFn = Future<List<int>> Function();
 
 /// Encodes the machine-readable payload (`books.json`).
 typedef BooksJsonEncoder = List<int> Function(PublishExport export);
+
+/// The ONE `books.json` encoder (pretty-printed UTF-8 JSON).
+///
+/// Why one implementation (beginner note): the bytes ARE the content sha, and
+/// every host decides "upload or skip" by comparing that sha with the last
+/// publish. Two encoders that differ by a single space would make every file
+/// look changed on the other host and force a full re-upload — so production
+/// wiring uses this function and never builds its own encoder.
+List<int> encodeBooksJsonBytes(PublishExport export) =>
+    utf8.encode(const JsonEncoder.withIndent('  ').convert(export.toJson()));
 
 /// Builds the catalogue section for one publish.
 final class CatalogueSectionBuilder {

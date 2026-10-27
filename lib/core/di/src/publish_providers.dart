@@ -14,18 +14,24 @@
 library;
 
 import 'package:pitaka/core/di/src/database_providers.dart';
+import 'package:pitaka/core/di/src/events_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
+import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
-    show PublishManifestGateway, RemoteCoverFetcher;
+    show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
+import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
@@ -43,6 +49,7 @@ import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_st
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
+import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'publish_providers.g.dart';
@@ -180,6 +187,64 @@ EventsHtmlFactory eventsHtmlFactory(EventsHtmlFactoryRef ref) =>
 @riverpod
 EventsJsonFactory eventsJsonFactory(EventsJsonFactoryRef ref) =>
     (posters) => const EventsJsonBuilder().build(posters);
+
+/// The ONE snapshot builder every publish host consumes (Cloudflare plan
+/// R2/R3/P5).
+///
+/// Why it lives in DI (beginner note): the catalogue and events sections must
+/// be byte-identical no matter which host receives them, so the four builders
+/// (covers, viewer HTML, events HTML/JSON) and the shared `books.json` encoder
+/// are wired exactly once, here. A second wiring — for example a Cloudflare
+/// adapter assembling its own builder — is how two hosts start publishing
+/// slightly different files without anyone noticing.
+///
+/// Settings are read here because the published pages carry the library's
+/// CURRENT name and public contact choices; the builder is auto-dispose, so a
+/// publish always builds against the values in force at that moment.
+@riverpod
+Future<PublishSnapshotBuilder> publishSnapshotBuilder(
+  PublishSnapshotBuilderRef ref,
+) async {
+  final settings = await ref.watch(settingsControllerProvider.future);
+  final coverIds = ref.watch(publishCoverIdsProvider);
+  final readLocalCover = await ref.watch(
+    publishLocalCoverReaderProvider.future,
+  );
+  final fetchRemoteCover = ref.watch(remoteCoverFetcherProvider);
+  final viewerHtml = ref.watch(viewerHtmlFactoryProvider);
+  final eventsHtml = ref.watch(eventsHtmlFactoryProvider);
+  final eventsJson = ref.watch(eventsJsonFactoryProvider);
+  final readPoster = await ref.watch(eventsPosterReaderProvider.future);
+
+  return PublishSnapshotBuilder(
+    catalogue: CatalogueSectionBuilder(
+      covers: PublishCoverDecider(
+        coverIds: coverIds,
+        readLocalCover: readLocalCover,
+        fetchRemoteCover: fetchRemoteCover,
+      ),
+      buildViewerHtml: () => viewerHtml(
+        libraryName: settings.libraryName,
+        contact: PublishContact(
+          address: settings.publishContactAddress,
+          gps: settings.publishContactGps,
+          email: settings.publishContactEmail,
+          phone: settings.publishContactPhone,
+        ),
+        // D7: one switch gates the index.html pin and the library.json
+        // location alike.
+        sharing: settings.publishLocationSharing,
+      ),
+      encodeBooksJson: encodeBooksJsonBytes,
+    ),
+    events: EventsSectionBuilder(
+      readPoster: readPoster,
+      buildEventsHtml: (posters) =>
+          eventsHtml(libraryName: settings.libraryName, posters: posters),
+      buildEventsJson: eventsJson,
+    ),
+  );
+}
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
 @riverpod
