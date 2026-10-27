@@ -17,21 +17,30 @@
 /// plan R3) and merged into the publication record with [mergeSection] (R7),
 /// so publishing events can never drop the catalogue's file shas and publishing
 /// the catalogue can never drop a poster.
+///
+/// Since schema 2 the commit is also anchored: the branch head is read before
+/// building and passed back as `expectedHead`, so a commit made meanwhile is
+/// reported as stale instead of overwritten (R6). Read-back then decides
+/// whether the record may be called `live` — an accepted commit alone is not
+/// proof that the page is served (F.4 step 7).
 library;
 
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
+import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
-import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
 /// Built once per call so the same poster-reader/html/json ports are used for
@@ -53,6 +62,7 @@ final class PublishEventsSuccess extends PublishEventsResult {
   const PublishEventsSuccess({
     required this.eventsUrl,
     required this.uploadedPaths,
+    this.localStateSaved = true,
   });
 
   /// Public URL of the events page.
@@ -60,6 +70,10 @@ final class PublishEventsSuccess extends PublishEventsResult {
 
   /// Files whose bytes were uploaded this run.
   final List<String> uploadedPaths;
+
+  /// False when the commit landed but this phone could not save its own record
+  /// of the publish (R9). The site IS updated; the next publish reconciles.
+  final bool localStateSaved;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.
@@ -81,6 +95,8 @@ final class PublishEventsUseCase {
     required PosterBytesReader readPoster,
     required EventsHtmlBuilderFn buildEventsHtml,
     required EventsJsonFactory buildEventsJson,
+    PublishedSiteVerifier? verifier,
+    Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
        _credentials = credentials,
@@ -90,12 +106,18 @@ final class PublishEventsUseCase {
          buildEventsHtml: buildEventsHtml,
          buildEventsJson: buildEventsJson,
        ),
+       _verifier = verifier,
+       _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final EventsSectionBuilder _section;
+
+  /// Null ⇒ read-back skipped (tests / no network port wired).
+  final PublishedSiteVerifier? _verifier;
+  final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
   /// Repo path of the catalogue page whose presence proves "already published".
@@ -115,26 +137,17 @@ final class PublishEventsUseCase {
       return const PublishEventsFailure('Not signed in to GitHub.');
     }
     final ownerRepo = await _credentials.targetRepo();
-    final parts = ownerRepo?.split('/');
-    if (ownerRepo == null || parts == null || parts.length != 2) {
+    final target = GitHubPublishTarget.create(ownerRepo);
+    if (target == null) {
       return const PublishEventsFailure('Pick a target repo first.');
     }
-    final owner = parts[0];
-    final repo = parts[1];
+    final owner = target.owner;
+    final repo = target.repo;
     // N09: ONE resolver for every published address (user site vs project
     // site) — shared with the catalogue publish and the drawer.
     final eventsUrl = githubPagesFileUrl(ownerRepo, 'events.html');
     if (eventsUrl == null) {
       return const PublishEventsFailure('Pick a target repo first.');
-    }
-
-    // Gate (Q8=A): the catalogue must have been published to THIS repo.
-    final manifest = _manifest.load();
-    if (manifest.repo != ownerRepo ||
-        manifest.shaFor(_catalogueMarker) == null) {
-      return const PublishEventsFailure(
-        'Publish your catalogue first, then publish events.',
-      );
     }
 
     // N09 (D2-a): commit to the branch Pages actually serves (see the
@@ -148,6 +161,32 @@ final class PublishEventsUseCase {
       branch = site.sourceBranch!;
     } on GitHubApiException {
       return const PublishEventsFailure(gitHubNetworkErrorMessage);
+    }
+
+    // R6: shas and ownership come from the remote tree, never from the local
+    // file. That is also what makes the catalogue gate below trustworthy: a
+    // claimed `index.html` means the file really exists on the site.
+    final reconciliation = await GitHubPublicationReconciler(_api).call(
+      target: target,
+      branch: branch,
+      token: token,
+      local: _manifest.load(),
+    );
+    final publication = reconciliation.toNullable();
+    if (publication == null) {
+      return PublishEventsFailure(switch (reconciliation.swap().toNullable()!) {
+        ValidationFailure(:final message) => message,
+        _ => 'Something went wrong. Nothing was published.',
+      });
+    }
+    final manifest = publication.manifest;
+
+    // Gate (Q8=A): the catalogue must have been published to THIS repo.
+    if (manifest.repo != target.ownerRepo ||
+        manifest.shaFor(_catalogueMarker) == null) {
+      return const PublishEventsFailure(
+        'Publish your catalogue first, then publish events.',
+      );
     }
 
     // Build the section with the SHARED builder: one filtered poster list
@@ -187,6 +226,7 @@ final class PublishEventsUseCase {
         ],
         deletePaths: merge.deletePaths,
         commitMessage: 'Pitak events publish $now',
+        expectedHead: publication.headSha,
       );
     } on GitHubApiException {
       // Fixed message (§5): exception text can embed URLs/response detail.
@@ -194,20 +234,48 @@ final class PublishEventsUseCase {
     }
 
     switch (result) {
-      case PublishCommitSuccess(:final uploadedPaths):
+      case PublishCommitStale():
+        return const PublishEventsFailure(gitHubStalePublishMessage);
+      case PublishCommitSuccess(:final uploadedPaths, :final commitSha):
         // Merge the new file shas into the existing record (preserve the
         // catalogue's entries) and DROP the deleted poster paths (M14) so a
         // later publish does not try to reuse their shas.
-        _manifest.save(
-          PublishManifest(
-            repo: ownerRepo,
-            fileShas: merge.fileShas,
-            coverUrlByBookId: manifest.coverUrlByBookId,
-          ),
+        final committed = manifest.afterCommit(
+          commitSha: commitSha,
+          mergedShas: merge.fileShas,
+          coverUrlByBookId: manifest.coverUrlByBookId,
         );
+        final localStateSaved = _manifest.save(committed).isRight();
+
+        // F.4 step 7: an accepted commit is not proof that the page is served.
+        // Verify the machine-readable section (always present — a publish with
+        // zero posters still writes an explicit empty list), then record the
+        // truth.
+        final verifier = _verifier;
+        final eventsJson = merge.files
+            .where((f) => f.path == EventsSectionBuilder.eventsJsonPath)
+            .firstOrNull
+            ?.bytes;
+        if (verifier != null && eventsJson != null) {
+          final live =
+              await PublishedFileReadBack(
+                verifier: verifier,
+                sleep: _sleep,
+              ).untilServed(
+                siteUrl: target.siteUrl,
+                path: EventsSectionBuilder.eventsJsonPath,
+                expected: eventsJson,
+                revision: now,
+              );
+          if (live ?? false) {
+            // A failed upgrade leaves `deployed`, which is the truth (R5).
+            _manifest.save(committed.asLive());
+          }
+        }
         return PublishEventsSuccess(
           eventsUrl: eventsUrl,
           uploadedPaths: uploadedPaths,
+          localStateSaved: localStateSaved,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can

@@ -255,6 +255,7 @@ final class _PublishFixture {
             ),
           ],
       commitMessage: 'test publish',
+      expectedHead: _head,
     );
   }
 

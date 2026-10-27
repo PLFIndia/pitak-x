@@ -17,6 +17,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
+import 'package:pitaka/features/publish/infrastructure/http_github_tree.dart';
 
 /// `http`-backed GitHub client.
 final class HttpGitHubApi implements GitHubApi {
@@ -34,8 +36,6 @@ final class HttpGitHubApi implements GitHubApi {
 
   /// Git file mode for a normal (non-executable) blob.
   static const String _modeFile = '100644';
-
-  static final RegExp _gitSha = RegExp(r'^[0-9a-fA-F]{40}$');
 
   /// Git branch names the app will put into a URL path. Git allows far more,
   /// but every branch the app creates or serves Pages from is plain
@@ -75,7 +75,7 @@ final class HttpGitHubApi implements GitHubApi {
       headers: {'Accept': 'application/json'},
       body: {'client_id': clientId, 'scope': scope},
     );
-    final json = _decodeMap(resp.body);
+    final json = decodeGitHubObject(resp.body);
     final deviceCode = json['device_code'] as String?;
     final userCode = json['user_code'] as String?;
     final uri = json['verification_uri'] as String?;
@@ -105,7 +105,7 @@ final class HttpGitHubApi implements GitHubApi {
         'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
       },
     );
-    final json = _decodeMap(resp.body);
+    final json = decodeGitHubObject(resp.body);
     final token = json['access_token'] as String?;
     if (token != null && token.isNotEmpty) {
       return PollAuthorized(token, (json['scope'] as String?) ?? '');
@@ -141,7 +141,7 @@ final class HttpGitHubApi implements GitHubApi {
       _apiBase.replace(path: '/user'),
       headers: _authHeaders(token),
     );
-    final login = _decodeMap(resp.body)['login'] as String?;
+    final login = decodeGitHubObject(resp.body)['login'] as String?;
     if (login == null) throw const GitHubApiException('No login in /user');
     return login;
   }
@@ -212,7 +212,7 @@ final class HttpGitHubApi implements GitHubApi {
     if (resp.statusCode >= 400) {
       throw GitHubApiException('repository: HTTP ${resp.statusCode}');
     }
-    final json = _decodeMapSafe(resp.body);
+    final json = decodeGitHubObject(resp.body);
     final fullName = json['full_name'];
     final ownerLogin = (json['owner'] as Map?)?['login'];
     final isPrivate = json['private'];
@@ -256,7 +256,7 @@ final class HttpGitHubApi implements GitHubApi {
     if (resp.statusCode >= 400) {
       throw GitHubApiException('pages: HTTP ${resp.statusCode}');
     }
-    final json = _decodeMapSafe(resp.body);
+    final json = decodeGitHubObject(resp.body);
     // `build_type` is absent on older API shapes; GitHub's default for a
     // branch-sourced site is `legacy`.
     final buildType = json['build_type'] ?? 'legacy';
@@ -314,10 +314,11 @@ final class HttpGitHubApi implements GitHubApi {
     if (resp.statusCode == 422) return const RepoAlreadyExists();
     if (resp.statusCode >= 400) {
       throw GitHubApiException(
-        'repo create: HTTP ${resp.statusCode} ${_excerpt(resp.body)}',
+        'repo create: HTTP ${resp.statusCode} ${gitHubExcerpt(resp.body)}',
       );
     }
-    final branch = _decodeMap(resp.body)['default_branch'] as String? ?? 'main';
+    final branch =
+        decodeGitHubObject(resp.body)['default_branch'] as String? ?? 'main';
     return RepoCreated(branch);
   }
 
@@ -338,40 +339,23 @@ final class HttpGitHubApi implements GitHubApi {
     // 409 = Pages already enabled — converged, not an error (§12).
     if (resp.statusCode >= 400 && resp.statusCode != 409) {
       throw GitHubApiException(
-        'enable Pages: HTTP ${resp.statusCode} ${_excerpt(resp.body)}',
+        'enable Pages: HTTP ${resp.statusCode} ${gitHubExcerpt(resp.body)}',
       );
     }
   }
 
-  // --- Git Data: read head tree (manifest rebuild) -------------------------
+  // --- Git Data: read head + tree (manifest reconciliation) ----------------
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
-  }) async {
-    final headSha = await _refSha(owner, repo, branch, token);
-    if (headSha == null) return {};
-    final treeSha = await _commitTreeSha(owner, repo, headSha, token);
-    if (treeSha == null) return {};
-    final resp = await _client.get(
-      _apiBase.replace(
-        path: '/repos/$owner/$repo/git/trees/$treeSha',
-        queryParameters: {'recursive': '1'},
-      ),
-      headers: _authHeaders(token),
-    );
-    if (resp.statusCode >= 400) return {};
-    final tree = _decodeMap(resp.body)['tree'];
-    if (tree is! List) return {};
-    return {
-      for (final e in tree.whereType<Map<String, dynamic>>())
-        if (e['type'] == 'blob' && e['path'] is String && e['sha'] is String)
-          e['path'] as String: e['sha'] as String,
-    };
-  }
+  }) => GitHubTreeReader(
+    client: _client,
+    apiBase: _apiBase,
+  ).read(owner: owner, repo: repo, branch: branch, token: token);
 
   // --- Git Data: atomic incremental commit ---------------------------------
 
@@ -383,6 +367,7 @@ final class HttpGitHubApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
     final headers = _authHeaders(token);
@@ -395,9 +380,16 @@ final class HttpGitHubApi implements GitHubApi {
       headers: headers,
     );
     if (refResp.statusCode != 200) {
-      return PublishCommitHttpError(refResp.statusCode, _excerpt(refResp.body));
+      return PublishCommitHttpError(
+        refResp.statusCode,
+        gitHubExcerpt(refResp.body),
+      );
     }
-    final headSha = _readGitObjectSha(refResp.body, 'object');
+    final headSha = gitHubObjectSha(refResp.body, 'object');
+    // R6 compare-and-swap, checked BEFORE a single blob is uploaded: if the
+    // branch is no longer the head this publish was built from, another writer
+    // changed the site and our planned deletions may be wrong.
+    if (headSha != expectedHead) return const PublishCommitStale();
     final headCommitResp = await _get(
       _apiBase.replace(path: '/repos/$owner/$repo/git/commits/$headSha'),
       headers: headers,
@@ -405,10 +397,10 @@ final class HttpGitHubApi implements GitHubApi {
     if (headCommitResp.statusCode != 200) {
       return PublishCommitHttpError(
         headCommitResp.statusCode,
-        _excerpt(headCommitResp.body),
+        gitHubExcerpt(headCommitResp.body),
       );
     }
-    final baseTreeSha = _readGitObjectSha(headCommitResp.body, 'tree');
+    final baseTreeSha = gitHubObjectSha(headCommitResp.body, 'tree');
 
     // 2. Upload changed blobs (serially — simple + safe; counts are small).
     for (final f in files.where((f) => f.upload)) {
@@ -420,7 +412,7 @@ final class HttpGitHubApi implements GitHubApi {
       if (blobResp.statusCode >= 400) {
         return PublishCommitHttpError(
           blobResp.statusCode,
-          _excerpt(blobResp.body),
+          gitHubExcerpt(blobResp.body),
         );
       }
     }
@@ -443,10 +435,10 @@ final class HttpGitHubApi implements GitHubApi {
     if (treeResp.statusCode >= 400) {
       return PublishCommitHttpError(
         treeResp.statusCode,
-        _excerpt(treeResp.body),
+        gitHubExcerpt(treeResp.body),
       );
     }
-    final newTreeSha = _decodeMap(treeResp.body)['sha'] as String?;
+    final newTreeSha = decodeGitHubObject(treeResp.body)['sha'] as String?;
     if (newTreeSha == null) {
       return PublishCommitHttpError(treeResp.statusCode, 'Empty tree sha');
     }
@@ -464,23 +456,33 @@ final class HttpGitHubApi implements GitHubApi {
     if (commitResp.statusCode >= 400) {
       return PublishCommitHttpError(
         commitResp.statusCode,
-        _excerpt(commitResp.body),
+        gitHubExcerpt(commitResp.body),
       );
     }
-    final newCommitSha = _decodeMap(commitResp.body)['sha'] as String?;
+    final newCommitSha = decodeGitHubObject(commitResp.body)['sha'] as String?;
     if (newCommitSha == null) {
       return PublishCommitHttpError(commitResp.statusCode, 'Empty commit sha');
     }
 
     // 5. Move the existing branch ref — the single atomic flip. A concurrent
     // branch advance must be rejected by GitHub, never overwritten by force.
+    //
+    // The pre-check above already returned [PublishCommitStale] when the head
+    // was not the expected one. A branch that moves BETWEEN that read and this
+    // patch comes back as a rejected (non-fast-forward) update; which status
+    // code that is depends on GitHub's side, and it can also mean a malformed
+    // request, so it stays a plain HTTP error with the fixed retry copy rather
+    // than being guessed into "the site changed".
     final refMove = await _patch(
       _apiBase.replace(path: '/repos/$owner/$repo/git/refs/heads/$branch'),
       headers: headers,
       jsonBody: {'sha': newCommitSha, 'force': false},
     );
     if (refMove.statusCode >= 400) {
-      return PublishCommitHttpError(refMove.statusCode, _excerpt(refMove.body));
+      return PublishCommitHttpError(
+        refMove.statusCode,
+        gitHubExcerpt(refMove.body),
+      );
     }
 
     return PublishCommitSuccess(newCommitSha, [
@@ -489,52 +491,6 @@ final class HttpGitHubApi implements GitHubApi {
   }
 
   // --- helpers -------------------------------------------------------------
-
-  // These reads authorize a publish, unlike the best-effort manifest cache.
-  // Require a complete Git SHA-1, not null/empty text or an arbitrary URL path.
-  String _readGitObjectSha(String body, String field) {
-    final Map<String, dynamic> json;
-    try {
-      json = _decodeMap(body);
-    } on FormatException {
-      // FormatException embeds response text; keep it out of diagnostics.
-      throw const GitHubApiException('Malformed Git object response');
-    }
-    final object = json[field];
-    final sha = object is Map<String, dynamic> ? object['sha'] : null;
-    if (sha is! String || sha.length != 40 || !_gitSha.hasMatch(sha)) {
-      throw const GitHubApiException('Malformed Git object SHA');
-    }
-    return sha;
-  }
-
-  Future<String?> _refSha(
-    String owner,
-    String repo,
-    String branch,
-    String token,
-  ) async {
-    final resp = await _client.get(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/ref/heads/$branch'),
-      headers: _authHeaders(token),
-    );
-    if (resp.statusCode >= 400) return null;
-    return (_decodeMap(resp.body)['object'] as Map?)?['sha'] as String?;
-  }
-
-  Future<String?> _commitTreeSha(
-    String owner,
-    String repo,
-    String commitSha,
-    String token,
-  ) async {
-    final resp = await _client.get(
-      _apiBase.replace(path: '/repos/$owner/$repo/git/commits/$commitSha'),
-      headers: _authHeaders(token),
-    );
-    if (resp.statusCode >= 400) return null;
-    return (_decodeMap(resp.body)['tree'] as Map?)?['sha'] as String?;
-  }
 
   Future<http.Response> _get(Uri uri, {required Map<String, String> headers}) =>
       _guard(() => _client.get(uri, headers: headers));
@@ -576,25 +532,4 @@ final class HttpGitHubApi implements GitHubApi {
       throw GitHubApiException('$e');
     }
   }
-
-  Map<String, dynamic> _decodeMap(String body) {
-    final decoded = jsonDecode(body);
-    if (decoded is! Map<String, dynamic>) {
-      throw const GitHubApiException('Expected a JSON object');
-    }
-    return decoded;
-  }
-
-  /// [_decodeMap] that also turns a JSON syntax error into the typed
-  /// exception (a `FormatException` would embed response text).
-  Map<String, dynamic> _decodeMapSafe(String body) {
-    try {
-      return _decodeMap(body);
-    } on FormatException {
-      throw const GitHubApiException('Malformed JSON response');
-    }
-  }
-
-  String _excerpt(String body) =>
-      body.length <= 200 ? body : body.substring(0, 200);
 }

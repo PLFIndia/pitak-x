@@ -161,12 +161,18 @@ class _FakeGitHubApi implements GitHubApi {
       null;
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
-  }) async => const {};
+  }) async => const GitHubTreeSnapshot(
+    repo: 'me/lib',
+    branch: 'main',
+    headSha: 'sha',
+    files: {},
+    truncated: false,
+  );
 
   @override
   Future<PublishCommitResult> commitFiles({
@@ -176,6 +182,7 @@ class _FakeGitHubApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async => const PublishCommitSuccess('sha', []);
 }

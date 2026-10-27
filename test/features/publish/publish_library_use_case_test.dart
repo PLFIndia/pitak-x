@@ -18,8 +18,10 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -50,10 +52,25 @@ class _MemManifest implements PublishManifestGateway {
   _MemManifest([this._m = PublishManifest.empty]);
   final PublishManifest _m;
   PublishManifest? saved;
+  bool saveFails = false;
+
+  /// Every record this gateway was asked to persist, in order (R5: the commit
+  /// is saved as `deployed` first, then upgraded to `live`).
+  final List<PublishManifest> saves = [];
+
+  /// The record a load would return right now.
+  PublishManifest get current => saved ?? _m;
+
   @override
-  PublishManifest load() => _m;
+  PublishManifest load() => current;
+
   @override
-  void save(PublishManifest m) => saved = m;
+  Either<Failure, Unit> save(PublishManifest m) {
+    if (saveFails) return left(const StorageFailure('disk full'));
+    saved = m;
+    saves.add(m);
+    return right(unit);
+  }
 }
 
 /// Fake read-back: answers by (siteUrl, path) and records every call so the
@@ -90,13 +107,27 @@ class _CapturingApi implements GitHubGitDataApi {
       isWorkflowBuild: false,
     ),
     this.throwOnPagesSite = false,
+    this.throwOnHeadTree = false,
+    this.treeTruncated = false,
   });
   final Map<String, String> headShas = const {};
 
   /// What `pagesSite()` answers (null = Pages off).
   final PagesSite? pages;
   final bool throwOnPagesSite;
-  final PublishCommitResult? commitResult = null;
+
+  /// The fake remote tree. `makeUseCase` seeds it from the gateway's record,
+  /// which is the state most tests describe ("the site holds what this phone
+  /// published"); a test that wants a DIVERGENT remote sets `treeFiles`
+  /// itself after building the use case.
+  Map<String, String> treeFiles = const {};
+  String treeHead = 'HEAD';
+  bool treeTruncated;
+  final bool throwOnHeadTree;
+  PublishCommitResult? result;
+
+  /// Head the commit was asked to compare-and-swap against (R6).
+  String? committedExpectedHead;
   List<DesiredFile>? committed;
 
   /// deletePaths the commit was asked to remove (M14 / docs/ARCHITECTURE.md §5.1).
@@ -119,14 +150,21 @@ class _CapturingApi implements GitHubGitDataApi {
   }
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     headTreeBranch = branch;
-    return headShas;
+    if (throwOnHeadTree) throw const GitHubApiException('boom');
+    return GitHubTreeSnapshot(
+      repo: '$owner/$repo',
+      branch: branch,
+      headSha: treeHead,
+      files: treeFiles,
+      truncated: treeTruncated,
+    );
   }
 
   @override
@@ -137,12 +175,18 @@ class _CapturingApi implements GitHubGitDataApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
     committed = files;
     committedBranch = branch;
+    committedExpectedHead = expectedHead;
     deleted = deletePaths;
-    return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
+    // Behave like the real port: a head that no longer matches is not
+    // overwritten (R6).
+    if (expectedHead != treeHead) return const PublishCommitStale();
+    treeFiles = {for (final f in files) f.path: f.gitSha};
+    return result ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
 }
 
@@ -327,42 +371,53 @@ void main() {
     List<int>? libraryJson,
     PublishReads? reads,
     BooksJsonEncoder? encodeBooksJson,
-  }) => PublishLibraryUseCase(
-    api: api,
-    credentials: credentials ?? _FakeCreds(),
-    manifest: manifest,
-    snapshotBuilder: PublishSnapshotBuilder(
-      catalogue: CatalogueSectionBuilder(
-        covers: PublishCoverDecider(
-          coverIds: PublishCoverIds(_FixedSalt()),
-          readLocalCover: readLocalCover ?? (_) async => null,
-          fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
+  }) {
+    // R6: the fake remote starts as what this phone recorded — the state most
+    // tests describe. Publishing against it therefore re-uploads nothing and
+    // deletes only paths the record already owns.
+    if (api is _CapturingApi) {
+      final local = manifest.load();
+      api
+        ..treeFiles = {...local.fileShas}
+        ..treeHead = local.headSha ?? api.treeHead;
+    }
+    return PublishLibraryUseCase(
+      api: api,
+      credentials: credentials ?? _FakeCreds(),
+      manifest: manifest,
+      snapshotBuilder: PublishSnapshotBuilder(
+        catalogue: CatalogueSectionBuilder(
+          covers: PublishCoverDecider(
+            coverIds: PublishCoverIds(_FixedSalt()),
+            readLocalCover: readLocalCover ?? (_) async => null,
+            fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
+          ),
+          buildViewerHtml:
+              buildViewerHtml ?? () async => utf8.encode('<html></html>'),
+          encodeBooksJson: encodeBooksJson ?? encode,
         ),
-        buildViewerHtml:
-            buildViewerHtml ?? () async => utf8.encode('<html></html>'),
-        encodeBooksJson: encodeBooksJson ?? encode,
-      ),
-      // Q5=A: a catalogue publish never reads or writes the events section;
-      // the builder still receives it so a complete (move) publish can use
-      // the same wiring.
-      events: EventsSectionBuilder(
-        readPoster: (_) async => null,
-        buildEventsHtml: (_) async => const [],
-        buildEventsJson: (_) => const [],
-      ),
-    ),
-    reads:
-        reads ??
-        _Reads(
-          books: books ?? const [],
-          periodicals: periodicals ?? const [],
-          activeLoanCounts: activeLoanCounts,
-          libraryJson: libraryJson,
+        // Q5=A: a catalogue publish never reads or writes the events section;
+        // the builder still receives it so a complete (move) publish can use
+        // the same wiring.
+        events: EventsSectionBuilder(
+          readPoster: (_) async => null,
+          buildEventsHtml: (_) async => const [],
+          buildEventsJson: (_) => const [],
         ),
-    verifier: verifier,
-    sleep: (_) async {}, // no real waiting in tests
-    clock: () => 1000,
-  );
+      ),
+      reads:
+          reads ??
+          _Reads(
+            books: books ?? const [],
+            periodicals: periodicals ?? const [],
+            activeLoanCounts: activeLoanCounts,
+            libraryJson: libraryJson,
+          ),
+      verifier: verifier,
+      sleep: (_) async {}, // no real waiting in tests
+      clock: () => 1000,
+    );
+  }
 
   test(
     'R2: an unreadable library aborts BEFORE any commit or manifest save',
@@ -452,7 +507,7 @@ void main() {
         periodicals: const [],
       ).run();
       expect((result as PublishSuccess).pagesLive, isNull);
-      expect(polls, PublishLibraryUseCase.readBackAttempts);
+      expect(polls, PublishedFileReadBack.defaultAttempts);
     });
 
     test('fetch failures (null) are tolerated and stay bounded', () async {
@@ -762,8 +817,12 @@ void main() {
       () async {
         final api = _CapturingApi();
         final manifest = _MemManifest(
+          // A schema-2 record that DESCRIBES this site: only such a record
+          // may authorise a delete (R6).
           const PublishManifest(
             repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
             fileShas: {'library.json': 'OLD_SHA'},
           ),
         );
@@ -1039,6 +1098,8 @@ void main() {
       final manifest = _MemManifest(
         PublishManifest(
           repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
           fileShas: {path: 'EXISTING_SHA'},
           coverUrlByBookId: {
             'periodical:uid-1': 'https://covers.openlibrary.org/x.jpg',
@@ -1331,5 +1392,193 @@ void main() {
         );
       });
     }
+  });
+
+  group('S4 — the record describes the site, not a guess (R5/R6/R9)', () {
+    test(
+      'R6: an unreadable remote tree stops before any commit or save',
+      () async {
+        final api = _CapturingApi(throwOnHeadTree: true);
+        final manifest = _MemManifest();
+        final result = await makeUseCase(api, manifest, books: [book()]).run();
+
+        expect(
+          (result as PublishFailure).reason,
+          gitHubSiteStateUnreadableMessage,
+        );
+        expect(api.committed, isNull);
+        expect(manifest.saved, isNull);
+      },
+    );
+
+    test('R6: a truncated tree stops before any commit or save', () async {
+      final api = _CapturingApi(treeTruncated: true);
+      final manifest = _MemManifest();
+      final result = await makeUseCase(api, manifest, books: [book()]).run();
+
+      expect((result as PublishFailure).reason, gitHubTreeTooLargeMessage);
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    });
+
+    test('R6: the commit is anchored to the head that was read', () async {
+      final api = _CapturingApi();
+      await makeUseCase(api, _MemManifest(), books: [book()]).run();
+      expect(api.committedExpectedHead, 'HEAD');
+    });
+
+    test('R6: a head that moved is a typed failure, nothing saved', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final useCase = makeUseCase(api, manifest, books: [book()]);
+      // The record says head-a; the branch is now at head-b, and the commit
+      // itself finds a head that already moved again.
+      api
+        ..treeHead = 'head-b'
+        ..result = const PublishCommitStale();
+
+      final result = await useCase.run();
+      expect((result as PublishFailure).reason, gitHubStalePublishMessage);
+      expect(manifest.saved, isNull);
+      expect(manifest.saves, isEmpty);
+    });
+
+    test('R6: the tree sha wins over a stale local sha', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          fileShas: {'books.json': 'stale-sha', 'index.html': 'stale-index'},
+        ),
+      );
+      final useCase = makeUseCase(api, manifest, books: [book()]);
+      // What the remote really holds for those paths.
+      api.treeFiles = {
+        'books.json': 'remote-books',
+        'index.html': 'remote-index',
+      };
+
+      await useCase.run();
+
+      // The bytes are re-uploaded because the tree sha is not the local sha:
+      // trusting the stale sha would leave the old books.json live forever.
+      expect(
+        api.committed!.firstWhere((f) => f.path == 'books.json').upload,
+        isTrue,
+      );
+      expect(manifest.saved!.shaFor('books.json'), isNot('stale-sha'));
+    });
+
+    test(
+      'R6: a file this phone did not write is never deleted or adopted',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
+            ownershipConfirmed: true,
+            fileShas: {
+              'index.html': 'own-index',
+              'covers/gone.jpg': 'own-cover',
+            },
+          ),
+        );
+        final useCase = makeUseCase(api, manifest, books: const []);
+        api.treeFiles = {
+          'index.html': 'own-index',
+          'covers/gone.jpg': 'own-cover',
+          // Files a human wrote in the same repository.
+          'README.md': 'human-readme',
+          'notes/private.txt': 'human-note',
+        };
+
+        await useCase.run();
+
+        // Only the app-owned path the section dropped is deleted.
+        expect(api.deleted, ['covers/gone.jpg']);
+        final saved = manifest.saved!;
+        expect(saved.shaFor('README.md'), isNull);
+        expect(saved.shaFor('notes/private.txt'), isNull);
+        expect(saved.shaFor('books.json'), isNotNull);
+      },
+    );
+
+    test('R6: a legacy record claims nothing, so it deletes nothing', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        // Schema 1: no branch, so it does not describe this site.
+        const PublishManifest(
+          schema: 1,
+          repo: 'me/lib',
+          fileShas: {'covers/gone.jpg': 'own-cover', 'index.html': 'old'},
+        ),
+      );
+      final useCase = makeUseCase(api, manifest, books: const []);
+      api.treeFiles = {'covers/gone.jpg': 'own-cover', 'index.html': 'old'};
+
+      await useCase.run();
+
+      expect(api.deleted, isEmpty);
+    });
+
+    test(
+      'R5: the commit is recorded as deployed, then upgraded to live',
+      () async {
+        final api = _CapturingApi();
+        final verifier = _FakeVerifier(
+          (_, _) async =>
+              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+        );
+        final manifest = _MemManifest();
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: verifier,
+          books: [book()],
+        ).run();
+
+        expect((result as PublishSuccess).pagesLive, isTrue);
+        expect(manifest.saves.map((m) => m.state), [
+          PublishManifestState.deployed,
+          PublishManifestState.live,
+        ]);
+        // Both saves describe the commit the API returned.
+        expect(manifest.saves.first.headSha, 'NEWCOMMIT');
+        expect(manifest.current.branch, 'main');
+      },
+    );
+
+    test(
+      'R5: a read-back that never lands leaves the record deployed',
+      () async {
+        final manifest = _MemManifest();
+        final result = await makeUseCase(
+          _CapturingApi(),
+          manifest,
+          verifier: _FakeVerifier((_, _) async => utf8.encode('stale')),
+          books: [book()],
+        ).run();
+
+        expect((result as PublishSuccess).pagesLive, isNull);
+        expect(manifest.current.state, PublishManifestState.deployed);
+      },
+    );
+
+    test('R9: a failed save is reported, not swallowed', () async {
+      final manifest = _MemManifest()..saveFails = true;
+      final result = await makeUseCase(
+        _CapturingApi(),
+        manifest,
+        books: [book()],
+      ).run();
+
+      // The commit landed, so the publish IS a success — with the honest
+      // detail that this phone has no record of it.
+      expect((result as PublishSuccess).localStateSaved, isFalse);
+    });
   });
 }

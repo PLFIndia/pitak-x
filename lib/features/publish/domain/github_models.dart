@@ -111,6 +111,48 @@ final class PagesSite {
       !isWorkflowBuild && sourceBranch != null && sourcePath == '/';
 }
 
+/// A typed read of one branch's current head and recursive tree (R6).
+///
+/// Why a type instead of a path→sha map (beginner note): the manifest used to
+/// be "rebuilt" from whatever a tree call happened to return, and a failed or
+/// truncated read became an empty map — indistinguishable from an empty
+/// repository. That made a broken remote read look like "nothing is
+/// published", which is exactly the state that permits a destructive
+/// whole-site publish. So the read is now one value with its own head commit,
+/// and a read that cannot be trusted is a typed FAILURE at the port, never a
+/// small/empty map.
+///
+/// [truncated] is GitHub telling us the tree listing was cut short (huge
+/// repository). A caller must refuse to publish on a truncated snapshot: it
+/// cannot prove which paths exist, so it cannot prove which paths it owns.
+final class GitHubTreeSnapshot {
+  /// Creates the snapshot.
+  const GitHubTreeSnapshot({
+    required this.repo,
+    required this.branch,
+    required this.headSha,
+    required this.files,
+    required this.truncated,
+  });
+
+  /// `owner/name` this snapshot was read from.
+  final String repo;
+
+  /// Branch whose head was read.
+  final String branch;
+
+  /// The head commit sha at the moment of the read. This is the
+  /// compare-and-swap anchor every commit must pass back as `expectedHead`.
+  final String headSha;
+
+  /// Every blob path → its git blob sha. Directories, symlinks and submodule
+  /// entries are not blobs and are absent.
+  final Map<String, String> files;
+
+  /// True when GitHub truncated the listing; [files] is then incomplete.
+  final bool truncated;
+}
+
 /// One file we want present in the repo after a publish (Git Data tree entry).
 final class DesiredFile {
   /// Creates a desired file.

@@ -47,6 +47,10 @@ class PublishEventsController extends _$PublishEventsController {
     // (rootBundle) stays in infrastructure, wired by the composition root.
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
+    // Bounded, origin-bound read-back (R16/F.4 step 7): an accepted commit is
+    // not proof that the events page is served, so the record is only called
+    // `live` after the live site proves it.
+    final verifier = ref.read(publishedSiteVerifierProvider);
     final useCase = PublishEventsUseCase(
       api: api,
       credentials: credentials,
@@ -55,6 +59,7 @@ class PublishEventsController extends _$PublishEventsController {
       buildEventsHtml: (posters) =>
           buildEventsHtml(libraryName: settings.libraryName, posters: posters),
       buildEventsJson: buildEventsJson,
+      verifier: verifier,
     );
 
     return useCase.call(content);

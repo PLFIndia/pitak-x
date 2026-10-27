@@ -18,6 +18,7 @@ import 'package:pitaka/features/events/application/publish_events_controller.dar
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/presentation/widgets/poster_thumbnail.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
+import 'package:pitaka/features/publish/application/publish_status_copy.dart';
 
 /// Standalone Events screen (its own Scaffold). Use [EventsView] to embed the
 /// editor inside another screen, e.g. the Publish hub's Events tab.
@@ -126,8 +127,8 @@ class _EventsViewState extends ConsumerState<EventsView> {
           .read(publishEventsControllerProvider.notifier)
           .publish();
       switch (result) {
-        case PublishEventsSuccess(:final eventsUrl):
-          _snack('Published! Your events page is at $eventsUrl');
+        case final PublishEventsSuccess success:
+          _snack(eventsPublishStatusMessage(success));
         case PublishEventsFailure(:final reason):
           _snack(reason);
       }

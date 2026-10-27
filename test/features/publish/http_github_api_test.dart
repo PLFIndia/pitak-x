@@ -258,6 +258,7 @@ void main() {
           ),
         ],
         commitMessage: 'Pitaka publish',
+        expectedHead: _headSha,
       );
 
       expect(result, isA<PublishCommitSuccess>());
@@ -328,6 +329,7 @@ void main() {
           ],
           commitMessage: 'Pitaka events publish',
           deletePaths: const ['posters/old.jpg'],
+          expectedHead: _headSha,
         );
 
         expect(result, isA<PublishCommitSuccess>());
@@ -354,6 +356,7 @@ void main() {
         token: 'TKN',
         files: const [],
         commitMessage: 'publish',
+        expectedHead: _headSha,
       );
       expect(result, isA<PublishCommitHttpError>());
       expect((result as PublishCommitHttpError).code, 404);
@@ -398,9 +401,131 @@ void main() {
           ),
         ],
         commitMessage: 'm',
+        expectedHead: _headSha,
       );
       expect(result, isA<PublishCommitHttpError>());
       expect((result as PublishCommitHttpError).code, 403);
+    });
+
+    // R6: the head read before building is a compare-and-swap anchor. A branch
+    // that moved since is NOT overwritten.
+    test('a head that moved since the read returns Stale, no write', () async {
+      final calls = <String>[];
+      final svc = api(
+        MockClient((req) async {
+          calls.add('${req.method} ${req.url.path}');
+          return http.Response(
+            jsonEncode({
+              'object': {'sha': _headSha},
+            }),
+            200,
+          );
+        }),
+      );
+      final result = await svc.commitFiles(
+        owner: 'me',
+        repo: 'lib',
+        branch: 'main',
+        token: 'TKN',
+        files: const [
+          DesiredFile(path: 'x', bytes: [1], gitSha: 'deadbeef', upload: true),
+        ],
+        commitMessage: 'm',
+        expectedHead: 'cccccccccccccccccccccccccccccccccccccccc',
+      );
+      expect(result, isA<PublishCommitStale>());
+      // Only the head read happened: no blob, no tree, no ref move.
+      expect(calls, ['GET /repos/me/lib/git/ref/heads/main']);
+    });
+  });
+
+  group('headTree (R6 reconciliation)', () {
+    const treeSha = 'dddddddddddddddddddddddddddddddddddddddd';
+
+    /// Answers the three reads a tree snapshot needs, with [treeBody] as the
+    /// recursive listing.
+    HttpGitHubApi treeApi(String treeBody, {List<String>? calls}) => api(
+      MockClient((req) async {
+        calls?.add('${req.method} ${req.url.path}');
+        final p = req.url.path;
+        if (p.endsWith('/git/ref/heads/main')) {
+          return http.Response(
+            jsonEncode({
+              'object': {'sha': _headSha},
+            }),
+            200,
+          );
+        }
+        if (p.endsWith('/git/commits/$_headSha')) {
+          return http.Response(
+            jsonEncode({
+              'tree': {'sha': treeSha},
+            }),
+            200,
+          );
+        }
+        if (p.endsWith('/git/trees/$treeSha')) {
+          // recursive=1 is what makes the listing complete.
+          expect(req.url.queryParameters['recursive'], '1');
+          return http.Response(treeBody, 200);
+        }
+        return http.Response('unexpected ${req.url.path}', 500);
+      }),
+    );
+
+    test('reports the head and every blob, ignoring non-blob types', () async {
+      final snapshot = await treeApi(
+        jsonEncode({
+          'sha': treeSha,
+          'truncated': false,
+          'tree': [
+            {'path': 'books.json', 'type': 'blob', 'sha': 'sha-books'},
+            {'path': 'covers', 'type': 'tree', 'sha': 'sha-dir'},
+            {'path': 'sub', 'type': 'commit', 'sha': 'sha-submodule'},
+            {'path': 'index.html', 'type': 'blob', 'sha': 'sha-index'},
+          ],
+        }),
+      ).headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN');
+
+      expect(snapshot.headSha, _headSha);
+      expect(snapshot.branch, 'main');
+      expect(snapshot.repo, 'me/lib');
+      expect(snapshot.truncated, isFalse);
+      expect(snapshot.files, {
+        'books.json': 'sha-books',
+        'index.html': 'sha-index',
+      });
+    });
+
+    test('a truncated listing is reported, not silently shortened', () async {
+      final snapshot = await treeApi(
+        jsonEncode({
+          'sha': treeSha,
+          'truncated': true,
+          'tree': [
+            {'path': 'books.json', 'type': 'blob', 'sha': 'sha-books'},
+          ],
+        }),
+      ).headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN');
+      expect(snapshot.truncated, isTrue);
+    });
+
+    // The bug this replaces: a failed read used to answer with an EMPTY map,
+    // which is indistinguishable from "nothing is published".
+    test('a missing branch is a typed failure, not an empty tree', () async {
+      final svc = api(MockClient((_) async => http.Response('', 404)));
+      await expectLater(
+        svc.headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN'),
+        throwsA(isA<GitHubApiException>()),
+      );
+    });
+
+    test('a malformed listing is a typed failure', () async {
+      final svc = treeApi(jsonEncode({'sha': treeSha, 'tree': 'nope'}));
+      await expectLater(
+        svc.headTree(owner: 'me', repo: 'lib', branch: 'main', token: 'TKN'),
+        throwsA(isA<GitHubApiException>()),
+      );
     });
   });
 

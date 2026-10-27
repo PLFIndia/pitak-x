@@ -17,6 +17,7 @@ final class PublishSuccess extends PublishResult {
     required this.uploadedPaths,
     this.availabilityOmitted = false,
     this.pagesLive,
+    this.localStateSaved = true,
   });
 
   /// The public page URL.
@@ -32,6 +33,14 @@ final class PublishSuccess extends PublishResult {
   /// (read-back, à la Localcart Orange); null when the bounded wait ran out
   /// before the Pages build landed (it usually finishes moments later).
   final bool? pagesLive;
+
+  /// False when the commit landed but this phone could not save its own record
+  /// of the publish (R9).
+  ///
+  /// The site IS updated — the honest message says exactly that — and the next
+  /// publish re-reads the remote tree, so the lost record costs one
+  /// reconciliation, not correctness.
+  final bool localStateSaved;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.

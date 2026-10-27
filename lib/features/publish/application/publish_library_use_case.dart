@@ -9,25 +9,31 @@
 ///  1. Resolve token + target repo + the branch Pages SERVES from (N09: read
 ///     live from the Pages configuration, never assumed to be the default
 ///     branch; Pages off or re-pointed → typed failure before any write).
-///  2. Load (or rebuild) the incremental manifest.
+///  2. Reconcile the local record against the remote head + tree (R6): every
+///     claimed sha comes from the tree, and foreign files are never adopted.
 ///  3. Ask the SHARED [PublishSnapshotBuilder] for the section to write
 ///     (Cloudflare plan R2/R3) — the same builder the Cloudflare adapter will
 ///     consume, over strict reads, so the two hosts cannot drift and a failed
 ///     read aborts before any write.
 ///  4. Merge that section into the publication record (R7): only its own
 ///     paths are replaced, the events section survives.
-///  5. Commit the changed file set + exact owned deletions; persist the merged
-///     manifest; read the live site back (bounded).
+///  5. Commit the changed file set + exact owned deletions, passing the head
+///     read in step 2 as `expectedHead` (a change made meanwhile is reported,
+///     never overwritten), persist the record, then read the live site back
+///     (bounded) and record the result.
 ///
 /// Cover images are downscaled by the injected local-cover reader
 /// (`ImageDownscaler`, 400×600 q80 — the single image choke point), so a
 /// publish uploads small JPEGs and EXIF/GPS never leaves the device.
 library;
 
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
@@ -81,8 +87,9 @@ final class PublishLibraryUseCase {
   final PublishManifestGateway _manifest;
 
   /// The ONE section builder for every host (R3). Building happens here, after
-  /// the manifest is known, so exactly one manifest load feeds the change
-  /// detection and the merge — the section is never built twice.
+  /// the reconciled record is known, so exactly one read of the remote state
+  /// feeds the change detection and the merge — the section is never built
+  /// twice.
   final PublishSnapshotBuilder _snapshotBuilder;
 
   /// Strict typed reads the snapshot is built from (R2).
@@ -92,14 +99,6 @@ final class PublishLibraryUseCase {
   final PublishedSiteVerifier? _verifier;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
-
-  /// Read-back budget: [readBackAttempts] polls, [readBackInterval] apart
-  /// (Orange budgets 120 s; 60 s covers typical Pages builds and keeps the
-  /// worst-case wait tolerable on a phone). ALWAYS terminates.
-  static const int readBackAttempts = 12;
-
-  /// Pause between read-back polls.
-  static const Duration readBackInterval = Duration(seconds: 5);
 
   /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
   static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
@@ -149,7 +148,6 @@ final class PublishLibraryUseCase {
     // never disagree about where this publish goes.
     final owner = target.owner;
     final repo = target.repo;
-    final ownerRepo = target.ownerRepo;
     final pagesUrl = target.siteUrl;
 
     final now = _clock();
@@ -167,21 +165,23 @@ final class PublishLibraryUseCase {
       return const PublishFailure(gitHubNetworkErrorMessage);
     }
 
-    // Load manifest; rebuild from the repo tree if missing / for another repo.
-    var manifest = _manifest.load();
-    if (manifest.repo != ownerRepo || manifest.fileShas.isEmpty) {
-      try {
-        final shas = await _api.headTreeShas(
-          owner: owner,
-          repo: repo,
-          branch: branch,
-          token: token,
-        );
-        manifest = PublishManifest(repo: ownerRepo, fileShas: shas);
-      } on GitHubApiException {
-        manifest = PublishManifest(repo: ownerRepo);
-      }
+    // R6: read the remote head + tree and reconcile the local record against
+    // it BEFORE building. Shas come from the tree (never from the local file),
+    // and a path this phone did not write is never claimed — so `mergeSection`
+    // below cannot delete a human's file, and an unchanged file is compared
+    // against what the site really holds.
+    final reconciliation = await GitHubPublicationReconciler(_api).call(
+      target: target,
+      branch: branch,
+      token: token,
+      local: _manifest.load(),
+    );
+    final publication = reconciliation.toNullable();
+    if (publication == null) {
+      return PublishFailure(_messageFor(reconciliation.swap().toNullable()!));
     }
+    final previous = publication.manifest;
+    final expectedHead = publication.headSha;
 
     // Phase 2: build the section through the SHARED builders (R3) against the
     // publication record that will also be merged, so change detection and
@@ -190,7 +190,7 @@ final class PublishLibraryUseCase {
     // publish can never delete one (R7).
     final built = await _snapshotBuilder.build(
       inputs: inputs,
-      previous: manifest,
+      previous: previous,
       now: now,
       mode: mode,
     );
@@ -203,7 +203,7 @@ final class PublishLibraryUseCase {
     // R7: merge ONLY this section into the publication record. The events
     // section (and any other app-owned path) survives; the section's own
     // dropped paths become exact deletions (never a prefix sweep).
-    final merge = mergeSection(previous: manifest, section: section);
+    final merge = mergeSection(previous: previous, section: section);
 
     phase(
       section.hasUploads ? PublishPhase.uploading : PublishPhase.committing,
@@ -227,6 +227,7 @@ final class PublishLibraryUseCase {
         ],
         commitMessage: 'Pitaka publish $now',
         deletePaths: merge.deletePaths,
+        expectedHead: expectedHead,
       );
     } on GitHubApiException {
       // Fixed message (§5): exception text can embed URLs/response detail.
@@ -234,28 +235,46 @@ final class PublishLibraryUseCase {
     }
 
     switch (result) {
-      case PublishCommitSuccess(:final uploadedPaths):
-        _manifest.save(
-          PublishManifest(
-            repo: ownerRepo,
-            fileShas: merge.fileShas,
-            coverUrlByBookId: section.coverUrlByKey,
-          ),
+      case PublishCommitStale():
+        // Another writer moved the branch after we read it (R6). Nothing was
+        // written; the next publish starts from their newest state.
+        return const PublishFailure(gitHubStalePublishMessage);
+      case PublishCommitSuccess(:final uploadedPaths, :final commitSha):
+        // R5/R9: persist the commit AS `deployed` before spending a minute on
+        // read-back, so a crash here is recoverable instead of "unknown". A
+        // failed save is reported, never swallowed: the site IS updated.
+        final committed = previous.afterCommit(
+          commitSha: commitSha,
+          mergedShas: merge.fileShas,
+          coverUrlByBookId: section.coverUrlByKey,
         );
+        final localStateSaved = _manifest.save(committed).isRight();
+
         phase(PublishPhase.pagesBuilding);
-        // `pagesUrl` came from the single resolver (github_pages_url.dart),
-        // shared with the events publish and the drawer's share action.
         // Bounded read-back: poll the LIVE books.json with a cache-buster
         // until it serves exactly the bytes just published.
         final booksJson = merge.files
             .firstWhere((f) => f.path == CatalogueSectionBuilder.booksJsonPath)
             .bytes;
-        final pagesLive = await _verifyLive(pagesUrl, booksJson, now);
+        final pagesLive = await _readBack(
+          siteUrl: pagesUrl,
+          path: CatalogueSectionBuilder.booksJsonPath,
+          expected: booksJson,
+          revision: now,
+        );
+        if (pagesLive ?? false) {
+          // Proven live ⇒ upgrade the record (R5). A failed upgrade is not
+          // reported: the stored record stays `deployed`, which is the truth
+          // (the commit landed, its verification did not finish) and the next
+          // publish re-verifies it before building on it.
+          _manifest.save(committed.asLive());
+        }
         return PublishSuccess(
           pagesUrl: pagesUrl,
           uploadedPaths: uploadedPaths,
           availabilityOmitted: snapshot.availabilityOmitted,
           pagesLive: pagesLive,
+          localStateSaved: localStateSaved,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can
@@ -273,46 +292,29 @@ final class PublishLibraryUseCase {
     _ => 'Something went wrong. Nothing was published.',
   };
 
-  /// Polls the live site (bounded) until books.json serves [expected].
-  /// Returns true when verified, null when the budget ran out or no fetch
-  /// port is wired. Never throws, never loops unbounded.
-  Future<bool?> _verifyLive(
-    String pagesUrl,
-    List<int> expected,
-    int revision,
-  ) async {
+  /// Bounded origin-bound read-back of one just-published file.
+  Future<bool?> _readBack({
+    required String siteUrl,
+    required String path,
+    required List<int> expected,
+    required int revision,
+  }) async {
     final verifier = _verifier;
     if (verifier == null) return null;
-    for (var attempt = 0; attempt < readBackAttempts; attempt++) {
-      await _sleep(readBackInterval);
-      // Origin-bound, redirect-free, capped at exactly the expected size (a
-      // longer body cannot be the file we wrote). A fresh cache-buster per
-      // attempt so a CDN cannot answer with a stale copy.
-      final body = await verifier.read(
-        siteUrl: pagesUrl,
-        path: 'books.json',
-        maxBytes: expected.isEmpty ? 1 : expected.length,
-        cacheBuster: '$revision-$attempt',
-      );
-      if (body != null && _sameBytes(body, expected)) return true;
-    }
-    return null;
-  }
-
-  static bool _sameBytes(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
+    return PublishedFileReadBack(verifier: verifier, sleep: _sleep).untilServed(
+      siteUrl: siteUrl,
+      path: path,
+      expected: expected,
+      revision: revision,
+    );
   }
 }
 
-/// Load/save view of the manifest the orchestrator needs.
+/// Load/save view of the manifest the orchestrators need.
 abstract interface class PublishManifestGateway {
   /// Loads the manifest (or empty).
   PublishManifest load();
 
-  /// Persists [manifest].
-  void save(PublishManifest manifest);
+  /// Persists [manifest]; a failure is returned, never swallowed (R9).
+  Either<Failure, Unit> save(PublishManifest manifest);
 }

@@ -22,6 +22,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/publish_status_copy.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -634,15 +635,13 @@ class GitHubConnectionController extends _$GitHubConnectionController {
         );
       } finally {
         switch (result) {
-          case PublishSuccess(:final pagesUrl, :final pagesLive):
+          case final PublishSuccess success:
             _emit(
               (c) => c.copyWith(
                 phase: GitHubConnectionPhase.idle,
-                publishedUrl: pagesUrl,
-                statusMessage: (pagesLive ?? false)
-                    ? 'Published! Your site is live.'
-                    : 'Published! The commit is pushed — the site can take a '
-                          'minute to update.',
+                publishedUrl: success.pagesUrl,
+                // The wording (live / pushed / not recorded) has ONE home.
+                statusMessage: cataloguePublishStatusMessage(success),
               ),
             );
           case PublishFailure(:final reason):

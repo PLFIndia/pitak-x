@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
@@ -8,10 +10,30 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
+
+/// Answers read-back polls from a script; records the paths it was asked for.
+class _FakeVerifier implements PublishedSiteVerifier {
+  _FakeVerifier(this.answer);
+  final Future<List<int>?> Function(String siteUrl, String path) answer;
+  final List<String> paths = [];
+
+  @override
+  Future<List<int>?> read({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) {
+    paths.add(path);
+    return answer(siteUrl, path);
+  }
+}
 
 class _FakeCreds implements PublishCredentialReader {
   _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
@@ -27,10 +49,22 @@ class _MemManifest implements PublishManifestGateway {
   _MemManifest([this._m = PublishManifest.empty]);
   final PublishManifest _m;
   PublishManifest? saved;
+  bool saveFails = false;
+  final List<PublishManifest> saves = [];
+
+  /// The record a load would return right now.
+  PublishManifest get current => saved ?? _m;
+
   @override
-  PublishManifest load() => _m;
+  PublishManifest load() => current;
+
   @override
-  void save(PublishManifest m) => saved = m;
+  Either<Failure, Unit> save(PublishManifest m) {
+    if (saveFails) return left(const StorageFailure('disk full'));
+    saved = m;
+    saves.add(m);
+    return right(unit);
+  }
 }
 
 /// S5: implements only the git-data role the use case consumes.
@@ -45,9 +79,19 @@ class _CapturingApi implements GitHubGitDataApi {
 
   /// What `pagesSite()` answers (null = Pages off).
   final PagesSite? pages;
+
+  /// The fake remote tree (R6). `make` seeds it from the gateway's record,
+  /// which is the state these tests describe; a test that wants a divergent
+  /// remote overwrites `treeFiles` after building the use case.
+  Map<String, String> treeFiles = const {};
+  String treeHead = 'HEAD';
+  bool treeTruncated = false;
+  bool throwOnTree = false;
+
   List<DesiredFile>? committed;
   List<String> deleted = [];
   String? committedBranch;
+  String? committedExpectedHead;
   PublishCommitResult result = const PublishCommitSuccess('NEW', ['x']);
 
   @override
@@ -58,6 +102,23 @@ class _CapturingApi implements GitHubGitDataApi {
   }) async => pages;
 
   @override
+  Future<GitHubTreeSnapshot> headTree({
+    required String owner,
+    required String repo,
+    required String branch,
+    required String token,
+  }) async {
+    if (throwOnTree) throw const GitHubApiException('boom');
+    return GitHubTreeSnapshot(
+      repo: '$owner/$repo',
+      branch: branch,
+      headSha: treeHead,
+      files: treeFiles,
+      truncated: treeTruncated,
+    );
+  }
+
+  @override
   Future<PublishCommitResult> commitFiles({
     required String owner,
     required String repo,
@@ -65,29 +126,25 @@ class _CapturingApi implements GitHubGitDataApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
     committed = files;
     committedBranch = branch;
+    committedExpectedHead = expectedHead;
     deleted = deletePaths;
+    if (expectedHead != treeHead) return const PublishCommitStale();
+    treeFiles = {for (final f in files) f.path: f.gitSha};
     return result;
   }
-
-  // Unused member of the role (events publishes reuse the catalogue's
-  // manifest, never rebuilding it from the head tree).
-  @override
-  Future<Map<String, String>> headTreeShas({
-    required String owner,
-    required String repo,
-    required String branch,
-    required String token,
-  }) => throw UnimplementedError();
 }
 
 void main() {
   // A manifest that "proves" a catalogue publish to me/lib.
   PublishManifest published() => const PublishManifest(
     repo: 'me/lib',
+    branch: 'main',
+    headSha: 'HEAD',
     fileShas: {'index.html': 'abc', 'books.json': 'def'},
   );
 
@@ -108,16 +165,29 @@ void main() {
     required PublishManifestGateway manifest,
     PublishCredentialReader? creds,
     PosterBytesReader? readPoster,
-  }) => PublishEventsUseCase(
-    api: api,
-    credentials: creds ?? _FakeCreds(),
-    manifest: manifest,
-    readPoster: readPoster ?? (ref) async => ascii.encode('img:$ref'),
-    buildEventsHtml: (posters) async =>
-        utf8.encode('<html>${posters.length} posters</html>'),
-    buildEventsJson: const EventsJsonBuilder().build,
-    clock: () => 1000,
-  );
+    PublishedSiteVerifier? verifier,
+  }) {
+    // R6: the fake remote starts as what this phone recorded (see the
+    // catalogue suite for the same rule).
+    if (api is _CapturingApi) {
+      final local = manifest.load();
+      api
+        ..treeFiles = {...local.fileShas}
+        ..treeHead = local.headSha ?? api.treeHead;
+    }
+    return PublishEventsUseCase(
+      api: api,
+      credentials: creds ?? _FakeCreds(),
+      manifest: manifest,
+      readPoster: readPoster ?? (ref) async => ascii.encode('img:$ref'),
+      buildEventsHtml: (posters) async =>
+          utf8.encode('<html>${posters.length} posters</html>'),
+      buildEventsJson: const EventsJsonBuilder().build,
+      verifier: verifier,
+      sleep: (_) async {}, // no real waiting in tests
+      clock: () => 1000,
+    );
+  }
 
   test('refuses when not signed in', () async {
     final result = await make(
@@ -145,6 +215,7 @@ void main() {
   test('refuses when the manifest is for a different repo', () async {
     const otherRepo = PublishManifest(
       repo: 'someone/else',
+      branch: 'main',
       fileShas: {'index.html': 'abc'},
     );
     final result = await make(
@@ -220,6 +291,7 @@ void main() {
     final manifest = _MemManifest(
       PublishManifest(
         repo: 'me/lib',
+        branch: 'main',
         fileShas: {
           'index.html': 'abc',
           'posters/a.jpg': GitBlobSha.of(aBytes),
@@ -246,6 +318,7 @@ void main() {
       final manifest = _MemManifest(
         const PublishManifest(
           repo: 'me/lib',
+          branch: 'main',
           fileShas: {
             'index.html': 'abc',
             'events.html': 'old',
@@ -274,6 +347,7 @@ void main() {
     final manifest = _MemManifest(
       const PublishManifest(
         repo: 'me/lib',
+        branch: 'main',
         fileShas: {
           'index.html': 'abc',
           'events.html': 'old',
@@ -315,6 +389,7 @@ void main() {
     test('a user site (me/me.github.io) links events at the ROOT', () async {
       const manifest = PublishManifest(
         repo: 'me/me.github.io',
+        branch: 'main',
         fileShas: {'index.html': 'abc'},
       );
       final result = await make(
@@ -338,11 +413,48 @@ void main() {
       );
       final result = await make(
         api: api,
-        manifest: _MemManifest(published()),
+        // The record describes the branch Pages serves, so the catalogue it
+        // claims is on the branch this publish targets (R6).
+        manifest: _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'gh-pages',
+            headSha: 'HEAD',
+            fileShas: {'index.html': 'abc'},
+          ),
+        ),
       ).call(twoPosters());
       expect(result, isA<PublishEventsSuccess>());
       expect(api.committedBranch, 'gh-pages');
     });
+
+    // R6, fail closed: after Pages is re-pointed, the OLD branch's record
+    // proves nothing about the new one, so the catalogue gate refuses instead
+    // of adding a page to a site that may not have a catalogue.
+    test(
+      'R6: a record from the old branch does not prove the catalogue',
+      () async {
+        final api = _CapturingApi(
+          pages: const PagesSite(
+            sourceBranch: 'gh-pages',
+            sourcePath: '/',
+            isWorkflowBuild: false,
+          ),
+        );
+        final manifest = _MemManifest(published());
+        final result = await make(
+          api: api,
+          manifest: manifest,
+        ).call(twoPosters());
+
+        expect(result, isA<PublishEventsFailure>());
+        expect(
+          (result as PublishEventsFailure).reason,
+          contains('Publish your catalogue first'),
+        );
+        expect(api.committed, isNull);
+      },
+    );
 
     test('Pages turned off → typed failure, no commit', () async {
       final api = _CapturingApi(pages: null);
@@ -355,6 +467,113 @@ void main() {
       expect((result as PublishEventsFailure).reason, contains('GitHub Pages'));
       expect(api.committed, isNull);
       expect(manifest.saved, isNull);
+    });
+  });
+
+  group('S4 — anchored commits and an honest record (R5/R6/R9)', () {
+    test('R6: the commit is anchored to the head that was read', () async {
+      final api = _CapturingApi();
+      await make(
+        api: api,
+        manifest: _MemManifest(published()),
+      ).call(twoPosters());
+      expect(api.committedExpectedHead, 'HEAD');
+    });
+
+    test('R6: an unreadable remote tree refuses before any commit', () async {
+      final api = _CapturingApi()..throwOnTree = true;
+      final manifest = _MemManifest(published());
+      final result = await make(
+        api: api,
+        manifest: manifest,
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsFailure>());
+      expect(
+        (result as PublishEventsFailure).reason,
+        gitHubSiteStateUnreadableMessage,
+      );
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    });
+
+    // The gate is "the catalogue is on THIS site", so it must be answered by
+    // the remote tree, not by a local claim.
+    test(
+      'R6: a claimed catalogue marker missing remotely still refuses',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(published());
+        final useCase = make(api: api, manifest: manifest);
+        // The file the record claims is not on the branch any more.
+        api.treeFiles = {'books.json': 'def'};
+
+        final result = await useCase.call(twoPosters());
+        expect(result, isA<PublishEventsFailure>());
+        expect(
+          (result as PublishEventsFailure).reason,
+          contains('Publish your catalogue first'),
+        );
+        expect(manifest.saved, isNull);
+      },
+    );
+
+    test('R6: a stale head is a typed failure and saves nothing', () async {
+      final api = _CapturingApi()..result = const PublishCommitStale();
+      final manifest = _MemManifest(published());
+      final result = await make(
+        api: api,
+        manifest: manifest,
+      ).call(twoPosters());
+
+      expect(
+        (result as PublishEventsFailure).reason,
+        gitHubStalePublishMessage,
+      );
+      expect(manifest.saved, isNull);
+    });
+
+    test('R5: read-back upgrades the record to live', () async {
+      final api = _CapturingApi();
+      late _FakeVerifier verifier;
+      verifier = _FakeVerifier(
+        (_, _) async =>
+            api.committed!.firstWhere((f) => f.path == 'events.json').bytes,
+      );
+      final manifest = _MemManifest(published());
+      await make(
+        api: api,
+        manifest: manifest,
+        verifier: verifier,
+      ).call(twoPosters());
+
+      expect(verifier.paths, everyElement('events.json'));
+      expect(manifest.saves.map((m) => m.state), [
+        PublishManifestState.deployed,
+        PublishManifestState.live,
+      ]);
+    });
+
+    test('R5: an unproven read-back leaves the record deployed', () async {
+      final manifest = _MemManifest(published());
+      await make(
+        api: _CapturingApi(),
+        manifest: manifest,
+        verifier: _FakeVerifier((_, _) async => null),
+      ).call(twoPosters());
+
+      expect(manifest.current.state, PublishManifestState.deployed);
+    });
+
+    test('R9: a failed save is reported, not swallowed', () async {
+      final manifest = _MemManifest(published())..saveFails = true;
+      final result = await make(
+        api: _CapturingApi(),
+        manifest: manifest,
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect((result as PublishEventsSuccess).localStateSaved, isFalse);
     });
   });
 }

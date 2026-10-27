@@ -151,6 +151,20 @@ final class PublishCommitHttpError extends PublishCommitResult {
   final String body;
 }
 
+/// The branch head moved between this phone's read and its commit, so nothing
+/// was written (R6).
+///
+/// Why its own result instead of an HTTP code (beginner note): "the site
+/// changed since we looked" is not an error the user should retry blindly —
+/// the next publish must re-read the remote state and decide again, and a
+/// MOVE must stop rather than overwrite a newer source. A generic 422 message
+/// would tell the user "try again", which is exactly the wrong advice for a
+/// source that another device changed.
+final class PublishCommitStale extends PublishCommitResult {
+  /// Creates the stale result.
+  const PublishCommitStale();
+}
+
 /// Transport-level failure crossing the GitHub boundary.
 final class GitHubApiException implements Exception {
   /// Creates the exception with a short [message].
@@ -244,9 +258,17 @@ abstract interface class GitHubGitDataApi {
     required String token,
   });
 
-  /// Reads the full recursive blob path→sha map of [owner]/[repo]'s current
-  /// head tree (manifest rebuild). Empty when the repo has no commits.
-  Future<Map<String, String>> headTreeShas({
+  /// Reads the head commit and the full recursive blob path→sha map of
+  /// [owner]/[repo]'s [branch] (R6 reconciliation).
+  ///
+  /// Throws [GitHubApiException] for ANY read that cannot be trusted: no
+  /// branch, a malformed response, a transport failure, or a truncated tree.
+  /// It never answers with a smaller/empty map, because an empty map would be
+  /// indistinguishable from "nothing is published" — the state that permits a
+  /// destructive publish. A truncated listing is returned as
+  /// [GitHubTreeSnapshot.truncated] so the caller reports the real reason
+  /// instead of guessing.
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
@@ -256,6 +278,11 @@ abstract interface class GitHubGitDataApi {
   /// Pushes [files] to [owner]/[repo]@[branch] as a SINGLE atomic commit
   /// (blobs → tree(base) → commit → move ref). Only `upload`-flagged files
   /// have their bytes sent; the rest are reused by sha.
+  ///
+  /// [expectedHead] is the head commit this phone read before building the
+  /// publish (R6). If the branch no longer points at it, nothing is written
+  /// and [PublishCommitStale] is returned: another device (or a human) changed
+  /// the site, so a MOVE must stop rather than overwrite a newer source.
   ///
   /// [deletePaths] (M14) lists repo-relative paths to REMOVE in the same
   /// commit: GitHub's create-tree API deletes any entry whose `sha` is null
@@ -274,6 +301,7 @@ abstract interface class GitHubGitDataApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths,
   });
 }

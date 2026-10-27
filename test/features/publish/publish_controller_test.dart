@@ -21,6 +21,7 @@ import 'package:pitaka/features/periodicals/domain/repositories/periodical_repos
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
@@ -110,7 +111,9 @@ void main() {
             as Map<String, dynamic>;
     expect(payload['books'], isEmpty);
     expect(files.map((file) => file.path), contains('index.html'));
-    expect(h.manifest.saves, 1);
+    // R5: the commit is persisted immediately, then upgraded once the live
+    // site proves it — the record ends `live`.
+    expect(h.manifest.current.state, PublishManifestState.live);
     expect((result as PublishSuccess).pagesLive, isTrue);
   });
 
@@ -237,6 +240,7 @@ void main() {
           right(const [CatalogueItem(id: 1, title: 'Recovered')]);
       expect(await h.publish(tester), isA<PublishSuccess>());
       final saved = h.manifest.current;
+      final savesAfterSuccess = h.manifest.saves;
       h.books.read = () async => left(const StorageFailure('private-second'));
       final result = await h.publish(tester);
 
@@ -244,7 +248,8 @@ void main() {
       expect(h.states.last.requireValue, same(result));
       expect(h.books.reads, 3);
       expect(h.api.commits, hasLength(1));
-      expect(h.manifest.saves, 1);
+      // The failure wrote nothing: the last successful record is untouched.
+      expect(h.manifest.saves, savesAfterSuccess);
       expect(h.manifest.current, same(saved));
     },
   );
@@ -272,7 +277,7 @@ void main() {
         succeeds ? right([]) : left(const StorageFailure('private')),
       );
       await tester.pump();
-      await tester.pump(PublishLibraryUseCase.readBackInterval);
+      await tester.pump(PublishedFileReadBack.defaultInterval);
       final result = await pending;
       expect(result, succeeds ? isA<PublishSuccess>() : isA<PublishFailure>());
       expect(h.api.commits, hasLength(succeeds ? 1 : 0));
@@ -293,7 +298,7 @@ void main() {
           succeeds ? right([]) : left(const StorageFailure('private')),
         );
         await tester.pump();
-        await tester.pump(PublishLibraryUseCase.readBackInterval);
+        await tester.pump(PublishedFileReadBack.defaultInterval);
         expect(
           await pending,
           succeeds ? isA<PublishSuccess>() : isA<PublishFailure>(),
@@ -354,7 +359,7 @@ void main() {
     h.books.read = () async => right([]);
     await tester.tap(publish);
     await tester.pump();
-    await tester.pump(PublishLibraryUseCase.readBackInterval);
+    await tester.pump(PublishedFileReadBack.defaultInterval);
     await tester.pumpAndSettle();
     expect(find.text('Published! Your site is live.'), findsOneWidget);
     expect(h.api.commits, hasLength(1));
@@ -602,6 +607,9 @@ class _Harness {
     bool networkUnavailable = false,
     bool coverSalt = false,
   }) {
+    // R6: the fake remote starts as what this phone recorded.
+    api.tree = {...manifest.current.fileShas};
+    api.head = manifest.current.headSha ?? api.head;
     container = ProviderContainer(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
@@ -706,7 +714,7 @@ class _Harness {
     await tester.pump();
     // Advance the real use case's read-back delay on the test clock, not wall
     // time. The fake serves the committed bytes on the very first poll.
-    await tester.pump(PublishLibraryUseCase.readBackInterval);
+    await tester.pump(PublishedFileReadBack.defaultInterval);
     return pending;
   }
 }
@@ -839,6 +847,7 @@ class _Credentials implements PublishCredentialStore {
 class _Manifest implements PublishManifestGateway {
   PublishManifest current = const PublishManifest(
     repo: 'me/lib',
+    branch: 'main',
     fileShas: {'books.json': 'old-books-sha'},
     coverUrlByBookId: {'1': 'covers/old.jpg'},
   );
@@ -852,15 +861,21 @@ class _Manifest implements PublishManifestGateway {
   }
 
   @override
-  void save(PublishManifest manifest) {
+  Either<Failure, Unit> save(PublishManifest manifest) {
     saves++;
     current = manifest;
+    return right(unit);
   }
 }
 
 class _Api implements GitHubApi {
   int reads = 0;
   final commits = <List<DesiredFile>>[];
+
+  /// The fake remote branch: head + tree, updated by every successful commit
+  /// so a second publish sees exactly what the first one wrote (R6).
+  String head = 'synthetic-commit';
+  Map<String, String> tree = const {};
 
   @override
   Future<PagesSite?> pagesSite({
@@ -877,14 +892,20 @@ class _Api implements GitHubApi {
   }
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     reads++;
-    return const {};
+    return GitHubTreeSnapshot(
+      repo: '$owner/$repo',
+      branch: branch,
+      headSha: head,
+      files: tree,
+      truncated: false,
+    );
   }
 
   @override
@@ -895,10 +916,14 @@ class _Api implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    // R6: never overwrite a head this publish was not built from.
+    if (expectedHead != head) return const PublishCommitStale();
     commits.add(files);
-    return const PublishCommitSuccess('synthetic-commit', ['books.json']);
+    tree = {for (final f in files) f.path: f.gitSha};
+    return PublishCommitSuccess(head, ['books.json']);
   }
 
   @override
