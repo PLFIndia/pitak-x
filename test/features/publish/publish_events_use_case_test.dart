@@ -52,13 +52,16 @@ class _FakeVerifier implements PublishedSiteVerifier {
 }
 
 class _FakeCreds implements PublishCredentialReader {
-  _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
+  _FakeCreds({this.tok = 'TKN'});
   final String? tok;
-  final String? repo;
+
   @override
   Future<String?> token() async => tok;
+
+  /// Deliberately NOT the target the use case is given: the use case must never
+  /// read this for its destination (R1/C3).
   @override
-  Future<String?> targetRepo() async => repo;
+  Future<String?> targetRepo() async => 'me/lib';
 }
 
 class _MemManifest implements PublishManifestGateway {
@@ -183,6 +186,7 @@ void main() {
     PosterBytesReader? readPoster,
     PublishedSiteVerifier? verifier,
     PublishHostStateRecorder? hostState,
+    GitHubPublishTarget? target,
   }) {
     // R6: the fake remote starts as what this phone recorded (see the
     // catalogue suite for the same rule).
@@ -194,6 +198,8 @@ void main() {
     }
     return PublishEventsUseCase(
       api: api,
+      // R1/C3: the target is passed in, never re-derived inside the use case.
+      target: target ?? GitHubPublishTarget.create('me/lib')!,
       credentials: creds ?? _FakeCreds(),
       manifest: manifest,
       readPoster: readPoster ?? (ref) async => ascii.encode('img:$ref'),
@@ -242,6 +248,35 @@ void main() {
     ).call(twoPosters());
     expect(result, isA<PublishEventsFailure>());
   });
+
+  test(
+    'R1: the target comes from the caller, not the credential store',
+    () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/other',
+          branch: 'main',
+          headSha: 'HEAD',
+          fileShas: {'index.html': 'abc'},
+        ),
+      );
+      final result = await make(
+        api: api,
+        manifest: manifest,
+        // Deliberately different: the use case must not read this for the
+        // target.
+        creds: _FakeCreds(),
+        target: GitHubPublishTarget.create('me/other'),
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect(
+        (result as PublishEventsSuccess).eventsUrl,
+        'https://me.github.io/other/events.html',
+      );
+    },
+  );
 
   test('publishes events.html + events.json + posters atomically', () async {
     final api = _CapturingApi();
@@ -413,7 +448,7 @@ void main() {
       final result = await make(
         api: _CapturingApi(),
         manifest: _MemManifest(manifest),
-        creds: _FakeCreds(repo: 'me/me.github.io'),
+        target: GitHubPublishTarget.create('me/me.github.io'),
       ).call(twoPosters());
       expect(
         (result as PublishEventsSuccess).eventsUrl,

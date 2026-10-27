@@ -266,11 +266,14 @@ group, add-member page flow, network page flow (accept + dismiss).
 2. **`pendingMove` in the journal.** The record is schema 1 with
    `activeHost` + `verifiedTarget`; the move's phase and the exact old/new
    targets are added by S9 (absent field = no move, so no migration).
-3. **The events publish still resolves `targetRepo()` itself** — give it an
-   explicit target when the move commands land, so both publishes are
-   target-driven. (It already builds a `GitHubPublishTarget` from it, so the
-   descriptor/read-back/commit are all target-driven; only the *source* of the
-   repo string is still the credential store.)
+3. **DONE — the events publish is target-driven.** `PublishEventsUseCase` now
+   takes a `required GitHubPublishTarget` in its constructor and never calls
+   `targetRepo()`; `PublishEventsController` resolves the target once (exactly
+   like `PublishController`) and returns the fixed "Pick a target repo first."
+   failure when there is none. `eventsUrl` is `'${target.siteUrl}events.html'`,
+   so the user-site/project-site rule comes from the target rather than a
+   second derivation. Pinned by a test that gives the use case a target
+   different from the credential store's repo.
 4. **The R4 digest** (§3.4 above) and the move/replacement commands (S9).
 
 ### 4.5 Still open from S3

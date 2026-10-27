@@ -7,7 +7,7 @@ part of 'publish_events_controller.dart';
 // **************************************************************************
 
 String _$publishEventsControllerHash() =>
-    r'11317d704f7db29809ea35780d9e31b3fdf63be1';
+    r'f06df0166b2bd691d51a4af7d6ff0dac0cec72cd';
 
 /// Runs an events publish and exposes its [PublishEventsResult].
 ///

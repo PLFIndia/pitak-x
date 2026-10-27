@@ -5,8 +5,12 @@
 /// re-publishing the book list, and vice versa. It pushes `events.html`, the
 /// machine-readable `events.json`, and the poster images as ONE atomic
 /// incremental commit via [GitHubGitDataApi] (the git-data role of the GitHub
-/// port, S5), reusing the same credential + target repo a prior catalogue
-/// publish established.
+/// port, S5).
+///
+/// The TARGET is resolved by the caller (the controller) and passed in — this
+/// use case never re-derives the repo from credentials (R1/C3). That is the
+/// same rule the catalogue publish follows, and it is what lets a move publish
+/// to the NEW target while the old one is still active.
 ///
 /// Gate (Q8=A): refuses unless the on-device publish manifest proves the
 /// catalogue was already published to the CURRENT target repo (it contains an
@@ -36,7 +40,6 @@ import 'package:pitaka/features/publish/application/site/published_file_read_bac
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -91,6 +94,7 @@ final class PublishEventsUseCase {
   /// Creates the use case over its ports.
   PublishEventsUseCase({
     required GitHubGitDataApi api,
+    required GitHubPublishTarget target,
     required PublishCredentialReader credentials,
     required PublishManifestGateway manifest,
     required PosterBytesReader readPoster,
@@ -101,6 +105,7 @@ final class PublishEventsUseCase {
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
+       _target = target,
        _credentials = credentials,
        _manifest = manifest,
        _section = EventsSectionBuilder(
@@ -114,6 +119,9 @@ final class PublishEventsUseCase {
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubGitDataApi _api;
+
+  /// The exact destination of THIS operation (R1/C3). Never re-derived.
+  final GitHubPublishTarget _target;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final EventsSectionBuilder _section;
@@ -142,19 +150,13 @@ final class PublishEventsUseCase {
     if (token == null) {
       return const PublishEventsFailure('Not signed in to GitHub.');
     }
-    final ownerRepo = await _credentials.targetRepo();
-    final target = GitHubPublishTarget.create(ownerRepo);
-    if (target == null) {
-      return const PublishEventsFailure('Pick a target repo first.');
-    }
+    final target = _target;
     final owner = target.owner;
     final repo = target.repo;
     // N09: ONE resolver for every published address (user site vs project
-    // site) — shared with the catalogue publish and the drawer.
-    final eventsUrl = githubPagesFileUrl(ownerRepo, 'events.html');
-    if (eventsUrl == null) {
-      return const PublishEventsFailure('Pick a target repo first.');
-    }
+    // site) — the target's canonical root, so a user site and a project site
+    // both resolve correctly and no second derivation exists.
+    final eventsUrl = '${target.siteUrl}events.html';
 
     // N09 (D2-a): commit to the branch Pages actually serves (see the
     // catalogue use case for the reasoning).

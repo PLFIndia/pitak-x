@@ -10,6 +10,7 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/events/application/events_controller.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -38,6 +39,13 @@ class PublishEventsController extends _$PublishEventsController {
     final api = ref.read(gitHubApiProvider);
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
+    // R1/C3: the operation's target is resolved ONCE, here, and passed in. The
+    // use case never re-derives the repo, so a move can publish to the new
+    // target while the old one is still active.
+    final target = GitHubPublishTarget.create(await credentials.targetRepo());
+    if (target == null) {
+      return const PublishEventsFailure('Pick a target repo first.');
+    }
     // N14: poster file IO arrives via DI (infrastructure port), keeping this
     // controller free of dart:io (§3.1).
     final readPoster = await ref.read(eventsPosterReaderProvider.future);
@@ -54,6 +62,7 @@ class PublishEventsController extends _$PublishEventsController {
     final verifier = ref.read(publishedSiteVerifierProvider);
     final useCase = PublishEventsUseCase(
       api: api,
+      target: target,
       credentials: credentials,
       manifest: manifest,
       readPoster: readPoster,
