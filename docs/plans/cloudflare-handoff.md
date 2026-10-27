@@ -1,14 +1,15 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries this session's deviation rows 34–40).
-- **Branch:** `cloudflare`, three commits on top of `main` at `e8c4d8e`:
+  its Part M now carries every session's deviation rows 34–42).
+- **Branch:** `cloudflare`, four commits on top of `main` at `e8c4d8e`:
 
   | Commit | Session | What landed |
   |---|---|---|
   | `9b5cb38` | S0 | Publish-page widget extraction, Cloudflare copy withdrawal, ADR 0007/0010 amended, draft ADR 0017, `SECURITY.md` |
   | `8c413d8` | S1 | Strict `workers.dev` reader grammar, C10/R17 library-move reconciliation |
   | `3205f37` | S3 (part 1) | Shared section builders, exact section merge, strict snapshot reads |
+  | `77561ef` | S3 (part 2) | Origin-bound verifier, strict snapshot builder wired into the controller, two-phase read/build, `PublishReadFailure` |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -176,18 +177,38 @@ group, add-member page flow, network page flow (accept + dismiss).
   redirect refused, over-cap, non-2xx, refused URL never reaches the network)
   plus the read-back suite in `publish_library_use_case_test.dart`.
 
-### 4.3 Still open in S3 (finish before S4's move work)
+### 4.3 S3 remainder — done (commit `77561ef`)
 
-1. **Wire `PublishSnapshotBuilder` into `PublishController`.** The controller
-   still assembles inputs by hand (`_run` → `_publishBooks`) and the GitHub
-   publish still runs in `incremental` mode. Implement `PublishReads` over the
-   existing providers (catalogue `getAllForInterchange`, `periodical.listAll`,
-   `events.loadStrict`, `libraryJson` assembly, `activeLoanCounts`) and pass
-   `PublishMode.complete` for moves/replacements when those commands exist.
-2. **R4 snapshot digest** — moved into S4 with the confirmation flow (deviation
-   row 40). The digest must cover canonical section content + content shas but
-   exclude `exportedAt`/`publishId`, so it must not be a hash of the built bytes
-   alone (`books.json` embeds `exportedAt`).
+1. **`PublishSnapshotBuilder` is wired into `PublishController`.** The
+   controller now *is* the app's `PublishReads`: catalogue
+   (`getAllForInterchange`), `periodical.listAll`, `events.loadStrict`, the
+   `library.json` assembly and `activeLoanCounts`, each returned as a typed
+   `PublishReadFailure` carrying an already-safe sentence. The section builder
+   itself comes from the new DI provider `publishSnapshotBuilderProvider`, so
+   GitHub and (later) Cloudflare consume ONE wiring and one `books.json`
+   encoder (`encodeBooksJsonBytes`).
+2. **Two-phase contract.** Reading and building are separate calls:
+   `read(reads:, includeEvents:)` → `PublishInputs`, then
+   `build(inputs:, previous:, now:, mode:)` → `PublishSnapshot`. The read phase
+   needs no target, so `PublishLibraryUseCase.call` runs it BEFORE the token,
+   `pagesSite` and the manifest. A library that cannot be read therefore fails
+   without a keystore read, an API call or a manifest load — the fail-fast
+   tests in `publish_controller_test.dart` still pass unchanged.
+3. **`PublishMode.complete` reaches the builder** via
+   `PublishController.publish({mode})`, covered by a controller test (missing
+   cover refuses in `complete`, degrades in `incremental`). The move/replacement
+   *commands* are still S4/S9 work.
+4. **Tests added:** `test/features/publish/application/publish_snapshot_builder_test.dart`
+   (J.2: failed catalogue/periodical/events read, no-events read, complete-mode
+   missing cover/poster, availability flag, counts from the snapshot) plus the
+   two read-failure tests in `publish_library_use_case_test.dart`.
+
+### 4.4 Still open from S3
+
+**R4 snapshot digest** — moved into S4 with the confirmation flow (deviation
+row 40). The digest must cover canonical section content + content shas but
+exclude `exportedAt`/`publishId`, so it must not be a hash of the built bytes
+alone (`books.json` embeds `exportedAt`).
 
 ---
 
@@ -221,8 +242,7 @@ behavior become load-bearing.
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
-| S3 remainder | — | Controller wiring to `PublishSnapshotBuilder` (§4.3); digest in S4 |
-| S4 | S3 remainder done | Sealed `PublishTarget`, schema-2 manifests (GitHub **and** Cloudflare), `SerialOpQueue` extraction (`lib/features/vault/application/serial_op_queue.dart` → `core/async/`), `publish_host_state` journal (one prefs key, no tokens), `hardenedSecureStorage()` factory shared by both credential stores, atomic typed manifest saves, expected-head GitHub commits, `verifiedTarget` migration gated on a real read-back |
+| S4 | — (S3 complete) | Sealed `PublishTarget`, schema-2 manifests (GitHub **and** Cloudflare), `SerialOpQueue` extraction (`lib/features/vault/application/serial_op_queue.dart` → `core/async/`), `publish_host_state` journal (one prefs key, no tokens), `hardenedSecureStorage()` factory shared by both credential stores, atomic typed manifest saves, expected-head GitHub commits, `verifiedTarget` migration gated on a real read-back |
 | S5 | — (independent of S2) | Cloudflare pure domain: token/account/worker/subdomain/URL value objects, `SitePath`, asset hash vectors, content types, schema-2 Cloudflare manifest + `hashScheme`, marker value object, limits |
 | S2 | S5 may proceed in parallel | Trial tool + maintainer run + report |
 | S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
@@ -246,6 +266,13 @@ goal is "as much as possible without credentials", stop after S5.
 - **A corrupt read is not empty content.** Publishing uses `loadStrict`; the
   tolerant editor path is explicitly named.
 - **Complete mode fails, it does not omit.** A missing cover/poster aborts.
+- **`read` before `build`.** The snapshot's read phase runs before any token,
+  API call or manifest load. Do not fold it back into one pass: that is what
+  makes an unreadable library cost nothing but a local read, and it is the
+  shape R4's prepare→confirm flow needs.
+- **One builder wiring.** `publishSnapshotBuilderProvider` is the only place
+  that assembles the section builders and the `books.json` encoder. A second
+  wiring is how two hosts start publishing different bytes.
 - **Ratchet:** no new allow-list entry. If an addition pushes a file over 500
   lines, split it (that is how `refresh_run.dart` and the three `site/` files
   came to exist).
@@ -259,13 +286,17 @@ goal is "as much as possible without credentials", stop after S5.
 
 1. **Single-writer guarantee** — unresolved until S2/T14. Do not claim the
    marker gives compare-and-swap.
-2. **`PublishMode.complete` is implemented but unused** until moves exist. It is
-   covered by unit tests, not by a user-facing path yet.
+2. **`PublishMode.complete` is implemented and reachable** through
+   `PublishController.publish(mode:)`, but nothing passes it yet: the move and
+   replacement commands arrive in S4/S9. It is covered by a controller test,
+   not by a user-facing path.
 3. **Catalogue deploy now deletes stale covers.** This is the intended R8 fix,
    but it is a *remote behavior change*: run the J.7 smoke on a real GitHub Pages
    repo before release, and note it in `CHANGELOG.md`.
-4. **`PublishSnapshot` has no digest yet** — the replacement confirmation must
-   not be built on it until R4's digest exists (S4).
+4. **`PublishSnapshot` has no digest yet** — the replacement confirmation (S4)
+   must not be built on it until R4's digest exists. The snapshot is otherwise
+   complete: counts, empty-section warnings and `availabilityOmitted` all come
+   from it.
 5. **The plan's `tool/cloudflare_trial/` does not exist**, so S2 cannot be
    executed today; a successor must write it first.
 6. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
@@ -296,6 +327,8 @@ section_card}.dart`, `docs/adr/0017-cloudflare-workers-publishing.md`.
 **Materially changed**
 `lib/features/publish/application/{publish_library_use_case,
 publish_events_use_case,publish_cover_decider,publish_controller}.dart`,
+`lib/core/di/src/publish_providers.dart` (one snapshot-builder wiring),
+`lib/core/error/failure.dart` (`PublishReadFailure`),
 `lib/features/publish/domain/publish_manifest.dart`,
 `lib/features/network/domain/{refresh_report.dart,repositories/
 network_repository.dart,value_objects/bookmark_url.dart,usecases/
@@ -313,7 +346,7 @@ infrastructure/file_events_repository.dart,application/events_controller.dart}`,
 `test/core` none; `test/features/network/domain/workers_dev_url_test.dart`,
 `reconcile_library_move_use_case_test.dart`;
 `test/features/publish/application/catalogue_section_builder_test.dart`,
-`events_section_builder_test.dart`;
+`events_section_builder_test.dart`, `publish_snapshot_builder_test.dart`;
 `test/features/publish/domain/section_merge_test.dart`; plus the new groups in
 the drift repository, refresh, controller, add-member and network-page suites.
 
