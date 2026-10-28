@@ -5,8 +5,9 @@
   as `a98c588`, S10 as `7c7dca9`). The S2 disposable-account
   trial passed on 2026-10-27 (see the sanitized report in Part M.1 and
   `docs/plans/cloudflare-handoff.md`). S10's documentation audit is handoff
-  §11; **S11 (real-host smoke and cleanup) is next**, with its evidence table
-  in handoff §12.
+  §11. **S11 is in progress:** the S2 trial tool was removed on 2026-10-28;
+  the real-host J.7 smoke and the Linux `publish_connection` golden
+  regeneration are outstanding, with the evidence table in handoff §12.
 - **Supersedes:** `cloudflare_plan.md` and `cloudflare_plan_amendments.md`.
   Those files remain review history only. Implementation uses this document.
 - **Scope:** a library can publish its read-only site (catalogue, events and
@@ -1284,7 +1285,7 @@ final consistency audit.
 | S8 | Cloudflare publish and replacement | L | F.3/F.9 covered; section survival, marker recovery, replacement warning, per-hash bytes, version gate and aggregate memory tests pass; Android release/AOT memory gate recorded. |
 | S9 | Moves and retirement | XL; split PRs | Both directions, exact ownership, read-back, idempotent pending retry and every crash point pass before completion. |
 | S10 | Docs and release checklist | M | Every Part K item and ADR amendment done; no contradictory docs remain. |
-| S11 | Real-host smoke and cleanup | M | Every Part J smoke step passes; `tool/cloudflare_trial/` removed; final CI/release gates green. |
+| S11 | Real-host smoke and cleanup | M | Every Part J smoke step passes; `tool/cloudflare_trial/` removed (done, 2026-10-28); Linux goldens regenerated; final CI/release gates green. |
 
 S6–S9 wait for S2's outcome. If T6 fails or the maintainer rejects a required
 C1/C6 consequence, stop rather than patching around the decision.
@@ -1353,8 +1354,9 @@ C1/C6 consequence, stop rather than patching around the decision.
   concurrency cannot exceed the budget. Initial implementation remains serial.
 - Android release/AOT profile uses production-equivalent artifact/upload code;
   desktop trial RSS is recorded only as supplementary evidence.
-- Trial script passes `dart analyze tool` and
-  `dart format --set-exit-if-changed tool/cloudflare_trial` in S2.
+- The S2 trial script passed `dart analyze tool` and
+  `dart format --set-exit-if-changed tool/cloudflare_trial` while it existed;
+  both were re-run clean immediately before the tool was removed in S11.
 
 ## J.4 Reader tests
 
@@ -1480,7 +1482,9 @@ On a disposable account with the exact restricted token:
   intended for production. A second broad token may be used only to diagnose a
   failed restricted call, never as proof the production flow works.
 - Run `dart analyze tool` and format checks manually because `tool/` is outside
-  the normal CI lint paths.
+  the normal CI lint paths. (The S2 trial was the only Dart source under
+  `tool/`; it was removed in S11, so this rule now applies only to any future
+  Dart tool.)
 
 ## L.2 Checks
 
@@ -1505,7 +1509,7 @@ On a disposable account with the exact restricted token:
 | T16 | Repeat every required endpoint, including deploy, route/version settings and retirement, with the exact restricted token. Any untested write permission blocks S7/S8. |
 
 The maintainer records the sanitized report and all deviations in Part M before
-S6. The trial source is removed in S11.
+S6. The trial source was removed in S11 (2026-10-28).
 
 ---
 

@@ -4,8 +4,9 @@
   its Part M now carries every session's deviation rows 34–79 and the S2 report).
 - **Branch:** `cloudflare`; implementation commits through `a98c588` are listed
   below (S2–S9 landed as one consolidated commit). **S10 (docs and release
-  checklist) is implemented in `7c7dca9`.** S11 (real-host smoke and
-  cleanup) is next:
+  checklist) is implemented in `7c7dca9`.** **S11 started with the trial-tool
+  removal (2026-10-28);** the real-host J.7 smoke and the Linux
+  `publish_connection` golden regeneration remain:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -690,9 +691,9 @@ Retry and Skip are deterministic after every remote or persistent side effect.
 | S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
 | S9 | S8 done | **Done** (§9): moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash matrix |
 | S10 | S9 done | **Done** (§11): ADR 0017 accepted; ARCHITECTURE, PRIVACY, SECURITY, README, RELEASING, CHANGELOG and the in-app guide describe both hosts; §6.5 publish smoke matrix and the App-access answer; fastlane blurb and golden regeneration deferred with reasons |
-| S11 | S10 done | Real-host J.7 smoke (§12), Linux golden regeneration, remove `tool/cloudflare_trial/` + its test, final CI/release gates |
+| S11 | S10 done | Real-host J.7 smoke (§12), Linux golden regeneration, final CI/release gates. The trial-tool removal is **done** (2026-10-28) |
 
-S2 is complete. The trial source remains for S11 and is removed there.
+S2 is complete. The trial source was removed in S11 (2026-10-28).
 
 ---
 
@@ -759,10 +760,12 @@ Publish to Cloudflare Workers: connect a token scoped to one account, then publi
 Check it before committing the release:
 `python3 tool/check_fastlane_changelog_chars.py <versionCode>`.
 
-**Cleanup, also S11:** delete `tool/cloudflare_trial/` and
-`test/tool/cloudflare_trial_test.dart`, then re-run the full gate set in
-`README.md` › Quality gates (including `dart analyze tool` while the tool
-still exists) and the Part N checklist in the plan.
+**Cleanup — done 2026-10-28.** `dart analyze tool` (no issues) and
+`dart format --set-exit-if-changed tool/cloudflare_trial` (0 changed) were
+re-run while the tool still existed, then `tool/cloudflare_trial/` (9 `.dart`
+files + `README.md`) and `test/tool/cloudflare_trial_test.dart` were deleted,
+emptying `test/tool/`. The full gate set in `README.md` › Quality gates and
+the Part N checklist were run again afterwards.
 
 ---
 
@@ -863,8 +866,9 @@ still exists) and the Part N checklist in the plan.
    JSON is read from the spool on demand. Changed content after preparation
    requires a fresh confirmation, never a deploy of the old bytes.
 5. **S2 and S6–S10 are complete.** The sanitized report/design outcomes and
-   adapter/connection deviations are recorded in the plan. The trial tool
-   remains analyze/format/test clean for S11, when it is removed.
+   adapter/connection deviations are recorded in the plan. The trial tool was
+   analyze/format/test clean when it was removed in S11 (2026-10-28); it is no
+   longer in the tree.
 6. **F.4 step 2 is implemented as Option B** (deviation rows 48/55): a
    `deployed` record at the current head is verified before the next publish.
    A contradiction blocks; an unreachable site does not. Cloudflare's
@@ -904,7 +908,8 @@ still exists) and the Part N checklist in the plan.
 `lib/features/network/domain/usecases/refresh_run.dart`,
 `lib/features/network/presentation/widgets/library_move_prompt.dart`.
 
-**New — trial tool (S2)**
+**Removed — trial tool (S2), deleted in S11 on 2026-10-28 after a final clean
+`dart analyze tool` / `dart format` pass**
 `tool/cloudflare_trial/{main,trial_run,trial_http,trial_public,trial_multipart,
 trial_assets,trial_report,trial_cleanup,trial_versions}.dart` + `README.md`,
 `test/tool/cloudflare_trial_test.dart`.

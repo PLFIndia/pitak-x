@@ -164,8 +164,9 @@ consequences the product cannot hide:
   `PRIVACY.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/RELEASING.md`,
   `CHANGELOG.md` and the in-app guide with the behaviour described here. What
   remains is evidence, not decision: the **S11 J.7 real-host smoke** on a
-  disposable account, the Linux regeneration of the `publish_connection`
-  golden, and removing the trial tool. Acceptance does *not* claim a supported
+  disposable account and the Linux regeneration of the `publish_connection`
+  golden. (The S2 trial tool, the third S11 cleanup item, was removed on
+  2026-10-28.) Acceptance does *not* claim a supported
   compare-and-swap contract (no such contract exists — see §Decision 6 and
   Consequences) and does not promise that arbitrary user files on a dedicated
   Worker survive.
