@@ -2,7 +2,7 @@
 
 - **Branch:** `cloudflare` (from `main` at `e8c4d8e`, 2026-10-26).
 - **Status:** consolidated design; S0–S10 are implemented and committed (S2–S9
-  as `a98c588`, S10 as the documentation commit). The S2 disposable-account
+  as `a98c588`, S10 as `7c7dca9`). The S2 disposable-account
   trial passed on 2026-10-27 (see the sanitized report in Part M.1 and
   `docs/plans/cloudflare-handoff.md`). S10's documentation audit is handoff
   §11; **S11 (real-host smoke and cleanup) is next**, with its evidence table
