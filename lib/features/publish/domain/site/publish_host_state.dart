@@ -17,12 +17,17 @@
 library;
 
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// The persisted journal of the active host and its verified site.
 final class PublishHostState {
   /// Creates a journal record.
-  const PublishHostState({this.activeHost, this.verifiedTarget});
+  const PublishHostState({
+    this.activeHost,
+    this.verifiedTarget,
+    this.pendingMove,
+  });
 
   /// The record before anything was published or configured.
   static const PublishHostState empty = PublishHostState();
@@ -35,6 +40,9 @@ final class PublishHostState {
   /// publication has been verified.
   final PublishTarget? verifiedTarget;
 
+  /// A destination-verified move whose source retirement is unfinished.
+  final PendingMove? pendingMove;
+
   /// The public address to share/QR, or null when nothing is verified.
   String? get verifiedSiteUrl => verifiedTarget?.siteUrl;
 
@@ -43,8 +51,15 @@ final class PublishHostState {
   /// as "nothing verified" (fail closed).
   bool get isConsistent {
     final target = verifiedTarget;
-    if (target == null) return true;
-    return activeHost == target.host;
+    if (target != null && activeHost != target.host) return false;
+    final pending = pendingMove;
+    if (pending == null) return true;
+    // A pending move never changes which old address is shared. Requiring the
+    // exact old verified target also prevents a corrupt journal from treating
+    // an unverified destination as the successful half of a move.
+    return activeHost == pending.oldTarget.host &&
+        target != null &&
+        target.isSameExactTarget(pending.oldTarget);
   }
 
   /// The record after a publish to [target] was proven live.
@@ -53,16 +68,49 @@ final class PublishHostState {
   /// publish to a DIFFERENT host is the destination half of a move, whose
   /// switch belongs to the move state machine (S9), not to this setter.
   PublishHostState afterVerifiedPublish(PublishTarget target) {
+    // No ordinary publish may replace either journal fact during recovery.
+    if (pendingMove != null) return this;
     final active = activeHost;
     if (active != null && active != target.host) return this;
     return PublishHostState(activeHost: target.host, verifiedTarget: target);
   }
 
-  /// True when [target] is already the verified target of this record.
-  bool verifies(PublishTarget target) =>
-      verifiedTarget?.targetId == target.targetId && activeHost == target.host;
+  /// Starts [pending] only from its exact old active/verified target.
+  PublishHostState? beginMove(PendingMove pending) {
+    final existing = pendingMove;
+    if (existing != null) {
+      return existing.sameOperation(pending) && isConsistent ? this : null;
+    }
+    if (!verifies(pending.oldTarget)) return null;
+    return PublishHostState(
+      activeHost: activeHost,
+      verifiedTarget: verifiedTarget,
+      pendingMove: pending,
+    );
+  }
+
+  /// Completes or explicitly skips [expected]. Repeating an already-persisted
+  /// completion is a no-op; a stale caller cannot finish a different move.
+  PublishHostState? finishMove(PendingMove expected) {
+    final pending = pendingMove;
+    if (pending == null) return verifies(expected.newTarget) ? this : null;
+    if (!pending.sameOperation(expected) || !isConsistent) return null;
+    return PublishHostState(
+      activeHost: pending.newTarget.host,
+      verifiedTarget: pending.newTarget,
+    );
+  }
+
+  /// True when [target] is already the exact verified target of this record.
+  bool verifies(PublishTarget target) {
+    final verified = verifiedTarget;
+    return verified != null &&
+        verified.isSameExactTarget(target) &&
+        activeHost == target.host;
+  }
 
   @override
   String toString() =>
-      'PublishHostState(${activeHost?.name}, ${verifiedTarget?.targetId})';
+      'PublishHostState(${activeHost?.name}, ${verifiedTarget?.targetId}, '
+      'pending=${pendingMove != null})';
 }

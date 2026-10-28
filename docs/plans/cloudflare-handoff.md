@@ -1,10 +1,9 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–73 and the S2 report).
+  its Part M now carries every session's deviation rows 34–74 and the S2 report).
 - **Branch:** `cloudflare`; implementation commits through `1a44444` are listed
-  below. The S2 report/trial hardening, S6 HTTP adapters, and S7 connection
-  flow are in the working tree:
+  below. S2–S9 are in the working tree:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -25,15 +24,17 @@
   | *(working tree)* | S6 | Cloudflare domain ports, account/deploy HTTP adapters + facade, bounded/abortable multipart transport, hostile-response and real-socket tests |
   | *(working tree)* | S7 | Secure whole-record connection storage, staged account/subdomain/Worker setup, marker-only address verification, shared publish queue, connection controller + dialogs |
   | *(working tree)* | S8 | Ordinary publish/replacement, strict R4 confirmation, active-host routing, per-file artifact sink, full read-back and memory scenario |
+  | *(working tree)* | S9 | Moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash-matrix tests |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
   `dart format --set-exit-if-changed lib test integration_test` is clean, and
   the full suite passes (golden excluded).
-- **Cloudflare connection/setup and ordinary publishing are user-facing.** S7
-  adds restricted-token capture and setup; S8 adds ordinary catalogue/events
-  publishing and explicit whole-site replacement. Moves/retirement remain S9.
-  See §7 for setup invariants and §8 for the publish/recovery implementation.
+- **Cloudflare connection/setup, ordinary publishing, and moves are
+  user-facing.** S7 adds restricted-token capture and setup; S8 adds ordinary
+  catalogue/events publishing and explicit whole-site replacement; S9 adds
+  user-confirmed moves in either direction. See §7 for setup invariants, §8 for
+  ordinary publish/recovery, and §9 for moves.
 
 ---
 
@@ -592,7 +593,90 @@ and host-neutral publish UI. Moves and retirement remain S9.
 
 ---
 
-## 9. Remaining sessions, in order, with entry criteria
+## 9. S9 — moves and retirement (implemented)
+
+**Deliverable:** a user-confirmed move between GitHub Pages and Cloudflare
+Workers in either direction. The destination receives a strict complete
+snapshot and passes full read-back before the source is touched; the old
+active/verified share target stays selected until source retirement verifies;
+Retry and Skip are deterministic after every remote or persistent side effect.
+
+- **One atomic pending journal.** `PendingMove` + `RetirementDescriptor` carry
+  the exact old/new sealed targets, source anchor, branch, owned deletion paths,
+  the frozen schema-1 moved page bytes and (for Cloudflare) a fresh retired
+  marker. `PrefsPublishHostStore` writes it in the same one-key record as the
+  active/verified target, distinguishes "absent" from "unreadable" with typed
+  `Either` reads, and refuses malformed pending history instead of quietly
+  starting over. `beginMove`/`finishMove` are single-write transitions; the
+  old target is never switched before retirement verifies.
+- **Frozen moved page.** `assets/publish/moved.html` is a versioned renderer
+  (`MovedHtmlBuilder`), escapes the library name and exact destination, and is
+  re-rendered and byte-compared before every Retry. Both index and 404 bytes are
+  persisted so an app upgrade cannot change a pending operation's output.
+- **Outer state machine.** `MoveSiteUseCase` holds the one shared queue only for
+  prepare/confirm/Retry/Skip. Prepare is write-free. Confirm re-resolves both
+  targets and the source anchor, rechecks the source immediately before and
+  after the destination write, re-prompts when the rebuilt digest differs,
+  records pending only after the destination passes complete read-back, and
+  retires before the single final switch. The confirmation dialog runs after
+  the queue is released; inner host operations never enqueue.
+- **Both destinations.** GitHub lands one expected-head commit of the complete
+  snapshot and verifies every file by sha at the exact origin. Cloudflare
+  deploys the complete assets-only snapshot, disables preview/version URLs
+  before writing, rechecks the preflight anchor immediately before deploy, and
+  verifies the marker, catalogue, descriptor/events and removed files.
+- **Both retirements.** GitHub writes the moved index/404 and deletes every
+  other exact app-owned path in the same expected-head commit, then proves the
+  moved root and the old `books.json` 404 before saving a retired manifest.
+  Cloudflare deploys exactly index/404/marker with the R27 retired headers,
+  proves the same set, and saves the retired manifest with its publish id. Both
+  adopt an already-retired source (idempotent Retry) without a second write.
+  Skip runs only after the exact old repository/Worker is proven absent and the
+  explicit warning; it switches to the verified destination and never marks the
+  old site retired.
+- **Target-mutation guards.** `PendingMoveTargetGuard` is shared by GitHub repo
+  setup and Cloudflare Worker activation: while a pending move exists, only the
+  exact recorded destinations may be changed. An unreadable journal fails
+  closed.
+- **Presentation.** The publish card shows either the move controls or a
+  persistent pending banner with Retry and the verified new address. Skip has
+  its own warning. Result copy distinguishes verified-but-unrecorded, retirement
+  pending, completion pending, skipped retirement and temporary cleanup. Peers
+  are explicitly told they do not follow automatically, and the card must be
+  reprinted after a move.
+
+### 9.1 Evidence
+
+- **Outer state machine:** 35 tests across both directions cover prepare,
+  stale confirmation, source drift before and after the destination write,
+  digest re-prompt, destination failure/local-save failure, pending-journal
+  write failure, retirement failure, final-switch failure, Retry, invalid
+  persisted bytes, Skip authorization, Skip refusal, and a corrupt journal
+  stopping before retirement.
+- **Hosts:** GitHub destination (7: write-free prepare, complete commit and
+  read-back, digest re-prompt, pre-write abort, stale head, failed read-back,
+  already-committed retry), GitHub source (10: anchor proof, tree/credential
+  drift, exact commit/deletions, already-retired adoption, stale head, failed
+  read-back, local-record drift, Skip rules), Cloudflare source (9: anchor,
+  local/credential drift, preview-URL gate, three-file retirement, already-
+  retired adoption, changed source, failed read-back, stubborn route, Skip) and
+  Cloudflare destination (5: write-free prepare, complete deploy, digest
+  re-prompt, pre-write abort, existing-snapshot verification).
+- **Supporting:** 6 resolver tests (including the unreadable-credential fix),
+  4 setup target-mutation guard tests, 5 outer-controller tests, 10 verifier
+  tests, 8 widget tests, 9 pending-journal tests and 8 moved-page tests
+  (including persisted-bytes authentication against the frozen schema).
+- **Defect found while testing:** `ConfiguredMoveTargetResolver` threw
+  `StateError` when the Cloudflare credential record was unreadable, because
+  `StateError` is not caught by `on Exception`. It now treats an unreadable
+  record as "not configured" (`setupRequired`) and never crashes or substitutes
+  another Worker.
+- **Gates:** `build_runner` leaves no new diff; `dart format` clean; `flutter
+  analyze lib test integration_test` zero issues; full non-golden suite green:
+  **4,230 tests** passed on 2026-10-28 with `--exclude-tags golden`. Real-host
+  J.7 smoke remains S11.
+
+## 10. Remaining sessions, in order, with entry criteria
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
@@ -602,14 +686,14 @@ and host-neutral publish UI. Moves and retirement remain S9.
 | S6 | **Done** | Domain ports, account/deploy adapters + facade, bounded/native-abort transport, streamed multipart, endpoint/hostile/socket tests |
 | S7 | **Done** (§7) | Secure whole-record connection, staged setup, verification, shared queue, controller + dialogs |
 | S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
-| S9 | S8 done; implement next | Moves and retirement in both directions, pending journal, idempotent Retry/Skip and crash matrix |
+| S9 | S8 done | **Done** (§9): moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash matrix |
 | S10–S11 | S9 done | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
 
 S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 10. Decisions a successor must not silently reverse
+## 11. Decisions a successor must not silently reverse
 
 - **One builder per section, one merge.** Do not add a second file-assembly path
   for Cloudflare; feed the same `PublishSection` to the Cloudflare adapter.
@@ -689,7 +773,7 @@ S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 11. Open questions / risks
+## 12. Open questions / risks
 
 1. **Single-writer limitation confirmed** — S2/T14 found no supported CAS
    contract. One publisher at a time per Worker is an operating requirement;
@@ -735,7 +819,7 @@ S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 12. File map for the work so far
+## 13. File map for the work so far
 
 **New — network (S1)**
 `lib/core/network/workers_dev_url.dart`,
@@ -804,6 +888,26 @@ file_publish_artifact_store}.dart`,
 `test/features/publish/support/cloudflare_s8_fakes.dart`; behavior, security,
 fake-server and memory tests sit beside the new modules.
 
+**New — publish (S9)**
+`lib/features/publish/domain/site/{pending_move,move_plan}.dart`,
+`lib/features/publish/domain/github_branch_name.dart`,
+`lib/features/publish/application/site/{move_site_operations,move_site_result,
+move_site_use_case,move_site_controller,move_snapshot_preparation,
+move_target_resolver,pending_move_target_guard,complete_snapshot_verifier,
+moved_site_verifier}.dart`,
+`lib/features/publish/application/{github_move_reader,github_move_source,
+github_move_destination}.dart`,
+`lib/features/publish/application/cloudflare/{cloudflare_move_reader,
+cloudflare_move_source,cloudflare_move_destination,cloudflare_move_preparation,
+cloudflare_retirement_artifacts}.dart`,
+`lib/features/publish/infrastructure/moved_html_builder.dart`,
+`assets/publish/moved.html`,
+`lib/features/publish/presentation/widgets/{move_site_controls,move_site_dialog,
+pending_move_banner}.dart`, and `lib/core/di/src/move_publish_providers.dart`.
+Focused move tests live in `test/features/publish/{application,domain,
+infrastructure}/` with shared doubles in
+`test/features/publish/support/move_fakes.dart`.
+
 **New — publish (S3)**
 `lib/features/publish/domain/site/{publish_file,publish_section,publish_mode,
 previous_publication,section_merge,publish_snapshot}.dart`,
@@ -862,7 +966,7 @@ the drift repository, refresh, controller, add-member and network-page suites.
 
 ---
 
-## 13. Secrets
+## 14. Secrets
 
 No token, JWT, account id or credential is committed anywhere in this work.
 The S2 token was read from macOS Keychain into the trial process only. The

@@ -32,6 +32,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -141,10 +142,14 @@ GitHubDeviceFlow gitHubDeviceFlow(GitHubDeviceFlowRef ref) =>
 /// One-tap repo setup: create/adopt the publish repo + enable Pages
 /// (mirrors Localcart Orange's github_setup).
 @riverpod
-SetupGitHubRepo setupGitHubRepo(SetupGitHubRepoRef ref) => SetupGitHubRepo(
-  ref.watch(gitHubApiProvider),
-  ref.watch(publishCredentialStoreProvider),
-);
+Future<SetupGitHubRepo> setupGitHubRepo(SetupGitHubRepoRef ref) async =>
+    SetupGitHubRepo(
+      ref.watch(gitHubApiProvider),
+      ref.watch(publishCredentialStoreProvider),
+      PendingMoveTargetGuard(
+        await ref.watch(publishHostStateRepositoryProvider.future),
+      ),
+    );
 
 /// Bounded, typed remote-cover download (M1: allow-list + deadline + byte
 /// cap; N08: the deadline aborts the socket) with the publish downscale

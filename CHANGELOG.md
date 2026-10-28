@@ -14,6 +14,29 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Move a library site between GitHub Pages and Cloudflare Workers (S9):** a
+  user-confirmed move publishes and verifies a complete destination snapshot
+  before touching the old site, records one atomic pending-journal entry with
+  the exact moved-page bytes and app-owned deletion paths retirement will use,
+  and switches the share/QR address only after the old site is verifiably
+  retired. Retry resumes only missing work; Skip requires the old repository or
+  Worker to be gone and never pretends it was retired.
+- **Persistent move recovery UI:** the publish card shows the verified new
+  address plus a Retry/Skip banner until completion, warns before Skip, and
+  states that peers do not follow a move automatically and the card must be
+  reprinted.
+
+### Changed
+- **One target-mutation rule:** GitHub repository setup and Cloudflare Worker
+  setup now share the pending-move guard, so neither can change a target while
+  a move is being recovered.
+
+### Fixed
+- **Unreadable Cloudflare credentials during a move:** the move target resolver
+  threw a `StateError` (not caught by `on Exception`) instead of reporting that
+  setup is required; it now fails closed with the fixed setup message.
+
 ## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `Announcements & Events`.

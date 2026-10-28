@@ -2,12 +2,39 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
+import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
+    show PublishManifestGateway;
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/cloudflare_fakes.dart'
+    show FakePublishHostStateStore, FakePublishedSiteVerifier;
+
+/// An empty journal for tests that only need the setup guard's read to pass.
+PublishHostStateRepository _emptyHostRepository() => PublishHostStateRepository(
+  store: FakePublishHostStateStore(),
+  manifest: const _NoManifest(),
+  verifier: FakePublishedSiteVerifier(),
+);
+
+final class _NoManifest implements PublishManifestGateway {
+  const _NoManifest();
+
+  @override
+  PublishManifest load() => PublishManifest.empty;
+
+  @override
+  Either<Failure, Unit> save(PublishManifest manifest) => right(unit);
+}
 
 /// In-memory credential store that COUNTS writes, so tests can assert the
 /// token landed in the store exactly once (and never in the UI state).
@@ -193,6 +220,12 @@ class _Harness {
       overrides: [
         publishCredentialStoreProvider.overrideWithValue(this.creds),
         gitHubApiProvider.overrideWithValue(this.api),
+        // S9: setup reads the host journal before changing a target. The real
+        // repository would open the file manifest and prefs; these connection
+        // tests only need a valid empty journal.
+        publishHostStateRepositoryProvider.overrideWith(
+          (ref) async => _emptyHostRepository(),
+        ),
         // Real device flow, but with an instant sleep so tests never wait on
         // real timers.
         gitHubDeviceFlowProvider.overrideWith(
@@ -232,6 +265,11 @@ class _Harness {
 }
 
 void main() {
+  // S9: setup now reads the host journal before it may change a target. An
+  // empty in-memory journal keeps these connection tests on the same path as
+  // a device that has never published (no pending move, no stored host).
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   test('build() loads signed-in flag + target repo; the token itself never '
       'enters the state', () async {
     final h = _Harness(
@@ -435,6 +473,9 @@ void main() {
         overrides: [
           publishCredentialStoreProvider.overrideWithValue(creds),
           gitHubApiProvider.overrideWithValue(api),
+          publishHostStateRepositoryProvider.overrideWith(
+            (ref) async => _emptyHostRepository(),
+          ),
           gitHubDeviceFlowProvider.overrideWith(
             (ref) => GitHubDeviceFlow(
               ref.watch(gitHubApiProvider),

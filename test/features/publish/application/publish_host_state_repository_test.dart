@@ -20,7 +20,7 @@ class _Store implements PublishHostStateStore {
   int saves = 0;
 
   @override
-  PublishHostState? load() => stored;
+  Either<Failure, PublishHostState?> load() => right(stored);
 
   @override
   Future<Either<Failure, Unit>> save(PublishHostState state) async {

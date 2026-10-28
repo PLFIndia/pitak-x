@@ -73,6 +73,7 @@ abstract final class PublishedSiteUrlPolicy {
   }
 
   /// The PUBLISH read-back address for [path] under [siteUrl], or null.
+  /// An empty [path] means the canonical root itself (used for moved pages).
   ///
   /// Why a separate entry point (Cloudflare plan R16): publish verification
   /// may append a generated `rb` cache-buster so a CDN cannot serve a stale
@@ -88,8 +89,10 @@ abstract final class PublishedSiteUrlPolicy {
     String? cacheBuster,
   }) {
     if (!_isCanonicalSiteRoot(siteUrl)) return null;
-    if (!_isSafeRelativePath(path)) return null;
-    final bare = Uri.parse(siteUrl).resolve(path);
+    if (path.isNotEmpty && !_isSafeRelativePath(path)) return null;
+    final bare = path.isEmpty
+        ? Uri.parse(siteUrl)
+        : Uri.parse(siteUrl).resolve(path);
     // Containment is checked on the QUERY-FREE URL: `sanitizeForSite`
     // refuses queries by design (the viewer's rule), and re-checking the
     // exact same origin/directory is what matters here.

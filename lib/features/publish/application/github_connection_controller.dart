@@ -343,9 +343,9 @@ class GitHubConnectionController extends _$GitHubConnectionController {
         final result = await ref
             .read(publishOperationQueueProvider)
             .enqueue(
-              () => ref
-                  .read(setupGitHubRepoProvider)
-                  .call(token: token, repoName: name),
+              () async => (await ref.read(
+                setupGitHubRepoProvider.future,
+              )).call(token: token, repoName: name),
             );
         await result.match<Future<void>>(
           (failure) async {
@@ -429,9 +429,9 @@ class GitHubConnectionController extends _$GitHubConnectionController {
         final result = await ref
             .read(publishOperationQueueProvider)
             .enqueue(
-              () => ref
-                  .read(setupGitHubRepoProvider)
-                  .adopt(token: token, fullName: fullName),
+              () async => (await ref.read(
+                setupGitHubRepoProvider.future,
+              )).adopt(token: token, fullName: fullName),
             );
         await result.match<Future<void>>(
           (failure) async {

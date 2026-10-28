@@ -198,26 +198,27 @@ final gitHubDeviceFlowProvider = AutoDisposeProvider<GitHubDeviceFlow>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubDeviceFlowRef = AutoDisposeProviderRef<GitHubDeviceFlow>;
-String _$setupGitHubRepoHash() => r'9281c5b0bdaf50685d0cdf621a85cf7445784933';
+String _$setupGitHubRepoHash() => r'1686f29e04f5075e4fb2cbefad0976e89e713044';
 
 /// One-tap repo setup: create/adopt the publish repo + enable Pages
 /// (mirrors Localcart Orange's github_setup).
 ///
 /// Copied from [setupGitHubRepo].
 @ProviderFor(setupGitHubRepo)
-final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
-  setupGitHubRepo,
-  name: r'setupGitHubRepoProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$setupGitHubRepoHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+final setupGitHubRepoProvider =
+    AutoDisposeFutureProvider<SetupGitHubRepo>.internal(
+      setupGitHubRepo,
+      name: r'setupGitHubRepoProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$setupGitHubRepoHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
+typedef SetupGitHubRepoRef = AutoDisposeFutureProviderRef<SetupGitHubRepo>;
 String _$boundedCoverDownloadHash() =>
     r'26bb6879ed58b99cd14babb330131c1e1d3b94a0';
 

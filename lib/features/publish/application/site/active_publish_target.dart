@@ -33,12 +33,21 @@ final class ActivePublishTargetResolver {
   /// Resolves one exact target or a fixed failure before any remote call.
   Future<Either<Failure, PublishTarget>> call() async {
     try {
-      final journal = _hostState.storedState();
+      final loaded = _hostState.storedState();
+      if (loaded case Left(value: final failure)) return Left(failure);
+      final journal = loaded.toNullable();
       if (journal == null) {
         // Documented legacy default ONLY: an older install has no journal but
         // does have a GitHub target. This is not a credential-based fallback —
         // an existing journal always wins, and no Cloudflare fallback occurs.
         return _gitHubTarget();
+      }
+      if (journal.pendingMove != null) {
+        return const Left(
+          ValidationFailure(
+            'Finish or skip the pending move before publishing again.',
+          ),
+        );
       }
       return switch (journal.activeHost) {
         PublishHost.github => _gitHubTarget(),

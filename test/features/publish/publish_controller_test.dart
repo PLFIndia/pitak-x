@@ -862,7 +862,7 @@ class _HostState implements PublishHostStateStore {
   PublishHostState? stored;
 
   @override
-  PublishHostState? load() => stored;
+  Either<Failure, PublishHostState?> load() => right(stored);
 
   @override
   Future<Either<Failure, Unit>> save(PublishHostState state) async {

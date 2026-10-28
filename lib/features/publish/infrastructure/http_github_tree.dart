@@ -15,6 +15,7 @@ library;
 
 import 'package:http/http.dart' as http;
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
 
@@ -37,6 +38,9 @@ final class GitHubTreeReader {
     required String branch,
     required String token,
   }) async {
+    if (!GitHubBranchName.isValid(branch)) {
+      throw const GitHubApiException('Unsafe branch name');
+    }
     final headers = {'Authorization': 'Bearer $token', 'Accept': _accept};
 
     final ref = await _get(

@@ -172,7 +172,7 @@ final class FakePublishHostStateStore implements PublishHostStateStore {
   bool failSave = false;
 
   @override
-  PublishHostState? load() => stored;
+  Either<Failure, PublishHostState?> load() => right(stored);
 
   @override
   Future<Either<Failure, Unit>> save(PublishHostState state) async {

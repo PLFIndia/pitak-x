@@ -23,31 +23,31 @@ void main() {
     expect(saved.isRight(), isTrue);
 
     // A FRESH store (as after an app restart) reads the same facts.
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
     expect(loaded.activeHost, github.host);
     expect(loaded.verifiedSiteUrl, 'https://me.github.io/lib/');
     expect(loaded.verifiedTarget!.targetId, 'github:me/lib');
   });
 
   test('an absent record is null, not an empty claim', () async {
-    expect((await store()).load(), isNull);
+    expect((await store()).load().toNullable(), isNull);
   });
 
-  test('corrupt JSON reads as absent', () async {
+  test('corrupt JSON is a typed unreadable record', () async {
     SharedPreferences.setMockInitialValues({
       PrefsPublishHostStore.key: '{"schema":1,"activeHost":',
     });
-    expect((await store()).load(), isNull);
+    expect((await store()).load().isLeft(), isTrue);
   });
 
-  test('an unknown schema reads as absent (fail closed)', () async {
+  test('an unknown schema is unreadable (fail closed)', () async {
     SharedPreferences.setMockInitialValues({
       PrefsPublishHostStore.key: jsonEncode({
         'schema': 99,
         'activeHost': 'github',
       }),
     });
-    expect((await store()).load(), isNull);
+    expect((await store()).load().isLeft(), isTrue);
   });
 
   // C3: the address is DERIVED from the identity. A file that stores another
@@ -65,7 +65,7 @@ void main() {
         },
       }),
     });
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
     expect(loaded.activeHost, github.host);
     expect(loaded.verifiedTarget, isNull);
     expect(loaded.verifiedSiteUrl, isNull);
@@ -84,7 +84,7 @@ void main() {
         },
       }),
     });
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
     expect(loaded.activeHost, PublishHost.cloudflare);
     expect(loaded.verifiedTarget, isNull);
   });
@@ -100,7 +100,7 @@ void main() {
       PublishHostState.empty.afterVerifiedPublish(cloudflare),
     );
 
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
 
     expect(loaded.activeHost, PublishHost.cloudflare);
     expect(
@@ -129,7 +129,7 @@ void main() {
         },
       }),
     });
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
     // The configured host is a fact worth keeping; the address is not proven.
     expect(loaded.activeHost, PublishHost.cloudflare);
     expect(loaded.verifiedTarget, isNull);
@@ -148,7 +148,7 @@ void main() {
         },
       }),
     });
-    final loaded = (await store()).load()!;
+    final loaded = (await store()).load().toNullable()!;
     expect(loaded.verifiedTarget, isNull);
   });
 

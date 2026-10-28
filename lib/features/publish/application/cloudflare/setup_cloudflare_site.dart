@@ -10,6 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_account.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
+import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -20,6 +21,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// Account, subdomain, Worker, verification, and finalization orchestration.
@@ -351,6 +353,8 @@ final class SetupCloudflareSite {
             const CloudflareFailure(CloudflareErrorMessages.connectionRequired),
           );
         }
+        final allowed = _allowTarget(target);
+        if (allowed case Left(value: final failure)) return left(failure);
         final activated = await _hostState.ensureActiveHost(
           PublishHost.cloudflare,
         );
@@ -369,6 +373,9 @@ final class SetupCloudflareSite {
 
   /// Forgets only the secure connection; public state and the Worker survive.
   Future<Either<Failure, Unit>> disconnect() => _credentials.clear();
+
+  Either<Failure, Unit> _allowTarget(CloudflarePublishTarget target) =>
+      PendingMoveTargetGuard(_hostState).allows(target);
 
   Future<Either<Failure, CloudflareSubdomainOutcome>> _completeAccountSelection(
     CloudflareConnection selected,
@@ -442,6 +449,8 @@ final class SetupCloudflareSite {
     if (target == null) {
       return left(const CloudflareFailure(CloudflareErrorMessages.generic));
     }
+    final allowed = _allowTarget(target);
+    if (allowed case Left(value: final failure)) return left(failure);
     // Confirmed target first; only then may the journal select a host.
     final saved = await _credentials.save(connection);
     if (saved case Left(value: final failure)) {

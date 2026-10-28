@@ -1,9 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
+import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
+
+import 'support/move_fakes.dart';
 
 /// Scriptable API covering the repo-admin role (S5): SetupGitHubRepo needs
 /// nothing else, so this fake stubs 6 methods instead of the aggregate's 10.
@@ -441,5 +448,54 @@ void main() {
         expect(creds.storedTarget, isNull);
       },
     );
+  });
+
+  group('S9 — a pending move owns the target mutation', () {
+    PublishHostState pendingJournal(PublishTarget destination) =>
+        PublishHostState(
+          activeHost: PublishHost.cloudflare,
+          verifiedTarget: moveCloudflareTarget,
+        ).beginMove(
+          movePending(oldTarget: moveCloudflareTarget, newTarget: destination),
+        )!;
+
+    test(
+      'setup is allowed for the exact pending destination repository',
+      () async {
+        final store = ScriptedHostStore(
+          pendingJournal(GitHubPublishTarget.create('booklover/my-library')!),
+        );
+        final creds = _MemCreds();
+
+        final result = await SetupGitHubRepo(
+          _SetupApi(),
+          creds,
+          PendingMoveTargetGuard(moveHostRepository(store)),
+        ).call(token: 'tok', repoName: 'my-library');
+
+        expect(result.isRight(), isTrue);
+        expect(creds.storedTarget, 'booklover/my-library');
+      },
+    );
+
+    test('a different repository is refused before the target write', () async {
+      final store = ScriptedHostStore(
+        pendingJournal(GitHubPublishTarget.create('booklover/another')!),
+      );
+      final creds = _MemCreds();
+
+      final result = await SetupGitHubRepo(
+        _SetupApi(),
+        creds,
+        PendingMoveTargetGuard(moveHostRepository(store)),
+      ).call(token: 'tok', repoName: 'my-library');
+
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        MoveSiteMessages.targetMismatch,
+      );
+      expect(creds.storedTarget, isNull);
+    });
   });
 }

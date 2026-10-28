@@ -2,6 +2,7 @@
 library;
 
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// Active host, configured target, and independently verified share address.
@@ -12,6 +13,8 @@ final class PublishSiteStatus {
     required this.target,
     required this.verifiedSiteUrl,
     required this.setupMessage,
+    this.pendingMove,
+    this.canMove = false,
   });
 
   /// Host selected by the journal, or null before setup.
@@ -25,6 +28,12 @@ final class PublishSiteStatus {
 
   /// Fixed setup/routing guidance when [target] is unavailable.
   final String? setupMessage;
+
+  /// Destination-verified recovery state, retained on the old active host.
+  final PendingMove? pendingMove;
+
+  /// Whether both exact configured endpoints satisfy the move preconditions.
+  final bool canMove;
 
   /// Whether the ordinary publish action may start.
   bool get canPublish => target != null;

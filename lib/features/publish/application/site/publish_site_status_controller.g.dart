@@ -6,7 +6,7 @@ part of 'publish_site_status_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$publishSiteStatusHash() => r'19a035be726c2a52bfd22139420f01f98761fe8d';
+String _$publishSiteStatusHash() => r'203e509b7e36cb8e2dd23e8c44f4cd060abc0a29';
 
 /// Watches setup state and returns active host, configured target, and the
 /// journal's independently verified share address.

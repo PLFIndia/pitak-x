@@ -13,6 +13,8 @@ import 'package:pitaka/features/publish/application/site/publish_site_status.dar
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
+import 'package:pitaka/features/publish/presentation/widgets/move_site_controls.dart';
+import 'package:pitaka/features/publish/presentation/widgets/pending_move_banner.dart';
 import 'package:pitaka/features/publish/presentation/widgets/replace_site_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
@@ -123,6 +125,10 @@ class _PublishCardState extends ConsumerState<PublishCard> {
             ],
           ),
         ),
+        if (site.pendingMove case final pending?)
+          PendingMoveBanner(pending: pending)
+        else
+          MoveSiteControls(enabled: site.canMove),
         if (site.verifiedSiteUrl case final url?)
           SectionCard(
             title: 'Your site',

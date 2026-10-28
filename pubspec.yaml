@@ -207,6 +207,7 @@ flutter:
     # {{LIBRARY_NAME}}/{{POSTERS_HTML}} substituted; img-src is 'self' only
     # (posters are same-origin). Poster markup is baked in (max 2 posters).
     - assets/publish/events.html
+    - assets/publish/moved.html
     # Pitak app icon, composited into the PDF export footer (attribution line).
     - assets/pdf/app_icon.png
     # Noto Sans TTFs for the PDF export. The `pdf` package's built-in base-14

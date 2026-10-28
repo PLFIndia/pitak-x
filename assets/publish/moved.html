@@ -1,0 +1,44 @@
+<!doctype html>
+<!--
+  Pitak moved-library page (Cloudflare plan R27).
+  The same built bytes are uploaded as index.html and 404.html on the old site.
+
+  Placeholders substituted by MovedHtmlBuilder:
+    {{LIBRARY_NAME}}  — HTML-escaped page title and heading
+    {{NEW_SITE_URL}}  — validated, HTML-escaped canonical destination
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'" />
+<meta name="robots" content="noindex" />
+<meta http-equiv="refresh" content="5; url={{NEW_SITE_URL}}" />
+<title>{{LIBRARY_NAME}} has moved</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: #fffaf5;
+    color: #1f1209;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 640px; text-align: center; }
+  h1 { color: #7e2706; font-size: 28px; }
+  p { line-height: 1.5; }
+  a { color: #7e2706; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{LIBRARY_NAME}} has moved</h1>
+  <p>This library now lives at a new address:</p>
+  <p><a href="{{NEW_SITE_URL}}">{{NEW_SITE_URL}}</a></p>
+  <p>You will be redirected in five seconds. If that does not happen, use the link above.</p>
+</main>
+</body>
+</html>

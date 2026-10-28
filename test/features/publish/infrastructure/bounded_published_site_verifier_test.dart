@@ -52,7 +52,6 @@ void main() {
         'a//b.json',
         r'a\b.json',
         'a/b/c/d.json',
-        '',
       ]) {
         expect(
           PublishedSiteUrlPolicy.readBackUrl(site, path),
@@ -60,6 +59,16 @@ void main() {
           reason: path,
         );
       }
+    });
+
+    test('an empty path is the canonical site root (moved pages)', () {
+      // S9: the moved page is served AT the root, so `''` must resolve to the
+      // site URL instead of being treated as an unsafe relative path.
+      expect(PublishedSiteUrlPolicy.readBackUrl(site, ''), site);
+      expect(
+        PublishedSiteUrlPolicy.readBackUrl(site, '', cacheBuster: 'abc'),
+        '$site?rb=abc',
+      );
     });
 
     test('refuses a site root that is not canonical', () {

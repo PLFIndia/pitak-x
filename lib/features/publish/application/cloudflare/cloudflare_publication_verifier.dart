@@ -70,13 +70,11 @@ final class CloudflarePublicationVerifier {
     final descriptor = manifest.entryFor('library.json');
     if (descriptor == null) {
       pending['library.json'] = const _Expectation.absent();
-    } else {
-      expectContent('library.json', descriptor);
     }
-    final events = manifest.entryFor('events.json');
-    if (events != null) expectContent('events.json', events);
+    // A complete move/replacement is proven file by file, not inferred from
+    // books.json. This covers HTML, descriptor, covers, events and posters.
     for (final entry in manifest.files.entries) {
-      if (entry.key.startsWith('posters/')) {
+      if (entry.key != CloudflareLimits.markerPath) {
         expectContent(entry.key, entry.value);
       }
     }

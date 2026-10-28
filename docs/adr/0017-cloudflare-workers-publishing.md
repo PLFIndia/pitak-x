@@ -1,7 +1,7 @@
 # ADR 0017: Cloudflare Workers publishing — dedicated Worker, one active host
 
-- **Status:** Proposed (S2 and S7 outcomes recorded 2026-10-27; final wording
-  follows the S10 consistency audit)
+- **Status:** Proposed (S2/S7 outcomes recorded 2026-10-27, S8/S9 on
+  2026-10-28; final wording follows the S10 consistency audit)
 - **Date:** 2026-10-26
 - **Plan:** `cloudflare_plan-final.md` (parts A–N). Related: ADR 0007,
   ADR 0010, ADR 0012, ADR 0015, ADR 0016.
@@ -50,9 +50,12 @@ consequences the product cannot hide:
    survive.
 5. **One atomic journal.** `publish_host_state` (one preferences key) holds
    the active host, the single `verifiedTarget` used for share/QR, and any
-   pending move with the exact old/new targets, phase and source anchor —
-   never a token. The active pointer switches only after the destination is
-   verified **and** retirement verifies.
+   pending move with the exact old/new targets, phase, source anchor and an
+   immutable retirement descriptor (the moved-page bytes/schema, exact GitHub
+   deletion paths or Cloudflare retired-marker id). It never holds a token.
+   Reads distinguish "absent" from "unreadable", so corrupt pending history
+   fails closed instead of starting over. The active pointer switches only
+   after the destination is verified **and** retirement verifies.
 6. **Marker freshness, not compare-and-swap.** Every Cloudflare deploy writes
    `pitak-publish.json` with a fresh 128-bit `publishId` and a
    `live` / `verification` / `retired` state. A matching marker is the

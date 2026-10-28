@@ -1,19 +1,8 @@
-/// The host journal's rules and its read-back-gated migration (application
-/// layer; Cloudflare plan E.5/R33, deviations 24 and 33).
+/// The host journal's rules and its read-back-gated migration.
 ///
-/// Why the share address lives HERE and not in the publish manifest (beginner
-/// note): the manifest describes what one publish wrote, and it is rewritten by
-/// every publish. The address a library hands out — the one printed on a card,
-/// shown in a QR code and sent to peers — must survive a failed publish, a
-/// target change and a device that is halfway through a move. So it is stored
-/// once, separately, and only ever set after a read-back PROVED the site is
-/// live.
-///
-/// The migration rule (E.5): an older install has a manifest but no journal.
-/// A manifest is not proof that its site is served, so the first read performs
-/// ONE bounded read-back of the address the manifest implies and only then
-/// records it as verified. Until that succeeds the journal makes no verified
-/// claim and the share address stays empty.
+/// Reads distinguish a genuinely absent record from an unreadable one. Only an
+/// absent record may trigger legacy GitHub defaults/migration; corrupt pending
+/// history fails closed and is never overwritten by a fresh publication.
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -22,47 +11,29 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
-/// Persistence of the journal record. Implemented over one prefs key in
-/// infrastructure; `load()` returns null when this phone has no record.
+/// Persistence of the journal record over one preferences key.
 abstract interface class PublishHostStateStore {
-  /// Reads the journal, or null when none was ever written (or it is
-  /// unreadable/inconsistent — then there is nothing worth trusting).
-  PublishHostState? load();
+  /// Right(null) means truly absent; Right(state) is valid; Left is corrupt,
+  /// unsupported, or unreadable and forbids every default or mutation.
+  Either<Failure, PublishHostState?> load();
 
-  /// Writes the whole record (one key, one write). A failure is returned —
-  /// never swallowed, because the share/QR address depends on it (R9).
+  /// Writes the whole record (one key, one write).
   Future<Either<Failure, Unit>> save(PublishHostState state);
 }
 
-/// The narrow ability a PUBLISH has on the journal: record that its own target
-/// was proven live.
-///
-/// Why narrow (beginner note): a publish must not be able to rewrite the
-/// active host, clear a move, or point the journal at a site it did not
-/// publish to. Keeping that out of reach is cheaper than auditing for it.
-///
-/// It is an injected SEAM (a fake records calls in tests), not a data
-/// abstraction, which is why it has one member.
+/// The narrow ability a PUBLISH has on the journal: record verified read-back.
 // ignore: one_member_abstracts
 abstract interface class PublishHostStateRecorder {
-  /// Records [target] as the verified live target (R5/R33). Returns a typed
-  /// failure when the record could not be persisted.
+  /// Records [target] as verified, without switching away during a move.
   Future<Either<Failure, Unit>> recordVerified(PublishTarget target);
 }
 
-/// A [PublishHostStateRecorder] that resolves the real repository on FIRST
-/// USE.
-///
-/// Why (beginner note): a publish that fails while READING the library must
-/// not touch anything else — not the network, not the file system, and now not
-/// the preferences store either (R2's fail-fast rule, deviation 41). Resolving
-/// the journal up front would open prefs before the first strict read, so the
-/// controller passes this wrapper instead and the store is only opened when a
-/// publish actually has something verified to record.
+/// Resolves the real repository only when a publish has proof to record.
 final class LazyPublishHostStateRecorder implements PublishHostStateRecorder {
   /// Creates the wrapper over a resolver.
   const LazyPublishHostStateRecorder(this._resolve);
@@ -89,59 +60,96 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
   final PublishManifestGateway _manifest;
   final PublishedSiteVerifier _verifier;
 
-  /// The repo-relative file whose served sha proves the site is live. It is
-  /// the same file the publish read-back uses, so "verified" means the same
-  /// thing in both places.
+  /// The file whose served sha proves a legacy GitHub site.
   static const String proofPath = 'books.json';
 
   @override
   Future<Either<Failure, Unit>> recordVerified(PublishTarget target) async {
-    final current = _store.load() ?? PublishHostState.empty;
+    final loaded = _store.load();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable() ?? PublishHostState.empty;
     if (current.verifies(target)) return right(unit);
-    return _store.save(current.afterVerifiedPublish(target));
+    final next = current.afterVerifiedPublish(target);
+    // A cross-host destination publish deliberately changes no journal facts.
+    if (identical(next, current)) return right(unit);
+    return _store.save(next);
   }
 
-  /// Reads only the stored journal, without legacy-manifest reconciliation.
-  ///
-  /// This is the fail-fast routing read: it touches neither the network nor the
-  /// publish manifest. An absent record is distinguishable from a record whose
-  /// active host is genuinely unset, so the caller can apply the documented
-  /// legacy default without doing manifest IO before strict library reads.
-  PublishHostState? storedState() => _store.load();
+  /// Persists a destination-verified pending move without switching hosts.
+  /// Repeating the exact pending operation is a no-write success.
+  Future<Either<Failure, Unit>> beginMove(PendingMove pending) async {
+    final loaded = _loadWithLegacyDefault();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable() ?? PublishHostState.empty;
+    final next = current.beginMove(pending);
+    if (next == null) {
+      return left(
+        const ValidationFailure(
+          'The active site changed. Review the move again before continuing.',
+        ),
+      );
+    }
+    if (identical(next, current)) return right(unit);
+    return _store.save(next);
+  }
 
-  /// Reads the current journal WITHOUT network access.
-  ///
-  /// An absent journal gets E.5's legacy default when a valid GitHub target
-  /// exists. The default is NOT persisted here: leaving the raw record absent
-  /// lets [verifiedSiteUrl] perform its one read-back-gated migration later.
-  PublishHostState? currentState() => _loadWithLegacyDefault();
+  /// Selects the verified destination and clears pending history in one write.
+  /// Completion and Skip both call this only for their exact expected move.
+  Future<Either<Failure, Unit>> finishMove(PendingMove expected) async {
+    final loaded = _store.load();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable();
+    if (current == null) {
+      return left(
+        const ValidationFailure(
+          'The pending move is no longer available. Review the move again.',
+        ),
+      );
+    }
+    final next = current.finishMove(expected);
+    if (next == null) {
+      return left(
+        const ValidationFailure(
+          'The pending move is no longer available. Review the move again.',
+        ),
+      );
+    }
+    if (identical(next, current)) return right(unit);
+    return _store.save(next);
+  }
 
-  /// Selects [host] only when setup has not selected a host yet.
-  ///
-  /// This never creates a verified-live pointer. In particular, a
-  /// verification-only Cloudflare marker is not a library publication. An
-  /// existing or legacy-default GitHub active record is returned untouched.
+  /// Reads only the stored journal for fail-fast command routing. No manifest
+  /// or network is touched, and unreadable state remains a typed failure.
+  Either<Failure, PublishHostState?> storedState() => _store.load();
+
+  /// Display projection. Unreadable state yields no share/setup claim; commands
+  /// must use the typed reads above rather than interpreting this as absence.
+  PublishHostState? currentState() => _loadWithLegacyDefault().toNullable();
+
+  /// Selects [host] only when no host is active, never during pending recovery.
   Future<Either<Failure, Unit>> ensureActiveHost(PublishHost host) async {
-    final current = _loadWithLegacyDefault() ?? PublishHostState.empty;
+    final loaded = _loadWithLegacyDefault();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable() ?? PublishHostState.empty;
     if (current.activeHost != null) return right(unit);
     return _store.save(PublishHostState(activeHost: host));
   }
 
-  PublishHostState? _loadWithLegacyDefault() {
-    final stored = _store.load();
-    if (stored != null) return stored;
+  Either<Failure, PublishHostState?> _loadWithLegacyDefault() {
+    final loaded = _store.load();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final stored = loaded.toNullable();
+    if (stored != null) return Right(stored);
     final legacyTarget = GitHubPublishTarget.create(_manifest.load().repo);
-    if (legacyTarget == null) return null;
-    return const PublishHostState(activeHost: PublishHost.github);
+    if (legacyTarget == null) return const Right(null);
+    return const Right(PublishHostState(activeHost: PublishHost.github));
   }
 
   /// The address to share, or null when nothing is verified yet.
-  ///
-  /// Reads the journal when it exists. When it does not, performs the ONE
-  /// bounded migration read-back described in the library doc and returns the
-  /// address only if the site really serves what the manifest recorded.
   Future<String?> verifiedSiteUrl() async {
-    final stored = _store.load();
+    final loaded = _store.load();
+    if (loaded.isLeft()) return null;
+    final stored = loaded.toNullable();
     if (stored != null) return stored.verifiedSiteUrl;
 
     final manifest = _manifest.load();
@@ -149,8 +157,7 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
     final expectedSha = manifest.shaFor(proofPath);
     if (target == null || expectedSha == null) return null;
 
-    // ONE fetch, no polling: the site was published minutes or days ago, so
-    // either it is serving that file or it is not (E.5's bounded read-back).
+    // One bounded migration fetch, only for a genuinely absent journal.
     final body = await _verifier.read(
       siteUrl: target.siteUrl,
       path: proofPath,
@@ -158,11 +165,6 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
       cacheBuster: 'migrate',
     );
     final proven = body != null && GitBlobSha.of(body) == expectedSha;
-
-    // Record the attempt either way: the active host is a fact (a GitHub
-    // target exists), the verified pointer only when proven. Without the save
-    // every later read would retry the fetch, and the share address of a site
-    // that is genuinely unreachable would keep costing network.
     final state = PublishHostState(
       activeHost: PublishHost.github,
       verifiedTarget: proven ? target : null,

@@ -16,6 +16,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/infrastructure/github_http_support.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_tree.dart';
@@ -41,8 +42,7 @@ final class HttpGitHubApi implements GitHubApi {
   /// but every branch the app creates or serves Pages from is plain
   /// (`main`, `gh-pages`, `release/1.2`); anything else is refused rather
   /// than URL-encoded, because a `..` or `?` here would change which
-  /// endpoint later Git Data calls hit.
-  static final RegExp _branchChars = RegExp(r'^[A-Za-z0-9._/-]{1,200}$');
+  /// endpoint later Git Data calls hit. The journal uses this same grammar.
 
   /// Page budget for [userRepos] (N09, D4-a): 10 × 100 = at most 1000
   /// repositories, ~10 sequential requests. Bounds both network time and
@@ -286,9 +286,7 @@ final class HttpGitHubApi implements GitHubApi {
 
   /// Refuses a branch name the app must not put into a URL path.
   void _requireBranchName(String branch) {
-    final segments = branch.split('/');
-    if (!_branchChars.hasMatch(branch) ||
-        segments.any((s) => s.isEmpty || s == '.' || s == '..')) {
+    if (!GitHubBranchName.isValid(branch)) {
       throw const GitHubApiException('Unsafe branch name');
     }
   }
@@ -329,6 +327,7 @@ final class HttpGitHubApi implements GitHubApi {
     required String branch,
     required String token,
   }) async {
+    _requireBranchName(branch);
     final resp = await _post(
       _apiBase.replace(path: '/repos/$owner/$repo/pages'),
       headers: _authHeaders(token),
@@ -370,6 +369,7 @@ final class HttpGitHubApi implements GitHubApi {
     required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    _requireBranchName(branch);
     final headers = _authHeaders(token);
 
     // 1. Resolve both head and base tree before ANY writes. Setup creates repos

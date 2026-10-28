@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
+import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -9,6 +10,7 @@ import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 
 import '../../support/cloudflare_fakes.dart';
+import '../../support/move_fakes.dart';
 
 T _right<T>(Either<Failure, T> result) => switch (result) {
   Right(value: final value) => value,
@@ -443,5 +445,52 @@ void main() {
         expect((await h.setup.loadStatus()).isLeft(), isTrue);
       },
     );
+  });
+
+  group('S9 — a pending move owns the target mutation', () {
+    PublishHostState pendingJournal(CloudflarePublishTarget destination) =>
+        PublishHostState(
+          activeHost: PublishHost.github,
+          verifiedTarget: moveGitHubTarget,
+        ).beginMove(
+          movePending(oldTarget: moveGitHubTarget, newTarget: destination),
+        )!;
+
+    test(
+      'finishSetup is allowed for the exact pending destination Worker',
+      () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(),
+          hostState: pendingJournal(moveCloudflareTarget),
+        );
+
+        final result = await h.setup.finishSetup();
+
+        expect(result.isRight(), isTrue);
+        expect(h.hostStore.stored!.activeHost, PublishHost.github);
+        expect(h.hostStore.stored!.pendingMove, isNotNull);
+      },
+    );
+
+    test('a different Worker is refused before host activation', () async {
+      final other = CloudflarePublishTarget.create(
+        accountId: cloudflareTestAccountId,
+        workerName: 'another-worker',
+        accountSubdomain: 'library',
+      )!;
+      final h = CloudflareSetupHarness(
+        connection: cloudflareTestConnection(),
+        hostState: pendingJournal(other),
+      );
+
+      final result = await h.setup.finishSetup();
+
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        MoveSiteMessages.targetMismatch,
+      );
+      expect(h.hostStore.saves, 0);
+    });
   });
 }

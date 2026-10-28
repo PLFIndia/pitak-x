@@ -25,6 +25,12 @@ Future<PublishSiteStatus> publishSiteStatus(PublishSiteStatusRef ref) async {
   final resolver = await ref.watch(activePublishTargetResolverProvider.future);
   final resolved = await resolver.call();
   final failure = resolved.swap().toNullable();
+  final pending = current?.pendingMove;
+  final moveTargets = pending == null
+      ? await (await ref.watch(
+          configuredMoveTargetResolverProvider.future,
+        )).call()
+      : null;
   return PublishSiteStatus(
     activeHost: current?.activeHost,
     target: resolved.toNullable(),
@@ -32,5 +38,7 @@ Future<PublishSiteStatus> publishSiteStatus(PublishSiteStatusRef ref) async {
     setupMessage: failure == null
         ? null
         : CloudflarePublishOutcomes.failure(failure).reason,
+    pendingMove: pending,
+    canMove: moveTargets?.isRight() ?? false,
   );
 }

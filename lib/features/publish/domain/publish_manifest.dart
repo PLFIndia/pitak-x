@@ -217,6 +217,24 @@ final class PublishManifest implements PreviousPublication {
     coverUrlByBookId: coverUrlByBookId,
   );
 
+  /// The exact moved-page record after retirement read-back succeeds.
+  ///
+  /// The head is the retirement commit (or an already-retired head found by
+  /// Retry), never the old live anchor. Only moved files remain owned.
+  PublishManifest asRetired({
+    required String commitSha,
+    required Map<String, String> movedFileShas,
+  }) => PublishManifest(
+    schema: schema,
+    repo: repo,
+    branch: branch,
+    headSha: commitSha,
+    ownershipConfirmed: true,
+    state: PublishState.retired,
+    fileShas: Map.unmodifiable(movedFileShas),
+    coverUrlByBookId: coverUrlByBookId,
+  );
+
   /// Encodes this record. Public data only; no token, no credential.
   Map<String, Object?> toJson() => {
     'schema': schema,

@@ -46,6 +46,29 @@ final class CloudflarePublishMarkerProbe {
     };
   }
 
+  /// Re-reads after an uncertain retirement and accepts only its exact marker.
+  Future<CloudflareDeployRecovery> recoverRetirement({
+    required CloudflarePublishTarget target,
+    required PublishMarker expected,
+  }) async {
+    try {
+      final probe = await call(
+        target: target,
+        cacheBuster: 'recover-retired-${expected.publishId}',
+      );
+      if (probe case MarkerPresent(:final marker)) {
+        if (marker.publishId == expected.publishId &&
+            marker.publishedAt == expected.publishedAt &&
+            marker.state == PublishMarkerState.retired) {
+          return CloudflareDeployRecovery.alreadyDeployed;
+        }
+      }
+    } on Exception {
+      // Uncertainty is never proof that another deployment is safe.
+    }
+    return CloudflareDeployRecovery.abort;
+  }
+
   /// Re-reads after an uncertain deploy and allows completion only when the
   /// exact fresh live marker is present. Absence/mismatch is never retry proof.
   Future<CloudflareDeployRecovery> recoverLiveDeployment({

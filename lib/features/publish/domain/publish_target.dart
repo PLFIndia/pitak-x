@@ -38,6 +38,16 @@ sealed class PublishTarget {
   String get targetId;
 }
 
+/// Exact operation-endpoint comparison: API identity AND canonical address.
+/// Cloudflare deliberately keeps [targetId] independent of its subdomain, so a
+/// move/journal must check both rather than treating a changed address as the
+/// same verified site.
+extension PublishTargetExactMatch on PublishTarget {
+  /// True only when [other] is the same identity at the same public address.
+  bool isSameExactTarget(PublishTarget other) =>
+      targetId == other.targetId && siteUrl == other.siteUrl;
+}
+
 /// A GitHub Pages destination (`owner/repo`, served from the branch Pages
 /// serves).
 final class GitHubPublishTarget extends PublishTarget {
