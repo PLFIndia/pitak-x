@@ -1,9 +1,11 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–74 and the S2 report).
-- **Branch:** `cloudflare`; implementation commits through `1a44444` are listed
-  below. S2–S9 are in the working tree:
+  its Part M now carries every session's deviation rows 34–79 and the S2 report).
+- **Branch:** `cloudflare`; implementation commits through `a98c588` are listed
+  below (S2–S9 landed as one consolidated commit). **S10 (docs and release
+  checklist) is implemented in the commit that carries this file.** S11
+  (real-host smoke and cleanup) is next:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -20,21 +22,21 @@
   | `1118ac4` | S2 tool | Disposable-account Cloudflare trial |
   | `1151a17` | S4 remainder | Events publish takes the explicit target |
   | `1a44444` | S4 remainder | Option B verification of an unconfirmed publication before republishing |
-  | *(working tree)* | S2 | Full sanitized trial report, conditional-write/hash outcomes, propagation-safe and redacted trial checks |
-  | *(working tree)* | S6 | Cloudflare domain ports, account/deploy HTTP adapters + facade, bounded/abortable multipart transport, hostile-response and real-socket tests |
-  | *(working tree)* | S7 | Secure whole-record connection storage, staged account/subdomain/Worker setup, marker-only address verification, shared publish queue, connection controller + dialogs |
-  | *(working tree)* | S8 | Ordinary publish/replacement, strict R4 confirmation, active-host routing, per-file artifact sink, full read-back and memory scenario |
-  | *(working tree)* | S9 | Moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash-matrix tests |
+  | `a98c588` | S2–S9 | Consolidated commit: the sanitized S2 trial report, the S6 HTTP adapters, S7 connection/setup, S8 ordinary publish/replacement, and S9 moves/retirement |
+  | *(S10, this commit)* | S10 | ADR 0017 accepted; ARCHITECTURE §5.8 + host/egress/non-goal/bounds reconciliation; PRIVACY both hosts; RELEASING §6.5 smoke matrix + App access; README; CHANGELOG S7/S8/S1; in-app guide both hosts; mockup marked frozen |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
   `dart format --set-exit-if-changed lib test integration_test` is clean, and
-  the full suite passes (golden excluded).
+  the full suite passes (golden excluded). S10 changed no application
+  behaviour; its only test changes are the guide copy pins and the guide-page
+  copy budget (see §11).
 - **Cloudflare connection/setup, ordinary publishing, and moves are
   user-facing.** S7 adds restricted-token capture and setup; S8 adds ordinary
   catalogue/events publishing and explicit whole-site replacement; S9 adds
   user-confirmed moves in either direction. See §7 for setup invariants, §8 for
-  ordinary publish/recovery, and §9 for moves.
+  ordinary publish/recovery, and §9 for moves. §11 is the documentation audit;
+  §12 is where the S11 smoke evidence goes.
 
 ---
 
@@ -687,13 +689,84 @@ Retry and Skip are deterministic after every remote or persistent side effect.
 | S7 | **Done** (§7) | Secure whole-record connection, staged setup, verification, shared queue, controller + dialogs |
 | S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
 | S9 | S8 done | **Done** (§9): moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash matrix |
-| S10–S11 | S9 done | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
+| S10 | S9 done | **Done** (§11): ADR 0017 accepted; ARCHITECTURE, PRIVACY, SECURITY, README, RELEASING, CHANGELOG and the in-app guide describe both hosts; §6.5 publish smoke matrix and the App-access answer; fastlane blurb and golden regeneration deferred with reasons |
+| S11 | S10 done | Real-host J.7 smoke (§12), Linux golden regeneration, remove `tool/cloudflare_trial/` + its test, final CI/release gates |
 
 S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 11. Decisions a successor must not silently reverse
+## 11. S10 — documentation and release checklist (implemented)
+
+**Deliverable:** every document, ADR and privacy disclosure that describes
+publishing now describes **both hosts**, and nothing contradicts the shipped
+behaviour. S10 changed **no application behaviour**: the only source changes
+are the in-app guide copy and its pinned tests.
+
+| Surface | What changed |
+|---|---|
+| `docs/adr/0017-…md` | Status **Proposed → Accepted** (2026-10-28), with an explicit "what acceptance does not claim" note and a verification bullet naming the S11 smoke as the outstanding *evidence* |
+| `docs/ARCHITECTURE.md` | New **§5.8** (sealed targets, the host journal, both schema-2 records, the marker, the retired set); egress gains `api.cloudflare.com` and the real read-back; §1.2 gains the Cloudflare non-goals; §2 names the third token and the JWTs; §3 gains `core/async`, `core/security`, `workers_dev_url`, the Cloudflare publish role and `moved.html`; §5.6 gains seven publish/API bounds; §6's Publish decision is host-neutral |
+| `PRIVACY.md` | Item 3 rewritten as **GitHub Pages / Cloudflare Workers / checking-and-moving**; the stored-data list gains the `cf_connection` record; effective date 2026-10-28 |
+| `SECURITY.md` | Verified: S0 already carries the third persisted token and the ephemeral JWTs, and the scope matches ADR 0007. No change needed |
+| `docs/RELEASING.md` | New **§6.5 publish smoke matrix** (J.7 steps, restricted-token setup, header evidence, where to record); §6.1 step 9 runs it; §8 App access names the Cloudflare token |
+| `README.md` | Publish bullet covers both hosts, the dedicated Worker, one publisher per Worker, moves, card reprint and the reader-update requirement; privacy posture and honest limits updated |
+| `CHANGELOG.md` | Unreleased gained **S7/S8/S1** (they had no entry at all) plus a Security section: sealed secrets, the version-URL gate, bounded egress, fail-closed records |
+| In-app guide | The publish guide gained a **Cloudflare** block, a **moving** block and host-neutral "every time"; the map guide lists `workers.dev` and the reader-update requirement. Publish is now the longest guide (≈3170 dp), so the guide-page test surface rose 3000 → 3400 dp — a recorded copy decision, not silent budget drift |
+| `docs/mockups/how-pitak-works.md` | §3.2/§3.3 mirror the shipping copy |
+| `docs/mockups/how-pitak-works.html` | Marked a **frozen 2026-10-19 artefact** instead of re-rendered: the copy authority is the catalog + `.md`, and re-rendering would fake a design review that never happened |
+
+**Deliberately not in S10 (release-time or hardware-bound):**
+
+- **Fastlane blurb** — a changelog file is named after a versionCode that does
+  not exist yet, so it belongs to the `chore(release)` commit. Ready-to-paste
+  text is in §12; the version bump is the maintainer's release decision.
+- **`publish_connection` golden** — regenerate only through the **Linux**
+  `update-goldens` workflow; a macOS-rendered PNG must not be committed. It is
+  currently the Oct 24 placeholder-era reference.
+- **Play Console** answers — the App access / Data safety text is drafted in
+  `docs/RELEASING.md` §8 and must be typed into Play Console by hand.
+
+---
+
+## 12. S11 — real-host smoke evidence (to fill)
+
+Run `docs/RELEASING.md` §6.5 on a **disposable** account with the exact
+one-account `Workers Scripts · Edit` token, then record one row per step here.
+No token, JWT, account id or raw response body goes in this table.
+
+| # | Step | Expected | Result |
+|---|---|---|---|
+| 1 | Connect (manual-subdomain fallback if the token cannot read it) | Candidate unconfirmed until exact-origin marker read-back | *pending* |
+| 2 | Publish catalogue → events → catalogue | Events survive the second catalogue publish | *pending* |
+| 3 | Remove a poster, publish events | Old poster URL 404; no old version URL serves it | *pending* |
+| 4 | Root / index / events / JSON / missing file | 200 · 307 · 200 · `application/json` · real 404; no-cache + CORS | *pending* |
+| 5 | Reset local Cloudflare state, publish | Explicit replacement warning with real counts; cancel writes nothing | *pending* |
+| 6 | Move Cloudflare → GitHub | New descriptor address; moved page + retired headers + retired marker; old `books.json` 404 | *pending* |
+| 7 | Move GitHub → Cloudflare | Reverse of 6; unrelated `README.md` survives | *pending* |
+| 8 | Pending Retry after a simulated local failure; reconnect to another Worker | Retry resumes only missing work; wrong target refuses retirement | *pending* |
+| 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | *pending* |
+| 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | *pending* |
+
+Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
+
+**Release-note draft (≤ 500 characters, for `fastlane/…/changelogs/N.txt`):**
+
+```text
+Publish to Cloudflare Workers: connect a token scoped to one account, then publish your catalogue and events to a Worker dedicated to Pitak. Move a library between GitHub Pages and Cloudflare — the new site is verified before the old one becomes a moved page — and open Workers addresses inside Pitak. Publish from one phone at a time per Worker. More in How Pitak works.
+```
+
+Check it before committing the release:
+`python3 tool/check_fastlane_changelog_chars.py <versionCode>`.
+
+**Cleanup, also S11:** delete `tool/cloudflare_trial/` and
+`test/tool/cloudflare_trial_test.dart`, then re-run the full gate set in
+`README.md` › Quality gates (including `dart analyze tool` while the tool
+still exists) and the Part N checklist in the plan.
+
+---
+
+## 13. Decisions a successor must not silently reverse
 
 - **One builder per section, one merge.** Do not add a second file-assembly path
   for Cloudflare; feed the same `PublishSection` to the Cloudflare adapter.
@@ -773,22 +846,23 @@ S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 12. Open questions / risks
+## 14. Open questions / risks
 
 1. **Single-writer limitation confirmed** — S2/T14 found no supported CAS
    contract. One publisher at a time per Worker is an operating requirement;
    the marker detects observed staleness but is not compare-and-swap.
-2. **Complete replacement is user-facing (S8).** Unknown/retired Cloudflare
-   state now reaches the strict complete snapshot and replacement dialog through
-   `PublishReplacementRequired`. S9 still owns complete move snapshots.
+2. **Complete replacement and complete move snapshots are implemented
+   (S8/S9).** Unknown/retired Cloudflare state reaches the strict complete
+   snapshot and replacement dialog through `PublishReplacementRequired`, and
+   both move directions use the same complete-snapshot rule.
 3. **Catalogue deploy now deletes stale covers.** This is the intended R8 fix,
-   but it is a *remote behavior change*: run the J.7 smoke on a real GitHub Pages
-   repo before release, and note it in `CHANGELOG.md`.
+   but it is a *remote behavior change*. It is recorded in `CHANGELOG.md`
+   (S10); the real-host check is still the S11 J.7 smoke.
 4. **R4 digest and confirmation are implemented (S8).** Canonical section/file
    ordering and JSON normalization exclude operation timestamps/ids; volatile
    JSON is read from the spool on demand. Changed content after preparation
    requires a fresh confirmation, never a deploy of the old bytes.
-5. **S2, S6, and S7 are complete.** The sanitized report/design outcomes and
+5. **S2 and S6–S10 are complete.** The sanitized report/design outcomes and
    adapter/connection deviations are recorded in the plan. The trial tool
    remains analyze/format/test clean for S11, when it is removed.
 6. **F.4 step 2 is implemented as Option B** (deviation rows 48/55): a
@@ -796,9 +870,9 @@ S2 is complete. The trial source remains for S11 and is removed there.
    A contradiction blocks; an unreachable site does not. Cloudflare's
    deploy-free Retry verification is implemented; the GitHub-only standalone
    convenience remains optional because the next GitHub publish already retries.
-7. **The journal has no `pendingMove` yet** — schema 1 carries `activeHost` +
-   `verifiedTarget` only. S9 adds the field; an absent field must keep meaning
-   "no move" rather than requiring a migration.
+7. **The journal carries `pendingMove` (S9)** in the same schema-1 record as
+   `activeHost` + `verifiedTarget`, including the immutable retirement
+   descriptor. An absent field still means "no move" — no migration.
 8. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
    library ever publishes under a path (it cannot, per B.1), that assumption
    changes.
@@ -809,9 +883,11 @@ S2 is complete. The trial source remains for S11 and is removed there.
     so 10031/10032 have no guessed meaning. S7 acts only on explicit boolean
     `available`, treats other successful shapes as unknown, and uses create +
     exact GET confirmation. Absence is only HTTP 404 + code 10007.
-11. **The publish-connection golden needs regeneration.** S7 intentionally
-    replaces the placeholder with a real card. Use the Linux `update-goldens`
-    workflow; the normal macOS/non-golden suite does not produce reference PNGs.
+11. **The publish-connection golden still needs regeneration.** The reference
+    PNG is dated 2026-10-24, i.e. the placeholder era; S7 replaced it with a
+    real card. Use the Linux `update-goldens` workflow — the normal
+    macOS/non-golden suite does not produce reference PNGs, and a
+    macOS-rendered replacement must not be committed. S11 owns this.
 12. **Structured marker reads are implemented (S8).** Only a real HTTP 404 is
     `MarkerAbsent`; malformed/oversize/redirect/timeout/other statuses are
     `MarkerUnreadable`. The legacy nullable verifier remains unchanged for
@@ -819,7 +895,7 @@ S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 13. File map for the work so far
+## 15. File map for the work so far
 
 **New — network (S1)**
 `lib/core/network/workers_dev_url.dart`,
@@ -964,9 +1040,22 @@ infrastructure/file_events_repository.dart,application/events_controller.dart}`,
 `test/features/publish/domain/section_merge_test.dart`; plus the new groups in
 the drift repository, refresh, controller, add-member and network-page suites.
 
+
+**Docs and copy (S10)**
+`docs/adr/0017-cloudflare-workers-publishing.md` (Proposed → Accepted),
+`docs/ARCHITECTURE.md` (§5.8 added; egress, non-goals, secrets, module map,
+bounds and the standing Publish decision reconciled), `PRIVACY.md` (item 3 and
+the stored-data list; date bumped), `README.md`, `docs/RELEASING.md` (§6.5
+smoke matrix, §6.1 step 9, §8 App access), `CHANGELOG.md` (S7/S8/S1 +
+Security), `lib/features/guides/domain/guide_catalog.dart` with
+`test/features/guides/domain/guide_catalog_test.dart` and
+`test/features/guides/presentation/guide_page_test.dart`, and
+`docs/mockups/how-pitak-works.{md,html}`. `SECURITY.md` was verified and left
+unchanged.
+
 ---
 
-## 14. Secrets
+## 16. Secrets
 
 No token, JWT, account id or credential is committed anywhere in this work.
 The S2 token was read from macOS Keychain into the trial process only. The

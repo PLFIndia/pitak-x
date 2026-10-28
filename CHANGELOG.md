@@ -15,6 +15,19 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **Publish to Cloudflare Workers:** connect with a restricted API token
+  scoped to one account (`Workers Scripts · Edit`), choose the account,
+  `workers.dev` subdomain and a Worker dedicated to Pitak, prove the address
+  with a marker-only deploy, then publish the catalogue and events to an
+  assets-only Worker. An unknown remote state requires an explicit
+  whole-Worker replacement whose dialog shows real item and poster counts;
+  cancelling writes nothing.
+- **Read and reconcile `workers.dev` libraries:** strict
+  `<worker>.<subdomain>.workers.dev` root addresses are accepted and hostile
+  forms refused. When a saved library's fingerprint reappears at another
+  verified address, both addresses are offered neutrally and accepting is one
+  transactional merge/repoint that keeps URL and fingerprint uniqueness;
+  declining writes nothing and nothing follows a move automatically.
 - **Move a library site between GitHub Pages and Cloudflare Workers (S9):** a
   user-confirmed move publishes and verifies a complete destination snapshot
   before touching the old site, records one atomic pending-journal entry with
@@ -28,6 +41,22 @@ heading as part of the `chore(release):` commit.
   reprinted.
 
 ### Changed
+- **One publish pipeline for both hosts:** catalogue and events are built by
+  ONE set of section builders, merged by ONE section rule, and every publish
+  is bound to one sealed target, so `library.json` always carries the address
+  of the operation that wrote it. The host adapters consume the same bytes.
+- **GitHub writes are head-aware and fail closed:** a schema-2 publish record
+  (repo, branch, head, ownership consent), typed non-truncated tree
+  reconciliation, expected-head commits, atomic typed saves, and
+  `deployed` → `live` only after read-back proves the site. A record that no
+  longer describes the repo+branch claims nothing instead of authorising
+  deletions, and tree paths this phone did not write are never adopted.
+- **A corrupt read is not empty content:** publishing uses strict reads, so a
+  damaged events file is a typed failure rather than an empty public page; the
+  tolerant editor read is now explicitly `loadForEditor()`.
+- **Stale covers are deleted on the next publish.** This is a deliberate
+  remote-behaviour change: a cover that is no longer referenced leaves the
+  site instead of lingering at its old URL.
 - **One target-mutation rule:** GitHub repository setup and Cloudflare Worker
   setup now share the pending-move guard, so neither can change a target while
   a move is being recovered.
@@ -36,6 +65,25 @@ heading as part of the `chore(release):` commit.
 - **Unreadable Cloudflare credentials during a move:** the move target resolver
   threw a `StateError` (not caught by `on Exception`) instead of reporting that
   setup is required; it now fails closed with the fixed setup message.
+
+### Security
+- **Cloudflare secrets stay out of state:** the token and target live in ONE
+  versioned `cf_connection` secure-storage record that is replaced as a whole
+  (a new token never pairs with a stale Worker); upload/completion JWTs are
+  request-scoped and never persisted, logged, spooled or placed in UI state;
+  and every secret-bearing store now uses the shared hardened
+  `flutter_secure_storage` factory.
+- **Version URLs fail closed:** the app confirms a Worker's version URLs are
+  off before creating another version, and blocks further deploys — and
+  retirement completion — while an older copy of the site could be public.
+- **Publishing egress is bounded and hostile-input safe:** fixed API origin,
+  refused redirects, genuinely abortable deadlines, streamed response caps, a
+  JSON depth/bounds pre-scan before decoding, whitelisted error codes, and
+  fixed failure messages that never carry a token, URL or response body.
+- **Cloudflare records fail closed:** an unsupported schema/state or a single
+  malformed file entry invalidates the whole record, forcing explicit
+  replacement reconciliation instead of a partial deploy that silently drops a
+  remote asset.
 
 ## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
 

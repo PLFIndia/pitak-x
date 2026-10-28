@@ -73,7 +73,7 @@ void main() {
     const expected = <GuideId, List<int>>{
       // §3.6: picker table (3 rows), 5 steps, two bullet blocks of 3.
       GuideId.catalogue: [0, 3, 5, 3, 3, 3],
-      GuideId.publish: [2, 2, 6, 1, 3],
+      GuideId.publish: [1, 2, 6, 2, 1, 1, 3],
       GuideId.map: [0, 6, 3, 3],
       GuideId.backup: [0, 5, 3, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],

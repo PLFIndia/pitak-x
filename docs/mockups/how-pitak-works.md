@@ -162,17 +162,24 @@ decides which form you fill in.
 
 ### 3.2 Put your catalogue online
 
-**Intro.** Pitak can turn your book list into a simple public web page that
-anyone can open and search. It is free — the page is hosted by GitHub.
+> **Updated 2026-10-28 (S10):** the shipping guide now documents **two
+> hosts** — GitHub Pages and Cloudflare Workers — because the app publishes to
+> one active host, not to GitHub alone. This section mirrors
+> `lib/features/guides/domain/guide_catalog.dart`; the HTML mockup next to this
+> file is a frozen 2026-10-19 design artefact.
 
-**You need:** a free GitHub account (github.com — sign-up takes two
-minutes) · internet.
+**Intro.** Pitak can turn your book list into a simple public web page that
+anyone can open and search. It is free: on **GitHub Pages**, or on
+**Cloudflare Workers** in your own account — one address at a time.
+
+**You need:** a free GitHub account (github.com), or a free Cloudflare account
+(dash.cloudflare.com).
 
 **What goes online:** titles, authors, covers, and — if your vault is
 unlocked when you publish — whether a book is available.
 **Never goes online:** borrowers, loans, notes, shelf locations.
 
-**First time**
+**First time on GitHub Pages**
 
 1. Open **☰ → Publish to web**.
 2. Tap **Sign in to GitHub**. Pitak shows a short code.
@@ -180,22 +187,43 @@ unlocked when you publish — whether a book is available.
    computer — log in to GitHub and type the code. Come back to Pitak; it
    continues by itself.
 4. Tap **Set up a repository**, give it a short name like `my-library`, tap
-   **Create**. (A repository is just the folder on GitHub that holds your
-   page. Pitak creates it and switches the page on.)
+   **Create** — that folder is where your page lives.
 5. Tap **Publish catalogue now**.
 6. Your web address appears under **Your site**. Tap **Copy link** or
    **Share**. The first time, the page can take a minute or two to go live.
 
+**Or use Cloudflare Workers**
+
+On **Publish to web**, the Cloudflare tile works the same way: tap **Connect
+Cloudflare** and paste a token you create — Pitak opens Cloudflare with
+Workers Scripts · Edit, for one account, already chosen. Then pick the
+account, your `workers.dev` name and a Worker.
+
+**Give the Worker to Pitak alone:** publishing replaces everything already on
+it. Cloudflare has no "only if nothing changed" switch either, so publish from
+one phone at a time. Pitak proves the address with a test page, and calls the
+site live only after it reads the published files back.
+
 **Every time after that**
 
 Added or lent books? Open **Publish to web** and tap **Publish catalogue
-now** again. Only what changed is uploaded, so it takes seconds.
+now** again. Only what changed is uploaded, so it takes seconds. It publishes
+to whichever host is active.
+
+**Moving to the other host later**
+
+You can move the page between the two hosts. Pitak verifies the new site
+first, then turns the old address into a short "moved" page. Other phones
+never follow a move by themselves — they may offer the choice to their owner —
+and a printed library card still shows the old address, so reprint it after a
+move.
 
 **Good to know**
 
 - The **Basic info** tab adds your library's name, address, email and phone
   to the page. Every field is optional.
-- Signing out of GitHub does not take your page down.
+- Signing out of GitHub does not take your page down. Disconnecting
+  Cloudflare only forgets the token — it never deletes the Worker.
 - Sign-in not finishing? Keep the code screen open and type the code in a
   browser on a computer instead.
 
@@ -230,8 +258,10 @@ until you switch it on and publish — and you choose how exact the pin is.
 - Your map shows only the libraries on your own **Library network** list —
   the ones you bookmarked, added as members, or that Pitak found through
   your hubs — and only those that publish a location.
-- Only web addresses made by Pitak can be bookmarked (they end in
-  `github.io` or `pages.dev`). Other websites are not accepted.
+- Only web addresses made by Pitak can be bookmarked: they end in
+  `github.io`, `pages.dev`, or `<worker>.<name>.workers.dev`. Other websites
+  are not accepted. A `workers.dev` library needs a recent Pitak — update the
+  app before adding one.
 - Pin positions come from each library's published page, read when you tap
   **Refresh**. Nobody's location is sent anywhere else.
 

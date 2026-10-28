@@ -10,16 +10,18 @@ import '../../../support/a11y.dart';
 
 void main() {
   /// Pumps [guide] with a recording opener. Phone width (360 dp) so wrapping
-  /// is realistic; 3000 dp tall so the lazy ListView builds every child —
-  /// the longest guides (catalogue ≈ 2880 dp, backup ≈ 2800 dp) end inside
-  /// that under the test font — and the a11y checks see every node, bottom
-  /// button included. A guide that outgrows the surface fails the "every
-  /// guide renders" test below: that is the copy-length budget, on purpose.
+  /// is realistic; 3400 dp tall so the lazy ListView builds every child —
+  /// the longest guide is now publish at ≈3170 dp (it documents two hosts;
+  /// catalogue ≈2880 dp, backup ≈2800 dp) and ends inside that under the test
+  /// font — and the a11y checks see every node, bottom button included. A
+  /// guide that outgrows the surface fails the "every guide renders" test
+  /// below: that is the copy-length budget, on purpose. Raise the surface only
+  /// with a deliberate copy decision, never to make a long guide pass.
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
   ) async {
-    tester.view.physicalSize = const Size(1080, 9000);
+    tester.view.physicalSize = const Size(1080, 10200);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     final opened = <GuideDestination>[];
@@ -49,14 +51,20 @@ void main() {
         findsOneWidget,
       );
 
-      // "You need" chips.
+      // "You need" chips: one chip names both accounts.
       expect(find.text('You need'), findsOneWidget);
-      expect(find.byType(Chip), findsNWidgets(2));
-      expect(find.text('Internet'), findsOneWidget);
+      expect(find.byType(Chip), findsNWidgets(1));
+      expect(find.textContaining('dash.cloudflare.com'), findsOneWidget);
 
       // Section headings and the six step bubbles.
-      expect(find.text('First time'), findsOneWidget);
+      expect(find.text('First time on GitHub Pages'), findsOneWidget);
+      expect(find.text('Or use Cloudflare Workers'), findsOneWidget);
       expect(find.text('Every time after that'), findsOneWidget);
+      expect(find.text('Moving to the other host later'), findsOneWidget);
+      expect(
+        find.textContaining('Give the Worker to Pitak alone'),
+        findsOneWidget,
+      );
       for (var n = 1; n <= 6; n++) {
         expect(find.text('$n'), findsOneWidget, reason: 'step bubble $n');
       }

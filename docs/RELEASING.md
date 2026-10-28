@@ -213,7 +213,11 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    selected output with those fields, `rawSpoolBytes`, `requestBytes` and
    Android `peakRssBytes`; record the result in
    `docs/plans/cloudflare-handoff.md`. Desktop RSS is supplementary only.
-9. Commit.
+9. If the release touches publishing (anything under
+   `lib/features/publish/`, the `workers.dev` reader grammar, or
+   `assets/publish/`), run the publish smoke matrix (§6.5) on a disposable
+   Cloudflare account and record the outcome.
+10. Commit.
 
 ### 6.2 Google Play
 
@@ -281,6 +285,60 @@ Recipe facts worth knowing:
 
 ---
 
+### 6.5 Publish smoke matrix (GitHub Pages and Cloudflare Workers)
+
+Publishing is the only feature that writes to someone else's servers, so it
+gets a **manual real-host pass** before any release that touches it. Use a
+**disposable Cloudflare account** and a throwaway GitHub repository — never the
+maintainer's real library. The automated J.1–J.6 suites cover the logic; this
+matrix is the only evidence that the *live* hosts behave as documented.
+
+**The restricted token (one account, Workers only).** Sign in to the disposable
+Cloudflare account → My Profile → API Tokens → Create Token → the
+**Workers Scripts · Edit** template. The in-app **Connect Cloudflare** button
+opens that page. Check the token is scoped to **one account**: a user-level
+token's documented default is *all* accounts, which is exactly the permission
+this design forbids. The app verifies the token before saving it and never asks
+for a broader one.
+
+**Where to record it:** append a row to the evidence table in
+`docs/plans/cloudflare-handoff.md` §12 (date, commit, PASS/FAIL per step, the
+sanitized counts). Never paste a token, JWT, account id or raw response body
+into a document or an issue.
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | Connect, including the manual-subdomain fallback when the token cannot read the account subdomain | Candidate stays unconfirmed until the marker-only deploy is read back from its exact origin; a confirmed target is not presented as live |
+| 2 | Publish catalogue, then events, then catalogue again | The events page survives the second catalogue publish (one section never erases the other) |
+| 3 | Remove a poster, then publish events | The old poster URL returns 404; an old **version URL** cannot serve it either |
+| 4 | Root, `index.html`, `events.html`, `books.json` and a missing file | 200 / 307 / 200 / `application/json` / real 404; `Cache-Control: no-cache` and `Access-Control-Allow-Origin: *` on assets |
+| 5 | Reset local Cloudflare state (reinstall or clear app data), then publish | The explicit whole-site replacement warning appears with real counts; cancelling writes nothing |
+| 6 | Move Cloudflare → GitHub | New descriptor carries the GitHub address; Cloudflare serves the moved page plus the full retired headers; the retired marker is `state: "retired"`; old `books.json` is 404 |
+| 7 | Move GitHub → Cloudflare | Reverse of 6; an unrelated `README.md` in the repo still exists afterwards |
+| 8 | Make the local journal unwritable (or kill the app mid-retirement) and retry; then reconnect to a *different* Worker | Retry resumes only the missing work; a wrong target refuses retirement instead of guessing |
+| 9 | Scan the moved library's card on a second updated phone | Both addresses are offered neutrally; accepting leaves one canonical row, no duplicates |
+| 10 | Disconnect | The connection record is forgotten, the remote Worker is untouched, and the share address still reports only what was verified |
+
+Header evidence (substitute your own address):
+
+```bash
+curl -sI https://<worker>.<subdomain>.workers.dev/ | grep -Ei 'cache-control|access-control'
+curl -s -o /dev/null -w '%{http_code}\n' https://<worker>.<subdomain>.workers.dev/missing.json
+# A retired Worker must also show:
+curl -sI https://<worker>.<subdomain>.workers.dev/ | grep -Ei 'content-security-policy|x-content-type-options|referrer-policy'
+```
+
+Two deliberate asymmetries to confirm rather than "fix":
+
+- **GitHub has no response-header channel** on this publishing path. Its moved
+  page relies on the `<meta>` CSP directives that a meta tag can enforce
+  (`default-src 'none'; style-src 'unsafe-inline'`); the directives it cannot
+  enforce are documented, not simulated.
+- **A missing file is a real 404 on both hosts**, so a dropped asset is visible
+  instead of silently served.
+
+---
+
 ## 7. Toolchain (what the pins mean)
 
 - **Flutter** is pinned in `.fvmrc` **and** `pubspec.yaml`
@@ -308,7 +366,8 @@ Recipe facts worth knowing:
 ## 8. Play Console answers (keep consistent with `PRIVACY.md`)
 
 - **Data safety:** "No data collected or shared." No developer servers; ISBN
-  lookups carry book metadata only; publish, exports, network Refresh and map
+  lookups carry book metadata only; publish (to the user's own GitHub
+  repository or Cloudflare Worker), exports, network Refresh and map
   tiles are **user-directed transfers** to sites/OSM the user chose; a
   published location pin is the user's own deliberate publish choice (off by
   default). If Play ever counts opt-in tiles as "sharing", the honest edit is
@@ -316,8 +375,11 @@ Recipe facts worth knowing:
   still no collection.
 - **Content rating** Everyone · **Target audience** 18+ (keeps the Families
   policy out of scope) · **Ads** No · News / COVID / Government No.
-- **App access:** core needs no account; optional Publish uses the user's own
-  GitHub sign-in.
+- **App access:** core needs no account. Optional Publish uses an account the
+  user already owns — either their own GitHub sign-in (device flow) or a
+  Cloudflare API token they create, scoped to one account with Workers Scripts
+  · Edit. The developer provides neither, holds neither, and can revoke
+  neither; a reviewer can use "Publish to web" without connecting anything.
 - **Privacy policy URL** points at `PRIVACY.md` on the `main` branch —
   moving or renaming that file breaks the link.
 - **Listing** copy: `fastlane/metadata/android/en-US/{short,full}_description.txt`;

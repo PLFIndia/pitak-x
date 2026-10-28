@@ -121,13 +121,15 @@ const Guide _catalogue = Guide(
 const Guide _publish = Guide(
   id: GuideId.publish,
   title: 'Put your catalogue online',
-  cardSubtitle: 'A free public web page of your books — in 6 steps',
+  cardSubtitle:
+      'A free public web page of your books — on GitHub or Cloudflare',
   intro:
       'Pitak can turn your book list into a simple public web page that '
-      'anyone can open and search. It is free — the page is hosted by GitHub.',
+      'anyone can open and search. It is free: on **GitHub Pages**, or on '
+      '**Cloudflare Workers** in your own account — one address at a time.',
   needs: [
-    'A free GitHub account (github.com — sign-up takes two minutes)',
-    'Internet',
+    'A free GitHub account (github.com), or a free Cloudflare account '
+        '(dash.cloudflare.com)',
   ],
   sections: [
     GuideParagraphs(
@@ -139,7 +141,7 @@ const Guide _publish = Guide(
       ],
     ),
     GuideSteps(
-      title: 'First time',
+      title: 'First time on GitHub Pages',
       steps: [
         'Open **☰ → Publish to web**.',
         'Tap **Sign in to GitHub**. Pitak shows a short code.',
@@ -147,8 +149,7 @@ const Guide _publish = Guide(
             'a computer — log in to GitHub and type the code. Come back to '
             'Pitak; it continues by itself.',
         'Tap **Set up a repository**, give it a short name like `my-library`, '
-            'tap **Create**. (A repository is just the folder on GitHub that '
-            'holds your page. Pitak creates it and switches the page on.)',
+            'tap **Create** — that folder is where your page lives.',
         'Tap **Publish catalogue now**.',
         'Your web address appears under **Your site**. Tap **Copy link** or '
             '**Share**. The first time, the page can take a minute or two to '
@@ -156,18 +157,44 @@ const Guide _publish = Guide(
       ],
     ),
     GuideParagraphs(
+      title: 'Or use Cloudflare Workers',
+      paragraphs: [
+        'On **Publish to web**, the Cloudflare tile works the same way: tap '
+            '**Connect Cloudflare** and paste a token you create — Pitak opens '
+            'Cloudflare with Workers Scripts · Edit, for one account, already '
+            'chosen. Then pick the account, your `workers.dev` name and a '
+            'Worker.',
+        '**Give the Worker to Pitak alone:** publishing replaces everything '
+            'already on it. Cloudflare has no "only if nothing changed" switch '
+            'either, so publish from one phone at a time. Pitak proves the '
+            'address with a test page, and calls the site live only after it '
+            'reads the published files back.',
+      ],
+    ),
+    GuideParagraphs(
       title: 'Every time after that',
       paragraphs: [
         'Added or lent books? Open **Publish to web** and tap **Publish '
             'catalogue now** again. Only what changed is uploaded, so it takes '
-            'seconds.',
+            'seconds. It publishes to whichever host is active.',
+      ],
+    ),
+    GuideParagraphs(
+      title: 'Moving to the other host later',
+      paragraphs: [
+        'You can move the page between the two hosts. Pitak verifies the new '
+            'site first, then turns the old address into a short "moved" page. '
+            'Other phones never follow a move by themselves — they may offer '
+            'the choice to their owner — and a printed library card still '
+            'shows the old address, so reprint it after a move.',
       ],
     ),
   ],
   goodToKnow: [
     "The **Basic info** tab adds your library's name, address, email and "
         'phone to the page. Every field is optional.',
-    'Signing out of GitHub does not take your page down.',
+    'Signing out of GitHub does not take your page down. Disconnecting '
+        'Cloudflare only forgets the token — it never deletes the Worker.',
     'Sign-in not finishing? Keep the code screen open and type the code in a '
         'browser on a computer instead.',
   ],
@@ -211,8 +238,10 @@ const Guide _map = Guide(
         'Your map shows only the libraries on your own **Library network** '
             'list — the ones you bookmarked, added as members, or that Pitak '
             'found through your hubs — and only those that publish a location.',
-        'Only web addresses made by Pitak can be bookmarked (they end in '
-            '`github.io` or `pages.dev`). Other websites are not accepted.',
+        'Only web addresses made by Pitak can be bookmarked: they end in '
+            '`github.io`, `pages.dev`, or `<worker>.<name>.workers.dev`. Other '
+            'websites are not accepted. A `workers.dev` library needs a '
+            'recent Pitak — update the app before adding one.',
         "Pin positions come from each library's published page, read when "
             "you tap **Refresh**. Nobody's location is sent anywhere else.",
       ],

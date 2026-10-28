@@ -1,9 +1,12 @@
 # Cloudflare Workers publishing — consolidated implementation plan
 
 - **Branch:** `cloudflare` (from `main` at `e8c4d8e`, 2026-10-26).
-- **Status:** consolidated design; S0–S8 are implemented and the S2 disposable-
-  account trial passed on 2026-10-27 (see the sanitized report in Part M and
-  `docs/plans/cloudflare-handoff.md`). S9 (moves and retirement) is next.
+- **Status:** consolidated design; S0–S10 are implemented and committed (S2–S9
+  as `a98c588`, S10 as the documentation commit). The S2 disposable-account
+  trial passed on 2026-10-27 (see the sanitized report in Part M.1 and
+  `docs/plans/cloudflare-handoff.md`). S10's documentation audit is handoff
+  §11; **S11 (real-host smoke and cleanup) is next**, with its evidence table
+  in handoff §12.
 - **Supersedes:** `cloudflare_plan.md` and `cloudflare_plan_amendments.md`.
   Those files remain review history only. Implementation uses this document.
 - **Scope:** a library can publish its read-only site (catalogue, events and
@@ -1588,6 +1591,11 @@ rows; they do not silently edit away the history.
 | 72 | R24 bounds upload encoding but S3 builders retained every artifact and R4 digesting needed volatile JSON bytes | S8 adds a per-file `PublishArtifactSink`: Cloudflare builds spool immediately and return metadata-only files; the assembler reuses those sources, and digest calculation reads only volatile JSON from the spool on demand. GitHub keeps its original byte-bearing files and byte identity | Spooling only after a complete snapshot is built would leave the build-time peak unbounded. The sink closes that gap without changing GitHub output or sacrificing canonical replacement confirmation |
 | 73 | Events had a tolerant editor-read path and no read-back result field | S8 uses `loadStrict()` for GitHub events too, adds `pagesLive` to the events result, and maps both hosts through the shared `PublishResult` and host-specific copy | A corrupt events file must not become an empty public page, and an accepted commit must not be reported as verified live |
 | 74 | E.5's recovery example stops at "after journal switch but before retirement", and the journal carried only endpoint/phase/source-anchor facts | The pending journal also stores an immutable retirement descriptor: exact moved index/404 bytes, moved-page schema, normalized library name, GitHub branch plus exact owned deletion paths, and the Cloudflare retirement publish id/timestamp. Retry re-renders and byte-compares those documents against the frozen schema before any source write | Without the descriptor a crash after the remote retirement but before the old-manifest commit could not reproduce the exact bytes: a newer app template or current settings could change the moved page, and Retry could not prove the source already matched. Persisting the public page bytes and exact deletion paths makes every retry idempotent while keeping tokens and JWTs out of the journal |
+| 75 | Part K requires the in-app guides to name both hosts, the dedicated Worker, moves and the single-writer rule | The publish guide gained a Cloudflare block, a moving block and host-neutral "every time" copy; the map guide lists `workers.dev` and the reader-update requirement. Publish is now the longest guide (≈3170 dp), so the guide-page test surface rose 3000 → 3400 dp and its comment states the new budget | The catalog test pins copy length on purpose; a longer guide that still renders is a deliberate copy decision. Recording the new budget keeps the guard honest instead of letting a real overflow hide behind a stale number |
+| 76 | Part K requires the fastlane changelog to name both hosts | S10 records the ready-to-paste ≤500-character blurb and its check command in handoff §12; the file itself is written in the `chore(release)` commit | A fastlane file is named after a versionCode that does not exist yet. Inventing one would fail `tool/check_fastlane_changelog_chars.py` and pre-empt the maintainer's release decision |
+| 77 | Part K assumes the design mockups can be kept in copy-sync | `docs/mockups/how-pitak-works.md` §3.2/§3.3 mirror the shipping copy; the HTML mockup is marked a frozen 2026-10-19 design artefact instead of re-rendered | The HTML is a design artefact, not a second copy authority. Re-rendering it would fake a design review that never happened; marking it frozen keeps a later grep honest |
+| 78 | E.5's stored-data table is the only description of the publish records | ARCHITECTURE gains §5.8: sealed targets, the one host journal, both schema-2 records, the marker and the retired set, with every record name verified against its store | Part K requires target/journal state and manifest meaning in ARCHITECTURE; a beginner must not have to read the plan to learn which record decides what survives a publish |
+| 79 | Part K requires PRIVACY to disclose Cloudflare | PRIVACY item 3 is rewritten in three parts (GitHub Pages / Cloudflare Workers / checking and moving) and the effective date moves to 2026-10-28 | A policy whose substance changed — a second host, a stored token, a dedicated Worker, moved pages — must move its date with it |
 
 ## M.1 S2 sanitized disposable-account report — 2026-10-27
 
@@ -1641,28 +1649,34 @@ RESULT: PASS
 
 # Part N — Final implementation checklist
 
-Do not consider the feature complete until every answer is “yes”:
+Do not consider the feature complete until every answer is “yes”.
 
-- [ ] Is every publish call bound to an exact sealed target, with descriptor URL
+**S10 audit, 2026-10-28.** Items 1–15 were verified against the merged
+implementation and the reconciled documents (handoff §11). Item 16 stays open
+until the S11 real-host smoke is recorded in handoff §12.
+
+- [x] Is every publish call bound to an exact sealed target, with descriptor URL
       derived from that target?
-- [ ] Can a corrupt read or missing required asset never produce a complete
+- [x] Can a corrupt read or missing required asset never produce a complete
       snapshot or retirement?
-- [ ] Are source and destination both checked before a move, with the source
+- [x] Are source and destination both checked before a move, with the source
       checked again before retirement?
-- [ ] Is any multi-writer claim limited to what the actual API guarantees?
-- [ ] Are legacy GitHub manifests reconciled before merge, with expected-head
+- [x] Is any multi-writer claim limited to what the actual API guarantees?
+- [x] Are legacy GitHub manifests reconciled before merge, with expected-head
       commits and atomic saves?
-- [ ] Are Cloudflare Workers explicitly dedicated, and GitHub deletions exactly
+- [x] Are Cloudflare Workers explicitly dedicated, and GitHub deletions exactly
       owned and consented?
-- [ ] Are version URLs confirmed off before subsequent deploys and retirement?
-- [ ] Is a retired site recognized only by positive evidence, never marker 404?
-- [ ] Can an unverified address never reach descriptor, QR, share or move?
-- [ ] Can read-back never be satisfied by another origin?
-- [ ] Are tokens/JWTs absent from state, logs, journal, spool and errors?
-- [ ] Are multipart operations abortable and all response/JSON bounds enforced?
-- [ ] Is memory bounded across artifacts, base64, multipart and concurrency?
-- [ ] Does reader reconciliation preserve both uniqueness constraints and local
+- [x] Are version URLs confirmed off before subsequent deploys and retirement?
+- [x] Is a retired site recognized only by positive evidence, never marker 404?
+- [x] Can an unverified address never reach descriptor, QR, share or move?
+- [x] Can read-back never be satisfied by another origin?
+- [x] Are tokens/JWTs absent from state, logs, journal, spool and errors?
+- [x] Are multipart operations abortable and all response/JSON bounds enforced?
+- [x] Is memory bounded across artifacts, base64, multipart and concurrency?
+- [x] Does reader reconciliation preserve both uniqueness constraints and local
       user decisions without automatic following?
-- [ ] Does every move crash point have a deterministic safe retry?
+- [x] Does every move crash point have a deterministic safe retry?
 - [ ] Are all docs, ADRs, privacy/store answers and real-host smoke evidence in
-      agreement with the shipped behavior?
+      agreement with the shipped behavior? — **docs and ADRs: yes (S10);
+      real-host smoke: pending S11.** The Play Console answers are drafted in
+      `docs/RELEASING.md` §8 and must be typed into Console by hand.

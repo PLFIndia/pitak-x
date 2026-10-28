@@ -1,8 +1,14 @@
 # ADR 0017: Cloudflare Workers publishing — dedicated Worker, one active host
 
-- **Status:** Proposed (S2/S7 outcomes recorded 2026-10-27, S8/S9 on
-  2026-10-28; final wording follows the S10 consistency audit)
+- **Status:** Accepted (2026-10-28). Proposed 2026-10-26; S2 trial outcomes
+  recorded 2026-10-27, S7/S8/S9 implementation outcomes 2026-10-28, and the
+  S10 consistency audit reconciled every document that cites it. The S11
+  real-host smoke is still outstanding, so the *evidence* is not complete —
+  the decision is.
 - **Date:** 2026-10-26
+- **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
+  upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
+  API). ADR 0012 gains the `workers.dev` reader URL by the same work.
 - **Plan:** `cloudflare_plan-final.md` (parts A–N). Related: ADR 0007,
   ADR 0010, ADR 0012, ADR 0015, ADR 0016.
 
@@ -153,7 +159,13 @@ consequences the product cannot hide:
   incomplete journal/connection commit is re-proven before repair. Persistence
   is ordered `deployed`, then `live`, journal `verifiedTarget`, and finally the
   whole secure connection's write-proven flag.
-- Follow-up enforcement: session gates S6–S11 of the plan, the D1–D5
-  behavioural tests, the J.1–J.6 suites, the J.7 real-host smoke matrix, and
-  the documentation check in Part K. The sanitized S2 evidence is in plan Part
-  M.1; this ADR is finalized by the S10 consistency audit.
+- **Verification status.** The J.1–J.6 suites are green (4,230 non-golden
+  tests on 2026-10-28) and the S10 consistency audit reconciled `README.md`,
+  `PRIVACY.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/RELEASING.md`,
+  `CHANGELOG.md` and the in-app guide with the behaviour described here. What
+  remains is evidence, not decision: the **S11 J.7 real-host smoke** on a
+  disposable account, the Linux regeneration of the `publish_connection`
+  golden, and removing the trial tool. Acceptance does *not* claim a supported
+  compare-and-swap contract (no such contract exists — see §Decision 6 and
+  Consequences) and does not promise that arbitrary user files on a dedicated
+  Worker survive.
