@@ -7,8 +7,8 @@
 /// One JSON value is written in one call, so a reader sees the old record or
 /// the new one.
 ///
-/// The record is PUBLIC data (host, repo, public URL). It contains no token,
-/// no account id and no credential — those live in secure storage.
+/// The record is PUBLIC configuration data (host, target identity, public URL).
+/// It contains no token or credential — those live in secure storage.
 ///
 /// Decoding fails CLOSED (C3/R1): the address inside the file is never trusted
 /// as-is. The identity parts are used to rebuild the sealed target, and the

@@ -22,6 +22,7 @@ import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -40,13 +41,25 @@ final class EventsSectionBuilder {
     required PosterBytesReader readPoster,
     required EventsHtmlBuilderFn buildEventsHtml,
     required EventsJsonFactory buildEventsJson,
+    PublishArtifactSink? sink,
   }) : _readPoster = readPoster,
        _buildEventsHtml = buildEventsHtml,
-       _buildEventsJson = buildEventsJson;
+       _buildEventsJson = buildEventsJson,
+       _sink = sink;
 
   final PosterBytesReader _readPoster;
   final EventsHtmlBuilderFn _buildEventsHtml;
   final EventsJsonFactory _buildEventsJson;
+  final PublishArtifactSink? _sink;
+
+  /// Uses the same readers/builders with immediate artifact consumption (R24).
+  EventsSectionBuilder withArtifactSink(PublishArtifactSink sink) =>
+      EventsSectionBuilder(
+        readPoster: _readPoster,
+        buildEventsHtml: _buildEventsHtml,
+        buildEventsJson: _buildEventsJson,
+        sink: sink,
+      );
 
   /// Repo path of the events page.
   static const String eventsHtmlPath = 'events.html';
@@ -78,14 +91,16 @@ final class EventsSectionBuilder {
       }
       final path = poster.imageRef; // already `posters/<id>.jpg`
       final sha = GitBlobSha.of(bytes);
-      posterFiles.add(
-        PublishFile(
-          path: path,
-          bytes: bytes,
-          gitSha: sha,
-          upload: previous.shaFor(path) != sha,
-        ),
+      final file = PublishFile(
+        path: path,
+        bytes: bytes,
+        gitSha: sha,
+        upload: previous.shaFor(path) != sha,
       );
+      final written = await _write(file);
+      final writeFailure = written.swap().toNullable();
+      if (writeFailure != null) return Left(writeFailure);
+      posterFiles.add(written.toNullable()!);
       published.add(
         PublishPoster(imagePath: path, description: poster.description),
       );
@@ -108,25 +123,49 @@ final class EventsSectionBuilder {
           path,
     ];
 
+    final htmlFile = await _write(
+      PublishFile(
+        path: eventsHtmlPath,
+        bytes: eventsHtml,
+        gitSha: htmlSha,
+        upload: previous.shaFor(eventsHtmlPath) != htmlSha,
+      ),
+    );
+    final htmlFailure = htmlFile.swap().toNullable();
+    if (htmlFailure != null) return Left(htmlFailure);
+    final jsonFile = await _write(
+      PublishFile(
+        path: eventsJsonPath,
+        bytes: eventsJson,
+        gitSha: jsonSha,
+        upload: previous.shaFor(eventsJsonPath) != jsonSha,
+      ),
+    );
+    final jsonFailure = jsonFile.swap().toNullable();
+    if (jsonFailure != null) return Left(jsonFailure);
+
     return right(
       PublishSection(
         section: SiteSection.events,
-        files: [
-          PublishFile(
-            path: eventsHtmlPath,
-            bytes: eventsHtml,
-            gitSha: htmlSha,
-            upload: previous.shaFor(eventsHtmlPath) != htmlSha,
-          ),
-          PublishFile(
-            path: eventsJsonPath,
-            bytes: eventsJson,
-            gitSha: jsonSha,
-            upload: previous.shaFor(eventsJsonPath) != jsonSha,
-          ),
-          ...posterFiles,
-        ],
+        files: [htmlFile.toNullable()!, jsonFile.toNullable()!, ...posterFiles],
         deletePaths: obsolete,
+      ),
+    );
+  }
+
+  Future<Either<Failure, PublishFile>> _write(PublishFile file) async {
+    final sink = _sink;
+    if (sink == null) return Right(file);
+    final result = await sink.write(file);
+    final failure = result.swap().toNullable();
+    if (failure != null) return Left(failure);
+    // The sink owns the bytes now; retain only metadata in the snapshot.
+    return Right(
+      PublishFile(
+        path: file.path,
+        bytes: const [],
+        gitSha: file.gitSha,
+        upload: file.upload,
       ),
     );
   }

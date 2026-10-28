@@ -182,7 +182,6 @@ void main() {
       // merge_fields.dart (721 → <500). merge_page.dart left it the same day:
       // the review cards moved to widgets/merge_review_section.dart when the
       // periodical counts landed (538 → <500).
-      'lib/features/publish/application/github_connection_controller.dart': 670,
       // 2026-10 (plan F7 rename sessions): `CatalogueItem`,
       // `CatalogueItemRepository` etc. are longer identifiers, so dart format
       // wrapped signatures and the 80-column lint forced doc-comment reflows:

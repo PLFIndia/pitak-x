@@ -69,6 +69,7 @@ class _MemManifest implements PublishManifestGateway {
   final PublishManifest _m;
   PublishManifest? saved;
   bool saveFails = false;
+  bool liveSaveFails = false;
   final List<PublishManifest> saves = [];
 
   /// The record a load would return right now.
@@ -79,7 +80,9 @@ class _MemManifest implements PublishManifestGateway {
 
   @override
   Either<Failure, Unit> save(PublishManifest m) {
-    if (saveFails) return left(const StorageFailure('disk full'));
+    if (saveFails || (liveSaveFails && m.state == PublishState.live)) {
+      return left(const StorageFailure('disk full'));
+    }
     saved = m;
     saves.add(m);
     return right(unit);
@@ -662,6 +665,26 @@ void main() {
       ).call(twoPosters());
 
       expect(manifest.current.state, PublishState.deployed);
+    });
+
+    test('R9: a failed live save does not advance the journal', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(published())..liveSaveFails = true;
+      final recorder = _Recorder();
+      final result = await make(
+        api: api,
+        manifest: manifest,
+        verifier: _FakeVerifier(
+          (_, _) async =>
+              api.committed!.firstWhere((f) => f.path == 'events.json').bytes,
+        ),
+        hostState: recorder,
+      ).call(twoPosters());
+
+      expect(result, isA<PublishEventsSuccess>());
+      expect((result as PublishEventsSuccess).localStateSaved, isFalse);
+      expect(manifest.current.state, PublishState.deployed);
+      expect(recorder.recorded, isEmpty);
     });
 
     test('R9: a failed save is reported, not swallowed', () async {

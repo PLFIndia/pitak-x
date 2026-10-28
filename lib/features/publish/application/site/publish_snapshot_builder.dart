@@ -20,6 +20,7 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
@@ -39,6 +40,13 @@ final class PublishSnapshotBuilder {
 
   final CatalogueSectionBuilder _catalogue;
   final EventsSectionBuilder _events;
+
+  /// Uses the same two builders with immediate artifact consumption (R24).
+  PublishSnapshotBuilder withArtifactSink(PublishArtifactSink sink) =>
+      PublishSnapshotBuilder(
+        catalogue: _catalogue.withArtifactSink(sink),
+        events: _events.withArtifactSink(sink),
+      );
 
   /// Shown when a required read fails. Fixed text: read diagnostics can carry
   /// private database detail and never reach the UI (AGENTS §5). The wording

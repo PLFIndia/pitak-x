@@ -1,7 +1,7 @@
 # ADR 0017: Cloudflare Workers publishing — dedicated Worker, one active host
 
-- **Status:** Proposed (draft; final wording follows the S2 disposable-account
-  trial and the S10 consistency audit)
+- **Status:** Proposed (S2 and S7 outcomes recorded 2026-10-27; final wording
+  follows the S10 consistency audit)
 - **Date:** 2026-10-26
 - **Plan:** `cloudflare_plan-final.md` (parts A–N). Related: ADR 0007,
   ADR 0010, ADR 0012, ADR 0015, ADR 0016.
@@ -78,13 +78,14 @@ consequences the product cannot hide:
 - **Single-writer limitation is disclosed.** The local app-wide operation
   queue serialises this device only. Two devices publishing to one Worker
   concurrently can lose a write; the marker fails closed on *observed*
-  staleness but is not claimed to be atomic compare-and-swap. If the S2 trial
-  finds a supported conditional-deployment contract, the limitation may be
-  narrowed; otherwise it is an operating requirement and is documented in
-  README, the in-app guide, the privacy disclosure and store answers.
-- If the assets-only metadata deploy cannot be confirmed on a disposable
-  account (trial check T6), the plan stops. Shipping user Worker code is a
-  separate product decision, not a fallback.
+  staleness but is not claimed to be atomic compare-and-swap. S2/T14 found no
+  qualifying supported conditional-deployment contract in the current docs or
+  Wrangler source. One publisher at a time per Worker is therefore an operating
+  requirement and is documented in README, the in-app guide, the privacy
+  disclosure and store answers.
+- S2/T6 confirmed assets-only metadata deployment on a disposable account, so
+  the assets-only plan proceeds. Shipping user Worker code remains a separate
+  product decision, not a fallback.
 - A move can leave a verified destination published while the source is not yet
   retired; the journal keeps the old active/verified target truthful and the
   UI shows a persistent retry banner with the verified new address.
@@ -94,15 +95,62 @@ consequences the product cannot hide:
   changed", not "nothing was sent".
 - Moved pages: Cloudflare gets full response-header CSP; GitHub keeps only the
   directives a `<meta>` tag can enforce, and that limitation is documented.
-- Follow-up enforcement: session gates S0–S11 of the plan, the D1–D5
+- **S2 confirmed the version-URL gate.** `previews_enabled` is the controlling
+  field: the old version was unreachable when off and reachable when on; a
+  failed disable left it reachable until a confirmed off. C8/R14 is therefore
+  mandatory, not advisory.
+- **S2 confirmed the asset-hash formula.** T4–T5 accepted
+  `hex(SHA-256(base64(bytes) + extension))[0..32]` with the exact restricted
+  token. `hashScheme` remains `sha256-b64-ext-32`; no blake3 dependency is
+  added. The stored scheme still protects future migrations.
+- **S7 keeps connection credentials cohesive.** One versioned `cf_connection`
+  record lives in hardened secure storage and is replaced as a whole. A new
+  token starts fresh; user tokens verify immediately, account tokens verify at
+  the selected account before their first save. The creation button uses the
+  account-owned Workers-scripts-only template so one-account scope is the
+  default, while compatible pasted user tokens remain supported.
+- **S7 verification is not a live publication.** Manual subdomains stay
+  candidates until a marker-only deploy is read back from the exact origin.
+  Success stores the confirmed target, but writes no normal live manifest and
+  no journal `verifiedTarget`. Manual proof names its exact Worker and cannot
+  confirm a different Worker. Host activation is a separate idempotent write;
+  its retry never deploys again. A legacy GitHub manifest still counts as an
+  active GitHub host without bypassing read-back-gated address migration.
+  Post-deploy Version-URL and marker failures expose their privacy/partial
+  outcomes explicitly.
+- **S7 makes the local queue real.** One keep-alive provider serializes
+  catalogue/events publishing, GitHub credential/target mutations, and every
+  Cloudflare setup command. Dialogs and other user waits remain outside it.
+- **S8 publishes through one active-host command path.** A raw stored-journal
+  read chooses the host without manifest IO before strict reads. An absent
+  journal alone uses the documented legacy GitHub default; an existing journal
+  never falls back from one host's credentials to the other's. One Cloudflare
+  use-case factory serves catalogue and events, and the publish card shows the
+  configured target separately from the journal's verified share address.
+- **S8 makes replacement a two-phase, write-free confirmation.** Unknown or
+  positively retired state builds a strict complete snapshot against an empty
+  previous publication and returns a typed summary with real counts and a
+  canonical digest. No route update, upload session, bucket upload, deploy, or
+  credential/manifest write occurs during preparation. Confirmation re-enters
+  the queue, revalidates remote anchors and rebuilds from current local data;
+  any digest change requires another review. The digest excludes operation
+  timestamps and ids, and reads only volatile JSON from the spool on demand.
+- **S8 bounds build and upload memory together.** A per-file
+  `PublishArtifactSink` spools public bytes during section building and leaves
+  metadata-only files in Cloudflare snapshots. The assembler deduplicates by
+  content hash, and one bucket is streamed at a time through reopenable 64 KiB
+  sources. GitHub keeps its original byte-bearing files and byte-for-byte
+  behavior. Temporary spools are operation-scoped and cleaned in `finally`.
+- **S8 requires complete publication proof.** Freshness is checked at preflight
+  and immediately before deployment. Read-back covers the fresh marker,
+  `books.json`, descriptor bytes or its real 404, events JSON when present,
+  current posters, and exact removed-poster 404s. A matching `deployed` record
+  is verified before another deployment; verification failure stops, while a
+  successful retry creates no new deployment. A `live` manifest with an
+  incomplete journal/connection commit is re-proven before repair. Persistence
+  is ordered `deployed`, then `live`, journal `verifiedTarget`, and finally the
+  whole secure connection's write-proven flag.
+- Follow-up enforcement: session gates S6–S11 of the plan, the D1–D5
   behavioural tests, the J.1–J.6 suites, the J.7 real-host smoke matrix, and
-  the documentation check in Part K. This ADR is finalized with the S2 trial
-  outcome (conditional writes, version-URL semantics, the asset-hash formula)
-  and the S10 audit.
-- **Open until S2: the asset-hash formula.** The plan specifies
-  `hex(SHA-256(base64(bytes) + extension))[0..32]`; the reviewed Wrangler source
-  computes blake3 over the same input, and the Cloudflare docs name no
-  algorithm. The app implements the plan's formula behind a stored
-  `hashScheme`, so a change invalidates stored hashes safely instead of
-  reusing wrong ones. blake3 would require a new runtime dependency, which
-  R28 forbids without a product decision.
+  the documentation check in Part K. The sanitized S2 evidence is in plan Part
+  M.1; this ADR is finalized by the S10 consistency audit.

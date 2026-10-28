@@ -89,6 +89,9 @@ dependencies:
   # (scan/lookup/search); only the typed ISBN/title leaves the device. The
   # canonical Flutter HTTP package.
   http: ^1.2.2
+  # Multipart part media types for Cloudflare static-asset uploads (R28).
+  # Already pinned transitively through package:http; no new download/plugin.
+  http_parser: ^4.1.2
   # Barcode + QR scanning (#29, CAMERA): zxing-cpp via Dart FFI. FOSS (MIT), no
   # Google MLKit / Play Services — required so the F-Droid build stays free of
   # proprietary dependencies (the reason the F-Droid edition exists). Mirrors

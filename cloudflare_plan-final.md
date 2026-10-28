@@ -1,10 +1,9 @@
 # Cloudflare Workers publishing — consolidated implementation plan
 
 - **Branch:** `cloudflare` (from `main` at `e8c4d8e`, 2026-10-26).
-- **Status:** consolidated design; S0–S5 landed on the branch (see
-  `docs/plans/cloudflare-handoff.md` for the per-session record). S2 (the
-  disposable-account trial) is the next gate and needs a human; S6–S9 wait for
-  its report.
+- **Status:** consolidated design; S0–S8 are implemented and the S2 disposable-
+  account trial passed on 2026-10-27 (see the sanitized report in Part M and
+  `docs/plans/cloudflare-handoff.md`). S9 (moves and retirement) is next.
 - **Supersedes:** `cloudflare_plan.md` and `cloudflare_plan_amendments.md`.
   Those files remain review history only. Implementation uses this document.
 - **Scope:** a library can publish its read-only site (catalogue, events and
@@ -1570,10 +1569,72 @@ rows; they do not silently edit away the history.
 | 53 | E.1 lists `cloudflare_api.dart`, `cloudflare_credential_store.dart` and `cloudflare_error_messages.dart` under the S5 domain slice | S5 lands the value objects, the target, the record and the marker. The ports, the credential-store port and the fixed messages land with S6/S7, where their first adapter and caller exist | A port with no adapter and no caller is dead code (AGENTS §2.4), and S5's own done criteria are the value-object/manifest/marker tests. The files are still domain-only when they land |
 | 54 | Part G lists the production HTTP contract; the trial's T11/T15 need a version id to build a version URL | The trial adds ONE trial-only diagnostic read, `GET /accounts/{a}/workers/scripts/{name}/versions`, and probes `https://<version-id>-<worker>.<sub>.workers.dev/`. The probe result is recorded as `unknown` when the shape does not resolve, and the version-URL shape is never used by the app | T11/T15 ask whether an earlier version is publicly reachable, which cannot be answered without a version id. The endpoint is documented and read-only, it is not added to Part G (no production code calls it), and an unresolved probe is reported honestly instead of being guessed into a pass |
 | 55 | Row 48 deferred F.4 step 2; F.4 says a failed pre-publish verification "stops without another commit" | Implemented as the maintainer's chosen **Option B**: a `deployed` record whose anchor still matches the remote head is verified before building. `matched` upgrades the record to `live` and lets the journal claim the address; `contradicted` (the site answered with DIFFERENT bytes) stops the publish with a fixed message; `unreachable` (no answer within three short polls) lets the publish proceed. The check is `PublishVerificationCheck` + `PublishedFileReadBack.untilMatchesSha`, wired into both publishes. The standalone "Retry verification" affordance of D.3 is still open (the next publish now retries automatically) | Row 48's own note is the reason: blocking on an unreadable site would strand a user whose phone simply cannot reach the CDN, and a timeout is not evidence that the site changed. The distinction is objective — a fetched body either hashes to the recorded content sha or it does not — so no guessing is involved. The bytes of an earlier publish are not kept; the recorded git blob sha is what makes one fetch enough |
+| 56 | Row 54's trial read version/deployment lists directly and used a full version id in the probe | The live trial showed why the envelope must be strict: versions use `result.items`, deployments use `result.deployments`; v1 is saved after T6, v2 is checked after T10, and Version URLs use v1's first 8 characters. Public add/remove/version/retirement checks poll the required state for at most one minute | Cloudflare's documented envelopes and Wrangler agree. The full UUID was not the public prefix, the newest version was not the old one, and a fast 200/404 can be the previous deployment during propagation |
+| 57 | The trial could leak an unexpected transport exception, call skipped checks a pass, and needed a second token for T11b | TLS failures become fixed redacted outcomes; skips are `INCOMPLETE`; malformed responses fail closed; an invalid disable request proves the old version remains reachable until a confirmed off; large-session transport retries re-read the Worker first; opt-in crash cleanup deletes only exact trial-name matches | The exact restricted token is sufficient for every required check. A partial or interrupted trial must not be reported as a pass or leave ambiguous remote state |
+| 58 | S2/T14 left conditional deployment open | On 2026-10-27, current Script Upload docs and `workers-sdk` commit `0968b08c2a0b322fe6820bc2eb573440e6589a0b` exposed no supported expected-live-state/CAS contract for assets-only script PUT. Completion JWTs attach assets; deployment ids are results/diagnostics, not preconditions. No undocumented header is used. C6's one-publisher-at-a-time requirement remains in force | This is absence of a qualifying supported contract, not a claim about undocumented server behavior. The marker still detects observed staleness but cannot serialize two devices |
+| 59 | Row 49 left the SHA-256 versus blake3 asset-hash question open | S2/T4–T5 accepted the plan's SHA-256 manifest hashes and completed the bucket upload. `CloudflareAssetHash.scheme` remains `sha256-b64-ext-32`; no blake3 dependency is added | The exact production-shape token and API accepted the implemented formula, so no product/dependency change is needed |
+| 60 | Part G describes the subdomain-check outcomes as trial-confirmed; 10007 denotes absence | The S2 report contains no T3a availability result, so S6 maps only an explicit boolean `result.available` to available/taken; every other successful shape is `unknown`, and 10031/10032 remain typed errors rather than guessed outcomes. Absence requires BOTH HTTP 404 and code 10007; 401/403/429/5xx can never prove absence | The evidence gap is real, and a permission, rate-limit or server failure must never turn into subdomain creation or retry authorization |
+| 61 | E.6 allows a sibling transport for genuinely abortable streamed/multipart requests; Part G includes trial cleanup endpoints | S6 instead generalizes the existing `TimeoutHttpClient` with a delegating abortable wrapper for every request type, preserving original streaming, multipart boundaries and content lengths. All production Part G calls are implemented; DELETE, Worker listing and `/versions` remain trial-only. Bucket upload takes no long-lived API-token parameter | One transport policy avoids a second timeout implementation and fixes the existing `StreamedRequest` gap without buffering bodies. Trial-only operations stay out of the app (A.4), and bucket upload needs only its upload JWT (R19) |
+| 62 | R20/R24 require genuinely abortable requests and end-to-end bounded uploads, but the initial S6 shape left pre-`openUrl` and whole-bucket representations possible | Production native clients use the operation's exact `HttpClient.connectionTimeout`, covering the phase before package:http attaches its abort hook. Bucket assets are reopenable, size-checked 64 KiB streams; SHA-256/base64/multipart encoding is chunked, hash validation precedes HTTP, every transmitted attempt is hashed again before it can complete, and one `SerialOpQueue` covers validation + all attempts. No whole-bucket raw or encoded copy is retained; the 25 MiB single-file limit is unchanged | A caller timeout alone cannot abort `openUrl`, and per-file caps alone cannot stop a hostile/skewed bucket from causing raw + base64 + multipart OOM. The adapter now enforces the boundary S8's spool and Android AOT profiling build on |
+| 63 | S4 said the app-wide operation queue had landed, but only the utility and the bucket-private queue existed | S7 adds ONE keep-alive `publishOperationQueueProvider` and wires catalogue/events publishes, GitHub credential/target mutations, and every Cloudflare setup command; prompts still release the queue | R11 requires a real shared queue before any Cloudflare credential/target write. A Cloudflare-only queue would leave cross-host races intact; this completes the intended contract |
+| 64 | D.2 required a prefilled least-privilege token page but did not choose user- versus account-owned creation | S7 opens Cloudflare's account-owned `Workers Scripts · Edit` template, which scopes the token to one selected account by construction; pasted user tokens with the same restrictions remain supported | The user-token template's documented default is all accounts. Account-owned creation preserves M3 for a beginner instead of relying on them to notice and change that default |
+| 65 | The first S7 implementation review candidate had four contract gaps | Legacy GitHub default is computed without persisting it (so read-back migration still runs); manual proof is bound to its exact Worker and cleared on change; post-deploy Version-URL/partial failures have explicit copy; rejected subdomain input is retained on retry | Independent review caught an implicit legacy host switch, proof reuse across Workers, missing privacy/partial disclosures, and an F.9 retry violation. Dedicated regressions pin each correction |
+| 66 | S5's tolerant manifest decoding could drop one malformed file entry or read an unknown state/schema as `deployed` while retaining the target and other files | S8 makes an unsupported schema/state or any malformed, unsafe, or type-mismatched file entry invalidate the WHOLE Cloudflare record; the file store then returns `empty`, forcing explicit replacement reconciliation | A partially decoded record whose publish id still matches the live marker would otherwise look `known` and could silently omit a remote asset from the next complete Worker snapshot. Fail-closed reconciliation is required by C2/R5 |
+| 67 | S3/R2 said complete mode required every referenced cover, but the builder only required a non-null published URL | Complete mode now requires a Pitak cover path backed by materialized bytes or an explicitly trusted reuse record; an external-URL fallback after a failed fetch is a typed failure. S8 replacement builds against an empty previous record so no stale reuse can satisfy the gate | A remote URL is not an asset in the destination snapshot. Accepting it would replace the Worker while silently omitting the referenced cover bytes |
+| 68 | F.3/F.4 require manifest `live` before journal `verifiedTarget`; the GitHub paths wrote the journal first and ignored the `asLive` save result | S8 uses manifest-live-then-journal order for Cloudflare and corrects both GitHub publish paths; the `asLive` save remains a typed result whose failure is reported | Reversing the order can advertise a verified target while local recovery still says `deployed`; discarding the failed upgrade hides a partial persistence outcome |
+| 69 | R4 defines digest coverage but not its canonical encoding | S8 sorts section/file paths and JSON map keys, uses recorded content hashes for ordinary assets, and canonicalizes `books.json` without `exportedAt` plus `library.json` without `updatedAt` before SHA-256 hashing | The same logical snapshot must produce the same digest across operation timestamps and harmless ordering differences, while every user/content change still requires renewed confirmation |
+| 70 | E.2 proposes a new `publish_site_controller.dart`; legacy routing could read the manifest before strict library reads | S8 instead makes the existing catalogue/events controllers host-neutral behind ONE active-target resolver and ONE Cloudflare use-case factory. `storedState()` performs no legacy manifest IO; only an absent journal uses the GitHub legacy default, while an existing journal never falls back. A declarative status provider replaces the GitHub-only publish card/wrapper | This preserves the existing `PublishReads` implementation and codegen while avoiding duplicate controllers and fail-fast regressions. No queue nesting or credential-based host inference is introduced |
+| 71 | R5/R12 name path and freshness rules but do not enumerate coherent normal/retired manifest shapes | S8 requires normal records to contain the marker and catalogue core, events HTML/JSON to be coherent, posters to require events, and retired records to be exactly index/404/marker. A `live` record with incomplete local commit state is re-proven by full read-back before repair | The allowed-path union alone would still permit mixed live/retired or partial records. Reusing a prior `live` label without fresh proof would bypass E.5's crash recovery rule |
+| 72 | R24 bounds upload encoding but S3 builders retained every artifact and R4 digesting needed volatile JSON bytes | S8 adds a per-file `PublishArtifactSink`: Cloudflare builds spool immediately and return metadata-only files; the assembler reuses those sources, and digest calculation reads only volatile JSON from the spool on demand. GitHub keeps its original byte-bearing files and byte identity | Spooling only after a complete snapshot is built would leave the build-time peak unbounded. The sink closes that gap without changing GitHub output or sacrificing canonical replacement confirmation |
+| 73 | Events had a tolerant editor-read path and no read-back result field | S8 uses `loadStrict()` for GitHub events too, adds `pagesLive` to the events result, and maps both hosts through the shared `PublishResult` and host-specific copy | A corrupt events file must not become an empty public page, and an accepted commit must not be reported as verified live |
 
+## M.1 S2 sanitized disposable-account report — 2026-10-27
 
+The run used a disposable account and the exact one-account
+`Workers Scripts · Edit` token. Subdomain creation was explicitly authorized.
+No second token was used. T16 is therefore satisfied by the successful required
+operations in this report. T14's manual item is resolved by row 58. Desktop RSS
+is supplementary evidence only, not an Android memory bound.
 
+T3's creation sequence is recorded without inventing a status code: the first
+no-create run observed the subdomain absent (the 10007 path). After the
+explicitly authorized creation attempt, a TLS interruption lost the detailed
+create labels; subsequent independent runs using the same token read the
+subdomain as present. No specific create-response status is claimed.
 
+```text
+Pitak Cloudflare trial report
+(fixed labels only: no token, JWT, header or raw body)
+T0 trial worker: INFO (name-shape=pitak-trial-<8 hex>)
+T1 token verify: PASS (endpoint=user status=active expiry=present)
+T2 accounts: PASS (source=list pages=1 accounts=1)
+T0c previous trial cleanup: PASS (workers=0 absent=0)
+T3 account subdomain: PASS (read=present)
+T4 upload session: PASS (paths=5 unique=4 buckets=3 requested=4 leadingSlash=yes)
+T5 bucket upload: PASS (buckets=3 uploaded=4 completion=true)
+T6 metadata-only deploy: PASS (status=200)
+T6v first version diagnostic: INFO (status=200 shape=valid id=present)
+T7 route + version URLs: PASS (enable=200 enabled=true previews=false field=previews_enabled)
+T7b version-URL toggle: INFO (on=true off=false)
+T8 root: PASS (status=200)
+T8a index.html: INFO (status=307 cache=no-cache cors=*)
+T8b books.json: PASS (status=200 type=application/json cache=no-cache cors=*)
+T8c covers/sample.jpg: PASS (status=200 type=image/jpeg cache=no-cache cors=*)
+T8d missing file is a real 404: PASS (status=404 cache=no-cache cors=*)
+T8e cache + CORS: PASS (status=200 type=application/json cache=no-cache cors=*)
+T8f events.json: INFO (status=200 type=application/json cache=no-cache cors=*)
+T9 deployment diagnostic: INFO (status=200 shape=valid entries=1 latest-id=present)
+T10 second deploy dedupes and removes: PASS (buckets=0 deploy=200 events404=true)
+T11 old version not reachable with version URLs off: PASS (previews=true versions=2 v1=present newestChanged=true versionStatus=200 reachable=false)
+T15 version-URL gate: PASS (off-reachable=false on-reachable=true enable=200 disable=200 restored=true)
+T11b failure-to-disable path: PASS (status=400 stillOn=true reachable=true)
+T12 retired deploy: PASS (deploy=200 root=200 books404=true marker=retired headers=true)
+T5b large asset set: INFO (files=2000 buckets=5 largestFiles=410 largestRawBytes=41984000 requested=2000 hashMs=22838 processMaxRssBytes=215760896 uploaded=no)
+T14 conditional deploy: MANUAL (check current docs, Wrangler and the API for a conditional parameter; record the evidence in this report)
+T13 cleanup: PASS (workers=2 deleted=2 absent=2)
+
+RESULT: PASS
+```
 
 ---
 

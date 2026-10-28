@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pitaka/features/network/domain/published_site_url_policy.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_published_site_verifier.dart';
 
 /// R16: publish read-back is bound to the EXACT published site — same origin,
@@ -199,6 +200,28 @@ void main() {
         isNull,
       );
       expect(calls, 0);
+    });
+
+    test(
+      'structured reads distinguish a real 404 from other failures',
+      () async {
+        Future<PublishedSiteReadOutcome> withStatus(int status) =>
+            BoundedPublishedSiteVerifier(
+              client: MockClient((_) async => http.Response('no', status)),
+            ).readOutcome(siteUrl: site, path: 'books.json', maxBytes: 16);
+
+        expect(await withStatus(404), isA<PublishedSiteReadAbsent>());
+        expect(await withStatus(500), isA<PublishedSiteReadUnreadable>());
+      },
+    );
+
+    test('structured reads preserve bounded success bytes', () async {
+      final outcome = await BoundedPublishedSiteVerifier(
+        client: MockClient((_) async => http.Response.bytes([1, 2], 200)),
+      ).readOutcome(siteUrl: site, path: 'books.json', maxBytes: 2);
+
+      expect(outcome, isA<PublishedSiteReadBody>());
+      expect((outcome as PublishedSiteReadBody).bytes, [1, 2]);
     });
   });
 }

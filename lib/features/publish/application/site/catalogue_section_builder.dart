@@ -32,6 +32,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -59,13 +60,25 @@ final class CatalogueSectionBuilder {
     required PublishCoverDecider covers,
     required ViewerHtmlBuilderFn buildViewerHtml,
     required BooksJsonEncoder encodeBooksJson,
+    PublishArtifactSink? sink,
   }) : _covers = covers,
        _buildViewerHtml = buildViewerHtml,
-       _encodeBooksJson = encodeBooksJson;
+       _encodeBooksJson = encodeBooksJson,
+       _sink = sink;
 
   final PublishCoverDecider _covers;
   final ViewerHtmlBuilderFn _buildViewerHtml;
   final BooksJsonEncoder _encodeBooksJson;
+  final PublishArtifactSink? _sink;
+
+  /// Uses the same builders with immediate artifact consumption (R24).
+  CatalogueSectionBuilder withArtifactSink(PublishArtifactSink sink) =>
+      CatalogueSectionBuilder(
+        covers: _covers,
+        buildViewerHtml: _buildViewerHtml,
+        encodeBooksJson: _encodeBooksJson,
+        sink: sink,
+      );
 
   /// Repo path of the network descriptor (docs/ARCHITECTURE.md §5.1). One
   /// constant so the write, the sha-diff skip and the delete path agree.
@@ -125,12 +138,16 @@ final class CatalogueSectionBuilder {
     final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
 
     // A COMPLETE publish may not silently drop a referenced cover: every
-    // decision below must end with a published URL (a real upload path or the
-    // already-published one). Recorded (never thrown — AGENTS §5) and turned
-    // into a typed failure before anything is returned.
+    // decision below must end with a Pitak path backed by bytes or an explicit
+    // trusted reuse record. A sanitized EXTERNAL URL is not an asset in this
+    // snapshot and therefore cannot satisfy the gate (R2). Record the failure
+    // (never throw for an expected failure) and return it before any write.
     Failure? missingCover;
     void requireCover(CoverDecision decision) {
-      if (mode == PublishMode.complete && decision.publishedCoverUrl == null) {
+      final hasMaterializedAsset =
+          decision.publishPath != null &&
+          (decision.bytes != null || decision.reuseSha != null);
+      if (mode == PublishMode.complete && !hasMaterializedAsset) {
         missingCover = const ValidationFailure(missingCoverMessage);
       }
     }
@@ -211,11 +228,21 @@ final class CatalogueSectionBuilder {
           ),
       ],
     );
-    final booksJson = _encodeBooksJson(export);
-    final viewerHtml = await _buildViewerHtml();
+    var booksJson = _encodeBooksJson(export);
+    var viewerHtml = await _buildViewerHtml();
 
-    // Assemble the desired file set with per-file change detection.
-    final desired = <PublishFile>[
+    // Assemble with per-file change detection. A sink consumes each artifact
+    // immediately; without one, the original byte-bearing files are preserved.
+    final desired = <PublishFile>[];
+    Future<Failure?> addFile(PublishFile file) async {
+      final written = await _write(file);
+      final failure = written.swap().toNullable();
+      if (failure != null) return failure;
+      desired.add(written.toNullable()!);
+      return null;
+    }
+
+    final coreFiles = <PublishFile>[
       _file(booksJsonPath, booksJson, previous),
       // The descriptor rides in the SAME atomic write as books.json: books,
       // descriptor and viewer always agree on the live site. Incremental
@@ -224,12 +251,16 @@ final class CatalogueSectionBuilder {
       if (libraryJson != null) _file(libraryJsonPath, libraryJson, previous),
       _file(indexHtmlPath, viewerHtml, previous),
     ];
+    for (final file in coreFiles) {
+      final failure = await addFile(file);
+      if (failure != null) return Left(failure);
+    }
     for (final d in [
       ...coverDecisions.values,
       ...periodicalCoverDecisions.values,
     ]) {
       if (d.bytes != null && d.publishPath != null && d.gitSha != null) {
-        desired.add(
+        final failure = await addFile(
           PublishFile(
             path: d.publishPath!,
             bytes: d.bytes!,
@@ -237,6 +268,7 @@ final class CatalogueSectionBuilder {
             upload: previous.shaFor(d.publishPath!) != d.gitSha,
           ),
         );
+        if (failure != null) return Left(failure);
       } else if (d.reuseSha != null && d.publishPath != null) {
         desired.add(
           PublishFile(
@@ -248,6 +280,11 @@ final class CatalogueSectionBuilder {
         );
       }
     }
+    // Do not retain every cover or the large catalogue JSON after consumption.
+    coverDecisions.clear();
+    periodicalCoverDecisions.clear();
+    booksJson = const [];
+    viewerHtml = const [];
     // De-dup by path (deterministic: keep the first).
     final seen = <String>{};
     final files = [
@@ -294,6 +331,23 @@ final class CatalogueSectionBuilder {
       bytes: bytes,
       gitSha: sha,
       upload: previous.shaFor(path) != sha,
+    );
+  }
+
+  Future<Either<Failure, PublishFile>> _write(PublishFile file) async {
+    final sink = _sink;
+    if (sink == null) return Right(file);
+    final result = await sink.write(file);
+    final failure = result.swap().toNullable();
+    if (failure != null) return Left(failure);
+    // The sink owns the bytes now; retain only metadata in the snapshot.
+    return Right(
+      PublishFile(
+        path: file.path,
+        bytes: const [],
+        gitSha: file.gitSha,
+        upload: file.upload,
+      ),
     );
   }
 

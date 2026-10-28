@@ -21,6 +21,7 @@ library;
 
 export 'package:pitaka/core/di/src/app_update_providers.dart';
 export 'package:pitaka/core/di/src/backup_providers.dart';
+export 'package:pitaka/core/di/src/cloudflare_publish_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/events_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';

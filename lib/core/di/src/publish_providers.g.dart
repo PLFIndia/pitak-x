@@ -26,6 +26,138 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
+String _$cloudflareApiHash() => r'2545ce2e7bd42244c638d6552dd6614bd95c6b80';
+
+/// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
+///
+/// Auto-dispose is deliberate: an operation owns its connections, and closing
+/// the provider aborts outstanding work without retaining any credential. The
+/// facade itself holds no API token or upload/completion JWT.
+///
+/// Copied from [cloudflareApi].
+@ProviderFor(cloudflareApi)
+final cloudflareApiProvider = AutoDisposeProvider<CloudflareApi>.internal(
+  cloudflareApi,
+  name: r'cloudflareApiProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$cloudflareApiHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareApiRef = AutoDisposeProviderRef<CloudflareApi>;
+String _$publishOperationQueueHash() =>
+    r'067570ba6162f6cafb7839b7b4617ae132462a22';
+
+/// The ONE app-wide publish queue (R11). Only outermost commands enqueue;
+/// dialogs and other user waits always happen after the queue is released.
+///
+/// Copied from [publishOperationQueue].
+@ProviderFor(publishOperationQueue)
+final publishOperationQueueProvider = Provider<SerialOpQueue>.internal(
+  publishOperationQueue,
+  name: r'publishOperationQueueProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$publishOperationQueueHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishOperationQueueRef = ProviderRef<SerialOpQueue>;
+String _$cloudflareCredentialStoreHash() =>
+    r'a66c1eb47b3598ecfa588a130b20b423ab4cf62b';
+
+/// One versioned, whole-record Cloudflare connection in hardened storage.
+///
+/// Copied from [cloudflareCredentialStore].
+@ProviderFor(cloudflareCredentialStore)
+final cloudflareCredentialStoreProvider =
+    AutoDisposeProvider<CloudflareCredentialStore>.internal(
+      cloudflareCredentialStore,
+      name: r'cloudflareCredentialStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflareCredentialStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareCredentialStoreRef =
+    AutoDisposeProviderRef<CloudflareCredentialStore>;
+String _$publishMarkerCodecHash() =>
+    r'bab91b6486d13dc7464829202b11c812ffd8ccfb';
+
+/// Public-marker JSON codec. It contains no credential or connection state.
+///
+/// Copied from [publishMarkerCodec].
+@ProviderFor(publishMarkerCodec)
+final publishMarkerCodecProvider =
+    AutoDisposeProvider<PublishMarkerCodec>.internal(
+      publishMarkerCodec,
+      name: r'publishMarkerCodecProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishMarkerCodecHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishMarkerCodecRef = AutoDisposeProviderRef<PublishMarkerCodec>;
+String _$verifyCloudflareAddressHash() =>
+    r'0463cd69dbbeca16b309bf91bc7df4b3257f54ef';
+
+/// Marker-only manual-address verification (D.2), never a normal publication.
+///
+/// Copied from [verifyCloudflareAddress].
+@ProviderFor(verifyCloudflareAddress)
+final verifyCloudflareAddressProvider =
+    AutoDisposeProvider<VerifyCloudflareAddress>.internal(
+      verifyCloudflareAddress,
+      name: r'verifyCloudflareAddressProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$verifyCloudflareAddressHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef VerifyCloudflareAddressRef =
+    AutoDisposeProviderRef<VerifyCloudflareAddress>;
+String _$setupCloudflareSiteHash() =>
+    r'5bd4b4c2865b3b06171b6ffc97b8b6d81c9196fa';
+
+/// Staged setup commands. Every mutating call is invoked inside the shared
+/// [publishOperationQueueProvider] by the outer connection controller.
+///
+/// Copied from [setupCloudflareSite].
+@ProviderFor(setupCloudflareSite)
+final setupCloudflareSiteProvider =
+    AutoDisposeFutureProvider<SetupCloudflareSite>.internal(
+      setupCloudflareSite,
+      name: r'setupCloudflareSiteProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$setupCloudflareSiteHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SetupCloudflareSiteRef =
+    AutoDisposeFutureProviderRef<SetupCloudflareSite>;
 String _$publishCredentialStoreHash() =>
     r'3b31461d16fbf56902e23d43430383b9d60baf70';
 
@@ -214,6 +346,51 @@ final publishedSiteVerifierProvider =
 // ignore: unused_element
 typedef PublishedSiteVerifierRef =
     AutoDisposeProviderRef<PublishedSiteVerifier>;
+String _$publishedSiteReadVerifierHash() =>
+    r'874d563b3b70ead96c482dec106969f4fe87693a';
+
+/// Structured public reads for marker freshness and expected-404 checks. This
+/// uses the same bounded adapter/policy as [publishedSiteVerifierProvider].
+///
+/// Copied from [publishedSiteReadVerifier].
+@ProviderFor(publishedSiteReadVerifier)
+final publishedSiteReadVerifierProvider =
+    AutoDisposeProvider<PublishedSiteReadVerifier>.internal(
+      publishedSiteReadVerifier,
+      name: r'publishedSiteReadVerifierProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedSiteReadVerifierHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedSiteReadVerifierRef =
+    AutoDisposeProviderRef<PublishedSiteReadVerifier>;
+String _$cloudflarePublishMarkerProbeHash() =>
+    r'6570ff88384d7a6e1130e2fe48285891cc4b04d2';
+
+/// Freshness-marker reads preserve 404 versus unreadable/malformed outcomes.
+///
+/// Copied from [cloudflarePublishMarkerProbe].
+@ProviderFor(cloudflarePublishMarkerProbe)
+final cloudflarePublishMarkerProbeProvider =
+    AutoDisposeProvider<CloudflarePublishMarkerProbe>.internal(
+      cloudflarePublishMarkerProbe,
+      name: r'cloudflarePublishMarkerProbeProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflarePublishMarkerProbeHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflarePublishMarkerProbeRef =
+    AutoDisposeProviderRef<CloudflarePublishMarkerProbe>;
 String _$viewerHtmlFactoryHash() => r'413b4a5cb4c970060bbcf1dcc9511344c1fbc407';
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
@@ -353,6 +530,28 @@ final publishManifestStoreProvider =
 // ignore: unused_element
 typedef PublishManifestStoreRef =
     AutoDisposeFutureProviderRef<PublishManifestGateway>;
+String _$cloudflareManifestStoreHash() =>
+    r'fa655bfc22cd3c9212d6480fd9719551d2afb6b5';
+
+/// Atomic Cloudflare manifest storage, separate from GitHub's public record.
+///
+/// Copied from [cloudflareManifestStore].
+@ProviderFor(cloudflareManifestStore)
+final cloudflareManifestStoreProvider =
+    AutoDisposeFutureProvider<CloudflareManifestStore>.internal(
+      cloudflareManifestStore,
+      name: r'cloudflareManifestStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflareManifestStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareManifestStoreRef =
+    AutoDisposeFutureProviderRef<CloudflareManifestStore>;
 String _$publishHostStateStoreHash() =>
     r'daee9bc28bd86ab5f6674152a951164c773a6c3c';
 

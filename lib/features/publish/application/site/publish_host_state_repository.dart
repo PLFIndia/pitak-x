@@ -101,6 +101,40 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
     return _store.save(current.afterVerifiedPublish(target));
   }
 
+  /// Reads only the stored journal, without legacy-manifest reconciliation.
+  ///
+  /// This is the fail-fast routing read: it touches neither the network nor the
+  /// publish manifest. An absent record is distinguishable from a record whose
+  /// active host is genuinely unset, so the caller can apply the documented
+  /// legacy default without doing manifest IO before strict library reads.
+  PublishHostState? storedState() => _store.load();
+
+  /// Reads the current journal WITHOUT network access.
+  ///
+  /// An absent journal gets E.5's legacy default when a valid GitHub target
+  /// exists. The default is NOT persisted here: leaving the raw record absent
+  /// lets [verifiedSiteUrl] perform its one read-back-gated migration later.
+  PublishHostState? currentState() => _loadWithLegacyDefault();
+
+  /// Selects [host] only when setup has not selected a host yet.
+  ///
+  /// This never creates a verified-live pointer. In particular, a
+  /// verification-only Cloudflare marker is not a library publication. An
+  /// existing or legacy-default GitHub active record is returned untouched.
+  Future<Either<Failure, Unit>> ensureActiveHost(PublishHost host) async {
+    final current = _loadWithLegacyDefault() ?? PublishHostState.empty;
+    if (current.activeHost != null) return right(unit);
+    return _store.save(PublishHostState(activeHost: host));
+  }
+
+  PublishHostState? _loadWithLegacyDefault() {
+    final stored = _store.load();
+    if (stored != null) return stored;
+    final legacyTarget = GitHubPublishTarget.create(_manifest.load().repo);
+    if (legacyTarget == null) return null;
+    return const PublishHostState(activeHost: PublishHost.github);
+  }
+
   /// The address to share, or null when nothing is verified yet.
   ///
   /// Reads the journal when it exists. When it does not, performs the ONE

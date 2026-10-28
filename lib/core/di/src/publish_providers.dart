@@ -13,6 +13,7 @@
 /// direction only.
 library;
 
+import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/events_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
@@ -20,6 +21,10 @@ import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
+import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
@@ -29,6 +34,8 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
@@ -37,16 +44,21 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
+import 'package:pitaka/features/publish/domain/site/publish_marker_codec.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_published_site_verifier.dart';
+import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
+import 'package:pitaka/features/publish/infrastructure/file_cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
+import 'package:pitaka/features/publish/infrastructure/http_cloudflare_api.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
+import 'package:pitaka/features/publish/infrastructure/secure_storage_cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
@@ -60,6 +72,61 @@ part 'publish_providers.g.dart';
 @riverpod
 GitHubApi gitHubApi(GitHubApiRef ref) =>
     HttpGitHubApi(client: ref.watch(httpClientProvider));
+
+/// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
+///
+/// Auto-dispose is deliberate: an operation owns its connections, and closing
+/// the provider aborts outstanding work without retaining any credential. The
+/// facade itself holds no API token or upload/completion JWT.
+@riverpod
+CloudflareApi cloudflareApi(CloudflareApiRef ref) {
+  final api = HttpCloudflareApi();
+  ref.onDispose(api.close);
+  return api;
+}
+
+/// The ONE app-wide publish queue (R11). Only outermost commands enqueue;
+/// dialogs and other user waits always happen after the queue is released.
+@Riverpod(keepAlive: true)
+SerialOpQueue publishOperationQueue(PublishOperationQueueRef ref) =>
+    SerialOpQueue();
+
+/// One versioned, whole-record Cloudflare connection in hardened storage.
+@riverpod
+CloudflareCredentialStore cloudflareCredentialStore(
+  CloudflareCredentialStoreRef ref,
+) => SecureStorageCloudflareCredentialStore();
+
+/// Public-marker JSON codec. It contains no credential or connection state.
+@riverpod
+PublishMarkerCodec publishMarkerCodec(PublishMarkerCodecRef ref) =>
+    const CloudflarePublishMarkerCodec();
+
+/// Marker-only manual-address verification (D.2), never a normal publication.
+@riverpod
+VerifyCloudflareAddress verifyCloudflareAddress(
+  VerifyCloudflareAddressRef ref,
+) => VerifyCloudflareAddress(
+  api: ref.watch(cloudflareApiProvider),
+  verifier: ref.watch(publishedSiteVerifierProvider),
+  codec: ref.watch(publishMarkerCodecProvider),
+  sleep: Future<void>.delayed,
+  clock: ref.watch(clockProvider),
+);
+
+/// Staged setup commands. Every mutating call is invoked inside the shared
+/// [publishOperationQueueProvider] by the outer connection controller.
+@riverpod
+Future<SetupCloudflareSite> setupCloudflareSite(
+  SetupCloudflareSiteRef ref,
+) async => SetupCloudflareSite(
+  accountApi: ref.watch(cloudflareApiProvider),
+  deployApi: ref.watch(cloudflareApiProvider),
+  credentials: ref.watch(cloudflareCredentialStoreProvider),
+  hostState: await ref.watch(publishHostStateRepositoryProvider.future),
+  verifyAddress: ref.watch(verifyCloudflareAddressProvider),
+  clock: ref.watch(clockProvider),
+);
 
 /// Encrypted-at-rest GitHub publish credentials (token + clientId + repo).
 @Riverpod(keepAlive: true)
@@ -165,6 +232,22 @@ Future<Future<List<int>?> Function(String)> publishLocalCoverReader(
 PublishedSiteVerifier publishedSiteVerifier(PublishedSiteVerifierRef ref) =>
     BoundedPublishedSiteVerifier(client: ref.watch(httpClientProvider));
 
+/// Structured public reads for marker freshness and expected-404 checks. This
+/// uses the same bounded adapter/policy as [publishedSiteVerifierProvider].
+@riverpod
+PublishedSiteReadVerifier publishedSiteReadVerifier(
+  PublishedSiteReadVerifierRef ref,
+) => BoundedPublishedSiteVerifier(client: ref.watch(httpClientProvider));
+
+/// Freshness-marker reads preserve 404 versus unreadable/malformed outcomes.
+@riverpod
+CloudflarePublishMarkerProbe cloudflarePublishMarkerProbe(
+  CloudflarePublishMarkerProbeRef ref,
+) => CloudflarePublishMarkerProbe(
+  reader: ref.watch(publishedSiteReadVerifierProvider),
+  codec: ref.watch(publishMarkerCodecProvider),
+);
+
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
 /// effect, so it lives behind this seam) and substitutes the library values.
 @riverpod
@@ -260,6 +343,15 @@ Future<PublishManifestGateway> publishManifestStore(
 ) async {
   final dir = await ref.watch(appDocsDirProvider.future);
   return FilePublishManifestStore(baseDir: dir.path);
+}
+
+/// Atomic Cloudflare manifest storage, separate from GitHub's public record.
+@riverpod
+Future<CloudflareManifestStore> cloudflareManifestStore(
+  CloudflareManifestStoreRef ref,
+) async {
+  final dir = await ref.watch(appDocsDirProvider.future);
+  return FileCloudflareManifestStore(baseDir: dir.path);
 }
 
 /// The host journal's storage (E.5): ONE prefs key, no tokens.

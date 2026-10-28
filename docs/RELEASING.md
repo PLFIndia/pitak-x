@@ -200,7 +200,20 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    native viewer, searches/filters, opens the read-only detail, returns,
    reloads once, checks the injected browser hand-off and removes the row.
    It uses fake catalogue/cover ports, so it needs **no** live network.
-8. Commit.
+8. For the Cloudflare S8 publisher, run the Android release/AOT memory gate on
+   a test emulator (the script uninstalls any previous profiling build):
+   `adb root`, then
+   `S8_AOT_MODE=release S8_MEMORY_OUT=build/cloudflare_aot_memory_release.json ./tool/cloudflare_aot_memory.sh <android-device-id>`.
+   Root adb is used only to read the release app's private result file. For an
+   AOT profile diagnostic, `./tool/cloudflare_aot_memory.sh <android-device-id>`
+   needs no root adb. Both modes run the real catalogue builder, per-file
+   artifact sink, assembler and streamed native upload against a loopback fake
+   server. Require `fileCount == 413`, `uploadedAssets == 413`,
+   `requestCount == 1` and `metadataOnlyBuild == true`. The script writes the
+   selected output with those fields, `rawSpoolBytes`, `requestBytes` and
+   Android `peakRssBytes`; record the result in
+   `docs/plans/cloudflare-handoff.md`. Desktop RSS is supplementary only.
+9. Commit.
 
 ### 6.2 Google Play
 

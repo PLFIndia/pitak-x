@@ -1,9 +1,10 @@
 # Cloudflare publishing — implementation handoff
 
 - **Plan:** [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) (authoritative;
-  its Part M now carries every session's deviation rows 34–53).
-- **Branch:** `cloudflare`, nine commits on top of `main` at `e8c4d8e`, plus
-  S5 in the working tree (not yet committed — a commit needs approval):
+  its Part M now carries every session's deviation rows 34–73 and the S2 report).
+- **Branch:** `cloudflare`; implementation commits through `1a44444` are listed
+  below. The S2 report/trial hardening, S6 HTTP adapters, and S7 connection
+  flow are in the working tree:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -16,16 +17,23 @@
   | `c3005d1` | S4 (part 2) | Sealed `PublishTarget`/`GitHubPublishTarget`; the descriptor URL comes from the operation's target |
   | `0f509fa` | S4 (part 3) | Schema-2 publish record, typed tree reconciliation, expected-head commits, atomic typed saves, `deployed`→`live` |
   | `f865361` | S4 (part 4) | `PublishHostState` journal + `PrefsPublishHostStore`, read-back-gated migration, the share URL comes from it |
-  | *(pending)* | S5 | `SitePath`, shared `PublishState`, Cloudflare value objects, `CloudflarePublishTarget`, schema-2 Cloudflare record, publish marker + freshness classifier |
+  | `0bda71d` | S5 | `SitePath`, shared `PublishState`, Cloudflare value objects, `CloudflarePublishTarget`, schema-2 Cloudflare record, publish marker + freshness classifier |
+  | `1118ac4` | S2 tool | Disposable-account Cloudflare trial |
+  | `1151a17` | S4 remainder | Events publish takes the explicit target |
+  | `1a44444` | S4 remainder | Option B verification of an unconfirmed publication before republishing |
+  | *(working tree)* | S2 | Full sanitized trial report, conditional-write/hash outcomes, propagation-safe and redacted trial checks |
+  | *(working tree)* | S6 | Cloudflare domain ports, account/deploy HTTP adapters + facade, bounded/abortable multipart transport, hostile-response and real-socket tests |
+  | *(working tree)* | S7 | Secure whole-record connection storage, staged account/subdomain/Worker setup, marker-only address verification, shared publish queue, connection controller + dialogs |
+  | *(working tree)* | S8 | Ordinary publish/replacement, strict R4 confirmation, active-host routing, per-file artifact sink, full read-back and memory scenario |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
   `dart format --set-exit-if-changed lib test integration_test` is clean, and
   the full suite passes (golden excluded).
-- **Nothing Cloudflare-side is shipped yet.** No token capture, no API client,
-  no Worker upload. The Cloudflare-visible code is the reader's `workers.dev`
-  URL grammar (S1) and the S5 pure-domain value objects — see §6 for why that
-  is deliberate.
+- **Cloudflare connection/setup and ordinary publishing are user-facing.** S7
+  adds restricted-token capture and setup; S8 adds ordinary catalogue/events
+  publishing and explicit whole-site replacement. Moves/retirement remain S9.
+  See §7 for setup invariants and §8 for the publish/recovery implementation.
 
 ---
 
@@ -293,7 +301,7 @@ alone (`books.json` embeds `exportedAt`).
 
 ---
 
-## 5. S5 — Cloudflare pure domain (in the working tree, commit pending)
+## 5. S5 — Cloudflare pure domain (commit `0bda71d`)
 
 **Deliverable:** every Cloudflare value that can reach an API path, a public
 address or a published file is validated at construction, and the two records
@@ -367,65 +375,241 @@ marker classifier and the journal share one vocabulary (deviation 51).
 the fixed error messages land with S6/S7, where their first adapter and caller
 exist (deviation 53). A port with no adapter is dead code.
 
-### 5.6 The one open risk from S5
+### 5.6 The S5 asset-hash risk — resolved by S2
 
-**The asset-hash formula (deviation 49).** The plan says SHA-256; the reviewed
-Wrangler source uses blake3 over the same `base64 + extension` input. SHA-256 is
-implemented because it is the reviewed contract and blake3 would need a new
-dependency (R28). S2/T4–T5 settles it: if the API rejects these hashes, the
-formula and `hashScheme` change together, which invalidates stored hashes
-safely rather than reusing wrong ones.
+**The asset-hash formula is confirmed (deviations 49/59).** The reviewed
+Wrangler source used blake3, but the disposable trial's T4–T5 accepted the
+plan's implemented SHA-256 formula. `hashScheme` remains
+`sha256-b64-ext-32`; no new dependency or stored-hash migration is needed.
 
-## 6. The S2 gate — nothing Cloudflare-side may proceed before it
+## 6. The S2 gate — passed on 2026-10-27
 
-The plan (§I) says **S6–S9 wait for S2's outcome**. The tool now exists
-(`tool/cloudflare_trial/`, written in the S5 commit's follow-up); running it
-**requires a human with a disposable account**:
+The full T1–T16 trial passed on a disposable account with the exact one-account
+`Workers Scripts · Edit` token; no second token was used. The sanitized report
+is in `cloudflare_plan-final.md` Part M.1, with deviations in rows 56–59.
 
-- `tool/cloudflare_trial/` implements T1–T16 per plan Part L: token only from
-  `CF_API_TOKEN` (optional `CF_ACCOUNT_ID`, `CF_CREATE_SUBDOMAIN`,
-  `CF_TRIAL_SKIP_LARGE`), Worker named `pitak-trial-<8 hex>`, deletion in
-  `finally`, and a report of fixed labels / status codes / whitelisted headers
-  only — never tokens, JWTs, authorization headers or raw bodies. Its pure
-  parts (asset sets, multipart bodies, deterministic large set) are pinned by
-  `test/tool/cloudflare_trial_test.dart`; `dart analyze tool` and
-  `dart format --set-exit-if-changed tool/cloudflare_trial` are clean.
-- Run it on a **disposable account** with the exact
-  `Workers Scripts · Edit`, one-account token:
+- **T6 passed:** metadata-only assets deployment works. No Worker module or new
+  product decision is needed.
+- **T4–T5 passed:** Cloudflare accepted the implemented SHA-256 asset hashes.
+  `hashScheme` remains `sha256-b64-ext-32`; no blake3 dependency is needed.
+- **T7/T11/T15 passed:** `previews_enabled` controls Version URLs. With it off,
+  v1 was unreachable; with it on, v1 was reachable; a failed disable left v1
+  reachable; a confirmed off restored privacy. This makes C8/R14 load-bearing.
+- **T14 found no qualifying supported CAS contract** in the current docs or
+  `workers-sdk` commit `0968b08c2a0b322fe6820bc2eb573440e6589a0b`. C6's
+  one-publisher-at-a-time operating requirement remains in force. Completion
+  JWTs and deployment ids are not compare-and-swap anchors.
+- **T5b:** 2,000 files produced 5 buckets; the largest held 410 files /
+  41,984,000 raw bytes. Desktop process max RSS was 215,760,896 bytes. This is
+  supplementary evidence only; S8's Android release/AOT evidence is in §8.1.
+- **T13 passed:** both trial Workers were deleted and verified absent. The
+  account subdomain remains, as explicitly authorized.
 
-  ```bash
-  CF_API_TOKEN=... fvm dart run tool/cloudflare_trial/main.dart
-  ```
-- Record the sanitized report and the two decisions it settles:
-  - **T6** — does a metadata-only assets deploy succeed? If it fails, **stop**;
-    shipping Worker code is a separate product decision.
-  - **T14/T15** — is there a supported conditional-deployment contract? If not,
-    the single-writer limitation in ADR 0017 becomes an operating requirement
-    that docs/store answers must state.
-- Only after that report: S6 (HTTP adapters) → S7 (connect) → S8 (publish) →
-  S9 (moves/retirement).
+The trial tool itself was hardened during the run: redacted TLS outcomes,
+incomplete-not-pass reporting, strict response envelopes, saved-v1/prefixed
+Version URL probes, bounded propagation polls, re-read-before-retry for the
+large session, and opt-in exact-name crash cleanup. Its focused tests,
+`dart analyze tool` and format gate are green.
 
-Until then, do **not** write Cloudflare API code, and do not let a Cloudflare
-behavior become load-bearing.
+**S6 (HTTP adapters) is implemented in the working tree.** The account and
+deploy role adapters sit behind `HttpCloudflareApi` and one fixed-origin,
+bounded transport. Every production Part G call is covered; DELETE, Worker
+listing and `/versions` remain trial-only. Responses use streamed 1 MiB caps,
+the shared depth-16 pre-scan, endpoint-specific bounds and numeric-only error
+codes. Retries are deterministic; uncertain creates/deploys re-read before any
+repeat. Multipart bucket hashing/base64 is streamed from reopenable 64 KiB
+sources, every transmitted attempt is hashed again before it can complete, and
+one queue serializes validation + attempts. Real native clients use
+the operation's `connectionTimeout`, and real-socket tests cover ordinary JSON,
+bucket multipart and deploy multipart abortion. Subdomain absence requires
+404 + 10007; availability remains `unknown` without explicit boolean evidence
+(Part M rows 60–62).
+
+**S7 (Connect Cloudflare) is implemented in §7.** S8 (publish/replacement) is
+next, then S9 (moves/retirement).
 
 ---
 
-## 7. Remaining sessions, in order, with entry criteria
+## 7. S7 — Connect Cloudflare (implemented)
+
+**Deliverable:** a user can connect a restricted Cloudflare token, select an
+account/subdomain/dedicated Worker, prove a manual address, and resume setup
+without ever exposing a token to Riverpod state. Ordinary catalogue/events
+publishing remains S8.
+
+### 7.1 Whole-record secrets and one real operation queue
+
+- `CloudflareConnection` + `CloudflareCredentialStore` hold the token and all
+  optional setup fields as ONE versioned `cf_connection` record in hardened
+  secure storage. Reads are bounded and fail closed; writes replace the whole
+  record. A newly verified token starts fresh, so stale account/target fields
+  cannot pair with it. `CloudflareConnectionStatus` is the only UI projection.
+  Manual proof also records `verifiedWorkerName`: selecting a different Worker
+  clears that proof and requires verification again. API-read subdomain
+  confirmation is separate and remains valid across Worker choices (row 65).
+- User tokens (including the legacy 40-character shape) verify before their
+  first save. Account tokens list/select first and verify at the chosen account
+  before their first save. The token-creation button uses Cloudflare's
+  account-owned Workers-scripts-only template so one-account scope is the
+  default; compatible pasted user tokens remain supported (Part M row 64).
+- The token exists only in the running async setup operation. Prompt completers
+  contain only non-secret answers; no token is a controller field or UI value.
+- `publishOperationQueueProvider` is the ONE keep-alive app-wide queue. It now
+  covers catalogue/events publishes, GitHub token/target mutations and sign-out,
+  and every Cloudflare setup command. Dialogs/user waits happen after release;
+  re-entry re-reads the record and remote Worker state (Part M row 63).
+
+### 7.2 Setup, verification, and recovery truth
+
+- Account listing remains bounded; refusal/truncation leads to manual Account
+  ID, while 401 remains reconnect. Subdomain absence requires explicit
+  creation. Only explicit `available` evidence permits creation; `taken` and
+  `unknown` do not create. Account-level 403 offers the manual candidate path.
+- Existing Workers require whole-asset replacement consent before any write.
+  API-read/created subdomains can finish with a confirmed target and no deploy;
+  `workersWriteConfirmed` remains false until deployment plus read-back proves
+  write capability.
+- Manual candidates require a fresh `state: verification` marker only. Existing
+  Workers disable/GET-confirm Version URLs before upload; every deploy
+  reconfirms route/privacy afterward. A post-deploy route failure explicitly
+  warns that old Version URLs may be public and blocks further deployment until
+  repaired; read-back failure includes marker-only partial-state disclosure.
+  Exact marker bytes are read back from the candidate origin before
+  `CloudflarePublishTarget` is constructed. No books,
+  events, descriptor, normal live manifest, QR/share update, source retirement,
+  or journal `verifiedTarget` is written by this flow.
+- The candidate+Worker is saved BEFORE the first remote write so a crash can
+  resume. Verification failure leaves it unconfirmed and discloses possible
+  marker-only state. Remote verification followed by a secure-save failure has
+  distinct partial-outcome copy. A journal-only failure retries `finishSetup`
+  WITHOUT another deploy.
+- `ensureActiveHost(cloudflare)` runs only after the confirmed target is saved
+  and only when no host is active. An absent journal with a valid GitHub
+  manifest gets the legacy GitHub default WITHOUT persisting it, so the normal
+  read-back migration can still prove the old address later. Existing GitHub
+  active/verified state is untouched. Disconnect deletes only `cf_connection`;
+  it never deletes a Worker or public journal/manifest state.
+
+### 7.3 Presentation and evidence
+
+- `cloudflare_connection_controller.dart` drives typed prompts and all five D.1
+  states. `cloudflare_connection_section.dart` only maps prompts to dialogs and
+  returns answers with monotonically checked serials. `connection_tab.dart`
+  keeps the publish page a thin shell; GitHub UI state moved to
+  `github_connection_ui.dart` so queue edits did not grow its ratchet entry.
+- Masked token entry is wrapped in `SecretOnScreen`; its controller is disposed
+  and stored tokens are never reloaded into the field. Dialog validation copy
+  never echoes input. The fixed external template opens only in the external
+  browser.
+- Tests cover whole-record/corrupt-store behavior, verification order,
+  fallbacks, consent, dedup/bucket upload, pre/post version gates, exact-origin
+  success/failure/recovery, partial persistence failures, deploy-free journal
+  retry, queue serialization, prompt waits, stale answers, provider disposal,
+  all five card states, token masking/FLAG_SECURE, narrow layout and a11y.
+  Independent-review regressions also pin the legacy GitHub default, Worker-A
+  proof never confirming Worker B, post-deploy privacy/partial copy, and
+  rejected-subdomain input retention (Part M row 65).
+- The `publish_connection` golden intentionally changes from a placeholder to
+  the real connection card. Regenerate it with the Linux `update-goldens`
+  workflow; do not commit a macOS-rendered replacement.
+
+**S8 entry notes:** implement ordinary publish/replacement next. S8 still needs
+its normal manifest store, freshness/marker reader (the current bounded
+verifier's null is not a 404/unreadable distinction), R4 replacement digest and
+confirmation flow, active-host publish routing, per-hash artifact spool, and
+Android release/AOT memory evidence (now in §8.1). Do not treat the verification marker as a
+normal live manifest or use it to skip S8 replacement reconciliation.
+
+---
+
+## 8. S8 — ordinary Cloudflare publish and replacement (implemented)
+
+**Deliverable:** ordinary catalogue/events publishing to the active Cloudflare
+Worker, explicit unknown-state whole-Worker replacement, exact-marker recovery,
+and host-neutral publish UI. Moves and retirement remain S9.
+
+- `FileCloudflareManifestStore` provides atomic schema-2 persistence. Semantic
+  decoding fails the WHOLE record on unsupported schema/state, invalid ids,
+  unsafe/unknown/type-mismatched files, or incoherent live/retired file sets.
+  Normal records require marker + catalogue core; events HTML/JSON are coherent;
+  retired records are exactly index/404/marker.
+- `PublishedSiteReadVerifier` preserves Body/404/Unreadable outcomes without
+  changing the older nullable verifier. `CloudflarePublishMarkerProbe` uses only
+  a real 404 as absence; malformed/oversize/redirect/timeout stays unreadable.
+- `ActivePublishTargetResolver` uses a raw stored-journal read with no manifest
+  IO before strict reads. Only an absent journal uses the GitHub legacy default;
+  an existing journal never falls back. `PublishController` and
+  `PublishEventsController` share one Cloudflare factory and strict reads; no
+  nested queue entry or credential-based host inference exists.
+- R4 replacement preparation builds against an empty previous publication in
+  complete mode and returns typed counts + canonical digest without any remote
+  write. Confirmation re-enters the queue, revalidates anchors and rebuilds;
+  a changed digest re-prompts instead of deploying. Canonical ordering and JSON
+  normalization exclude `exportedAt`/`updatedAt`/marker ids and timestamps.
+- F.3 covers account/subdomain preflight, version gate, complete merged snapshot,
+  serial hash uploads, final marker recheck, metadata-only deploy, route/privacy
+  reconfirmation, `deployed` save, full read-back, then `live` → journal →
+  whole-connection commit. Verification checks marker, books, descriptor or its
+  real 404, events JSON, current posters, and removed-poster 404s. A deployed
+  record is verified before another deploy; `verificationOnly` never creates an
+  upload session or deployment. A `live` record with partial local commit state
+  is re-proven before repair.
+- R24 is enforced during building, not just upload: `PublishArtifactSink` spools
+  each public artifact as it is built and leaves metadata-only files in the
+  Cloudflare snapshot. `FilePublishArtifactStore` deduplicates by hash, reopens
+  64 KiB sources, and is cleaned after every result. Digest reads of volatile
+  JSON use the same spool on demand. GitHub keeps its original byte behavior.
+- The host-neutral `PublishCard` shows active host, configured target and only
+  the journal's verified share address. `replace_site_dialog.dart` shows real
+  counts and zero warnings; cancel does no work. `Retry verification` is
+  deploy-free. Events use the same dialog and host-specific history/privacy copy.
+
+### 8.1 Evidence
+
+- Unit/integration coverage includes marker 404-vs-unreadable, manifest semantic
+  corruption, target/host no-fallback, section survival, per-hash duplicate and
+  missing bytes, pre/post Version-URL gates, final race, replacement counts and
+  digest re-prompt, deploy-free recovery, live/journal/connection save order,
+  privacy and cleanup partial outcomes, secret/spool redaction, and the
+  forbidden "Publish everything" source check.
+- `lib/dev/cloudflare_memory_scenario.dart` (re-exported by
+  `integration_test/cloudflare_memory_scenario.dart`) runs 410 unique 100 KiB
+  covers through the real builder, sink, assembler and native streaming upload.
+  `test/features/publish/infrastructure/cloudflare_publish_memory_test.dart`
+  is the desktop fake-server gate. On 2026-10-28, the same scenario passed as a
+  true F-Droid **release/AOT** build on Android 16 API 36 (`emulator-5554`):
+  `fileCount=413`, `uploadedAssets=413`, `requestCount=1`,
+  `metadataOnlyBuild=true`, `rawSpoolBytes=42029177`,
+  `requestBytes=56131788`, and `peakRssBytes=491327488` (about 469 MiB). The
+  machine-readable result is `build/cloudflare_aot_memory_release.json`; the
+  reproducible command is in `docs/RELEASING.md` §6.1 step 8.
+- On 2026-10-28, the local closeout gates passed: offline locked dependency
+  resolution, build runner with no generated-source changes, formatting (966
+  files, 0 changed), `flutter analyze lib test integration_test` (zero issues),
+  and `flutter test --coverage --exclude-tags golden` (4,113 tests). The Linux
+  `update-goldens` workflow still needs to regenerate the intentional
+  `publish_connection` reference PNG.
+
+---
+
+## 9. Remaining sessions, in order, with entry criteria
 
 | Session | Entry criterion | Scope reminder |
 |---|---|---|
-| S4 (remainder) | — | Done: queue extraction, hardened-storage factory, sealed `GitHubPublishTarget`, schema-2 record + tree reconciliation, atomic typed saves, expected-head commits, the host journal + read-back-gated migration. Left: F.4 step 2's pre-deploy check (with the journal's retry command), `pendingMove` (S9), the events publish's explicit target (§4.4) |
+| S4 (remainder) | — | Done: queue, hardened storage, sealed targets, schema-2 reconciliation, atomic saves, expected-head commits, host journal, Option B pre-publish verification, target-driven events. Left: R4 digest/replacement confirmation, `pendingMove` (S9), standalone Retry verification convenience |
 | S5 | — (independent of S2) | **Done** (§5): `SitePath`, token/account/worker/subdomain/URL value objects, `CloudflarePublishTarget`, asset hash vectors, content types, schema-2 Cloudflare record + `hashScheme`, marker value object, limits. Left by design: the API/credential ports and fixed messages (S6/S7) |
-| S2 | Tool written; needs a maintainer run | `tool/cloudflare_trial/` run on a disposable account + sanitized report + the T6/T14/T15 decisions |
-| S6–S9 | S2 report | HTTP adapters, connect flow, publish/replacement, moves/retirement |
-| S10–S11 | S6–S9 | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
+| S2 | **Done** (§6) | Full restricted-token trial, sanitized report, T6/T14/T15 and asset-hash outcomes |
+| S6 | **Done** | Domain ports, account/deploy adapters + facade, bounded/native-abort transport, streamed multipart, endpoint/hostile/socket tests |
+| S7 | **Done** (§7) | Secure whole-record connection, staged setup, verification, shared queue, controller + dialogs |
+| S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
+| S9 | S8 done; implement next | Moves and retirement in both directions, pending journal, idempotent Retry/Skip and crash matrix |
+| S10–S11 | S9 done | Docs/release checklist; real-host smoke; remove `tool/cloudflare_trial/` |
 
-S4 and S5 are the last sessions that can be completed without the trial. If the
-goal is "as much as possible without credentials", stop after S5.
+S2 is complete. The trial source remains for S11 and is removed there.
 
 ---
 
-## 8. Decisions a successor must not silently reverse
+## 10. Decisions a successor must not silently reverse
 
 - **One builder per section, one merge.** Do not add a second file-assembly path
   for Cloudflare; feed the same `PublishSection` to the Cloudflare adapter.
@@ -473,6 +657,19 @@ goal is "as much as possible without credentials", stop after S5.
   host-specific regex or a "fix up the path" helper: a repaired path is a
   different file than the builder asked for, and two rules are how one host
   accepts what the other refuses.
+- **A new token starts a fresh `cf_connection`.** Never preserve account,
+  Worker, target, or confirmation flags across token replacement. The whole
+  record is secret; only `CloudflareConnectionStatus` enters UI state.
+- **Prompts never hold the publish queue.** Token/consent/name answers use
+  non-secret completers. Every mutating command re-enters the SAME provider;
+  no inner use case enqueues a nested operation.
+- **Verification is not live publication.** A verification marker may prove an
+  address/write capability, but it creates no normal manifest or
+  `verifiedTarget`. Save the confirmed target first, activate only if unset,
+  and retry journal-only failure without another deploy.
+- **Save the candidate before its first remote write.** A crash after upload or
+  deploy must resume the exact unverified Worker/address; never infer success
+  from a 404 or from an unreachable marker.
 - **The marker is not compare-and-swap.** `classifyFreshness` answers "what can
   I prove?", never "am I the only writer". Only positive evidence yields
   `known`; a 404 is never retirement and a malformed marker is never a fresh
@@ -492,45 +689,53 @@ goal is "as much as possible without credentials", stop after S5.
 
 ---
 
-## 9. Open questions / risks
+## 11. Open questions / risks
 
-1. **Single-writer guarantee** — unresolved until S2/T14. Do not claim the
-   marker gives compare-and-swap.
-2. **`PublishMode.complete` is implemented and reachable** through
-   `PublishController.publish(mode:)`, but nothing passes it yet: the move and
-   replacement commands arrive in S4/S9. It is covered by a controller test,
-   not by a user-facing path.
+1. **Single-writer limitation confirmed** — S2/T14 found no supported CAS
+   contract. One publisher at a time per Worker is an operating requirement;
+   the marker detects observed staleness but is not compare-and-swap.
+2. **Complete replacement is user-facing (S8).** Unknown/retired Cloudflare
+   state now reaches the strict complete snapshot and replacement dialog through
+   `PublishReplacementRequired`. S9 still owns complete move snapshots.
 3. **Catalogue deploy now deletes stale covers.** This is the intended R8 fix,
    but it is a *remote behavior change*: run the J.7 smoke on a real GitHub Pages
    repo before release, and note it in `CHANGELOG.md`.
-4. **`PublishSnapshot` has no digest yet** — the replacement confirmation (S4)
-   must not be built on it until R4's digest exists. The snapshot is otherwise
-   complete: counts, empty-section warnings and `availabilityOmitted` all come
-   from it.
-5. **S2 has not been run.** `tool/cloudflare_trial/` exists and is
-   analyze/format clean, but it needs a disposable account and the exact
-   restricted token. Until its report lands, no Cloudflare behavior may become
-   load-bearing.
+4. **R4 digest and confirmation are implemented (S8).** Canonical section/file
+   ordering and JSON normalization exclude operation timestamps/ids; volatile
+   JSON is read from the spool on demand. Changed content after preparation
+   requires a fresh confirmation, never a deploy of the old bytes.
+5. **S2, S6, and S7 are complete.** The sanitized report/design outcomes and
+   adapter/connection deviations are recorded in the plan. The trial tool
+   remains analyze/format/test clean for S11, when it is removed.
 6. **F.4 step 2 is implemented as Option B** (deviation rows 48/55): a
    `deployed` record at the current head is verified before the next publish.
-   A contradiction blocks; an unreachable site does not. The standalone "Retry
-   verification" button (D.3) is still open.
+   A contradiction blocks; an unreachable site does not. Cloudflare's
+   deploy-free Retry verification is implemented; the GitHub-only standalone
+   convenience remains optional because the next GitHub publish already retries.
 7. **The journal has no `pendingMove` yet** — schema 1 carries `activeHost` +
    `verifiedTarget` only. S9 adds the field; an absent field must keep meaning
    "no move" rather than requiring a migration.
 8. **`bookmark_url.dart` still refuses non-root Workers paths by design**; if a
    library ever publishes under a path (it cannot, per B.1), that assumption
    changes.
-9. **The asset-hash formula is unconfirmed (deviation 49).** The plan says
-   SHA-256; the reviewed Wrangler source uses blake3 over the same
-   `base64 + extension` input, and the docs name no algorithm. S5 implements
-   SHA-256 (the reviewed contract; blake3 would need a new dependency, R28).
-   S2/T4–T5 decides. If it changes, `hashScheme` changes with it, so stored
-   hashes are invalidated rather than reused.
+9. **The asset-hash formula is confirmed (deviations 49/59).** S2/T4–T5
+   accepted the implemented SHA-256 formula. Keep `hashScheme =
+   sha256-b64-ext-32`; no blake3 dependency or migration is needed.
+10. **Subdomain availability evidence is incomplete.** S2 did not record T3a,
+    so 10031/10032 have no guessed meaning. S7 acts only on explicit boolean
+    `available`, treats other successful shapes as unknown, and uses create +
+    exact GET confirmation. Absence is only HTTP 404 + code 10007.
+11. **The publish-connection golden needs regeneration.** S7 intentionally
+    replaces the placeholder with a real card. Use the Linux `update-goldens`
+    workflow; the normal macOS/non-golden suite does not produce reference PNGs.
+12. **Structured marker reads are implemented (S8).** Only a real HTTP 404 is
+    `MarkerAbsent`; malformed/oversize/redirect/timeout/other statuses are
+    `MarkerUnreadable`. The legacy nullable verifier remains unchanged for
+    existing read-back paths.
 
 ---
 
-## 10. File map for the work so far
+## 12. File map for the work so far
 
 **New — network (S1)**
 `lib/core/network/workers_dev_url.dart`,
@@ -541,7 +746,7 @@ goal is "as much as possible without credentials", stop after S5.
 
 **New — trial tool (S2)**
 `tool/cloudflare_trial/{main,trial_run,trial_http,trial_public,trial_multipart,
-trial_assets,trial_report}.dart` + `README.md`,
+trial_assets,trial_report,trial_cleanup,trial_versions}.dart` + `README.md`,
 `test/tool/cloudflare_trial_test.dart`.
 
 **New — publish (S5)**
@@ -550,6 +755,54 @@ trial_assets,trial_report}.dart` + `README.md`,
 cloudflare_account_id,cloudflare_worker_name,cloudflare_subdomain,
 cloudflare_site_url,unverified_cloudflare_address,cloudflare_content_type,
 cloudflare_asset_hash,cloudflare_limits,cloudflare_site_manifest}.dart`.
+
+**New — publish (S6)**
+`lib/features/publish/domain/cloudflare/{cloudflare_api,
+cloudflare_api_models}.dart`,
+`lib/features/publish/infrastructure/{cloudflare_http_transport,
+cloudflare_json,cloudflare_multipart_request,http_cloudflare_account_api,
+http_cloudflare_deploy_api,http_cloudflare_api}.dart`; generated
+`cloudflareApiProvider` in `lib/core/di/src/publish_providers.dart`.
+Focused account/deploy/transport/multipart/JSON/domain tests plus real-loopback
+`cloudflare_socket_abort_test.dart` and generic multipart timeout regressions.
+
+**New — publish (S7)**
+`lib/features/publish/domain/cloudflare/{cloudflare_connection,
+cloudflare_credential_store,cloudflare_error_messages}.dart`,
+`lib/features/publish/domain/site/publish_marker_codec.dart`,
+`lib/features/publish/infrastructure/{secure_storage_cloudflare_credential_store,
+cloudflare_publish_marker_codec}.dart`,
+`lib/features/publish/application/cloudflare/{setup_cloudflare_site,
+setup_cloudflare_account,setup_cloudflare_result,verify_cloudflare_address,
+cloudflare_connection_controller,cloudflare_connection_ui}.dart`,
+`lib/features/publish/presentation/widgets/{connection_tab,
+cloudflare_connection_section,cloudflare_tile,cloudflare_token_dialog,
+cloudflare_name_dialogs,cloudflare_verification_dialog}.dart`, and
+`lib/features/publish/application/github_connection_ui.dart`. Generated bindings
+include the credential store, marker codec/verifier, setup use case, connection
+controller, and the keep-alive `publishOperationQueueProvider`. Focused
+store/setup/verification/controller/dialog/tile tests live beside the existing
+publish suites, with shared fakes in `test/features/publish/support/`.
+
+**New — publish (S8)**
+`lib/features/publish/application/cloudflare/{cloudflare_artifact_store,
+cloudflare_manifest_store,cloudflare_publication_verifier,
+cloudflare_publish_artifacts,cloudflare_publish_marker_probe,
+cloudflare_publish_outcomes,cloudflare_publish_preflight,
+cloudflare_replacement_preparation,cloudflare_verified_state_commit,
+publish_to_cloudflare_use_case}.dart`,
+`lib/features/publish/application/site/{active_publish_target,publish_site_status,
+publish_site_status_controller,publish_snapshot_digest}.dart`,
+`lib/features/publish/domain/site/publish_artifact_sink.dart`,
+`lib/features/publish/infrastructure/{file_cloudflare_manifest_store,
+file_publish_artifact_store}.dart`,
+`lib/features/publish/presentation/widgets/{publish_card,replace_site_dialog}.dart`,
+`lib/core/di/src/cloudflare_publish_providers.dart`, and
+`lib/dev/{cloudflare_memory_scenario,cloudflare_aot_memory_app}.dart`,
+`integration_test/cloudflare_memory_scenario.dart` (re-export), and
+`tool/cloudflare_aot_memory.sh`. Focused S8 fakes live in
+`test/features/publish/support/cloudflare_s8_fakes.dart`; behavior, security,
+fake-server and memory tests sit beside the new modules.
 
 **New — publish (S3)**
 `lib/features/publish/domain/site/{publish_file,publish_section,publish_mode,
@@ -576,6 +829,10 @@ prefs_publish_host_store}.dart`.
 section_card}.dart`, `docs/adr/0017-cloudflare-workers-publishing.md`.
 
 **Materially changed**
+S7 also wires the shared queue through `publish_controller.dart`,
+`publish_events_controller.dart`, `github_connection_controller.dart`, and
+`setup_github_repo.dart`; adds `ensureActiveHost` to the host repository; adds
+`CloudflareFailure`; and updates the publish page/provider tile plus DI.
 `lib/features/publish/application/{publish_library_use_case,
 publish_events_use_case,publish_cover_decider,publish_controller}.dart`,
 `lib/core/di/src/publish_providers.dart` (one snapshot-builder wiring),
@@ -605,9 +862,9 @@ the drift repository, refresh, controller, add-member and network-page suites.
 
 ---
 
-## 11. Secrets
+## 13. Secrets
 
 No token, JWT, account id or credential is committed anywhere in this work.
-The only Cloudflare-shaped strings in the tree are the published-address
-grammar, the ADR text and the plan. When the trial tool is written, its report
-must stay sanitized (fixed labels, numeric codes) exactly as Part L requires.
+The S2 token was read from macOS Keychain into the trial process only. The
+recorded report contains fixed labels, numeric codes and whitelisted headers,
+exactly as Part L requires; it contains no authorization header or raw body.

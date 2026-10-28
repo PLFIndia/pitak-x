@@ -63,13 +63,21 @@ final class TrialReport {
     _lines.add('$id $label: MANUAL${_suffix(detail)}');
   }
 
-  /// True when no check failed.
-  bool get passed => !_status.values.contains(TrialStatus.fail);
+  /// True only when every check ran and no check failed.
+  bool get passed =>
+      !_status.values.contains(TrialStatus.fail) &&
+      !_status.values.contains(TrialStatus.skip);
 
   /// The ids that failed, in insertion order.
   List<String> get failedIds => [
     for (final entry in _status.entries)
       if (entry.value == TrialStatus.fail) entry.key,
+  ];
+
+  /// The ids that did not run, in insertion order.
+  List<String> get skippedIds => [
+    for (final entry in _status.entries)
+      if (entry.value == TrialStatus.skip) entry.key,
   ];
 
   /// The whole report, one line per entry.
@@ -80,11 +88,14 @@ final class TrialReport {
     for (final line in _lines) {
       buffer.writeln(line);
     }
-    buffer
-      ..writeln()
-      ..writeln(
-        passed ? 'RESULT: PASS' : 'RESULT: FAIL (${failedIds.join(', ')})',
-      );
+    buffer.writeln();
+    if (failedIds.isNotEmpty) {
+      buffer.writeln('RESULT: FAIL (${failedIds.join(', ')})');
+    } else if (skippedIds.isNotEmpty) {
+      buffer.writeln('RESULT: INCOMPLETE (${skippedIds.join(', ')})');
+    } else {
+      buffer.writeln('RESULT: PASS');
+    }
     return buffer.toString();
   }
 

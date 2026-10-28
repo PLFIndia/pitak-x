@@ -28,7 +28,8 @@ Optional environment:
 |---|---|
 | `CF_ACCOUNT_ID` | Skip account listing. Required when listing is refused or truncated. |
 | `CF_CREATE_SUBDOMAIN=1` | Allow creating the permanent account subdomain. Throw-away accounts only. |
-| `CF_TRIAL_SKIP_LARGE=1` | Skip the ~2,000-file bucket measurement (T5b). |
+| `CF_TRIAL_SKIP_LARGE=1` | Skip the ~2,000-file bucket measurement (T5b). The result is incomplete. |
+| `CF_CLEANUP_PREVIOUS=1` | On a disposable account only, delete and verify exact random-name matches left by an interrupted trial before starting. |
 
 Exit codes: `0` every check passed, `1` a check failed, `2` no usable token.
 
@@ -46,7 +47,7 @@ Exit codes: `0` every check passed, `1` a check failed, `2` no usable token.
 | T8 | Root/index/JSON/404 behaviour, content types, `no-cache` and CORS. |
 | T9 | Is the deployment id available (diagnostics only)? |
 | T10 | Does a second deploy dedupe unchanged files and remove the dropped `events.json`? |
-| T11 | With version URLs off, is the earlier version unreachable? |
+| T11 | With version URLs off, is the earlier version unreachable? Does a failed disable leave it reachable until a confirmed off? |
 | T12 | Does a retired deploy serve the moved page, a 404 for `books.json`, the retired marker and the full CSP headers? |
 | T13 | Is the trial Worker deleted and verified absent? |
 | T14 | **Manual:** is there a supported conditional-deployment contract? Record the evidence. |

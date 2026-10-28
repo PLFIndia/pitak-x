@@ -19,8 +19,13 @@ enum ProviderConfig {
   /// Signed in, but no target repo yet.
   partial('Partially configured', Icons.warning_amber_rounded),
 
-  /// Not signed in / nothing set up (also the only state an unimplemented
-  /// provider can ever be in).
+  /// A manual Cloudflare address still needs exact-origin verification.
+  addressNotConfirmed('Address not confirmed yet', Icons.warning_amber_rounded),
+
+  /// Confirmed target, but no deployment/read-back has proved write access.
+  readyToPublish('Ready to publish', Icons.check_circle_outline),
+
+  /// Not signed in / nothing set up.
   notConfigured('Not configured', Icons.cancel);
 
   const ProviderConfig(this.label, this.icon);
@@ -37,10 +42,14 @@ enum ProviderConfig {
       brightness == Brightness.dark
           ? Colors.green.shade400
           : Colors.green.shade700,
-    ProviderConfig.partial =>
+    ProviderConfig.partial || ProviderConfig.addressNotConfirmed =>
       brightness == Brightness.dark
           ? Colors.amber.shade300
           : Colors.amber.shade800,
+    ProviderConfig.readyToPublish =>
+      brightness == Brightness.dark
+          ? Colors.lightBlue.shade300
+          : Colors.blue.shade700,
     ProviderConfig.notConfigured =>
       brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade700,
   };

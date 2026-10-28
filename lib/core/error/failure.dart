@@ -238,6 +238,26 @@ final class NetworkFailure extends Failure {
   const NetworkFailure();
 }
 
+/// An expected Cloudflare setup or publishing failure with fixed safe copy.
+///
+/// The message is selected from application-owned constants. It must never be
+/// built from a token, credential-bearing URL, response body, or platform
+/// exception text.
+final class CloudflareFailure extends Failure {
+  /// Creates a failure whose [message] is safe to display verbatim.
+  const CloudflareFailure(
+    this.message, {
+    this.requiresCompleteSnapshot = false,
+  });
+
+  /// Fixed, user-facing Cloudflare failure copy.
+  final String message;
+
+  /// True only when missing artifact bytes require the R4 replacement flow.
+  /// This is an application control-flow fact, never a UI prompt by itself.
+  final bool requiresCompleteSnapshot;
+}
+
 /// An unexpected error (a bug). Caller should log, wipe sensitive state, and
 /// fail closed — never expose [debugReason] to the user.
 final class UnexpectedFailure extends Failure {

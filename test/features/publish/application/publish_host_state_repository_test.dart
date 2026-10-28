@@ -9,6 +9,7 @@ import 'package:pitaka/features/publish/application/site/publish_host_state_repo
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
@@ -182,6 +183,87 @@ void main() {
       ).verifiedSiteUrl();
 
       expect(url, isNull);
+      expect(verifier.calls, isEmpty);
+    });
+  });
+
+  group('ensureActiveHost (S7 setup)', () {
+    test(
+      'sets only the host when unset, never a verified-live pointer',
+      () async {
+        final store = _Store();
+        final result = await repository(
+          store: store,
+        ).ensureActiveHost(PublishHost.cloudflare);
+
+        expect(result.isRight(), isTrue);
+        expect(store.stored?.activeHost, PublishHost.cloudflare);
+        expect(store.stored?.verifiedTarget, isNull);
+      },
+    );
+
+    test('preserves an existing GitHub active and verified target', () async {
+      final journal = PublishHostState.empty.afterVerifiedPublish(github);
+      final store = _Store(journal);
+      final result = await repository(
+        store: store,
+      ).ensureActiveHost(PublishHost.cloudflare);
+
+      expect(result.isRight(), isTrue);
+      expect(store.stored, same(journal));
+      expect(store.saves, 0);
+    });
+
+    test('returns a failed journal write', () async {
+      final store = _Store()..fails = true;
+      final result = await repository(
+        store: store,
+      ).ensureActiveHost(PublishHost.cloudflare);
+      expect(result.isLeft(), isTrue);
+    });
+
+    test(
+      'legacy GitHub default blocks a switch without bypassing migration',
+      () async {
+        final bytes = utf8.encode('{"books":[]}');
+        final store = _Store();
+        final verifier = _Verifier((_, _) async => bytes);
+        final repo = repository(
+          store: store,
+          manifest: PublishManifest(
+            repo: 'me/lib',
+            fileShas: {
+              PublishHostStateRepository.proofPath: GitBlobSha.of(bytes),
+            },
+          ),
+          verifier: verifier,
+        );
+
+        final result = await repo.ensureActiveHost(PublishHost.cloudflare);
+        expect(result.isRight(), isTrue);
+        expect(store.saves, 0);
+        expect(store.stored, isNull);
+        expect(repo.currentState()?.activeHost, PublishHost.github);
+        expect(repo.currentState()?.verifiedTarget, isNull);
+
+        // The unpersisted default leaves the raw journal absent, so the normal
+        // read-back-gated migration still runs and can later prove the address.
+        final url = await repo.verifiedSiteUrl();
+        expect(url, 'https://me.github.io/lib/');
+        expect(verifier.calls, hasLength(1));
+        expect(store.stored?.activeHost, PublishHost.github);
+        expect(store.stored?.verifiedTarget?.targetId, github.targetId);
+      },
+    );
+
+    test('currentState performs no migration read-back', () async {
+      final verifier = _Verifier((_, _) async => fail('must not fetch'));
+      final store = _Store(PublishHostState.empty);
+      final current = repository(
+        store: store,
+        verifier: verifier,
+      ).currentState();
+      expect(current, same(store.stored));
       expect(verifier.calls, isEmpty);
     });
   });

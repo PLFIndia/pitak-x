@@ -17,7 +17,8 @@ import 'package:pitaka/features/network/domain/published_site_url_policy.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 /// Reads published files under the site's own origin and directory.
-final class BoundedPublishedSiteVerifier implements PublishedSiteVerifier {
+final class BoundedPublishedSiteVerifier
+    implements PublishedSiteVerifier, PublishedSiteReadVerifier {
   /// Creates the verifier over an injected (unauthenticated) [client].
   const BoundedPublishedSiteVerifier({
     required http.Client client,
@@ -36,13 +37,33 @@ final class BoundedPublishedSiteVerifier implements PublishedSiteVerifier {
     required int maxBytes,
     String? cacheBuster,
   }) async {
-    if (maxBytes <= 0) return null;
+    final outcome = await readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+    return switch (outcome) {
+      PublishedSiteReadBody(:final bytes) => bytes,
+      // The original verifier port deliberately keeps every refusal as null.
+      PublishedSiteReadAbsent() || PublishedSiteReadUnreadable() => null,
+    };
+  }
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    if (maxBytes <= 0) return const PublishedSiteReadUnreadable();
     final url = PublishedSiteUrlPolicy.readBackUrl(
       siteUrl,
       path,
       cacheBuster: cacheBuster,
     );
-    if (url == null) return null;
+    if (url == null) return const PublishedSiteReadUnreadable();
 
     final fetcher = BoundedHttpFetcher(
       client: _client,
@@ -55,10 +76,12 @@ final class BoundedPublishedSiteVerifier implements PublishedSiteVerifier {
     );
     final outcome = await fetcher.fetch(url);
     return switch (outcome) {
-      FetchedBytes(:final bytes) => bytes,
-      // Every refusal maps to the same "could not verify" answer. The viewer
-      // keeps its own, richer refusal mapping.
-      FetchRefused() => null,
+      FetchedBytes(:final bytes) => PublishedSiteReadBody(bytes),
+      // Only an actual 404 is absence. A redirect, 500, timeout, or oversized
+      // body remains unreadable and can never authorize a fresh-site decision.
+      FetchRefused(reason: FetchRefusal.httpStatus, statusCode: 404) =>
+        const PublishedSiteReadAbsent(),
+      FetchRefused() => const PublishedSiteReadUnreadable(),
     };
   }
 }

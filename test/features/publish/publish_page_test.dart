@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -8,6 +9,8 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/domain/repositories/events_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -15,6 +18,7 @@ import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/a11y.dart';
+import 'support/cloudflare_fakes.dart';
 
 /// An in-memory credential store, starting signed out, so the Connection tab
 /// renders its "Sign in" state without any network.
@@ -191,10 +195,24 @@ class _EmptyEventsRepo implements EventsRepository {
       right('posters/x.jpg');
 }
 
+List<Override> _cloudflareOverrides() {
+  final graph = CloudflareSetupHarness();
+  final documents = Directory.systemTemp.createTempSync('pitaka_publish_page_');
+  addTearDown(() {
+    if (documents.existsSync()) documents.deleteSync(recursive: true);
+  });
+  return [
+    setupCloudflareSiteProvider.overrideWith((ref) async => graph.setup),
+    cloudflareCredentialStoreProvider.overrideWithValue(graph.credentials),
+    appDocsDirProvider.overrideWith((ref) async => documents),
+  ];
+}
+
 Future<Widget> _app({PublishTab initialTab = PublishTab.connection}) async {
   SharedPreferences.setMockInitialValues({'library_name': 'My Shelf'});
   return ProviderScope(
     overrides: [
+      ..._cloudflareOverrides(),
       publishCredentialStoreProvider.overrideWithValue(_FakeCreds()),
       eventsRepositoryProvider.overrideWith((ref) async => _EmptyEventsRepo()),
     ],
@@ -203,6 +221,35 @@ Future<Widget> _app({PublishTab initialTab = PublishTab.connection}) async {
 }
 
 void main() {
+  test(
+    'publishSiteStatus completes with a bounded number of evaluations',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final container = ProviderContainer(
+        overrides: [
+          ..._cloudflareOverrides(),
+          publishCredentialStoreProvider.overrideWithValue(_FakeCreds()),
+        ],
+      );
+      addTearDown(container.dispose);
+      final states = <AsyncValue<PublishSiteStatus>>[];
+      final subscription = container.listen(
+        publishSiteStatusProvider,
+        (_, next) => states.add(next),
+        fireImmediately: true,
+      );
+      addTearDown(subscription.close);
+
+      final status = await container
+          .read(publishSiteStatusProvider.future)
+          .timeout(const Duration(seconds: 2));
+
+      expect(status.activeHost, isNull);
+      await Future<void>.delayed(Duration.zero);
+      expect(states.length, lessThan(5));
+    },
+  );
+
   testWidgets('renders the three tabs', (tester) async {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
@@ -212,7 +259,7 @@ void main() {
     expect(find.text('Events'), findsWidgets); // tab label
   });
 
-  testWidgets('Connection tab shows sign-in + an unavailable Cloudflare card', (
+  testWidgets('Connection tab shows sign-in + a Cloudflare connection card', (
     tester,
   ) async {
     await tester.pumpWidget(await _app());
@@ -220,7 +267,8 @@ void main() {
 
     expect(find.text('Sign in to GitHub'), findsOneWidget);
     expect(find.text('Cloudflare Workers'), findsOneWidget);
-    expect(find.text('Coming soon'), findsOneWidget);
+    expect(find.text('Coming soon'), findsNothing);
+    expect(find.text('Not configured'), findsNWidgets(2));
   });
 
   testWidgets('Basic info starts read-only, then Edit reveals fields', (
@@ -281,6 +329,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ..._cloudflareOverrides(),
             publishCredentialStoreProvider.overrideWithValue(creds),
             gitHubApiProvider.overrideWithValue(api),
             eventsRepositoryProvider.overrideWith(
@@ -336,6 +385,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ..._cloudflareOverrides(),
             publishCredentialStoreProvider.overrideWithValue(creds),
             gitHubApiProvider.overrideWithValue(api),
             eventsRepositoryProvider.overrideWith(
@@ -402,6 +452,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ..._cloudflareOverrides(),
             publishCredentialStoreProvider.overrideWithValue(_FakeCreds()),
             gitHubApiProvider.overrideWithValue(api),
             eventsRepositoryProvider.overrideWith(
@@ -453,6 +504,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          ..._cloudflareOverrides(),
           publishCredentialStoreProvider.overrideWithValue(
             _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
           ),
@@ -503,6 +555,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ..._cloudflareOverrides(),
             publishCredentialStoreProvider.overrideWithValue(creds),
             gitHubApiProvider.overrideWithValue(api),
             eventsRepositoryProvider.overrideWith(
@@ -691,6 +744,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
+            ..._cloudflareOverrides(),
             publishCredentialStoreProvider.overrideWithValue(creds),
             eventsRepositoryProvider.overrideWith(
               (ref) async => _EmptyEventsRepo(),
@@ -743,28 +797,25 @@ void main() {
       expect(find.text('Current: me/lib'), findsOneWidget);
     });
 
-    testWidgets('Cloudflare tile: collapsed, no fake fields, note on expand', (
-      tester,
-    ) async {
-      await pumpCreds(tester, _FakeCreds());
+    testWidgets(
+      'Cloudflare tile: collapsed setup, real connect action on expand',
+      (tester) async {
+        await pumpCreds(tester, _FakeCreds());
 
-      expect(find.text('Cloudflare Workers'), findsOneWidget);
-      expect(find.text('Coming soon'), findsOneWidget);
-      // Collapsed: the body note is not built; the old fake disabled fields
-      // are gone for good.
-      expect(
-        find.textContaining('Publishing your catalogue straight to Cloudflare'),
-        findsNothing,
-      );
-      expect(find.text('Cloudflare API token'), findsNothing);
+        expect(find.text('Cloudflare Workers'), findsOneWidget);
+        expect(find.text('Coming soon'), findsNothing);
+        expect(find.text('Connect Cloudflare'), findsNothing);
 
-      await tester.tap(find.text('Cloudflare Workers'));
-      await tester.pumpAndSettle();
-      expect(
-        find.textContaining('Publishing your catalogue straight to Cloudflare'),
-        findsOneWidget,
-      );
-    });
+        await tester.tap(find.text('Cloudflare Workers'));
+        await tester.pumpAndSettle();
+        expect(
+          find.textContaining('Worker dedicated to Pitak'),
+          findsOneWidget,
+        );
+        expect(find.text('Connect Cloudflare'), findsOneWidget);
+        expect(find.text('Cloudflare API token'), findsNothing);
+      },
+    );
   });
 
   testWidgets('meets accessibility guidelines', (tester) async {

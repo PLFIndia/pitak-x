@@ -7,7 +7,7 @@ part of 'github_connection_controller.dart';
 // **************************************************************************
 
 String _$gitHubConnectionControllerHash() =>
-    r'99448d234662b0f84cb744f994aa42879374247d';
+    r'9ca6f940c37b317b58e966b08adebfca01a41ba0';
 
 /// Owns the GitHub connection tab's state machine (application layer).
 ///

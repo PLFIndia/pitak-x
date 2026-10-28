@@ -65,10 +65,14 @@ abstract final class TrialPublic {
     Uri uri, {
     int cap = 64 * 1024,
     Duration deadline = const Duration(seconds: 20),
+    Future<HttpClientRequest> Function(Uri uri)? openUrl,
   }) async {
     final client = HttpClient()..connectionTimeout = deadline;
     try {
-      final request = await client.getUrl(uri).timeout(deadline);
+      // [openUrl] is a test seam; production always uses the real client.
+      final request = await (openUrl?.call(uri) ?? client.getUrl(uri)).timeout(
+        deadline,
+      );
       request
         ..followRedirects = false
         ..headers.set(HttpHeaders.userAgentHeader, 'pitak-trial');
@@ -94,6 +98,13 @@ abstract final class TrialPublic {
         headers: {},
         bytes: 0,
         errorLabel: 'timeout',
+      );
+    } on TlsException {
+      return const PublicResponse(
+        status: 0,
+        headers: {},
+        bytes: 0,
+        errorLabel: 'tls',
       );
     } on SocketException {
       return const PublicResponse(

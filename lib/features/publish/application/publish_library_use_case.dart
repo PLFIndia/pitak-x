@@ -288,16 +288,18 @@ final class PublishLibraryUseCase {
           revision: now,
         );
         if (pagesLive ?? false) {
-          // Proven live ⇒ the journal may now claim this address (R33). This
-          // is the ONLY place the share/QR address is set by the catalogue
-          // path, and it happens after the proof, never before.
-          localStateSaved =
-              (await _hostState.recordVerified(target)).isRight() &&
-              localStateSaved;
-          // The manifest upgrade is not reported on its own: a failure leaves
-          // the record `deployed`, which is the truth (the commit landed, its
-          // verification did not finish) and the next publish re-verifies it.
-          _manifest.save(committed.asLive());
+          // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). If the live
+          // upgrade succeeds it supersedes any earlier `deployed`-save failure;
+          // if it fails, the journal must not advance and the partial outcome
+          // remains visible. A journal failure after a successful live save is
+          // also reported rather than hidden behind "Published!".
+          final liveSaved = _manifest.save(committed.asLive()).isRight();
+          localStateSaved = liveSaved;
+          if (liveSaved) {
+            localStateSaved = (await _hostState.recordVerified(
+              target,
+            )).isRight();
+          }
         }
         return PublishSuccess(
           pagesUrl: pagesUrl,

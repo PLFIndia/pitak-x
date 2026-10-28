@@ -22,13 +22,17 @@ void main() {
     accountSubdomain: 'kadugodi',
   )!;
 
-  CloudflareAssetEntry entry(String sha, {String? hash, int size = 10}) =>
-      CloudflareAssetEntry(
-        sha: sha,
-        hash: hash ?? CloudflareAssetHash.of(const [1, 2, 3], 'json'),
-        size: size,
-        type: CloudflareContentType.json,
-      );
+  CloudflareAssetEntry entry(
+    String sha, {
+    String? hash,
+    int size = 10,
+    CloudflareContentType type = CloudflareContentType.json,
+  }) => CloudflareAssetEntry(
+    sha: sha,
+    hash: hash ?? CloudflareAssetHash.of(const [1, 2, 3], type.extension),
+    size: size,
+    type: type,
+  );
 
   CloudflareSiteManifest live({
     Map<String, CloudflareAssetEntry>? files,
@@ -39,7 +43,13 @@ void main() {
     state: PublishState.live,
     publishId: 'a' * 32,
     hashScheme: hashScheme,
-    files: files ?? {'books.json': entry('sha-books')},
+    files:
+        files ??
+        {
+          'books.json': entry('sha-books'),
+          'index.html': entry('sha-index', type: CloudflareContentType.html),
+          'pitak-publish.json': entry('sha-marker'),
+        },
     coverUrlByBookId: covers,
   );
 
@@ -115,16 +125,29 @@ void main() {
       );
     });
 
-    test('an unknown state reads as deployed, never as live', () {
+    test('an unknown state invalidates the whole record', () {
       final json = live().toJson()..['state'] = 'something-new';
 
-      expect(
-        CloudflareSiteManifest.fromJson(json).state,
-        PublishState.deployed,
-      );
+      final decoded = CloudflareSiteManifest.fromJson(json);
+
+      expect(decoded.target, isNull);
+      expect(decoded.ownedPaths, isEmpty);
     });
 
-    test('a malformed file entry is dropped, not guessed', () {
+    test('an unsupported schema invalidates the whole record', () {
+      final json = live().toJson()..['schema'] = 1;
+
+      expect(CloudflareSiteManifest.fromJson(json).target, isNull);
+    });
+
+    test('a missing or malformed publish id invalidates the whole record', () {
+      for (final value in [null, 'not-a-publish-id']) {
+        final json = live().toJson()..['publishId'] = value;
+        expect(CloudflareSiteManifest.fromJson(json).target, isNull);
+      }
+    });
+
+    test('a malformed file entry invalidates the whole record', () {
       final json = live().toJson();
       (json['files']! as Map<String, Object?>)['broken.json'] = {
         'sha': 'x',
@@ -135,8 +158,93 @@ void main() {
 
       final decoded = CloudflareSiteManifest.fromJson(json);
 
-      expect(decoded.entryFor('broken.json'), isNull);
-      expect(decoded.entryFor('books.json'), isNotNull);
+      expect(decoded.target, isNull);
+      expect(decoded.ownedPaths, isEmpty);
+    });
+
+    test('an unsafe or type-mismatched path invalidates the whole record', () {
+      for (final path in ['../escape.json', 'books.html', 'unknown.json']) {
+        final json = live().toJson();
+        final files = json['files']! as Map<String, Object?>;
+        final books = files.remove('books.json');
+        if (books == null) fail('books.json fixture missing');
+        files[path] = books;
+
+        final decoded = CloudflareSiteManifest.fromJson(json);
+
+        expect(decoded.target, isNull, reason: path);
+        expect(decoded.ownedPaths, isEmpty, reason: path);
+      }
+    });
+  });
+
+  group('state-specific file sets', () {
+    test('normal records require the marker and catalogue core', () {
+      const core = {'books.json', 'index.html', 'pitak-publish.json'};
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: core,
+        ),
+        isTrue,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.deployed,
+          paths: core.difference({'pitak-publish.json'}),
+        ),
+        isFalse,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: {...core, '404.html'},
+        ),
+        isFalse,
+      );
+    });
+
+    test('events files are coherent and posters cannot stand alone', () {
+      const core = {'books.json', 'index.html', 'pitak-publish.json'};
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: {...core, 'events.json'},
+        ),
+        isFalse,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: {...core, 'posters/a.jpg'},
+        ),
+        isFalse,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: {...core, 'events.html', 'events.json', 'posters/a.jpg'},
+        ),
+        isTrue,
+      );
+    });
+
+    test('retired records are exactly the moved-page set', () {
+      const moved = {'index.html', '404.html', 'pitak-publish.json'};
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.retired,
+          paths: moved,
+        ),
+        isTrue,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.retired,
+          paths: {...moved, 'books.json'},
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -145,7 +253,7 @@ void main() {
       final manifest = live(hashScheme: 'blake3-b64-ext-32');
 
       expect(manifest.hashesTrusted, isFalse);
-      expect(manifest.ownedPaths, ['books.json']);
+      expect(manifest.ownedPaths, contains('books.json'));
     });
 
     test('a missing scheme is not trusted', () {

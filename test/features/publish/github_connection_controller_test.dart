@@ -5,12 +5,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
-import 'package:pitaka/features/publish/application/publish_controller.dart';
-import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
-import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 
 /// In-memory credential store that COUNTS writes, so tests can assert the
 /// token landed in the store exactly once (and never in the UI state).
@@ -187,35 +184,11 @@ class _FakeGitHubApi implements GitHubApi {
   }) async => const PublishCommitSuccess('sha', []);
 }
 
-/// PublishController stand-in that returns a fixed result without touching
-/// the (heavy) publish dependency graph — this test only checks how the
-/// connection controller MAPS the result, not publishing itself (that is
-/// covered by `publish_controller_test.dart`).
-class _FakePublishController extends PublishController {
-  _FakePublishController(this._result);
-  final PublishResult _result;
-  int calls = 0;
-
-  @override
-  FutureOr<PublishResult?> build() => null;
-
-  @override
-  Future<PublishResult> publish({
-    PublishMode mode = PublishMode.incremental,
-  }) async {
-    calls++;
-    return _result;
-  }
-}
-
 /// Owns a container + the collected UI states for one test.
 class _Harness {
-  _Harness({
-    _FakeCreds? creds,
-    _FakeGitHubApi? api,
-    PublishController? publishController,
-  }) : creds = creds ?? _FakeCreds(),
-       api = api ?? _FakeGitHubApi() {
+  _Harness({_FakeCreds? creds, _FakeGitHubApi? api})
+    : creds = creds ?? _FakeCreds(),
+      api = api ?? _FakeGitHubApi() {
     container = ProviderContainer(
       overrides: [
         publishCredentialStoreProvider.overrideWithValue(this.creds),
@@ -228,15 +201,6 @@ class _Harness {
             sleep: (_) async {},
           ),
         ),
-        if (publishController != null)
-          publishControllerProvider.overrideWith(() => publishController),
-        // Counting override so publish()'s `ref.invalidate` of the drawer
-        // link provider is observable (each invalidation recomputes it while
-        // listened to).
-        publishedSiteUrlProvider.overrideWith((ref) async {
-          publishedSiteUrlComputations++;
-          return null;
-        }),
       ],
     );
     addTearDown(container.dispose);
@@ -253,9 +217,6 @@ class _Harness {
   final _FakeCreds creds;
   final _FakeGitHubApi api;
   late final ProviderSubscription<AsyncValue<GitHubConnectionUi>> subscription;
-
-  /// How often the drawer-link provider was (re)computed.
-  int publishedSiteUrlComputations = 0;
 
   /// Every emitted (non-loading) UI state, in order.
   final List<GitHubConnectionUi> states = [];
@@ -288,7 +249,7 @@ void main() {
           (s) =>
               '${s.phase}|${s.signedIn}|${s.targetRepo}|${s.repos}|'
               '${s.awaitingUserCode}|${s.awaitingVerificationUri}|'
-              '${s.repoPromptInitialName}|${s.statusMessage}|${s.publishedUrl}',
+              '${s.repoPromptInitialName}|${s.statusMessage}',
         )
         .join('\n');
     expect(rendered, isNot(contains('SECRET-TOKEN')));
@@ -746,88 +707,6 @@ void main() {
       expect(h.last.phase, GitHubConnectionPhase.idle);
     });
   });
-
-  group('publish()', () {
-    test('success maps to the live message + published URL and refreshes the '
-        'drawer link provider', () async {
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-        publishController: _FakePublishController(
-          const PublishSuccess(
-            pagesUrl: 'https://me.github.io/lib/',
-            uploadedPaths: ['index.html'],
-            pagesLive: true,
-          ),
-        ),
-      );
-      // Keep the drawer-link provider alive so an invalidation recomputes it
-      // eagerly and the counter moves.
-      final urlSub = h.container.listen(
-        publishedSiteUrlProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(urlSub.close);
-      await h.container.read(publishedSiteUrlProvider.future);
-      expect(h.publishedSiteUrlComputations, 1);
-
-      await h.settle();
-      await h.notifier.publish();
-
-      expect(h.last.publishedUrl, 'https://me.github.io/lib/');
-      expect(h.last.statusMessage, 'Published! Your site is live.');
-      expect(h.last.phase, GitHubConnectionPhase.idle);
-      // The drawer share link was invalidated; the recompute is scheduled on
-      // a microtask, so drain it before counting.
-      await Future<void>.delayed(Duration.zero);
-      expect(h.publishedSiteUrlComputations, 2);
-    });
-
-    test(
-      'failure maps to a prefixed reason and clears the published URL',
-      () async {
-        final h = _Harness(
-          creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-          publishController: _FakePublishController(
-            const PublishFailure('safe fixed reason'),
-          ),
-        );
-        await h.settle();
-        await h.notifier.publish();
-
-        expect(h.last.publishedUrl, isNull);
-        expect(h.last.statusMessage, 'Publish failed: safe fixed reason');
-      },
-    );
-
-    test('a publish exception collapses to the fixed safe message', () async {
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-        publishController: _ThrowingPublishController(),
-      );
-      await h.settle();
-      await h.notifier.publish();
-
-      expect(h.last.publishedUrl, isNull);
-      expect(
-        h.last.statusMessage,
-        'Publish failed: Something went wrong. Please try again.',
-      );
-    });
-
-    test('publish is refused without a target repo', () async {
-      final fake = _FakePublishController(
-        const PublishSuccess(pagesUrl: 'u', uploadedPaths: []),
-      );
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN'),
-        publishController: fake,
-      );
-      await h.settle();
-      await h.notifier.publish();
-      expect(fake.calls, 0);
-    });
-  });
 }
 
 /// requestDeviceCode itself throwing (transport down before the flow starts).
@@ -837,14 +716,4 @@ class _ThrowingRequestApi extends _FakeGitHubApi {
     required String clientId,
     required String scope,
   }) => throw const GitHubApiException('no route to host');
-}
-
-class _ThrowingPublishController extends PublishController {
-  @override
-  FutureOr<PublishResult?> build() => null;
-
-  @override
-  Future<PublishResult> publish({
-    PublishMode mode = PublishMode.incremental,
-  }) async => throw const GitHubApiException('private transport detail');
 }

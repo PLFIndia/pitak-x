@@ -83,7 +83,7 @@ final class PublishMarker {
     final schema = json['schema'];
     if (schema is! int || schema != currentSchema) return null;
     final publishId = json['publishId'];
-    if (publishId is! String || !_isPublishId(publishId)) return null;
+    if (publishId is! String || !isValidPublishId(publishId)) return null;
     final publishedAt = json['publishedAt'];
     if (publishedAt is! int || publishedAt < 0) return null;
     final state = _stateFrom(json['state']);
@@ -109,7 +109,8 @@ final class PublishMarker {
   @override
   String toString() => 'PublishMarker(${state.name}, $publishId)';
 
-  static bool _isPublishId(String value) {
+  /// True only for a 128-bit lower-case hexadecimal publish id.
+  static bool isValidPublishId(String value) {
     if (value.length != publishIdLength) return false;
     for (final unit in value.codeUnits) {
       final isDigit = unit >= 0x30 && unit <= 0x39;

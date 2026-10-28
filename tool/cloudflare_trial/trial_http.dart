@@ -105,14 +105,21 @@ final class TrialResponse {
 /// The trial's API client.
 final class TrialHttp {
   /// Creates a client over [token].
-  TrialHttp({required String token, required String userAgent})
-    : _token = token,
-      _userAgent = userAgent {
+  TrialHttp({
+    required String token,
+    required String userAgent,
+    Future<HttpClientRequest> Function(String method, Uri uri)? openUrl,
+  }) : _token = token,
+       _userAgent = userAgent,
+       _openUrl = openUrl {
     _client = HttpClient()..connectionTimeout = const Duration(seconds: 20);
   }
 
   final String _token;
   final String _userAgent;
+
+  /// Test seam for transport failures; production always uses [_client].
+  final Future<HttpClientRequest> Function(String method, Uri uri)? _openUrl;
   late final HttpClient _client;
 
   /// Sends one request to the fixed API origin.
@@ -164,7 +171,9 @@ final class TrialHttp {
     final uri = Uri.parse('${CloudflareLimits.apiBase}$path');
     HttpClientRequest? request;
     try {
-      final opened = await _client.openUrl(method, uri).timeout(deadline);
+      final opened =
+          await (_openUrl?.call(method, uri) ?? _client.openUrl(method, uri))
+              .timeout(deadline);
       request = opened
         ..followRedirects = false
         ..headers.set(
@@ -204,6 +213,16 @@ final class TrialHttp {
         headers: const {},
         elapsed: watch.elapsed,
         errorLabel: 'timeout',
+      );
+    } on TlsException {
+      request?.abort();
+      watch.stop();
+      return TrialResponse(
+        status: 0,
+        bytes: 0,
+        headers: const {},
+        elapsed: watch.elapsed,
+        errorLabel: 'tls',
       );
     } on SocketException {
       watch.stop();

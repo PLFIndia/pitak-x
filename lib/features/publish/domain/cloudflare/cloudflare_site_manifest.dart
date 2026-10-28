@@ -25,10 +25,14 @@ library;
 
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
+import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// One published asset's metadata.
 final class CloudflareAssetEntry {
@@ -74,10 +78,10 @@ final class CloudflareAssetEntry {
       raw['type'] is String ? raw['type'] as String : null,
     );
     if (sha is! String || sha.isEmpty) return null;
-    if (hash is! String || hash.length != CloudflareAssetHash.hexLength) {
+    if (hash is! String || !_isAssetHash(hash)) return null;
+    if (size is! int || size < 0 || size > CloudflareLimits.maxFileBytes) {
       return null;
     }
-    if (size is! int || size < 0) return null;
     if (type == null) return null;
     return CloudflareAssetEntry(sha: sha, hash: hash, size: size, type: type);
   }
@@ -126,30 +130,47 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// cannot be rebuilt claims nothing at all.
   factory CloudflareSiteManifest.fromJson(Map<String, dynamic> json) {
     final target = _targetFrom(json['target']);
-    if (target == null) return empty;
-    final rawFiles = json['files'];
-    final files = <String, CloudflareAssetEntry>{};
-    if (rawFiles is Map) {
-      for (final entry in rawFiles.entries) {
-        final path = entry.key;
-        if (path is! String) continue;
-        final asset = CloudflareAssetEntry.fromJson(entry.value);
-        if (asset != null) files[path] = asset;
-      }
+    if (target == null || json['schema'] != currentSchema) return empty;
+    final state = _stateFrom(json['state']);
+    final publishId = json['publishId'];
+    if (state == null ||
+        publishId is! String ||
+        !PublishMarker.isValidPublishId(publishId)) {
+      return empty;
     }
-    final schema = json['schema'];
+
+    // A partial file map is not a usable record. If one entry is corrupt, the
+    // whole map loses its ownership/freshness meaning and the next publish must
+    // reconcile explicitly instead of omitting that path from a full deploy.
+    final rawFiles = json['files'];
+    if (rawFiles is! Map ||
+        rawFiles.length > CloudflareLimits.maxFilesPerVersion) {
+      return empty;
+    }
+    final files = <String, CloudflareAssetEntry>{};
+    for (final entry in rawFiles.entries) {
+      final rawPath = entry.key;
+      if (rawPath is! String) return empty;
+      final path = SitePath.tryParse(rawPath);
+      final asset = CloudflareAssetEntry.fromJson(entry.value);
+      if (path == null ||
+          !isAllowedPath(rawPath) ||
+          asset == null ||
+          asset.type != CloudflareContentType.forPath(path)) {
+        return empty;
+      }
+      files[rawPath] = asset;
+    }
+    if (!isValidFileSet(state: state, paths: files.keys)) return empty;
     return CloudflareSiteManifest(
-      schema: schema is int ? schema : 1,
       target: target,
-      state: _stateFrom(json['state']) ?? PublishState.deployed,
-      publishId: json['publishId'] is String
-          ? json['publishId'] as String
-          : null,
+      state: state,
+      publishId: publishId,
       liveId: json['liveId'] is String ? json['liveId'] as String : null,
       hashScheme: json['hashScheme'] is String
           ? json['hashScheme'] as String
           : null,
-      files: files,
+      files: Map.unmodifiable(files),
       coverUrlByBookId: _stringMap(json['coverUrlByBookId']),
     );
   }
@@ -159,6 +180,44 @@ final class CloudflareSiteManifest implements PreviousPublication {
 
   /// The empty manifest (nothing recorded on this phone).
   static const CloudflareSiteManifest empty = CloudflareSiteManifest();
+
+  /// True only for Pitak's fixed public files and reserved asset namespaces.
+  /// Unknown paths are never adopted into a complete Worker snapshot (R12/R23).
+  static bool isAllowedPath(String path) =>
+      SiteSection.catalogue.owns(path) ||
+      SiteSection.events.owns(path) ||
+      SiteSection.retirement.owns(path);
+
+  /// Validates the file-set invariant for the recorded deployment kind.
+  ///
+  /// A normal deployment always has the marker and catalogue core; events HTML
+  /// and JSON arrive together. A retired deployment is exactly the moved page,
+  /// its 404 page, and the retired marker. This prevents a syntactically valid
+  /// but semantically mixed record from feeding freshness or section merging.
+  static bool isValidFileSet({
+    required PublishState state,
+    required Iterable<String> paths,
+  }) {
+    final set = paths.toSet();
+    if (set.length != paths.length) return false;
+    if (state == PublishState.retired) {
+      return set.length == 3 &&
+          set.contains('index.html') &&
+          set.contains('404.html') &&
+          set.contains(CloudflareLimits.markerPath);
+    }
+    if (!set.contains('books.json') ||
+        !set.contains('index.html') ||
+        !set.contains(CloudflareLimits.markerPath) ||
+        set.contains('404.html')) {
+      return false;
+    }
+    final hasEventsHtml = set.contains('events.html');
+    final hasEventsJson = set.contains('events.json');
+    if (hasEventsHtml != hasEventsJson) return false;
+    final hasPosters = set.any((path) => path.startsWith('posters/'));
+    return !hasPosters || hasEventsJson;
+  }
 
   /// Schema of the record this object was read from.
   final int schema;
@@ -351,3 +410,5 @@ final class CloudflareSiteManifest implements PreviousPublication {
       'CloudflareSiteManifest(${target?.targetId}, $state, '
       '${files.length} files)';
 }
+
+bool _isAssetHash(String value) => CloudflareAssetHash.isValidHash(value);

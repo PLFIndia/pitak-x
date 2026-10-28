@@ -35,8 +35,9 @@
 /// services → a fixed safe message), so every flow fails closed with its
 /// existing copy instead of spinning or buffering.
 ///
-/// Request-copy shape borrowed from `package:http`'s own `RetryClient`
-/// (dart-lang/http, BSD-3), which re-sends a `BaseRequest` the same way.
+/// Request bodies are not copied or buffered by this decorator. A thin
+/// abortable wrapper delegates `finalize()` to the original request, so plain,
+/// streamed and multipart uploads all keep their existing streaming behavior.
 library;
 
 import 'dart:async';
@@ -155,27 +156,18 @@ final class TimeoutHttpClient extends http.BaseClient {
     );
   }
 
-  /// Re-issues [original] as an [http.AbortableRequest] wired to [trigger].
-  /// `BaseClient.get/post/patch` build plain `Request`s the caller cannot make
-  /// abortable, so the decorator does it here. Only `Request` bodies exist in
-  /// this app (no multipart/streamed uploads), so copying `bodyBytes` is
-  /// lossless; anything else is passed through unchanged (bounded but not
-  /// abortable) rather than silently mangled. A caller's own `abortTrigger`
-  /// (an `AbortableRequest` IS a `Request`) is not lost: `send` chains it
-  /// into [trigger] before calling this.
-  http.BaseRequest _abortable(http.BaseRequest original, Future<void> trigger) {
-    if (original is! http.Request) return original;
-    return http.AbortableRequest(
-        original.method,
-        original.url,
-        abortTrigger: trigger,
-      )
-      ..headers.addAll(original.headers)
-      ..bodyBytes = original.bodyBytes
-      ..followRedirects = original.followRedirects
-      ..maxRedirects = original.maxRedirects
-      ..persistentConnection = original.persistentConnection;
-  }
+  /// Re-issues [original] behind an abortable wrapper wired to [trigger].
+  ///
+  /// `BaseClient.get/post/patch` build plain requests the caller cannot make
+  /// abortable, so the decorator does it here. Delegating `finalize()` instead
+  /// of copying a body is important: multipart and streamed requests must keep
+  /// streaming, and their boundaries/content lengths must remain untouched.
+  /// A caller's own `abortTrigger` is not lost: `send` chains it into [trigger]
+  /// before calling this.
+  http.BaseRequest _abortable(
+    http.BaseRequest original,
+    Future<void> trigger,
+  ) => _AbortableRequest(original, trigger);
 
   /// Forwards [source] enforcing (2) idle, (3) total and (4) size. On any
   /// trip: cancel the source (closes the socket), request the abort, error
@@ -269,6 +261,42 @@ final class TimeoutHttpClient extends http.BaseClient {
 
   @override
   void close() => _inner.close();
+}
+
+/// Adds an abort signal to any request without changing how its body is made.
+///
+/// Beginner note: `package:http` already knows how to stream each concrete
+/// request type. Rebuilding only `http.Request` here used to leave multipart
+/// uploads outside the deadline. This wrapper keeps the original request as
+/// the body authority and adds exactly one new capability: [abortTrigger].
+final class _AbortableRequest extends http.BaseRequest with http.Abortable {
+  _AbortableRequest(this._original, this.abortTrigger)
+    : super(_original.method, _original.url) {
+    headers.addAll(_original.headers);
+    followRedirects = _original.followRedirects;
+    maxRedirects = _original.maxRedirects;
+    persistentConnection = _original.persistentConnection;
+  }
+
+  final http.BaseRequest _original;
+
+  @override
+  final Future<void> abortTrigger;
+
+  /// Multipart requests calculate their length from their parts; forwarding
+  /// the getter preserves that calculation instead of freezing a second copy.
+  @override
+  int? get contentLength => _original.contentLength;
+
+  @override
+  http.ByteStream finalize() {
+    super.finalize();
+    final body = _original.finalize();
+    // MultipartRequest adds its generated boundary header during finalize.
+    // Copy final headers AFTER finalizing so IOClient sends that exact header.
+    headers.addAll(_original.headers);
+    return body;
+  }
 }
 
 /// The clock one request runs against: a total timer plus the abort signal

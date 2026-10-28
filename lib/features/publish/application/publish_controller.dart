@@ -22,6 +22,8 @@ import 'package:pitaka/features/network/domain/entities/library_descriptor.dart'
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/library_descriptor_codec.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
@@ -45,6 +47,8 @@ class PublishController extends _$PublishController implements PublishReads {
   /// publishes stay incremental (they may reuse already-published files).
   Future<PublishResult> publish({
     PublishMode mode = PublishMode.incremental,
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
   }) async {
     // keepAlive for the duration of the run: this provider is autoDispose
     // and the page only read()s it, so a long publish (the post-commit
@@ -55,7 +59,18 @@ class PublishController extends _$PublishController implements PublishReads {
     final link = ref.keepAlive();
     state = const AsyncLoading();
     try {
-      final result = await _run(mode);
+      // R11: the outermost publish command shares one app-wide queue with
+      // events, setup, disconnect, and (later) moves/retirement. Inner use-case
+      // steps document that the queue is already held and never enqueue again.
+      final result = await ref
+          .read(publishOperationQueueProvider)
+          .enqueue(
+            () => _run(
+              mode,
+              confirmation: confirmation,
+              verificationOnly: verificationOnly,
+            ),
+          );
       state = AsyncData(result);
       return result;
     } on Exception catch (e, st) {
@@ -66,16 +81,41 @@ class PublishController extends _$PublishController implements PublishReads {
     }
   }
 
-  Future<PublishResult> _run(PublishMode mode) async {
-    // The operation's target is resolved ONCE, here, from local state, and is
-    // then the only source of the site URL (R1/C3). A publish with no usable
-    // target stops before any other work.
-    final target = GitHubPublishTarget.create(
-      await ref.read(publishCredentialStoreProvider).targetRepo(),
-    );
-    if (target == null) {
-      return const PublishFailure('Pick a target repo first.');
+  Future<PublishResult> _run(
+    PublishMode mode, {
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    // The journal chooses the host freshly inside this queue. Only that host's
+    // credentials supply the exact sealed target; there is no fallback.
+    final resolver = await ref.read(activePublishTargetResolverProvider.future);
+    final resolved = await resolver.call();
+    final targetFailure = resolved.swap().toNullable();
+    if (targetFailure != null) {
+      return CloudflarePublishOutcomes.failure(targetFailure);
     }
+    final target = resolved.toNullable()!;
+    if (target is GitHubPublishTarget &&
+        (confirmation != null || verificationOnly)) {
+      return const PublishFailure(
+        'The publishing host changed before this command could continue.',
+      );
+    }
+    return switch (target) {
+      final GitHubPublishTarget gitHub => _runGitHub(gitHub, mode),
+      final CloudflarePublishTarget cloudflare => _runCloudflare(
+        cloudflare,
+        mode: mode,
+        confirmation: confirmation,
+        verificationOnly: verificationOnly,
+      ),
+    };
+  }
+
+  Future<PublishResult> _runGitHub(
+    GitHubPublishTarget target,
+    PublishMode mode,
+  ) async {
     // Side-effecting ports (bounded HTTP fetch, rootBundle template load)
     // arrive via DI as domain function types — this controller never touches
     // infrastructure directly (§3.1).
@@ -104,7 +144,36 @@ class PublishController extends _$PublishController implements PublishReads {
       verifier: verifier,
     );
 
-    return useCase.call(target: target, mode: mode);
+    final result = await useCase.call(target: target, mode: mode);
+    if (result is PublishSuccess) ref.invalidate(publishedSiteUrlProvider);
+    return result;
+  }
+
+  Future<PublishResult> _runCloudflare(
+    CloudflarePublishTarget target, {
+    required PublishMode mode,
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    if ((mode == PublishMode.complete && confirmation == null) ||
+        (verificationOnly && confirmation != null)) {
+      return const PublishFailure(
+        'Review the Cloudflare replacement again before continuing.',
+      );
+    }
+    final factory = await ref.read(publishToCloudflareUseCaseProvider.future);
+    final result = await factory(this).call(
+      target: target,
+      section: PublishRequestedSection.catalogue,
+      confirmation: confirmation,
+      verificationOnly: verificationOnly,
+    );
+    if (result is PublishSuccess) {
+      ref
+        ..invalidate(publishedSiteUrlProvider)
+        ..invalidate(cloudflareConnectionControllerProvider);
+    }
+    return result;
   }
 
   // --- PublishReads -------------------------------------------------------

@@ -211,6 +211,27 @@ void main() {
   );
 
   test(
+    'COMPLETE mode refuses an external-URL fallback after a failed fetch',
+    () async {
+      final result = await builder().build(
+        books: [book(cover: 'https://covers.openlibrary.org/b/id/1-L.jpg')],
+        periodicals: const [],
+        activeLoanCounts: null,
+        libraryJson: null,
+        previous: PublishManifest.empty,
+        now: 1,
+        mode: PublishMode.complete,
+      );
+
+      expect(result.isLeft(), isTrue);
+      expect(
+        (result.swap().toNullable()! as ValidationFailure).message,
+        CatalogueSectionBuilder.missingCoverMessage,
+      );
+    },
+  );
+
+  test(
     'INCREMENTAL mode drops the same unreadable cover (historical rule)',
     () async {
       final section = (await builder().build(

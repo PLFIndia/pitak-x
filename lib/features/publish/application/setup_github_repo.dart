@@ -59,6 +59,9 @@ final class GitHubSetupResult {
 
 /// Creates (or adopts) the publish repo, verifies Pages, and stores the
 /// target — so "connected" always means "ready to publish".
+///
+/// The outer connection command holds the app-wide publish queue for these
+/// methods; this inner use case deliberately never enqueues a nested operation.
 final class SetupGitHubRepo {
   /// Creates the use case.
   const SetupGitHubRepo(this._api, this._creds);

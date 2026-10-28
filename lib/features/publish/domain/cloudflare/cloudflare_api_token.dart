@@ -27,6 +27,18 @@
 /// verifier, which fails closed.
 library;
 
+/// The ownership route used to verify a token.
+///
+/// This is non-secret metadata. Callers must use it instead of inspecting the
+/// token text or its prefix themselves.
+enum CloudflareApiTokenKind {
+  /// Verified with `/user/tokens/verify` (including the legacy 40-char shape).
+  user,
+
+  /// Listed/selected first, then verified at the chosen account's endpoint.
+  account,
+}
+
 /// A shape-checked Cloudflare API token that never prints its value.
 final class CloudflareApiToken {
   const CloudflareApiToken._(this._value);
@@ -69,6 +81,11 @@ final class CloudflareApiToken {
 
   /// True when [raw] is a plausible token (the dialog's live check).
   static bool isValidShape(String? raw) => tryParse(raw) != null;
+
+  /// Which verification endpoint and setup order this token requires.
+  CloudflareApiTokenKind get kind => _value.startsWith(_accountPrefix)
+      ? CloudflareApiTokenKind.account
+      : CloudflareApiTokenKind.user;
 
   /// Runs [action] with the token value.
   ///

@@ -17,8 +17,12 @@ import 'package:pitaka/features/events/application/events_controller.dart';
 import 'package:pitaka/features/events/application/publish_events_controller.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/events/presentation/widgets/poster_thumbnail.dart';
-import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
+import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/publish_status_copy.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host.dart';
+import 'package:pitaka/features/publish/presentation/widgets/replace_site_dialog.dart';
 
 /// Standalone Events screen (its own Scaffold). Use [EventsView] to embed the
 /// editor inside another screen, e.g. the Publish hub's Events tab.
@@ -50,6 +54,7 @@ class EventsView extends ConsumerStatefulWidget {
 
 class _EventsViewState extends ConsumerState<EventsView> {
   bool _busy = false;
+  PublishResult? _lastPublishResult;
 
   void _snack(String message) {
     if (!mounted) return;
@@ -120,23 +125,51 @@ class _EventsViewState extends ConsumerState<EventsView> {
     _snack(ok ? 'Description saved.' : "Couldn't save the description.");
   }
 
-  Future<void> _publish() async {
+  Future<void> _publish({
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
     setState(() => _busy = true);
     try {
       final result = await ref
           .read(publishEventsControllerProvider.notifier)
-          .publish();
+          .publish(
+            confirmation: confirmation,
+            verificationOnly: verificationOnly,
+          );
+      _lastPublishResult = result;
       switch (result) {
-        case final PublishEventsSuccess success:
-          _snack(eventsPublishStatusMessage(success));
-        case PublishEventsFailure(:final reason):
+        case final PublishSuccess success:
+          final site = await ref.read(publishSiteStatusProvider.future);
+          _snack(eventsPublishStatusMessage(success, host: site.activeHost));
+        case PublishFailure(:final reason):
           _snack(reason);
+        case PublishReplacementRequired(:final summary):
+          // The queued preparation is complete. Only the dialog wait happens
+          // here; confirmation re-enters the queue with the reviewed digest.
+          if (!mounted) return;
+          final confirmed = await showReplaceSiteDialog(context, summary);
+          if (confirmed && mounted) {
+            await _publish(confirmation: summary);
+          }
       }
     } on Exception {
       _snack("Couldn't publish your events.");
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _retryVerification() => _publish(verificationOnly: true);
+
+  bool get _showRetryVerification {
+    if (_lastPublishResult case final PublishSuccess success) {
+      return success.pagesLive == null || !success.localStateSaved;
+    }
+    if (_lastPublishResult case PublishFailure(:final reason)) {
+      return reason == CloudflareErrorMessages.publicationVerificationFailed;
+    }
+    return false;
   }
 
   Future<void> _removePoster(int index) async {
@@ -167,6 +200,8 @@ class _EventsViewState extends ConsumerState<EventsView> {
   @override
   Widget build(BuildContext context) {
     final eventsAsync = ref.watch(eventsControllerProvider);
+    final siteAsync = ref.watch(publishSiteStatusProvider);
+    final activeHost = siteAsync.valueOrNull?.activeHost;
     return SafeArea(
       child: eventsAsync.when(
         loading: () => const Center(child: CircularProgressIndicator()),
@@ -181,6 +216,10 @@ class _EventsViewState extends ConsumerState<EventsView> {
           onEditCaption: _editCaption,
           onRemove: _removePoster,
           onPublish: _publish,
+          onRetryVerification: _retryVerification,
+          showRetryVerification:
+              activeHost == PublishHost.cloudflare && _showRetryVerification,
+          cloudflareHistory: activeHost == PublishHost.cloudflare,
         ),
       ),
     );
@@ -197,6 +236,9 @@ class _EventsBody extends StatelessWidget {
     required this.onEditCaption,
     required this.onRemove,
     required this.onPublish,
+    required this.onRetryVerification,
+    required this.showRetryVerification,
+    required this.cloudflareHistory,
   });
 
   final List<EventPoster> posters;
@@ -207,6 +249,9 @@ class _EventsBody extends StatelessWidget {
   final void Function(int index, String current) onEditCaption;
   final void Function(int index) onRemove;
   final VoidCallback onPublish;
+  final VoidCallback onRetryVerification;
+  final bool showRetryVerification;
+  final bool cloudflareHistory;
 
   @override
   Widget build(BuildContext context) {
@@ -270,12 +315,16 @@ class _EventsBody extends StatelessWidget {
           style: textTheme.bodySmall,
         ),
         const SizedBox(height: 4),
-        // M14: honest removal copy — deleting current files does not rewrite
-        // Git history or third-party copies.
+        // Host-truthful removal copy: Git history is permanent; Cloudflare's
+        // old-version statement is conditional on the Version-URL invariant.
         Text(
-          'Removing a poster deletes it from the live page, but older '
-          'versions stay in the repository’s Git history (and copies may '
-          'exist elsewhere).',
+          cloudflareHistory
+              ? 'Removing a poster deletes it from the live page. Older '
+                    'Worker versions are not publicly reachable while Version '
+                    'URLs are disabled and confirmed.'
+              : 'Removing a poster deletes it from the live page, but older '
+                    'versions stay in the repository’s Git history (and copies '
+                    'may exist elsewhere).',
           style: textTheme.bodySmall,
         ),
         const SizedBox(height: 12),
@@ -287,6 +336,13 @@ class _EventsBody extends StatelessWidget {
             posters.isEmpty ? 'Clear the events page' : 'Publish events',
           ),
         ),
+        if (showRetryVerification) ...[
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: busy ? null : onRetryVerification,
+            child: const Text('Retry verification'),
+          ),
+        ],
       ],
     );
   }

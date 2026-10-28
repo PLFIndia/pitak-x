@@ -37,6 +37,53 @@ abstract interface class PublishedSiteVerifier {
   });
 }
 
+/// The structured form of a bounded public read.
+///
+/// The older [PublishedSiteVerifier] deliberately collapses every refusal to
+/// null. Freshness and expected-404 checks need one extra fact: an actual HTTP
+/// 404 is ABSENCE, while a timeout, redirect, malformed response, or other
+/// status is UNREADABLE. Neither outcome exposes response text or a URL.
+sealed class PublishedSiteReadOutcome {
+  const PublishedSiteReadOutcome();
+}
+
+/// A body arrived from the exact expected origin within the byte cap.
+final class PublishedSiteReadBody extends PublishedSiteReadOutcome {
+  /// Creates a successful read.
+  const PublishedSiteReadBody(this.bytes);
+
+  /// The bounded public response bytes.
+  final List<int> bytes;
+}
+
+/// The exact expected origin answered HTTP 404.
+final class PublishedSiteReadAbsent extends PublishedSiteReadOutcome {
+  /// Creates an absence result.
+  const PublishedSiteReadAbsent();
+}
+
+/// No trustworthy body or absence answer was obtained.
+final class PublishedSiteReadUnreadable extends PublishedSiteReadOutcome {
+  /// Creates an unreadable result.
+  const PublishedSiteReadUnreadable();
+}
+
+/// A structured counterpart to [PublishedSiteVerifier] for freshness and 404
+/// decisions. Both ports use the same origin, redirect, timeout, and byte-cap
+/// policy; this one simply preserves the 404-versus-unreadable distinction.
+/// It is a one-method injected test seam, like [PublishedSiteVerifier].
+// ignore: one_member_abstracts
+abstract interface class PublishedSiteReadVerifier {
+  /// Reads one exact public file and classifies the outcome without exposing
+  /// response text or platform errors.
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  });
+}
+
 /// Byte cap for a publish read-back of the machine-readable catalogue
 /// (`books.json`).
 ///

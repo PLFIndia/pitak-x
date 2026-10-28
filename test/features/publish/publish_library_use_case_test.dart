@@ -36,6 +36,7 @@ import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart
 import '../../support/raw_catalogue_rows.dart';
 import '../import_export/bundle_test_fixture.dart';
 import '../library/replacement_harness.dart';
+import 'support/cloudflare_fakes.dart';
 
 class _FakeCreds implements PublishCredentialReader {
   _FakeCreds({this.tok = 'TKN'});
@@ -56,6 +57,7 @@ class _MemManifest implements PublishManifestGateway {
   final PublishManifest _m;
   PublishManifest? saved;
   bool saveFails = false;
+  bool liveSaveFails = false;
 
   /// Every record this gateway was asked to persist, in order (R5: the commit
   /// is saved as `deployed` first, then upgraded to `live`).
@@ -69,7 +71,9 @@ class _MemManifest implements PublishManifestGateway {
 
   @override
   Either<Failure, Unit> save(PublishManifest m) {
-    if (saveFails) return left(const StorageFailure('disk full'));
+    if (saveFails || (liveSaveFails && m.state == PublishState.live)) {
+      return left(const StorageFailure('disk full'));
+    }
     saved = m;
     saves.add(m);
     return right(unit);
@@ -1333,6 +1337,13 @@ void main() {
               _ControllerCredentials(),
             ),
             publishManifestStoreProvider.overrideWith((ref) async => manifest),
+            publishHostStateRepositoryProvider.overrideWith(
+              (ref) async => PublishHostStateRepository(
+                store: FakePublishHostStateStore(),
+                manifest: manifest,
+                verifier: _FakeVerifier((_, _) async => null),
+              ),
+            ),
             publishCoverIdsProvider.overrideWithValue(
               PublishCoverIds(_FixedSalt()),
             ),
@@ -1669,6 +1680,27 @@ void main() {
 
         expect(result, isA<PublishSuccess>());
       });
+    });
+
+    test('R9: a failed live save does not advance the journal', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest()..liveSaveFails = true;
+      final recorder = _Recorder();
+      final result = await makeUseCase(
+        api,
+        manifest,
+        verifier: _FakeVerifier(
+          (_, _) async =>
+              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+        ),
+        hostState: recorder,
+        books: [book()],
+      ).run();
+
+      expect((result as PublishSuccess).pagesLive, isTrue);
+      expect(result.localStateSaved, isFalse);
+      expect(manifest.current.state, PublishState.deployed);
+      expect(recorder.recorded, isEmpty);
     });
 
     test('R9: a failed save is reported, not swallowed', () async {

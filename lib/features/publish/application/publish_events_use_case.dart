@@ -69,6 +69,7 @@ final class PublishEventsSuccess extends PublishEventsResult {
     required this.eventsUrl,
     required this.uploadedPaths,
     this.localStateSaved = true,
+    this.pagesLive,
   });
 
   /// Public URL of the events page.
@@ -80,6 +81,9 @@ final class PublishEventsSuccess extends PublishEventsResult {
   /// False when the commit landed but this phone could not save its own record
   /// of the publish (R9). The site IS updated; the next publish reconciles.
   final bool localStateSaved;
+
+  /// True only after exact read-back; null when verification did not finish.
+  final bool? pagesLive;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.
@@ -274,12 +278,13 @@ final class PublishEventsUseCase {
         // zero posters still writes an explicit empty list), then record the
         // truth.
         final verifier = _verifier;
+        bool? pagesLive;
         final eventsJson = merge.files
             .where((f) => f.path == EventsSectionBuilder.eventsJsonPath)
             .firstOrNull
             ?.bytes;
         if (verifier != null && eventsJson != null) {
-          final live =
+          pagesLive =
               await PublishedFileReadBack(
                 verifier: verifier,
                 sleep: _sleep,
@@ -289,19 +294,25 @@ final class PublishEventsUseCase {
                 expected: eventsJson,
                 revision: now,
               );
-          if (live ?? false) {
-            // Proven live ⇒ the journal may claim this address (R33).
-            localStateSaved =
-                (await _hostState.recordVerified(target)).isRight() &&
-                localStateSaved;
-            // A failed upgrade leaves `deployed`, which is the truth (R5).
-            _manifest.save(committed.asLive());
+          if (pagesLive ?? false) {
+            // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). The
+            // successful live record supersedes an earlier deployed-save
+            // failure; a failed upgrade leaves the journal untouched and is
+            // reported instead of being swallowed.
+            final liveSaved = _manifest.save(committed.asLive()).isRight();
+            localStateSaved = liveSaved;
+            if (liveSaved) {
+              localStateSaved = (await _hostState.recordVerified(
+                target,
+              )).isRight();
+            }
           }
         }
         return PublishEventsSuccess(
           eventsUrl: eventsUrl,
           uploadedPaths: uploadedPaths,
           localStateSaved: localStateSaved,
+          pagesLive: pagesLive,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can

@@ -61,6 +61,16 @@ abstract final class CloudflareLimits {
   /// Total attempts for a read or an idempotent hash upload.
   static const int maxAttempts = 3;
 
+  /// Largest raw chunk accepted from an on-demand/spooled artifact source.
+  ///
+  /// Uploads are serial and every part is streamed, so raw bytes, base64 text,
+  /// UTF-8 bytes and multipart copies stay bounded by a small number of chunks
+  /// instead of growing with the server's bucket size (R24).
+  static const int maxArtifactChunkBytes = 64 * 1024;
+
+  /// Largest standard padded-base64 chunk produced from the raw chunk cap.
+  static const int maxBase64ChunkBytes = 4 * ((maxArtifactChunkBytes + 2) ~/ 3);
+
   // ---- Fixed protocol values (B.3) -----------------------------------------
 
   /// The reviewed compatibility date every deploy sends.

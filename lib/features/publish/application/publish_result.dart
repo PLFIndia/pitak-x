@@ -4,9 +4,70 @@
 /// small and readable while publish preparation gains explicit validation.
 library;
 
+import 'package:pitaka/features/publish/domain/publish_target.dart';
+
 /// Outcome of a publish.
 sealed class PublishResult {
   const PublishResult();
+}
+
+/// The ordinary section a user asked to publish.
+enum PublishRequestedSection {
+  /// Catalogue only; an existing events section is preserved.
+  catalogue,
+
+  /// Events only; the catalogue is preserved.
+  events,
+}
+
+/// Safe, non-artifact state needed to confirm a whole-Worker replacement.
+///
+/// No local entities, snapshot bytes, credentials, or upload tokens cross into
+/// controller/UI state. The digest binds this summary to the exact logical
+/// content the user reviewed; target and requested section bind the operation.
+final class PublishReplacementSummary {
+  /// Creates a confirmation summary from a validated complete snapshot.
+  const PublishReplacementSummary({
+    required this.target,
+    required this.requestedSection,
+    required this.digest,
+    required this.catalogueItemCount,
+    required this.posterCount,
+    required this.availabilityOmitted,
+  });
+
+  /// Exact Cloudflare Worker being replaced.
+  final CloudflarePublishTarget target;
+
+  /// Button that initiated reconciliation (replacement itself covers both).
+  final PublishRequestedSection requestedSection;
+
+  /// Canonical R4 content digest, excluding operation timestamps and ids.
+  final String digest;
+
+  /// Live catalogue rows in the reviewed snapshot.
+  final int catalogueItemCount;
+
+  /// Event posters in the reviewed snapshot.
+  final int posterCount;
+
+  /// Whether availability was omitted because the vault was locked.
+  final bool availabilityOmitted;
+
+  /// True when the reviewed catalogue has no items.
+  bool get catalogueIsEmpty => catalogueItemCount == 0;
+
+  /// True when the reviewed events page has no posters.
+  bool get eventsIsEmpty => posterCount == 0;
+}
+
+/// Unknown or retired remote state requires explicit whole-site replacement.
+final class PublishReplacementRequired extends PublishResult {
+  /// Creates a typed, expected confirmation outcome (not an error).
+  const PublishReplacementRequired(this.summary);
+
+  /// The exact content and target the user must review.
+  final PublishReplacementSummary summary;
 }
 
 /// Publish succeeded.
@@ -18,6 +79,7 @@ final class PublishSuccess extends PublishResult {
     this.availabilityOmitted = false,
     this.pagesLive,
     this.localStateSaved = true,
+    this.temporaryCleanupFailed = false,
   });
 
   /// The public page URL.
@@ -41,6 +103,10 @@ final class PublishSuccess extends PublishResult {
   /// publish re-reads the remote tree, so the lost record costs one
   /// reconciliation, not correctness.
   final bool localStateSaved;
+
+  /// True when public temporary artifacts could not be removed after the run.
+  /// This never means the remote publish failed; the UI reports it separately.
+  final bool temporaryCleanupFailed;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.

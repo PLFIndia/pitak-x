@@ -47,6 +47,7 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
 import '../features/periodicals/application/periodical_fakes.dart';
+import '../features/publish/support/cloudflare_fakes.dart';
 import '../features/vault/vault_repository_write_stub.dart';
 import 'golden_names.dart';
 
@@ -298,11 +299,18 @@ void main() {
   });
 
   testWidgets('publish connection tab', (tester) async {
+    final cloudflare = CloudflareSetupHarness();
     await expectGolden(
       tester,
       ProviderScope(
         overrides: [
           publishCredentialStoreProvider.overrideWithValue(_GoldenCreds()),
+          setupCloudflareSiteProvider.overrideWith(
+            (ref) async => cloudflare.setup,
+          ),
+          cloudflareCredentialStoreProvider.overrideWithValue(
+            cloudflare.credentials,
+          ),
         ],
         child: themedApp(const PublishPage()),
       ),

@@ -55,6 +55,60 @@ void main() {
     });
   });
 
+  group('fromStream', () {
+    test('matches the buffered formula across chunk boundaries', () async {
+      final bytes = List<int>.generate(100000, (index) => index % 256);
+      for (final chunkSize in [1, 2, 3, 7, 65536]) {
+        final chunks = <List<int>>[
+          for (var offset = 0; offset < bytes.length; offset += chunkSize)
+            bytes.sublist(
+              offset,
+              offset + chunkSize > bytes.length
+                  ? bytes.length
+                  : offset + chunkSize,
+            ),
+        ];
+        expect(
+          await CloudflareAssetHash.fromStream(
+            Stream.fromIterable(chunks),
+            'jpg',
+          ),
+          CloudflareAssetHash.of(bytes, 'jpg'),
+          reason: 'chunk size $chunkSize',
+        );
+      }
+    });
+
+    test('an empty stream matches the empty-file vector', () async {
+      expect(
+        await CloudflareAssetHash.fromStream(
+          const Stream<List<int>>.empty(),
+          'json',
+        ),
+        CloudflareAssetHash.of(const [], 'json'),
+      );
+    });
+
+    test('verifyStream checks transmitted content', () async {
+      const bytes = <int>[1, 2, 3];
+      final expected = CloudflareAssetHash.of(bytes, 'json');
+      final matching = await CloudflareAssetHash.verifyStream(
+        bytes: Stream.value(bytes),
+        extension: 'json',
+        expectedHash: expected,
+      ).toList();
+      expect(matching, [bytes]);
+      await expectLater(
+        CloudflareAssetHash.verifyStream(
+          bytes: Stream.value(const [9, 9, 9]),
+          extension: 'json',
+          expectedHash: expected,
+        ).toList(),
+        throwsA(isA<CloudflareAssetHashException>()),
+      );
+    });
+  });
+
   group('shape', () {
     test('is exactly 32 lower-case hex characters', () {
       final hash = CloudflareAssetHash.of(utf8.encode('x'), 'json');

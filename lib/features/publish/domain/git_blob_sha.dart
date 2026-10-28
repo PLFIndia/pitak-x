@@ -11,7 +11,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
@@ -19,10 +18,29 @@ import 'package:crypto/crypto.dart';
 abstract final class GitBlobSha {
   /// Lowercase 40-char hex git blob sha of [bytes].
   static String of(List<int> bytes) {
-    final header = ascii.encode('blob ${bytes.length}\u0000');
-    final input = Uint8List(header.length + bytes.length)
-      ..setRange(0, header.length, header)
-      ..setRange(header.length, header.length + bytes.length, bytes);
-    return sha1.convert(input).toString();
+    // Chunked conversion avoids allocating a second header+file-sized copy.
+    // The bytes themselves remain owned by the caller; only the digest state
+    // and small encoded header are retained here.
+    final output = _DigestValueSink();
+    sha1.startChunkedConversion(output)
+      ..add(ascii.encode('blob ${bytes.length}\u0000'))
+      ..add(bytes)
+      ..close();
+    final digest = output.value;
+    if (digest == null) throw StateError('SHA-1 produced no digest');
+    return digest.toString();
   }
+}
+
+final class _DigestValueSink implements Sink<Digest> {
+  Digest? value;
+
+  @override
+  void add(Digest value) {
+    if (this.value != null) throw StateError('SHA-1 emitted two digests');
+    this.value = value;
+  }
+
+  @override
+  void close() {}
 }

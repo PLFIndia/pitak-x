@@ -12,6 +12,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
@@ -21,10 +22,12 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.d
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 
 import 'trial_assets.dart';
+import 'trial_cleanup.dart';
 import 'trial_http.dart';
 import 'trial_multipart.dart';
 import 'trial_public.dart';
 import 'trial_report.dart';
+import 'trial_versions.dart';
 
 /// The trial's inputs, read from the environment.
 final class TrialConfig {
@@ -32,6 +35,7 @@ final class TrialConfig {
     required this.token,
     this.accountId,
     this.createSubdomain = false,
+    this.cleanupPrevious = false,
     this.skipLarge = false,
   });
 
@@ -45,6 +49,9 @@ final class TrialConfig {
   /// account subdomain on a throw-away account.
   final bool createSubdomain;
 
+  /// True only for explicit crash recovery on a disposable account.
+  final bool cleanupPrevious;
+
   /// True when the ~2,000-file measurement (T5b) is skipped.
   final bool skipLarge;
 
@@ -57,6 +64,7 @@ final class TrialConfig {
       token: token,
       accountId: env['CF_ACCOUNT_ID'],
       createSubdomain: _flag(env['CF_CREATE_SUBDOMAIN']),
+      cleanupPrevious: _flag(env['CF_CLEANUP_PREVIOUS']),
       skipLarge: _flag(env['CF_TRIAL_SKIP_LARGE']),
     );
   }
@@ -85,6 +93,7 @@ final class Trial {
   String? _accountId;
   String? _subdomain;
   String? _siteUrl;
+  String? _firstVersionId;
 
   /// Bearer secrets for one operation. Never printed, never in the report.
   String? _uploadJwt;
@@ -105,6 +114,17 @@ final class Trial {
     try {
       if (!await _t1Verify()) return;
       if (!await _t2Accounts()) return;
+      if (config.cleanupPrevious) {
+        final accountId = _accountId;
+        if (accountId == null ||
+            !await PreviousTrialCleanup.run(
+              api: _api,
+              accountId: accountId,
+              report: report,
+            )) {
+          return;
+        }
+      }
       await _t3Subdomain();
       if (_subdomain == null) {
         _skipDeployChecks('no confirmed account subdomain');
@@ -117,6 +137,7 @@ final class Trial {
         _skipDeployChecks('T6 failed: the plan stops here');
         return;
       }
+      await _captureFirstVersion();
       await _t7Route();
       await _t8Public();
       await _t9Deployments();
@@ -609,6 +630,18 @@ final class Trial {
     return false;
   }
 
+  /// Waits up to one minute for a public file to reach [expectedStatus].
+  Future<bool> _waitForStatus(Uri uri, int expectedStatus) async {
+    for (var attempt = 1; attempt <= 12; attempt++) {
+      final response = await TrialPublic.get(uri);
+      if (response.status == expectedStatus) return true;
+      if (attempt < 12) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+      }
+    }
+    return false;
+  }
+
   // ---- T9: deployment diagnostic ------------------------------------------
 
   Future<void> _t9Deployments() async {
@@ -619,14 +652,16 @@ final class Trial {
       path: '/accounts/$accountId/workers/scripts/$_workerName/deployments',
       retry: true,
     );
-    final list = response.resultList ?? const [];
+    final raw = response.result?['deployments'];
+    final list = raw is List ? raw : const <Object?>[];
+    final valid = response.ok && (response.success ?? false) && raw is List;
     final first = list.isEmpty ? null : list.first;
     final hasId = first is Map && first['id'] is String;
     report.info(
       'T9',
       'deployment diagnostic',
-      'status=${response.status} entries=${list.length} '
-          'latest-id=${hasId ? 'present' : 'absent'}',
+      'status=${response.status} shape=${valid ? 'valid' : 'invalid'} '
+          'entries=${list.length} latest-id=${hasId ? 'present' : 'absent'}',
     );
   }
 
@@ -686,14 +721,9 @@ final class Trial {
       deadline: CloudflareLimits.uploadDeadline,
     );
     final site = _siteUrl;
-    var removed = false;
-    if (site != null) {
-      await _waitForRoot(Uri.parse(site));
-      final events = await TrialPublic.get(
-        Uri.parse(site).resolve('events.json'),
-      );
-      removed = events.status == 404;
-    }
+    final removed =
+        site != null &&
+        await _waitForStatus(Uri.parse(site).resolve('events.json'), 404);
     report.check(
       'T10',
       'second deploy dedupes and removes',
@@ -706,6 +736,24 @@ final class Trial {
 
   // ---- T11/T15: version exposure ------------------------------------------
 
+  Future<void> _captureFirstVersion() async {
+    final accountId = _accountId;
+    if (accountId == null) return;
+    final response = await _api.send(
+      method: 'GET',
+      path: '/accounts/$accountId/workers/scripts/$_workerName/versions',
+      retry: true,
+    );
+    final ids = TrialVersions.idsFrom(response);
+    if (ids != null && ids.isNotEmpty) _firstVersionId = ids.first;
+    report.info(
+      'T6v',
+      'first version diagnostic',
+      'status=${response.status} shape=${ids == null ? 'invalid' : 'valid'} '
+          'id=${_firstVersionId == null ? 'absent' : 'present'}',
+    );
+  }
+
   Future<void> _t11VersionExposure() async {
     final accountId = _accountId;
     final site = _siteUrl;
@@ -716,64 +764,134 @@ final class Trial {
       path: '/accounts/$accountId/workers/scripts/$_workerName/versions',
       retry: true,
     );
-    final ids = _versionIds(versions);
+    final ids = TrialVersions.idsFrom(versions);
+    final first = _firstVersionId;
+    final versionState =
+        ids != null &&
+        first != null &&
+        ids.isNotEmpty &&
+        ids.first != first &&
+        ids.contains(first);
+    final newestChanged = ids == null || ids.isEmpty || first == null
+        ? null
+        : ids.first != first;
     final before = await _api.send(method: 'GET', path: path, retry: true);
     final previewsOff = before.result?['previews_enabled'] == false;
-    final probe = ids.isEmpty ? null : await _probeVersionUrl(ids.first, site);
-    report.check(
-      'T11',
-      'old version not reachable with version URLs off',
-      pass: previewsOff && probe != true,
-      detail:
-          'previews=$previewsOff versions=${ids.length} '
-          'reachable=${probe?.toString() ?? 'unknown'}',
-    );
-    // T15: prove the setting is what matters.
-    await _api.send(
+    final probe = versionState
+        ? await _probeVersionUrl(first, site, expected: false)
+        : null;
+    final probeDetail =
+        'previews=$previewsOff versions=${ids?.length ?? 'unknown'} '
+        'v1=${first == null ? 'unknown' : 'present'} '
+        'newestChanged=${newestChanged ?? 'unknown'} '
+        'versionStatus=${versions.status} '
+        'reachable=${probe?.toString() ?? 'unknown'}';
+    if (!previewsOff) {
+      report.check(
+        'T11',
+        'old version not reachable with version URLs off',
+        pass: false,
+        detail: probeDetail,
+      );
+    } else if (!versionState || probe == null) {
+      report.skip(
+        'T11',
+        'old version not reachable with version URLs off',
+        probeDetail,
+      );
+    } else {
+      report.check(
+        'T11',
+        'old version not reachable with version URLs off',
+        pass: probe == false,
+        detail: probeDetail,
+      );
+    }
+    // T15: prove the setting is what matters, then always restore it to off.
+    final enabled = await _api.send(
       method: 'POST',
       path: path,
       jsonBody: {'enabled': true, 'previews_enabled': true},
     );
-    final withPreviews = ids.isEmpty
-        ? null
-        : await _probeVersionUrl(ids.first, site);
-    await _api.send(
+    final withPreviews =
+        versionState && enabled.ok && (enabled.success ?? false)
+        ? await _probeVersionUrl(first, site, expected: true)
+        : null;
+    // Deliberately malformed disable attempt: no second token is needed to
+    // prove that a failed disable leaves the exposed old version reachable.
+    final failedDisable = await _api.send(
+      method: 'POST',
+      path: path,
+      jsonBody: {'enabled': true, 'previews_enabled': 'false'},
+    );
+    final failedRead = await _api.send(method: 'GET', path: path, retry: true);
+    final failedValue = failedRead.result?['previews_enabled'];
+    final stillOn = failedValue is bool ? failedValue : null;
+    final exposedAfterFailedDisable = versionState && (stillOn ?? false)
+        ? await _probeVersionUrl(first, site, expected: true)
+        : null;
+    final disabled = await _api.send(
       method: 'POST',
       path: path,
       jsonBody: {'enabled': true, 'previews_enabled': false},
     );
     final after = await _api.send(method: 'GET', path: path, retry: true);
-    report
-      ..info(
+    final restored =
+        disabled.ok && after.ok && after.result?['previews_enabled'] == false;
+    final gateDetail =
+        'off-reachable=${probe?.toString() ?? 'unknown'} '
+        'on-reachable=${withPreviews?.toString() ?? 'unknown'} '
+        'enable=${enabled.status} disable=${disabled.status} '
+        'restored=$restored';
+    if (!versionState || probe == null || withPreviews == null) {
+      report.skip('T15', 'version-URL gate', gateDetail);
+    } else {
+      report.check(
         'T15',
         'version-URL gate',
-        'off-reachable=${probe?.toString() ?? 'unknown'} '
-            'on-reachable=${withPreviews?.toString() ?? 'unknown'} '
-            'restored=${after.result?['previews_enabled'] == false}',
-      )
-      ..manual(
+        pass: probe == false && withPreviews == true && restored,
+        detail: gateDetail,
+      );
+    }
+    final failedGateDetail =
+        'status=${failedDisable.status} stillOn=$stillOn '
+        'reachable=${exposedAfterFailedDisable?.toString() ?? 'unknown'}';
+    if (stillOn == null || (stillOn && exposedAfterFailedDisable == null)) {
+      report.skip('T11b', 'failure-to-disable path', failedGateDetail);
+    } else {
+      report.check(
         'T11b',
         'failure-to-disable path',
-        'needs a token that cannot write the subdomain setting; '
-            'record by hand',
+        pass: stillOn && (exposedAfterFailedDisable ?? false),
+        detail: failedGateDetail,
       );
+    }
   }
 
-  List<String> _versionIds(TrialResponse response) {
-    final list = response.resultList ?? const [];
-    return [
-      for (final entry in list)
-        if (entry is Map && entry['id'] is String) entry['id'] as String,
-    ];
-  }
-
-  /// Probes the documented version-URL shape; null when it cannot be built.
-  Future<bool?> _probeVersionUrl(String versionId, String site) async {
-    final host = Uri.parse(site).host;
-    final url = Uri.parse('https://$versionId-$host/');
-    final response = await TrialPublic.get(url);
-    if (response.status == 0) return null;
-    return response.ok;
+  /// Waits up to one minute for v1 to reach [expected] public reachability.
+  ///
+  /// The returned boolean is the last observed state, not a claim that the wait
+  /// succeeded. Null means transport failures prevented a public observation.
+  Future<bool?> _probeVersionUrl(
+    String versionId,
+    String site, {
+    required bool expected,
+  }) async {
+    final url = TrialVersions.previewUri(
+      versionId: versionId,
+      site: Uri.parse(site),
+    );
+    if (url == null) return null;
+    bool? observed;
+    for (var attempt = 1; attempt <= 12; attempt++) {
+      final response = await TrialPublic.get(url);
+      observed = response.status == 0 ? null : response.ok;
+      if (observed == expected) return observed;
+      if (attempt < 12) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+      }
+    }
+    return observed;
   }
 
   // ---- T12: retired deploy -------------------------------------------------
@@ -868,27 +986,40 @@ final class Trial {
       deadline: CloudflareLimits.uploadDeadline,
     );
     final root = Uri.parse(site);
-    await _waitForRoot(root);
-    final books = await TrialPublic.get(root.resolve('books.json'));
-    final markerResponse = await TrialPublic.get(
-      root.resolve(CloudflareLimits.markerPath),
-    );
-    final parsed = markerResponse.ok
-        ? PublishMarker.tryParse(_tryDecode(markerResponse))
-        : null;
-    final csp = markerResponse.headers['content-security-policy'] ?? '';
+    late PublicResponse rootResponse;
+    late PublicResponse books;
+    late PublicResponse markerResponse;
+    PublishMarker? parsed;
+    var retired = false;
+    for (var attempt = 1; attempt <= 12; attempt++) {
+      rootResponse = await TrialPublic.get(root);
+      books = await TrialPublic.get(root.resolve('books.json'));
+      markerResponse = await TrialPublic.get(
+        root.resolve(CloudflareLimits.markerPath),
+      );
+      parsed = markerResponse.ok
+          ? PublishMarker.tryParse(_tryDecode(markerResponse))
+          : null;
+      retired =
+          rootResponse.ok &&
+          books.status == 404 &&
+          (parsed?.isRetired ?? false) &&
+          _hasRetiredHeaders(rootResponse) &&
+          _hasRetiredHeaders(books) &&
+          _hasRetiredHeaders(markerResponse);
+      if (retired) break;
+      if (attempt < 12) {
+        await Future<void>.delayed(const Duration(seconds: 5));
+      }
+    }
     report.check(
       'T12',
       'retired deploy',
-      pass:
-          deploy.ok &&
-          books.status == 404 &&
-          (parsed?.isRetired ?? false) &&
-          csp.contains("default-src 'none'"),
+      pass: deploy.ok && retired,
       detail:
-          'deploy=${deploy.status} books404=${books.status == 404} '
-          'marker=${parsed?.state.name ?? 'unreadable'} '
-          'csp=${csp.isEmpty ? 'absent' : 'present'}',
+          'deploy=${deploy.status} root=${rootResponse.status} '
+          'books404=${books.status == 404} '
+          'marker=${parsed?.state.name ?? 'unreadable'} headers=$retired',
     );
   }
 
@@ -903,13 +1034,7 @@ final class Trial {
       for (final asset in assets)
         asset.manifestKey: {'hash': asset.hash, 'size': asset.size},
     };
-    final response = await _api.send(
-      method: 'POST',
-      path:
-          '/accounts/$accountId/workers/scripts/$_largeWorkerName/'
-          'assets-upload-session',
-      jsonBody: {'manifest': manifest},
-    );
+    final response = await _largeUploadSession(accountId, manifest);
     watch.stop();
     if (!response.ok || !(response.success ?? false)) {
       report.check(
@@ -922,19 +1047,71 @@ final class Trial {
     }
     _largeWorkerCreated = true;
     final buckets = _parseBuckets(response.result?['buckets']);
-    var largest = 0;
+    final byHash = {for (final asset in assets) asset.hash: asset};
+    var largestFiles = 0;
+    var largestRawBytes = 0;
     var requested = 0;
     for (final bucket in buckets) {
       requested += bucket.length;
-      if (bucket.length > largest) largest = bucket.length;
+      if (bucket.length > largestFiles) largestFiles = bucket.length;
+      final rawBytes = bucket.fold<int>(
+        0,
+        (total, hash) => total + (byHash[hash]?.size ?? 0),
+      );
+      if (rawBytes > largestRawBytes) largestRawBytes = rawBytes;
     }
     report.info(
       'T5b',
       'large asset set',
       'files=${assets.length} buckets=${buckets.length} '
-          'largest=$largest requested=$requested '
-          'hashMs=${watch.elapsedMilliseconds} uploaded=no',
+          'largestFiles=$largestFiles largestRawBytes=$largestRawBytes '
+          'requested=$requested hashMs=${watch.elapsedMilliseconds} '
+          // Whole-process high-water mark: desktop-only supplementary evidence.
+          'processMaxRssBytes=${ProcessInfo.maxRss} uploaded=no',
     );
+  }
+
+  /// Retries an uncertain large-session transport failure only after a Worker
+  /// re-read. A discovered Worker is remembered so `finally` can delete it.
+  Future<TrialResponse> _largeUploadSession(
+    String accountId,
+    Map<String, Object?> manifest,
+  ) async {
+    final path =
+        '/accounts/$accountId/workers/scripts/$_largeWorkerName/'
+        'assets-upload-session';
+    for (var attempt = 1; attempt <= CloudflareLimits.maxAttempts; attempt++) {
+      final response = await _api.send(
+        method: 'POST',
+        path: path,
+        jsonBody: {'manifest': manifest},
+      );
+      final transportFailure =
+          response.errorLabel == 'timeout' ||
+          response.errorLabel == 'network' ||
+          response.errorLabel == 'tls';
+      if (!transportFailure) return response;
+
+      final workerPath =
+          '/accounts/$accountId/workers/scripts/$_largeWorkerName';
+      final read = await _api.send(
+        method: 'GET',
+        path: workerPath,
+        retry: true,
+      );
+      if (read.ok) _largeWorkerCreated = true;
+      report.info(
+        'T5br',
+        'large session re-read',
+        'attempt=$attempt status=${read.status}',
+      );
+      if (attempt == CloudflareLimits.maxAttempts ||
+          (read.status != 200 && read.status != 404)) {
+        return response;
+      }
+      await Future<void>.delayed(Duration(seconds: attempt));
+    }
+    throw StateError('unreachable large-session retry state');
   }
 
   // ---- T13: cleanup --------------------------------------------------------
@@ -970,6 +1147,16 @@ final class Trial {
       pass: absent == names.length,
       detail: 'workers=${names.length} deleted=$deleted absent=$absent',
     );
+  }
+
+  static bool _hasRetiredHeaders(PublicResponse response) {
+    final headers = response.headers;
+    return (headers['cache-control'] ?? '').contains('no-cache') &&
+        (headers['content-security-policy'] ?? '').contains(
+          "default-src 'none'",
+        ) &&
+        headers['x-content-type-options'] == 'nosniff' &&
+        headers['referrer-policy'] == 'no-referrer';
   }
 
   // ---- helpers -------------------------------------------------------------

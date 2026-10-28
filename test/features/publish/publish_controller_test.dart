@@ -36,6 +36,8 @@ import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
+import 'support/cloudflare_fakes.dart';
+
 const _safeReadFailure =
     'Could not read the library. Nothing was published. '
     'Please try again.';
@@ -620,6 +622,9 @@ class _Harness {
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         gitHubApiProvider.overrideWithValue(api),
         publishCredentialStoreProvider.overrideWithValue(credentials),
+        cloudflareCredentialStoreProvider.overrideWithValue(
+          InMemoryCloudflareCredentialStore(),
+        ),
         publishCoverIdsProvider.overrideWithValue(
           PublishCoverIds(_Salt(coverSalt ? const [1, 2, 3, 4] : null)),
         ),
