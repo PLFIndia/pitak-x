@@ -5,9 +5,9 @@
   as `a98c588`, S10 as `7c7dca9`). The S2 disposable-account
   trial passed on 2026-10-27 (see the sanitized report in Part M.1 and
   `docs/plans/cloudflare-handoff.md`). S10's documentation audit is handoff
-  §11. **S11 is in progress:** the S2 trial tool was removed on 2026-10-28;
-  the real-host J.7 smoke and the Linux `publish_connection` golden
-  regeneration are outstanding, with the evidence table in handoff §12.
+  §11. **S11 is in progress:** the S2 trial tool was removed in `705074d`
+  (2026-10-28); the real-host J.7 smoke and the Linux `publish_connection`
+  golden regeneration are outstanding, with the evidence table in handoff §12.
 - **Supersedes:** `cloudflare_plan.md` and `cloudflare_plan_amendments.md`.
   Those files remain review history only. Implementation uses this document.
 - **Scope:** a library can publish its read-only site (catalogue, events and
@@ -1285,7 +1285,7 @@ final consistency audit.
 | S8 | Cloudflare publish and replacement | L | F.3/F.9 covered; section survival, marker recovery, replacement warning, per-hash bytes, version gate and aggregate memory tests pass; Android release/AOT memory gate recorded. |
 | S9 | Moves and retirement | XL; split PRs | Both directions, exact ownership, read-back, idempotent pending retry and every crash point pass before completion. |
 | S10 | Docs and release checklist | M | Every Part K item and ADR amendment done; no contradictory docs remain. |
-| S11 | Real-host smoke and cleanup | M | Every Part J smoke step passes; `tool/cloudflare_trial/` removed (done, 2026-10-28); Linux goldens regenerated; final CI/release gates green. |
+| S11 | Real-host smoke and cleanup | M | Every Part J smoke step passes; `tool/cloudflare_trial/` removed (done in `705074d`, 2026-10-28); Linux goldens regenerated; final CI/release gates green. |
 
 S6–S9 wait for S2's outcome. If T6 fails or the maintainer rejects a required
 C1/C6 consequence, stop rather than patching around the decision.

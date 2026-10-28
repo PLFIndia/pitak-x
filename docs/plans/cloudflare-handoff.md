@@ -5,7 +5,7 @@
 - **Branch:** `cloudflare`; implementation commits through `a98c588` are listed
   below (S2–S9 landed as one consolidated commit). **S10 (docs and release
   checklist) is implemented in `7c7dca9`.** **S11 started with the trial-tool
-  removal (2026-10-28);** the real-host J.7 smoke and the Linux
+  removal in `705074d` (2026-10-28);** the real-host J.7 smoke and the Linux
   `publish_connection` golden regeneration remain:
 
   | Commit | Session | What landed |
@@ -25,6 +25,7 @@
   | `1a44444` | S4 remainder | Option B verification of an unconfirmed publication before republishing |
   | `a98c588` | S2–S9 | Consolidated commit: the sanitized S2 trial report, the S6 HTTP adapters, S7 connection/setup, S8 ordinary publish/replacement, and S9 moves/retirement |
   | `7c7dca9` | S10 | ADR 0017 accepted; ARCHITECTURE §5.8 + host/egress/non-goal/bounds reconciliation; PRIVACY both hosts; RELEASING §6.5 smoke matrix + App access; README; CHANGELOG S7/S8/S1; in-app guide both hosts; mockup marked frozen |
+  | `705074d` | S11 (cleanup) | Trial harness (9 `.dart` + `README.md`) and its 18 tests removed after a final clean `dart analyze tool`/format pass; plan, ADR 0017 and handoff records reconciled |
 
 - **State:** every session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
