@@ -7,6 +7,7 @@
 /// re-enters through the controller with only a safe target/section/digest.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
@@ -110,7 +111,16 @@ final class PublishToCloudflareUseCase {
         replacement: replacement,
         progress: progress,
       );
-    } on CloudflareApiException catch (error) {
+    } on CloudflareApiException catch (error, stackTrace) {
+      // Safe smoke diagnostics: numeric/category data and method names only.
+      // Never log bearer tokens, JWTs, URLs, response bodies, or library data.
+      debugPrint(
+        'CloudflarePublish API failure: ${error.kind.name}; '
+        'status=${error.statusCode}; codes=${error.errorCodes}; '
+        'deployStarted=${progress.deployStarted}; '
+        'deployAccepted=${progress.deployAccepted}',
+      );
+      debugPrintStack(stackTrace: stackTrace, label: 'CloudflarePublish stack');
       result = PublishFailure(
         CloudflarePublishOutcomes.transport(
           error,
