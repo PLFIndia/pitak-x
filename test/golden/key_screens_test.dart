@@ -35,6 +35,8 @@ import 'package:pitaka/features/network/presentation/widgets/open_published_site
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -310,6 +312,17 @@ void main() {
           ),
           cloudflareCredentialStoreProvider.overrideWithValue(
             cloudflare.credentials,
+          ),
+          // Pin the signed-out host projection as well. Without this, the
+          // publish card reads platform storage and its loading spinner makes
+          // pumpAndSettle time out before a screenshot can be taken.
+          publishSiteStatusProvider.overrideWith(
+            (ref) async => const PublishSiteStatus(
+              activeHost: null,
+              target: null,
+              verifiedSiteUrl: null,
+              setupMessage: 'Pick a target repo first.',
+            ),
           ),
         ],
         child: themedApp(const PublishPage()),
