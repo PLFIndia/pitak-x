@@ -152,8 +152,14 @@ final class FakeS8Reads implements PublishReads {
   final List<String> calls = [];
   final List<String> descriptorSites = [];
 
+  /// Counter mirrors of [calls]/[descriptorSites] for cheap assertions.
+  int catalogueCalls = 0;
+  int eventsCalls = 0;
+  int libraryJsonCalls = 0;
+
   @override
   Future<Either<Failure, List<CatalogueItem>>> catalogueItems() async {
+    catalogueCalls++;
     calls.add('catalogue');
     return catalogueResult ?? right(books);
   }
@@ -168,12 +174,14 @@ final class FakeS8Reads implements PublishReads {
 
   @override
   Future<Either<Failure, EventsContent>> events() async {
+    eventsCalls++;
     calls.add('events');
     return eventsResult ?? right(eventsContent);
   }
 
   @override
   Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async {
+    libraryJsonCalls++;
     descriptorSites.add(siteUrl);
     return right(descriptor);
   }

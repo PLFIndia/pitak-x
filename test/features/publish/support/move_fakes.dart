@@ -351,8 +351,12 @@ final class MoveHarness {
     PublishTarget? oldTarget,
     PublishTarget? newTarget,
     this.withJournal = true,
+    MoveLibraryNameReader? readLibraryName,
   }) : oldTarget = oldTarget ?? moveGitHubTarget,
-       newTarget = newTarget ?? moveCloudflareTarget {
+       newTarget = newTarget ?? moveCloudflareTarget,
+       // M9/M8 need a scriptable settings read; the default keeps every
+       // existing test on the same name.
+       readLibraryName = readLibraryName ?? (() async => 'My Library') {
     targets = FakeMoveTargets(
       oldTarget: this.oldTarget,
       newTarget: this.newTarget,
@@ -388,7 +392,7 @@ final class MoveHarness {
       buildMovedHtml: ({required libraryName, required newTarget}) async =>
           utf8.encode('<html>$libraryName moved</html>'),
       validateMovedHtml: (pending) async => validateMoved,
-      readLibraryName: () async => 'My Library',
+      readLibraryName: this.readLibraryName,
       clock: () => 1700000000000,
       publishId: () => moveRetiredPublishId,
     );
@@ -396,6 +400,9 @@ final class MoveHarness {
 
   /// Whether the harness starts with a consistent live journal.
   final bool withJournal;
+
+  /// Reads the moved-page library name; scriptable since Phase 0.7.
+  final MoveLibraryNameReader readLibraryName;
 
   /// Direction's source.
   final PublishTarget oldTarget;

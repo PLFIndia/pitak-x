@@ -261,8 +261,22 @@ final class FakeCloudflareApi implements CloudflareApi {
   CloudflareApiException? uploadError;
   CloudflareApiException? deployError;
 
-  /// Optional gate for proving cross-command queue serialization.
-  Future<void>? workerExistsGate;
+  /// Optional gate that blocks one API call until completed. Tests use it to
+  /// prove cross-command queue serialization and mid-operation disposal.
+  Future<void>? gate;
+
+  /// Which method [gate] blocks; null blocks every method.
+  String? gatedCall;
+
+  /// Awaits the gate only for [call]. Counters are incremented first, so a
+  /// test can prove the call started while the operation is still blocked.
+  Future<void> _awaitGate(String call) async {
+    final current = gate;
+    if (current == null) return;
+    final target = gatedCall;
+    if (target != null && target != call) return;
+    await current;
+  }
 
   int userVerifyCalls = 0;
   int accountVerifyCalls = 0;
@@ -282,11 +296,16 @@ final class FakeCloudflareApi implements CloudflareApi {
   /// Optional side effect after a successful fake deploy (for crash tests).
   void Function()? onDeploy;
 
+  /// Runs when a deploy is attempted, BEFORE any scripted [deployError] is
+  /// thrown, so a test can model "the deploy landed but the response was lost".
+  void Function()? onDeployAttempt;
+
   @override
   Future<CloudflareTokenVerification> verifyUserToken(
     CloudflareApiToken token,
   ) async {
     userVerifyCalls++;
+    await _awaitGate('verifyUserToken');
     final error = userVerifyError;
     if (error != null) throw error;
     return userVerification;
@@ -298,6 +317,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareAccountId accountId,
   }) async {
     accountVerifyCalls++;
+    await _awaitGate('verifyAccountToken');
     final error = accountVerifyError;
     if (error != null) throw error;
     return accountVerification;
@@ -308,6 +328,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     CloudflareApiToken token,
   ) async {
     listCalls++;
+    await _awaitGate('listAccounts');
     final error = listError;
     if (error != null) throw error;
     return listing!;
@@ -319,6 +340,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareAccountId accountId,
   }) async {
     subdomainReadCalls++;
+    await _awaitGate('readAccountSubdomain');
     final error = readSubdomainError;
     if (error != null) throw error;
     return subdomain;
@@ -331,6 +353,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareSubdomain candidate,
   }) async {
     subdomainCheckCalls++;
+    await _awaitGate('checkAccountSubdomain');
     final error = checkSubdomainError;
     if (error != null) throw error;
     return CloudflareSubdomainCheckResult(
@@ -346,6 +369,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareSubdomain candidate,
   }) async {
     subdomainCreateCalls++;
+    await _awaitGate('createAccountSubdomain');
     final error = createSubdomainError;
     if (error != null) throw error;
     return candidate;
@@ -358,10 +382,9 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareWorkerName workerName,
   }) async {
     workerExistsCalls++;
+    await _awaitGate('workerExists');
     final error = workerExistsError;
     if (error != null) throw error;
-    final gate = workerExistsGate;
-    if (gate != null) await gate;
     return workerExistsValue;
   }
 
@@ -380,6 +403,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required List<CloudflareAssetManifestEntry> manifest,
   }) async {
     uploadManifests.add(List.unmodifiable(manifest));
+    await _awaitGate('createUploadSession');
     onCreateUploadSession?.call();
     final error = sessionError;
     if (error != null) throw error;
@@ -393,6 +417,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required List<CloudflareBucketAsset> assets,
   }) async {
     bucketCalls++;
+    await _awaitGate('uploadBucket');
     final error = uploadError;
     if (error != null) throw error;
     bucketUploads.add(List.unmodifiable(assets));
@@ -415,6 +440,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareDeployRecoveryCallback recovery,
   }) async {
     deployCalls++;
+    await _awaitGate('deploy');
     deployedCompletionTokens.add(completionToken.use((value) => value));
     deployRecovery = recovery;
     final error = deployError;
@@ -429,6 +455,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareWorkerName workerName,
   }) async {
     routeReadCalls++;
+    await _awaitGate('readWorkerRoute');
     final error = routeError;
     if (error != null) throw error;
     return route;
@@ -442,6 +469,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required bool enabled,
     required bool previewsEnabled,
   }) async {
+    await _awaitGate('updateWorkerRoute');
     routeUpdates.add(
       CloudflareWorkerRoute(enabled: enabled, previewsEnabled: previewsEnabled),
     );

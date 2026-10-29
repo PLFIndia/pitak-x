@@ -300,7 +300,9 @@ void main() {
       await h.settle();
       await h.toWorker();
       final gate = Completer<void>();
-      h.graph.api.workerExistsGate = gate.future;
+      h.graph.api
+        ..gatedCall = 'workerExists'
+        ..gate = gate.future;
 
       // toWorker started the operation; answer its Worker prompt.
       h.notifier.answerText('new-worker', h.serial);

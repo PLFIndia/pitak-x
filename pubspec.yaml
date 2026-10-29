@@ -181,6 +181,11 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   very_good_analysis: ^6.0.0
+  # Deterministic timers for the upload-progress tests (Cloudflare fix plan
+  # Phase 2): a fake clock lets "60 s with no progress" be proven without a
+  # real wait. Already present transitively via flutter_test; declared here so
+  # the tests may import it directly (depend_on_referenced_packages).
+  fake_async: ^1.3.3
   build_runner: ^2.4.13
   riverpod_generator: ^2.6.1
   freezed: ^2.5.7
