@@ -752,8 +752,8 @@ No token, JWT, account id or raw response body goes in this table.
 | 3 | Remove a poster, publish events | Old poster URL 404; no old version URL serves it | **PASS** (2026-10-29, `691b325`): after deleting the poster, a catalogue publish left the events section and poster unchanged (by design, R7); the following events publish (14:15 IST) emptied `events.json`, restored the empty events page, and the old poster URL is a real 404 with and without a cache-buster. Dashboard Worker → Domains shows Preview URLs Disabled, so no version URL can serve the old poster (S2/T11/T15) |
 | 4 | Root / index / events / JSON / missing file | 200 · 307 · 307 → `/events` (200) · `application/json` · real 404; no-cache + CORS | **PASS** (2026-10-29, `691b325`, unauthenticated reads): `/` 200 `text/html`; `/index.html` 307 → `/`; `/events` 200 `text/html` (`/events.html` 307 → `/events`); `books.json`/`library.json`/`events.json`/marker 200 `application/json`; poster 200 `image/jpeg`; missing file real 404. Every response had `Cache-Control: no-cache` and `Access-Control-Allow-Origin: *` |
 | 5 | Reset local Cloudflare state, publish | Explicit replacement warning with real counts; cancel writes nothing | **PASS** (2026-10-29, `691b325`): `pm clear` is refused by OxygenOS, so local state was reset by uninstall + reinstall (`allowBackup=false`, nothing restored). Run A: new synthetic book, reconnect (API-read subdomain, replacement consent, no deploy), Publish → "Replace the site" showed 1 book / 0 posters with the warning; confirmed → replacement live 14:30 IST. Run B (second reinstall): same dialog, **Cancel** → marker, `books.json` and `library.json` byte-identical to the 14:30 deploy |
-| 6 | Move Cloudflare → GitHub | New descriptor address; moved page + retired headers + retired marker; old `books.json` 404 | *pending* |
-| 7 | Move GitHub → Cloudflare | Reverse of 6; unrelated `README.md` survives | *pending* |
+| 6 | Move Cloudflare → GitHub | New descriptor address; moved page + retired headers + retired marker; old `books.json` 404 | **PASS** (2026-10-29, `691b325`; throwaway public repo created by Pitak with an auto-init `README.md`). GitHub got the complete snapshot (`index.html`, `books.json`, `library.json`, `events.*`, `covers/`) with `library.json.siteUrl` = the GitHub address; `README.md` kept. Cloudflare then served the moved page at `/` (it names the new address) with `Cache-Control: no-cache`, the full CSP, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; marker `state: retired` (14:49 IST); `books.json`, `library.json`, `events.json` 404. The first Move attempt committed (14:45:52) but did not move — see note below |
+| 7 | Move GitHub → Cloudflare | Reverse of 6; unrelated `README.md` survives | **PASS** (2026-10-29, `691b325`, one attempt): Cloudflare deployed the complete live snapshot first (marker `live` 14:55:25 IST; `/`, `books.json`, `library.json`, `events.json`, `/events` 200 with no-cache + CORS; `library.json.siteUrl` = workers.dev); then ONE GitHub commit (14:55:55) left exactly `404.html`, `README.md`, `index.html`. The moved root names the Cloudflare address and carries the meta CSP; old `books.json`/`library.json`/`events.*` 404; `README.md` still 200 |
 | 8 | Pending Retry after a simulated local failure; reconnect to another Worker | Retry resumes only missing work; wrong target refuses retirement | *pending* |
 | 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | *pending* |
 | 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | *pending* |
@@ -887,6 +887,22 @@ reader served HTML at file names, so no test could fail. Plan row 81.
 - `MovedSiteVerifier` already read the moved root as `''`, so Cloudflare
   retirement read-back was unaffected; the GitHub `CompleteSnapshotVerifier`
   is GitHub-only and correct as is.
+
+**Step 6 observation — the first Move attempt to a brand-new Pages site
+(not fixed; safe, but worth a decision).** The repository history shows two
+complete-snapshot commits, `Pitak move …` at 14:45:52 and 14:48:18 IST, that
+differ only in `books.json.exportedAt`. The user saw the first attempt "not
+move", and the Cloudflare source stayed live until the second attempt retired it
+at 14:49:06. The most likely cause is that GitHub Pages' FIRST build of a new
+repository took longer than the destination read-back budget (12 × 5 s): the
+destination failed verification, so — by design — no pending move was recorded
+and the source was not touched (this is the C2/R16 safety property working on a
+real host). Two consequences to decide on before release: (a) a user may see
+"move failed" for a site that simply needs another minute; the result copy
+could say that the new site was written and may still be building; (b) a
+re-confirmed move rebuilds `books.json` with a new `exportedAt`, so the
+"already-committed retry" adoption never matches and each attempt adds one
+expected-head commit. Neither loses data or publishes unverified state.
 
 **UX observation (not fixed; not a correctness gap).** "Retry verification" is
 shown only from the in-memory result of the last publish. After an app restart
