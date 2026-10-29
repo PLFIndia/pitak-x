@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
+import 'package:pitaka/features/publish/presentation/widgets/cloudflare_forget_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_name_dialogs.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_tile.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_token_dialog.dart';
@@ -56,6 +57,7 @@ class _CloudflareConnectionSectionState
             onConnect: _startConnection,
             onContinue: _continueSetup,
             onDisconnect: _disconnect,
+            onForgetConnection: _forgetConnection,
           ),
         );
   }
@@ -71,6 +73,14 @@ class _CloudflareConnectionSectionState
   void _disconnect() => unawaited(
     ref.read(cloudflareConnectionControllerProvider.notifier).disconnect(),
   );
+
+  Future<void> _forgetConnection() async {
+    if (!await showForgetCloudflareConnectionDialog(context)) return;
+    if (!mounted) return;
+    await ref
+        .read(cloudflareConnectionControllerProvider.notifier)
+        .forgetConnection();
+  }
 
   Future<void> _showPrompt(CloudflareConnectionUi ui) async {
     final prompt = ui.prompt;

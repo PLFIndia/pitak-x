@@ -15,6 +15,11 @@ enum CloudflareConnectionPhase {
 
   /// A dialog is open; the publish queue is not held.
   awaitingInput,
+
+  /// The stored connection exists but cannot be decoded (an older app version
+  /// or a reset secure store). It carries no secret; the user can forget it
+  /// without losing the public site, Worker or share link (fix-plan M7).
+  unreadable,
 }
 
 /// Every dialog the setup state machine can request.

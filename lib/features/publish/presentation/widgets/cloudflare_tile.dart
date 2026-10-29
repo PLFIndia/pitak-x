@@ -28,6 +28,7 @@ class CloudflareTile extends StatelessWidget {
     required this.onConnect,
     required this.onContinue,
     required this.onDisconnect,
+    required this.onForgetConnection,
     super.key,
   });
 
@@ -43,8 +44,14 @@ class CloudflareTile extends StatelessWidget {
   /// Forgets only the secure connection.
   final VoidCallback onDisconnect;
 
+  /// Forgets a connection record that could not be read (M7).
+  final VoidCallback onForgetConnection;
+
   @override
   Widget build(BuildContext context) {
+    if (ui.phase == CloudflareConnectionPhase.unreadable) {
+      return _unreadable(context);
+    }
     final status = ui.status;
     final idle = ui.phase == CloudflareConnectionPhase.idle;
     return ProviderTile(
@@ -163,6 +170,32 @@ class CloudflareTile extends StatelessWidget {
       ),
     );
   }
+
+  /// An unreadable record is an expected state with a way out, not a crash.
+  Widget _unreadable(BuildContext context) => ProviderTile(
+    title: 'Cloudflare Workers',
+    status: ProviderConfig.notConfigured,
+    body: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Cloudflare setup on this phone can’t be read. This can happen after '
+          'installing an older version of Pitak or after the phone’s secure '
+          'storage was reset. Forget it and connect again. Your public site, '
+          'its Worker and your share link are not changed.',
+        ),
+        const SizedBox(height: 12),
+        FilledButton(
+          onPressed: onForgetConnection,
+          child: const Text('Forget Cloudflare connection'),
+        ),
+        if (ui.statusMessage case final message?) ...[
+          const SizedBox(height: 12),
+          Text(message),
+        ],
+      ],
+    ),
+  );
 
   Widget _verifiedRow(BuildContext context) {
     final green = Theme.of(context).brightness == Brightness.dark

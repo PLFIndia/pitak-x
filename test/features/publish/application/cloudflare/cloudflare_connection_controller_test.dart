@@ -294,6 +294,61 @@ void main() {
   });
 
   test(
+    'an unreadable stored connection becomes a data state, not a crash',
+    () async {
+      final h = _Harness(connection: cloudflareTestConnection());
+      h.graph.credentials.failRead = true;
+
+      final ui = await h.settle();
+
+      expect(ui.phase, CloudflareConnectionPhase.unreadable);
+      expect(ui.status.hasToken, isFalse);
+      expect(ui.prompt, isNull);
+    },
+  );
+
+  test('forgetConnection clears the unreadable record exactly once and '
+      'returns to not-connected', () async {
+    final h = _Harness(connection: cloudflareTestConnection());
+    h.graph.credentials.failRead = true;
+    await h.settle();
+    h.graph.credentials.failRead = false;
+
+    await h.notifier.forgetConnection();
+    await _flush();
+
+    expect(h.graph.credentials.clears, 1);
+    expect(h.graph.credentials.record, isNull);
+    expect(h.last.phase, CloudflareConnectionPhase.idle);
+    expect(h.last.status.hasToken, isFalse);
+    expect(h.last.statusMessage, CloudflareErrorMessages.disconnected);
+    // The public record and journal are untouched (D.6/F.8).
+    expect(h.graph.hostStore.stored, isNull);
+  });
+
+  test(
+    'forgetConnection is refused while another command is running',
+    () async {
+      final h = _Harness(connection: cloudflareTestConnection());
+      await h.settle();
+      final gate = Completer<void>();
+      h.graph.api
+        ..gatedCall = 'workerExists'
+        ..gate = gate.future;
+      h.operation = h.notifier.startConnection();
+      h.notifier.answerToken(cloudflareTestToken(), h.serial);
+      await _flush(2);
+
+      await h.notifier.forgetConnection();
+      expect(h.graph.credentials.clears, 0);
+
+      gate.complete();
+      h.notifier.answerToken(null, h.serial);
+      await h.operation;
+    },
+  );
+
+  test(
     'a queued setup command blocks the next publish operation until done',
     () async {
       final h = _Harness();

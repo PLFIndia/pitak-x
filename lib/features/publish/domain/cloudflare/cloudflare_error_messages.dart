@@ -124,6 +124,11 @@ abstract final class CloudflareErrorMessages {
   static const temporaryCleanup =
       'Temporary publish files could not be removed.';
 
+  /// The stored connection cannot be decoded; only a fresh connection fixes it.
+  static const connectionUnreadable =
+      'Cloudflare setup on this phone can’t be read. Open Publish → '
+      'Connection to fix it.';
+
   /// Secure-storage failure without platform detail.
   static const storage =
       'Cloudflare setup could not be saved on this device. Try again.';

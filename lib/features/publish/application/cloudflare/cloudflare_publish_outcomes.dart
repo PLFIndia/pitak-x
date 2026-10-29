@@ -123,7 +123,8 @@ abstract final class CloudflarePublishOutcomes {
     PublishReadFailure(:final message) => message,
     ValidationFailure(:final message) => message,
     CloudflareFailure(:final message) => message,
-    StorageFailure() => CloudflareErrorMessages.storage,
+    // A read failure is not a failed write: the connection needs Forgetting.
+    StorageFailure() => CloudflareErrorMessages.connectionUnreadable,
     _ => CloudflareErrorMessages.generic,
   };
 

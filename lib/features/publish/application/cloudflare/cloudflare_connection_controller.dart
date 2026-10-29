@@ -50,12 +50,17 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     });
     final setup = await ref.watch(setupCloudflareSiteProvider.future);
     final loaded = await setup.loadStatus();
+    // A read failure is an EXPECTED state (an older app version, a reset
+    // secure store), not a crash: the tile offers "Forget" (fix-plan M7).
     return switch (loaded) {
       Right(value: final status) => CloudflareConnectionUi(
         status: status,
         activeHost: setup.currentActiveHost(),
       ),
-      Left() => throw StateError('Cloudflare setup status unavailable'),
+      Left() => CloudflareConnectionUi(
+        phase: CloudflareConnectionPhase.unreadable,
+        activeHost: setup.currentActiveHost(),
+      ),
     };
   }
 
@@ -69,7 +74,15 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   Future<void> continueSetup() => _start(_resume);
 
   /// Forgets only the secure connection, never the remote Worker/public state.
-  Future<void> disconnect() => _start(() async {
+  Future<void> disconnect() => forgetConnection();
+
+  /// Forgets a connection record the app cannot READ.
+  ///
+  /// The secure store is deleted without decoding it, so an unreadable value
+  /// is no longer a dead end (fix-plan M7). Only `cf_connection` is cleared:
+  /// the public record, the journal and any pending move stay, so the site,
+  /// its Worker and the share link are untouched (D.6/F.8).
+  Future<void> forgetConnection() => _start(() async {
     final result = await _enqueueSetup((setup) => setup.disconnect());
     final saved = await _unwrap(result);
     if (saved == null) return;

@@ -215,6 +215,31 @@ void main() {
     },
   );
 
+  test('clear works on an unreadable value from a newer schema', () async {
+    // A newer app version wrote a record this build cannot decode. Forgetting
+    // it must work without decoding: only the key is deleted.
+    final storage = _FakeStorage()
+      ..values[SecureStorageCloudflareCredentialStore.key] = jsonEncode({
+        'schema': 99,
+        'token': 'unreadable-to-this-build',
+      });
+    final store = SecureStorageCloudflareCredentialStore(storage: storage);
+
+    expect((await store.read()).isLeft(), isTrue);
+    expect((await store.clear()).isRight(), isTrue);
+    expect(storage.values, isEmpty);
+  });
+
+  test('clear works on an undecodable value', () async {
+    final storage = _FakeStorage()
+      ..values[SecureStorageCloudflareCredentialStore.key] = '{not json';
+    final store = SecureStorageCloudflareCredentialStore(storage: storage);
+
+    expect((await store.read()).isLeft(), isTrue);
+    expect((await store.clear()).isRight(), isTrue);
+    expect(storage.values, isEmpty);
+  });
+
   test(
     'token kind routes account and legacy shapes without inspecting prefixes',
     () {

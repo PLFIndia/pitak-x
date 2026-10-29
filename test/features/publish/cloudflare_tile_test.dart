@@ -9,13 +9,14 @@ import 'package:pitaka/features/publish/presentation/widgets/provider_tile.dart'
 import '../../support/a11y.dart';
 import 'support/cloudflare_fakes.dart';
 
-Widget _app(CloudflareConnectionUi ui) => MaterialApp(
+Widget _app(CloudflareConnectionUi ui, {VoidCallback? onForget}) => MaterialApp(
   home: Scaffold(
     body: CloudflareTile(
       ui: ui,
       onConnect: () {},
       onContinue: () {},
       onDisconnect: () {},
+      onForgetConnection: onForget ?? () {},
     ),
   ),
 );
@@ -26,6 +27,30 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
+  testWidgets(
+    'an unreadable record shows the explanation and a Forget action',
+    (tester) async {
+      var forgotten = 0;
+      await tester.pumpWidget(
+        _app(
+          const CloudflareConnectionUi(
+            phase: CloudflareConnectionPhase.unreadable,
+          ),
+          onForget: () => forgotten++,
+        ),
+      );
+      await _expand(tester);
+
+      expect(find.textContaining('can’t be read'), findsOneWidget);
+      expect(find.textContaining('share link are not changed'), findsOneWidget);
+      await tester.tap(find.text('Forget Cloudflare connection'));
+      expect(forgotten, 1);
+      // No Connect/Disconnect/Continue action is offered while unreadable.
+      expect(find.text('Connect Cloudflare'), findsNothing);
+      expect(find.text('Disconnect'), findsNothing);
+    },
+  );
+
   test('derives all five provider configuration states', () {
     expect(
       cloudflareProviderConfig(CloudflareConnectionStatus.empty),
