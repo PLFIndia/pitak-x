@@ -310,8 +310,8 @@ into a document or an issue.
 |---|---|---|
 | 1 | Connect, including the manual-subdomain fallback when the token cannot read the account subdomain | Candidate stays unconfirmed until the marker-only deploy is read back from its exact origin; a confirmed target is not presented as live |
 | 2 | Publish catalogue, then events, then catalogue again | The events page survives the second catalogue publish (one section never erases the other) |
-| 3 | Remove a poster, then publish events | The old poster URL returns 404; an old **version URL** cannot serve it either |
-| 4 | Root, `index.html`, `events.html`, `books.json` and a missing file | 200 / 307 / 200 / `application/json` / real 404; `Cache-Control: no-cache` and `Access-Control-Allow-Origin: *` on assets |
+| 3 | Remove a poster, then publish **events** (a catalogue publish deliberately leaves the events section, poster included, untouched) | The old poster URL returns 404; an old **version URL** cannot serve it either: the dashboard's Worker → **Domains** page shows Preview URLs **Disabled** |
+| 4 | Root, `index.html`, `events.html`, `/events`, `books.json` and a missing file | 200 / 307 → `/` / 307 → `/events` / 200 / `application/json` / real 404 (`auto-trailing-slash` serves an HTML file without its extension); `Cache-Control: no-cache` and `Access-Control-Allow-Origin: *` on assets |
 | 5 | Reset local Cloudflare state (reinstall or clear app data), then publish | The explicit whole-site replacement warning appears with real counts; cancelling writes nothing |
 | 6 | Move Cloudflare → GitHub | New descriptor carries the GitHub address; Cloudflare serves the moved page plus the full retired headers; the retired marker is `state: "retired"`; old `books.json` is 404 |
 | 7 | Move GitHub → Cloudflare | Reverse of 6; an unrelated `README.md` in the repo still exists afterwards |
