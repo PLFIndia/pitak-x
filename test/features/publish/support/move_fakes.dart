@@ -169,6 +169,16 @@ final class ScriptedHostStore implements PublishHostStateStore {
     stored = state;
     return right(unit);
   }
+
+  @override
+  Future<Either<Failure, Unit>> clearUnreadable() async {
+    if (load() is Right) {
+      return left(const ValidationFailure('synthetic readable record'));
+    }
+    failLoad = false;
+    stored = null;
+    return right(unit);
+  }
 }
 
 final class _NoManifest implements PublishManifestGateway {

@@ -15,6 +15,7 @@ final class PublishSiteStatus {
     required this.setupMessage,
     this.pendingMove,
     this.canMove = false,
+    this.journalUnreadable = false,
   });
 
   /// Host selected by the journal, or null before setup.
@@ -34,6 +35,10 @@ final class PublishSiteStatus {
 
   /// Whether both exact configured endpoints satisfy the move preconditions.
   final bool canMove;
+
+  /// True when the host journal exists but cannot be read. Every command fails
+  /// closed; the card offers the explicit reset (fix-plan N7).
+  final bool journalUnreadable;
 
   /// Whether the ordinary publish action may start.
   bool get canPublish => target != null;

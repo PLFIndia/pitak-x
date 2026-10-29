@@ -29,6 +29,15 @@ class _Store implements PublishHostStateStore {
     stored = state;
     return right(unit);
   }
+
+  @override
+  Future<Either<Failure, Unit>> clearUnreadable() async {
+    if (load() is Right) {
+      return left(const ValidationFailure('readable'));
+    }
+    stored = null;
+    return right(unit);
+  }
 }
 
 class _Manifest implements PublishManifestGateway {

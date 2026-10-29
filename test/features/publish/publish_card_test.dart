@@ -3,8 +3,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
@@ -67,16 +70,20 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester,
-    _FakePublishController controller,
-  ) async {
+    _FakePublishController controller, {
+    PublishSiteStatus? site,
+    PublishJournalReset? reset,
+  }) async {
     tester.view.physicalSize = const Size(500, 1400);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          publishSiteStatusProvider.overrideWith((ref) async => status),
+          publishSiteStatusProvider.overrideWith((ref) async => site ?? status),
           publishControllerProvider.overrideWith(() => controller),
+          if (reset != null)
+            publishJournalResetProvider.overrideWith(() => reset),
         ],
         child: const MaterialApp(home: Scaffold(body: PublishCard())),
       ),
@@ -196,4 +203,55 @@ void main() {
     expect(controller.calls, hasLength(2));
     expect(controller.calls.last.verificationOnly, isTrue);
   });
+
+  testWidgets('an unreadable publishing record offers a confirmed reset', (
+    tester,
+  ) async {
+    final reset = _FakeReset();
+    await pump(
+      tester,
+      _FakePublishController([]),
+      site: const PublishSiteStatus(
+        activeHost: null,
+        target: null,
+        verifiedSiteUrl: null,
+        setupMessage: 'Cloudflare setup on this phone can’t be read.',
+        journalUnreadable: true,
+      ),
+      reset: reset,
+    );
+
+    expect(find.text('Reset publishing record'), findsOneWidget);
+    await tester.tap(find.text('Reset publishing record'));
+    await tester.pumpAndSettle();
+    expect(find.text('Reset the publishing record?'), findsOneWidget);
+    await tester.tap(find.text('Keep the record'));
+    await tester.pumpAndSettle();
+    expect(reset.calls, 0);
+
+    await tester.tap(find.text('Reset publishing record'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Reset record'));
+    await tester.pumpAndSettle();
+    expect(reset.calls, 1);
+    expect(find.textContaining('Publishing record reset'), findsOneWidget);
+  });
+
+  testWidgets('a readable record never shows the reset action', (tester) async {
+    await pump(tester, _FakePublishController([]));
+    expect(find.text('Reset publishing record'), findsNothing);
+  });
+}
+
+final class _FakeReset extends PublishJournalReset {
+  int calls = 0;
+
+  @override
+  FutureOr<void> build() {}
+
+  @override
+  Future<Either<Failure, Unit>> resetUnreadable() async {
+    calls++;
+    return right(unit);
+  }
 }

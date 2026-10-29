@@ -169,16 +169,35 @@ final class FakePublishHostStateStore implements PublishHostStateStore {
   /// Current journal.
   PublishHostState? stored;
   int saves = 0;
+  int clears = 0;
   bool failSave = false;
+  bool failClear = false;
+
+  /// When true, [load] returns the typed unreadable failure (N7).
+  bool unreadable = false;
 
   @override
-  Either<Failure, PublishHostState?> load() => right(stored);
+  Either<Failure, PublishHostState?> load() =>
+      unreadable ? left(const StorageFailure('test host read')) : right(stored);
 
   @override
   Future<Either<Failure, Unit>> save(PublishHostState state) async {
     saves++;
     if (failSave) return left(const StorageFailure('test host save'));
     stored = state;
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> clearUnreadable() async {
+    clears++;
+    if (failClear) return left(const StorageFailure('test host clear'));
+    // Same rule as the real store: a readable record is never deleted.
+    if (load() is Right) {
+      return left(const ValidationFailure('readable'));
+    }
+    unreadable = false;
+    stored = null;
     return right(unit);
   }
 }

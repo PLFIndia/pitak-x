@@ -869,6 +869,10 @@ class _HostState implements PublishHostStateStore {
     stored = state;
     return right(unit);
   }
+
+  @override
+  Future<Either<Failure, Unit>> clearUnreadable() async =>
+      left(const ValidationFailure('readable'));
 }
 
 class _Manifest implements PublishManifestGateway {

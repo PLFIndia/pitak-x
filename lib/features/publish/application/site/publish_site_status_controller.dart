@@ -21,7 +21,9 @@ Future<PublishSiteStatus> publishSiteStatus(PublishSiteStatusRef ref) async {
     ..watch(gitHubConnectionControllerProvider)
     ..watch(cloudflareConnectionControllerProvider);
   final hostState = await ref.watch(publishHostStateRepositoryProvider.future);
-  final current = hostState.currentState();
+  final stored = hostState.storedState();
+  final journalUnreadable = stored.isLeft();
+  final current = journalUnreadable ? null : hostState.currentState();
   final resolver = await ref.watch(activePublishTargetResolverProvider.future);
   final resolved = await resolver.call();
   final failure = resolved.swap().toNullable();
@@ -40,5 +42,6 @@ Future<PublishSiteStatus> publishSiteStatus(PublishSiteStatusRef ref) async {
         : CloudflarePublishOutcomes.failure(failure).reason,
     pendingMove: pending,
     canMove: moveTargets?.isRight() ?? false,
+    journalUnreadable: journalUnreadable,
   );
 }

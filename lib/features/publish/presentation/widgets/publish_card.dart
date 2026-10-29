@@ -9,12 +9,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/publish_status_copy.dart';
+import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/presentation/widgets/move_site_controls.dart';
 import 'package:pitaka/features/publish/presentation/widgets/pending_move_banner.dart';
+import 'package:pitaka/features/publish/presentation/widgets/publish_journal_reset_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/replace_site_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
 import 'package:pitaka/features/publish/presentation/widgets/share_library_sheet.dart';
@@ -67,6 +69,25 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     final target = site.target;
     return Column(
       children: [
+        if (site.journalUnreadable)
+          SectionCard(
+            title: 'Publishing record',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Pitak can’t read its record of where your library is '
+                  'published. This can happen after installing an older '
+                  'version.',
+                ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: busy ? null : _resetJournal,
+                  child: const Text('Reset publishing record'),
+                ),
+              ],
+            ),
+          ),
         SectionCard(
           title: 'Publish',
           child: Column(
@@ -208,6 +229,20 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     } finally {
       _dialogOpen = false;
     }
+  }
+
+  Future<void> _resetJournal() async {
+    if (!await showPublishJournalResetDialog(context)) return;
+    if (!mounted) return;
+    final result = await ref
+        .read(publishJournalResetProvider.notifier)
+        .resetUnreadable();
+    if (!mounted) return;
+    result.fold(
+      (_) => _snack('The publishing record could not be reset. Try again.'),
+      (_) =>
+          _snack('Publishing record reset. Publish to record your site again.'),
+    );
   }
 
   Future<void> _copy(String url) async {

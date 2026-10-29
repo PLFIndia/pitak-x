@@ -161,4 +161,28 @@ void main() {
       expect(raw.toLowerCase(), isNot(contains(forbidden)));
     }
   });
+
+  test('clearUnreadable refuses a readable record', () async {
+    final hostStore = await store();
+    await hostStore.save(PublishHostState.empty.afterVerifiedPublish(github));
+
+    final result = await hostStore.clearUnreadable();
+
+    expect(result.isLeft(), isTrue);
+    expect((await store()).load().toNullable()!.verifiedTarget, isNotNull);
+  });
+
+  test('clearUnreadable deletes an unreadable record', () async {
+    SharedPreferences.setMockInitialValues({
+      PrefsPublishHostStore.key: jsonEncode({
+        'schema': 99,
+        'activeHost': 'cloudflare',
+      }),
+    });
+    final hostStore = await store();
+    expect(hostStore.load().isLeft(), isTrue);
+
+    expect((await hostStore.clearUnreadable()).isRight(), isTrue);
+    expect((await store()).load().toNullable(), isNull);
+  });
 }

@@ -72,6 +72,23 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
       left(const StorageFailure('publish host state read'));
 
   @override
+  Future<Either<Failure, Unit>> clearUnreadable() async {
+    // Re-check here, not at the call site: a readable record is never deleted,
+    // whatever the caller believes (fix-plan N7/D10).
+    if (load() is Right) {
+      return left(const ValidationFailure('The publishing record is readable'));
+    }
+    try {
+      if (!await _prefs.remove(key)) {
+        return left(const StorageFailure('publish host state clear'));
+      }
+      return right(unit);
+    } on Exception {
+      return left(const StorageFailure('publish host state clear'));
+    }
+  }
+
+  @override
   Future<Either<Failure, Unit>> save(PublishHostState state) async {
     if (!state.isConsistent) {
       return left(const ValidationFailure('Invalid publish host state'));

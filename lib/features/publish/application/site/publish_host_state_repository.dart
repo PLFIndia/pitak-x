@@ -24,6 +24,13 @@ abstract interface class PublishHostStateStore {
 
   /// Writes the whole record (one key, one write).
   Future<Either<Failure, Unit>> save(PublishHostState state);
+
+  /// Deletes the key ONLY when the stored record is unreadable.
+  ///
+  /// The store re-checks readability itself, so no caller can use this as a
+  /// general reset: a readable record is refused. This is the one in-app exit
+  /// for an unreadable journal (fix-plan N7/D10).
+  Future<Either<Failure, Unit>> clearUnreadable();
 }
 
 /// The narrow ability a PUBLISH has on the journal: record verified read-back.
@@ -117,6 +124,14 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
     if (identical(next, current)) return right(unit);
     return _store.save(next);
   }
+
+  /// Deletes an UNREADABLE journal on explicit user request (N7/D10).
+  ///
+  /// Publishing, moves and setup fail closed forever while the record cannot
+  /// be read (for example after installing an older version). This clears it
+  /// once, so the next publish can record the site again. A readable record
+  /// is refused by the store, so this can never be a general reset.
+  Future<Either<Failure, Unit>> resetUnreadable() => _store.clearUnreadable();
 
   /// Reads only the stored journal for fail-fast command routing. No manifest
   /// or network is touched, and unreadable state remains a typed failure.
