@@ -35,12 +35,13 @@
 | `a6e295c` | S11 (evidence) | J.7 steps 2 and 4 recorded PASS; plan Part M rows 80–81 |
 | `1e11842` | S11 (J.7 step-8 fix) | A move's GitHub destination read-back waits up to GitHub's documented 10 minutes (60 × 10 s) instead of 60 s; verifying/not-verified copy says a build can take minutes |
 
-- **State:** every local session gate is green — `build_runner` leaves no diff,
-  `flutter analyze lib test integration_test` reports no issues,
-  `dart format --set-exit-if-changed lib test integration_test` is clean, the
-  full non-golden suite passes (4,212 tests), and the Linux golden suite passes
-  (10 tests). S10 changed no application behaviour; its only test changes are
-  the guide copy pins and the guide-page copy budget (see §11).
+- **State (2026-10-29, `1e11842`):** every local gate is green — `build_runner`
+  leaves no diff, `flutter analyze lib test integration_test` reports no
+  issues, `dart format --set-exit-if-changed lib test integration_test` is
+  clean, and the full non-golden suite passes (4,255 tests). PR #20's full CI
+  matrix passed at `c2a0286`. The real-host J.7 smoke found and fixed three
+  defects (bucket completion token, HTML read-back address, GitHub Pages wait);
+  steps 1–8 and 10 PASS, step 9 is pending a second phone (§12).
 - **Cloudflare connection/setup, ordinary publishing, and moves are
   user-facing.** S7 adds restricted-token capture and setup; S8 adds ordinary
   catalogue/events publishing and explicit whole-site replacement; S9 adds
@@ -700,7 +701,7 @@ Retry and Skip are deterministic after every remote or persistent side effect.
 | S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
 | S9 | S8 done | **Done** (§9): moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash matrix |
 | S10 | S9 done | **Done** (§11): ADR 0017 accepted; ARCHITECTURE, PRIVACY, SECURITY, README, RELEASING, CHANGELOG and the in-app guide describe both hosts; §6.5 publish smoke matrix and the App-access answer; fastlane blurb and golden regeneration deferred with reasons |
-| S11 | S10 done | Real-host J.7 smoke (§12) and final CI/release gates. Trial-tool removal is **done** (2026-10-28); Linux golden regeneration is **done** (2026-10-29) |
+| S11 | S10 done | Real-host J.7 smoke (§12) and final CI/release gates. Trial-tool removal is **done** (2026-10-28); Linux golden regeneration is **done** (2026-10-29); J.7 steps 1–8 and 10 **PASS** (2026-10-29) after fixes `61c5bed`, `691b325`, `1e11842`. Left: step 9 (second phone), the open decisions in §12, release gates |
 
 S2 is complete. The trial source was removed in S11 (2026-10-28).
 
