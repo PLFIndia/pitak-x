@@ -29,6 +29,7 @@
   | `2f7e190` | S11 (golden fixture) | Pin the signed-out publish-status projection so the real card settles deterministically instead of leaving a platform-storage loading spinner |
   | `0903ff6` | S11 (Linux golden) | Regenerate only `publish_connection.png` from the successful 10-test Linux workflow artifact; all other references were byte-identical |
   | `8d499ea` | S11 (CI/security) | Move Argon2 to fixed `block-buffer` 0.12.1; confine the remaining bridge-only OSV exception with exact policies and a CI path guard |
+  | `7e1f9e1` | S11 (smoke diagnostics) | Add release-visible Cloudflare publish failure logs limited to API category, numeric status/error codes, deployment flags and stack; focused tests only |
 
 - **State:** every local session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -743,8 +744,8 @@ No token, JWT, account id or raw response body goes in this table.
 
 | # | Step | Expected | Result |
 |---|---|---|---|
-| 1 | Connect (manual-subdomain fallback if the token cannot read it) | Candidate unconfirmed until exact-origin marker read-back | *pending* |
-| 2 | Publish catalogue → events → catalogue | Events survive the second catalogue publish | *pending* |
+| 1 | Connect (manual-subdomain fallback if the token cannot read it) | Candidate unconfirmed until exact-origin marker read-back | **PASS** (2026-10-29): token and exact-origin verification confirmed |
+| 2 | Publish catalogue → events → catalogue | Events survive the second catalogue publish | **BLOCKED**: first catalogue publish returns the fixed unreadable-response error before deployment |
 | 3 | Remove a poster, publish events | Old poster URL 404; no old version URL serves it | *pending* |
 | 4 | Root / index / events / JSON / missing file | 200 · 307 · 200 · `application/json` · real 404; no-cache + CORS | *pending* |
 | 5 | Reset local Cloudflare state, publish | Explicit replacement warning with real counts; cancel writes nothing | *pending* |
@@ -755,6 +756,72 @@ No token, JWT, account id or raw response body goes in this table.
 | 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | *pending* |
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
+
+### Current smoke handoff — 2026-10-29
+
+**Branch and verification baseline.** Branch `cloudflare`, PR #20 remains draft.
+Commit `90a3160` is the last head with the FULL CI matrix green (4,212
+non-golden tests, 10 Linux goldens, Rust, OSV and F-Droid). Diagnostic commit
+`7e1f9e1` adds only safe failure logging; its focused 15-test publish suite and
+analysis pass, but full CI has NOT run at that head. Do not call the new head
+release-green, and do not build the release AAB yet.
+
+**Device and current app state.** OnePlus LE2101, Android 14, device id
+`678c5642`. The installed F-Droid release package is
+`dev.khoj.pitaka.fdroid`, version 1.8.0+31. It contains one synthetic book and
+the confirmed Cloudflare target `https://pitak-worker.beli-log1234.workers.dev/`;
+the tile says Ready to publish. No real borrower data is used. The diagnostic
+APK was built after `fvm flutter clean` and installed with `install -r`, so the
+book and connection survived. APK:
+`build/app/outputs/flutter-apk/app-fdroid-release.apk`; SHA-256
+`fcb840fc514832806b1d60102fc6cd712fb2177d22a7bd6a0921964013385700`.
+This is a smoke artifact, not a distribution release.
+
+**Connection issue resolved.** The first candidate incorrectly used account
+subdomain `pitak`; public reads returned Cloudflare 1042 (no Worker serving that
+address). The actual single-label account subdomain is `beli-log1234`.
+Reconnecting with that value and Worker `pitak-worker` produced exact-origin
+marker read-back and Ready to publish. This was configuration, not a validator
+bug. Do not change the Cloudflare account subdomain again.
+
+**Current blocker (J.7 step 2).** With one book present, Publish catalogue now
+returns `Publish failed: Cloudflare returned an unreadable response.` Public
+`pitak-publish.json` is still the earlier `verification` marker, while
+`books.json`, `library.json` and `events.json` all return 404. Therefore the
+catalogue did NOT deploy. The error is
+`CloudflareApiExceptionKind.malformedResponse`; its exact API stage is still
+unknown. Do not weaken the strict response parser or retry blindly.
+
+**Diagnostics now installed.** `7e1f9e1` changes
+`lib/features/publish/application/cloudflare/publish_to_cloudflare_use_case.dart`
+to `debugPrint` the API kind, numeric HTTP status, numeric Cloudflare error
+codes, deployment flags and caught stack. It never logs tokens, JWTs, URLs,
+response bodies or library data. The earlier `dart:developer.log` attempt was
+not visible in release logs and was replaced. The focused test's synthetic
+failure proves both the message and stack appear. The installed APK includes
+this version.
+
+**Next session — capture the failing stage first.** On the device, tap Publish
+catalogue now once and wait for the error. Then run from the repository root:
+
+```bash
+ADB="$HOME/Library/Android/sdk/platform-tools/adb"
+mkdir -p build/smoke
+pid="$("$ADB" -s 678c5642 shell pidof dev.khoj.pitaka.fdroid | tr -d '\r')"
+"$ADB" -s 678c5642 logcat -d --pid="$pid" -v time \
+  > build/smoke/publish-diagnostic.log
+```
+
+Inspect `CloudflarePublish` and the following stack in that file. Map it to
+preflight, `createUploadSession`, `uploadBucket`, or `deploy`, then fix that
+specific parser/request path with a regression test. Numeric status/codes are
+safe; if a live response must be inspected, keep the restricted token in a local
+environment variable and never print or commit the token, JWT, authorization
+header, account id or raw body. `build/` is ignored, so preserve any needed log
+before running `flutter clean` again.
+
+After the fix, rerun the focused suite and full gates, clean-build/install the
+APK, and resume J.7 at catalogue → events → catalogue. Steps 3–10 remain pending.
 
 **Linux golden — done 2026-10-29.** Workflow run `40817772312` exposed a
 `pumpAndSettle` timeout: S8's new publish card was reading the non-overridden
