@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
@@ -119,6 +120,35 @@ void main() {
       find.widgetWithText(FilledButton, 'Connect Cloudflare'),
     );
     expect(button.onPressed, isNull);
+  });
+
+  // S11 smoke (2026-10-29): on one line the name and the status fought for a
+  // phone's width and both were cut off ("Cloudflare Wor…").
+  testWidgets('the status sits below the name and neither is truncated on a '
+      '360 dp phone', (tester) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      _app(
+        CloudflareConnectionUi(
+          status: cloudflareTestConnection(confirmed: false).status,
+        ),
+      ),
+    );
+
+    final name = find.text('Cloudflare Workers');
+    final status = find.text('Address not confirmed yet');
+    expect(
+      tester.getRect(status).top,
+      greaterThanOrEqualTo(tester.getRect(name).bottom),
+    );
+    // The test font's square glyphs are far wider than a real phone font, so
+    // the name may wrap here; what must never happen is an ellipsis.
+    for (final text in [name, status]) {
+      final paragraph = tester.renderObject<RenderParagraph>(text);
+      expect(paragraph.didExceedMaxLines, isFalse);
+    }
   });
 
   testWidgets('expanded tile survives 320px and larger text', (tester) async {

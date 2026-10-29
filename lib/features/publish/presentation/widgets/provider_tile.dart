@@ -55,11 +55,11 @@ enum ProviderConfig {
   };
 }
 
-/// A collapsible provider card (S35): header = provider name + status
-/// badge, body = that provider's settings. Matches the publish page's
-/// section-card visuals so the tab reads as one family; collapsing is what
-/// keeps the whole page on one screen. The default rotating chevron stays
-/// as the expand affordance.
+/// A collapsible provider card (S35): header = provider name with the status
+/// badge on the line below it, body = that provider's settings. Matches the
+/// publish page's section-card visuals so the tab reads as one family;
+/// collapsing is what keeps the whole page on one screen. The default
+/// rotating chevron stays as the expand affordance.
 class ProviderTile extends StatelessWidget {
   /// Creates the tile.
   const ProviderTile({
@@ -95,36 +95,37 @@ class ProviderTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
-        // N12 (320px / large text): both the title and the status label
-        // ellipsize; icon and chevron keep their shape.
-        title: Row(
+        // Name on the first line, status on the second. On one line the two
+        // competed for a phone's width and BOTH were cut off ("Cloudflare
+        // Wor…" + a clipped status, S11 smoke 2026-10-29). Stacked, each gets
+        // the full width; N12 (320px / large text) is still covered because
+        // each line wraps once and only then ellipsizes.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Flexible(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium,
-                overflow: TextOverflow.ellipsis,
-              ),
+            Text(
+              title,
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(status.icon, size: 18, color: color),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      status.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                      ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(status.icon, size: 18, color: color),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    status.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),
