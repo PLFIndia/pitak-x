@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verifi
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -31,6 +32,17 @@ final class CloudflareExistingPublicationContinue
 
   /// The manifest the rest of the operation must use.
   final CloudflareSiteManifest local;
+}
+
+/// The record contradicted the live site, so the caller must prepare a
+/// whole-site replacement for [reason] before anything else is written.
+final class CloudflareExistingPublicationReplace
+    extends CloudflareExistingPublicationOutcome {
+  /// Creates the replace outcome for [reason].
+  const CloudflareExistingPublicationReplace(this.reason);
+
+  /// Why the replacement is needed (always `recordContradicted` today).
+  final PublishReplacementReason reason;
 }
 
 /// The operation ends here with [result]; the caller must write nothing else.
@@ -60,6 +72,9 @@ final class CloudflareExistingPublicationCheck {
   final int Function() _clock;
 
   /// Runs the branch for a `known` preflight.
+  ///
+  /// The earlier-deployment budget is used on purpose: this check runs while
+  /// the publish queue is held, so it must never spend the post-deploy wait.
   Future<CloudflareExistingPublicationOutcome> call({
     required CloudflareConnection connection,
     required CloudflarePublishTarget target,
@@ -71,12 +86,10 @@ final class CloudflareExistingPublicationCheck {
         target: target,
         manifest: local,
         revision: _clock(),
+        budget: CloudflareReadBackBudget.earlierDeployment,
       );
-      if (verified != CloudflarePublicationVerification.verified) {
-        return const CloudflareExistingPublicationFinished(
-          PublishFailure(CloudflareErrorMessages.publicationVerificationFailed),
-        );
-      }
+      final blocked = _beforeCommit(verified, verificationOnly, local);
+      if (blocked != null) return blocked;
       final committed = await _verifiedCommit.call(
         connection: connection,
         target: target,
@@ -105,12 +118,10 @@ final class CloudflareExistingPublicationCheck {
         target: target,
         manifest: local,
         revision: _clock(),
+        budget: CloudflareReadBackBudget.earlierDeployment,
       );
-      if (verified != CloudflarePublicationVerification.verified) {
-        return const CloudflareExistingPublicationFinished(
-          PublishFailure(CloudflareErrorMessages.publicationVerificationFailed),
-        );
-      }
+      final blocked = _beforeCommit(verified, verificationOnly, local);
+      if (blocked != null) return blocked;
       final committed = await _verifiedCommit.call(
         connection: connection,
         target: target,
@@ -137,4 +148,33 @@ final class CloudflareExistingPublicationCheck {
     }
     return CloudflareExistingPublicationContinue(local);
   }
+
+  /// Decides what may happen to the verified commit.
+  ///
+  /// Null means "verified, commit now". Anything else ends the branch here:
+  /// a contradiction needs a reviewed whole-site replacement, while an
+  /// unreachable site continues the ordinary publish WITHOUT marking the old
+  /// record live (its own new read-back decides that) — and a verify-only
+  /// retry reports it.
+  CloudflareExistingPublicationOutcome? _beforeCommit(
+    CloudflarePublicationVerification verification,
+    bool verificationOnly,
+    CloudflareSiteManifest local,
+  ) => switch (verification) {
+    CloudflarePublicationVerification.verified => null,
+    CloudflarePublicationVerification.contradicted =>
+      verificationOnly
+          ? const CloudflareExistingPublicationFinished(
+              PublishFailure(CloudflareErrorMessages.liveSiteContradicted),
+            )
+          : const CloudflareExistingPublicationReplace(
+              PublishReplacementReason.recordContradicted,
+            ),
+    CloudflarePublicationVerification.unreachable =>
+      verificationOnly
+          ? const CloudflareExistingPublicationFinished(
+              PublishFailure(CloudflareErrorMessages.siteNotChecked),
+            )
+          : CloudflareExistingPublicationContinue(local),
+  };
 }

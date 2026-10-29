@@ -75,7 +75,6 @@ void main() {
       verifier: CloudflarePublicationVerifier(
         reader: reader,
         sleep: (_) async {},
-        attempts: 1,
       ),
       verifiedCommit: CloudflareVerifiedStateCommit(
         manifest: manifests,

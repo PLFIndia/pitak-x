@@ -85,3 +85,43 @@ abstract final class CloudflareLimits {
   /// The public marker file name (R10).
   static const String markerPath = 'pitak-publish.json';
 }
+
+/// One bounded read-back budget (fix-plan M2, R16).
+///
+/// Two questions need different answers: "did the deployment I just made
+/// land?" can wait for a fresh edge, while "does this older record still
+/// describe the live site?" must be cheap and must not hold the publish queue
+/// for minutes. Both keep a total deadline, so a hung read can never make the
+/// check unbounded.
+final class CloudflareReadBackBudget {
+  /// Creates a budget.
+  const CloudflareReadBackBudget({
+    required this.rounds,
+    required this.interval,
+    required this.deadline,
+  });
+
+  /// Rounds for a deployment made moments ago: 12 × 5 s inside 90 s.
+  static const afterDeploy = CloudflareReadBackBudget(
+    rounds: 12,
+    interval: Duration(seconds: 5),
+    deadline: Duration(seconds: 90),
+  );
+
+  /// Rounds for a record written by an earlier publish: 3 × 2 s inside 20 s.
+  static const earlierDeployment = CloudflareReadBackBudget(
+    rounds: 3,
+    interval: Duration(seconds: 2),
+    deadline: Duration(seconds: 20),
+  );
+
+  /// Maximum polling rounds.
+  final int rounds;
+
+  /// Delay before each polling round.
+  final Duration interval;
+
+  /// Total wall-clock budget. A read already in flight may overrun it by its
+  /// own transport limit (15 s); no new read starts after it.
+  final Duration deadline;
+}

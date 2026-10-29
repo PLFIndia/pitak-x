@@ -166,7 +166,10 @@ class _PublishCardState extends ConsumerState<PublishCard> {
       final PublishSuccess success =>
         success.pagesLive == null || !success.localStateSaved,
       PublishFailure(:final reason) =>
-        reason == CloudflareErrorMessages.publicationVerificationFailed,
+        // A contradiction needs a reviewed replacement, never another check;
+        // "nothing to verify" is not a transient failure either.
+        reason == CloudflareErrorMessages.siteNotChecked ||
+            reason == CloudflareErrorMessages.publicationVerificationFailed,
       _ => false,
     };
   }

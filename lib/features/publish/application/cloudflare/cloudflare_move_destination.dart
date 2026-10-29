@@ -21,6 +21,7 @@ import 'package:pitaka/features/publish/application/site/publish_snapshot_builde
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
@@ -345,6 +346,9 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       target: target,
       manifest: current.local,
       revision: _clock(),
+      // An existing destination is an earlier deployment, so it gets the
+      // short budget rather than the post-deploy wait (M2).
+      budget: CloudflareReadBackBudget.earlierDeployment,
     );
     if (verified != CloudflarePublicationVerification.verified) {
       return const MoveDestinationFailed(

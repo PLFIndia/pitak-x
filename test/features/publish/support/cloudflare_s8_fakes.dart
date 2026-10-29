@@ -287,8 +287,7 @@ final class S8PublishHarness {
       verifier: CloudflarePublicationVerifier(
         reader: reader,
         sleep: (_) async {},
-        attempts: 1,
-        interval: Duration.zero,
+        clock: () => cloudflareTestNow,
       ),
       verifiedCommit: CloudflareVerifiedStateCommit(
         manifest: manifestStore,

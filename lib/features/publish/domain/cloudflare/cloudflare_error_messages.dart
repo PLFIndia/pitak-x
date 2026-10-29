@@ -88,6 +88,16 @@ abstract final class CloudflareErrorMessages {
       'This phone has no publish on this Cloudflare site to verify yet. '
       'Publish to continue.';
 
+  /// The live site answered with bytes that contradict this phone's record.
+  static const liveSiteContradicted =
+      'The live Cloudflare site does not match this phone’s last publish. '
+      'Publish to review a whole-site replacement.';
+
+  /// The site could not be checked; nothing was written either way.
+  static const siteNotChecked =
+      'The Cloudflare site could not be checked right now. Nothing was '
+      'changed. Try again later.';
+
   /// A matching deployed record could not complete read-back; no new deploy.
   static const publicationVerificationFailed =
       'The existing Cloudflare deployment could not be verified. No new '

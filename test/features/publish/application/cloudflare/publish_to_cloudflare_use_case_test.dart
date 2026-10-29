@@ -651,6 +651,60 @@ void main() {
     },
   );
 
+  test('an unreachable earlier deployment does not block the publish and is '
+      'not marked live', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      state: PublishState.deployed,
+    );
+    seed(h, s8CoreFiles(oldId));
+    h.reader.unreadable('books.json');
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect(h.api.deployCalls, 1);
+    // The first `live` save must come from the NEW deploy's read-back, never
+    // from an unproven old record.
+    expect(h.manifestStore.saves.map((m) => m.state), [
+      PublishState.deployed,
+      PublishState.live,
+    ]);
+  });
+
+  test('an earlier deployment that contradicts this phone offers a '
+      'record-contradicted replacement and writes nothing', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      state: PublishState.deployed,
+    );
+    seed(h, s8CoreFiles(oldId));
+    h.reader.body('books.json', utf8.encode('someone else'));
+
+    final prepared = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(prepared, isA<PublishReplacementRequired>());
+    expect(
+      (prepared as PublishReplacementRequired).summary.reason,
+      PublishReplacementReason.recordContradicted,
+    );
+    expect(h.api.deployCalls, 0);
+    expect(h.api.uploadManifests, isEmpty);
+    expect(h.manifestStore.saves, isEmpty);
+  });
+
   test(
     'a failed pre-deploy Version-URL gate stops before upload or deploy',
     () async {

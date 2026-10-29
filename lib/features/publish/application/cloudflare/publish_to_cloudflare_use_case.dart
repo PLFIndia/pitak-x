@@ -239,6 +239,8 @@ final class PublishToCloudflareUseCase {
             return result;
           case CloudflareExistingPublicationContinue(local: final repaired):
             local = repaired;
+          case CloudflareExistingPublicationReplace(:final reason):
+            replacementReason = reason;
         }
       } else if (verificationOnly) {
         return PublishFailure(
@@ -249,9 +251,10 @@ final class PublishToCloudflareUseCase {
       }
     }
 
-    if (confirmation == null) {
+    if (confirmation == null && replacementReason == null) {
       // A record for another target is a change of destination, not a remote
-      // state: it is reviewed on its own terms (D1).
+      // state: it is reviewed on its own terms (D1). A contradiction found by
+      // the read-back above already decided, so it must not be overwritten.
       replacementReason =
           _structuralReason(previousTarget, target) ??
           _stateReason(initial.freshness);
