@@ -33,6 +33,7 @@
 | `61c5bed` | S11 (J.7 step-2 fix 1) | Bucket uploads accept Cloudflare's documented token-less non-final acknowledgement; one shared `CloudflareBucketUploader` takes the completion token from the final bucket only; the `7e1f9e1` diagnostic moves behind `appLog` (debug-only) so both architecture tests pass again (§12) |
 | `691b325` | S11 (J.7 step-2 fix 2) | Read-back requests HTML at the address `auto-trailing-slash` serves it (`index.html` → root, `events.html` → `events`); Cloudflare suites use a Worker-realistic fake reader (§12) |
 | `a6e295c` | S11 (evidence) | J.7 steps 2 and 4 recorded PASS; plan Part M rows 80–81 |
+| `1e11842` | S11 (J.7 step-8 fix) | A move's GitHub destination read-back waits up to GitHub's documented 10 minutes (60 × 10 s) instead of 60 s; verifying/not-verified copy says a build can take minutes |
 
 - **State:** every local session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -754,9 +755,9 @@ No token, JWT, account id or raw response body goes in this table.
 | 5 | Reset local Cloudflare state, publish | Explicit replacement warning with real counts; cancel writes nothing | **PASS** (2026-10-29, `691b325`): `pm clear` is refused by OxygenOS, so local state was reset by uninstall + reinstall (`allowBackup=false`, nothing restored). Run A: new synthetic book, reconnect (API-read subdomain, replacement consent, no deploy), Publish → "Replace the site" showed 1 book / 0 posters with the warning; confirmed → replacement live 14:30 IST. Run B (second reinstall): same dialog, **Cancel** → marker, `books.json` and `library.json` byte-identical to the 14:30 deploy |
 | 6 | Move Cloudflare → GitHub | New descriptor address; moved page + retired headers + retired marker; old `books.json` 404 | **PASS** (2026-10-29, `691b325`; throwaway public repo created by Pitak with an auto-init `README.md`). GitHub got the complete snapshot (`index.html`, `books.json`, `library.json`, `events.*`, `covers/`) with `library.json.siteUrl` = the GitHub address; `README.md` kept. Cloudflare then served the moved page at `/` (it names the new address) with `Cache-Control: no-cache`, the full CSP, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; marker `state: retired` (14:49 IST); `books.json`, `library.json`, `events.json` 404. The first Move attempt committed (14:45:52) but did not move — see note below |
 | 7 | Move GitHub → Cloudflare | Reverse of 6; unrelated `README.md` survives | **PASS** (2026-10-29, `691b325`, one attempt): Cloudflare deployed the complete live snapshot first (marker `live` 14:55:25 IST; `/`, `books.json`, `library.json`, `events.json`, `/events` 200 with no-cache + CORS; `library.json.siteUrl` = workers.dev); then ONE GitHub commit (14:55:55) left exactly `404.html`, `README.md`, `index.html`. The moved root names the Cloudflare address and carries the meta CSP; old `books.json`/`library.json`/`events.*` 404; `README.md` still 200 |
-| 8 | Pending Retry after a simulated local failure; reconnect to another Worker | Retry resumes only missing work; wrong target refuses retirement | *pending* |
-| 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | *pending* |
-| 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | *pending* |
+| 8 | Pending Retry after a simulated local failure; reconnect to another Worker | Retry resumes only missing work; wrong target refuses retirement | **PASS** (2026-10-29, `1e11842`). Move Cloudflare → GitHub with a Mac-side watcher that ran `am force-stop` the instant the public marker turned `retired`: GitHub commit 15:26:29 verified within the new Pages budget, Cloudflare retired deploy 15:27:38, app killed 15:27:53, before the final switch. Reopened: "Finish moving your site… Verified new address: <GitHub>" with **Retry move** / **Skip retirement**. Disconnect + reconnect choosing Worker `pitak-worker-b` was refused, and Retry refused with "The saved Cloudflare target does not match this publish…"; `pitak-worker-b` still answers Cloudflare 1042 (never created), marker and GitHub head unchanged. Reconnected to `pitak-worker` → Retry → "Move complete" with NO new deploy (retired marker `d9d681ee…` unchanged) and NO new commit (head `2f319ed`); share address = GitHub |
+| 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | *pending*: no second phone was available on 2026-10-29. See the reader observation below before running it |
+| 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | **PASS** (2026-10-29, `1e11842`): Cloudflare shows disconnected; "Your site" still shows the verified GitHub address; the Worker still serves the same moved page, retired headers and retired marker `d9d681ee…` |
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
 
@@ -766,22 +767,27 @@ Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
 Commit `90a3160` is the last head with the FULL CI matrix green (4,212
 non-golden tests, 10 Linux goldens, Rust, OSV and F-Droid). `7e1f9e1` broke two
 architecture tests (see the logging note below); `61c5bed` and `691b325` repair
-them and fix the two smoke defects. At `691b325` the LOCAL gates pass:
-`build_runner` no diff, format clean, `flutter analyze lib test
-integration_test` zero issues, **4,252** non-golden tests. Full CI (goldens,
-Rust, OSV, F-Droid) has NOT run at this head yet: push and let PR #20's matrix
-run before calling it release-green, and do not build the release AAB yet.
+them and fix the two smoke defects; `1e11842` fixes the third (GitHub Pages
+wait). PR #20's FULL CI matrix passed at `c2a0286` (Flutter analyze/format/
+test, Rust, OSV, F-Droid purity, and the Update goldens workflow). At
+`1e11842` the LOCAL gates pass: `build_runner` no diff, format clean, `flutter
+analyze lib test integration_test` zero issues, **4,255** non-golden tests;
+check PR #20's run for this head before calling it release-green. Do not build
+the release AAB until step 9 and the open decisions below are settled.
 
 **Device and current app state.** OnePlus LE2101, Android 14, device id
 `678c5642`. The installed F-Droid release package is
 `dev.khoj.pitaka.fdroid`, version 1.8.0+31, built from `691b325` after
 `fvm flutter clean` (`fvm flutter build apk --release --flavor fdroid`) and
-installed with `install -r`, so the book and connection survived. APK SHA-256
-`9eeb934182d232f267785417ffa951982f1aaf6610c118f456f6a2dbaffa12a8`. It holds
-one synthetic book, one synthetic event poster and the confirmed Cloudflare
-target `https://pitak-worker.beli-log1234.workers.dev/`, now publicly live
-(marker `state: live`). No real borrower data is used. This is a smoke artifact,
-not a distribution release.
+installed with `install -r`. Steps 2–5 ran on that APK (SHA-256
+`9eeb934182d232f267785417ffa951982f1aaf6610c118f456f6a2dbaffa12a8`); step 5
+reinstalled it twice to reset local state. Steps 6–10 ended on the `1e11842`
+APK (SHA-256 `52d7ee091e21f9fabf125a647ed676adaa2aa5b5c51b6674e1cad7f218b1ab27`,
+installed with `install -r`). End state: active host GitHub Pages
+(`https://degt3rt.github.io/my-library5/`, a throwaway public repo), Cloudflare
+DISCONNECTED, `pitak-worker` serving the moved page with a retired marker. Only
+synthetic books/posters were used. These are smoke artifacts, not distribution
+releases.
 
 **Connection issue resolved.** The first candidate incorrectly used account
 subdomain `pitak`; public reads returned Cloudflare 1042 (no Worker serving that
@@ -888,8 +894,8 @@ reader served HTML at file names, so no test could fail. Plan row 81.
   retirement read-back was unaffected; the GitHub `CompleteSnapshotVerifier`
   is GitHub-only and correct as is.
 
-**Step 6 observation — the first Move attempt to a brand-new Pages site
-(not fixed; safe, but worth a decision).** The repository history shows two
+**Step 6/8 finding — GitHub Pages builds outlasted the move read-back
+(budget fixed in `1e11842`; re-commit on retry is a recorded follow-up).** The repository history shows two
 complete-snapshot commits, `Pitak move …` at 14:45:52 and 14:48:18 IST, that
 differ only in `books.json.exportedAt`. The user saw the first attempt "not
 move", and the Cloudflare source stayed live until the second attempt retired it
@@ -903,6 +909,27 @@ could say that the new site was written and may still be building; (b) a
 re-confirmed move rebuilds `books.json` with a new `exportedAt`, so the
 "already-committed retry" adoption never matches and each attempt adds one
 expected-head commit. Neither loses data or publishes unverified state.
+The first step-8 attempt confirmed it: commit 15:00:55, but Pages served the
+new `books.json` only at 15:02:16 (81 s), so the 60 s read-back expired and no
+pending move was recorded. `1e11842` gives the GitHub destination
+`CompleteSnapshotVerifier.gitHubPages` (60 × 10 s = GitHub's documented "up to
+10 minutes"); the re-run verified in about a minute. Still open, by the
+maintainer's choice on 2026-10-29: a retry after a timeout still re-commits
+(adopting the app's own unverified commit would need a new optional field in
+the GitHub publish record).
+
+**Reader observation during step 8 (design behaviour, needs a product look
+before step 9).** The maintainer's phone had BOTH addresses saved in Library
+Bookmarks. While the timed-out move left a complete copy live on GitHub and the
+original still live on Cloudflare, both opened the catalogue, and Refresh
+flagged BOTH rows "identity conflict". That follows the S1 rules exactly: both
+rows already stored the same fingerprint from earlier fetches, and the neutral
+move offer (C10/R17) only applies when the other row has no identity yet, so
+the stricter D12 conflict path wins. Note that a known conflict outranks a later
+failed fetch (`refresh_run.dart`), so the badge can outlive the move once the
+old address becomes a moved page. Step 9 (a second phone that has only the old
+row) exercises the intended offer; decide whether two saved rows of one library
+should also get the offer, and whether a completed move should clear the badge.
 
 **UX observation (not fixed; not a correctness gap).** "Retry verification" is
 shown only from the in-memory result of the last publish. After an app restart
