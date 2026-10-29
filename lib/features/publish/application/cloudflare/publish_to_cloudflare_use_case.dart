@@ -10,7 +10,8 @@ library;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
-import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_deploy_pipeline.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_existing_publication_check.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
@@ -23,7 +24,6 @@ import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
@@ -32,7 +32,6 @@ import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker_codec.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
-import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// One DI wiring; only the strict-read implementation varies by entry point.
 typedef PublishToCloudflareUseCaseFactory =
@@ -213,63 +212,22 @@ final class PublishToCloudflareUseCase {
     }
 
     if (initial.freshness == PublishFreshness.known) {
-      if (local.state == PublishState.deployed) {
-        final verified = await _verifier.verify(
-          target: target,
-          manifest: local,
-          revision: _clock(),
-        );
-        if (verified != CloudflarePublicationVerification.verified) {
-          return const PublishFailure(
-            CloudflareErrorMessages.publicationVerificationFailed,
+      final existing =
+          await CloudflareExistingPublicationCheck(
+            verifier: _verifier,
+            verifiedCommit: _verifiedCommit,
+            clock: _clock,
+          ).call(
+            connection: connection,
+            target: target,
+            local: local,
+            verificationOnly: verificationOnly,
           );
-        }
-        final committed = await _verifiedCommit.call(
-          connection: connection,
-          target: target,
-          manifest: local,
-        );
-        if (verificationOnly || committed.isLeft()) {
-          return CloudflarePublishOutcomes.verificationSuccess(
-            target,
-            localStateSaved: committed.isRight(),
-          );
-        }
-        local = local.asLive();
-      } else if (_verifiedCommit.needsRepair(
-        connection: connection,
-        target: target,
-        manifest: local,
-      )) {
-        // A local `live` record says an earlier read-back succeeded, but a
-        // missing journal/connection flag means that commit may have crashed.
-        // Re-prove the exact public snapshot before repairing either record.
-        final verified = await _verifier.verify(
-          target: target,
-          manifest: local,
-          revision: _clock(),
-        );
-        if (verified != CloudflarePublicationVerification.verified) {
-          return const PublishFailure(
-            CloudflareErrorMessages.publicationVerificationFailed,
-          );
-        }
-        final committed = await _verifiedCommit.call(
-          connection: connection,
-          target: target,
-          manifest: local,
-        );
-        if (verificationOnly || committed.isLeft()) {
-          return CloudflarePublishOutcomes.verificationSuccess(
-            target,
-            localStateSaved: committed.isRight(),
-          );
-        }
-      } else if (verificationOnly) {
-        return CloudflarePublishOutcomes.verificationSuccess(
-          target,
-          localStateSaved: true,
-        );
+      switch (existing) {
+        case CloudflareExistingPublicationFinished(:final result):
+          return result;
+        case CloudflareExistingPublicationContinue(local: final repaired):
+          local = repaired;
       }
     } else if (verificationOnly) {
       return const PublishFailure(
@@ -355,141 +313,27 @@ final class PublishToCloudflareUseCase {
     }
     final publication = artifacts.toNullable()!;
 
-    if (initial.workerExists) {
-      final route = initial.route;
-      if (route == null) {
-        return const PublishFailure(CloudflareErrorMessages.artifactInvalid);
-      }
-      if (route.previewsEnabled) {
-        final updated = await _deployApi.updateWorkerRoute(
-          token: connection.useToken((token) => token),
-          accountId: target.accountId,
-          workerName: target.workerName,
-          enabled: route.enabled,
-          previewsEnabled: false,
-        );
-        if (updated.previewsEnabled) {
-          return const PublishFailure(
-            CloudflareErrorMessages.versionUrlPrivacy,
-          );
-        }
-      }
-    }
-
-    final session = await _deployApi.createUploadSession(
-      token: connection.useToken((token) => token),
-      accountId: target.accountId,
-      workerName: target.workerName,
-      manifest: publication.uploadManifest,
-    );
-    final upload = await CloudflareBucketUploader(_deployApi).upload(
-      accountId: target.accountId,
-      session: session,
-      assetForHash: publication.assetForHash,
-      beforeBucketUpload: () => progress.assetBytesMayHaveUploaded = true,
-    );
-    final CloudflareBucketsUploaded uploaded;
-    switch (upload) {
-      case CloudflareBucketsUploaded():
-        uploaded = upload;
-      case CloudflareBucketHashMissing() when !replacing:
-        return replacement.prepareResult(
-          reads: _reads,
-          target: target,
-          requestedSection: section,
-          inputs: inputs,
-        );
-      case CloudflareBucketHashMissing():
-        return PublishFailure(
-          '${CloudflareErrorMessages.missingRequestedHash} '
-          '${progress.assetBytesNote}',
-        );
-      case CloudflareUploadNotConfirmed():
-        return PublishFailure(
-          CloudflarePublishOutcomes.uploadNotConfirmed(progress),
-        );
-    }
-    final completionToken = uploaded.completion;
-    final uploadedPaths = [
-      for (final hash in uploaded.uploadedHashes)
-        ...publication.pathsForHash(hash),
-    ];
-
-    final last = await _preflight.call(
-      token: connection.useToken((token) => token),
+    return CloudflareDeployPipeline(
+      deployApi: _deployApi,
+      manifest: _manifest,
+      preflight: _preflight,
+      markerProbe: _markerProbe,
+      verifier: _verifier,
+      verifiedCommit: _verifiedCommit,
+      replacement: replacement,
+      reads: _reads,
+      clock: _clock,
+    ).run(
+      connection: connection,
       target: target,
+      section: section,
       local: local,
-      cacheBuster: 'final-${_clock()}',
-    );
-    final lastFailure = last.swap().toNullable();
-    if (lastFailure != null) {
-      return CloudflarePublishOutcomes.failure(lastFailure);
-    }
-    if (!initial.hasSameAnchor(last.toNullable()!)) {
-      return const PublishFailure(CloudflareErrorMessages.stalePublish);
-    }
-
-    progress.deployStarted = true;
-    await _deployApi.deploy(
-      token: connection.useToken((token) => token),
-      accountId: target.accountId,
-      workerName: target.workerName,
-      completionToken: completionToken,
-      kind: CloudflareDeploymentKind.live,
-      recovery: () => _markerProbe.recoverLiveDeployment(
-        target: target,
-        expected: publication.marker,
-      ),
-    );
-    progress.deployAccepted = true;
-
-    var localStateSaved = _manifest.save(publication.manifest).isRight();
-    try {
-      final route = await _deployApi.updateWorkerRoute(
-        token: connection.useToken((token) => token),
-        accountId: target.accountId,
-        workerName: target.workerName,
-        enabled: true,
-        previewsEnabled: false,
-      );
-      if (!route.enabled || route.previewsEnabled) {
-        return PublishFailure(
-          CloudflarePublishOutcomes.privacyAfterDeploy(
-            localStateSaved: localStateSaved,
-          ),
-        );
-      }
-    } on Exception {
-      return PublishFailure(
-        CloudflarePublishOutcomes.privacyAfterDeploy(
-          localStateSaved: localStateSaved,
-        ),
-      );
-    }
-
-    final verified = await _verifier.verify(
-      target: target,
-      manifest: publication.manifest,
-      markerBytes: publication.markerBytes,
-      deletedPaths: publication.deletedPaths,
-      revision: _clock(),
-    );
-    if (verified == CloudflarePublicationVerification.verified) {
-      final committed = await _verifiedCommit.call(
-        connection: connection,
-        target: target,
-        manifest: publication.manifest,
-      );
-      localStateSaved = committed.isRight();
-    }
-    return PublishSuccess(
-      pagesUrl: CloudflarePublishOutcomes.resultUrl(target, section),
-      uploadedPaths: List.unmodifiable(uploadedPaths.toSet()),
+      initial: initial,
+      publication: publication,
+      inputs: inputs,
+      replacing: replacing,
       availabilityOmitted: snapshot.availabilityOmitted,
-      pagesLive: verified == CloudflarePublicationVerification.verified
-          ? true
-          : null,
-      localStateSaved: localStateSaved,
+      progress: progress,
     );
   }
 
