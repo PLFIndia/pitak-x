@@ -112,6 +112,8 @@ final class CloudflareDeployPipeline {
           target: target,
           requestedSection: section,
           inputs: inputs,
+          remoteAnchor: initial.anchor,
+          reason: PublishReplacementReason.localBytesMissing,
         );
       case CloudflareBucketHashMissing():
         return PublishFailure(

@@ -4,6 +4,7 @@
 /// small and readable while publish preparation gains explicit validation.
 library;
 
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 
 /// Outcome of a publish.
@@ -20,6 +21,35 @@ enum PublishRequestedSection {
   events,
 }
 
+/// Why a whole-Worker replacement is being offered (fix-plan N1/M10).
+///
+/// The reason selects the dialog copy. It is NOT what authorises the write:
+/// confirmation is bound to [PublishReplacementSummary.remoteAnchor], so a
+/// changed remote always re-prompts whatever the reason says.
+enum PublishReplacementReason {
+  /// The live site cannot be trusted (an unreadable or foreign marker).
+  unknownRemoteState,
+
+  /// The marker positively says the site is a moved page.
+  retiredSite,
+
+  /// This phone has a record but the Worker no longer exists (F.9/R10).
+  workerMissing,
+
+  /// Files from the last publish cannot be read locally or fetched back, so an
+  /// incremental deploy cannot carry them (N1/N15).
+  localBytesMissing,
+
+  /// The live site answered with bytes that contradict this phone's record.
+  recordContradicted,
+
+  /// The stored record describes another Worker or account (D1).
+  targetChanged,
+
+  /// Same Worker, different `workers.dev` subdomain (D1).
+  addressChanged,
+}
+
 /// Safe, non-artifact state needed to confirm a whole-Worker replacement.
 ///
 /// No local entities, snapshot bytes, credentials, or upload tokens cross into
@@ -34,6 +64,10 @@ final class PublishReplacementSummary {
     required this.catalogueItemCount,
     required this.posterCount,
     required this.availabilityOmitted,
+    required this.remoteAnchor,
+    required this.reason,
+    this.previousSiteUrl,
+    this.remoteChangedSinceReview = false,
   });
 
   /// Exact Cloudflare Worker being replaced.
@@ -53,6 +87,20 @@ final class PublishReplacementSummary {
 
   /// Whether availability was omitted because the vault was locked.
   final bool availabilityOmitted;
+
+  /// The remote facts this summary was prepared against. Confirmation is
+  /// valid only while a fresh preflight still reports the same anchor.
+  final CloudflareRemoteAnchor remoteAnchor;
+
+  /// Why the replacement is offered; selects the dialog copy only.
+  final PublishReplacementReason reason;
+
+  /// The site this phone last published to, when it is not [target] (D1).
+  final String? previousSiteUrl;
+
+  /// True when the remote changed after the user reviewed this summary, so the
+  /// dialog must ask again instead of deploying.
+  final bool remoteChangedSinceReview;
 
   /// True when the reviewed catalogue has no items.
   bool get catalogueIsEmpty => catalogueItemCount == 0;

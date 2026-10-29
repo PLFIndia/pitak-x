@@ -9,6 +9,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
@@ -93,6 +94,11 @@ void main() {
     final required = prepared as PublishReplacementRequired;
     expect(required.summary.catalogueItemCount, 1);
     expect(required.summary.posterCount, 0);
+    expect(
+      required.summary.reason,
+      PublishReplacementReason.unknownRemoteState,
+    );
+    expect(required.summary.remoteAnchor.workerExists, isTrue);
     expect(h.api.uploadManifests, isEmpty);
     expect(h.api.routeUpdates, isEmpty);
     expect(h.api.deployCalls, 0);
@@ -141,6 +147,181 @@ void main() {
       expect(h.api.uploadManifests, isEmpty);
     },
   );
+
+  test('a confirmation is bound to the remote anchor the user reviewed: a '
+      'new marker asks again and writes nothing', () async {
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.reader.body(
+      CloudflareLimits.markerPath,
+      s8Marker('a' * 32, state: PublishMarkerState.verification),
+    );
+    final first = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+    final summary = (first as PublishReplacementRequired).summary;
+
+    // Another device deployed between the review and the confirmation.
+    h.reader.body(
+      CloudflareLimits.markerPath,
+      s8Marker('b' * 32, state: PublishMarkerState.verification),
+    );
+    final second = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      confirmation: summary,
+    );
+
+    expect(second, isA<PublishReplacementRequired>());
+    final again = (second as PublishReplacementRequired).summary;
+    expect(again.remoteChangedSinceReview, isTrue);
+    expect(again.remoteAnchor.publishId, 'b' * 32);
+    expect(again.digest, summary.digest, reason: 'only the remote changed');
+    expect(h.api.uploadManifests, isEmpty);
+    expect(h.api.deployCalls, 0);
+    expect(h.manifestStore.saves, isEmpty);
+  });
+
+  test('a Worker that vanished after the review also re-prompts', () async {
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.reader.body(
+      CloudflareLimits.markerPath,
+      s8Marker('a' * 32, state: PublishMarkerState.verification),
+    );
+    final first = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+    final summary = (first as PublishReplacementRequired).summary;
+
+    h.api.workerExistsValue = false;
+    h.reader.absent(CloudflareLimits.markerPath);
+    final second = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      confirmation: summary,
+    );
+
+    expect(second, isA<PublishReplacementRequired>());
+    expect(
+      (second as PublishReplacementRequired).summary.remoteAnchor.workerExists,
+      isFalse,
+    );
+    expect(h.api.deployCalls, 0);
+  });
+
+  test(
+    'an unreadable marker after the review re-prompts instead of deploying',
+    () async {
+      final h = S8PublishHarness(dir, workerExists: true);
+      h.reader.body(
+        CloudflareLimits.markerPath,
+        s8Marker('a' * 32, state: PublishMarkerState.verification),
+      );
+      final first = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+      final summary = (first as PublishReplacementRequired).summary;
+
+      h.reader.unreadable(CloudflareLimits.markerPath);
+      final second = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        confirmation: summary,
+      );
+
+      expect(second, isA<PublishReplacementRequired>());
+      final again = (second as PublishReplacementRequired).summary;
+      expect(again.remoteAnchor.markerKind, CloudflareMarkerKind.unreadable);
+      expect(again.remoteChangedSinceReview, isTrue);
+      expect(h.api.deployCalls, 0);
+    },
+  );
+
+  test(
+    'a confirmation for a remote that now matches this phone is stale',
+    () async {
+      final oldId = 'a' * 32;
+      final h = S8PublishHarness(dir, workerExists: true);
+      h.manifestStore.current = s8Manifest(target: h.target, publishId: oldId);
+      seed(h, s8CoreFiles(oldId));
+      // A foreign marker first: the site is unknown, so a review is offered.
+      h.reader.body(
+        CloudflareLimits.markerPath,
+        s8Marker('b' * 32, state: PublishMarkerState.verification),
+      );
+      final first = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+      final summary = (first as PublishReplacementRequired).summary;
+
+      // Then the recorded deployment reappears: nothing needs replacing.
+      h.reader.body(CloudflareLimits.markerPath, s8Marker(oldId));
+      final second = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        confirmation: summary,
+      );
+
+      expect(second, isA<PublishFailure>());
+      expect(
+        (second as PublishFailure).reason,
+        CloudflareErrorMessages.stalePublish,
+      );
+      expect(h.api.deployCalls, 0);
+      expect(h.manifestStore.saves, isEmpty);
+    },
+  );
+
+  test('a missing-bytes repair whose remote changed re-prompts instead of '
+      'dead-ending', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    final previous = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      additional: {
+        'events.html': s8File('events.html', utf8.encode('<html></html>')),
+        'events.json': s8File('events.json', utf8.encode('{"posters":[1]}')),
+        'posters/a.jpg': s8File('posters/a.jpg', [1, 2, 3]),
+      },
+    );
+    h.manifestStore.current = previous;
+    alreadyVerified(h);
+    h.reader.body(CloudflareLimits.markerPath, s8Marker(oldId));
+    final requestedHash = previous.entryFor('posters/a.jpg')!.hash;
+    h.api.uploadSessionFactory = (_) => CloudflareUploadSession.tryCreate(
+      uploadJwt: 'synthetic-upload-jwt',
+      buckets: [
+        [requestedHash],
+      ],
+    )!;
+
+    final first = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+    final summary = (first as PublishReplacementRequired).summary;
+    expect(summary.reason, PublishReplacementReason.localBytesMissing);
+
+    // Another device deployed after the review.
+    h.reader.body(CloudflareLimits.markerPath, s8Marker('b' * 32));
+    final second = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      confirmation: summary,
+    );
+
+    expect(second, isA<PublishReplacementRequired>());
+    final again = (second as PublishReplacementRequired).summary;
+    expect(again.remoteChangedSinceReview, isTrue);
+    // The remote is now a deployment this phone did not make, so the fresh
+    // review explains that; the missing bytes still make it a replacement.
+    expect(again.reason, PublishReplacementReason.unknownRemoteState);
+    expect(h.api.deployCalls, 0);
+  });
 
   test(
     'verification-only retries an existing deployment without a new deploy',
@@ -271,8 +452,24 @@ void main() {
     );
 
     expect(result, isA<PublishReplacementRequired>());
+    final summary = (result as PublishReplacementRequired).summary;
+    expect(summary.reason, PublishReplacementReason.localBytesMissing);
     expect(h.api.bucketCalls, 0);
     expect(h.api.deployCalls, 0);
+
+    // N1 regression: the offered repair must be CONFIRMABLE and deploy once.
+    // The scripted session asked for the OLD poster hash; a real session asks
+    // for the new manifest's hashes, and the repair carries none of them.
+    h.api.uploadSessionFactory = null;
+    final confirmed = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      confirmation: summary,
+    );
+    expect(confirmed, isA<PublishSuccess>());
+    expect((confirmed as PublishSuccess).pagesLive, isTrue);
+    expect(h.api.deployCalls, 1);
+    expect(h.manifestStore.current.state, PublishState.live);
   });
 
   test('J.7 regression: a multi-bucket upload deploys with the token from the '

@@ -186,15 +186,12 @@ final class PublishToCloudflareUseCase {
       return const PublishFailure(CloudflareErrorMessages.targetMismatch);
     }
 
-    var local = _manifest.load();
-    if (local.target != null &&
-        (!local.describes(target) ||
-            !CloudflareSiteManifest.isValidFileSet(
-              state: local.state,
-              paths: local.ownedPaths,
-            ))) {
-      return const PublishFailure(CloudflareErrorMessages.targetMismatch);
-    }
+    final stored = _manifest.load();
+    final previousTarget = stored.target;
+    // One rule for "what does my record claim?": a record that does not
+    // describe this exact target claims nothing at all (handoff §13). Treating
+    // it as an error stranded the user until they cleared app data (H1).
+    var local = stored.forTarget(target);
 
     final preflight = await _preflight.call(
       token: connection.useToken((token) => token),
@@ -207,39 +204,57 @@ final class PublishToCloudflareUseCase {
       return CloudflarePublishOutcomes.failure(preflightFailure);
     }
     final initial = preflight.toNullable()!;
-    if (initial.freshness == PublishFreshness.siteUnavailable) {
-      return const PublishFailure(CloudflareErrorMessages.siteUnavailable);
-    }
 
-    if (initial.freshness == PublishFreshness.known) {
-      final existing =
-          await CloudflareExistingPublicationCheck(
-            verifier: _verifier,
-            verifiedCommit: _verifiedCommit,
-            clock: _clock,
-          ).call(
-            connection: connection,
-            target: target,
-            local: local,
-            verificationOnly: verificationOnly,
-          );
-      switch (existing) {
-        case CloudflareExistingPublicationFinished(:final result):
-          return result;
-        case CloudflareExistingPublicationContinue(local: final repaired):
-          local = repaired;
+    // Confirmation is bound to the remote facts the user reviewed, not to a
+    // freshness category (N1/M10). An equal anchor authorises the replacement
+    // the user read; a changed one never writes and asks again.
+    PublishReplacementReason? replacementReason;
+    if (confirmation != null) {
+      if (!initial.anchor.matches(confirmation.remoteAnchor)) {
+        return _reviewAgain(
+          initial: initial,
+          confirmation: confirmation,
+          target: target,
+          section: section,
+          inputs: inputs,
+          replacement: replacement,
+        );
       }
-    } else if (verificationOnly) {
-      return const PublishFailure(
-        CloudflareErrorMessages.publicationVerificationFailed,
-      );
+      replacementReason = confirmation.reason;
+    } else {
+      if (initial.freshness == PublishFreshness.siteUnavailable) {
+        return const PublishFailure(CloudflareErrorMessages.siteUnavailable);
+      }
+      if (initial.freshness == PublishFreshness.known) {
+        final existing =
+            await CloudflareExistingPublicationCheck(
+              verifier: _verifier,
+              verifiedCommit: _verifiedCommit,
+              clock: _clock,
+            ).call(
+              connection: connection,
+              target: target,
+              local: local,
+              verificationOnly: verificationOnly,
+            );
+        switch (existing) {
+          case CloudflareExistingPublicationFinished(:final result):
+            return result;
+          case CloudflareExistingPublicationContinue(local: final repaired):
+            local = repaired;
+        }
+      } else if (verificationOnly) {
+        return const PublishFailure(
+          CloudflareErrorMessages.publicationVerificationFailed,
+        );
+      }
     }
 
-    final replacing = initial.requiresReplacement;
-    if (confirmation != null && !replacing) {
-      return const PublishFailure(CloudflareErrorMessages.stalePublish);
+    if (confirmation == null && replacementReason == null) {
+      replacementReason = _stateReason(initial.freshness);
     }
-    if (replacing || confirmation != null) {
+    final replacing = replacementReason != null;
+    if (replacing) {
       inputs = await replacement.readInputs(
         reads: _reads,
         target: target,
@@ -256,6 +271,9 @@ final class PublishToCloudflareUseCase {
         target: target,
         requestedSection: section,
         inputs: inputs,
+        remoteAnchor: initial.anchor,
+        reason: replacementReason,
+        previousSiteUrl: previousTarget?.siteUrl,
       );
       final failure = prepared.swap().toNullable();
       if (failure != null) return CloudflarePublishOutcomes.failure(failure);
@@ -307,6 +325,9 @@ final class PublishToCloudflareUseCase {
           target: target,
           requestedSection: section,
           inputs: inputs,
+          remoteAnchor: initial.anchor,
+          reason: PublishReplacementReason.localBytesMissing,
+          previousSiteUrl: previousTarget?.siteUrl,
         );
       }
       return CloudflarePublishOutcomes.failure(artifactFailure);
@@ -334,6 +355,56 @@ final class PublishToCloudflareUseCase {
       replacing: replacing,
       availabilityOmitted: snapshot.availabilityOmitted,
       progress: progress,
+    );
+  }
+
+  /// The replacement reason implied by a preflighted freshness category.
+  ///
+  /// `known`, `newSite` and (until the recreate flow lands) `siteUnavailable`
+  /// do not justify a replacement by themselves.
+  static PublishReplacementReason? _stateReason(PublishFreshness freshness) =>
+      switch (freshness) {
+        PublishFreshness.unknown => PublishReplacementReason.unknownRemoteState,
+        PublishFreshness.knownRetired => PublishReplacementReason.retiredSite,
+        _ => null,
+      };
+
+  /// A confirmed review is stale when the remote changed after it.
+  ///
+  /// The user reviews remote facts, so a changed anchor always needs a new
+  /// review. Once the site matches this phone's own record, the confirmation
+  /// itself no longer describes anything to replace: pressing Publish again is
+  /// the honest next step (`stalePublish`).
+  bool _stillNeedsReplacement(
+    PublishFreshness freshness,
+    PublishReplacementReason confirmed,
+  ) {
+    if (freshness != PublishFreshness.known) return true;
+    return confirmed == PublishReplacementReason.localBytesMissing ||
+        confirmed == PublishReplacementReason.recordContradicted;
+  }
+
+  /// Returns a fresh summary (asking again) or a stale refusal. No write.
+  Future<PublishResult> _reviewAgain({
+    required CloudflarePublishPreflight initial,
+    required PublishReplacementSummary confirmation,
+    required CloudflarePublishTarget target,
+    required PublishRequestedSection section,
+    required PublishInputs inputs,
+    required CloudflareReplacementPreparation replacement,
+  }) async {
+    if (!_stillNeedsReplacement(initial.freshness, confirmation.reason)) {
+      return const PublishFailure(CloudflareErrorMessages.stalePublish);
+    }
+    return replacement.prepareResult(
+      reads: _reads,
+      target: target,
+      requestedSection: section,
+      inputs: inputs,
+      remoteAnchor: initial.anchor,
+      reason: _stateReason(initial.freshness) ?? confirmation.reason,
+      previousSiteUrl: confirmation.previousSiteUrl,
+      remoteChangedSinceReview: true,
     );
   }
 

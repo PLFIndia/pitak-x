@@ -249,6 +249,18 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// paths still say which files this phone wrote (R5).
   bool get hashesTrusted => hashScheme == CloudflareAssetHash.scheme;
 
+  /// The record when it describes [target] and its file set is valid;
+  /// otherwise the EMPTY record.
+  ///
+  /// This is the one rule for "what does my record claim?" (handoff §13): a
+  /// record for another target claims NOTHING. It must never be an error,
+  /// because a user who reconnected to another Worker would otherwise be
+  /// stranded with no way to publish (fix-plan H1).
+  CloudflareSiteManifest forTarget(CloudflarePublishTarget target) =>
+      describes(target) && isValidFileSet(state: state, paths: ownedPaths)
+      ? this
+      : empty;
+
   /// True when this record describes exactly [other].
   bool describes(CloudflarePublishTarget other) {
     final mine = target;

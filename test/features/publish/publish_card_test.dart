@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/presentation/widgets/publish_card.dart';
@@ -57,6 +58,11 @@ void main() {
     catalogueItemCount: items,
     posterCount: posters,
     availabilityOmitted: false,
+    remoteAnchor: const CloudflareRemoteAnchor(
+      workerExists: true,
+      markerKind: CloudflareMarkerKind.absent,
+    ),
+    reason: PublishReplacementReason.unknownRemoteState,
   );
 
   Future<void> pump(

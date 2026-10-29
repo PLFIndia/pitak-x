@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_digest.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -60,10 +61,17 @@ final class CloudflareReplacementPreparation {
   );
 
   /// Builds against [CloudflareSiteManifest.empty] in complete mode.
+  ///
+  /// [remoteAnchor] and [reason] are carried into the summary so the
+  /// confirmation is bound to the remote state the user actually saw.
   Future<Either<Failure, CloudflareCompletePreparation>> prepare({
     required CloudflarePublishTarget target,
     required PublishRequestedSection requestedSection,
     required PublishInputs inputs,
+    required CloudflareRemoteAnchor remoteAnchor,
+    required PublishReplacementReason reason,
+    String? previousSiteUrl,
+    bool remoteChangedSinceReview = false,
   }) async {
     final built = await _snapshotBuilder.build(
       inputs: inputs,
@@ -91,6 +99,10 @@ final class CloudflareReplacementPreparation {
           catalogueItemCount: snapshot.catalogueItemCount,
           posterCount: snapshot.posterCount,
           availabilityOmitted: snapshot.availabilityOmitted,
+          remoteAnchor: remoteAnchor,
+          reason: reason,
+          previousSiteUrl: previousSiteUrl,
+          remoteChangedSinceReview: remoteChangedSinceReview,
         ),
       ),
     );
@@ -132,6 +144,10 @@ final class CloudflareReplacementPreparation {
     required CloudflarePublishTarget target,
     required PublishRequestedSection requestedSection,
     required PublishInputs inputs,
+    required CloudflareRemoteAnchor remoteAnchor,
+    required PublishReplacementReason reason,
+    String? previousSiteUrl,
+    bool remoteChangedSinceReview = false,
   }) async {
     final completeInputs = await readInputs(
       reads: reads,
@@ -147,6 +163,10 @@ final class CloudflareReplacementPreparation {
       target: target,
       requestedSection: requestedSection,
       inputs: completeInputs,
+      remoteAnchor: remoteAnchor,
+      reason: reason,
+      previousSiteUrl: previousSiteUrl,
+      remoteChangedSinceReview: remoteChangedSinceReview,
     );
     final failure = prepared.swap().toNullable();
     if (failure != null) return CloudflarePublishOutcomes.failure(failure);
