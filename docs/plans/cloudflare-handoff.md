@@ -28,6 +28,7 @@
   | `705074d` | S11 (cleanup) | Trial harness (9 `.dart` + `README.md`) and its 18 tests removed after a final clean `dart analyze tool`/format pass; plan, ADR 0017 and handoff records reconciled |
   | `2f7e190` | S11 (golden fixture) | Pin the signed-out publish-status projection so the real card settles deterministically instead of leaving a platform-storage loading spinner |
   | `0903ff6` | S11 (Linux golden) | Regenerate only `publish_connection.png` from the successful 10-test Linux workflow artifact; all other references were byte-identical |
+  | `8d499ea` | S11 (CI/security) | Move Argon2 to fixed `block-buffer` 0.12.1; confine the remaining bridge-only OSV exception with exact policies and a CI path guard |
 
 - **State:** every local session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
@@ -772,6 +773,18 @@ each. Rust formatting, Clippy, `cargo deny` and release tests passed (35 tests,
 2 real-vault tests ignored as documented). Fastlane validation plus its 6 unit
 tests, the tracked-file secret scan, F-Droid purity and the Play positive
 control also passed. No AAB or release artifact was built in this session.
+
+**CI dependency remediation — 2026-10-29.** PR #20's first OSV job found
+GHSA-qwgh-2vcv-g2f7 in `block-buffer` 0.10.4. `8d499ea` upgrades Argon2 to 0.6
+with only `alloc`, moving the shipped KDF to fixed `block-buffer` 0.12.1 while
+preserving its known-answer vector and all 35 release tests. The older crate
+remains only in Flutter Rust Bridge's compile-time MD5 chain (still used by
+upstream's newest beta). `rust/osv-scanner.toml` scopes the exception to that
+advisory until 2027-01-29; exact-version `cargo-deny` skips cover the four
+unavoidable major splits, and `tool/check_block_buffer_exception.py` fails CI
+if any path outside the reviewed bridge chain appears. Local OSV-Scanner 2.7.0
+then reported no issues, and formatting, Clippy, `cargo deny` and release tests
+passed again.
 
 **Release-note draft (≤ 500 characters, for `fastlane/…/changelogs/N.txt`):**
 
