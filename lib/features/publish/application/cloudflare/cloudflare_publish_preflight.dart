@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
@@ -55,26 +56,30 @@ final class CloudflarePublishPreflight {
   /// True only for a new Worker with no matching local record and a real 404.
   bool get isNewSite => freshness == PublishFreshness.newSite;
 
-  /// Compares the remote facts that may not change before deployment. Route
-  /// settings are deliberately excluded: the C8 gate changes them on purpose.
-  bool hasSameAnchor(CloudflarePublishPreflight other) {
-    if (target.targetId != other.target.targetId ||
-        target.siteUrl != other.target.siteUrl ||
-        workerExists != other.workerExists) {
-      return false;
-    }
-    return switch ((probe, other.probe)) {
-      (MarkerAbsent(), MarkerAbsent()) => true,
-      (MarkerUnreadable(), MarkerUnreadable()) => true,
-      (
-        MarkerPresent(:final marker),
-        MarkerPresent(marker: final otherMarker),
-      ) =>
-        marker.publishId == otherMarker.publishId &&
-            marker.state == otherMarker.state,
-      _ => false,
-    };
-  }
+  /// The remote facts a confirmation or replacement is bound to.
+  CloudflareRemoteAnchor get anchor => switch (probe) {
+    MarkerAbsent() => CloudflareRemoteAnchor(
+      workerExists: workerExists,
+      markerKind: CloudflareMarkerKind.absent,
+    ),
+    MarkerUnreadable() => CloudflareRemoteAnchor(
+      workerExists: workerExists,
+      markerKind: CloudflareMarkerKind.unreadable,
+    ),
+    MarkerPresent(:final marker) => CloudflareRemoteAnchor(
+      workerExists: workerExists,
+      markerKind: CloudflareMarkerKind.present,
+      publishId: marker.publishId,
+      markerState: marker.state,
+    ),
+  };
+
+  /// Compares the target and the remote anchor. Route settings are deliberately
+  /// excluded: the C8 gate changes them on purpose.
+  bool hasSameAnchor(CloudflarePublishPreflight other) =>
+      target.targetId == other.target.targetId &&
+      target.siteUrl == other.target.siteUrl &&
+      anchor.matches(other.anchor);
 }
 
 /// Reads account, Worker, route, and marker state without writing anything.
