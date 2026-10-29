@@ -1,0 +1,7 @@
+# Applies only to rust/Cargo.lock (OSV configs do not propagate to children).
+# Reassess by the expiry; remove as soon as flutter_rust_bridge_macros upgrades
+# its compile-time md-5 dependency to the fixed digest/block-buffer chain.
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+ignoreUntil = 2027-01-29
+reason = "Argon2 0.6 uses fixed block-buffer 0.12.1. The remaining 0.10.4 is only through flutter_rust_bridge_macros' compile-time md-5 0.10.6 (also in upstream's newest beta). The advisory requires catching a compression/generator panic and reusing that buffer; Pitak has no catch_unwind and does not execute attacker-controlled proc macros."

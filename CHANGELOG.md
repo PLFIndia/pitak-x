@@ -84,6 +84,11 @@ heading as part of the `chore(release):` commit.
   malformed file entry invalidates the whole record, forcing explicit
   replacement reconciliation instead of a partial deploy that silently drops a
   remote asset.
+- **Argon2 uses the fixed digest chain:** Argon2 0.6 moves the shipped KDF to
+  `block-buffer` 0.12.1 (GHSA-qwgh-2vcv-g2f7). The older crate remains only in
+  Flutter Rust Bridge's compile-time MD5 chain; a CI path guard confines the
+  time-limited OSV exception to that chain, and exact-version `cargo-deny`
+  entries permit only the unavoidable upstream major-version splits.
 
 ## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
 
