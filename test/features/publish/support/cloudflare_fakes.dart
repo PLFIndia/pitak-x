@@ -300,6 +300,10 @@ final class FakeCloudflareApi implements CloudflareApi {
   /// thrown, so a test can model "the deploy landed but the response was lost".
   void Function()? onDeployAttempt;
 
+  /// Runs after each Worker-existence read, with its 1-based call number.
+  /// Tests use it to make a Worker appear between two reads.
+  void Function(int call)? onWorkerExists;
+
   @override
   Future<CloudflareTokenVerification> verifyUserToken(
     CloudflareApiToken token,
@@ -383,6 +387,7 @@ final class FakeCloudflareApi implements CloudflareApi {
   }) async {
     workerExistsCalls++;
     await _awaitGate('workerExists');
+    onWorkerExists?.call(workerExistsCalls);
     final error = workerExistsError;
     if (error != null) throw error;
     return workerExistsValue;

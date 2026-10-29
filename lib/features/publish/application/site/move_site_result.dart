@@ -15,6 +15,7 @@ final class MoveSiteConfirmation {
     required this.catalogueItemCount,
     required this.posterCount,
     required this.availabilityOmitted,
+    this.destinationWarning,
   });
 
   /// Exact current site that will later be retired.
@@ -37,6 +38,25 @@ final class MoveSiteConfirmation {
 
   /// Whether vault locking omitted availability from the reviewed snapshot.
   final bool availabilityOmitted;
+
+  /// One fixed, safe sentence about the destination that the user must see
+  /// before confirming (for example "the Worker no longer exists").
+  ///
+  /// Null for an ordinary destination. It never carries response text.
+  final String? destinationWarning;
+
+  /// The same review with an extra destination sentence.
+  MoveSiteConfirmation withDestinationWarning(String warning) =>
+      MoveSiteConfirmation(
+        oldTarget: oldTarget,
+        newTarget: newTarget,
+        sourceAnchor: sourceAnchor,
+        digest: digest,
+        catalogueItemCount: catalogueItemCount,
+        posterCount: posterCount,
+        availabilityOmitted: availabilityOmitted,
+        destinationWarning: warning,
+      );
 
   /// True when the reviewed catalogue has no items.
   bool get catalogueIsEmpty => catalogueItemCount == 0;
@@ -231,6 +251,11 @@ abstract final class MoveSiteMessages {
   static const String completionFailed =
       'Retirement finished, but the move could not be completed on this phone. '
       'Retry to finish it.';
+
+  /// The destination Worker was deleted; the move recreates it completely.
+  static String workerMissingDestination(String address) =>
+      'The Worker for $address no longer exists. Pitak creates it with your '
+      'whole library.';
 
   /// Unexpected failures are collapsed to fixed copy without remote details.
   static const String generic =

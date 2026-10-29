@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_session_baseline.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
@@ -73,6 +74,7 @@ final class CloudflareDeployPipeline {
     required bool availabilityOmitted,
     required CloudflarePublishOperationProgress progress,
   }) async {
+    final token = connection.useToken((value) => value);
     final gate = CloudflareVersionUrlGate(deployApi: _deployApi);
     if (initial.workerExists) {
       final route = initial.route;
@@ -80,7 +82,7 @@ final class CloudflareDeployPipeline {
         return const PublishFailure(CloudflareErrorMessages.artifactInvalid);
       }
       final private = await gate.ensureOff(
-        token: connection.useToken((token) => token),
+        token: token,
         accountId: target.accountId,
         workerName: target.workerName,
         route: route,
@@ -90,12 +92,42 @@ final class CloudflareDeployPipeline {
       }
     }
 
+    // RH1: creating the session may create the Worker. A Worker that appeared
+    // BEFORE the session is someone else's, so this publish stops as stale.
+    if (await CloudflareSessionBaseline.workerAppeared(
+      sawWorkerInitially: initial.workerExists,
+      workerExists: () => _deployApi.workerExists(
+        token: token,
+        accountId: target.accountId,
+        workerName: target.workerName,
+      ),
+    )) {
+      return const PublishFailure(CloudflareErrorMessages.stalePublish);
+    }
+
     final session = await _deployApi.createUploadSession(
-      token: connection.useToken((token) => token),
+      token: token,
       accountId: target.accountId,
       workerName: target.workerName,
       manifest: publication.uploadManifest,
     );
+
+    // RH1: adopt our own session's Worker creation as the baseline, or keep
+    // the old baseline when a foreign marker appeared.
+    final baselineResult = await CloudflareSessionBaseline.afterSession(
+      initial: initial,
+      read: () => _preflight.call(
+        token: token,
+        target: target,
+        local: local,
+        cacheBuster: 'post-session-${_clock()}',
+      ),
+    );
+    final baselineFailure = baselineResult.swap().toNullable();
+    if (baselineFailure != null) {
+      return CloudflarePublishOutcomes.failure(baselineFailure);
+    }
+    final baseline = baselineResult.toNullable()!;
     final upload = await CloudflareBucketUploader(_deployApi).upload(
       accountId: target.accountId,
       session: session,
@@ -132,7 +164,7 @@ final class CloudflareDeployPipeline {
     ];
 
     final last = await _preflight.call(
-      token: connection.useToken((token) => token),
+      token: token,
       target: target,
       local: local,
       cacheBuster: 'final-${_clock()}',
@@ -141,13 +173,13 @@ final class CloudflareDeployPipeline {
     if (lastFailure != null) {
       return CloudflarePublishOutcomes.failure(lastFailure);
     }
-    if (!initial.hasSameAnchor(last.toNullable()!)) {
+    if (!baseline.hasSameAnchor(last.toNullable()!)) {
       return const PublishFailure(CloudflareErrorMessages.stalePublish);
     }
 
     progress.deployStarted = true;
     await _deployApi.deploy(
-      token: connection.useToken((token) => token),
+      token: token,
       accountId: target.accountId,
       workerName: target.workerName,
       completionToken: completionToken,
@@ -162,7 +194,7 @@ final class CloudflareDeployPipeline {
     var localStateSaved = _manifest.save(publication.manifest).isRight();
     try {
       final private = await gate.afterDeploy(
-        token: connection.useToken((token) => token),
+        token: token,
         accountId: target.accountId,
         workerName: target.workerName,
       );

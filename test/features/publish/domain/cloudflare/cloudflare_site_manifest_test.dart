@@ -53,6 +53,43 @@ void main() {
     coverUrlByBookId: covers,
   );
 
+  group('forTarget: the one "what does my record claim?" rule', () {
+    test('returns the record for the exact target', () {
+      final manifest = live();
+      expect(identical(manifest.forTarget(target), manifest), isTrue);
+    });
+
+    test('returns the empty record for another Worker or address', () {
+      final otherWorker = CloudflarePublishTarget.create(
+        accountId: '0123456789abcdef0123456789abcdef',
+        workerName: 'other-library',
+        accountSubdomain: 'kadugodi',
+      )!;
+      final otherAddress = CloudflarePublishTarget.create(
+        accountId: '0123456789abcdef0123456789abcdef',
+        workerName: 'kadugodi-library',
+        accountSubdomain: 'newkadugodi',
+      )!;
+      final manifest = live();
+
+      expect(manifest.forTarget(otherWorker).target, isNull);
+      expect(manifest.forTarget(otherWorker).files, isEmpty);
+      expect(manifest.forTarget(otherAddress).target, isNull);
+    });
+
+    test('an invalid file set claims nothing even for its own target', () {
+      // A normal deployment without books.json is not a usable record.
+      final manifest = live(
+        files: {
+          'index.html': entry('sha-index', type: CloudflareContentType.html),
+          'pitak-publish.json': entry('sha-marker'),
+        },
+      );
+      expect(manifest.describes(target), isTrue);
+      expect(manifest.forTarget(target).target, isNull);
+    });
+  });
+
   group('target identity', () {
     test('describes only its own account, Worker and derived address', () {
       final manifest = live();

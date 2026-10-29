@@ -7,9 +7,12 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
@@ -21,6 +24,18 @@ import '../../support/cloudflare_s8_fakes.dart';
 
 void main() {
   late Directory dir;
+
+  final defaultTarget = cloudflareTestConnection().status.target!;
+
+  /// A connection for the same account at [workerName]/[subdomain].
+  CloudflareConnection connectionFor(String workerName, String subdomain) =>
+      cloudflareTestConnection()
+          .selectSubdomain(
+            CloudflareSubdomain.tryParse(subdomain)!,
+            confirmed: true,
+          )
+          // selectWorker is what derives the sealed target from the parts.
+          .selectWorker(CloudflareWorkerName.tryParse(workerName)!);
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('pitaka_s8_publish_');
@@ -321,6 +336,267 @@ void main() {
     // review explains that; the missing bytes still make it a replacement.
     expect(again.reason, PublishReplacementReason.unknownRemoteState);
     expect(h.api.deployCalls, 0);
+  });
+
+  group('H1: publishing dead ends', () {
+    test('a record for another Worker is a target-changed review, not an '
+        'error, and confirming deploys a complete site', () async {
+      final h = S8PublishHarness(
+        dir,
+        connection: connectionFor('other-library', 'library'),
+      );
+      h.manifestStore.current = s8Manifest(
+        target: defaultTarget,
+        publishId: 'a' * 32,
+      );
+
+      final prepared = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(prepared, isA<PublishReplacementRequired>());
+      final summary = (prepared as PublishReplacementRequired).summary;
+      expect(summary.reason, PublishReplacementReason.targetChanged);
+      expect(summary.previousSiteUrl, defaultTarget.siteUrl);
+      expect(h.api.deployCalls, 0);
+
+      final confirmed = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        confirmation: summary,
+      );
+
+      expect(confirmed, isA<PublishSuccess>());
+      expect(h.api.deployCalls, 1);
+      expect(h.manifestStore.current.target?.targetId, h.target.targetId);
+      expect(h.hostStore.stored?.verifiedTarget?.targetId, h.target.targetId);
+    });
+
+    test('a record for another target never drives an incremental deploy to '
+        'an existing Worker', () async {
+      final h = S8PublishHarness(
+        dir,
+        connection: connectionFor('other-library', 'library'),
+        workerExists: true,
+      );
+      h.manifestStore.current = s8Manifest(
+        target: defaultTarget,
+        publishId: 'a' * 32,
+      );
+      // The OLD record's marker is live on the destination Worker. If the
+      // stale record were used, this would classify as `known` and deploy
+      // incrementally.
+      h.reader.body(CloudflareLimits.markerPath, s8Marker('a' * 32));
+
+      final prepared = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(prepared, isA<PublishReplacementRequired>());
+      expect(
+        (prepared as PublishReplacementRequired).summary.reason,
+        PublishReplacementReason.targetChanged,
+      );
+      expect(h.api.uploadManifests, isEmpty);
+      expect(h.api.deployCalls, 0);
+    });
+
+    test(
+      'the same Worker at a new address is an address-changed review',
+      () async {
+        final h = S8PublishHarness(
+          dir,
+          connection: connectionFor('pitak-library', 'newlibrary'),
+        );
+        h.api.subdomain = cloudflareTestSubdomain('newlibrary');
+        h.manifestStore.current = s8Manifest(
+          target: defaultTarget,
+          publishId: 'a' * 32,
+        );
+
+        final prepared = await h.useCase.call(
+          target: h.target,
+          section: PublishRequestedSection.catalogue,
+        );
+
+        expect(prepared, isA<PublishReplacementRequired>());
+        final summary = (prepared as PublishReplacementRequired).summary;
+        expect(summary.reason, PublishReplacementReason.addressChanged);
+        expect(summary.previousSiteUrl, defaultTarget.siteUrl);
+        expect(summary.target.siteUrl, contains('newlibrary'));
+      },
+    );
+
+    test('a deleted Worker gets a recreate review with no writes, and '
+        'confirming recreates and verifies the site', () async {
+      final oldId = 'a' * 32;
+      final h = S8PublishHarness(dir);
+      h.manifestStore.current = s8Manifest(
+        target: h.target,
+        publishId: oldId,
+        state: PublishState.deployed,
+      );
+
+      final prepared = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(prepared, isA<PublishReplacementRequired>());
+      final summary = (prepared as PublishReplacementRequired).summary;
+      expect(summary.reason, PublishReplacementReason.workerMissing);
+      expect(h.api.routeUpdates, isEmpty);
+      expect(h.api.uploadManifests, isEmpty);
+      expect(h.api.deployCalls, 0);
+      expect(h.manifestStore.saves, isEmpty);
+
+      final confirmed = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        confirmation: summary,
+      );
+
+      expect(confirmed, isA<PublishSuccess>());
+      expect((confirmed as PublishSuccess).pagesLive, isTrue);
+      expect(h.api.deployCalls, 1);
+      expect(h.manifestStore.saves.map((m) => m.state), [
+        PublishState.deployed,
+        PublishState.live,
+      ]);
+    });
+
+    test(
+      'confirming a recreate re-prompts when the Worker reappeared',
+      () async {
+        final h = S8PublishHarness(dir);
+        h.manifestStore.current = s8Manifest(
+          target: h.target,
+          publishId: 'a' * 32,
+          state: PublishState.deployed,
+        );
+        final prepared = await h.useCase.call(
+          target: h.target,
+          section: PublishRequestedSection.catalogue,
+        );
+        final summary = (prepared as PublishReplacementRequired).summary;
+
+        h.api.workerExistsValue = true;
+        h.reader.body(
+          CloudflareLimits.markerPath,
+          s8Marker('b' * 32, state: PublishMarkerState.verification),
+        );
+        final second = await h.useCase.call(
+          target: h.target,
+          section: PublishRequestedSection.catalogue,
+          confirmation: summary,
+        );
+
+        expect(second, isA<PublishReplacementRequired>());
+        final again = (second as PublishReplacementRequired).summary;
+        expect(again.remoteChangedSinceReview, isTrue);
+        expect(again.remoteAnchor.workerExists, isTrue);
+        expect(h.api.deployCalls, 0);
+      },
+    );
+
+    test('retry verification with only another target record says there is '
+        'nothing to verify', () async {
+      final h = S8PublishHarness(
+        dir,
+        connection: connectionFor('other-library', 'library'),
+      );
+      h.manifestStore.current = s8Manifest(
+        target: defaultTarget,
+        publishId: 'a' * 32,
+      );
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        verificationOnly: true,
+      );
+
+      expect(result, isA<PublishFailure>());
+      expect(
+        (result as PublishFailure).reason,
+        CloudflareErrorMessages.nothingToVerify,
+      );
+    });
+  });
+
+  group('RH1: a Worker created around the upload session', () {
+    test('our own session creating the Worker still deploys', () async {
+      final h = S8PublishHarness(dir);
+      h.api.onCreateUploadSession = () => h.api.workerExistsValue = true;
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishSuccess>());
+      expect(h.api.deployCalls, 1);
+    });
+
+    test('a foreign creation before the session stops as stale', () async {
+      final h = S8PublishHarness(dir);
+      h.api.onWorkerExists = (call) {
+        if (call == 2) h.api.workerExistsValue = true;
+      };
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishFailure>());
+      expect(
+        (result as PublishFailure).reason,
+        CloudflareErrorMessages.stalePublish,
+      );
+      expect(h.api.uploadManifests, isEmpty);
+      expect(h.api.deployCalls, 0);
+    });
+
+    test('a marker appearing after the session stops as stale', () async {
+      final h = S8PublishHarness(dir);
+      h.api.onCreateUploadSession = () {
+        h.reader.body(
+          CloudflareLimits.markerPath,
+          s8Marker('b' * 32, state: PublishMarkerState.verification),
+        );
+      };
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishFailure>());
+      expect(
+        (result as PublishFailure).reason,
+        CloudflareErrorMessages.stalePublish,
+      );
+      expect(h.api.deployCalls, 0);
+    });
+
+    test('a fresh Worker with an unreadable marker still deploys', () async {
+      final h = S8PublishHarness(dir);
+      h.api.onCreateUploadSession = () {
+        h.api.workerExistsValue = true;
+        h.reader.unreadable(CloudflareLimits.markerPath);
+      };
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishSuccess>());
+      expect(h.api.deployCalls, 1);
+    });
   });
 
   test(

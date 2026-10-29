@@ -154,6 +154,26 @@ void main() {
     expect(hostStore.stored!.pendingMove, isNull);
   });
 
+  test('N2: a destination whose Worker was deleted is reviewed as a recreate '
+      'and publishes normally', () async {
+    manifests.current = s8Manifest(
+      target: moveCloudflareTarget,
+      publishId: 'a' * 32,
+    );
+
+    final confirmation = await prepare();
+
+    expect(confirmation.destinationWarning, contains('no longer exists'));
+    final result = await destination.publish(
+      confirmation: confirmation,
+      beforeWrite: () async => true,
+    );
+
+    expect(result, isA<MoveDestinationPublished>());
+    expect(api.deployCalls, 1);
+    expect(manifests.current.state, PublishState.live);
+  });
+
   test('J.7 regression: a multi-bucket destination deploys with the final '
       "bucket's completion token", () async {
     api.uploadSessionFactory = cloudflareOneBucketPerHashSession;

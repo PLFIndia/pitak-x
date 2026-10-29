@@ -47,11 +47,13 @@ final class CloudflarePublishPreflight {
   /// Fail-closed freshness classification.
   final PublishFreshness freshness;
 
-  /// Unknown state and a positively identified retired site both require the
-  /// complete-snapshot replacement flow before any write.
+  /// Unknown state, a positively identified retired site, and a Worker that
+  /// no longer exists all require the complete-snapshot replacement flow
+  /// before any write (F.5, F.9, R10).
   bool get requiresReplacement =>
       freshness == PublishFreshness.unknown ||
-      freshness == PublishFreshness.knownRetired;
+      freshness == PublishFreshness.knownRetired ||
+      freshness == PublishFreshness.siteUnavailable;
 
   /// True only for a new Worker with no matching local record and a real 404.
   bool get isNewSite => freshness == PublishFreshness.newSite;

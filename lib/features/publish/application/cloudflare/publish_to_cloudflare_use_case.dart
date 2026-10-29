@@ -222,9 +222,6 @@ final class PublishToCloudflareUseCase {
       }
       replacementReason = confirmation.reason;
     } else {
-      if (initial.freshness == PublishFreshness.siteUnavailable) {
-        return const PublishFailure(CloudflareErrorMessages.siteUnavailable);
-      }
       if (initial.freshness == PublishFreshness.known) {
         final existing =
             await CloudflareExistingPublicationCheck(
@@ -244,14 +241,20 @@ final class PublishToCloudflareUseCase {
             local = repaired;
         }
       } else if (verificationOnly) {
-        return const PublishFailure(
-          CloudflareErrorMessages.publicationVerificationFailed,
+        return PublishFailure(
+          local.target == null
+              ? CloudflareErrorMessages.nothingToVerify
+              : CloudflareErrorMessages.publicationVerificationFailed,
         );
       }
     }
 
-    if (confirmation == null && replacementReason == null) {
-      replacementReason = _stateReason(initial.freshness);
+    if (confirmation == null) {
+      // A record for another target is a change of destination, not a remote
+      // state: it is reviewed on its own terms (D1).
+      replacementReason =
+          _structuralReason(previousTarget, target) ??
+          _stateReason(initial.freshness);
     }
     final replacing = replacementReason != null;
     if (replacing) {
@@ -366,8 +369,30 @@ final class PublishToCloudflareUseCase {
       switch (freshness) {
         PublishFreshness.unknown => PublishReplacementReason.unknownRemoteState,
         PublishFreshness.knownRetired => PublishReplacementReason.retiredSite,
+        PublishFreshness.siteUnavailable =>
+          PublishReplacementReason.workerMissing,
         _ => null,
       };
+
+  /// The reason implied by a record that describes a different destination.
+  ///
+  /// `targetChanged` wins over `addressChanged`: another Worker (or account)
+  /// is a new site, while the same Worker at a new address is a rebuild at the
+  /// new address. Both deploy a complete snapshot because `library.json`
+  /// embeds the address (D1).
+  static PublishReplacementReason? _structuralReason(
+    CloudflarePublishTarget? previousTarget,
+    CloudflarePublishTarget target,
+  ) {
+    if (previousTarget == null) return null;
+    if (previousTarget.targetId != target.targetId) {
+      return PublishReplacementReason.targetChanged;
+    }
+    if (previousTarget.siteUrl != target.siteUrl) {
+      return PublishReplacementReason.addressChanged;
+    }
+    return null;
+  }
 
   /// A confirmed review is stale when the remote changed after it.
   ///

@@ -25,6 +25,10 @@ Future<bool> showMoveSiteDialog(
             const SizedBox(height: 8),
             const Text('New address:'),
             SelectableText(confirmation.newTarget.siteUrl),
+            if (confirmation.destinationWarning case final warning?) ...[
+              const SizedBox(height: 12),
+              Text(warning),
+            ],
             const SizedBox(height: 12),
             Text(
               'A complete snapshot with ${confirmation.catalogueItemCount} '

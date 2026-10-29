@@ -57,9 +57,9 @@ final class CloudflareMoveReader {
       );
     }
     final stored = _manifest.load();
-    final local = stored.target == null || stored.describes(expected)
-        ? stored
-        : CloudflareSiteManifest.empty;
+    // Same rule as the ordinary publish: a record for another target claims
+    // nothing, and that is never an error (handoff §13, fix-plan H1).
+    final local = stored.forTarget(expected);
     return Right(
       CloudflareMoveConnection(connection: connection, local: local),
     );

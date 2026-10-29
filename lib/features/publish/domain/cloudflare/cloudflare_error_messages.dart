@@ -38,10 +38,15 @@ abstract final class CloudflareErrorMessages {
   /// An operation requires a subdomain first.
   static const subdomainRequired = 'Choose an account subdomain first.';
 
-  /// The configured Worker or confirmed origin is no longer available.
+  /// The account subdomain changed, so the stored address no longer resolves.
+  ///
+  /// After H1 a deleted Worker has its own recreate review; this message is
+  /// only for the account-wide address change, where reconnecting (and
+  /// choosing the new address) is exactly the fix.
   static const siteUnavailable =
-      'The Cloudflare Worker or its confirmed address is not available. '
-      'Reconnect and verify the exact target before publishing.';
+      'Your Cloudflare account’s workers.dev address changed, so this site’s '
+      'address no longer works. Reconnect Cloudflare and choose the new '
+      'address.';
 
   /// The credential/target identity changed before an operation started.
   static const targetMismatch =
@@ -77,6 +82,11 @@ abstract final class CloudflareErrorMessages {
   static const stalePublish =
       'The Cloudflare site changed while publishing was being prepared. '
       'Review the latest state and try again. Your live site was not changed.';
+
+  /// Retry verification with nothing recorded for this exact site.
+  static const nothingToVerify =
+      'This phone has no publish on this Cloudflare site to verify yet. '
+      'Publish to continue.';
 
   /// A matching deployed record could not complete read-back; no new deploy.
   static const publicationVerificationFailed =

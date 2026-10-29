@@ -11,6 +11,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_r
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_session_baseline.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
@@ -86,11 +87,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         'move-prepare-${_clock()}',
       );
       if (initial case Left(value: final failure)) return Left(failure);
-      if (initial.toNullable()!.freshness == PublishFreshness.siteUnavailable) {
-        return const Left(
-          CloudflareFailure(CloudflareErrorMessages.siteUnavailable),
-        );
-      }
+      final reviewed = initial.toNullable()!;
       final prepared = await _preparation(store)(
         reads: _reads,
         oldTarget: oldTarget,
@@ -98,7 +95,16 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         sourceAnchor: sourceAnchor,
       );
       if (prepared case Left(value: final failure)) return Left(failure);
-      return Right(prepared.toNullable()!.confirmation);
+      final confirmation = prepared.toNullable()!.confirmation;
+      // N2: a deleted Worker is recreated by this complete snapshot. The
+      // review says so instead of refusing the move forever.
+      return Right(
+        reviewed.freshness == PublishFreshness.siteUnavailable
+            ? confirmation.withDestinationWarning(
+                MoveSiteMessages.workerMissingDestination(newTarget.siteUrl),
+              )
+            : confirmation,
+      );
     } on Exception {
       return const Left(CloudflareFailure(CloudflareErrorMessages.generic));
     } finally {
@@ -178,11 +184,6 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       return MoveDestinationFailed(_message(initialFailure));
     }
     final initial = initialResult.toNullable()!;
-    if (initial.freshness == PublishFreshness.siteUnavailable) {
-      return const MoveDestinationFailed(
-        CloudflareErrorMessages.siteUnavailable,
-      );
-    }
 
     if (initial.freshness == PublishFreshness.known &&
         _matchesSnapshot(current.local, complete.snapshot)) {
@@ -226,12 +227,34 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       }
     }
 
+    // RH1, the same rule as an ordinary publish: a Worker that appeared
+    // BEFORE our session is someone else's; one our session creates is ours.
+    if (await CloudflareSessionBaseline.workerAppeared(
+      sawWorkerInitially: initial.workerExists,
+      workerExists: () => _deployApi.workerExists(
+        token: token,
+        accountId: target.accountId,
+        workerName: target.workerName,
+      ),
+    )) {
+      return const MoveDestinationFailed(MoveSiteMessages.sourceChanged);
+    }
     final session = await _deployApi.createUploadSession(
       token: token,
       accountId: target.accountId,
       workerName: target.workerName,
       manifest: publication.uploadManifest,
     );
+    final baselineResult = await CloudflareSessionBaseline.afterSession(
+      initial: initial,
+      read: () =>
+          _reader.check(current, target, 'move-post-session-${_clock()}'),
+    );
+    final baselineFailure = baselineResult.swap().toNullable();
+    if (baselineFailure != null) {
+      return MoveDestinationFailed(_message(baselineFailure));
+    }
+    final baseline = baselineResult.toNullable()!;
     final upload = await CloudflareBucketUploader(_deployApi).upload(
       accountId: target.accountId,
       session: session,
@@ -260,7 +283,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       return MoveDestinationFailed(_message(lastFailure));
     }
     final last = lastResult.toNullable()!;
-    if (!initial.hasSameAnchor(last) || !await beforeWrite()) {
+    if (!baseline.hasSameAnchor(last) || !await beforeWrite()) {
       return const MoveDestinationFailed(MoveSiteMessages.sourceChanged);
     }
     await _deployApi.deploy(
