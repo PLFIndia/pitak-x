@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_replacement_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -72,24 +73,20 @@ final class CloudflareDeployPipeline {
     required bool availabilityOmitted,
     required CloudflarePublishOperationProgress progress,
   }) async {
+    final gate = CloudflareVersionUrlGate(deployApi: _deployApi);
     if (initial.workerExists) {
       final route = initial.route;
       if (route == null) {
         return const PublishFailure(CloudflareErrorMessages.artifactInvalid);
       }
-      if (route.previewsEnabled) {
-        final updated = await _deployApi.updateWorkerRoute(
-          token: connection.useToken((token) => token),
-          accountId: target.accountId,
-          workerName: target.workerName,
-          enabled: route.enabled,
-          previewsEnabled: false,
-        );
-        if (updated.previewsEnabled) {
-          return const PublishFailure(
-            CloudflareErrorMessages.versionUrlPrivacy,
-          );
-        }
+      final private = await gate.ensureOff(
+        token: connection.useToken((token) => token),
+        accountId: target.accountId,
+        workerName: target.workerName,
+        route: route,
+      );
+      if (!private) {
+        return const PublishFailure(CloudflareErrorMessages.versionUrlPrivacy);
       }
     }
 
@@ -162,14 +159,12 @@ final class CloudflareDeployPipeline {
 
     var localStateSaved = _manifest.save(publication.manifest).isRight();
     try {
-      final route = await _deployApi.updateWorkerRoute(
+      final private = await gate.afterDeploy(
         token: connection.useToken((token) => token),
         accountId: target.accountId,
         workerName: target.workerName,
-        enabled: true,
-        previewsEnabled: false,
       );
-      if (!route.enabled || route.previewsEnabled) {
+      if (!private) {
         return PublishFailure(
           CloudflarePublishOutcomes.privacyAfterDeploy(
             localStateSaved: localStateSaved,

@@ -10,6 +10,7 @@ import 'dart:async';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -86,18 +87,14 @@ final class VerifyCloudflareAddress {
     try {
       // C8: an existing Worker proves Version URLs off BEFORE a new version.
       if (workerExists) {
-        final route = await _api.readWorkerRoute(
-          token: token,
-          accountId: accountId,
-          workerName: workerName,
-        );
-        await _api.updateWorkerRoute(
-          token: token,
-          accountId: accountId,
-          workerName: workerName,
-          enabled: route.enabled,
-          previewsEnabled: false,
-        );
+        final private = await CloudflareVersionUrlGate(
+          deployApi: _api,
+        ).ensureOff(token: token, accountId: accountId, workerName: workerName);
+        if (!private) {
+          return left(
+            const CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
+          );
+        }
       }
     } on CloudflareApiException catch (error) {
       return left(CloudflareErrorMessages.fromException(error));
@@ -180,13 +177,21 @@ final class VerifyCloudflareAddress {
       // This both enables workers.dev and reconfirms Version URLs off after
       // the deploy. Failure is a visible privacy condition, not generic copy.
       try {
-        await _api.updateWorkerRoute(
-          token: token,
-          accountId: accountId,
-          workerName: workerName,
-          enabled: true,
-          previewsEnabled: false,
-        );
+        final private = await CloudflareVersionUrlGate(deployApi: _api)
+            .afterDeploy(
+              token: token,
+              accountId: accountId,
+              workerName: workerName,
+            );
+        if (!private) {
+          return left(
+            CloudflareErrorMessages.duringVerification(
+              const CloudflareFailure(
+                CloudflareErrorMessages.versionUrlPrivacy,
+              ),
+            ),
+          );
+        }
       } on CloudflareApiException {
         return left(
           CloudflareErrorMessages.duringVerification(

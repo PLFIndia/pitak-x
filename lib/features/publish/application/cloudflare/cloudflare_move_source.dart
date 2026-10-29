@@ -10,6 +10,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_r
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_retirement_artifacts.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
@@ -159,19 +160,17 @@ final class CloudflareMoveSource implements MoveSourceOperations {
           ValidationFailure(MoveSiteMessages.sourceUnavailable),
         );
       }
-      if (route.previewsEnabled) {
-        final disabled = await _deployApi.updateWorkerRoute(
-          token: token,
-          accountId: target.accountId,
-          workerName: target.workerName,
-          enabled: route.enabled,
-          previewsEnabled: false,
-        );
-        if (disabled.previewsEnabled) {
-          return const Left(
-            CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
+      final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+          .ensureOff(
+            token: token,
+            accountId: target.accountId,
+            workerName: target.workerName,
+            route: route,
           );
-        }
+      if (!private) {
+        return const Left(
+          CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
+        );
       }
       final deployment = await _deployRetirement(
         connected,
@@ -237,14 +236,13 @@ final class CloudflareMoveSource implements MoveSourceOperations {
         expected: retiredMarker,
       ),
     );
-    final route = await _deployApi.updateWorkerRoute(
-      token: token,
-      accountId: target.accountId,
-      workerName: target.workerName,
-      enabled: true,
-      previewsEnabled: false,
-    );
-    if (!route.enabled || route.previewsEnabled) {
+    final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+        .afterDeploy(
+          token: token,
+          accountId: target.accountId,
+          workerName: target.workerName,
+        );
+    if (!private) {
       return const Left(
         CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
       );

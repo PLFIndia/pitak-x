@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_public
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/move_snapshot_preparation.dart';
@@ -210,15 +211,15 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         MoveSiteMessages.destinationNotVerified,
       );
     }
-    if (existingRoute?.previewsEnabled ?? false) {
-      final route = await _deployApi.updateWorkerRoute(
-        token: token,
-        accountId: target.accountId,
-        workerName: target.workerName,
-        enabled: existingRoute!.enabled,
-        previewsEnabled: false,
-      );
-      if (route.previewsEnabled) {
+    if (existingRoute != null) {
+      final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+          .ensureOff(
+            token: token,
+            accountId: target.accountId,
+            workerName: target.workerName,
+            route: existingRoute,
+          );
+      if (!private) {
         return const MoveDestinationFailed(
           CloudflareErrorMessages.versionUrlPrivacy,
         );
@@ -283,14 +284,13 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
   ) async {
     _manifest.save(publication.manifest);
     final token = current.connection.useToken((value) => value);
-    final route = await _deployApi.updateWorkerRoute(
-      token: token,
-      accountId: target.accountId,
-      workerName: target.workerName,
-      enabled: true,
-      previewsEnabled: false,
-    );
-    if (!route.enabled || route.previewsEnabled) {
+    final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+        .afterDeploy(
+          token: token,
+          accountId: target.accountId,
+          workerName: target.workerName,
+        );
+    if (!private) {
       return const MoveDestinationFailed(
         CloudflareErrorMessages.versionUrlPrivacy,
       );
