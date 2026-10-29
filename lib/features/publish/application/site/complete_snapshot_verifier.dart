@@ -16,6 +16,31 @@ final class CompleteSnapshotVerifier {
   }) : _reader = reader,
        _sleep = sleep;
 
+  /// A verifier that waits as long as GitHub says a Pages build may take.
+  ///
+  /// A commit is not public until GitHub Pages rebuilds the site, and GitHub
+  /// documents that this "can take up to 10 minutes". The default 60 s budget
+  /// was shorter than real builds: the S11 J.7 smoke (2026-10-29) measured 48 s
+  /// and 81 s, so a move to GitHub could fail even though its commit was fine,
+  /// and every retry commits again and restarts the build. Polling every
+  /// [gitHubPagesInterval] for [gitHubPagesAttempts] rounds covers the
+  /// documented 10 minutes. It still fails closed when the time runs out.
+  const CompleteSnapshotVerifier.gitHubPages({
+    required PublishedSiteReadVerifier reader,
+    required Future<void> Function(Duration) sleep,
+  }) : this(
+         reader: reader,
+         sleep: sleep,
+         attempts: gitHubPagesAttempts,
+         interval: gitHubPagesInterval,
+       );
+
+  /// Polling rounds for a GitHub Pages build (60 × 10 s = 10 minutes).
+  static const int gitHubPagesAttempts = 60;
+
+  /// Delay before each GitHub Pages polling round.
+  static const Duration gitHubPagesInterval = Duration(seconds: 10);
+
   final PublishedSiteReadVerifier _reader;
   final Future<void> Function(Duration) _sleep;
 

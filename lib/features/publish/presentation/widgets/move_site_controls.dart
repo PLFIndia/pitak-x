@@ -73,7 +73,9 @@ class _MoveSiteControlsState extends ConsumerState<MoveSiteControls> {
     MoveSitePhase.preparingSnapshot => 'Preparing snapshot…',
     MoveSitePhase.checkingSites => 'Checking both sites…',
     MoveSitePhase.publishingDestination => 'Publishing destination…',
-    MoveSitePhase.verifyingDestination => 'Verifying destination…',
+    // A first GitHub Pages build routinely takes minutes; say so up front.
+    MoveSitePhase.verifyingDestination =>
+      'Verifying the new site… This can take a few minutes.',
     MoveSitePhase.recordingMove => 'Recording move…',
     MoveSitePhase.updatingOldAddress => 'Updating old address…',
     MoveSitePhase.verifyingOldAddress => 'Verifying old address…',

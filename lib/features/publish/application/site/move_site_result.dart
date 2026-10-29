@@ -211,9 +211,12 @@ abstract final class MoveSiteMessages {
       'Skip is available only when the old repository or Worker no longer '
       'exists.';
 
-  /// Complete destination read-back did not pass.
+  /// Complete destination read-back did not pass. The new host may simply
+  /// still be building (GitHub Pages can take minutes), so suggest a later
+  /// retry; never claim the new site is absent or the move impossible.
   static const String destinationNotVerified =
-      'The new site could not be verified. The current site was not changed.';
+      'The new site could not be verified yet. The current site was not '
+      'changed. Try the move again in a few minutes.';
 
   /// Destination proof exists, but the pending journal could not be saved.
   static const String pendingSaveFailed =

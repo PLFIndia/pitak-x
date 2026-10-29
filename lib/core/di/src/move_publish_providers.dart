@@ -104,7 +104,8 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
       manifest: gitHubManifest,
       snapshotBuilder: builder,
       reads: reads,
-      verifier: CompleteSnapshotVerifier(
+      // GitHub Pages builds can take minutes; see the named constructor.
+      verifier: CompleteSnapshotVerifier.gitHubPages(
         reader: publicReader,
         sleep: Future<void>.delayed,
       ),

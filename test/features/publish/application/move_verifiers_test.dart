@@ -124,6 +124,66 @@ void main() {
 
       expect(verified, isFalse);
     });
+
+    // S11 J.7 regression (2026-10-29): GitHub Pages needed 81 s to publish a
+    // move commit, past the old 12 × 5 s budget, so the move failed and every
+    // retry re-committed (restarting the build). GitHub documents that a
+    // Pages build "can take up to 10 minutes".
+    group('GitHub Pages budget', () {
+      test('covers the documented 10 minutes', () {
+        const verifier = CompleteSnapshotVerifier.gitHubPages(
+          reader: _NeverReader(),
+          sleep: _noSleep,
+        );
+        final budget = verifier.interval * verifier.attempts;
+        expect(budget, greaterThanOrEqualTo(const Duration(minutes: 10)));
+        expect(verifier.interval, const Duration(seconds: 10));
+      });
+
+      test('a build that lands after 81 s still verifies the move', () async {
+        // Unreadable (the Pages 404 before the build) for 9 rounds, i.e. the
+        // first 90 s, then the real bytes.
+        final reader = _FlakyReader(
+          first: const PublishedSiteReadUnreadable(),
+          failingRounds: 9,
+        );
+        final waited = <Duration>[];
+        final verifier = CompleteSnapshotVerifier.gitHubPages(
+          reader: reader,
+          sleep: (delay) async => waited.add(delay),
+        );
+
+        final verified = await verifier.verify(
+          siteUrl: moveGitHubTarget.siteUrl,
+          files: [file('index.html', '<html>one</html>')],
+          revision: 7,
+        );
+
+        expect(verified, isTrue);
+        expect(reader.calls, hasLength(10));
+        expect(
+          waited.fold(Duration.zero, (sum, delay) => sum + delay),
+          const Duration(seconds: 100),
+        );
+      });
+
+      test('still fails closed when the build never appears', () async {
+        final waited = <Duration>[];
+        final verifier = CompleteSnapshotVerifier.gitHubPages(
+          reader: const _NeverReader(),
+          sleep: (delay) async => waited.add(delay),
+        );
+
+        final verified = await verifier.verify(
+          siteUrl: moveGitHubTarget.siteUrl,
+          files: [file('index.html', '<html>one</html>')],
+          revision: 7,
+        );
+
+        expect(verified, isFalse);
+        expect(waited, hasLength(CompleteSnapshotVerifier.gitHubPagesAttempts));
+      });
+    });
   });
 
   group('MovedSiteVerifier', () {
@@ -244,10 +304,12 @@ void main() {
 
 /// Serves an unreadable outcome once, then a body — for the grouped-polling
 /// path.
+/// Answers [first] for the first [failingRounds] reads, then the real body.
 final class _FlakyReader implements PublishedSiteReadVerifier {
-  _FlakyReader({required this.first});
+  _FlakyReader({required this.first, this.failingRounds = 1});
 
   final PublishedSiteReadOutcome first;
+  final int failingRounds;
   final List<(String, String, int, String?)> calls = [];
 
   @override
@@ -258,7 +320,22 @@ final class _FlakyReader implements PublishedSiteReadVerifier {
     String? cacheBuster,
   }) async {
     calls.add((siteUrl, path, maxBytes, cacheBuster));
-    if (calls.length == 1) return first;
+    if (calls.length <= failingRounds) return first;
     return PublishedSiteReadBody(utf8.encode('<html>one</html>'));
   }
 }
+
+/// A host whose new build never appears (GitHub Pages 404 forever).
+final class _NeverReader implements PublishedSiteReadVerifier {
+  const _NeverReader();
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async => const PublishedSiteReadUnreadable();
+}
+
+Future<void> _noSleep(Duration _) async {}
