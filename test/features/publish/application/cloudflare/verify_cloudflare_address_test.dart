@@ -118,6 +118,32 @@ void main() {
     expect(h.api.deployCalls, 1);
   });
 
+  test('a final bucket without a completion token never deploys', () async {
+    final h = _manualHarness();
+    final bytes = cloudflareTestMarkerBytes();
+    final path = SitePath.tryParse(CloudflareLimits.markerPath)!;
+    final hash = CloudflareAssetHash.forPath(bytes, path)!;
+    h.api
+      ..uploadSession = CloudflareUploadSession.tryCreate(
+        uploadJwt: 'synthetic-upload-jwt',
+        buckets: [
+          [hash],
+        ],
+      )!
+      ..issueCompletionToken = false;
+
+    final result = await _verify(h);
+
+    expect(result.isLeft(), isTrue);
+    expect(
+      _failureMessage(result),
+      contains(CloudflareErrorMessages.uploadNotConfirmed),
+    );
+    expect(h.api.bucketCalls, 1);
+    expect(h.api.deployCalls, 0);
+    expect(h.credentials.record?.status.target, isNull);
+  });
+
   test(
     'failed exact read-back leaves an unconfirmed candidate and no host switch',
     () async {

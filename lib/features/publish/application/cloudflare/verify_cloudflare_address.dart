@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -138,39 +139,34 @@ final class VerifyCloudflareAddress {
           ),
         ],
       );
-      var completion = session.completionTokenWhenDeduplicated;
-      for (final bucket in session.buckets) {
-        final assets = <CloudflareBucketAsset>[];
-        for (final requestedHash in bucket) {
-          if (requestedHash != hash) {
-            return left(
-              CloudflareFailure(
-                CloudflareApiExceptionKind.malformedResponse.message,
+      // The marker is the only file, so any other requested hash is a
+      // malformed session, not missing local bytes.
+      final upload = await CloudflareBucketUploader(_api).upload(
+        accountId: accountId,
+        session: session,
+        assetForHash: (requestedHash) => requestedHash != hash
+            ? null
+            : CloudflareBucketAsset(
+                hash: hash,
+                type: CloudflareContentType.json,
+                size: bytes.length,
+                openBytes: () => Stream<List<int>>.value(bytes),
               ),
-            );
-          }
-          assets.add(
-            CloudflareBucketAsset(
-              hash: hash,
-              type: CloudflareContentType.json,
-              size: bytes.length,
-              openBytes: () => Stream<List<int>>.value(bytes),
+      );
+      final CloudflareCompletionToken completionToken;
+      switch (upload) {
+        case CloudflareBucketsUploaded():
+          completionToken = upload.completion;
+        case CloudflareBucketHashMissing():
+          return left(
+            CloudflareFailure(
+              CloudflareApiExceptionKind.malformedResponse.message,
             ),
           );
-        }
-        completion = await _api.uploadBucket(
-          accountId: accountId,
-          session: session,
-          assets: assets,
-        );
-      }
-      final completionToken = completion;
-      if (completionToken == null) {
-        return left(
-          CloudflareFailure(
-            CloudflareApiExceptionKind.malformedResponse.message,
-          ),
-        );
+        case CloudflareUploadNotConfirmed():
+          return left(
+            const CloudflareFailure(CloudflareErrorMessages.uploadNotConfirmed),
+          );
       }
 
       await _api.deploy(

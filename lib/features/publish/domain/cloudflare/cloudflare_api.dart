@@ -186,11 +186,18 @@ abstract interface class CloudflareDeployApi {
     required List<CloudflareAssetManifestEntry> manifest,
   });
 
-  /// Uploads one requested bucket and returns its completion token.
+  /// Uploads one requested bucket.
+  ///
+  /// Cloudflare issues the completion token only once EVERY requested hash
+  /// has been uploaded (B.2 step 4). A successful upload of any earlier bucket
+  /// therefore returns null: "bucket accepted, more to upload". Callers upload
+  /// the session's buckets in order and must take the completion token from
+  /// the FINAL bucket's result; a null after the last bucket means the upload
+  /// was not confirmed and nothing may be deployed.
   ///
   /// This operation deliberately has no long-lived API-token parameter. The
   /// adapter authorizes it with [session]'s upload JWT only (R19).
-  Future<CloudflareCompletionToken> uploadBucket({
+  Future<CloudflareCompletionToken?> uploadBucket({
     required CloudflareAccountId accountId,
     required CloudflareUploadSession session,
     required List<CloudflareBucketAsset> assets,

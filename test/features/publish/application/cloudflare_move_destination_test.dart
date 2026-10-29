@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
@@ -151,6 +152,44 @@ void main() {
       moveGitHubTarget.targetId,
     );
     expect(hostStore.stored!.pendingMove, isNull);
+  });
+
+  test('J.7 regression: a multi-bucket destination deploys with the final '
+      "bucket's completion token", () async {
+    api.uploadSessionFactory = cloudflareOneBucketPerHashSession;
+    final confirmation = await prepare();
+
+    final result = await destination.publish(
+      confirmation: confirmation,
+      beforeWrite: () async => true,
+    );
+
+    expect(result, isA<MoveDestinationPublished>());
+    expect(api.bucketCalls, greaterThan(1));
+    expect(api.deployCalls, 1);
+    expect(api.deployedCompletionTokens, [
+      api.completionToken.use((value) => value),
+    ]);
+    expect(manifests.current.state, PublishState.live);
+  });
+
+  test('a final bucket without a completion token stops the move before '
+      'deployment', () async {
+    api
+      ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+      ..issueCompletionToken = false;
+    final confirmation = await prepare();
+
+    final result = await destination.publish(
+      confirmation: confirmation,
+      beforeWrite: () async => true,
+    );
+
+    final failure = result as MoveDestinationFailed;
+    expect(failure.reason, CloudflareErrorMessages.uploadNotConfirmed);
+    expect(api.deployCalls, 0);
+    expect(manifests.saves, isEmpty);
+    expect(hostStore.saves, 0);
   });
 
   test('a changed digest re-prompts before any upload or deploy', () async {

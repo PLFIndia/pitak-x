@@ -3,13 +3,14 @@
 /// The app-wide operation queue is ALREADY HELD by the outer controller. This
 /// use case never waits for a dialog and never enqueues nested work.
 /// Preparation returns a typed replacement summary without a remote write;
-/// confirmation
-/// re-enters through the controller with only a safe target/section/digest.
+/// confirmation re-enters through the controller with only a safe
+/// target/section/digest.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
@@ -112,15 +113,14 @@ final class PublishToCloudflareUseCase {
         progress: progress,
       );
     } on CloudflareApiException catch (error, stackTrace) {
-      // Safe smoke diagnostics: numeric/category data and method names only.
-      // Never log bearer tokens, JWTs, URLs, response bodies, or library data.
-      debugPrint(
-        'CloudflarePublish API failure: ${error.kind.name}; '
-        'status=${error.statusCode}; codes=${error.errorCodes}; '
-        'deployStarted=${progress.deployStarted}; '
-        'deployAccepted=${progress.deployAccepted}',
+      // Debug builds only (appLog): which API stage failed, never secrets.
+      appLog(
+        CloudflarePublishOutcomes.apiFailureDiagnostic(
+          error,
+          progress,
+          stackTrace,
+        ),
       );
-      debugPrintStack(stackTrace: stackTrace, label: 'CloudflarePublish stack');
       result = PublishFailure(
         CloudflarePublishOutcomes.transport(
           error,
@@ -376,48 +376,44 @@ final class PublishToCloudflareUseCase {
       }
     }
 
-    final uploadedPaths = <String>[];
     final session = await _deployApi.createUploadSession(
       token: connection.useToken((token) => token),
       accountId: target.accountId,
       workerName: target.workerName,
       manifest: publication.uploadManifest,
     );
-    var completion = session.completionTokenWhenDeduplicated;
-    for (final bucket in session.buckets) {
-      final assets = <CloudflareBucketAsset>[];
-      for (final hash in bucket) {
-        final asset = publication.assetForHash(hash);
-        if (asset == null) {
-          if (!replacing) {
-            return replacement.prepareResult(
-              reads: _reads,
-              target: target,
-              requestedSection: section,
-              inputs: inputs,
-            );
-          }
-          return PublishFailure(
-            '${CloudflareErrorMessages.missingRequestedHash} '
-            '${progress.assetBytesNote}',
-          );
-        }
-        assets.add(asset);
-      }
-      progress.assetBytesMayHaveUploaded = true;
-      completion = await _deployApi.uploadBucket(
-        accountId: target.accountId,
-        session: session,
-        assets: assets,
-      );
-      for (final hash in bucket) {
-        uploadedPaths.addAll(publication.pathsForHash(hash));
-      }
+    final upload = await CloudflareBucketUploader(_deployApi).upload(
+      accountId: target.accountId,
+      session: session,
+      assetForHash: publication.assetForHash,
+      beforeBucketUpload: () => progress.assetBytesMayHaveUploaded = true,
+    );
+    final CloudflareBucketsUploaded uploaded;
+    switch (upload) {
+      case CloudflareBucketsUploaded():
+        uploaded = upload;
+      case CloudflareBucketHashMissing() when !replacing:
+        return replacement.prepareResult(
+          reads: _reads,
+          target: target,
+          requestedSection: section,
+          inputs: inputs,
+        );
+      case CloudflareBucketHashMissing():
+        return PublishFailure(
+          '${CloudflareErrorMessages.missingRequestedHash} '
+          '${progress.assetBytesNote}',
+        );
+      case CloudflareUploadNotConfirmed():
+        return PublishFailure(
+          CloudflarePublishOutcomes.uploadNotConfirmed(progress),
+        );
     }
-    final completionToken = completion;
-    if (completionToken == null) {
-      return const PublishFailure(CloudflareErrorMessages.artifactInvalid);
-    }
+    final completionToken = uploaded.completion;
+    final uploadedPaths = [
+      for (final hash in uploaded.uploadedHashes)
+        ...publication.pathsForHash(hash),
+    ];
 
     final last = await _preflight.call(
       token: connection.useToken((token) => token),

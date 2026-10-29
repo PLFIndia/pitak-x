@@ -338,7 +338,7 @@ final class _StubbornRouteApi implements CloudflareDeployApi {
   );
 
   @override
-  Future<CloudflareCompletionToken> uploadBucket({
+  Future<CloudflareCompletionToken?> uploadBucket({
     required CloudflareAccountId accountId,
     required CloudflareUploadSession session,
     required List<CloudflareBucketAsset> assets,

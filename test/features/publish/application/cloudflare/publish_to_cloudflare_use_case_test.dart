@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
@@ -14,6 +15,7 @@ import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
+import '../../support/cloudflare_fakes.dart';
 import '../../support/cloudflare_s8_fakes.dart';
 
 void main() {
@@ -273,6 +275,61 @@ void main() {
     expect(h.api.deployCalls, 0);
   });
 
+  test('J.7 regression: a multi-bucket upload deploys with the token from the '
+      'final bucket only', () async {
+    final h = S8PublishHarness(dir);
+    h.api.uploadSessionFactory = cloudflareOneBucketPerHashSession;
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect((result as PublishSuccess).pagesLive, isTrue);
+    final requested = h.api.uploadManifests.single
+        .map((entry) => entry.hash)
+        .toSet();
+    expect(requested.length, greaterThan(1), reason: 'needs several buckets');
+    expect(h.api.bucketCalls, requested.length);
+    expect(
+      h.api.bucketUploads.map((bucket) => bucket.single.hash),
+      orderedEquals(requested),
+      reason: 'buckets upload in the order Cloudflare requested them',
+    );
+    expect(h.api.deployCalls, 1);
+    expect(h.api.deployedCompletionTokens, [
+      h.api.completionToken.use((value) => value),
+    ]);
+    expect(h.manifestStore.current.state, PublishState.live);
+  });
+
+  test(
+    'a final bucket without a completion token stops before deployment',
+    () async {
+      final h = S8PublishHarness(dir);
+      h.api
+        ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+        ..issueCompletionToken = false;
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishFailure>());
+      final reason = (result as PublishFailure).reason;
+      expect(reason, contains(CloudflareErrorMessages.uploadNotConfirmed));
+      expect(reason, contains(CloudflareErrorMessages.uploadedBytesNote));
+      expect(reason, isNot(contains('synthetic-upload-jwt')));
+      expect(h.api.bucketCalls, greaterThan(1));
+      expect(h.api.deployCalls, 0);
+      expect(h.api.routeUpdates, isEmpty, reason: 'no post-deploy route write');
+      expect(h.manifestStore.saves, isEmpty);
+      expect(h.hostStore.stored?.verifiedTarget, isNull);
+    },
+  );
+
   test('unverified deploy stays deployed, then exact-marker retry avoids a '
       'second deployment', () async {
     final h = S8PublishHarness(dir)..autoServe = false;
@@ -432,4 +489,38 @@ void main() {
       expect(reason, contains(CloudflareErrorMessages.liveUnchanged));
     },
   );
+
+  test('the debug-only API diagnostic names the stage and codes, never '
+      'secrets or addresses', () async {
+    // appLog routes through debugPrint in debug/test builds only; capture it.
+    final printed = <String>[];
+    final previous = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      if (message != null) printed.add(message);
+    };
+    addTearDown(() => debugPrint = previous);
+    final h = S8PublishHarness(dir);
+    h.api.sessionError = CloudflareApiException(
+      CloudflareApiExceptionKind.requestRejected,
+      statusCode: 400,
+      errorCodes: const [10021],
+    );
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishFailure>());
+    final line = printed.single;
+    expect(line, startsWith('CloudflarePublish API failure: requestRejected'));
+    expect(line, contains('status=400'));
+    expect(line, contains('codes=[10021]'));
+    expect(line, contains('deployStarted=false'));
+    expect(line, contains('createUploadSession'), reason: 'the stack names it');
+    expect(line, isNot(contains('cfut_')));
+    expect(line, isNot(contains('synthetic-upload-jwt')));
+    expect(line, isNot(contains(h.target.siteUrl)));
+    expect(line, isNot(contains(h.target.accountId.value)));
+  });
 }

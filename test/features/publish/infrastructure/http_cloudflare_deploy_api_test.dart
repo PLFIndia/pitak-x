@@ -342,10 +342,123 @@ void main() {
           session: session,
           assets: assets,
         );
-        expect(completion.use((value) => value), 'completion.jwt');
+        expect(completion, isNotNull);
+        expect(completion!.use((value) => value), 'completion.jwt');
         expect(completion.toString(), isNot(contains('completion.jwt')));
       },
     );
+
+    // J.7 smoke regression (2026-10-29): Cloudflare split a one-book site
+    // into several buckets and acknowledged the first one WITHOUT a `jwt`.
+    // The documented schema is `result: optional object {jwt}`; only the
+    // final bucket carries the completion token.
+    group('an accepted non-final bucket carries no completion token', () {
+      final shapes = <String, Object? Function()>{
+        'result absent': () => {
+          'success': true,
+          'errors': <Object?>[],
+          'messages': <Object?>[],
+        },
+        'result null': () => {
+          'success': true,
+          'errors': <Object?>[],
+          'messages': <Object?>[],
+          'result': null,
+        },
+        'result is an empty object': () => {
+          'success': true,
+          'errors': <Object?>[],
+          'messages': <Object?>[],
+          'result': <String, Object?>{},
+        },
+        'jwt is null': () => {
+          'success': true,
+          'errors': <Object?>[],
+          'messages': <Object?>[],
+          'result': {'jwt': null},
+        },
+      };
+      for (final MapEntry(key: name, value: body) in shapes.entries) {
+        test(
+          '$name returns null instead of a malformed-response failure',
+          () async {
+            final api = apiFor(
+              (_) async => http.Response(
+                jsonEncode(body()),
+                202,
+                headers: {'content-type': 'application/json'},
+              ),
+            );
+            final completion = await api.uploadBucket(
+              accountId: account,
+              session: session,
+              assets: assets,
+            );
+            expect(completion, isNull);
+          },
+        );
+      }
+    });
+
+    group('a present but invalid completion token is still refused', () {
+      final shapes = <String, Object?>{
+        'result is a list': <Object?>['completion.jwt'],
+        'result is a string': 'completion.jwt',
+        'jwt is a number': {'jwt': 42},
+        'jwt is empty': {'jwt': ''},
+        'jwt contains whitespace': {'jwt': 'completion jwt'},
+        'jwt exceeds the length bound': {
+          'jwt': 'a' * (CloudflareCompletionToken.maxLength + 1),
+        },
+        'result has too many fields': {
+          for (var index = 0; index < 9; index++) 'field$index': index,
+        },
+      };
+      for (final MapEntry(key: name, value: result) in shapes.entries) {
+        test(name, () async {
+          final api = apiFor((_) async => envelope(result, status: 201));
+          await expectLater(
+            api.uploadBucket(
+              accountId: account,
+              session: session,
+              assets: assets,
+            ),
+            throwsA(
+              isA<CloudflareApiException>().having(
+                (e) => e.kind,
+                'kind',
+                CloudflareApiExceptionKind.malformedResponse,
+              ),
+            ),
+          );
+        });
+      }
+    });
+
+    test('a success:false bucket response is still a typed failure', () async {
+      final api = apiFor(
+        (_) async => envelope(
+          null,
+          status: 400,
+          success: false,
+          errors: [
+            {'code': 10021, 'message': 'raw text'},
+          ],
+        ),
+      );
+      await expectLater(
+        api.uploadBucket(accountId: account, session: session, assets: assets),
+        throwsA(
+          isA<CloudflareApiException>()
+              .having(
+                (e) => e.kind,
+                'kind',
+                CloudflareApiExceptionKind.requestRejected,
+              )
+              .having((e) => e.errorCodes, 'errorCodes', [10021]),
+        ),
+      );
+    });
 
     test(
       'retries an idempotent bucket with a fresh multipart request',

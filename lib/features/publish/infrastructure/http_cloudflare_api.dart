@@ -116,7 +116,7 @@ final class HttpCloudflareApi implements CloudflareApi {
   );
 
   @override
-  Future<CloudflareCompletionToken> uploadBucket({
+  Future<CloudflareCompletionToken?> uploadBucket({
     required CloudflareAccountId accountId,
     required CloudflareUploadSession session,
     required List<CloudflareBucketAsset> assets,

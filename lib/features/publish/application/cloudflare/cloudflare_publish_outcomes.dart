@@ -65,6 +65,33 @@ abstract final class CloudflarePublishOutcomes {
         '${_assetNote(assetBytesMayHaveUploaded)}';
   }
 
+  /// Every requested bucket was accepted, but the final response carried no
+  /// completion token, so nothing was deployed. Bucket bytes may remain.
+  static String uploadNotConfirmed(
+    CloudflarePublishOperationProgress progress,
+  ) {
+    final note = progress.assetBytesNote;
+    return note.isEmpty
+        ? CloudflareErrorMessages.uploadNotConfirmed
+        : '${CloudflareErrorMessages.uploadNotConfirmed} $note';
+  }
+
+  /// Debug-only diagnostic for an API failure (sent through `appLog`, so it
+  /// never reaches release logs). It names the failure category, numeric
+  /// HTTP status and Cloudflare error codes, the operation stage, and the
+  /// stack (method names only) — never a token, JWT, URL, response body or
+  /// library data (AGENTS §6.2). The stack is what maps a failure to
+  /// preflight, upload session, bucket upload or deploy.
+  static String apiFailureDiagnostic(
+    CloudflareApiException error,
+    CloudflarePublishOperationProgress progress,
+    StackTrace stackTrace,
+  ) =>
+      'CloudflarePublish API failure: ${error.kind.name}; '
+      'status=${error.statusCode}; codes=${error.errorCodes}; '
+      'deployStarted=${progress.deployStarted}; '
+      'deployAccepted=${progress.deployAccepted}\n$stackTrace';
+
   /// Post-deploy Version-URL/privacy failure with local-save truth.
   static String privacyAfterDeploy({required bool localStateSaved}) {
     final localNote = localStateSaved

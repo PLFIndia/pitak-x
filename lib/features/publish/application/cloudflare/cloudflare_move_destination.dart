@@ -4,6 +4,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket_uploader.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_preparation.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_reader.dart';
@@ -230,28 +231,23 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       workerName: target.workerName,
       manifest: publication.uploadManifest,
     );
-    var completion = session.completionTokenWhenDeduplicated;
-    for (final bucket in session.buckets) {
-      final assets = <CloudflareBucketAsset>[];
-      for (final hash in bucket) {
-        final asset = publication.assetForHash(hash);
-        if (asset == null) {
-          return const MoveDestinationFailed(
-            CloudflareErrorMessages.missingRequestedHash,
-          );
-        }
-        assets.add(asset);
-      }
-      completion = await _deployApi.uploadBucket(
-        accountId: target.accountId,
-        session: session,
-        assets: assets,
-      );
-    }
-    if (completion == null) {
-      return const MoveDestinationFailed(
-        CloudflareErrorMessages.artifactInvalid,
-      );
+    final upload = await CloudflareBucketUploader(_deployApi).upload(
+      accountId: target.accountId,
+      session: session,
+      assetForHash: publication.assetForHash,
+    );
+    final CloudflareCompletionToken completion;
+    switch (upload) {
+      case CloudflareBucketsUploaded():
+        completion = upload.completion;
+      case CloudflareBucketHashMissing():
+        return const MoveDestinationFailed(
+          CloudflareErrorMessages.missingRequestedHash,
+        );
+      case CloudflareUploadNotConfirmed():
+        return const MoveDestinationFailed(
+          CloudflareErrorMessages.uploadNotConfirmed,
+        );
     }
     final lastResult = await _reader.check(
       current,

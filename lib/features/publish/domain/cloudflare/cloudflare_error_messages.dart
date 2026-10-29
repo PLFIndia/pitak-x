@@ -63,6 +63,12 @@ abstract final class CloudflareErrorMessages {
       'Cloudflare requested an asset that is not available on this device. '
       'Deployment stopped before the live site changed.';
 
+  /// Every requested bucket was accepted, but the final one carried no
+  /// completion token, so there is nothing that may be deployed.
+  static const uploadNotConfirmed =
+      'Cloudflare did not confirm that every file was uploaded, so nothing '
+      'was deployed. Try again.';
+
   /// Events cannot create a site before its catalogue exists.
   static const catalogueFirst =
       'Publish your catalogue first, then publish events.';

@@ -131,7 +131,7 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
   }
 
   @override
-  Future<CloudflareCompletionToken> uploadBucket({
+  Future<CloudflareCompletionToken?> uploadBucket({
     required CloudflareAccountId accountId,
     required CloudflareUploadSession session,
     required List<CloudflareBucketAsset> assets,
@@ -159,18 +159,29 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
       throw StateError('An idempotent upload has no write recovery');
     }
     requireCloudflareSuccess(response);
-    return parseCloudflareResponse(() {
-      final result = cloudflareObject(response.result, maxEntries: 8);
-      final completion = CloudflareCompletionToken.tryParse(
-        cloudflareString(
-          result['jwt'],
-          maxLength: CloudflareCompletionToken.maxLength,
-        ),
-      );
-      if (completion == null) throw const CloudflareJsonException();
-      return completion;
-    });
+    return parseCloudflareResponse(() => _completionFrom(response.result));
   });
+
+  /// Reads the optional completion token from a successful bucket response.
+  ///
+  /// Cloudflare's documented schema is `result: optional object {jwt}` with
+  /// `jwt: optional string`: every bucket except the last is acknowledged
+  /// WITHOUT a token. So an absent/null `result` or an absent/null `jwt` means
+  /// "accepted, not complete yet" and returns null. This is not a looser
+  /// parser: anything that IS present must still be well formed — a non-object
+  /// result, too many fields, or a `jwt` that is not a valid token is refused
+  /// as malformed, exactly as before.
+  static CloudflareCompletionToken? _completionFrom(Object? raw) {
+    if (raw == null) return null;
+    final result = cloudflareObject(raw, maxEntries: 8);
+    final rawJwt = result['jwt'];
+    if (rawJwt == null) return null;
+    final completion = CloudflareCompletionToken.tryParse(
+      cloudflareString(rawJwt, maxLength: CloudflareCompletionToken.maxLength),
+    );
+    if (completion == null) throw const CloudflareJsonException();
+    return completion;
+  }
 
   @override
   Future<void> deploy({

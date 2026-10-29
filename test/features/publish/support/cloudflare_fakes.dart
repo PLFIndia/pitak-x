@@ -236,6 +236,19 @@ final class FakeCloudflareApi implements CloudflareApi {
   CloudflareCompletionToken completionToken =
       CloudflareCompletionToken.tryParse('synthetic-completion-jwt')!;
 
+  /// When false, Cloudflare "forgets" the completion token even after the
+  /// final bucket, so callers must refuse to deploy.
+  bool issueCompletionToken = true;
+
+  /// Hashes uploaded per session. Like the real API (B.2 step 4), the fake
+  /// returns [completionToken] only once EVERY requested hash has arrived;
+  /// every earlier bucket is acknowledged with null.
+  final Map<CloudflareUploadSession, Set<String>> _uploadedHashes =
+      Map.identity();
+
+  /// Completion tokens passed to [deploy], in call order (test-only values).
+  final List<String> deployedCompletionTokens = [];
+
   CloudflareApiException? userVerifyError;
   CloudflareApiException? accountVerifyError;
   CloudflareApiException? listError;
@@ -374,7 +387,7 @@ final class FakeCloudflareApi implements CloudflareApi {
   }
 
   @override
-  Future<CloudflareCompletionToken> uploadBucket({
+  Future<CloudflareCompletionToken?> uploadBucket({
     required CloudflareAccountId accountId,
     required CloudflareUploadSession session,
     required List<CloudflareBucketAsset> assets,
@@ -384,7 +397,12 @@ final class FakeCloudflareApi implements CloudflareApi {
     if (error != null) throw error;
     bucketUploads.add(List.unmodifiable(assets));
     onBucketUpload?.call(assets);
-    return completionToken;
+    final uploaded = _uploadedHashes.putIfAbsent(session, () => <String>{})
+      ..addAll(assets.map((asset) => asset.hash));
+    final complete = session.buckets
+        .expand((bucket) => bucket)
+        .every(uploaded.contains);
+    return complete && issueCompletionToken ? completionToken : null;
   }
 
   @override
@@ -397,6 +415,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     required CloudflareDeployRecoveryCallback recovery,
   }) async {
     deployCalls++;
+    deployedCompletionTokens.add(completionToken.use((value) => value));
     deployRecovery = recovery;
     final error = deployError;
     if (error != null) throw error;
@@ -433,6 +452,24 @@ final class FakeCloudflareApi implements CloudflareApi {
       previewsEnabled: previewsEnabled,
     );
   }
+}
+
+/// An upload session with one bucket per unique requested hash.
+///
+/// Cloudflare split the J.7 smoke's one-book site into several buckets (and
+/// S2/T4's 4 files into 3), so a small site is NOT guaranteed one bucket. Use
+/// this with [FakeCloudflareApi.uploadSessionFactory] to exercise the rule
+/// that only the final bucket's response carries the completion token.
+CloudflareUploadSession cloudflareOneBucketPerHashSession(
+  List<CloudflareAssetManifestEntry> manifest,
+) {
+  final hashes = <String>{for (final entry in manifest) entry.hash};
+  return CloudflareUploadSession.tryCreate(
+    uploadJwt: 'synthetic-upload-jwt',
+    buckets: [
+      for (final hash in hashes) [hash],
+    ],
+  )!;
 }
 
 /// Encodes the deterministic marker expected by verification tests.
