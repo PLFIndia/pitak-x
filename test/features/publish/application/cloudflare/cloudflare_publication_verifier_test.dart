@@ -10,7 +10,7 @@ import '../../support/cloudflare_s8_fakes.dart';
 
 void main() {
   final target = cloudflareTestConnection().status.target!;
-  final reader = FakeStructuredReader();
+  final reader = FakeCloudflareWorkerReader();
 
   CloudflarePublicationVerifier verifier({int attempts = 1}) =>
       CloudflarePublicationVerifier(
@@ -65,6 +65,37 @@ void main() {
         'posters/old.jpg',
       ]),
     );
+  });
+
+  // S11 J.7 regression (2026-10-29): the live Worker answered `index.html`
+  // and `events.html` with 307s, so a verifier that asked for file names
+  // could never pass. It must ask for the canonical addresses instead.
+  test('HTML assets are read where the Worker serves them, never at their '
+      'redirecting file names', () async {
+    final result = await verifier().verify(
+      target: target,
+      manifest: manifest,
+      revision: 1,
+      markerBytes: files['pitak-publish.json']!.bytes,
+    );
+
+    expect(result, CloudflarePublicationVerification.verified);
+    final paths = reader.calls.map((c) => c.$2).toSet();
+    expect(paths, containsAll(<String>['', 'events']));
+    expect(paths, isNot(contains('index.html')));
+    expect(paths, isNot(contains('events.html')));
+  });
+
+  test('a wrong root page body is not a verified deployment', () async {
+    reader.body('index.html', utf8.encode('<html>someone else</html>'));
+
+    final result = await verifier().verify(
+      target: target,
+      manifest: manifest,
+      revision: 1,
+    );
+
+    expect(result, CloudflarePublicationVerification.notVerified);
   });
 
   test('a wrong current poster body is not a verified deployment', () async {

@@ -11,6 +11,7 @@ import 'dart:async';
 
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
@@ -272,7 +273,6 @@ final class CloudflareUploadSession {
 enum CloudflareDeploymentKind {
   /// A normal or verification-only site with real missing-file 404s.
   live(
-    htmlHandling: 'auto-trailing-slash',
     notFoundHandling: 'none',
     headers:
         '/*\n'
@@ -282,7 +282,6 @@ enum CloudflareDeploymentKind {
 
   /// A moved page with the full response-header hardening policy.
   retired(
-    htmlHandling: 'auto-trailing-slash',
     notFoundHandling: '404-page',
     headers:
         '/*\n'
@@ -295,13 +294,14 @@ enum CloudflareDeploymentKind {
   );
 
   const CloudflareDeploymentKind({
-    required this.htmlHandling,
     required this.notFoundHandling,
     required this.headers,
   });
 
-  /// Cloudflare's fixed HTML routing behavior.
-  final String htmlHandling;
+  /// Cloudflare's fixed HTML routing behavior, identical for both kinds. It
+  /// comes from [CloudflareHtmlRouting] so public read-back always requests
+  /// the address this setting actually serves.
+  String get htmlHandling => CloudflareHtmlRouting.htmlHandling;
 
   /// `none` for live assets or `404-page` for a retired site.
   final String notFoundHandling;

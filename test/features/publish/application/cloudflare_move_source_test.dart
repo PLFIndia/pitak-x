@@ -45,7 +45,7 @@ void main() {
         publishId: moveCloudflarePublishId,
       ),
     );
-    reader = FakeStructuredReader()
+    reader = FakeCloudflareWorkerReader()
       ..body(CloudflareLimits.markerPath, s8Marker(moveCloudflarePublishId));
     store = RecordingArtifactStore(FilePublishArtifactStore(baseDir: dir.path));
     final probe = CloudflarePublishMarkerProbe(reader: reader, codec: _codec);

@@ -21,7 +21,7 @@ void main() {
 
   setUp(() {
     api = FakeCloudflareApi();
-    reader = FakeStructuredReader();
+    reader = FakeCloudflareWorkerReader();
     preflight = CloudflarePublishPreflightReader(
       accountApi: api,
       deployApi: api,

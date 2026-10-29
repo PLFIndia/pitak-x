@@ -5,6 +5,7 @@
 /// fresh marker alone never proves the complete Worker snapshot is live.
 library;
 
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
@@ -109,10 +110,15 @@ final class CloudflarePublicationVerifier {
     required int maxBytes,
     required String cacheBuster,
   }) async {
+    // HTML assets answer their file name with a 307 (auto-trailing-slash),
+    // and read-back follows no redirect, so ask the canonical address:
+    // `index.html` is read at the root, `events.html` at `events`.
+    final served = CloudflareHtmlRouting.servedPath(path);
+    if (served == null) return const PublishedSiteReadUnreadable();
     try {
       return await _reader.readOutcome(
         siteUrl: siteUrl,
-        path: path,
+        path: served,
         maxBytes: maxBytes,
         cacheBuster: cacheBuster,
       );

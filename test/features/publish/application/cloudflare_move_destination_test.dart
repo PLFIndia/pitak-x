@@ -43,7 +43,7 @@ void main() {
     api = FakeCloudflareApi();
     credentials = InMemoryCloudflareCredentialStore(cloudflareTestConnection());
     manifests = InMemoryCloudflareManifestStore();
-    reader = FakeStructuredReader()
+    reader = FakeCloudflareWorkerReader()
       ..absent(CloudflareLimits.markerPath)
       ..absent('library.json');
     store = RecordingArtifactStore(FilePublishArtifactStore(baseDir: dir.path));

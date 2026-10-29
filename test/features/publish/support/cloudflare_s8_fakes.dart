@@ -27,6 +27,7 @@ import 'package:pitaka/features/publish/application/site/publish_snapshot_builde
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
@@ -44,20 +45,26 @@ import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_sto
 
 import 'cloudflare_fakes.dart';
 
-final class FakeStructuredReader implements PublishedSiteReadVerifier {
+/// Serves every path exactly as seeded (GitHub Pages behaves this way: an
+/// HTML file answers at its own name). Cloudflare tests use
+/// [FakeCloudflareWorkerReader], which models the Worker's HTML routing.
+base class FakeStructuredReader implements PublishedSiteReadVerifier {
   final Map<String, PublishedSiteReadOutcome> outcomes = {};
   final List<(String, String, int, String?)> calls = [];
 
+  /// The address that answers for [path]; identity for a plain host.
+  String servedPathFor(String path) => path;
+
   void body(String path, List<int> bytes) {
-    outcomes[path] = PublishedSiteReadBody(bytes);
+    outcomes[servedPathFor(path)] = PublishedSiteReadBody(bytes);
   }
 
   void absent(String path) {
-    outcomes[path] = const PublishedSiteReadAbsent();
+    outcomes[servedPathFor(path)] = const PublishedSiteReadAbsent();
   }
 
   void unreadable(String path) {
-    outcomes[path] = const PublishedSiteReadUnreadable();
+    outcomes[servedPathFor(path)] = const PublishedSiteReadUnreadable();
   }
 
   @override
@@ -70,6 +77,19 @@ final class FakeStructuredReader implements PublishedSiteReadVerifier {
     calls.add((siteUrl, path, maxBytes, cacheBuster));
     return outcomes[path] ?? const PublishedSiteReadUnreadable();
   }
+}
+
+/// Answers like a real Pitak Worker (`html_handling: auto-trailing-slash`).
+///
+/// Tests still seed by ASSET path (`index.html`, `events.html`), but an HTML
+/// asset is answered only at its canonical address — `index.html` at the
+/// root `''`, `events.html` at `events`. Its file name gets nothing, just as
+/// the real 307 is refused by read-back. The S11 J.7 smoke showed a fake that
+/// served HTML at its file name hid a verifier that could never pass live.
+final class FakeCloudflareWorkerReader extends FakeStructuredReader {
+  @override
+  String servedPathFor(String path) =>
+      CloudflareHtmlRouting.servedPath(path) ?? path;
 }
 
 final class InMemoryCloudflareManifestStore implements CloudflareManifestStore {
@@ -277,7 +297,7 @@ final class S8PublishHarness {
   final InMemoryCloudflareCredentialStore credentials;
   final InMemoryCloudflareManifestStore manifestStore;
   final FakePublishHostStateStore hostStore;
-  final FakeStructuredReader reader = FakeStructuredReader();
+  final FakeStructuredReader reader = FakeCloudflareWorkerReader();
   final FakeS8Reads reads = FakeS8Reads();
   final RecordingArtifactStore artifactStore;
   bool autoServe = true;
