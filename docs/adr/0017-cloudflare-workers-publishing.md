@@ -2,9 +2,9 @@
 
 - **Status:** Accepted (2026-10-28). Proposed 2026-10-26; S2 trial outcomes
   recorded 2026-10-27, S7/S8/S9 implementation outcomes 2026-10-28, and the
-  S10 consistency audit reconciled every document that cites it. The S11
-  real-host smoke is still outstanding, so the *evidence* is not complete —
-  the decision is.
+  S10 consistency audit reconciled every document that cites it. The S11 Linux
+  golden was regenerated on 2026-10-29; the real-host smoke is still
+  outstanding, so the *evidence* is not complete — the decision is.
 - **Date:** 2026-10-26
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
@@ -159,14 +159,15 @@ consequences the product cannot hide:
   incomplete journal/connection commit is re-proven before repair. Persistence
   is ordered `deployed`, then `live`, journal `verifiedTarget`, and finally the
   whole secure connection's write-proven flag.
-- **Verification status.** The J.1–J.6 suites are green (4,230 non-golden
-  tests on 2026-10-28) and the S10 consistency audit reconciled `README.md`,
-  `PRIVACY.md`, `SECURITY.md`, `docs/ARCHITECTURE.md`, `docs/RELEASING.md`,
-  `CHANGELOG.md` and the in-app guide with the behaviour described here. What
-  remains is evidence, not decision: the **S11 J.7 real-host smoke** on a
-  disposable account and the Linux regeneration of the `publish_connection`
-  golden. (The S2 trial tool, the third S11 cleanup item, was removed on
-  2026-10-28.) Acceptance does *not* claim a supported
+- **Verification status.** The J.1–J.6 suites are green (4,212 non-golden
+  tests on 2026-10-29), all 10 Linux golden tests pass, and the S10 consistency
+  audit reconciled `README.md`, `PRIVACY.md`, `SECURITY.md`,
+  `docs/ARCHITECTURE.md`, `docs/RELEASING.md`, `CHANGELOG.md` and the in-app
+  guide with the behaviour described here. The `publish_connection` golden was
+  regenerated from the Linux workflow on 2026-10-29. What remains is evidence,
+  not decision: the **S11 J.7 real-host smoke** on a disposable account. (The
+  S2 trial tool, the third S11 cleanup item, was removed on 2026-10-28.)
+  Acceptance does *not* claim a supported
   compare-and-swap contract (no such contract exists — see §Decision 6 and
   Consequences) and does not promise that arbitrary user files on a dedicated
   Worker survive.

@@ -6,8 +6,9 @@
   trial passed on 2026-10-27 (see the sanitized report in Part M.1 and
   `docs/plans/cloudflare-handoff.md`). S10's documentation audit is handoff
   §11. **S11 is in progress:** the S2 trial tool was removed in `705074d`
-  (2026-10-28); the real-host J.7 smoke and the Linux `publish_connection`
-  golden regeneration are outstanding, with the evidence table in handoff §12.
+  (2026-10-28), and the Linux `publish_connection` golden was regenerated in
+  `0903ff6` (2026-10-29). The real-host J.7 smoke remains outstanding, with
+  the evidence table in handoff §12.
 - **Supersedes:** `cloudflare_plan.md` and `cloudflare_plan_amendments.md`.
   Those files remain review history only. Implementation uses this document.
 - **Scope:** a library can publish its read-only site (catalogue, events and

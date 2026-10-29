@@ -5,8 +5,8 @@
 - **Branch:** `cloudflare`; implementation commits through `a98c588` are listed
   below (S2–S9 landed as one consolidated commit). **S10 (docs and release
   checklist) is implemented in `7c7dca9`.** **S11 started with the trial-tool
-  removal in `705074d` (2026-10-28);** the real-host J.7 smoke and the Linux
-  `publish_connection` golden regeneration remain:
+  removal in `705074d` (2026-10-28);** the Linux `publish_connection` golden
+  was regenerated in `0903ff6` (2026-10-29). The real-host J.7 smoke remains:
 
   | Commit | Session | What landed |
   |---|---|---|
@@ -26,13 +26,15 @@
   | `a98c588` | S2–S9 | Consolidated commit: the sanitized S2 trial report, the S6 HTTP adapters, S7 connection/setup, S8 ordinary publish/replacement, and S9 moves/retirement |
   | `7c7dca9` | S10 | ADR 0017 accepted; ARCHITECTURE §5.8 + host/egress/non-goal/bounds reconciliation; PRIVACY both hosts; RELEASING §6.5 smoke matrix + App access; README; CHANGELOG S7/S8/S1; in-app guide both hosts; mockup marked frozen |
   | `705074d` | S11 (cleanup) | Trial harness (9 `.dart` + `README.md`) and its 18 tests removed after a final clean `dart analyze tool`/format pass; plan, ADR 0017 and handoff records reconciled |
+  | `2f7e190` | S11 (golden fixture) | Pin the signed-out publish-status projection so the real card settles deterministically instead of leaving a platform-storage loading spinner |
+  | `0903ff6` | S11 (Linux golden) | Regenerate only `publish_connection.png` from the successful 10-test Linux workflow artifact; all other references were byte-identical |
 
-- **State:** every session gate is green — `build_runner` leaves no diff,
+- **State:** every local session gate is green — `build_runner` leaves no diff,
   `flutter analyze lib test integration_test` reports no issues,
-  `dart format --set-exit-if-changed lib test integration_test` is clean, and
-  the full suite passes (golden excluded). S10 changed no application
-  behaviour; its only test changes are the guide copy pins and the guide-page
-  copy budget (see §11).
+  `dart format --set-exit-if-changed lib test integration_test` is clean, the
+  full non-golden suite passes (4,212 tests), and the Linux golden suite passes
+  (10 tests). S10 changed no application behaviour; its only test changes are
+  the guide copy pins and the guide-page copy budget (see §11).
 - **Cloudflare connection/setup, ordinary publishing, and moves are
   user-facing.** S7 adds restricted-token capture and setup; S8 adds ordinary
   catalogue/events publishing and explicit whole-site replacement; S9 adds
@@ -514,9 +516,9 @@ publishing remains S8.
   Independent-review regressions also pin the legacy GitHub default, Worker-A
   proof never confirming Worker B, post-deploy privacy/partial copy, and
   rejected-subdomain input retention (Part M row 65).
-- The `publish_connection` golden intentionally changes from a placeholder to
-  the real connection card. Regenerate it with the Linux `update-goldens`
-  workflow; do not commit a macOS-rendered replacement.
+- The `publish_connection` golden intentionally changed from a placeholder to
+  the real connection card. S11 regenerated it with the Linux `update-goldens`
+  workflow (§12); never commit a macOS-rendered replacement.
 
 **S8 entry notes:** implement ordinary publish/replacement next. S8 still needs
 its normal manifest store, freshness/marker reader (the current bounded
@@ -591,9 +593,9 @@ and host-neutral publish UI. Moves and retirement remain S9.
 - On 2026-10-28, the local closeout gates passed: offline locked dependency
   resolution, build runner with no generated-source changes, formatting (966
   files, 0 changed), `flutter analyze lib test integration_test` (zero issues),
-  and `flutter test --coverage --exclude-tags golden` (4,113 tests). The Linux
-  `update-goldens` workflow still needs to regenerate the intentional
-  `publish_connection` reference PNG.
+  and `flutter test --coverage --exclude-tags golden` (4,113 tests). At this
+  S8 closeout the intentional `publish_connection` reference still needed
+  regeneration; S11 completed it through the Linux workflow (§12).
 
 ---
 
@@ -692,7 +694,7 @@ Retry and Skip are deterministic after every remote or persistent side effect.
 | S8 | **Done** (§8) | Ordinary publish/replacement, structured marker reads, manifest store, active-host routing, replacement digest/dialog, per-file artifact sink, full read-back and memory scenario |
 | S9 | S8 done | **Done** (§9): moves and retirement in both directions, atomic pending journal, immutable retirement descriptor, idempotent Retry/Skip, target-mutation guards, move UI and crash matrix |
 | S10 | S9 done | **Done** (§11): ADR 0017 accepted; ARCHITECTURE, PRIVACY, SECURITY, README, RELEASING, CHANGELOG and the in-app guide describe both hosts; §6.5 publish smoke matrix and the App-access answer; fastlane blurb and golden regeneration deferred with reasons |
-| S11 | S10 done | Real-host J.7 smoke (§12), Linux golden regeneration, final CI/release gates. The trial-tool removal is **done** (2026-10-28) |
+| S11 | S10 done | Real-host J.7 smoke (§12) and final CI/release gates. Trial-tool removal is **done** (2026-10-28); Linux golden regeneration is **done** (2026-10-29) |
 
 S2 is complete. The trial source was removed in S11 (2026-10-28).
 
@@ -723,9 +725,10 @@ are the in-app guide copy and its pinned tests.
 - **Fastlane blurb** — a changelog file is named after a versionCode that does
   not exist yet, so it belongs to the `chore(release)` commit. Ready-to-paste
   text is in §12; the version bump is the maintainer's release decision.
-- **`publish_connection` golden** — regenerate only through the **Linux**
-  `update-goldens` workflow; a macOS-rendered PNG must not be committed. It is
-  currently the Oct 24 placeholder-era reference.
+- **`publish_connection` golden** — S10 deferred this because only the **Linux**
+  `update-goldens` workflow may produce the reference; it was still the Oct 24
+  placeholder-era PNG at that closeout. S11 regenerated it (§12), and no
+  macOS-rendered PNG was committed.
 - **Play Console** answers — the App access / Data safety text is drafted in
   `docs/RELEASING.md` §8 and must be typed into Play Console by hand.
 
@@ -751,6 +754,24 @@ No token, JWT, account id or raw response body goes in this table.
 | 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | *pending* |
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
+
+**Linux golden — done 2026-10-29.** Workflow run `40817772312` exposed a
+`pumpAndSettle` timeout: S8's new publish card was reading the non-overridden
+host-state provider, so its loading spinner never finished. `2f7e190` pins the
+same kind of signed-out `PublishSiteStatus` projection used by the publish-card
+widget tests. The focused test then reached image comparison immediately; its
+macOS pixel mismatch was expected and was not committed. Workflow run
+`40818683597` passed all 10 golden tests. Its artifact changed only
+`publish_connection.png`, committed as `0903ff6`; every other PNG was
+byte-identical.
+
+**Local gates — green 2026-10-29.** Lockfile enforcement, generation drift,
+analysis and formatting passed. The non-golden suite passed 4,212 tests with
+80.51% line coverage (floor 64%); both host-timezone matrices passed 192 tests
+each. Rust formatting, Clippy, `cargo deny` and release tests passed (35 tests,
+2 real-vault tests ignored as documented). Fastlane validation plus its 6 unit
+tests, the tracked-file secret scan, F-Droid purity and the Play positive
+control also passed. No AAB or release artifact was built in this session.
 
 **Release-note draft (≤ 500 characters, for `fastlane/…/changelogs/N.txt`):**
 
@@ -888,11 +909,10 @@ the Part N checklist were run again afterwards.
     so 10031/10032 have no guessed meaning. S7 acts only on explicit boolean
     `available`, treats other successful shapes as unknown, and uses create +
     exact GET confirmation. Absence is only HTTP 404 + code 10007.
-11. **The publish-connection golden still needs regeneration.** The reference
-    PNG is dated 2026-10-24, i.e. the placeholder era; S7 replaced it with a
-    real card. Use the Linux `update-goldens` workflow — the normal
-    macOS/non-golden suite does not produce reference PNGs, and a
-    macOS-rendered replacement must not be committed. S11 owns this.
+11. **The publish-connection golden is regenerated (2026-10-29).** The fixture
+    now pins the signed-out publish-status projection, and the Linux
+    `update-goldens` workflow passed all 10 tests. Only the intended PNG
+    changed (`0903ff6`); no macOS-rendered replacement was committed.
 12. **Structured marker reads are implemented (S8).** Only a real HTTP 404 is
     `MarkerAbsent`; malformed/oversize/redirect/timeout/other statuses are
     `MarkerUnreadable`. The legacy nullable verifier remains unchanged for
