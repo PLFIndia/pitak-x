@@ -33,6 +33,12 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
 
   @override
   Future<CloudflareConnectionUi> build() async {
+    // Riverpod 2 keeps THIS notifier across a rebuild (an `invalidate` after a
+    // move/publish, or a watched dependency changing) but first runs the
+    // previous build's onDispose. Without this reset `_disposed` stayed true
+    // and every command (e.g. Disconnect) silently did nothing until the page
+    // was reopened. Same pattern as `PublishedCatalogueController.build`.
+    _disposed = false;
     ref.onDispose(() {
       _disposed = true;
       _input?.complete(null);

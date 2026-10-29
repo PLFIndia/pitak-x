@@ -543,6 +543,24 @@ void main() {
         expect(h.last.statusMessage, 'Signed out.');
       },
     );
+
+    // S11 smoke regression (2026-10-29): a completed move invalidates this
+    // provider; Riverpod 2 reruns build on the same notifier after running
+    // the old onDispose, which used to leave every intent a silent no-op.
+    test('still works after the provider is invalidated and rebuilt', () async {
+      final h = _Harness(
+        creds: _FakeCreds(token: 'TKN', targetRepo: 'u/r'),
+      );
+      await h.settle();
+
+      h.container.invalidate(gitHubConnectionControllerProvider);
+      await h.settle();
+      await h.notifier.signOut();
+
+      expect(await h.creds.token(), isNull);
+      expect(h.last.signedIn, isFalse);
+      expect(h.last.statusMessage, 'Signed out.');
+    });
   });
 
   group('loadRepos()', () {

@@ -409,4 +409,25 @@ void main() {
       expect(h.last.statusMessage, contains('were not deleted'));
     },
   );
+
+  // S11 smoke regression (2026-10-29): after "Retry move" the move controller
+  // invalidates this provider. Riverpod 2 rebuilds the SAME notifier and runs
+  // the previous build's onDispose first, which left `_disposed` true, so
+  // Disconnect silently did nothing until the page was reopened.
+  test('commands still work after the provider is invalidated and rebuilt '
+      '(e.g. after a move or publish)', () async {
+    final h = _Harness(
+      connection: cloudflareTestConnection(),
+      hostState: const PublishHostState(activeHost: PublishHost.cloudflare),
+    );
+    await h.settle();
+
+    h.container.invalidate(cloudflareConnectionControllerProvider);
+    await h.settle();
+    await h.notifier.disconnect();
+
+    expect(h.graph.credentials.record, isNull);
+    expect(h.last.status.hasToken, isFalse);
+    expect(h.last.statusMessage, contains('were not deleted'));
+  });
 }

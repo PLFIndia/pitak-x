@@ -56,6 +56,11 @@ class GitHubConnectionController extends _$GitHubConnectionController {
 
   @override
   FutureOr<GitHubConnectionUi> build() async {
+    // Riverpod 2 keeps THIS notifier across a rebuild (the move controller
+    // invalidates this provider) but first runs the previous build's
+    // onDispose; reset the flag or every intent would silently no-op until
+    // the page was reopened. Same pattern as `PublishedCatalogueController`.
+    _disposed = false;
     ref.onDispose(() => _disposed = true);
     // Only the BOOLEAN "signed in" enters the state — never the token
     // (AGENTS §6.2).
