@@ -24,7 +24,6 @@ import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_controller.g.dart';
@@ -89,16 +88,13 @@ Future<({NetworkWindow window, List<NetworkLibrary> rows})> networkListView(
   final window = await ref.watch(networkControllerProvider.future);
   // The own pin for distance sorting = the location THIS library publishes
   // (D7 mapping in one place; off/unparseable ⇒ no own pin ⇒ name order).
-  // AWAITED (not valueOrNull): the first frame the tab renders is already
-  // sorted — no flash of name order while settings load. A settings failure
-  // degrades to name order rather than breaking the tab. (Non-final: Dart's
-  // definite-assignment rule forbids assigning a final in try AND catch.)
-  AppSettings? settings;
-  try {
-    settings = await ref.watch(settingsControllerProvider.future);
-  } on Object {
-    settings = null;
-  }
+  // Watched for reactivity, then read through the typed accessor (M8): a
+  // failed settings SAVE keeps the last good value, and a never-loaded state
+  // degrades to name order instead of breaking the tab.
+  ref.watch(settingsControllerProvider);
+  final settings =
+      (await ref.read(settingsControllerProvider.notifier).loaded())
+          .toNullable();
   final own = settings == null
       ? null
       : BuildOwnDescriptor.ownLocation(

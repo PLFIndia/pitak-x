@@ -31,6 +31,31 @@ void main() {
         withJournal: withJournal,
       );
 
+      test(
+        'a failed settings read stops before any destination write (M8)',
+        () async {
+          final h = MoveHarness(
+            oldTarget: direction.oldTarget,
+            newTarget: direction.newTarget,
+            readLibraryName: () async =>
+                left(const StorageFailure('settings unavailable')),
+          );
+          final prepared = await h.useCase.prepare();
+
+          final result = await h.useCase.confirm(
+            (prepared as MoveSiteConfirmationRequired).confirmation,
+          );
+
+          expect(result, isA<MoveSiteFailure>());
+          expect(
+            (result as MoveSiteFailure).reason,
+            MoveSiteMessages.settingsUnavailable,
+          );
+          expect(h.destination.publishCalls, 0);
+          expect(h.store.saves, 0);
+        },
+      );
+
       test('prepare is write-free and reviews the exact endpoints', () async {
         final h = harness();
         final phases = <MoveSitePhase>[];

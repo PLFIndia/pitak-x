@@ -282,12 +282,14 @@ PublishSnapshotBuilder _builder() => PublishSnapshotBuilder(
       readLocalCover: (_) async => null,
       fetchRemoteCover: (_) async => null,
     ),
-    buildViewerHtml: () async => utf8.encode('<html>viewer</html>'),
+    buildViewerHtml:
+        ({required libraryName, required contact, required sharing}) async =>
+            utf8.encode('<html>viewer</html>'),
     encodeBooksJson: encodeBooksJsonBytes,
   ),
   events: EventsSectionBuilder(
     readPoster: (_) async => null,
-    buildEventsHtml: (posters) async =>
+    buildEventsHtml: ({required libraryName, required posters}) async =>
         utf8.encode('<html>${posters.length}</html>'),
     buildEventsJson: (posters) => utf8.encode('{"posters":[]}'),
   ),

@@ -366,7 +366,9 @@ final class MoveHarness {
        newTarget = newTarget ?? moveCloudflareTarget,
        // M9/M8 need a scriptable settings read; the default keeps every
        // existing test on the same name.
-       readLibraryName = readLibraryName ?? (() async => 'My Library') {
+       readLibraryName =
+           readLibraryName ??
+           (() async => right<Failure, String>('My Library')) {
     targets = FakeMoveTargets(
       oldTarget: this.oldTarget,
       newTarget: this.newTarget,

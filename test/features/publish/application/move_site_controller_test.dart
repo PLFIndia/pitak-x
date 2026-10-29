@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/site/move_site_controller.dart';
@@ -55,6 +56,31 @@ void main() {
     expect(failure.reason, MoveSiteMessages.stale);
     expect(container.read(moveSiteControllerProvider).busy, isFalse);
   });
+
+  test(
+    'a THROWING move ends loading instead of leaving busy true (M8)',
+    () async {
+      final h = MoveHarness(
+        readLibraryName: () async =>
+            Future<Either<Failure, String>>.error(StateError('non-Exception')),
+      );
+      final container = containerFor(h);
+      final controller = container.read(moveSiteControllerProvider.notifier);
+      final prepared = await controller.prepare();
+      final confirmation =
+          (prepared as MoveSiteConfirmationRequired).confirmation;
+
+      final result = await controller.confirm(confirmation);
+
+      expect(result, isA<MoveSiteFailure>());
+      expect((result as MoveSiteFailure).reason, MoveSiteMessages.generic);
+      expect(
+        container.read(moveSiteControllerProvider).busy,
+        isFalse,
+        reason: 'a non-Exception used to strand busy forever',
+      );
+    },
+  );
 
   test(
     'a successful confirm updates the journal through the shared queue',

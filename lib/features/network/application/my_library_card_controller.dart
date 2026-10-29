@@ -30,7 +30,9 @@ class MyLibraryCardController extends _$MyLibraryCardController {
     // Watched, so the card updates when a publish lands or the name changes.
     final siteUrl = await ref.watch(publishedSiteUrlProvider.future);
     if (siteUrl == null) return null; // never published yet
-    await ref.watch(settingsControllerProvider.future);
+    // Watched so the card follows a name change, never awaited: a failed
+    // settings SAVE must not break the card (fix-plan M8).
+    ref.watch(settingsControllerProvider);
     // Identity through the LibraryNamespace owner (N07): current() mints the
     // ID on first use and returns a Left if that fails — no card then.
     final identity = await ref

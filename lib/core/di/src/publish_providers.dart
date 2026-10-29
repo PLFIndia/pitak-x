@@ -39,7 +39,6 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
@@ -63,7 +62,6 @@ import 'package:pitaka/features/publish/infrastructure/secure_storage_cloudflare
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
-import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'publish_providers.g.dart';
@@ -76,10 +74,14 @@ GitHubApi gitHubApi(GitHubApiRef ref) =>
 
 /// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
 ///
-/// Auto-dispose is deliberate: an operation owns its connections, and closing
-/// the provider aborts outstanding work without retaining any credential. The
-/// facade itself holds no API token or upload/completion JWT.
-@riverpod
+/// KeepAlive is deliberate (fix-plan M1). The controllers `ref.read` their
+/// factories, so with auto-dispose the API lived only while the Connection tab
+/// happened to be listening: switching tabs called `IOClient.close()`
+/// (`close(force: true)`) and cut exactly the in-flight requests. An operation
+/// must own its connections, not whichever widget is visible. This retains no
+/// secret — the facade holds no token or upload/completion JWT, tokens arrive
+/// per call — and idle sockets close themselves, so the cost is bounded.
+@Riverpod(keepAlive: true)
 CloudflareApi cloudflareApi(CloudflareApiRef ref) {
   final api = HttpCloudflareApi();
   ref.onDispose(api.close);
@@ -287,14 +289,15 @@ EventsJsonFactory eventsJsonFactory(EventsJsonFactoryRef ref) =>
 /// adapter assembling its own builder — is how two hosts start publishing
 /// slightly different files without anyone noticing.
 ///
-/// Settings are read here because the published pages carry the library's
-/// CURRENT name and public contact choices; the builder is auto-dispose, so a
-/// publish always builds against the values in force at that moment.
+/// The published pages carry the library's CURRENT name and public contact
+/// choices, but they are read through `PublishReads.pageSettings()` as part of
+/// the operation's strict reads (fix-plan M8), NOT here: awaiting the settings
+/// provider at wiring time let one failed settings write fail the builder with
+/// a non-`Exception`, which broke every publish and froze the card's spinner.
 @riverpod
 Future<PublishSnapshotBuilder> publishSnapshotBuilder(
   PublishSnapshotBuilderRef ref,
 ) async {
-  final settings = await ref.watch(settingsControllerProvider.future);
   final coverIds = ref.watch(publishCoverIdsProvider);
   final readLocalCover = await ref.watch(
     publishLocalCoverReaderProvider.future,
@@ -312,24 +315,13 @@ Future<PublishSnapshotBuilder> publishSnapshotBuilder(
         readLocalCover: readLocalCover,
         fetchRemoteCover: fetchRemoteCover,
       ),
-      buildViewerHtml: () => viewerHtml(
-        libraryName: settings.libraryName,
-        contact: PublishContact(
-          address: settings.publishContactAddress,
-          gps: settings.publishContactGps,
-          email: settings.publishContactEmail,
-          phone: settings.publishContactPhone,
-        ),
-        // D7: one switch gates the index.html pin and the library.json
-        // location alike.
-        sharing: settings.publishLocationSharing,
-      ),
+      // The factories receive the operation's settings snapshot per call.
+      buildViewerHtml: viewerHtml,
       encodeBooksJson: encodeBooksJsonBytes,
     ),
     events: EventsSectionBuilder(
       readPoster: readPoster,
-      buildEventsHtml: (posters) =>
-          eventsHtml(libraryName: settings.libraryName, posters: posters),
+      buildEventsHtml: eventsHtml,
       buildEventsJson: eventsJson,
     ),
   );

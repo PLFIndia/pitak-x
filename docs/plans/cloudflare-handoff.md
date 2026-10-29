@@ -1033,6 +1033,16 @@ the Part N checklist were run again afterwards.
 - **A failed save is reported.** `PublishManifestGateway.save` and the journal
   store return `Either`; "Published!" with an unrecorded commit is the bug
   they exist to prevent.
+- **An operation owns its connections.** `cloudflareApiProvider` is
+  keepAlive on purpose: auto-dispose tied the API's lifetime to whichever
+  widget was listening, and closing it cut in-flight requests (fix-plan M1).
+  Do not re-derive it from a widget, and keep the native connect timeout a
+  fixed constant, not an operation deadline (N14).
+- **A failed save is not a failed load.** Settings setters return the typed
+  failure and keep the last persisted value; publishing reads them through
+  `PublishReads.pageSettings()`. Never await `settingsControllerProvider.future`
+  outside the settings feature, and never let a `Failure` escape an
+  `on Exception` (fix-plan M8).
 - **A record that does not describe the target claims nothing.** That is
   `CloudflareSiteManifest.forTarget`, used by the ordinary publish and the move
   reader. Never turn it back into an error, and never let such a record drive

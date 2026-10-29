@@ -15,6 +15,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// SPECIFICATION of the snapshot builder (Cloudflare plan R2/R4, J.2).
 ///
@@ -46,12 +47,14 @@ void main() {
         readLocalCover: readLocalCover ?? (_) async => null,
         fetchRemoteCover: (_) async => null,
       ),
-      buildViewerHtml: () async => utf8.encode('<html></html>'),
+      buildViewerHtml:
+          ({required libraryName, required contact, required sharing}) async =>
+              utf8.encode('<html></html>'),
       encodeBooksJson: encode,
     ),
     events: EventsSectionBuilder(
       readPoster: readPoster ?? (_) async => null,
-      buildEventsHtml: (posters) async =>
+      buildEventsHtml: ({required libraryName, required posters}) async =>
           utf8.encode('<html>${posters.length}</html>'),
       buildEventsJson: (posters) => utf8.encode('{"posters":$posters}'),
     ),
@@ -86,6 +89,17 @@ void main() {
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, ['catalogue', 'periodicals']);
+    });
+
+    test('an unavailable settings read aborts the publish (M8)', () async {
+      final reads = _FakeReads()
+        ..settingsResult = left(const StorageFailure('settings unavailable'));
+      final result = await builder().read(reads: reads, target: target);
+
+      expect(result.swap().toNullable(), isA<StorageFailure>());
+      expect(reads.calls, contains('settings'));
+      // Settings are read once, in phase 1, before any build or write.
+      expect(reads.calls.where((call) => call == 'settings'), hasLength(1));
     });
 
     test('a corrupt events file is a failure, not empty content', () async {
@@ -294,6 +308,7 @@ final class _FakeReads implements PublishReads {
   Either<Failure, List<Periodical>>? periodicalsResult;
   Either<Failure, EventsContent>? eventsResult;
   Either<Failure, List<int>?>? descriptorResult;
+  Either<Failure, PublishPageSettings>? settingsResult;
 
   final calls = <String>[];
 
@@ -319,6 +334,13 @@ final class _FakeReads implements PublishReads {
   Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async {
     calls.add('libraryJson');
     return descriptorResult ?? right(descriptor);
+  }
+
+  @override
+  Future<Either<Failure, PublishPageSettings>> pageSettings() async {
+    calls.add('settings');
+    return settingsResult ??
+        right(const PublishPageSettings(libraryName: 'Test Library'));
   }
 
   @override

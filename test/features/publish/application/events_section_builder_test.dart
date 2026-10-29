@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/application/site/events_section_builder.
 import 'package:pitaka/features/publish/domain/events_posters_html.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// R2/R3/R7: the events section is built once, from ONE filtered poster list,
 /// and a complete publish fails closed instead of dropping a poster.
@@ -23,7 +24,7 @@ void main() {
   }) => EventsSectionBuilder(
     readPoster: (ref) async =>
         readable.contains(ref) ? utf8.encode('img:$ref') : null,
-    buildEventsHtml: (posters) async =>
+    buildEventsHtml: ({required libraryName, required posters}) async =>
         utf8.encode(EventsPostersHtml.render(posters, escape: (s) => s)),
     buildEventsJson: (posters) => utf8.encode(
       jsonEncode([
@@ -36,6 +37,7 @@ void main() {
   test('html, json and uploads come from the SAME poster list', () async {
     final section = (await builder().build(
       content: content(),
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
     )).toNullable()!;
 
@@ -65,6 +67,7 @@ void main() {
     () async {
       final section = (await builder(readable: const {'posters/0.jpg'}).build(
         content: content(),
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
       )).toNullable()!;
 
@@ -87,6 +90,7 @@ void main() {
     () async {
       final result = await builder(readable: const {'posters/0.jpg'}).build(
         content: content(),
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         mode: PublishMode.complete,
       );
@@ -112,6 +116,7 @@ void main() {
 
     final section = (await builder().build(
       content: content(posters: 1),
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: previous,
     )).toNullable()!;
 

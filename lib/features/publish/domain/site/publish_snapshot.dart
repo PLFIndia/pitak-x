@@ -15,8 +15,36 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart'
+    show LocationSharing;
+
+/// The settings a published page carries, read ONCE per operation.
+///
+/// Why a value and not a provider read (fix-plan M8): the builder used to
+/// `await settingsControllerProvider.future` at wiring time, so a failed
+/// settings write could make the builder itself fail with a non-`Exception`
+/// and break every publish. Reading it through [PublishReads], on the same
+/// strict path as the library, means one snapshot and one failure shape.
+final class PublishPageSettings {
+  /// Creates the published-page settings.
+  const PublishPageSettings({
+    required this.libraryName,
+    this.contact = const PublishContact(),
+    this.sharing = LocationSharing.off,
+  });
+
+  /// Title shown on the published pages.
+  final String libraryName;
+
+  /// Public contact choices (address, GPS pin, email, phone).
+  final PublishContact contact;
+
+  /// What the published GPS pin and `library.json` location may reveal.
+  final LocationSharing sharing;
+}
 
 /// Everything a publish needs to READ, as ports (implemented by the
 /// application controller; never by the domain).
@@ -42,6 +70,10 @@ abstract interface class PublishReads {
   /// Active-loan counts per item id, or null when the vault is locked
   /// (availability is then omitted, honestly, from the payload).
   Future<Either<Failure, Map<int, int>?>> activeLoanCounts();
+
+  /// The published-page settings. A failure stops the publish before any
+  /// write; it is never replaced by defaults (handoff §13).
+  Future<Either<Failure, PublishPageSettings>> pageSettings();
 }
 
 /// The TARGET-FREE inputs one publish reads (R2).
@@ -63,6 +95,7 @@ final class PublishInputs {
     required this.periodicals,
     required this.activeLoanCounts,
     required this.libraryJson,
+    required this.pageSettings,
     this.events,
   });
 
@@ -83,6 +116,9 @@ final class PublishInputs {
 
   /// The events content, or null when this publish carries no events section.
   final EventsContent? events;
+
+  /// The settings both section builders render with (one snapshot per run).
+  final PublishPageSettings pageSettings;
 }
 
 /// The immutable result of one snapshot build.

@@ -423,7 +423,9 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     final link = ref.keepAlive();
     try {
       await operation();
-    } on Exception {
+    } on Object {
+      // A `Failure` is not an `Exception`; the finally below still unlocks,
+      // but the message must be reported rather than escaping unhandled.
       await _reload(message: CloudflareErrorMessages.generic);
     } finally {
       _operationActive = false;

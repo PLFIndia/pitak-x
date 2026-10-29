@@ -222,6 +222,10 @@ abstract final class MoveSiteMessages {
   static const String targetMismatch =
       'Reconnect the exact publishing target used by this move.';
 
+  /// The moved-page name could not be read; nothing was published or moved.
+  static const String settingsUnavailable =
+      'Library settings could not be read. Nothing was moved.';
+
   /// The source is absent or cannot be read reliably enough to retire.
   static const String sourceUnavailable =
       'The current site is unavailable or its publishing state is unreadable.';

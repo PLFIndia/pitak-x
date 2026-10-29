@@ -30,6 +30,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
@@ -279,6 +280,10 @@ class _Reads implements PublishReads {
   @override
   Future<Either<Failure, Map<int, int>?>> activeLoanCounts() async =>
       right(_counts);
+
+  @override
+  Future<Either<Failure, PublishPageSettings>> pageSettings() async =>
+      right(const PublishPageSettings(libraryName: 'Test Library'));
 }
 
 /// Reads whose catalogue access fails: used to prove NOTHING is written when
@@ -414,7 +419,12 @@ void main() {
             fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
           ),
           buildViewerHtml:
-              buildViewerHtml ?? () async => utf8.encode('<html></html>'),
+              buildViewerHtml ??
+              ({
+                required libraryName,
+                required contact,
+                required sharing,
+              }) async => utf8.encode('<html></html>'),
           encodeBooksJson: encodeBooksJson ?? encode,
         ),
         // Q5=A: a catalogue publish never reads or writes the events section;
@@ -422,7 +432,8 @@ void main() {
         // the same wiring.
         events: EventsSectionBuilder(
           readPoster: (_) async => null,
-          buildEventsHtml: (_) async => const [],
+          buildEventsHtml: ({required libraryName, required posters}) async =>
+              const [],
           buildEventsJson: (_) => const [],
         ),
       ),
@@ -1210,10 +1221,11 @@ void main() {
           coverReads++;
           return utf8.encode('IMG');
         },
-        buildViewerHtml: () async {
-          viewerBuilds++;
-          return utf8.encode('<html></html>');
-        },
+        buildViewerHtml:
+            ({required libraryName, required contact, required sharing}) async {
+              viewerBuilds++;
+              return utf8.encode('<html></html>');
+            },
         encodeBooksJson: (export) {
           encodeCalls++;
           return encode(export);

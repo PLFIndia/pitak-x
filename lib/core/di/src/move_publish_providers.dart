@@ -130,8 +130,14 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
           newTarget: newTarget,
         ).build(),
     validateMovedHtml: validateMoved,
-    readLibraryName: () async =>
-        (await ref.read(settingsControllerProvider.future)).libraryName,
+    readLibraryName: () async {
+      // Typed read (M8): a settings failure is a value, never a thrown
+      // non-Exception that the move's catches would miss.
+      final loaded = await ref
+          .read(settingsControllerProvider.notifier)
+          .loaded();
+      return loaded.map((settings) => settings.libraryName);
+    },
     clock: clock,
   );
 }

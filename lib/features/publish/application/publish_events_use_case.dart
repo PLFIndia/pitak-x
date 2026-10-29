@@ -46,6 +46,7 @@ import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
@@ -106,6 +107,7 @@ final class PublishEventsUseCase {
     required PosterBytesReader readPoster,
     required EventsHtmlBuilderFn buildEventsHtml,
     required EventsJsonFactory buildEventsJson,
+    required PublishPageSettings settings,
     required PublishHostStateRecorder hostState,
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
@@ -119,6 +121,7 @@ final class PublishEventsUseCase {
          buildEventsHtml: buildEventsHtml,
          buildEventsJson: buildEventsJson,
        ),
+       _settings = settings,
        _hostState = hostState,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
@@ -131,6 +134,7 @@ final class PublishEventsUseCase {
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
   final EventsSectionBuilder _section;
+  final PublishPageSettings _settings;
 
   /// Records the verified live target after a read-back proves it (R33).
   final PublishHostStateRecorder _hostState;
@@ -220,6 +224,7 @@ final class PublishEventsUseCase {
     // appear in one representation but not another.
     final built = await _section.build(
       content: content,
+      settings: _settings,
       previous: manifest,
       mode: mode,
     );

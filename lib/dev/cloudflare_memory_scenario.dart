@@ -119,7 +119,9 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
         },
         fetchRemoteCover: (_) async => null,
       ),
-      buildViewerHtml: () async => utf8.encode('<html></html>'),
+      buildViewerHtml:
+          ({required libraryName, required contact, required sharing}) async =>
+              utf8.encode('<html></html>'),
       encodeBooksJson: encodeBooksJsonBytes,
       sink: CloudflareArtifactSink(store),
     );
@@ -128,6 +130,7 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,
+      settings: const PublishPageSettings(libraryName: 'Memory test'),
       previous: CloudflareSiteManifest.empty,
       now: 1700000000000,
       mode: PublishMode.complete,

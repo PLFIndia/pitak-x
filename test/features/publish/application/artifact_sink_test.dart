@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 final class _Sink implements PublishArtifactSink {
   final List<PublishFile> files = [];
@@ -40,14 +41,17 @@ void main() {
       readLocalCover: (_) async => [1, 2, 3],
       fetchRemoteCover: (_) async => null,
     ),
-    buildViewerHtml: () async => utf8.encode('<html></html>'),
+    buildViewerHtml:
+        ({required libraryName, required contact, required sharing}) async =>
+            utf8.encode('<html></html>'),
     encodeBooksJson: encodeBooksJsonBytes,
     sink: sink,
   );
 
   EventsSectionBuilder events(_Sink sink) => EventsSectionBuilder(
     readPoster: (_) async => [4, 5, 6],
-    buildEventsHtml: (_) async => utf8.encode('<html></html>'),
+    buildEventsHtml: ({required libraryName, required posters}) async =>
+        utf8.encode('<html></html>'),
     buildEventsJson: (_) => utf8.encode('{"posters":[]}'),
     sink: sink,
   );
@@ -61,6 +65,7 @@ void main() {
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
       mode: PublishMode.complete,
@@ -80,6 +85,7 @@ void main() {
       content: const EventsContent(
         posters: [EventPoster(imageRef: 'posters/a.jpg')],
       ),
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       mode: PublishMode.complete,
     )).toNullable()!;
@@ -95,6 +101,7 @@ void main() {
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
       mode: PublishMode.complete,
@@ -103,6 +110,7 @@ void main() {
       content: const EventsContent(
         posters: [EventPoster(imageRef: 'posters/a.jpg')],
       ),
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       mode: PublishMode.complete,
     );

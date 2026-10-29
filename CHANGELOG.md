@@ -78,6 +78,20 @@ heading as part of the `chore(release):` commit.
   upload session creates the Worker, the publish re-reads the Worker and marker
   around its own session instead of mistaking its creation for a foreign
   change.
+- **A Cloudflare connection that can’t be read is no longer a dead end:** the
+  Connection tile explains it and lets the user forget the unreadable record
+  (only the token key is deleted; the site, Worker and share link are
+  untouched) instead of asking for an app restart.
+- **An unreadable publishing record can be reset:** the publish card offers
+  "Reset publishing record" only when the journal cannot be decoded, behind a
+  dialog that says the sites and the old content are unchanged. It never acts
+  as a general reset.
+- **Switching tabs no longer cuts a Cloudflare publish:** the API facade now
+  lives as long as the app process instead of as long as the Connection tab is
+  visible, so in-flight requests are no longer closed mid-publish.
+- **A failed settings save no longer breaks publishing or the settings
+  screens:** the last saved value stays loaded, the screen says it couldn’t
+  save that setting, and a publish keeps its progress instead of freezing.
 - **Cloudflare read-back tells the truth about why it failed:** it reads only
   the documented set (never covers) and distinguishes a contradicting site
   from an unreachable one, under a bounded deadline. A contradicted earlier

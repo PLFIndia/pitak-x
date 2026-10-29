@@ -27,6 +27,7 @@ import 'package:pitaka/features/import_export/presentation/pages/merge_page.dart
 import 'package:pitaka/features/settings/application/library_logo_controller.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/presentation/settings_write.dart';
 import 'package:pitaka/features/settings/presentation/widgets/community_library_section.dart';
 import 'package:pitaka/features/settings/presentation/widgets/google_books_key_tile.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
@@ -115,7 +116,8 @@ class _AppearanceTab extends ConsumerWidget {
             ButtonSegment(value: AppThemeMode.dark, label: Text('Dark')),
           ],
           selected: {settings.themeMode},
-          onSelectionChanged: (s) => controller.setThemeMode(s.first),
+          onSelectionChanged: (s) =>
+              saveSetting(context, controller.setThemeMode(s.first)),
         ),
         const SizedBox(height: 24),
         Text('Library', style: textTheme.titleSmall),
@@ -124,14 +126,16 @@ class _AppearanceTab extends ConsumerWidget {
           label: 'Library name',
           hint: 'Shown as the title (blank uses the app name)',
           initial: settings.libraryName,
-          onCommitted: controller.setLibraryName,
+          onCommitted: (name) =>
+              saveSetting(context, controller.setLibraryName(name)),
         ),
         const SizedBox(height: 8),
         EditableTextField(
           label: 'Maintainer name',
           hint: 'Stamped onto books you add (the "added by" field)',
           initial: settings.maintainerName,
-          onCommitted: controller.setMaintainerName,
+          onCommitted: (name) =>
+              saveSetting(context, controller.setMaintainerName(name)),
         ),
         const SizedBox(height: 16),
         const _LogoRow(),
@@ -152,7 +156,8 @@ class _AppearanceTab extends ConsumerWidget {
             'replaced.',
           ),
           value: settings.loadRemoteCovers,
-          onChanged: (v) => controller.setLoadRemoteCovers(enabled: v),
+          onChanged: (v) =>
+              saveSetting(context, controller.setLoadRemoteCovers(enabled: v)),
         ),
         SwitchListTile(
           contentPadding: EdgeInsets.zero,
@@ -164,7 +169,10 @@ class _AppearanceTab extends ConsumerWidget {
             'of libraries never leaves the device.',
           ),
           value: settings.networkMapTilesConsent,
-          onChanged: (v) => controller.setNetworkMapTilesConsent(enabled: v),
+          onChanged: (v) => saveSetting(
+            context,
+            controller.setNetworkMapTilesConsent(enabled: v),
+          ),
         ),
         const SizedBox(height: 8),
         const GoogleBooksKeyTile(),

@@ -12,6 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/labeled_value_field.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
+import 'package:pitaka/features/settings/presentation/settings_write.dart';
 
 /// Plain-words label for a location-sharing mode — the view-mode display row
 /// uses the same wording as the segmented control's segments.
@@ -66,8 +67,8 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
 
   Future<void> _save() async {
     final notifier = ref.read(settingsControllerProvider.notifier);
-    await notifier.setLibraryName(_name.text);
-    await notifier.setPublishContact(
+    final name = await notifier.setLibraryName(_name.text);
+    final contact = await notifier.setPublishContact(
       address: _address.text,
       gps: _gps.text,
       email: _email.text,
@@ -75,8 +76,18 @@ class _BasicInfoTabState extends ConsumerState<BasicInfoTab> {
     );
     // D7: the switch gates the published pin AND the network-map location —
     // persisted through the single serialised settings writer (M16).
-    await notifier.setPublishLocationSharing(_sharing ?? LocationSharing.off);
-    if (mounted) setState(() => _editing = false);
+    final sharing = await notifier.setPublishLocationSharing(
+      _sharing ?? LocationSharing.off,
+    );
+    if (!mounted) return;
+    if (name.isLeft() || contact.isLeft() || sharing.isLeft()) {
+      // Stay in edit mode: the fields were not all stored (M8).
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text(settingsSaveFailedMessage)));
+      return;
+    }
+    setState(() => _editing = false);
   }
 
   @override

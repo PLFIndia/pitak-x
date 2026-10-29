@@ -6,7 +6,7 @@ part of 'app_lock_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$appLockControllerHash() => r'7340fd7b79212b6454d32f83c481847072b6452b';
+String _$appLockControllerHash() => r'82515f864648c3b768850eaa63eccba76d013b2d';
 
 /// Drives the app-lock phase. `keepAlive`: the lock must outlive any widget
 /// rebuild — it is the thing protecting the screen while the app is paused.

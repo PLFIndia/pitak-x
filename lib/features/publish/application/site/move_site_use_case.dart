@@ -1,6 +1,7 @@
 /// Outer S9 move state machine. The caller holds the one app-wide queue.
 library;
 
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
@@ -15,7 +16,12 @@ import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 typedef MoveSiteProgress = void Function(MoveSitePhase phase);
 
 /// Reads the current library name only while constructing a NEW descriptor.
-typedef MoveLibraryNameReader = Future<String> Function();
+/// Reads the moved-page library name, typed.
+///
+/// Typed on purpose (fix-plan M8): `settingsControllerProvider.future` could
+/// throw a `Failure`, which is not an `Exception`, so a `try/on Exception`
+/// around the read missed it. The caller now maps a `Left` to fixed copy.
+typedef MoveLibraryNameReader = Future<Either<Failure, String>> Function();
 
 /// Coordinates preparation, verified destination publication, pending recovery,
 /// exact source retirement, and the single final active/verified switch.
@@ -100,6 +106,15 @@ final class MoveSiteUseCase {
       return const MoveSiteFailure(MoveSiteMessages.sourceChanged);
     }
 
+    // Read the name BEFORE any destination write (M8/M9): a settings read
+    // that fails must stop the move while nothing has been published.
+    final name = await _readLibraryName();
+    final nameFailure = name.swap().toNullable();
+    if (nameFailure != null) {
+      return const MoveSiteFailure(MoveSiteMessages.settingsUnavailable);
+    }
+    final libraryName = name.toNullable() ?? '';
+
     onProgress?.call(MoveSitePhase.publishingDestination);
     final published = await _destinationFor(confirmation.newTarget).publish(
       confirmation: confirmation,
@@ -130,7 +145,7 @@ final class MoveSiteUseCase {
           return const MoveSiteFailure(MoveSiteMessages.sourceChanged);
         }
         onProgress?.call(MoveSitePhase.recordingMove);
-        final pending = await _createPending(confirmation);
+        final pending = await _createPending(confirmation, libraryName);
         if (pending == null || !await _validateMovedHtml(pending)) {
           return const MoveSiteFailure(MoveSiteMessages.pendingSaveFailed);
         }
@@ -219,8 +234,11 @@ final class MoveSiteUseCase {
     );
   }
 
-  Future<PendingMove?> _createPending(MoveSiteConfirmation confirmation) async {
-    final libraryName = normalizeMovedLibraryName(await _readLibraryName());
+  Future<PendingMove?> _createPending(
+    MoveSiteConfirmation confirmation,
+    String rawLibraryName,
+  ) async {
+    final libraryName = normalizeMovedLibraryName(rawLibraryName);
     final moved = await _buildMovedHtml(
       libraryName: libraryName,
       newTarget: confirmation.newTarget,

@@ -2,6 +2,7 @@
 library;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
@@ -95,7 +96,11 @@ class MoveSiteController extends _$MoveSiteController {
           ..invalidate(cloudflareConnectionControllerProvider);
       }
       return result;
-    } on Exception {
+    } on Object catch (e) {
+      // Catch everything: a `Failure` (not an `Exception`) or an `Error` here
+      // used to leave `busy` true forever, so every later command answered
+      // "stale" (fix-plan M8). Type only in the debug log.
+      appLog('move failed with: ${e.runtimeType}');
       const result = MoveSiteFailure(MoveSiteMessages.generic);
       state = const MoveSiteState(result: result);
       return result;

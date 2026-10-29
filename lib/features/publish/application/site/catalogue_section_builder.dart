@@ -28,6 +28,7 @@ import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
+import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
@@ -36,9 +37,21 @@ import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
+import 'package:pitaka/features/settings/domain/app_settings.dart'
+    show LocationSharing;
 
 /// Builds the viewer HTML from the bundled template with placeholders filled.
-typedef ViewerHtmlBuilderFn = Future<List<int>> Function();
+///
+/// It takes the page settings PER CALL (fix-plan M8) instead of a closure that
+/// captured them at DI time, so one operation uses one settings snapshot and a
+/// failed settings write cannot break the builder itself.
+typedef ViewerHtmlBuilderFn =
+    Future<List<int>> Function({
+      required String libraryName,
+      required PublishContact contact,
+      required LocationSharing sharing,
+    });
 
 /// Encodes the machine-readable payload (`books.json`).
 typedef BooksJsonEncoder = List<int> Function(PublishExport export);
@@ -117,6 +130,7 @@ final class CatalogueSectionBuilder {
     required List<Periodical> periodicals,
     required Map<int, int>? activeLoanCounts,
     required List<int>? libraryJson,
+    required PublishPageSettings settings,
     required PreviousPublication previous,
     required int now,
     PublishMode mode = PublishMode.incremental,
@@ -229,7 +243,11 @@ final class CatalogueSectionBuilder {
       ],
     );
     var booksJson = _encodeBooksJson(export);
-    var viewerHtml = await _buildViewerHtml();
+    var viewerHtml = await _buildViewerHtml(
+      libraryName: settings.libraryName,
+      contact: settings.contact,
+      sharing: settings.sharing,
+    );
 
     // Assemble with per-file change detection. A sink consumes each artifact
     // immediately; without one, the original byte-bearing files are preserved.

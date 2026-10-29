@@ -32,6 +32,7 @@ import 'dart:async';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/library_namespace.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
@@ -76,14 +77,16 @@ class SettingsController extends _$SettingsController
   ///
   /// Persists via [persist], then publishes `patch(currentState)` only when
   /// the write actually succeeded (M17: the plugin's success boolean is a
-  /// typed `Either`, so a failed write can never be confirmed). A prefs write
-  /// failure — typed [Failure] or unexpected throw — is folded into an
-  /// [AsyncError] state instead of escaping as an unhandled async error from
-  /// an un-awaited setter; every consumer renders that with a safe fallback.
-  /// The in-memory value is left unchanged — fail closed rather than show a
-  /// preference the device never actually stored (Riverpod keeps the previous
-  /// value reachable via `valueOrNull` on the error state).
-  Future<void> _update(
+  /// typed `Either`, so a failed write can never be confirmed).
+  ///
+  /// A failed write KEEPS the last persisted value in [AsyncData] and returns
+  /// the typed failure to the caller (fix-plan M8). It used to publish an
+  /// [AsyncError]; because `Failure` is not an `Exception`, every
+  /// `await settingsControllerProvider.future` then threw a non-`Exception`
+  /// that the publish/events/move paths did not catch, freezing a spinner for
+  /// the rest of the session — and the settings screens showed "Couldn't load
+  /// settings" after one failed toggle. The UI now reports the save failure.
+  Future<Either<Failure, Unit>> _update(
     Future<Either<Failure, Unit>> Function(SettingsRepository repo) persist,
     AppSettings Function(AppSettings current) patch,
   ) => _serialised(() async {
@@ -91,16 +94,37 @@ class SettingsController extends _$SettingsController
     final Either<Failure, Unit> result;
     try {
       result = await persist(repo);
-    } on Object catch (e, st) {
-      state = AsyncError(e, st);
-      return;
+    } on Object catch (e) {
+      // Name the type only: platform text may carry private detail.
+      appLog('settings write threw: ${e.runtimeType}');
+      return left(StorageFailure('settings write threw: ${e.runtimeType}'));
     }
-    state = result.match(
-      (failure) => AsyncError(failure, StackTrace.current),
+    if (result.isRight()) {
       // Patch what is there NOW — not a snapshot taken before the await.
-      (_) => AsyncData(patch(_current)),
-    );
+      state = AsyncData(patch(_current));
+      return result;
+    }
+    // Fail closed: never show a preference the device did not store, and never
+    // turn a loaded screen into an error for a failed SAVE.
+    final current = state.valueOrNull;
+    if (current != null) state = AsyncData(current);
+    return result;
   });
+
+  /// The last good settings, or a typed failure when none was ever loaded.
+  ///
+  /// This is the ONLY read publishing paths may use (fix-plan M8): it answers
+  /// the cached value after any amount of write failures, and it never
+  /// invents defaults for a corrupt read (handoff §13).
+  Future<Either<Failure, AppSettings>> loaded() async {
+    final cached = state.valueOrNull;
+    if (cached != null) return right(cached);
+    try {
+      return right(await future);
+    } on Object {
+      return left(const StorageFailure('settings unavailable'));
+    }
+  }
 
   /// Serialised write-then-publish for the ID-minting methods, which return
   /// the minted value to the caller. A left is returned untouched and nothing
@@ -109,7 +133,13 @@ class SettingsController extends _$SettingsController
     Future<Either<Failure, String>> Function(SettingsRepository repo) mint,
   ) => _serialised(() async {
     final repo = await ref.read(settingsRepositoryProvider.future);
-    final minted = await mint(repo);
+    final Either<Failure, String> minted;
+    try {
+      minted = await mint(repo);
+    } on Object catch (e) {
+      appLog('settings mint threw: ${e.runtimeType}');
+      return left(StorageFailure('settings mint threw: ${e.runtimeType}'));
+    }
     final id = minted.getOrElse((_) => '');
     if (minted.isRight() && _current.libraryId != id) {
       state = AsyncData(_current.copyWith(libraryId: id));
@@ -118,13 +148,13 @@ class SettingsController extends _$SettingsController
   });
 
   /// Sets the appearance mode.
-  Future<void> setThemeMode(AppThemeMode mode) => _update(
+  Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) => _update(
     (repo) => repo.setThemeMode(mode),
     (s) => s.copyWith(themeMode: mode),
   );
 
   /// Sets the library display name.
-  Future<void> setLibraryName(String name) => _update(
+  Future<Either<Failure, Unit>> setLibraryName(String name) => _update(
     (repo) => repo.setLibraryName(name),
     (s) => s.copyWith(libraryName: name.trim()),
   );
@@ -138,7 +168,7 @@ class SettingsController extends _$SettingsController
   /// Adopts [id] as this app's library ID (from a Join/Overwrite merge or a
   /// scanned pairing QR). The caller must pass a value already validated by
   /// `LibraryId.normalizeOrNull`.
-  Future<void> setLibraryId(String id) => _update(
+  Future<Either<Failure, Unit>> setLibraryId(String id) => _update(
     (repo) => repo.setLibraryId(id),
     (s) => s.copyWith(libraryId: id.trim()),
   );
@@ -163,11 +193,8 @@ class SettingsController extends _$SettingsController
   /// last good value is still cached on that state, so use it — the name only
   /// feeds the merge's "which library is this?" copy, never a gate.
   Future<String> _loadedLibraryName() async {
-    try {
-      return (await future).libraryName;
-    } on Object {
-      return _current.libraryName;
-    }
+    final loadedSettings = await loaded();
+    return loadedSettings.toNullable()?.libraryName ?? _current.libraryName;
   }
 
   /// Adopts an incoming library ID + name in ONE queued turn (N07). Both
@@ -213,26 +240,27 @@ class SettingsController extends _$SettingsController
   }
 
   /// Sets the maintainer name (stamped onto newly-added books).
-  Future<void> setMaintainerName(String name) => _update(
+  Future<Either<Failure, Unit>> setMaintainerName(String name) => _update(
     (repo) => repo.setMaintainerName(name),
     (s) => s.copyWith(maintainerName: name.trim()),
   );
 
   /// Sets the persisted library sort.
-  Future<void> setLibrarySort(LibrarySort sort) => _update(
+  Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) => _update(
     (repo) => repo.setLibrarySort(sort),
     (s) => s.copyWith(librarySort: sort),
   );
 
   /// Sets the remote-cover opt-in (#31, §2a.4). Default is off.
-  Future<void> setLoadRemoteCovers({required bool enabled}) => _update(
-    (repo) => repo.setLoadRemoteCovers(enabled: enabled),
-    (s) => s.copyWith(loadRemoteCovers: enabled),
-  );
+  Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
+      _update(
+        (repo) => repo.setLoadRemoteCovers(enabled: enabled),
+        (s) => s.copyWith(loadRemoteCovers: enabled),
+      );
 
   /// Sets the optional public publish-contact fields (#32). [address] is free
   /// text; [gps] is a "lat, lng" pin. Both optional.
-  Future<void> setPublishContact({
+  Future<Either<Failure, Unit>> setPublishContact({
     required String address,
     required String gps,
     required String email,
@@ -255,7 +283,9 @@ class SettingsController extends _$SettingsController
   /// Sets the location-sharing mode (docs/ARCHITECTURE.md §6 location sharing): what the published
   /// GPS pin and the network `library.json` location may reveal. Mirrored
   /// through [_update] like every other setter (M16: one serialised writer).
-  Future<void> setPublishLocationSharing(LocationSharing sharing) => _update(
+  Future<Either<Failure, Unit>> setPublishLocationSharing(
+    LocationSharing sharing,
+  ) => _update(
     (repo) => repo.setPublishLocationSharing(sharing),
     (s) => s.copyWith(publishLocationSharing: sharing),
   );
@@ -263,20 +293,23 @@ class SettingsController extends _$SettingsController
   /// Sets the OpenStreetMap tiles consent for the network map
   /// (docs/ARCHITECTURE.md §1 network egress). Mirrored through [_update]
   /// like every other setter (M16).
-  Future<void> setNetworkMapTilesConsent({required bool enabled}) => _update(
+  Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
+    required bool enabled,
+  }) => _update(
     (repo) => repo.setNetworkMapTilesConsent(enabled: enabled),
     (s) => s.copyWith(networkMapTilesConsent: enabled),
   );
 
   /// Sets (or clears, when blank) the user's library-logo reference.
-  Future<void> setLibraryLogo(String reference) => _update(
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) => _update(
     (repo) => repo.setLibraryLogo(reference),
     (s) => s.copyWith(libraryLogo: reference.trim()),
   );
 
   /// Enables/disables the opt-in app-wide biometric gate (default off).
-  Future<void> setAppLockBiometric({required bool enabled}) => _update(
-    (repo) => repo.setAppLockBiometric(enabled: enabled),
-    (s) => s.copyWith(appLockBiometric: enabled),
-  );
+  Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
+      _update(
+        (repo) => repo.setAppLockBiometric(enabled: enabled),
+        (s) => s.copyWith(appLockBiometric: enabled),
+      );
 }

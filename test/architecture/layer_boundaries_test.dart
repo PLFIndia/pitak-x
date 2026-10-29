@@ -212,6 +212,35 @@ void main() {
 
     int lineCount(File f) => f.readAsLinesSync().length;
 
+    test('only the settings feature awaits the settings provider future', () {
+      // `Failure` is not an `Exception`, so awaiting that provider's future
+      // and catching `on Exception` is how one failed settings write froze a
+      // publish spinner and unloaded the settings screen for the session
+      // (fix-plan M8). The typed `SettingsController.loaded()` is the one read.
+      final violations = <String>[];
+      for (final file in libFiles()) {
+        if (file.path.startsWith('lib/features/settings/')) continue;
+        // Comment lines may NAME the forbidden call to explain it.
+        final code = file
+            .readAsLinesSync()
+            .where((line) {
+              final trimmed = line.trimLeft();
+              return !trimmed.startsWith('//');
+            })
+            .join('\n');
+        if (code.contains('settingsControllerProvider.future')) {
+          violations.add(file.path);
+        }
+      }
+      expect(
+        violations,
+        isEmpty,
+        reason:
+            'Use ref.read(settingsControllerProvider.notifier).loaded() '
+            'instead of awaiting the provider future outside settings.',
+      );
+    });
+
     test(
       'no non-generated file exceeds 500 lines without an allow-list entry',
       () {

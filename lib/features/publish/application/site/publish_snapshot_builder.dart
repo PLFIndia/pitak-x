@@ -55,6 +55,12 @@ final class PublishSnapshotBuilder {
   static const String readFailedMessage =
       'Could not read the library. Nothing was published. Please try again.';
 
+  /// Shown when this phone's own settings cannot be read. Fixed text: the
+  /// operation stops before any write (fix-plan M8).
+  static const String settingsUnavailableMessage =
+      'Library settings could not be read. Nothing was published. '
+      'Please try again.';
+
   /// Phase 1: reads every input strictly.
   ///
   /// [target] is only used to build the `library.json` descriptor for the
@@ -79,6 +85,10 @@ final class PublishSnapshotBuilder {
     final countsFailure = counts.swap().toNullable();
     if (countsFailure != null) return Left(countsFailure);
 
+    final settings = await reads.pageSettings();
+    final settingsFailure = settings.swap().toNullable();
+    if (settingsFailure != null) return Left(settingsFailure);
+
     final descriptor = await reads.libraryJson(target.siteUrl);
     final descriptorFailure = descriptor.swap().toNullable();
     if (descriptorFailure != null) return Left(descriptorFailure);
@@ -99,6 +109,7 @@ final class PublishSnapshotBuilder {
         periodicals: titles.toNullable()!,
         activeLoanCounts: counts.toNullable(),
         libraryJson: descriptor.toNullable(),
+        pageSettings: settings.toNullable()!,
         events: content,
       ),
     );
@@ -122,6 +133,7 @@ final class PublishSnapshotBuilder {
       periodicals: inputs.periodicals,
       activeLoanCounts: inputs.activeLoanCounts,
       libraryJson: inputs.libraryJson,
+      settings: inputs.pageSettings,
       previous: previous,
       now: now,
       mode: mode,
@@ -134,6 +146,7 @@ final class PublishSnapshotBuilder {
     if (inputs.events case final content?) {
       final events = await _events.build(
         content: content,
+        settings: inputs.pageSettings,
         previous: previous,
         mode: mode,
       );

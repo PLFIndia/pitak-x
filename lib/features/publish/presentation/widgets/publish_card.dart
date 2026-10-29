@@ -198,7 +198,9 @@ class _PublishCardState extends ConsumerState<PublishCard> {
   Future<void> _publish() async {
     try {
       await ref.read(publishControllerProvider.notifier).publish();
-    } on Exception {
+    } on Object {
+      // A `Failure` is not an `Exception`; catching only the latter left
+      // this card's spinner on for the session (fix-plan M8).
       _snack('Something went wrong. Please try again.');
     }
   }
@@ -208,7 +210,9 @@ class _PublishCardState extends ConsumerState<PublishCard> {
       await ref
           .read(publishControllerProvider.notifier)
           .publish(verificationOnly: true);
-    } on Exception {
+    } on Object {
+      // A `Failure` is not an `Exception`; catching only the latter left
+      // this card's spinner on for the session (fix-plan M8).
       _snack('Something went wrong. Please try again.');
     }
   }
@@ -224,7 +228,9 @@ class _PublishCardState extends ConsumerState<PublishCard> {
       await ref
           .read(publishControllerProvider.notifier)
           .publish(confirmation: summary);
-    } on Exception {
+    } on Object {
+      // A `Failure` is not an `Exception`; catching only the latter left
+      // this card's spinner on for the session (fix-plan M8).
       _snack('Something went wrong. Please try again.');
     } finally {
       _dialogOpen = false;

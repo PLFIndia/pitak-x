@@ -38,6 +38,7 @@ import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
@@ -185,6 +186,10 @@ final class FakeS8Reads implements PublishReads {
     descriptorSites.add(siteUrl);
     return right(descriptor);
   }
+
+  @override
+  Future<Either<Failure, PublishPageSettings>> pageSettings() async =>
+      right(const PublishPageSettings(libraryName: 'Test Library'));
 }
 
 final class _FixedSalt implements PublishCoverSaltStore {
@@ -241,12 +246,17 @@ final class S8PublishHarness {
           readLocalCover: (_) async => null,
           fetchRemoteCover: (_) async => null,
         ),
-        buildViewerHtml: () async => utf8.encode('<html></html>'),
+        buildViewerHtml:
+            ({
+              required libraryName,
+              required contact,
+              required sharing,
+            }) async => utf8.encode('<html></html>'),
         encodeBooksJson: encodeBooksJsonBytes,
       ),
       events: EventsSectionBuilder(
         readPoster: (_) async => null,
-        buildEventsHtml: (posters) async =>
+        buildEventsHtml: ({required libraryName, required posters}) async =>
             utf8.encode('<html>${posters.length}</html>'),
         buildEventsJson: (posters) => utf8.encode(
           jsonEncode({

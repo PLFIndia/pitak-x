@@ -6,6 +6,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_http_transport.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_multipart_request.dart';
 
@@ -41,7 +42,8 @@ void main() {
       );
     });
 
-    test('native connect timeout matches the operation deadline', () async {
+    test('one native client keeps a FIXED connect timeout, not the operation '
+        'deadline (N14)', () async {
       final overrides = _RecordingOverrides();
       await HttpOverrides.runWithHttpOverrides(() async {
         final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -56,15 +58,27 @@ void main() {
           apiBase: Uri.http('127.0.0.1:${server.port}', '/client/v4'),
         );
         addTearDown(transport.close);
-        const deadline = Duration(milliseconds: 123);
         await transport.send(
           path: '/deadline',
           bearer: 'operation-secret',
           requestBuilder: cloudflareJsonRequest('GET', null),
-          deadline: deadline,
+          deadline: const Duration(milliseconds: 123),
         );
-        expect(overrides.clients, hasLength(1));
-        expect(overrides.clients.single.connectionTimeout, deadline);
+        await transport.send(
+          path: '/deadline',
+          bearer: 'operation-secret',
+          requestBuilder: cloudflareJsonRequest('GET', null),
+          deadline: const Duration(minutes: 20),
+        );
+        expect(
+          overrides.clients,
+          hasLength(1),
+          reason: 'one pool, not per size',
+        );
+        expect(
+          overrides.clients.single.connectionTimeout,
+          CloudflareLimits.apiDeadline,
+        );
       }, overrides);
     });
   });

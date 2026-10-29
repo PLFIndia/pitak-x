@@ -77,7 +77,8 @@ final class MovedHtmlBuilder {
       return expected != null &&
           _sameBytes(expected, descriptor.indexHtml) &&
           _sameBytes(expected, descriptor.notFoundHtml);
-    } on Exception {
+    } on Object {
+      // `rootBundle` throws FlutterError, which is not an Exception.
       return false;
     }
   }

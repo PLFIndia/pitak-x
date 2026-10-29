@@ -7,6 +7,7 @@
 library;
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
@@ -15,6 +16,7 @@ import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -49,7 +51,10 @@ class PublishEventsController extends _$PublishEventsController {
           );
       state = AsyncData(result);
       return result;
-    } on Exception catch (e, st) {
+    } on Object catch (e, st) {
+      // A `Failure` is not an `Exception`; catch both or the spinner freezes
+      // for the session (fix-plan M8). Type only in the log.
+      appLog('events publish failed with: ${e.runtimeType}');
       state = AsyncError(e, st);
       rethrow;
     } finally {
@@ -120,7 +125,16 @@ class PublishEventsController extends _$PublishEventsController {
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
     final readPoster = await ref.read(eventsPosterReaderProvider.future);
-    final settings = await ref.read(settingsControllerProvider.future);
+    // Typed read (M8): a settings failure stops before the destination write.
+    final loadedSettings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    final settings = loadedSettings.toNullable();
+    if (settings == null) {
+      return const PublishFailure(
+        PublishSnapshotBuilder.settingsUnavailableMessage,
+      );
+    }
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
     final verifier = ref.read(publishedSiteVerifierProvider);
@@ -130,9 +144,9 @@ class PublishEventsController extends _$PublishEventsController {
       credentials: credentials,
       manifest: manifest,
       readPoster: readPoster,
-      buildEventsHtml: (posters) =>
-          buildEventsHtml(libraryName: settings.libraryName, posters: posters),
+      buildEventsHtml: buildEventsHtml,
       buildEventsJson: buildEventsJson,
+      settings: PublishPageSettings(libraryName: settings.libraryName),
       hostState: LazyPublishHostStateRecorder(
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),

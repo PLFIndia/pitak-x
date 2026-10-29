@@ -12,6 +12,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// CHARACTERIZATION of the catalogue section (Cloudflare plan S3/R3).
 ///
@@ -69,7 +70,9 @@ void main() {
       readLocalCover: readLocal ?? (_) async => null,
       fetchRemoteCover: fetchRemote ?? (_) async => null,
     ),
-    buildViewerHtml: () async => utf8.encode('<html></html>'),
+    buildViewerHtml:
+        ({required libraryName, required contact, required sharing}) async =>
+            utf8.encode('<html></html>'),
     encodeBooksJson: encode,
   );
 
@@ -87,6 +90,7 @@ void main() {
             periodicals: [series(cover: 'covers/s.jpg')],
             activeLoanCounts: const {1: 1},
             libraryJson: utf8.encode('{"schema":1}'),
+            settings: const PublishPageSettings(libraryName: 'Test Library'),
             previous: PublishManifest.empty,
             now: 1000,
           )).toNullable()!;
@@ -154,6 +158,7 @@ void main() {
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: manifest,
       now: 1000,
     )).toNullable()!;
@@ -181,6 +186,7 @@ void main() {
         periodicals: const [],
         activeLoanCounts: null,
         libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: manifest,
         now: 1,
       )).toNullable()!;
@@ -197,6 +203,7 @@ void main() {
         periodicals: const [],
         activeLoanCounts: null,
         libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
         mode: PublishMode.complete,
@@ -218,6 +225,7 @@ void main() {
         periodicals: const [],
         activeLoanCounts: null,
         libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
         mode: PublishMode.complete,
@@ -239,6 +247,7 @@ void main() {
         periodicals: const [],
         activeLoanCounts: null,
         libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
       )).toNullable()!;
@@ -267,6 +276,7 @@ void main() {
         periodicals: const [],
         activeLoanCounts: null,
         libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
       );

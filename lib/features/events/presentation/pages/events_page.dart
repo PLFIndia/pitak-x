@@ -83,7 +83,8 @@ class _EventsViewState extends ConsumerState<EventsView> {
           .read(eventsControllerProvider.notifier)
           .addPoster(raw);
       _snack(ok ? 'Poster added.' : "Couldn't add that poster.");
-    } on Exception {
+    } on Object {
+      // A thrown `Failure` is not an `Exception` (fix-plan M8).
       _snack("Couldn't read that image.");
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -153,7 +154,9 @@ class _EventsViewState extends ConsumerState<EventsView> {
             await _publish(confirmation: summary);
           }
       }
-    } on Exception {
+    } on Object {
+      // The controller rethrows whatever ended the run, including a `Failure`;
+      // without this the page's spinner stayed on (fix-plan M8).
       _snack("Couldn't publish your events.");
     } finally {
       if (mounted) setState(() => _busy = false);

@@ -26,13 +26,19 @@ import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// Reads a poster image's bytes for its relative ref, or null when missing.
 typedef PosterBytesReader = Future<List<int>?> Function(String imageRef);
 
-/// Builds the events page HTML for the given published posters.
+/// Builds the events page HTML for the given published posters and name.
+///
+/// The name arrives per call (fix-plan M8), matching the catalogue builder.
 typedef EventsHtmlBuilderFn =
-    Future<List<int>> Function(List<PublishPoster> posters);
+    Future<List<int>> Function({
+      required String libraryName,
+      required List<PublishPoster> posters,
+    });
 
 /// Builds the events section for one publish.
 final class EventsSectionBuilder {
@@ -75,6 +81,7 @@ final class EventsSectionBuilder {
   /// Builds the section.
   Future<Either<Failure, PublishSection>> build({
     required EventsContent content,
+    required PublishPageSettings settings,
     required PreviousPublication previous,
     PublishMode mode = PublishMode.incremental,
   }) async {
@@ -108,7 +115,10 @@ final class EventsSectionBuilder {
 
     // Both public representations come from the SAME filtered list: a poster
     // whose local bytes were unreadable is absent from HTML, JSON and uploads.
-    final eventsHtml = await _buildEventsHtml(published);
+    final eventsHtml = await _buildEventsHtml(
+      libraryName: settings.libraryName,
+      posters: published,
+    );
     final eventsJson = _buildEventsJson(published);
     final htmlSha = GitBlobSha.of(eventsHtml);
     final jsonSha = GitBlobSha.of(eventsJson);

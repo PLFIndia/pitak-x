@@ -41,30 +41,37 @@ final class CloudflareHttpTransport {
   final http.Client? _injectedClient;
   final Uri _apiBase;
   final Future<void> Function(Duration delay) _sleep;
-  final Map<Duration, http.Client> _clients = {};
+  http.Client? _nativeClient;
 
-  /// Returns a client whose NATIVE connect timeout matches this operation.
+  /// The fixed connect timeout for the one native client.
+  ///
+  /// Keyed by a CONSTANT, never by the operation deadline (fix-plan N14):
+  /// size-derived upload deadlines would otherwise create one connection pool
+  /// per distinct value, each with a connect timeout of minutes. 30 s is the
+  /// ordinary API deadline, which is the only phase this timeout bounds.
+  static const Duration _connectTimeout = CloudflareLimits.apiDeadline;
+
+  /// Returns THE client whose NATIVE connect timeout bounds `openUrl`.
   ///
   /// package:http installs its Abortable listener only AFTER openUrl completes.
   /// HttpClient.connectionTimeout therefore provides the missing pre-request
   /// bound; TimeoutHttpClient still aborts the later request/body phases.
-  http.Client _clientFor(Duration deadline) {
-    final injected = _injectedClient;
-    if (injected != null) return injected;
-    return _clients.putIfAbsent(deadline, () {
-      final native = HttpClient()..connectionTimeout = deadline;
-      return IOClient(native);
-    });
-  }
+  ///
+  /// One client is enough because the key is the fixed [_connectTimeout], not
+  /// the operation deadline (fix-plan N14): a per-deadline pool would grow
+  /// with every size-derived upload deadline and hold connections open.
+  http.Client _client() =>
+      _injectedClient ??
+      (_nativeClient ??= IOClient(
+        HttpClient()..connectionTimeout = _connectTimeout,
+      ));
 
   /// Closes every native client and any injected shared client. Per-attempt
   /// decorators are not closed separately because they own no connections.
   void close() {
     _injectedClient?.close();
-    for (final client in _clients.values) {
-      client.close();
-    }
-    _clients.clear();
+    _nativeClient?.close();
+    _nativeClient = null;
   }
 
   /// Sends one logical operation.
@@ -192,7 +199,7 @@ final class CloudflareHttpTransport {
       throw CloudflareApiException(CloudflareApiExceptionKind.invalidRequest);
     }
     final bounded = TimeoutHttpClient(
-      _clientFor(deadline),
+      _client(),
       timeout: deadline,
       totalDeadline: deadline,
       maxResponseBytes: CloudflareLimits.maxApiBodyBytes,

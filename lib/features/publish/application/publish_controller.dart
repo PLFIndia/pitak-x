@@ -15,6 +15,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
@@ -27,8 +28,10 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -73,7 +76,11 @@ class PublishController extends _$PublishController implements PublishReads {
           );
       state = AsyncData(result);
       return result;
-    } on Exception catch (e, st) {
+    } on Object catch (e, st) {
+      // `on Object` on purpose: a `Failure` is not an `Exception`, so
+      // `on Exception` let it escape and froze the card's spinner for the
+      // session (fix-plan M8). The type is logged, never the message.
+      appLog('publish failed with: ${e.runtimeType}');
       state = AsyncError(e, st);
       rethrow;
     } finally {
@@ -229,7 +236,19 @@ class PublishController extends _$PublishController implements PublishReads {
       return left(const PublishReadFailure('Library identity unavailable'));
     }
 
-    final settings = await ref.read(settingsControllerProvider.future);
+    // Typed read (M8): a settings failure is a `Left`, never a thrown
+    // non-Exception. The last good value is used after any write failure.
+    final loadedSettings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    final settings = loadedSettings.toNullable();
+    if (settings == null) {
+      return left(
+        const PublishReadFailure(
+          PublishSnapshotBuilder.settingsUnavailableMessage,
+        ),
+      );
+    }
     // [siteUrl] comes from the operation's sealed target (C3): it is never
     // re-derived from "the current repo", so a move cannot publish a
     // descriptor pointing at the old host.
@@ -332,6 +351,25 @@ class PublishController extends _$PublishController implements PublishReads {
       );
     }
     return right(encoded);
+  }
+
+  @override
+  Future<Either<Failure, PublishPageSettings>> pageSettings() async {
+    final loadedSettings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    return loadedSettings.map(
+      (settings) => PublishPageSettings(
+        libraryName: settings.libraryName,
+        contact: PublishContact(
+          address: settings.publishContactAddress,
+          gps: settings.publishContactGps,
+          email: settings.publishContactEmail,
+          phone: settings.publishContactPhone,
+        ),
+        sharing: settings.publishLocationSharing,
+      ),
+    );
   }
 
   @override

@@ -16,6 +16,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
@@ -206,9 +207,10 @@ void main() {
       credentials: creds ?? _FakeCreds(),
       manifest: manifest,
       readPoster: readPoster ?? (ref) async => ascii.encode('img:$ref'),
-      buildEventsHtml: (posters) async =>
+      buildEventsHtml: ({required libraryName, required posters}) async =>
           utf8.encode('<html>${posters.length} posters</html>'),
       buildEventsJson: const EventsJsonBuilder().build,
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
       hostState: hostState ?? _Recorder(),
       verifier: verifier,
       sleep: (_) async {}, // no real waiting in tests

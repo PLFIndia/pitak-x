@@ -26,17 +26,21 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
-String _$cloudflareApiHash() => r'2545ce2e7bd42244c638d6552dd6614bd95c6b80';
+String _$cloudflareApiHash() => r'23c1205bd7389572e9500391aa386542d1f30acc';
 
 /// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
 ///
-/// Auto-dispose is deliberate: an operation owns its connections, and closing
-/// the provider aborts outstanding work without retaining any credential. The
-/// facade itself holds no API token or upload/completion JWT.
+/// KeepAlive is deliberate (fix-plan M1). The controllers `ref.read` their
+/// factories, so with auto-dispose the API lived only while the Connection tab
+/// happened to be listening: switching tabs called `IOClient.close()`
+/// (`close(force: true)`) and cut exactly the in-flight requests. An operation
+/// must own its connections, not whichever widget is visible. This retains no
+/// secret — the facade holds no token or upload/completion JWT, tokens arrive
+/// per call — and idle sockets close themselves, so the cost is bounded.
 ///
 /// Copied from [cloudflareApi].
 @ProviderFor(cloudflareApi)
-final cloudflareApiProvider = AutoDisposeProvider<CloudflareApi>.internal(
+final cloudflareApiProvider = Provider<CloudflareApi>.internal(
   cloudflareApi,
   name: r'cloudflareApiProvider',
   debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
@@ -48,7 +52,7 @@ final cloudflareApiProvider = AutoDisposeProvider<CloudflareApi>.internal(
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef CloudflareApiRef = AutoDisposeProviderRef<CloudflareApi>;
+typedef CloudflareApiRef = ProviderRef<CloudflareApi>;
 String _$publishOperationQueueHash() =>
     r'067570ba6162f6cafb7839b7b4617ae132462a22';
 
@@ -456,7 +460,7 @@ final eventsJsonFactoryProvider =
 // ignore: unused_element
 typedef EventsJsonFactoryRef = AutoDisposeProviderRef<EventsJsonFactory>;
 String _$publishSnapshotBuilderHash() =>
-    r'0cb0517e7ba7cb5384947bdcb8c87fcb3232b00d';
+    r'20c7014957a0cb26e4516dc474930a7c1445b419';
 
 /// The ONE snapshot builder every publish host consumes (Cloudflare plan
 /// R2/R3/P5).
@@ -468,9 +472,11 @@ String _$publishSnapshotBuilderHash() =>
 /// adapter assembling its own builder — is how two hosts start publishing
 /// slightly different files without anyone noticing.
 ///
-/// Settings are read here because the published pages carry the library's
-/// CURRENT name and public contact choices; the builder is auto-dispose, so a
-/// publish always builds against the values in force at that moment.
+/// The published pages carry the library's CURRENT name and public contact
+/// choices, but they are read through `PublishReads.pageSettings()` as part of
+/// the operation's strict reads (fix-plan M8), NOT here: awaiting the settings
+/// provider at wiring time let one failed settings write fail the builder with
+/// a non-`Exception`, which broke every publish and froze the card's spinner.
 ///
 /// Copied from [publishSnapshotBuilder].
 @ProviderFor(publishSnapshotBuilder)
