@@ -17,43 +17,14 @@ import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
+import 'package:pitaka/features/publish/infrastructure/cloudflare_http_response.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_json.dart';
+
+export 'package:pitaka/features/publish/infrastructure/cloudflare_http_response.dart';
 
 /// Builds a fresh request for one attempt. Multipart bodies are single-use, so
 /// retries must invoke this factory again rather than re-sending a request.
 typedef CloudflareRequestBuilder = http.BaseRequest Function(Uri uri);
-
-/// A bounded Cloudflare response reduced to safe, whitelisted fields.
-final class CloudflareHttpResponse {
-  /// Creates a parsed response.
-  CloudflareHttpResponse({
-    required this.statusCode,
-    required Map<String, dynamic> envelope,
-  }) : _success = envelope['success'] == true,
-       result = envelope['success'] == true ? envelope['result'] : null,
-       errorCodes = cloudflareErrorCodes(envelope);
-
-  /// Creates a status-only Worker-existence response.
-  CloudflareHttpResponse.statusOnly(this.statusCode)
-    : _success = false,
-      result = null,
-      errorCodes = const [];
-
-  /// HTTP status, retained as a number only.
-  final int statusCode;
-
-  final bool _success;
-
-  /// The `result` field of a successful envelope. Error results, raw `errors`
-  /// messages and top-level `messages` are discarded immediately.
-  final Object? result;
-
-  /// Numeric Cloudflare error codes only; never raw error messages.
-  final List<int> errorCodes;
-
-  /// True only for 2xx plus an explicit `success: true` envelope.
-  bool get isSuccess => statusCode >= 200 && statusCode < 300 && _success;
-}
 
 /// The shared Cloudflare HTTP transport.
 final class CloudflareHttpTransport {
@@ -355,37 +326,4 @@ T parseCloudflareResponse<T>(T Function() parse) {
   } on CloudflareJsonException {
     throw CloudflareApiException(CloudflareApiExceptionKind.malformedResponse);
   }
-}
-
-/// Converts a non-success response into a fixed, redacted adapter failure.
-CloudflareApiException cloudflareFailure(
-  CloudflareHttpResponse response, {
-  bool uncertain = false,
-}) {
-  final status = response.statusCode;
-  final kind = switch (status) {
-    401 => CloudflareApiExceptionKind.unauthorized,
-    403 => CloudflareApiExceptionKind.forbidden,
-    404 => CloudflareApiExceptionKind.notFound,
-    429 => CloudflareApiExceptionKind.rateLimited,
-    >= 500 => CloudflareApiExceptionKind.server,
-    _ => CloudflareApiExceptionKind.requestRejected,
-  };
-  return CloudflareApiException(
-    kind,
-    statusCode: status,
-    errorCodes: response.errorCodes,
-    uncertain: uncertain || status >= 500,
-  );
-}
-
-/// Returns [response] after requiring 2xx and `success: true`.
-CloudflareHttpResponse requireCloudflareSuccess(
-  CloudflareHttpResponse response, {
-  bool uncertain = false,
-}) {
-  if (!response.isSuccess) {
-    throw cloudflareFailure(response, uncertain: uncertain);
-  }
-  return response;
 }
