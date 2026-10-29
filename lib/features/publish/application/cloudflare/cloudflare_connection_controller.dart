@@ -11,6 +11,7 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_prompts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
@@ -28,8 +29,12 @@ part 'cloudflare_connection_controller.g.dart';
 class CloudflareConnectionController extends _$CloudflareConnectionController {
   bool _disposed = false;
   bool _operationActive = false;
-  Completer<Object?>? _input;
-  int _serial = 0;
+
+  /// One pending prompt and its serial; see [CloudflareSetupPrompts].
+  late final CloudflareSetupPrompts _prompts = CloudflareSetupPrompts(
+    emit: _emit,
+    current: () => _current,
+  );
 
   @override
   Future<CloudflareConnectionUi> build() async {
@@ -41,8 +46,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     _disposed = false;
     ref.onDispose(() {
       _disposed = true;
-      _input?.complete(null);
-      _input = null;
+      _prompts.cancel();
     });
     final setup = await ref.watch(setupCloudflareSiteProvider.future);
     final loaded = await setup.loadStatus();
@@ -74,18 +78,18 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
 
   /// Answers the token prompt. Null cancels; no raw token string crosses here.
   void answerToken(CloudflareApiToken? token, int serial) =>
-      _answer(token, serial);
+      _prompts.answer(token, serial);
 
   /// Answers the account picker.
   void answerAccount(CloudflareAccountChoice? choice, int serial) =>
-      _answer(choice, serial);
+      _prompts.answer(choice, serial);
 
   /// Answers an Account ID, subdomain, or Worker-name text prompt.
-  void answerText(String? value, int serial) => _answer(value, serial);
+  void answerText(String? value, int serial) => _prompts.answer(value, serial);
 
   /// Answers replacement/verification consent. False cancels that operation.
   void answerConsent({required bool value, required int serial}) =>
-      _answer(value, serial);
+      _prompts.answer(value, serial);
 
   Future<void> _connectNew() async {
     final token = await _awaitInput<CloudflareApiToken>(
@@ -366,45 +370,14 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     bool workerExists = false,
     bool verificationRequested = false,
     String? message,
-  }) async {
-    final completer = Completer<Object?>();
-    _input = completer;
-    final serial = ++_serial;
-    _emit(
-      (current) => current.copyWith(
-        phase: CloudflareConnectionPhase.awaitingInput,
-        prompt: prompt,
-        promptSerial: serial,
-        promptInitialValue: initialValue,
-        promptWorkerExists: workerExists,
-        promptVerificationRequested: verificationRequested,
-        accounts: accounts,
-        statusMessage: message,
-      ),
-    );
-    final answer = await completer.future;
-    _emit(
-      (current) => current.copyWith(
-        phase: CloudflareConnectionPhase.working,
-        prompt: null,
-        accounts: const [],
-      ),
-    );
-    return answer is T ? answer : null;
-  }
-
-  void _answer(Object? answer, int serial) {
-    if (_disposed) return;
-    final current = _current;
-    if (current == null ||
-        current.phase != CloudflareConnectionPhase.awaitingInput ||
-        current.promptSerial != serial) {
-      return;
-    }
-    final input = _input;
-    _input = null;
-    input?.complete(answer);
-  }
+  }) => _prompts.awaitInput<T>(
+    prompt,
+    accounts: accounts,
+    initialValue: initialValue,
+    workerExists: workerExists,
+    verificationRequested: verificationRequested,
+    message: message,
+  );
 
   Future<void> _reload({String? message}) async {
     final setup = await ref.read(setupCloudflareSiteProvider.future);
@@ -441,8 +414,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
       await _reload(message: CloudflareErrorMessages.generic);
     } finally {
       _operationActive = false;
-      _input?.complete(null);
-      _input = null;
+      _prompts.cancel();
       _emit(
         (current) => current.phase == CloudflareConnectionPhase.idle
             ? current
