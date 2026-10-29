@@ -65,6 +65,32 @@ heading as part of the `chore(release):` commit.
 - **Unreadable Cloudflare credentials during a move:** the move target resolver
   threw a `StateError` (not caught by `on Exception`) instead of reporting that
   setup is required; it now fails closed with the fixed setup message.
+- **Cloudflare publishing can no longer reach a dead end:** a stored record
+  for another Worker or address now claims nothing instead of failing every
+  publish; a deleted Worker is offered a recreate review instead of refusing
+  forever; and Retry verification with no matching record says there is
+  nothing to verify.
+- **A whole-site replacement for missing files can be confirmed:** consent was
+  checked against a freshness category instead of the remote state the user
+  reviewed, so a repair offered for files Cloudflare no longer holds could
+  never be confirmed. Confirmation is now bound to that remote anchor.
+- **The first publish to a new Worker no longer reports "stale":** if the
+  upload session creates the Worker, the publish re-reads the Worker and marker
+  around its own session instead of mistaking its creation for a foreign
+  change.
+- **Cloudflare read-back tells the truth about why it failed:** it reads only
+  the documented set (never covers) and distinguishes a contradicting site
+  from an unreachable one, under a bounded deadline. A contradicted earlier
+  deployment asks for a replacement instead of blocking; an unreachable one no
+  longer blocks an ordinary publish.
+
+### Changed
+- **Replacement and recreate dialogs explain the case:** missing files, a
+  deleted Worker, and a changed destination or address each get their own
+  title, body and button, and the dialog re-opens with a "the site changed"
+  warning when Cloudflare moved after the review.
+- **Moving to a Cloudflare Worker that no longer exists** is now a normal
+  move whose review says Pitak creates the Worker with the whole library.
 
 ### Security
 - **Cloudflare secrets stay out of state:** the token and target live in ONE

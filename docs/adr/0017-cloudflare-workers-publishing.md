@@ -5,7 +5,9 @@
   S10 consistency audit reconciled every document that cites it. The S11 Linux
   golden was regenerated on 2026-10-29; the real-host smoke is still
   outstanding, so the *evidence* is not complete — the decision is.
-- **Date:** 2026-10-26
+- **Date:** 2026-10-26 (amended 2026-10-29 by the Cloudflare fix plan,
+  Phase 1A: published-record ownership, anchor-bound replacement consent,
+  Option-B read-back, and the upload-session Worker baseline)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -66,7 +68,11 @@ consequences the product cannot hide:
    `pitak-publish.json` with a fresh 128-bit `publishId` and a
    `live` / `verification` / `retired` state. A matching marker is the
    freshness anchor; the deployment id is diagnostics only. A retired site is
-   recognised only by a positive retired marker, never by a 404.
+   recognised only by a positive retired marker, never by a 404. Creating the
+   asset upload session may itself create the Worker, so a publish re-reads the
+   Worker and marker around its own session and adopts only a Worker with a
+   never-present marker as its baseline. That is still observed staleness: the
+   session request itself is the one window that cannot be attributed.
 7. **Version URLs fail closed.** For an existing Worker, version URLs are
    disabled and GET-confirmed off before creating another version, and
    reconfirmed after the deploy. A failure stops the next deploy and blocks
@@ -136,14 +142,19 @@ consequences the product cannot hide:
   never falls back from one host's credentials to the other's. One Cloudflare
   use-case factory serves catalogue and events, and the publish card shows the
   configured target separately from the journal's verified share address.
-- **S8 makes replacement a two-phase, write-free confirmation.** Unknown or
-  positively retired state builds a strict complete snapshot against an empty
-  previous publication and returns a typed summary with real counts and a
-  canonical digest. No route update, upload session, bucket upload, deploy, or
-  credential/manifest write occurs during preparation. Confirmation re-enters
-  the queue, revalidates remote anchors and rebuilds from current local data;
-  any digest change requires another review. The digest excludes operation
-  timestamps and ids, and reads only volatile JSON from the spool on demand.
+- **S8 makes replacement a two-phase, write-free confirmation.** Unknown,
+  positively retired, deleted-Worker and missing-bytes states build a strict
+  complete snapshot against an empty previous publication and return a typed
+  summary with real counts, a canonical digest, and the remote anchor the user
+  reviewed. No route update, bucket upload, deploy, or credential/manifest
+  write occurs during preparation; the missing-bytes path may open an upload
+  session because that is the protocol's only way to report which hashes remain
+  (recorded exception, Part M row 88). Confirmation re-enters the queue and
+  rebuilds from current local data; it proceeds only while a fresh preflight
+  reports the same anchor, any digest change requires another review, and a
+  changed anchor writes nothing and returns a fresh summary. The digest
+  excludes operation timestamps and ids, and reads only volatile JSON from the
+  spool on demand.
 - **S8 bounds build and upload memory together.** A per-file
   `PublishArtifactSink` spools public bytes during section building and leaves
   metadata-only files in Cloudflare snapshots. The assembler deduplicates by
@@ -151,14 +162,23 @@ consequences the product cannot hide:
   sources. GitHub keeps its original byte-bearing files and byte-for-byte
   behavior. Temporary spools are operation-scoped and cleaned in `finally`.
 - **S8 requires complete publication proof.** Freshness is checked at preflight
-  and immediately before deployment. Read-back covers the fresh marker,
-  `books.json`, descriptor bytes or its real 404, events JSON when present,
-  current posters, and exact removed-poster 404s. A matching `deployed` record
-  is verified before another deployment; verification failure stops, while a
-  successful retry creates no new deployment. A `live` manifest with an
-  incomplete journal/connection commit is re-proven before repair. Persistence
-  is ordered `deployed`, then `live`, journal `verifiedTarget`, and finally the
-  whole secure connection's write-proven flag.
+  and immediately before deployment. Read-back covers the documented set: the
+  fresh marker, `books.json`, the root `index.html`, `library.json` or its real
+  404, the events files when recorded, at most two posters, and exact
+  removed-poster 404s. Covers are not read back: the upload protocol already
+  proved every hash before the completion token, and a version is atomic. The
+  result is one of `verified`, `contradicted` (a file answered with different
+  bytes, or serves a body where a 404 was required) or `unreachable` (nothing
+  was proven either way), under a bounded budget: 12 × 5 s inside 90 s after a
+  deploy, 3 × 2 s inside 20 s for an earlier record. A matching `deployed`
+  record is verified before another deployment: `verified` commits it and
+  continues, `contradicted` offers a `recordContradicted` whole-site
+  replacement, and `unreachable` continues the publish without marking the old
+  record live. Retry verification reports the specific case instead of
+  blocking. A `live` manifest with an incomplete journal/connection commit is
+  re-proven before repair. Persistence is ordered `deployed`, then `live`,
+  journal `verifiedTarget`, and finally the whole secure connection's
+  write-proven flag.
 - **Verification status.** The J.1–J.6 suites are green (4,212 non-golden
   tests on 2026-10-29), all 10 Linux golden tests pass, and the S10 consistency
   audit reconciled `README.md`, `PRIVACY.md`, `SECURITY.md`,

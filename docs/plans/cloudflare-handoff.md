@@ -564,12 +564,16 @@ and host-neutral publish UI. Moves and retirement remain S9.
   normalization exclude `exportedAt`/`updatedAt`/marker ids and timestamps.
 - F.3 covers account/subdomain preflight, version gate, complete merged snapshot,
   serial hash uploads, final marker recheck, metadata-only deploy, route/privacy
-  reconfirmation, `deployed` save, full read-back, then `live` → journal →
-  whole-connection commit. Verification checks marker, books, descriptor or its
-  real 404, events JSON, current posters, and removed-poster 404s. A deployed
-  record is verified before another deploy; `verificationOnly` never creates an
-  upload session or deployment. A `live` record with partial local commit state
-  is re-proven before repair.
+  reconfirmation, `deployed` save, bounded read-back, then `live` → journal →
+  whole-connection commit. Read-back covers the documented set only (marker,
+  `books.json`, the root `index.html`, `library.json` or its real 404, events
+  files when recorded, at most two posters, removed-poster 404s; never covers)
+  and reports `verified` / `contradicted` / `unreachable` under a bounded
+  budget. A `deployed` record is verified before another deploy: verified
+  commits it and continues, contradicted offers a `recordContradicted`
+  replacement, unreachable continues without marking it live.
+  `verificationOnly` never creates an upload session or deployment. A `live`
+  record with partial local commit state is re-proven before repair.
 - R24 is enforced during building, not just upload: `PublishArtifactSink` spools
   each public artifact as it is built and leaves metadata-only files in the
   Cloudflare snapshot. `FilePublishArtifactStore` deduplicates by hash, reopens
@@ -1029,6 +1033,19 @@ the Part N checklist were run again afterwards.
 - **A failed save is reported.** `PublishManifestGateway.save` and the journal
   store return `Either`; "Published!" with an unrecorded commit is the bug
   they exist to prevent.
+- **A record that does not describe the target claims nothing.** That is
+  `CloudflareSiteManifest.forTarget`, used by the ordinary publish and the move
+  reader. Never turn it back into an error, and never let such a record drive
+  an incremental deploy (fix-plan H1).
+- **Replacement consent is bound to the remote anchor.** A summary carries the
+  `CloudflareRemoteAnchor` the user reviewed; an equal anchor authorises the
+  write, a changed one only re-prompts. Never re-gate consent on a freshness
+  category (fix-plan N1/M10).
+- **A Worker our own session creates is ours.** The asset upload session may
+  create the Worker; the baseline adopted around the session requires a
+  never-present marker, and the final race check compares against it. Foreign
+  creation (before the session, or with a marker) still stops. This is observed
+  staleness, never compare-and-swap (fix-plan RH1).
 - **Ratchet:** no new allow-list entry. If an addition pushes a file over 500
   lines, split it (that is how `refresh_run.dart`, the three `site/` files,
   `http_github_tree.dart` and `publish_status_copy.dart` came to exist).
