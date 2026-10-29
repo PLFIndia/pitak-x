@@ -7,19 +7,19 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_operation_attempt.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_account.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
+import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
 import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
@@ -47,6 +47,12 @@ final class SetupCloudflareSite {
   final PublishHostStateRepository _hostState;
   final VerifyCloudflareAddress _verifyAddress;
   final int Function() _clock;
+
+  /// Subdomain commands over the same ports; cheap to build per call.
+  CloudflareSubdomainCommands get _subdomains => CloudflareSubdomainCommands(
+    accountApi: _accountApi,
+    credentials: _credentials,
+  );
 
   /// Loads only the secret-free projection for controller state.
   Future<Either<Failure, CloudflareConnectionStatus>> loadStatus() =>
@@ -160,104 +166,12 @@ final class SetupCloudflareSite {
   /// Explicitly creates a missing account subdomain after availability proof.
   Future<Either<Failure, CloudflareSubdomainOutcome>> createSubdomain(
     String raw,
-  ) => _withRecord((current) async {
-    final accountId = current.accountId;
-    if (accountId == null) {
-      return left(
-        const CloudflareFailure(CloudflareErrorMessages.accountRequired),
-      );
-    }
-    final existing = current.accountSubdomain;
-    if (existing != null && current.addressConfirmed) {
-      return right(
-        CloudflareSubdomainOutcome(CloudflareSubdomainStep.confirmed, existing),
-      );
-    }
-    final candidate = CloudflareSubdomain.tryParse(raw);
-    if (candidate == null) {
-      return left(
-        const ValidationFailure(CloudflareErrorMessages.invalidSubdomain),
-      );
-    }
-    try {
-      final checked = await current.useToken(
-        (token) => _accountApi.checkAccountSubdomain(
-          token: token,
-          accountId: accountId,
-          candidate: candidate,
-        ),
-      );
-      switch (checked.availability) {
-        case CloudflareSubdomainAvailability.taken:
-          return left(
-            const ValidationFailure(CloudflareErrorMessages.subdomainTaken),
-          );
-        case CloudflareSubdomainAvailability.unknown:
-          return left(
-            const CloudflareFailure(CloudflareErrorMessages.subdomainUnknown),
-          );
-        case CloudflareSubdomainAvailability.available:
-          break;
-      }
-      final confirmed = await current.useToken(
-        (token) => _accountApi.createAccountSubdomain(
-          token: token,
-          accountId: accountId,
-          candidate: candidate,
-        ),
-      );
-      final selected = current.selectSubdomain(confirmed, confirmed: true);
-      final saved = await _credentials.save(selected);
-      if (saved case Left(value: final failure)) return left(failure);
-      return right(
-        CloudflareSubdomainOutcome(
-          CloudflareSubdomainStep.confirmed,
-          confirmed,
-        ),
-      );
-    } on CloudflareApiException catch (error) {
-      if (error.kind == CloudflareApiExceptionKind.forbidden) {
-        return right(
-          const CloudflareSubdomainOutcome(
-            CloudflareSubdomainStep.manualRequired,
-          ),
-        );
-      }
-      rethrow;
-    }
-  });
+  ) => _withRecord((current) => _subdomains.create(current, raw));
 
   /// Stores a manual candidate only. It cannot become a target before F.2.
   Future<Either<Failure, CloudflareSubdomainOutcome>> useManualSubdomain(
     String raw,
-  ) => _withRecord((current) async {
-    if (current.accountId == null) {
-      return left(
-        const CloudflareFailure(CloudflareErrorMessages.accountRequired),
-      );
-    }
-    final candidate = CloudflareSubdomain.tryParse(raw);
-    if (candidate == null) {
-      return left(
-        const ValidationFailure(CloudflareErrorMessages.invalidSubdomain),
-      );
-    }
-    if (current.addressConfirmed &&
-        current.accountSubdomain?.value == candidate.value) {
-      return right(
-        CloudflareSubdomainOutcome(
-          CloudflareSubdomainStep.confirmed,
-          candidate,
-        ),
-      );
-    }
-    final selected = current.selectSubdomain(candidate, confirmed: false);
-    final saved = await _credentials.save(selected);
-    if (saved case Left(value: final failure)) return left(failure);
-    return right(
-      CloudflareSubdomainOutcome(CloudflareSubdomainStep.candidate, candidate),
-    );
-  });
+  ) => _withRecord((current) => _subdomains.useManual(current, raw));
 
   /// Checks a Worker and either requests consent/verification or finalizes.
   Future<Either<Failure, CloudflareWorkerOutcome>> selectWorker(
@@ -387,58 +301,7 @@ final class SetupCloudflareSite {
 
   Future<Either<Failure, CloudflareSubdomainOutcome>> _readSubdomain(
     CloudflareConnection current,
-  ) async {
-    final accountId = current.accountId;
-    if (accountId == null) {
-      return left(
-        const CloudflareFailure(CloudflareErrorMessages.accountRequired),
-      );
-    }
-    final stored = current.accountSubdomain;
-    if (stored != null) {
-      return right(
-        CloudflareSubdomainOutcome(
-          current.addressConfirmed
-              ? CloudflareSubdomainStep.confirmed
-              : CloudflareSubdomainStep.candidate,
-          stored,
-        ),
-      );
-    }
-    try {
-      final subdomain = await current.useToken(
-        (token) => _accountApi.readAccountSubdomain(
-          token: token,
-          accountId: accountId,
-        ),
-      );
-      if (subdomain == null) {
-        return right(
-          const CloudflareSubdomainOutcome(
-            CloudflareSubdomainStep.createRequired,
-          ),
-        );
-      }
-      final selected = current.selectSubdomain(subdomain, confirmed: true);
-      final saved = await _credentials.save(selected);
-      if (saved case Left(value: final failure)) return left(failure);
-      return right(
-        CloudflareSubdomainOutcome(
-          CloudflareSubdomainStep.confirmed,
-          subdomain,
-        ),
-      );
-    } on CloudflareApiException catch (error) {
-      if (error.kind == CloudflareApiExceptionKind.forbidden) {
-        return right(
-          const CloudflareSubdomainOutcome(
-            CloudflareSubdomainStep.manualRequired,
-          ),
-        );
-      }
-      rethrow;
-    }
-  }
+  ) => _subdomains.read(current);
 
   Future<Either<Failure, CloudflareWorkerOutcome>> _finalize(
     CloudflareConnection connection, {
@@ -496,14 +359,5 @@ final class SetupCloudflareSite {
 
   Future<Either<Failure, T>> _attempt<T>(
     Future<Either<Failure, T>> Function() action,
-  ) async {
-    try {
-      return await action();
-    } on CloudflareApiException catch (error) {
-      return left(CloudflareErrorMessages.fromException(error));
-    } on Exception {
-      // Platform detail is deliberately collapsed before it can reach the UI.
-      return left(const CloudflareFailure(CloudflareErrorMessages.generic));
-    }
-  }
+  ) => attemptCloudflareSetup(action);
 }

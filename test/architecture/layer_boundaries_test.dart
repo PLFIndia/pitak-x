@@ -204,12 +204,10 @@ void main() {
       // remediation S4): the per-row resolution apply moved to
       // merge_resolution_applier.dart (516 → <500).
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
-      // setup_cloudflare_site.dart entered on 2026-10-28 (S9): the pending-move
-      // target guard is shared, but its two activation checks still belong
-      // beside the setup transitions. Splitting the orchestrator would expose
-      // a partial setup API; the file stays a reviewed 509-line size.
-      'lib/features/publish/application/cloudflare/setup_cloudflare_site.dart':
-          509,
+      // setup_cloudflare_site.dart left this list on 2026-10-29 (Cloudflare
+      // fix plan 0.4): the subdomain commands moved to
+      // setup_cloudflare_subdomain.dart and the typed attempt boundary to
+      // cloudflare_operation_attempt.dart (509 → <500).
     };
 
     int lineCount(File f) => f.readAsLinesSync().length;
