@@ -643,10 +643,15 @@ target passed to the current operation — that is what lets a move publish the
   addresses neutrally instead of flagging a conflict. The offer is ephemeral —
   nothing is written until the user chooses. Accepting is ONE transactional
   merge/delete-plus-repoint that keeps the canonical row's id, local order and
-  consent/membership decisions, applies the fresh remote fields, deletes the
+  consent/membership decisions, applies the fresh remote fields only when a
+  descriptor was actually fetched at the chosen new address, deletes the
   duplicate and preserves both UNIQUE(site_url) and UNIQUE(fingerprint).
-  Declining writes nothing. Discovered/hostile rows keep the conflict badge,
-  and reachability alone never selects an address.
+  **Keeping the saved address changes NOTHING on the kept row** — only the
+  duplicate is deleted; a fingerprint is public, so applying the other
+  descriptor's name or pin to a row the user kept would let a spoofed site
+  rename or re-pin it (fix-plan L10/D11). Declining writes nothing.
+  Discovered/hostile rows keep the conflict badge, and reachability alone never
+  selects an address.
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
 - **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,

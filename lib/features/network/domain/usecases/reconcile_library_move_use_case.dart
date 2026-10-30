@@ -8,11 +8,13 @@
 /// atomic change:
 ///  - the canonical row keeps its id, position in the list and every
 ///    consent/membership decision the user already made;
-///  - it takes the chosen address and the fresh remote fields the descriptor
-///    published (name, opted-in pin, fingerprint, fetch status/time);
+///  - it takes the chosen address and, when a descriptor was actually fetched
+///    there, the fresh remote fields it published (name, opted-in pin,
+///    fingerprint, fetch status/time);
 ///  - the duplicate row is deleted;
-///  - if the user kept the saved address, nothing is repointed — the
-///    duplicate is simply dropped.
+///  - if the user kept the saved address, the kept row is left UNCHANGED and
+///    the duplicate is simply dropped (a public fingerprint must not let a
+///    spoofed site rename or re-pin it, fix-plan L10/D11).
 ///
 /// Decline is not this use case: it performs NO write at all.
 ///
@@ -82,24 +84,34 @@ final class ReconcileLibraryMoveUseCase {
 
     final useNewAddress = choice == LibraryMoveChoice.useNewAddress;
     // Fresh remote facts are applied ONLY when a descriptor was actually
-    // fetched at the new address (a refresh candidate). A card scan proves
-    // the address + identity in person but carries no name/pin/fetch status,
-    // so treating its nulls as "the library stopped sharing" would silently
-    // erase the user's stored data (the same fail-closed rule as the
-    // descriptor codec).
+    // fetched at the new address (a refresh candidate) AND the user chose that
+    // address. A card scan proves the address + identity in person but carries
+    // no name/pin/fetch status, so treating its nulls as "the library stopped
+    // sharing" would silently erase the user's stored data (the same
+    // fail-closed rule as the descriptor codec).
+    //
+    // Keeping the saved address writes NOTHING to the kept row (fix-plan
+    // L10/D11). The fingerprint is public, so a spoofed site that publishes it
+    // could otherwise rename or re-pin a row the user explicitly kept. The
+    // transaction only deletes the duplicate placeholder.
     final fetched = candidate.hasFetchedFacts;
-    final next = canonical.copyWith(
-      siteUrl: useNewAddress ? candidate.fetchedSiteUrl : null,
-      // The chosen address decides which facts are authoritative; identity
-      // bookkeeping and the user's own decisions are never touched.
-      name: candidate.fetchedName.isEmpty ? null : candidate.fetchedName,
-      fingerprint: candidate.fingerprint,
-      location: fetched ? candidate.fetchedLocation : null,
-      precision: fetched ? candidate.fetchedPrecision : null,
-      clearLocation: fetched && candidate.fetchedLocation == null,
-      fetchStatus: fetched ? FetchStatus.ok : null,
-      fetchedAt: fetched ? _clock() : null,
-    );
+    final next = switch ((useNewAddress, fetched)) {
+      (false, _) => canonical,
+      (true, true) => canonical.copyWith(
+        siteUrl: candidate.fetchedSiteUrl,
+        // The chosen address decides which facts are authoritative; identity
+        // bookkeeping and the user's own decisions are never touched.
+        name: candidate.fetchedName.isEmpty ? null : candidate.fetchedName,
+        fingerprint: candidate.fingerprint,
+        location: candidate.fetchedLocation,
+        precision: candidate.fetchedPrecision,
+        clearLocation: candidate.fetchedLocation == null,
+        fetchStatus: FetchStatus.ok,
+        fetchedAt: _clock(),
+      ),
+      // A card scan proves the address; it does not publish facts.
+      (true, false) => canonical.copyWith(siteUrl: candidate.fetchedSiteUrl),
+    };
 
     final applied = await _repository.acceptLibraryMove(
       canonicalBaseline: canonical,

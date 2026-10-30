@@ -96,9 +96,10 @@ void main() {
     expect(repo.acceptCalls, 1);
   });
 
-  test('keep saved address: deletes the duplicate and merges the fresh '
-      'fields into the saved row, without repointing', () async {
+  test('keep saved address: deletes the duplicate and changes NOTHING on the '
+      'kept row', () async {
     repo.rows = [canonical(), placeholder()];
+    final before = canonical();
 
     final result = await useCase(
       candidate: candidate(),
@@ -108,10 +109,41 @@ void main() {
     final row = result.toNullable()!;
     expect(row.id, 7);
     expect(row.siteUrl, oldSite, reason: 'address unchanged');
-    expect(row.name, 'New name');
-    expect(row.fetchedAt, 999);
+    // D11/L10: fresh facts belong to the OTHER address. Applying them here let
+    // a public fingerprint rename or re-pin a row the user chose to keep.
+    expect(row.name, before.name, reason: 'name unchanged');
+    expect(row.location!.lat, before.location!.lat, reason: 'pin unchanged');
+    expect(row.precision, before.precision);
+    expect(row.fetchStatus, before.fetchStatus);
+    expect(row.fetchedAt, before.fetchedAt, reason: 'no new fetch stamp');
     expect(repo.rows, hasLength(1));
     expect(repo.rows.single.siteUrl, oldSite);
+    expect(repo.rows.single.name, before.name);
+  });
+
+  test('keep saved address never copies a spoofed pin or name', () async {
+    repo.rows = [canonical(), placeholder()];
+
+    final result = await useCase(
+      candidate: LibraryMoveCandidate(
+        savedRowId: 7,
+        savedSiteUrl: oldSite,
+        savedName: 'Saved name',
+        fetchedSiteUrl: newSite,
+        fetchedName: 'Spoofed name',
+        fingerprint: fp,
+        // A hostile descriptor claims a different pin.
+        fetchedLocation: point(-1.0, -2.0),
+        fetchedPrecision: LocationPrecision.exact,
+        fetchedAt: 500,
+      ),
+      choice: LibraryMoveChoice.keepSavedAddress,
+    );
+
+    final row = result.toNullable()!;
+    expect(row.name, 'Saved name');
+    expect(row.location!.lat, 12.5);
+    expect(row.precision, LocationPrecision.approximate);
   });
 
   test('a CARD offer carries no fetched facts: a null pin must not erase '

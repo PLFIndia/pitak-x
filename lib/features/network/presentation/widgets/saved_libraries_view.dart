@@ -55,8 +55,9 @@ class SavedLibrariesView extends ConsumerWidget {
     );
   }
 
-  /// Applies (or drops) one move offer. Keeping the saved address still
-  /// merges away the duplicate row; "not the same library" writes nothing.
+  /// Applies (or drops) one move offer. Keeping the saved address deletes the
+  /// duplicate row and changes nothing on the kept one; "not the same library"
+  /// writes nothing.
   Future<void> _settleMove(
     BuildContext context,
     WidgetRef ref,
