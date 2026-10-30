@@ -3,9 +3,11 @@
   Pitak moved-library page (Cloudflare plan R27).
   The same built bytes are uploaded as index.html and 404.html on the old site.
 
-  Placeholders substituted by MovedHtmlBuilder:
-    {{LIBRARY_NAME}}  — HTML-escaped page title and heading
-    {{NEW_SITE_URL}}  — validated, HTML-escaped canonical destination
+  Placeholders substituted by MovedHtmlBuilder (schema 1). This comment
+  deliberately has NO brace characters: the renderer replaces its tokens
+  textually, and a token inside this comment would be substituted too.
+    LIBRARY_NAME  — HTML-escaped page title and heading
+    NEW_SITE_URL  — validated, HTML-escaped canonical destination
 -->
 <html lang="en">
 <head>
