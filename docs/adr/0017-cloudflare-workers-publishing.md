@@ -7,7 +7,10 @@
   outstanding, so the *evidence* is not complete — the decision is.
 - **Date:** 2026-10-26 (amended 2026-10-29 by the Cloudflare fix plan,
   Phase 1A: published-record ownership, anchor-bound replacement consent,
-  Option-B read-back, and the upload-session Worker baseline)
+  Option-B read-back, and the upload-session Worker baseline; amended
+  2026-10-30 by Phases 3–4: the three move exits, setup's exact-endpoint rule,
+  the pending-deploy record, Version-URL re-checks on every "done" result, and
+  the moved-page name/destination-consent rules)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -73,6 +76,12 @@ consequences the product cannot hide:
    the queue, requires "inaccessible" or "absent", and marks no record retired.
    Cancel is refused once the old address already shows the moved page, and
    Skip/Finish are refused while the old site is still reachable.
+   **Moved-page name (fix-plan M9):** the name is normalized by one total rule
+   before ANY write (C0 controls and DEL become spaces, trim, cap at 256 UTF-16
+   units without splitting a surrogate pair, trim again, blank means "My
+   Library"). A name the record would reject can therefore never be discovered
+   after the destination has been published, which would leave no pending
+   record and no Retry.
 6. **Marker freshness, not compare-and-swap.** Every Cloudflare deploy writes
    `pitak-publish.json` with a fresh 128-bit `publishId` and a
    `live` / `verification` / `retired` state. A matching marker is the
@@ -85,7 +94,13 @@ consequences the product cannot hide:
 7. **Version URLs fail closed.** For an existing Worker, version URLs are
    disabled and GET-confirmed off before creating another version, and
    reconfirmed after the deploy. A failure stops the next deploy and blocks
-   retirement completion.
+   retirement completion. **Every result (fix-plan L3/N3):** the same gate runs
+   after the final pre-deploy race check and before any result that says
+   "verified", "repaired", "adopted" or "complete" — deploy-free verification,
+   record repair, an adopted move destination, and an already-retired source.
+   Retry verification may therefore DISABLE Version URLs (a route write); it
+   never uploads and never deploys (D8). A route failure is the fixed privacy
+   message, never a fake verification result, and it commits nothing.
 8. **Bounded, hostile-boundary transport.** API traffic goes only to
    `https://api.cloudflare.com/client/v4` with `AppUserAgent`, refused
    redirects, a 1 MiB streamed response cap, a JSON depth/bounds pre-scan,
@@ -209,6 +224,15 @@ consequences the product cannot hide:
   re-proven before repair. Persistence is ordered `deployed`, then `live`,
   journal `verifiedTarget`, and finally the whole secure connection's
   write-proven flag.
+- **S11 makes outcomes truthful (fix-plan L7/L12/N4/N5/N6).** A deploy-free
+  check reports "Verified", never "Published!"; a failed old-record commit is a
+  failure that says the previous publish is live and the new changes were not
+  published; Retry verification is offered only where a deploy-free check can
+  change the outcome; every move destination carries its record-save truth and
+  a post-deploy route failure says the deployment was accepted; destination
+  drift and source drift have separate messages; and a typed library read
+  failure reaches the card with its specific sentence. Generic Cloudflare
+  catches log the error type and stage through `appLog`, never a message.
 - **Verification status.** The J.1–J.6 suites are green (4,212 non-golden
   tests on 2026-10-29), all 10 Linux golden tests pass, and the S10 consistency
   audit reconciled `README.md`, `PRIVACY.md`, `SECURITY.md`,

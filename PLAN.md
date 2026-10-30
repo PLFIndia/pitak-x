@@ -114,18 +114,18 @@ disagree with what actually happened on the phone and at the host:
 
 ## Steps
 
-- [ ] M9: total normalizer, pre-write pending build in `prepare`/`confirm`.
-- [ ] N9: destination/source verification callbacks; progress before steps.
-- [ ] L3/N3: gate before every success result and after the final race check.
-- [ ] L4: pending record, promotion, bounded polling, copy; drop `retry`.
-- [ ] L7/N16: `newDeployment`, typed Retry capability, honest commit copy,
+- [x] M9: total normalizer, pre-write pending build in `prepare`/`confirm`.
+- [x] N9: destination/source verification callbacks; progress before steps.
+- [x] L3/N3: gate before every success result and after the final race check.
+- [x] L4: pending record, promotion, bounded polling, copy; drop `retry`.
+- [x] L7/N16: `newDeployment`, typed Retry capability, honest commit copy,
       unexpected diagnostic.
-- [ ] L12/N4/N5: save results, route exceptions, destination-changed message.
-- [ ] L16: unknown-state anchor + "Replace and move" consent.
-- [ ] N6: `readInputs` returns `Either` and its message reaches the card.
-- [ ] Tests for every item above.
-- [ ] Records: ADR 0017, Part M, CHANGELOG, handoff, guide.
-- [ ] Gates: build_runner, format, analyze, non-golden suite.
+- [x] L12/N4/N5: save results, route exceptions, destination-changed message.
+- [x] L16: unknown-state anchor + "Replace and move" consent.
+- [x] N6: `readInputs` returns `Either` and its message reaches the card.
+- [x] Tests for every item above.
+- [x] Records: ADR 0017, Part M, CHANGELOG, handoff, guide.
+- [x] Gates: build_runner, format, analyze, non-golden suite.
 
 ## Out of scope
 
@@ -134,4 +134,42 @@ disagree with what actually happened on the phone and at the host:
 
 ## Result
 
-(To be filled when the phase lands.)
+Phase 4 is implemented end to end.
+
+- **M9:** `normalizeMovedLibraryName` is total and leaves every currently valid
+  name unchanged. `prepare` and `confirm` build, render and authenticate the
+  pending record before any write; an unrenderable moved page stops with
+  "Nothing was changed." (`MoveSiteMessages.movedPageNotPrepared`).
+- **N9:** `MoveDestinationPublisher.publish` and `MoveSourceOperations.retire`
+  take an `onVerify` callback, fired at each host's real verification boundary,
+  so "Verifying destination/old address" is shown while the wait happens.
+- **L3/N3:** `CloudflareExistingPublicationCheck` gates before every
+  verified/repaired result and commits nothing on failure; the deploy pipeline
+  re-proves previews off after the final race check; an adopted move
+  destination and an already-retired source do the same. Retry verification may
+  disable Version URLs (D8) and still never uploads or deploys.
+- **L4:** `CloudflareManifestStore` gained `loadPending`/`savePending`/
+  `clearPending` over a second atomic file. The pipeline records the attempt
+  before the PUT and clears it only after the `deployed` save; the preflight
+  promotes it only on an exact live marker match and re-derives freshness;
+  recovery polls 5 x 3 s inside 30 s. `CloudflareDeployRecovery.retry` and its
+  adapter branch are deleted.
+- **L7/N16:** `PublishSuccess.newDeployment`, `PublishFailure
+  .canRetryVerification`, `oldRecordCommitFailed`, honest rather than
+  "reconnect" uncertain-deploy copy, and `unexpectedDiagnostic`/`appLog` in
+  every generic Cloudflare catch, including the shared setup helper.
+- **L12/N4/N5:** `MoveDestinationFailed.localStateSaved` carries each record
+  save; a failed save says the phone could not save the new site; post-deploy
+  route failures say the deployment was accepted (retirement adds "Retry move");
+  destination drift is `destinationChanged`.
+- **L16:** an `unknown` destination with an existing Worker carries the reviewed
+  anchor, the Worker-specific replacement line and the "Replace and move"
+  action; a changed anchor re-prompts without writing.
+- **N6:** `readInputs` returns `Either`, so the specific library-read sentence
+  reaches the card for ordinary and replacement publishes.
+
+Records: ADR 0017 Decisions 4/5/6/7 amended; Part M rows 102-108; the fix-plan
+index status and row pointer refreshed; `CHANGELOG.md` Fixed (eight bullets);
+handoff §8/§9/§13/§17; the in-app guide's "Replace and move" and "Verified"
+sentences (the guide test surface rose 3400 -> 3800 dp as a recorded copy
+decision).

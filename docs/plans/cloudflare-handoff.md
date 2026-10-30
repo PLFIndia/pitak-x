@@ -583,6 +583,15 @@ and host-neutral publish UI. Moves and retirement remain S9.
   the journal's verified share address. `replace_site_dialog.dart` shows real
   counts and zero warnings; cancel does no work. `Retry verification` is
   deploy-free. Events use the same dialog and host-specific history/privacy copy.
+- **Phase 4 (fix-plan) hardening:** an attempted deploy is saved to
+  `cloudflare_publish_pending.json` before its PUT and promoted only by an exact
+  marker match, so a lost response is recognised instead of treated as a
+  foreign site (L4). Every "verified"/"repaired"/"adopted" result and the final
+  pre-deploy check consult the Version-URL gate (L3/N3). A deploy-free check
+  reports "Verified", a failed old-record commit is a failure, and Retry
+  verification is offered only where it can succeed (`canRetryVerification`);
+  generic catches log a type, stage and stack through `appLog` (L7). A typed
+  library read failure reaches the card with its specific sentence (N6).
 
 ### 8.1 Evidence
 
@@ -665,6 +674,15 @@ Retry and Skip are deterministic after every remote or persistent side effect.
   pending, completion pending, skipped retirement and temporary cleanup. Peers
   are explicitly told they do not follow automatically, and the card must be
   reprinted after a move.
+- **Phase 4 (fix-plan) hardening.** The moved-page name is normalized by one
+  total rule and the pending record is built and validated BEFORE the
+  destination publish, so a name that record would reject can never strand a
+  republished destination (M9). A move into an `unknown` destination carries
+  the reviewed `CloudflareRemoteAnchor` and asks "Replace and move"; a changed
+  anchor re-prompts (L16). Destination drift and source drift have separate
+  messages (N5). Both destinations carry their record-save truth and a
+  post-deploy route failure says the deployment was accepted (L12/N4).
+  Verification progress labels are emitted before their step, not after (N9).
 
 ### 9.1 Evidence
 
@@ -1113,6 +1131,24 @@ the Part N checklist were run again afterwards.
   publish when the site ANSWERED with different bytes. A timeout, a 404 or an
   oversize body is "could not check" and must let the publish proceed — that is
   the whole reason Option B was chosen over the plan's literal wording.
+- **An attempt is recorded before its PUT.** `cloudflare_publish_pending.json`
+  is the only way a phone can recognise its own unconfirmed deployment, because
+  the publish id exists nowhere else. Promoting it requires the exact live
+  marker; a non-matching marker changes nothing. Never re-send an uncertain PUT:
+  a public read can prove a deploy landed, never that it will not land later.
+- **Every "done" consults the route.** Version URLs are proven off after the
+  final race check and before any verified/repaired/adopted/complete result.
+  Retry verification may disable them (D8); it never uploads or deploys.
+- **A name that cannot be recorded fails before the publish, not after it.**
+  The moved-page normalizer is total, and `prepare`/`confirm` build the pending
+  record before any write. The record is the only Retry evidence, so discovering
+  a bad name after publishing leaves no way out.
+- **Replacing unknown Worker content is a consent, not a default.** The review
+  carries the destination's exact anchor and says what is replaced; a changed
+  anchor asks again. A Worker that does not exist needs no consent.
+- **A result message is a claim about the remote site.** "Verified" is not
+  "Published", "accepted" is not "verified live", and Retry verification is
+  offered only where a deploy-free check can change the answer.
 
 ---
 
@@ -1335,7 +1371,7 @@ exactly as Part L requires; it contains no authorization header or raw body.
 
 ---
 
-## 17. Fix plan (2026-10-29) — Phase 3 landed
+## 17. Fix plan (2026-10-29) — Phase 4 landed
 
 The review-driven fix plan (`cloudflare-fix-plan-2026-10-29.md` and its three
 parts) is being executed phase by phase. **Phase 0, 1A and 1B are committed**
@@ -1343,7 +1379,11 @@ parts) is being executed phase by phase. **Phase 0, 1A and 1B are committed**
 as Part M rows 93–95. **Phase 3 (L2, RH3, M5, M4, M3, M6, M11) landed in
 `7b0b9b7`**, recorded by `6a8f0ab` (ADR 0017 Decisions 5a and 9; Part M rows
 96–101; D.4, F.8, the F.9 failure map, `CHANGELOG`, §9/§13 and the in-app
-guide). The next phase is **Phase 4**.
+guide). **Phase 4 (M9, L3+N3, L4, L7+N16, L12+N4, L16, N5/N6/N9) landed on
+2026-10-30** as seven commits, recorded by the Phase 4 docs commit (ADR 0017
+Decision 4/5/6/7 amendments; Part M rows 102–108; `CHANGELOG`; the in-app
+guide's "Replace and move" and "Verified" sentences). The next phase is
+**Phase 5**.
 
 **Phase 2 — large uploads (H2, L8, L5).**
 
@@ -1391,17 +1431,47 @@ M6 (5) and M11 (3); `cloudflare_setup_journal.dart` and
 `cloudflare_connection_status_writer.dart` were extracted when two files
 crossed the 500-line ratchet, rather than allow-listed.
 
-**Next — Phase 4, truthful verification and messages (M9, L3+N3, L4,
-L7+N16, L12+N4, L16, N5/N6/N9).** Its entry criteria are met: Phase 3 is in,
-and the two decisions it needs are taken at the plan's recommended defaults
-(D6 — a total moved-page name normalizer that leaves every currently valid
-name unchanged; D8 — Retry verification may disable Version URLs, a route
-write and never a deploy). It must leave `cloudflare_version_url_gate.dart`
-as the only Version-URL rule, add the pending-deploy record instead of a
-schema bump, and keep every "done" message tied to what actually landed.
+**Phase 4 — truthful verification and messages (M9, L3+N3, L4, L7+N16,
+L12+N4, L16, N5/N6/N9) is implemented.** What it changed, in the order it
+landed:
 
-**Still open after Phase 4:** Phase 5 (remaining Low items and nits: L1, L6,
-L9–L11, L13–L15, L17, RH2, N17) and Phase 6 (real-host evidence, records and
-release gates). Phase 6.1's real-host checks need no code and should be run
-early; they only let L2/RH1/RH2/RH3 delete fallbacks. Bucket splitting stays
-an optional follow-up after a real-host trial (H2 step 7).
+- **M9:** `normalizeMovedLibraryName` is total (C0/DEL → spaces, trim, 256-unit
+  cap without splitting a surrogate pair, blank → "My Library"), and `prepare`
+  and `confirm` build and validate the pending record before any write. The
+  failure copy is "The moved page for your old address could not be prepared.
+  Nothing was changed."
+- **N9:** `MoveDestinationPublisher.publish` and `MoveSourceOperations.retire`
+  take an `onVerify` callback, so "Verifying" is shown while the read-back runs
+  instead of after it.
+- **L3/N3:** the Version-URL gate runs after the final race check and before
+  every verified/repaired/adopted/complete result; retry verification may
+  disable previews (D8) and still never uploads or deploys.
+- **L4:** `cloudflare_publish_pending.json` is written before the PUT, promoted
+  only by an exact marker match, and cleared only after the `deployed` save
+  succeeds. Recovery polls 5 × 3 s inside 30 s; the dead `retry` recovery value
+  is gone.
+- **L7/N16:** `newDeployment` selects "Verified", a failed old-record commit is
+  a failure, `canRetryVerification` gates the button, and
+  `unexpectedDiagnostic` logs type/stage/stack through `appLog`.
+- **L12/N4/N5:** both move destinations carry their save results and say when
+  the deployment was accepted; destination drift and source drift have separate
+  messages.
+- **L16:** an `unknown` destination carries the reviewed anchor and the
+  "Replace and move" consent, and a changed anchor re-prompts.
+- **N6:** `readInputs` returns `Either`, so the specific read sentence reaches
+  the card.
+
+Gates at the Phase 4 closeout (2026-10-30): `build_runner` left no diff,
+`dart format --set-exit-if-changed` was clean, `flutter analyze lib test
+integration_test` reported zero issues, and the full non-golden suite passed
+**4,454** tests (it was 4,255 at the Phase 3 closeout). No golden was
+regenerated: Phase 4 changes no golden-pinned pixel, and a golden change must
+still come from the Linux workflow.
+
+**Next — Phase 5, remaining Low items and nits (L1, L6, L9–L11, L13–L15,
+L17, RH2, N17).** Decisions it needs: D7 = A (legacy 40-character tokens fall
+back to account verification after a 401/403), D9 = Yes (lower-case new Worker
+names), D11 = Yes ("Keep saved address" changes nothing on the kept row, which
+also amends `ARCHITECTURE.md` §5). The Phase 6.1 real-host checks need no code
+and should be run early; they only let L2/RH1/RH2/RH3 delete fallbacks. Bucket
+splitting stays an optional follow-up after a real-host trial (H2 step 7).

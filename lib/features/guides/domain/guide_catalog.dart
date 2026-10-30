@@ -168,7 +168,9 @@ const Guide _publish = Guide(
             'already on it. Cloudflare has no "only if nothing changed" switch '
             'either, so publish from one phone at a time. Pitak proves the '
             'address with a test page, and calls the site live only after it '
-            'reads the published files back.',
+            'reads the published files back. Moving into a Worker that already '
+            'holds a test page or another copy asks first, and the button says '
+            '**Replace and move**.',
       ],
     ),
     GuideParagraphs(
@@ -176,7 +178,9 @@ const Guide _publish = Guide(
       paragraphs: [
         'Added or lent books? Open **Publish to web** and tap **Publish '
             'catalogue now** again. Only what changed is uploaded, so it takes '
-            'seconds. It publishes to whichever host is active.',
+            'seconds. It publishes to whichever host is active. When Pitak '
+            'only checks an earlier publish, the message says **Verified** — '
+            'nothing new was published.',
       ],
     ),
     GuideParagraphs(

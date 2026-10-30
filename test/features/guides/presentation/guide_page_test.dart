@@ -10,18 +10,20 @@ import '../../../support/a11y.dart';
 
 void main() {
   /// Pumps [guide] with a recording opener. Phone width (360 dp) so wrapping
-  /// is realistic; 3400 dp tall so the lazy ListView builds every child —
-  /// the longest guide is now publish at ≈3170 dp (it documents two hosts;
-  /// catalogue ≈2880 dp, backup ≈2800 dp) and ends inside that under the test
-  /// font — and the a11y checks see every node, bottom button included. A
-  /// guide that outgrows the surface fails the "every guide renders" test
-  /// below: that is the copy-length budget, on purpose. Raise the surface only
-  /// with a deliberate copy decision, never to make a long guide pass.
+  /// is realistic; 3800 dp tall so the lazy ListView builds every child —
+  /// the longest guide is now publish at ≈3670 dp (it documents two hosts and
+  /// the three move exits; catalogue ≈2880 dp, backup ≈2800 dp) and ends
+  /// inside that under the test font — and the a11y checks see every node,
+  /// bottom button included. A guide that outgrows the surface fails the
+  /// "every guide renders" test below: that is the copy-length budget, on
+  /// purpose. Raise the surface only with a deliberate copy decision, never to
+  /// make a long guide pass. (Phase 4 raised it 3400 → 3800 to record the
+  /// "Replace and move" and "Verified" sentences.)
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
   ) async {
-    tester.view.physicalSize = const Size(1080, 10200);
+    tester.view.physicalSize = const Size(1080, 11400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     final opened = <GuideDestination>[];

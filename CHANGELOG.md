@@ -134,6 +134,38 @@ heading as part of the `chore(release):` commit.
 - **A setup prompt is never stranded:** dialogs reappear when you return to the
   tab, a rebuild no longer opens the same prompt twice, and "Cancel setup" is
   available while a prompt is waiting.
+- **A library name can no longer break every move:** a pasted tab or other
+  control character in the library name used to be discovered only after the
+  new site was published, so every attempt failed at the same point with no way
+  to resume. The name is normalized before anything is written, and a moved
+  page that cannot be prepared stops with "Nothing was changed."
+- **Older versions can no longer stay publicly reachable:** Version URLs are
+  re-checked after the last moment before a deploy and before every
+  "verified", "repaired", "completed" or adopted-move message. "Retry
+  verification" may now switch them off (a setting change, never an upload or
+  deploy); if it cannot, the fixed privacy message blocks further deploys.
+- **A deployment that reached Cloudflare but lost its answer is recognised next
+  time:** the attempt is recorded before it is sent, so the next publish or
+  "Retry verification" proves it and finishes instead of offering a whole-site
+  replacement for your own deploy. An attempt that never landed leaves the old
+  record untouched.
+- **Cloudflare messages now match what happened:** a check of an earlier
+  publish says "Verified", not "Published!"; a publish that could not record
+  its own state says the previous site is live and the new changes were not
+  published; "Retry verification" appears only where it can change the outcome;
+  and an uncertain deploy says to check before publishing again instead of
+  suggesting a reconnect.
+- **A move reports which save or step failed:** if the new site is live but its
+  record could not be saved, the message says so; a failure after the
+  deployment was accepted says that; and a change on the destination is no
+  longer reported as a change on the old site.
+- **Moving into a Worker that already has content asks first:** the review
+  names the Worker, says the move replaces everything on it, and the button
+  says "Replace and move". If that content changes after the review, Pitak asks
+  again instead of writing.
+- **Cloudflare shows the same specific library-read message as GitHub:** an
+  unreadable library or an oversized member list now says exactly that instead
+  of a generic "could not read your library".
 
 ### Changed
 - **Replacement and recreate dialogs explain the case:** missing files, a

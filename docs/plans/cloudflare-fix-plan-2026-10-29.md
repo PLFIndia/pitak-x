@@ -4,7 +4,10 @@
   (2 High, 11 Medium, 17 Low, 5 nits, 3 real-host questions, 11 test gaps),
   plus 17 new findings from the verification pass ([Appendix B](#appendix-b--new-findings)).
 - **Baseline:** branch `cloudflare` at `77e6acb`, the reviewed commit.
-- **Status:** Proposed, 2026-10-29. Nothing here is implemented yet.
+- **Status:** In progress. Phases 0, 1A, 1B, 2, 3 and 4 are implemented
+  (2026-10-29/30); Phases 5–6 are open. Part M of
+  [the plan](../../cloudflare_plan-final.md) carries the deviation rows and
+  [the handoff](cloudflare-handoff.md) §17 records each phase.
 - **How it was checked:** before any fix was designed, every finding was
   re-read against the code at `77e6acb`. Four verification passes covered the
   publish pipeline, transport/upload, setup and Riverpod lifecycle, and
@@ -111,7 +114,7 @@ one of them stops and asks; it does not work around it.
    "prompts never hold the queue", "a failed save is reported", "unreachable is
    not contradictory". Where a fix **does** change a recorded decision, §2 marks
    it ★. It then gets an ADR 0017 amendment and a plan Part M row (next free:
-   **83**).
+   **109**).
 5. **One rule, one place.** If two paths need the same rule (publish and move
    reader; GitHub and Cloudflare verification; five copies of the Version-URL
    gate), extract it once.
