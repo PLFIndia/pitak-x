@@ -192,10 +192,12 @@ const Guide _publish = Guide(
             'If that last step cannot finish, the publish page keeps three '
             'choices: Retry move, Skip retirement (only when the old site is '
             'really gone) and Cancel move (which keeps your current site and '
-            'leaves the new copy online until you delete it). Other phones '
-            'never follow a move by themselves — they may offer the choice to '
-            'their owner — and a printed library card still shows the old '
-            'address, so reprint it after a move.',
+            'leaves the new copy online until you delete it). If Pitak cannot '
+            'sign in to the old site at all, Finish without retiring replaces '
+            'Skip behind a stronger warning — that copy also stays online. '
+            'Other phones never follow a move by themselves — they may offer '
+            'the choice to their owner — and a printed library card still '
+            'shows the old address, so reprint it after a move.',
       ],
     ),
   ],

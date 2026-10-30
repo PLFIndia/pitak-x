@@ -44,6 +44,14 @@
   matrix passed at `c2a0286`. The real-host J.7 smoke found and fixed three
   defects (bucket completion token, HTML read-back address, GitHub Pages wait);
   steps 1–8 and 10 PASS, step 9 is pending a second phone (§12).
+- **State (2026-10-30, fix-plan Phases 0–5):** the branch is pushed and PR #20's
+  head is now `878557d`. The **full CI matrix passed there** — Flutter (locked
+  deps, `build_runner` no diff, analyze, format, fastlane character check,
+  4,511-test suite with coverage, both host-timezone calendar runs, coverage
+  floor, secret scan, Linux golden comparison), Rust, OSV and F-Droid purity.
+  The Linux `Update goldens` artefact for that head is **byte-identical on all
+  10 PNGs**, so Phases 0–5 changed no golden-pinned pixel and no regeneration is
+  needed. Local gates at the Phase 5 closeout were already green (§17).
 - **Cloudflare connection/setup, ordinary publishing, and moves are
   user-facing.** S7 adds restricted-token capture and setup; S8 adds ordinary
   catalogue/events publishing and explicit whole-site replacement; S9 adds
@@ -810,6 +818,38 @@ No token, JWT, account id or raw response body goes in this table.
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
 
+### Phase 6 — real-host checks and the new smoke rows (pending)
+
+Two evidence sets are still empty. Both need the disposable Cloudflare account
+and the throwaway GitHub repository; neither is a code change.
+
+**Part 3 §6.1 checks — run these first, because their answers let a fallback be
+deleted.** Each design is safe under either answer; the evidence only removes a
+branch (and its tests) or proves the branch must stay.
+
+| Check | Answer to record | Unblocks |
+|---|---|---|
+| `GET /workers/scripts/{name}` for a Worker that does not exist | HTTP status and error codes | L2's "script not found" code |
+| `POST …/assets-upload-session` for a Worker that does not exist | Whether the session succeeds; whether `GET` then answers 200 or 404; route and preview settings after the session and after the first deploy; the public marker URL before and after the deploy; whether an abandoned session leaves a Worker behind | RH1's baseline branch |
+| Create a Worker named `MyLib`, then `GET` it as `mylib` | Whether the API ignores case | RH2 step 3 (the case-variant listing can be dropped if it does) |
+| A GitHub repository made private or deleted, read with the current token | The repository status and the public `books.json` status | RH3 |
+| Optional: split one bucket into two upload requests | Whether it is accepted and whether the completion token still arrives | H2's optional bucket split |
+
+**Rows 11–19** are the fix plan's Part 3 §6.2 additions; they are in
+`docs/RELEASING.md` §6.5 now. Fill one row here per run, same rules as 1–10.
+
+| # | Check | Result |
+|---|---|---|
+| 11 | Reconnect to a different Worker, then publish (H1, D1) | *pending* |
+| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* |
+| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | *pending* |
+| 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *pending* |
+| 15 | Switch tabs during a large publish (M1) | *pending* |
+| 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* |
+| 17 | Cancel a pending move; then finish without retiring with a revoked token (M4) | *pending* |
+| 18 | First move into a Worker that holds a setup marker (L16) | *pending* |
+| 19 | Publish after Cloudflare forgets a carried file (N1) | *pending* |
+
 ### Current smoke handoff — 2026-10-29
 
 **Branch and verification baseline.** Branch `cloudflare`, PR #20 remains draft.
@@ -1568,3 +1608,28 @@ proves names case-insensitive). Then the `docs/RELEASING.md` §6.5 matrix
 (including the rows in Part 3 §6.2), the release gates and the release build.
 Bucket splitting stays an optional follow-up after a real-host trial (H2 step
 7).
+
+**Phase 6 documentation closed out (2026-10-30, after Phase 5).** The part of
+fix-plan §6.3 that needs no hardware is done:
+
+- `README.md` — the Publish bullet now states the interrupted-move exits
+  (Retry / Skip / Cancel / Finish without retiring), that a cancelled or
+  unretired copy stays online until the user deletes it, that reconnecting to a
+  different Worker leaves the previous Worker serving its last deploy, and what
+  a slow connection does.
+- `PRIVACY.md` — the move paragraph says the same three facts as a disclosure:
+  the old site is untouched until retirement verifies, Cancel and Finish leave
+  the other copy public, and Pitak never deletes a site for you. The effective
+  date is bumped to 2026-10-30 with a one-line note that the change is wording
+  only — no new data is collected, stored or sent.
+- In-app guide — the moving block names **Finish without retiring** and that
+  its copy also stays online. The publish guide still ends inside the recorded
+  3800 dp test surface, so no budget raise was needed.
+- `docs/RELEASING.md` §6.5 — rows 11–19 added (fix-plan Part 3 §6.2), and §12
+  of this handoff gained the Phase 6 evidence tables: the five real-host checks
+  with an empty Answer column, and rows 11–19 marked pending.
+
+What Phase 6 still owns: the five real-host checks and rows 11–19 (hardware
+and the disposable account), J.7 step 9 (second phone), the three maintainer
+decisions in §12's 2026-10-29 notes, then the release gates and the
+`chore(release)` build.

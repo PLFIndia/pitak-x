@@ -1,6 +1,11 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-10-28 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-10-30 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-10-30 — wording only: the move paragraph now also says what
+Cancel move and Finish without retiring leave public, and that reconnecting to
+another Worker does not touch the previous one. No new data is collected,
+stored or sent._
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -156,6 +161,16 @@ passive exception (item 8, Google Play builds only):
    may show both addresses and change something only when their owner chooses.
    A printed library card keeps pointing at the old address until you reprint
    it.
+
+   An interrupted move is never silent: the publish card keeps a banner until
+   the move finishes, and the old site stays exactly as it is until it is
+   verifiably retired. **Cancel** stops the move and leaves the copy already
+   published on the other host online; **Finish without retiring** is offered
+   only when Pitak can no longer sign in to the old site, and leaves that copy
+   online too, unmarked. Pitak never deletes a site for you, so delete either
+   copy at its host if you do not want it public. Reconnecting to a different
+   Cloudflare Worker does not touch the previous Worker, which keeps serving
+   exactly what it last served until you delete it in the Cloudflare dashboard.
 4. **Library network — Refresh.** The Library network screen keeps the list
    of other Pitak libraries you save (by web address, or by scanning a
    library's card in person). Nothing about it leaves your device until you

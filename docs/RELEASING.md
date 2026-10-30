@@ -321,6 +321,22 @@ into a document or an issue.
 | 9 | Scan the moved library's card on a second updated phone | Both addresses are offered neutrally; accepting leaves one canonical row, no duplicates |
 | 10 | Disconnect | The connection record is forgotten, the remote Worker is untouched, and the share address still reports only what was verified |
 
+Rows 11–19 come from the 2026-10-29 fix plan (Part 3 §6.2). Each one exercises a
+state the review found the code could enter but not leave; every row must be
+recorded like 1–10, with the sanitized counts and no raw response text.
+
+| # | Check | Expected |
+|---|---|---|
+| 11 | Publish to one Worker, then reconnect choosing a **different** Worker and publish (H1, D1) | A "target changed" review names both addresses and says the old site stays as it is; the old Worker is untouched |
+| 12 | Delete the Worker in the dashboard, reconnect to the same target, publish (H1) | A "Worker missing" review offers to recreate it; the site comes back and verifies |
+| 13 | First publish to a brand-new Worker that was set up on the API-subdomain path (RH1) | The publish completes without a false "the site changed" (stale) review |
+| 14 | Publish a library whose largest upload bucket is ≥ 40 MB over a link throttled to about 1 Mbit/s (H2) | The upload completes; forcing a stall fails with the "stopped making progress" copy and does not re-send the same body |
+| 15 | Switch tabs (or background the app) during a large publish (M1) | The publish still completes |
+| 16 | Rotate the token for the site that is already live, using the manual-subdomain path (M3) | No verification deploy happens and the live site is unchanged; the next publish proves write access |
+| 17 | Start a move, then **Cancel** it; separately, revoke the token and choose **Finish without retiring** (M4) | After Cancel the old site is still the active/verified target and nothing is retired; Finish appears only with the stronger warning and still marks nothing as moved |
+| 18 | Publish a first move into a Cloudflare Worker that holds a setup (verification) marker (L16) | The review says "Replace and move" and names the Worker; a changed remote anchor asks again |
+| 19 | Publish when Cloudflare no longer holds files the local record claims (N1) | The "missing files" review can actually be confirmed and deploys; cancelling writes nothing |
+
 Header evidence (substitute your own address):
 
 ```bash

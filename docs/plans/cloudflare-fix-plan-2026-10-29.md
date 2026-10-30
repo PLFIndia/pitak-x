@@ -5,10 +5,12 @@
   plus 17 new findings from the verification pass ([Appendix B](#appendix-b--new-findings)).
 - **Baseline:** branch `cloudflare` at `77e6acb`, the reviewed commit.
 - **Status:** Phase 6 only. Phases 0, 1A, 1B, 2, 3, 4 and 5 are implemented
-  (2026-10-29/30), each recorded in Part M rows 83–119. Phase 6 (real-host
-  evidence, release records and the release build) is open. Part M of
-  [the plan](../../cloudflare_plan-final.md) carries the deviation rows and
-  [the handoff](cloudflare-handoff.md) §17 records each phase.
+  (2026-10-29/30), each recorded in Part M rows 83–119. Phase 6 is half done:
+  its documentation half (README, PRIVACY, in-app guide, RELEASING §6.5 rows
+  11–19, handoff §12 evidence tables) landed on 2026-10-30, while the real-host
+  evidence, the three maintainer decisions and the release build are still open.
+  Part M of [the plan](../../cloudflare_plan-final.md) carries the deviation rows
+  and [the handoff](cloudflare-handoff.md) §17 records each phase.
 - **How it was checked:** before any fix was designed, every finding was
   re-read against the code at `77e6acb`. Four verification passes covered the
   publish pipeline, transport/upload, setup and Riverpod lifecycle, and

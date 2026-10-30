@@ -71,6 +71,19 @@ a **library network** (pins on a map, hub/member cards).
   after that, and other phones never follow the move automatically — they may
   offer you the choice, and the library card must be reprinted. Older apps
   must be updated before they can add a `workers.dev` address.
+  An interrupted move keeps a banner on the publish card until it finishes:
+  **Retry** resumes only the missing half, **Skip** is offered only when the
+  old site is provably gone, and **Cancel** keeps publishing to your current
+  site — the copy already published on the other host stays online until you
+  delete it there. If Pitak can no longer sign in to the old site,
+  **Finish without retiring** is offered instead, behind a stronger warning;
+  the old copy also stays online and is never marked as moved. Reconnecting to
+  a **different** Worker leaves the previous Worker serving exactly what it
+  last served — Pitak cannot delete a Worker, so remove it in the Cloudflare
+  dashboard.
+  **Slow connections:** an upload is bounded by progress rather than one fixed
+  timeout, so a large library can publish over a slow link; a stall or an
+  expired upload token says so instead of asking you to reconnect.
 - **Events** — attach a small set of event posters (image + optional short
   description) to the published site and the native saved-library viewer;
   images stay on-device as ordinary files. Publishing also writes a public
