@@ -14,6 +14,7 @@ import 'dart:convert';
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -33,7 +34,11 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
   /// Storage key. Public so tests can seed `setMockInitialValues`.
   static const String key = 'publish_host_state';
 
-  /// The schema this build writes. An unknown/newer schema reads as absent.
+  /// The schema this build writes.
+  ///
+  /// An unknown/newer schema reads as UNREADABLE (a typed `Left`), never as an
+  /// absent record: treating it as absent would let an older build silently
+  /// start over on top of a newer journal.
   static const int schema = 1;
 
   /// Bounds local JSON plus at most 20,000 source paths and two moved pages.
@@ -78,14 +83,9 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
     if (load() is Right) {
       return left(const ValidationFailure('The publishing record is readable'));
     }
-    try {
-      if (!await _prefs.remove(key)) {
-        return left(const StorageFailure('publish host state clear'));
-      }
-      return right(unit);
-    } on Exception {
-      return left(const StorageFailure('publish host state clear'));
-    }
+    // A failed remove must not leave the cache believing the record is gone
+    // (fix-plan L9), so the shared helper restores it.
+    return removePrefs(_prefs, key, what: 'publish host state clear');
   }
 
   @override
@@ -104,15 +104,15 @@ final class PrefsPublishHostStore implements PublishHostStateStore {
     if (encoded.length > maxRecordLength) {
       return left(const ValidationFailure('Publish host state is too large'));
     }
-    try {
-      if (!await _prefs.setString(key, encoded)) {
-        return left(const StorageFailure('publish host state write'));
-      }
-      return right(unit);
-    } on Exception {
-      // No response text or key value in the failure (P2).
-      return left(const StorageFailure('publish host state write'));
-    }
+    // One helper repairs the in-memory cache after a failed platform write, so
+    // a failed `beginMove` can never look saved for the rest of the session
+    // (fix-plan L9).
+    return writePrefsString(
+      _prefs,
+      key,
+      encoded,
+      what: 'publish host state write',
+    );
   }
 
   Map<String, Object?> _targetJson(PublishTarget target) => {

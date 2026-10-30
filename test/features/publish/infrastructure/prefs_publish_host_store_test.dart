@@ -6,6 +6,11 @@ import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// Transitive dependency of shared_preferences, imported only for the
+// failure-injection seam below. Deliberately NOT added to pubspec so the
+// app's dependency surface stays unchanged.
+// ignore: depend_on_referenced_packages
+import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
 
 void main() {
   final github = GitHubPublishTarget.create('me/lib')!;
@@ -185,4 +190,77 @@ void main() {
     expect((await hostStore.clearUnreadable()).isRight(), isTrue);
     expect((await store()).load().toNullable(), isNull);
   });
+
+  group('L9 — a failed write never looks saved', () {
+    /// Installs a plugin store whose writes always fail, seeded with [data].
+    Future<PrefsPublishHostStore> failingStore(Map<String, Object> data) async {
+      SharedPreferences.setMockInitialValues({});
+      SharedPreferencesStorePlatform.instance = _FalseWriteStore(data);
+      addTearDown(() => SharedPreferences.setMockInitialValues({}));
+      return PrefsPublishHostStore(await SharedPreferences.getInstance());
+    }
+
+    test('a failed save keeps the previous record readable', () async {
+      final seed = await store();
+      await seed.save(PublishHostState.empty.afterVerifiedPublish(github));
+      final previous = (await store()).load().toNullable()!;
+      final raw = jsonEncode({
+        'schema': 1,
+        'activeHost': previous.activeHost!.name,
+        'verifiedTarget': {
+          'host': 'github',
+          'repo': 'me/lib',
+          'targetId': 'github:me/lib',
+          'siteUrl': 'https://me.github.io/lib/',
+        },
+      });
+
+      final failing = await failingStore({
+        'flutter.${PrefsPublishHostStore.key}': raw,
+      });
+      final other = GitHubPublishTarget.create('me/other')!;
+      final saved = await failing.save(
+        PublishHostState.empty.afterVerifiedPublish(other),
+      );
+
+      expect(saved.isLeft(), isTrue);
+      // The cache must not claim a record the device never stored.
+      final loaded = failing.load().toNullable()!;
+      expect(loaded.verifiedTarget!.targetId, 'github:me/lib');
+      expect(loaded.verifiedTarget!.siteUrl, 'https://me.github.io/lib/');
+    });
+
+    test(
+      'a failed clearUnreadable leaves the unreadable value in place',
+      () async {
+        final failing = await failingStore({
+          'flutter.${PrefsPublishHostStore.key}': '{"schema":1,"activeHost":',
+        });
+        expect(failing.load().isLeft(), isTrue);
+
+        final cleared = await failing.clearUnreadable();
+
+        // It reports failure, and the next read is still the typed unreadable
+        // value rather than a phantom "absent" record.
+        expect(cleared.isLeft(), isTrue);
+        expect(failing.load().isLeft(), isTrue);
+      },
+    );
+  });
+}
+
+/// A plugin store whose writes always report `false` (fix-plan L9).
+class _FalseWriteStore extends InMemorySharedPreferencesStore {
+  // Super params can't target the named `.withData` constructor, so the
+  // explicit initializer stays (lint suppressed with reason).
+  // ignore: use_super_parameters
+  _FalseWriteStore([Map<String, Object> data = const {}])
+    : super.withData(data);
+
+  @override
+  Future<bool> setValue(String valueType, String key, Object value) async =>
+      false;
+
+  @override
+  Future<bool> remove(String key) async => false;
 }
