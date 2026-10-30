@@ -137,9 +137,6 @@ final class CloudflareApiException implements Exception {
 
 /// What the application decides after re-reading an uncertain deployment.
 enum CloudflareDeployRecovery {
-  /// The deployment is confirmed absent, so the adapter may retry it once.
-  retry,
-
   /// The expected deployment is already present; finish without another PUT.
   alreadyDeployed,
 

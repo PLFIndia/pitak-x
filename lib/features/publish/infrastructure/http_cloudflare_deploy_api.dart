@@ -257,8 +257,9 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
         // A deploy carries metadata only, so the ordinary 60 s applies.
         timing: CloudflareRequestTiming.deploy,
         idempotent: false,
+        // A public read can prove a deployment LANDED, never that an
+        // uncertain PUT will not land later, so recovery never re-sends it.
         recover: () async => switch (await recovery()) {
-          CloudflareDeployRecovery.retry => false,
           CloudflareDeployRecovery.alreadyDeployed => true,
           CloudflareDeployRecovery.abort => null,
         },

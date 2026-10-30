@@ -104,6 +104,12 @@ final class InMemoryCloudflareManifestStore implements CloudflareManifestStore {
   bool failSave = false;
   bool failLiveSave = false;
 
+  /// The attempted deploy recorded before its PUT (fix-plan L4).
+  CloudflareSiteManifest pending = CloudflareSiteManifest.empty;
+  final List<CloudflareSiteManifest> pendingSaves = [];
+  int clearPendingCalls = 0;
+  bool failPendingSave = false;
+
   @override
   CloudflareSiteManifest load() => current;
 
@@ -114,6 +120,26 @@ final class InMemoryCloudflareManifestStore implements CloudflareManifestStore {
     }
     current = manifest;
     saves.add(manifest);
+    return right(unit);
+  }
+
+  @override
+  CloudflareSiteManifest loadPending() => pending;
+
+  @override
+  Either<Failure, Unit> savePending(CloudflareSiteManifest manifest) {
+    if (failPendingSave) {
+      return left(const StorageFailure('synthetic pending save failure'));
+    }
+    pending = manifest;
+    pendingSaves.add(manifest);
+    return right(unit);
+  }
+
+  @override
+  Either<Failure, Unit> clearPending() {
+    clearPendingCalls++;
+    pending = CloudflareSiteManifest.empty;
     return right(unit);
   }
 }

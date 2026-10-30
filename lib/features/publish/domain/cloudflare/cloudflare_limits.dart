@@ -170,6 +170,17 @@ abstract final class CloudflareLimits {
 
   /// The public marker file name (R10).
   static const String markerPath = 'pitak-publish.json';
+
+  // ---- Attempted-deploy recovery (fix-plan L4) ------------------------------
+
+  /// Marker reads allowed while deciding an uncertain deploy's outcome.
+  static const int deployRecoveryRounds = 5;
+
+  /// Delay between those reads. Bounded so the operation cannot hang.
+  static const Duration deployRecoveryInterval = Duration(seconds: 3);
+
+  /// Total wall-clock budget for the reads above (30 s).
+  static const Duration deployRecoveryBudget = Duration(seconds: 30);
 }
 
 /// One bounded read-back budget (fix-plan M2, R16).

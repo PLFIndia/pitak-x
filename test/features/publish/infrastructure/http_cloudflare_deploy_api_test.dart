@@ -786,7 +786,7 @@ void main() {
           kind: CloudflareDeploymentKind.live,
           recovery: () async {
             recoveries++;
-            return CloudflareDeployRecovery.retry;
+            return CloudflareDeployRecovery.abort;
           },
         );
         expect(body, contains('name="metadata"'));
@@ -797,17 +797,16 @@ void main() {
       },
     );
 
-    test(
-      'an uncertain deploy retries only after recovery permits it',
-      () async {
-        var calls = 0;
-        var recoveries = 0;
-        final api = apiFor((_) async {
-          calls++;
-          if (calls == 1) throw http.ClientException('connection lost');
-          return envelope(null);
-        });
-        await api.deploy(
+    test('an uncertain deploy is never re-sent, because a public read cannot '
+        'prove it will not land (L4)', () async {
+      var calls = 0;
+      var recoveries = 0;
+      final api = apiFor((_) async {
+        calls++;
+        throw http.ClientException('connection lost');
+      });
+      await expectLater(
+        api.deploy(
           token: token,
           accountId: account,
           workerName: worker,
@@ -817,13 +816,14 @@ void main() {
           kind: CloudflareDeploymentKind.retired,
           recovery: () async {
             recoveries++;
-            return CloudflareDeployRecovery.retry;
+            return CloudflareDeployRecovery.abort;
           },
-        );
-        expect(calls, 2);
-        expect(recoveries, 1);
-      },
-    );
+        ),
+        throwsA(isA<CloudflareApiException>()),
+      );
+      expect(calls, 1);
+      expect(recoveries, 1);
+    });
 
     test('an already-deployed recovery avoids a duplicate PUT', () async {
       var calls = 0;

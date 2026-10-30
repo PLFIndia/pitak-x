@@ -353,7 +353,6 @@ void main() {
 
         expect(await recovery(), CloudflareDeployRecovery.alreadyDeployed);
         expect(CloudflareDeployRecovery.values, [
-          CloudflareDeployRecovery.retry,
           CloudflareDeployRecovery.alreadyDeployed,
           CloudflareDeployRecovery.abort,
         ]);

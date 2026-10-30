@@ -76,6 +76,43 @@ final class CloudflarePublishPreflight {
     ),
   };
 
+  /// The same remote facts with [local] as the record to build from.
+  ///
+  /// Used when a pending deploy is promoted: the marker proved that deployment
+  /// landed, so freshness must be re-derived against the record describing it
+  /// (fix-plan L4). Nothing remote is re-read.
+  CloudflarePublishPreflight withLocal(CloudflareSiteManifest local) =>
+      CloudflarePublishPreflight(
+        target: target,
+        local: local,
+        workerExists: workerExists,
+        route: route,
+        probe: probe,
+        freshness: classifyFreshness(
+          localState: local.target == null ? null : local.state,
+          localPublishId: local.publishId,
+          probe: probe,
+          workerExists: workerExists,
+        ),
+      );
+
+  /// True when the public marker is EXACTLY the deploy [manifest] attempted.
+  ///
+  /// This is the only evidence that promotes a pending record (fix-plan L4):
+  /// a different id means the attempt did not land, and an unreadable marker
+  /// proves nothing.
+  bool provesDeploymentOf(CloudflareSiteManifest manifest) {
+    if (manifest.target == null || manifest.publishId == null) return false;
+    final marker = switch (probe) {
+      MarkerPresent(:final marker) => marker,
+      // Only a positive, live marker counts; absence or unreadability does not.
+      _ => null,
+    };
+    return marker != null &&
+        marker.publishId == manifest.publishId &&
+        marker.state == PublishMarkerState.live;
+  }
+
   /// Compares the target and the remote anchor. Route settings are deliberately
   /// excluded: the C8 gate changes them on purpose.
   bool hasSameAnchor(CloudflarePublishPreflight other) =>

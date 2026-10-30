@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
@@ -30,6 +31,25 @@ final class _FakeReader implements PublishedSiteReadVerifier {
   }
 }
 
+final class _SequenceReader implements PublishedSiteReadVerifier {
+  _SequenceReader(this.outcomes);
+
+  final List<PublishedSiteReadOutcome> outcomes;
+  int calls = 0;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    final index = calls < outcomes.length ? calls : outcomes.length - 1;
+    calls++;
+    return outcomes[index];
+  }
+}
+
 void main() {
   final target = CloudflarePublishTarget.create(
     accountId: '0123456789abcdef0123456789abcdef',
@@ -42,6 +62,59 @@ void main() {
     publishedAt: 1700000000000,
     state: PublishMarkerState.live,
   );
+
+  group('uncertain deploy recovery (L4)', () {
+    test('polls until the exact live marker appears', () async {
+      final reader = _SequenceReader([
+        const PublishedSiteReadUnreadable(),
+        PublishedSiteReadBody(codec.encode(marker)),
+      ]);
+      final recovery = await CloudflarePublishMarkerProbe(
+        reader: reader,
+        codec: codec,
+        sleep: (_) async {},
+        clock: () => 0,
+      ).recoverLiveDeployment(target: target, expected: marker);
+
+      expect(recovery, CloudflareDeployRecovery.alreadyDeployed);
+      expect(reader.calls, 2);
+    });
+
+    test(
+      'gives up after the bounded rounds and never asks to re-send',
+      () async {
+        final reader = _SequenceReader([const PublishedSiteReadAbsent()]);
+        final recovery = await CloudflarePublishMarkerProbe(
+          reader: reader,
+          codec: codec,
+          sleep: (_) async {},
+          clock: () => 0,
+        ).recoverLiveDeployment(target: target, expected: marker);
+
+        expect(recovery, CloudflareDeployRecovery.abort);
+        expect(reader.calls, CloudflareLimits.deployRecoveryRounds);
+      },
+    );
+
+    test('a different publish id is never proof', () async {
+      final other = PublishMarker(
+        publishId: 'f' * 32,
+        publishedAt: marker.publishedAt,
+        state: PublishMarkerState.live,
+      );
+      final reader = _SequenceReader([
+        PublishedSiteReadBody(codec.encode(other)),
+      ]);
+      final recovery = await CloudflarePublishMarkerProbe(
+        reader: reader,
+        codec: codec,
+        sleep: (_) async {},
+        clock: () => 0,
+      ).recoverLiveDeployment(target: target, expected: marker);
+
+      expect(recovery, CloudflareDeployRecovery.abort);
+    });
+  });
 
   test(
     'decodes a valid marker from the exact origin with a 4 KiB cap',

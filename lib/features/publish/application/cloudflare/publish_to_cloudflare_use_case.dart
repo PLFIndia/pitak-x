@@ -7,6 +7,7 @@
 /// target/section/digest.
 library;
 
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
@@ -203,7 +204,25 @@ final class PublishToCloudflareUseCase {
     if (preflightFailure != null) {
       return CloudflarePublishOutcomes.failure(preflightFailure);
     }
-    final initial = preflight.toNullable()!;
+    var initial = preflight.toNullable()!;
+
+    // L4: an attempt whose marker is EXACTLY present has landed. Promote the
+    // pending record before anything reads the state, so this phone recognises
+    // its own deploy (and can verify/repair it) instead of offering a
+    // whole-site replacement for a site that is already correct. A record for
+    // another target, or one whose id the marker does not carry, changes
+    // nothing.
+    final attempted = _manifest.loadPending().forTarget(target);
+    if (attempted.target != null && initial.provesDeploymentOf(attempted)) {
+      final promoted = _manifest.save(attempted);
+      if (promoted case Left(value: final failure)) {
+        return CloudflarePublishOutcomes.failure(failure);
+      }
+      // Idempotent: a leftover record is promoted only by the same exact match.
+      _manifest.clearPending();
+      local = attempted;
+      initial = initial.withLocal(attempted);
+    }
 
     // Confirmation is bound to the remote facts the user reviewed, not to a
     // freshness category (N1/M10). An equal anchor authorises the replacement

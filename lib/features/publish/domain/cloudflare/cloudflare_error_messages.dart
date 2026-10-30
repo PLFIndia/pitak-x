@@ -104,12 +104,24 @@ abstract final class CloudflareErrorMessages {
       'deployment was created. Retry verification before publishing again.';
 
   /// A deploy outcome is uncertain; never claim the live site is unchanged.
+  ///
+  /// Retry verification is the honest next step: it reads the site and either
+  /// confirms the exact deployment or reports that it is not there yet
+  /// (fix-plan L7). Reconnecting changes the target and proves nothing.
   static const deployUncertain =
-      'Cloudflare did not confirm the deployment. The site may have changed. '
-      'Reconnect and check the exact target before retrying.';
+      'Cloudflare did not confirm the deployment, so the site may or may not '
+      'have changed. Tap Retry verification to check before publishing again.';
 
   /// Fixed suffix for failures before any deployment was attempted.
   static const liveUnchanged = 'Your live site was not changed.';
+
+  /// The attempted deploy could not be recorded, so it was never sent.
+  ///
+  /// An attempt this phone cannot describe is one it could never recognise
+  /// afterwards, so nothing is deployed (fix-plan L4).
+  static const localRecordNotSavedBeforeDeploy =
+      'This device could not save its publish record, so nothing was deployed. '
+      'Your live site was not changed.';
 
   /// Honest note after asset-session/bucket work without a live deployment.
   static const uploadedBytesNote =

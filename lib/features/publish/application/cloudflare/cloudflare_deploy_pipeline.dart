@@ -199,6 +199,17 @@ final class CloudflareDeployPipeline {
       }
     }
 
+    // L4: the new publish id exists only in this PUT, so record the attempt
+    // first. A phone that cannot describe the attempt could never recognise a
+    // deploy whose response was lost, and would offer a whole-site
+    // replacement for its own site.
+    final pending = _manifest.savePending(publication.manifest);
+    if (pending.isLeft()) {
+      return const PublishFailure(
+        CloudflareErrorMessages.localRecordNotSavedBeforeDeploy,
+      );
+    }
+
     progress.deployStarted = true;
     await _deployApi.deploy(
       token: token,
@@ -213,7 +224,14 @@ final class CloudflareDeployPipeline {
     );
     progress.deployAccepted = true;
 
-    var localStateSaved = _manifest.save(publication.manifest).isRight();
+    final deployedSaved = _manifest.save(publication.manifest);
+    var localStateSaved = deployedSaved.isRight();
+    if (localStateSaved) {
+      // Clearing the attempt is idempotent: a leftover record is promoted only
+      // by an exact marker match, so a failed clear cannot corrupt the next
+      // publish. Its failure is therefore not a user-visible outcome.
+      _manifest.clearPending();
+    }
     try {
       final private = await gate.afterDeploy(
         token: token,

@@ -1022,6 +1022,141 @@ void main() {
     },
   );
 
+  test('the attempted deploy is recorded before the PUT and cleared after '
+      'it (L4)', () async {
+    final h = S8PublishHarness(dir);
+    final realOnDeploy = h.api.onDeploy;
+    var pendingAtDeploy = false;
+    var pendingIdAtDeploy = false;
+    h.api.onDeploy = () {
+      pendingAtDeploy = h.manifestStore.pending.target != null;
+      pendingIdAtDeploy =
+          h.manifestStore.pending.publishId == cloudflareTestPublishId;
+      realOnDeploy?.call();
+    };
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect(pendingAtDeploy, isTrue, reason: 'saved before the remote write');
+    expect(pendingIdAtDeploy, isTrue);
+    expect(h.manifestStore.pendingSaves, hasLength(1));
+    expect(h.manifestStore.clearPendingCalls, 1);
+    expect(h.manifestStore.pending.target, isNull);
+  });
+
+  test('an unrecordable attempt stops before the PUT (L4)', () async {
+    final h = S8PublishHarness(dir);
+    h.manifestStore.failPendingSave = true;
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    final failure = result as PublishFailure;
+    expect(
+      failure.reason,
+      CloudflareErrorMessages.localRecordNotSavedBeforeDeploy,
+    );
+    expect(h.api.deployCalls, 0);
+    expect(h.manifestStore.saves, isEmpty);
+  });
+
+  test('a landed deploy whose response was lost is recognised next time, '
+      'with no replacement (L4)', () async {
+    final h = S8PublishHarness(dir);
+    h.api
+      // The deploy landed and the edge serves it; only the response was lost.
+      ..onDeployAttempt = h.serveDeployed
+      ..deployError = CloudflareApiException(CloudflareApiExceptionKind.server);
+
+    final first = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(first, isA<PublishFailure>());
+    expect(
+      (first as PublishFailure).reason,
+      contains(CloudflareErrorMessages.deployUncertain),
+    );
+    expect(h.manifestStore.pending.publishId, cloudflareTestPublishId);
+
+    h.api.deployError = null;
+    final second = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(second, isNot(isA<PublishReplacementRequired>()));
+    expect(second, isA<PublishSuccess>());
+    expect(h.manifestStore.current.state, PublishState.live);
+    expect(h.manifestStore.pending.target, isNull);
+  });
+
+  test(
+    'an attempt that never landed leaves the live record untouched (L4)',
+    () async {
+      final oldId = 'a' * 32;
+      final h = S8PublishHarness(dir, workerExists: true);
+      h.manifestStore.current = s8Manifest(target: h.target, publishId: oldId);
+      seed(h, s8CoreFiles(oldId));
+      h.api.deployError = CloudflareApiException(
+        CloudflareApiExceptionKind.server,
+      );
+
+      final first = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(first, isA<PublishFailure>());
+      expect(h.manifestStore.current.publishId, oldId);
+      expect(h.manifestStore.pending.publishId, cloudflareTestPublishId);
+
+      h.api.deployError = null;
+      final second = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      // The marker never carried the attempted id, so nothing was promoted.
+      expect(second, isA<PublishSuccess>());
+      expect(h.api.deployCalls, 2);
+    },
+  );
+
+  test('Retry verification repairs a failed deployed save (L4)', () async {
+    final h = S8PublishHarness(dir);
+    h.manifestStore.failSave = true;
+
+    final first = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(first, isA<PublishSuccess>());
+    expect((first as PublishSuccess).localStateSaved, isFalse);
+    expect(h.manifestStore.pending.target, isNotNull);
+    expect(h.manifestStore.clearPendingCalls, 0);
+
+    h.manifestStore.failSave = false;
+    final retry = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      verificationOnly: true,
+    );
+
+    expect(retry, isA<PublishSuccess>());
+    expect(h.manifestStore.current.state, PublishState.live);
+    expect(h.manifestStore.pending.target, isNull);
+    expect(h.api.deployCalls, 1, reason: 'a repair never deploys again');
+  });
+
   test('unverified deploy stays deployed, then exact-marker retry avoids a '
       'second deployment', () async {
     final h = S8PublishHarness(dir)..autoServe = false;
