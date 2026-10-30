@@ -120,6 +120,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
         files,
         deleted,
         onVerify: onVerify,
+        recordSaved: true,
       );
     }
     if (!await beforeWrite()) {
@@ -159,13 +160,16 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           mergedShas: desired,
           coverUrlByBookId: complete.snapshot.catalogue.coverUrlByKey,
         );
-        _manifest.save(deployed);
+        // L12: this record is the only proof the commit was ours, so a failed
+        // save must reach the user rather than be discarded.
+        final recordSaved = _manifest.save(deployed).isRight();
         return _verifyCommitted(
           target,
           deployed,
           files,
           deleted,
           onVerify: onVerify,
+          recordSaved: recordSaved,
         );
     }
   }
@@ -175,6 +179,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
     PublishManifest publication,
     List<PublishFile> files,
     List<String> deleted, {
+    required bool recordSaved,
     MoveVerificationProgress? onVerify,
   }) async {
     onVerify?.call();
@@ -185,12 +190,16 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
       revision: _clock(),
     );
     if (!verified) {
-      return const MoveDestinationFailed(
-        MoveSiteMessages.destinationNotVerified,
+      return MoveDestinationFailed(
+        recordSaved
+            ? MoveSiteMessages.destinationNotVerified
+            : '${MoveSiteMessages.destinationNotVerified} '
+                  '${MoveSiteMessages.localRecordNotSaved}',
+        localStateSaved: recordSaved,
       );
     }
-    final saved = _manifest.save(publication.asLive()).isRight();
-    return MoveDestinationPublished(localStateSaved: saved);
+    final liveSaved = _manifest.save(publication.asLive()).isRight();
+    return MoveDestinationPublished(localStateSaved: recordSaved && liveSaved);
   }
 
   static bool _alreadyCommitted(

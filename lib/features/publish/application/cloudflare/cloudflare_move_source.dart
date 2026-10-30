@@ -270,15 +270,27 @@ final class CloudflareMoveSource implements MoveSourceOperations {
         expected: retiredMarker,
       ),
     );
-    final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
-        .afterDeploy(
-          token: token,
-          accountId: target.accountId,
-          workerName: target.workerName,
-        );
+    bool private;
+    try {
+      private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+          .afterDeploy(
+            token: token,
+            accountId: target.accountId,
+            workerName: target.workerName,
+          );
+    } on CloudflareApiException {
+      private = false;
+    }
     if (!private) {
+      // N4: the retirement deploy was accepted; only its route proof failed.
+      // Retrying is safe and necessary, and the copy must not hide that the
+      // old address's content is already gone.
       return const Left(
-        CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
+        CloudflareFailure(
+          '${CloudflareErrorMessages.versionUrlPrivacy} '
+          '${CloudflareErrorMessages.deploymentAccepted} The retirement '
+          'deployment was accepted; Retry move to finish it.',
+        ),
       );
     }
     return right(unit);

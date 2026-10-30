@@ -255,6 +255,114 @@ void main() {
   });
 
   test(
+    'a destination change next to the deploy names the destination (N5)',
+    () async {
+      final confirmation = await prepare();
+      api
+        ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+        ..onBucketUpload = (_) {
+          // The Worker's marker changed under us after the session started.
+          reader.body(CloudflareLimits.markerPath, s8Marker('f' * 32));
+        };
+
+      final result = await destination.publish(
+        confirmation: confirmation,
+        beforeWrite: () async => true,
+      );
+
+      final failure = result as MoveDestinationFailed;
+      expect(failure.reason, MoveSiteMessages.destinationChanged);
+      expect(failure.reason, isNot(MoveSiteMessages.sourceChanged));
+      expect(api.deployCalls, 0);
+    },
+  );
+
+  test(
+    'a source change next to the deploy still names the source (N5)',
+    () async {
+      final confirmation = await prepare();
+
+      final result = await destination.publish(
+        confirmation: confirmation,
+        beforeWrite: () async => false,
+      );
+
+      final failure = result as MoveDestinationFailed;
+      expect(failure.reason, MoveSiteMessages.sourceChanged);
+      expect(api.deployCalls, 0);
+    },
+  );
+
+  test('a route failure after the deploy says the deployment was accepted '
+      '(N4)', () async {
+    final confirmation = await prepare();
+    api
+      ..route = const CloudflareWorkerRoute(
+        enabled: true,
+        previewsEnabled: false,
+      )
+      ..onDeploy = () {
+        api
+          ..routeUpdateError = CloudflareApiException(
+            CloudflareApiExceptionKind.forbidden,
+          )
+          ..workerExistsValue = true;
+        for (final entry in store.bytesByPath.entries) {
+          reader.body(entry.key, entry.value);
+        }
+      };
+
+    final result = await destination.publish(
+      confirmation: confirmation,
+      beforeWrite: () async => true,
+    );
+
+    final failure = result as MoveDestinationFailed;
+    expect(failure.reason, contains(CloudflareErrorMessages.versionUrlPrivacy));
+    expect(
+      failure.reason,
+      contains(CloudflareErrorMessages.deploymentAccepted),
+    );
+    expect(api.deployCalls, 1);
+  });
+
+  test(
+    'a failed record save is disclosed with a failed read-back (L12)',
+    () async {
+      final confirmation = await prepare();
+      manifests.failSave = true;
+      api.onDeploy = () {
+        api.workerExistsValue = true;
+        final marker = store.bytesByPath[CloudflareLimits.markerPath];
+        if (marker != null) reader.body(CloudflareLimits.markerPath, marker);
+      };
+
+      final result = await destination.publish(
+        confirmation: confirmation,
+        beforeWrite: () async => true,
+      );
+
+      final failure = result as MoveDestinationFailed;
+      expect(failure.reason, contains(MoveSiteMessages.localRecordNotSaved));
+      expect(failure.localStateSaved, isFalse);
+    },
+  );
+
+  test('a failed record save is disclosed even when verification passes '
+      '(L12)', () async {
+    final confirmation = await prepare();
+    manifests.failSave = true;
+
+    final result = await destination.publish(
+      confirmation: confirmation,
+      beforeWrite: () async => true,
+    );
+
+    expect(result, isA<MoveDestinationPublished>());
+    expect((result as MoveDestinationPublished).localStateSaved, isFalse);
+  });
+
+  test(
     'an adopted destination still proves Version URLs are private (L3)',
     () async {
       final confirmation = await prepare();

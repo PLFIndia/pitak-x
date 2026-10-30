@@ -206,10 +206,15 @@ final class MoveDestinationConfirmationRequired extends MoveDestinationResult {
 /// Destination publication stopped before pending-state creation.
 final class MoveDestinationFailed extends MoveDestinationResult {
   /// Creates a fixed, safe destination failure.
-  const MoveDestinationFailed(this.reason);
+  const MoveDestinationFailed(this.reason, {this.localStateSaved = true});
 
   /// Safe user-facing reason with no transport or credential details.
   final String reason;
+
+  /// False when the destination's public record could not be saved on this
+  /// phone, so the failure copy says the site may be live but unrecorded
+  /// (fix-plan L12).
+  final bool localStateSaved;
 }
 
 /// Successful source retirement, including any separate spool cleanup truth.
@@ -256,6 +261,18 @@ abstract final class MoveSiteMessages {
   /// The source is absent or cannot be read reliably enough to retire.
   static const String sourceUnavailable =
       'The current site is unavailable or its publishing state is unreadable.';
+
+  /// The DESTINATION moved after review; the source is untouched.
+  ///
+  /// Reporting this as "source changed" named the wrong site and sent the user
+  /// to fix a site that had not changed (fix-plan N5).
+  static const String destinationChanged =
+      'The Cloudflare site changed while the move was being prepared. Nothing '
+      'was published.';
+
+  /// The destination is live but this phone could not record it.
+  static const String localRecordNotSaved =
+      'This phone could not save its record of the new site.';
 
   /// Skip is not authorization to hide a reachable or changed old site.
   static const String skipNotAllowed =

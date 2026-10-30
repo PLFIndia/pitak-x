@@ -205,6 +205,30 @@ void main() {
   });
 
   test(
+    'a failed commit record is reported with the failed read-back (L12)',
+    () async {
+      final prepared = await destination.prepare(
+        oldTarget: moveCloudflareTarget,
+        newTarget: moveGitHubTarget,
+        sourceAnchor: moveAnchor(moveCloudflareTarget),
+      );
+      // The commit lands, but its local record cannot be saved and read-back
+      // fails (no bodies are served).
+      destinationManifest.failSave = true;
+
+      final result = await destination.publish(
+        confirmation: prepared.toNullable()!,
+        beforeWrite: () async => true,
+      );
+
+      final failure = result as MoveDestinationFailed;
+      expect(failure.reason, contains(MoveSiteMessages.localRecordNotSaved));
+      expect(failure.localStateSaved, isFalse);
+      expect(api.commits, hasLength(1));
+    },
+  );
+
+  test(
     'failed destination read-back reports the truth and is not recorded',
     () async {
       final prepared = await destination.prepare(

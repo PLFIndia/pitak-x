@@ -151,8 +151,11 @@ final class MoveSiteUseCase {
     switch (published) {
       case MoveDestinationConfirmationRequired(:final confirmation):
         return MoveSiteConfirmationRequired(confirmation);
-      case MoveDestinationFailed(:final reason):
-        return MoveSiteFailure(reason);
+      case MoveDestinationFailed(:final reason, :final localStateSaved):
+        return MoveSiteFailure(
+          reason,
+          destinationLocalStateSaved: localStateSaved,
+        );
       case MoveDestinationPublished(
         :final localStateSaved,
         :final temporaryCleanupFailed,

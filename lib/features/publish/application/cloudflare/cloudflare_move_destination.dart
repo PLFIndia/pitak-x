@@ -297,7 +297,12 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       return MoveDestinationFailed(_message(lastFailure));
     }
     final last = lastResult.toNullable()!;
-    if (!baseline.hasSameAnchor(last) || !await beforeWrite()) {
+    // N5: the destination moved, or the source moved. Naming the wrong site
+    // sent the user to fix a site that had not changed.
+    if (!baseline.hasSameAnchor(last)) {
+      return const MoveDestinationFailed(MoveSiteMessages.destinationChanged);
+    }
+    if (!await beforeWrite()) {
       return const MoveDestinationFailed(MoveSiteMessages.sourceChanged);
     }
     await _deployApi.deploy(
@@ -325,17 +330,31 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
     CloudflarePublicationArtifacts publication, {
     MoveVerificationProgress? onVerify,
   }) async {
-    _manifest.save(publication.manifest);
+    // L12: this record is what proves the deploy was ours, so its save result
+    // must reach the user instead of being discarded.
+    final recordSaved = _manifest.save(publication.manifest).isRight();
+    final localNote = recordSaved
+        ? ''
+        : ' ${MoveSiteMessages.localRecordNotSaved}';
     final token = current.connection.useToken((value) => value);
-    final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
-        .afterDeploy(
-          token: token,
-          accountId: target.accountId,
-          workerName: target.workerName,
-        );
+    // N4: a route write here can throw. That must say the deploy was accepted,
+    // not collapse into a generic "move could not be completed".
+    bool private;
+    try {
+      private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+          .afterDeploy(
+            token: token,
+            accountId: target.accountId,
+            workerName: target.workerName,
+          );
+    } on CloudflareApiException {
+      private = false;
+    }
     if (!private) {
-      return const MoveDestinationFailed(
-        CloudflareErrorMessages.versionUrlPrivacy,
+      return MoveDestinationFailed(
+        '${CloudflareErrorMessages.versionUrlPrivacy} '
+        '${CloudflareErrorMessages.deploymentAccepted}$localNote',
+        localStateSaved: recordSaved,
       );
     }
     onVerify?.call();
@@ -346,8 +365,9 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       revision: _clock(),
     );
     if (verified != CloudflarePublicationVerification.verified) {
-      return const MoveDestinationFailed(
-        MoveSiteMessages.destinationNotVerified,
+      return MoveDestinationFailed(
+        '${MoveSiteMessages.destinationNotVerified}$localNote',
+        localStateSaved: recordSaved,
       );
     }
     final saved = (await _verifiedCommit.call(
@@ -355,7 +375,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       target: target,
       manifest: publication.manifest,
     )).isRight();
-    return MoveDestinationPublished(localStateSaved: saved);
+    return MoveDestinationPublished(localStateSaved: recordSaved && saved);
   }
 
   Future<MoveDestinationResult> _verifyExisting(

@@ -124,6 +124,10 @@ abstract final class CloudflareErrorMessages {
   /// Fixed suffix for failures before any deployment was attempted.
   static const liveUnchanged = 'Your live site was not changed.';
 
+  /// Honest note when the deploy landed but its route/read-back did not.
+  static const deploymentAccepted =
+      'The deployment was accepted but is not verified live.';
+
   /// The attempted deploy could not be recorded, so it was never sent.
   ///
   /// An attempt this phone cannot describe is one it could never recognise

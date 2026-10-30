@@ -157,6 +157,34 @@ void main() {
     });
   });
 
+  test('a route failure after the retirement deploy says the deployment was '
+      'accepted (N4)', () async {
+    final pending = movePending(oldTarget: moveCloudflareTarget);
+    api.onDeploy = () {
+      reader
+        ..body('', pending.retirement.indexHtml)
+        ..absent('books.json')
+        ..body(
+          CloudflareLimits.markerPath,
+          s8Marker(moveRetiredPublishId, state: PublishMarkerState.retired),
+        );
+      // Only the post-deploy route write fails.
+      api.routeUpdateError = CloudflareApiException(
+        CloudflareApiExceptionKind.forbidden,
+      );
+    };
+
+    final result = await source.retire(pending);
+
+    final failure = result.swap().toNullable()!;
+    expect(failure, isA<CloudflareFailure>());
+    final message = (failure as CloudflareFailure).message;
+    expect(message, contains(CloudflareErrorMessages.versionUrlPrivacy));
+    expect(message, contains(CloudflareErrorMessages.deploymentAccepted));
+    expect(manifests.current.state, isNot(PublishState.retired));
+    expect(api.deployCalls, 1);
+  });
+
   test('retire adopts an already-retired Worker without a deploy', () async {
     final pending = movePending(oldTarget: moveCloudflareTarget);
     reader

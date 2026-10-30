@@ -128,11 +128,17 @@ final class MemoryManifest implements PublishManifestGateway {
   /// Number of saves.
   int saves = 0;
 
+  /// When true, every save returns a typed failure without storing.
+  bool failSave = false;
+
   @override
   PublishManifest load() => value;
 
   @override
   Either<Failure, Unit> save(PublishManifest manifest) {
+    if (failSave) {
+      return left(const StorageFailure('synthetic manifest save failure'));
+    }
     value = manifest;
     saves++;
     return right(unit);
