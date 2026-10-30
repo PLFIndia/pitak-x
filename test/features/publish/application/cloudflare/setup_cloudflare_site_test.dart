@@ -39,6 +39,49 @@ void main() {
       },
     );
 
+    test('one hostile account name no longer hides the list (L14)', () async {
+      final h = CloudflareSetupHarness();
+      h.api.listing = CloudflareAccountListing(
+        accounts: [
+          CloudflareAccount(
+            id: cloudflareTestAccount(),
+            name: 'Evil\u202Eaccount',
+          ),
+          CloudflareAccount(
+            id: CloudflareAccountId.tryParse(
+              'fedcba9876543210fedcba9876543210',
+            )!,
+            name: 'Second account',
+          ),
+        ],
+        truncated: false,
+      );
+      final token = cloudflareTestToken();
+
+      final discovery = _right(await h.setup.begin(token));
+
+      expect(discovery.accounts, hasLength(2));
+      expect(
+        discovery.manualRequired,
+        isFalse,
+        reason: 'the list is shown; the manual path remains an option in it',
+      );
+      expect(discovery.accounts.first.displayName, 'Account …cdef');
+      expect(discovery.accounts.first.storageName, isNull);
+      expect(discovery.accounts.last.displayName, 'Second account');
+
+      // Selecting the fallback stores NO name, so the replacement label never
+      // becomes a "fact" this phone claims Cloudflare published.
+      _right(
+        await h.setup.selectAccount(
+          accountId: cloudflareTestAccount(),
+          accountName: discovery.accounts.first.storageName,
+          pendingToken: token,
+        ),
+      );
+      expect(h.credentials.record?.status.accountName, isNull);
+    });
+
     test(
       'a user token is saved at account selection, with its expiry',
       () async {

@@ -7,13 +7,14 @@ import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 
 /// Lists bounded account choices, with manual ID only for refusal/truncation.
 ///
 /// A 401 is NOT a manual-account workaround: it propagates to the caller's
-/// reconnect mapping. Hostile account display names fail closed instead of
-/// reaching a picker.
+/// reconnect mapping. A hostile account display name no longer fails the whole
+/// discovery: it is rendered as "Account …{last 4 of id}" and never stored,
+/// so one bad name cannot hide the other accounts or the manual path (fix-plan
+/// L14). The rule itself lives on [CloudflareAccount].
 Future<Either<Failure, CloudflareAccountDiscovery>> discoverCloudflareAccounts(
   CloudflareAccountApi api,
   CloudflareApiToken token, {
@@ -21,13 +22,6 @@ Future<Either<Failure, CloudflareAccountDiscovery>> discoverCloudflareAccounts(
 }) async {
   try {
     final listing = await api.listAccounts(token);
-    if (listing.accounts.any(
-      (account) => !CloudflareConnection.isValidAccountName(account.name),
-    )) {
-      return left(
-        CloudflareFailure(CloudflareApiExceptionKind.malformedResponse.message),
-      );
-    }
     return right(
       CloudflareAccountDiscovery(
         accounts: listing.accounts,

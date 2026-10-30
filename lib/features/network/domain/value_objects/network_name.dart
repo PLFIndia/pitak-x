@@ -6,13 +6,16 @@
 /// sheets and dialogs, so the rules are strict:
 ///  - 1–80 characters after trimming (a name, not prose — same bound the old
 ///    bookmark label used);
-///  - no C0 control characters (code units < 0x20) and no DEL (0x7F): they
-///    can hide or mangle text in logs and terminals;
-///  - no Unicode bidi embedding/override characters (U+202A–U+202E) and no
-///    bidi isolate controls (U+2066–U+2069): these can VISUALLY REORDER a
-///    string, letting a hostile name read as something it is not (the classic
-///    "Trojan Source" trick) — the single most important rejection here.
+///  - no character refused by the SHARED display-text rule.
+///
+/// That forbidden-character rule lives in `core/text/safe_display_text.dart`
+/// and is shared with Cloudflare account names (fix-plan L14): C0/C1 controls,
+/// DEL, zero-width and bidi characters, line/paragraph separators and U+FEFF
+/// are refused because they can hide or VISUALLY REORDER a string (the classic
+/// "Trojan Source" trick) — the single most important rejection here.
 library;
+
+import 'package:pitaka/core/text/safe_display_text.dart';
 
 /// Normalizes and validates a library name for network use.
 abstract final class NetworkName {
@@ -29,18 +32,12 @@ abstract final class NetworkName {
     final trimmed = raw?.trim();
     if (trimmed == null) return null;
     if (trimmed.length < minLength || trimmed.length > maxLength) return null;
-    for (var i = 0; i < trimmed.length; i++) {
-      if (_isForbidden(trimmed.codeUnitAt(i))) return null;
-    }
+    // One shared rule for untrusted display text (fix-plan L14); this type
+    // supplies only its own length bound.
+    if (!SafeDisplayText.isSafe(trimmed)) return null;
     return trimmed;
   }
 
   /// True when [normalizeOrNull] would accept [raw].
   static bool isValid(String? raw) => normalizeOrNull(raw) != null;
-
-  static bool _isForbidden(int c) =>
-      c < 0x20 || // C0 controls (\n, \t, NUL, …)
-      c == 0x7F || // DEL
-      (c >= 0x202A && c <= 0x202E) || // bidi embeddings/overrides
-      (c >= 0x2066 && c <= 0x2069); // bidi isolate controls
 }

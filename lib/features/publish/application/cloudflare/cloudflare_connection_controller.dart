@@ -247,7 +247,9 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
       selected = await _enqueueSetup(
         (setup) => setup.selectAccount(
           accountId: account.id,
-          accountName: account.name,
+          // A replacement label is a UI convenience, never a stored fact
+          // (fix-plan L14).
+          accountName: account.storageName,
           pendingToken: pendingToken,
           tokenExpiresOn: discovery.tokenExpiresOn,
         ),

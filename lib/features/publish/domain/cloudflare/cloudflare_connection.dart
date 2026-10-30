@@ -7,6 +7,7 @@
 library;
 
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
@@ -314,14 +315,12 @@ final class CloudflareConnection {
     );
   }
 
-  static bool _validAccountName(String? name) {
-    if (name == null) return true;
-    if (name.isEmpty || name.length > 256) return false;
-    for (final unit in name.codeUnits) {
-      if (unit < 0x20 || unit == 0x7f) return false;
-    }
-    return true;
-  }
+  /// One rule with the picker: C0/C1 controls, zero-width and bidi
+  /// characters, separators and U+FEFF are refused (fix-plan L14). The length
+  /// and character rule live on [CloudflareAccount] so the API model and the
+  /// stored record cannot disagree.
+  static bool _validAccountName(String? name) =>
+      CloudflareAccount.isValidName(name);
 
   @override
   String toString() => 'CloudflareConnection(***)';

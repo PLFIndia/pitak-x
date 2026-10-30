@@ -9,6 +9,7 @@ library;
 
 import 'dart:async';
 
+import 'package:pitaka/core/text/safe_display_text.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
@@ -39,11 +40,41 @@ final class CloudflareAccount {
   /// Creates an account summary.
   const CloudflareAccount({required this.id, required this.name});
 
+  /// Longest account name this app stores or renders.
+  static const int maxNameLength = 256;
+
   /// The validated account identity used in API paths.
   final CloudflareAccountId id;
 
-  /// The account name shown in the picker.
+  /// The account name exactly as Cloudflare returned it.
   final String name;
+
+  /// Whether [value] is a bounded, control-free account name.
+  ///
+  /// Null is valid on purpose: "no name" is a real, storable state. The
+  /// forbidden-character rule is SHARED with library names (fix-plan L14), so
+  /// bidi/zero-width/C1/separator characters cannot reach the picker through
+  /// either path.
+  static bool isValidName(String? value) {
+    if (value == null) return true;
+    if (value.isEmpty || value.length > maxNameLength) return false;
+    return SafeDisplayText.isSafe(value);
+  }
+
+  /// The label this app may render in the picker.
+  ///
+  /// A hostile or unrenderable name is replaced by "Account …{last 4 of id}"
+  /// instead of failing the entire discovery, so one bad name can never hide
+  /// the other accounts or the manual Account ID path (fix-plan L14).
+  String get displayName => name.isNotEmpty && isValidName(name)
+      ? name
+      : 'Account …${id.value.substring(id.value.length - 4)}';
+
+  /// The name to persist, or null when only [displayName]'s fallback applies.
+  ///
+  /// A replacement label is a UI convenience, not a fact Cloudflare published,
+  /// so it is never stored as the account name.
+  String? get storageName => name.isNotEmpty && isValidName(name) ? name : null;
 }
 
 /// A bounded account listing.

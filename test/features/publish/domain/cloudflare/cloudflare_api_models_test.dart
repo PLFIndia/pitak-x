@@ -67,12 +67,48 @@ void main() {
       expect(result.availability, CloudflareSubdomainAvailability.unknown);
     });
 
+    test('account names obey one shared safe-text rule (L14)', () {
+      final id = CloudflareAccountId.tryParse(
+        '0123456789abcdef0123456789abcdef',
+      )!;
+      final good = CloudflareAccount(id: id, name: 'Library account');
+      expect(good.displayName, 'Library account');
+      expect(good.storageName, 'Library account');
+
+      // Bidi override, zero-width space, C1 control, line separator and BOM:
+      // every one of these either reorders or hides what the user reads.
+      for (final hostile in <String>[
+        'Lib\u202Erary',
+        'Lib\u200Brary',
+        'Lib\u0085rary',
+        'Lib\u2028rary',
+        'Lib\uFEFFrary',
+      ]) {
+        final account = CloudflareAccount(id: id, name: hostile);
+        expect(CloudflareAccount.isValidName(hostile), isFalse);
+        expect(account.displayName, 'Account …cdef');
+        expect(
+          account.storageName,
+          isNull,
+          reason: 'a replacement label is never stored as the account name',
+        );
+      }
+    });
+
+    test('an empty account name gets the same safe fallback', () {
+      final id = CloudflareAccountId.tryParse(
+        '0123456789abcdef0123456789abcdef',
+      )!;
+      final account = CloudflareAccount(id: id, name: '');
+      expect(account.displayName, 'Account …cdef');
+      expect(account.storageName, isNull);
+    });
+
     test('worker route keeps both independent booleans', () {
       const route = CloudflareWorkerRoute(
         enabled: true,
         previewsEnabled: false,
       );
-
       expect(route.enabled, isTrue);
       expect(route.previewsEnabled, isFalse);
     });

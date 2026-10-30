@@ -20,7 +20,7 @@ Future<CloudflareAccountChoice?> showCloudflareAccountDialog(
     children: [
       for (final account in accounts)
         ListTile(
-          title: Text(account.name),
+          title: Text(account.displayName),
           onTap: () => Navigator.of(
             dialogContext,
           ).pop(CloudflareAccountChoice(account: account)),

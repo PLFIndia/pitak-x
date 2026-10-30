@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_name_dialogs.dart';
@@ -118,6 +121,33 @@ void main() {
       cloudflareTokenCreationUri.queryParameters['name'],
       'Pitak Library Publishing',
     );
+  });
+
+  testWidgets('a hostile account name is replaced, not shown (L14)', (
+    tester,
+  ) async {
+    CloudflareAccountChoice? result;
+    final second = CloudflareAccountId.tryParse(
+      'fedcba9876543210fedcba9876543210',
+    )!;
+    await _open(tester, container, (context) async {
+      result = await showCloudflareAccountDialog(
+        context,
+        accounts: [
+          CloudflareAccount(
+            id: CloudflareAccountId.tryParse(cloudflareTestAccountId)!,
+            name: 'Evil\u202Eaccount',
+          ),
+          CloudflareAccount(id: second, name: 'Second account'),
+        ],
+      );
+    });
+
+    expect(find.text('Account …cdef'), findsOneWidget);
+    expect(find.text('Second account'), findsOneWidget);
+    expect(find.text('Enter Account ID manually'), findsOneWidget);
+    expect(find.textContaining('\u202E'), findsNothing);
+    expect(result, isNull, reason: 'nothing was chosen yet');
   });
 
   testWidgets('Account ID dialog validates without echoing bad input', (
