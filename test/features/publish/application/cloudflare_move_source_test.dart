@@ -19,6 +19,7 @@ import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 import '../support/cloudflare_fakes.dart';
 import '../support/cloudflare_s8_fakes.dart';
@@ -47,7 +48,11 @@ void main() {
     );
     reader = FakeCloudflareWorkerReader()
       ..body(CloudflareLimits.markerPath, s8Marker(moveCloudflarePublishId));
-    store = RecordingArtifactStore(FilePublishArtifactStore(baseDir: dir.path));
+    store = RecordingArtifactStore(
+      FilePublishArtifactStore(
+        spoolRoot: PublishArtifactSpoolRoot(tempRoot: dir),
+      ),
+    );
     final probe = CloudflarePublishMarkerProbe(reader: reader, codec: _codec);
     final moveReader = CloudflareMoveReader(
       credentials: credentials,

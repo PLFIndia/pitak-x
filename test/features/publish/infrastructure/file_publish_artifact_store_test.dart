@@ -9,6 +9,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 PublishFile _file(String path, List<int> bytes, {String? sha}) => PublishFile(
   path: path,
@@ -35,7 +36,9 @@ void main() {
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('pitaka_s8_spool_');
-    store = FilePublishArtifactStore(baseDir: dir.path);
+    store = FilePublishArtifactStore(
+      spoolRoot: PublishArtifactSpoolRoot(tempRoot: dir),
+    );
   });
 
   tearDown(() async {

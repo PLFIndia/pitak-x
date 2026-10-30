@@ -21,6 +21,7 @@ import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 import '../support/cloudflare_fakes.dart';
 import '../support/cloudflare_s8_fakes.dart';
@@ -46,7 +47,11 @@ void main() {
     reader = FakeCloudflareWorkerReader()
       ..absent(CloudflareLimits.markerPath)
       ..absent('library.json');
-    store = RecordingArtifactStore(FilePublishArtifactStore(baseDir: dir.path));
+    store = RecordingArtifactStore(
+      FilePublishArtifactStore(
+        spoolRoot: PublishArtifactSpoolRoot(tempRoot: dir),
+      ),
+    );
     hostStore = ScriptedHostStore(
       PublishHostState(
         activeHost: PublishHost.github,

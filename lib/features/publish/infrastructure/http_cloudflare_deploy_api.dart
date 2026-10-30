@@ -16,9 +16,17 @@ import 'package:pitaka/features/publish/infrastructure/cloudflare_multipart_requ
 /// Deployment-side implementation of [CloudflareDeployApi].
 final class HttpCloudflareDeployApi implements CloudflareDeployApi {
   /// Creates the role adapter over the shared bounded transport.
-  HttpCloudflareDeployApi(this._transport);
+  ///
+  /// [nowMillis] is the adapter's clock, used only to stamp an upload session
+  /// so its one-hour JWT lifetime can be respected (fix-plan H2). Tests inject
+  /// a fixed clock; production reads the wall clock at the call.
+  HttpCloudflareDeployApi(this._transport, {int Function()? nowMillis})
+    : _nowMillis = nowMillis ?? _wallClockMillis;
 
   final CloudflareHttpTransport _transport;
+  final int Function() _nowMillis;
+
+  static int _wallClockMillis() => DateTime.now().millisecondsSinceEpoch;
 
   /// One bucket in flight, including hash validation and every retry (R24).
   /// Bounding each streamed chunk while serializing the operation bounds the
@@ -119,6 +127,9 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
           maxLength: CloudflareCompletionToken.maxLength,
         ),
         buckets: buckets,
+        // The upload JWT lives one hour; this stamp is what lets
+        // uploadBucket refuse work that cannot finish inside it.
+        issuedAtMillis: _nowMillis(),
       );
       if (session == null) throw const CloudflareJsonException();
       final knownHashes = <String>{for (final entry in manifest) entry.hash};
@@ -145,6 +156,7 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
       }
       await validateCloudflareBucketAssets(assets);
     });
+    final timing = _bucketTiming(session);
     final response = await session.useUploadJwt(
       (bearer) => _transport.send(
         path: '/accounts/${accountId.value}/workers/assets/upload',
@@ -152,15 +164,48 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
         queryParameters: const {'base64': 'true'},
         requestBuilder: (uri) =>
             cloudflareBucketMultipartRequest(url: uri, assets: assets),
-        deadline: CloudflareLimits.uploadDeadline,
+        timing: timing,
       ),
     );
     if (response == null) {
       throw StateError('An idempotent upload has no write recovery');
     }
-    requireCloudflareSuccess(response);
+    try {
+      requireCloudflareSuccess(response);
+    } on CloudflareApiException catch (error) {
+      // N12: a 401 here is the upload JWT expiring, not a bad account token.
+      // Telling the user to reconnect Cloudflare would not help.
+      if (error.kind == CloudflareApiExceptionKind.unauthorized) {
+        throw CloudflareApiException(
+          CloudflareApiExceptionKind.uploadTooSlow,
+          statusCode: error.statusCode,
+        );
+      }
+      rethrow;
+    }
     return parseCloudflareResponse(() => _completionFrom(response.result));
   });
+
+  /// The upload timing for one bucket, capped by the session's remaining life.
+  ///
+  /// Cloudflare's upload JWT lives one hour, so a session older than
+  /// [CloudflareLimits.uploadSessionBudget] refuses to start another bucket
+  /// instead of uploading bytes that can never be deployed (fix-plan H2).
+  CloudflareRequestTiming _bucketTiming(CloudflareUploadSession session) {
+    final issuedAt = session.issuedAtMillis;
+    if (issuedAt == null) {
+      // A test double that recorded no time; the budget is unobservable.
+      return const CloudflareRequestTiming.upload();
+    }
+    final elapsed = _nowMillis() - issuedAt;
+    final remaining =
+        CloudflareLimits.uploadSessionBudget -
+        Duration(milliseconds: elapsed < 0 ? 0 : elapsed);
+    if (remaining <= CloudflareLimits.uploadIdleTimeout) {
+      throw CloudflareApiException(CloudflareApiExceptionKind.uploadTooSlow);
+    }
+    return CloudflareRequestTiming.upload(cap: remaining);
+  }
 
   /// Reads the optional completion token from a successful bucket response.
   ///
@@ -201,7 +246,8 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
           completion: completionToken,
           kind: kind,
         ),
-        deadline: CloudflareLimits.uploadDeadline,
+        // A deploy carries metadata only, so the ordinary 60 s applies.
+        timing: CloudflareRequestTiming.deploy,
         idempotent: false,
         recover: () async => switch (await recovery()) {
           CloudflareDeployRecovery.retry => false,

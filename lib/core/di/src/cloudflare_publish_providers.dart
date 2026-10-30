@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/cloudflare/publish_to_cloudf
 import 'package:pitaka/features/publish/application/site/active_publish_target.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'cloudflare_publish_providers.g.dart';
@@ -56,12 +57,21 @@ Future<CloudflareVerifiedStateCommit> cloudflareVerifiedStateCommit(
 );
 
 /// Fresh operation-scoped public-artifact spools (never shared between runs).
+///
+/// The spool root is built here but does NO file work: the sweep and the run
+/// folder happen on the first `spool()` call, which is always inside a queued
+/// operation. Building a provider must never touch the filesystem, because the
+/// move providers are built outside the queue and could race a publish
+/// (fix-plan L5).
 @riverpod
 Future<CloudflareArtifactStoreFactory> cloudflareArtifactStores(
   CloudflareArtifactStoresRef ref,
 ) async {
-  final dir = await ref.watch(appDocsDirProvider.future);
-  return () => FilePublishArtifactStore(baseDir: dir.path);
+  final spoolRoot = PublishArtifactSpoolRoot(
+    tempRoot: await ref.watch(appTempDirProvider.future),
+    legacyRoot: await ref.watch(appDocsDirProvider.future),
+  );
+  return () => FilePublishArtifactStore(spoolRoot: spoolRoot);
 }
 
 /// The ONE Cloudflare ordinary-publish wiring shared by catalogue and events.

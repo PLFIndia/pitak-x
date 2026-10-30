@@ -24,6 +24,35 @@ enum CloudflareApiExceptionKind {
   /// The abortable total deadline expired.
   timeout('Cloudflare did not respond in time.'),
 
+  /// An upload stopped making progress after it had already sent real bytes.
+  ///
+  /// Re-sending a large body from byte 0 would spend the user's mobile data
+  /// for no guarantee, so the adapter stops and asks for a steadier link
+  /// (fix-plan H2 step 4).
+  uploadStalled(
+    'The upload to Cloudflare stopped making progress, so it was not '
+    'repeated automatically. Try again on a faster or steadier connection, '
+    'such as Wi-Fi.',
+  ),
+
+  /// An upload cannot finish inside Cloudflare's upload-session lifetime.
+  ///
+  /// Also used when the upload JWT itself expired (a 401 from the bucket
+  /// endpoint), because reconnecting the account would not help (N12).
+  uploadTooSlow(
+    'This connection is too slow to finish the upload in the time Cloudflare '
+    'allows. Try again on a faster connection, such as Wi-Fi.',
+  ),
+
+  /// A local artifact changed or disappeared between validation and upload.
+  ///
+  /// Not retryable: the bytes on this device are no longer the ones whose hash
+  /// Cloudflare accepted, so another attempt would send different content.
+  artifactChanged(
+    'Some site files on this device changed or could not be read during the '
+    'upload, so it stopped. Publish again.',
+  ),
+
   /// An API redirect was refused instead of forwarding credentials.
   redirect('Cloudflare returned an unexpected redirect.'),
 

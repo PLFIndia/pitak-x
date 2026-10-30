@@ -27,14 +27,15 @@ void main() {
   final delays = <Duration>[];
 
   HttpCloudflareDeployApi apiFor(
-    Future<http.Response> Function(http.Request request) handler,
-  ) {
+    Future<http.Response> Function(http.Request request) handler, {
+    int Function()? nowMillis,
+  }) {
     final transport = CloudflareHttpTransport(
       client: MockClient(handler),
       sleep: (delay) async => delays.add(delay),
     );
     addTearDown(transport.close);
-    return HttpCloudflareDeployApi(transport);
+    return HttpCloudflareDeployApi(transport, nowMillis: nowMillis);
   }
 
   http.Response envelope(
@@ -514,11 +515,77 @@ void main() {
           session: session,
           assets: [changingAsset],
         ),
-        throwsA(isA<CloudflareApiException>()),
+        throwsA(
+          isA<CloudflareApiException>().having(
+            (e) => e.kind,
+            'kind',
+            CloudflareApiExceptionKind.artifactChanged,
+          ),
+        ),
       );
       expect(handlerCalls, 0, reason: 'the mismatched body cannot complete');
-      expect(opens, 4, reason: 'validation plus all three bounded attempts');
-      expect(delays, [const Duration(seconds: 1), const Duration(seconds: 2)]);
+      expect(
+        opens,
+        2,
+        reason: 'one validation pass plus one refused stream, never a retry',
+      );
+      expect(delays, isEmpty, reason: 'a changed file is not retried (L8)');
+    });
+
+    test(
+      'a 401 on the bucket endpoint is an expired upload JWT (N12)',
+      () async {
+        final api = apiFor(
+          (_) async => envelope(null, status: 401, success: false),
+        );
+        await expectLater(
+          api.uploadBucket(
+            accountId: account,
+            session: session,
+            assets: assets,
+          ),
+          throwsA(
+            isA<CloudflareApiException>().having(
+              (e) => e.kind,
+              'kind',
+              CloudflareApiExceptionKind.uploadTooSlow,
+            ),
+          ),
+        );
+        expect(
+          delays,
+          isEmpty,
+          reason: 'reconnecting the account would not help, so no retry',
+        );
+      },
+    );
+
+    test('an exhausted upload session refuses another bucket', () async {
+      var calls = 0;
+      final issuedAt = DateTime.utc(2026, 10, 30, 12).millisecondsSinceEpoch;
+      final api = apiFor((_) async {
+        calls++;
+        return envelope({'jwt': 'completion.jwt'});
+      }, nowMillis: () => issuedAt);
+      final stale = CloudflareUploadSession.tryCreate(
+        uploadJwt: 'upload.jwt',
+        buckets: [
+          [hash],
+        ],
+        issuedAtMillis:
+            issuedAt - CloudflareLimits.uploadSessionBudget.inMilliseconds,
+      )!;
+      await expectLater(
+        api.uploadBucket(accountId: account, session: stale, assets: assets),
+        throwsA(
+          isA<CloudflareApiException>().having(
+            (e) => e.kind,
+            'kind',
+            CloudflareApiExceptionKind.uploadTooSlow,
+          ),
+        ),
+      );
+      expect(calls, 0, reason: 'no bytes are sent that can never be deployed');
     });
 
     test('three concurrent bucket calls remain serial', () async {

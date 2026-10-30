@@ -43,6 +43,7 @@ import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 import 'cloudflare_fakes.dart';
 
@@ -225,7 +226,9 @@ final class S8PublishHarness {
              const PublishHostState(activeHost: PublishHost.cloudflare),
        ),
        artifactStore = RecordingArtifactStore(
-         FilePublishArtifactStore(baseDir: directory.path),
+         FilePublishArtifactStore(
+           spoolRoot: PublishArtifactSpoolRoot(tempRoot: directory),
+         ),
        ) {
     api.workerExistsValue = workerExists;
     reader

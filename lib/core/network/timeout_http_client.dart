@@ -38,11 +38,19 @@
 /// Request bodies are not copied or buffered by this decorator. A thin
 /// abortable wrapper delegates `finalize()` to the original request, so plain,
 /// streamed and multipart uploads all keep their existing streaming behavior.
+///
+/// **Upload mode (fix-plan H2).** When `requestBodyIdleTimeout` is set, the
+/// per-phase `timeout` bounds ONLY the wait for the first pulled body chunk,
+/// and the body itself is bounded by an idle timer: no progress for that long
+/// aborts. Once the body ends, `responseHeadersTimeout` bounds the response
+/// headers. The total deadline still applies, so a trickle cannot live
+/// forever.
 library;
 
 import 'dart:async';
 
 import 'package:http/http.dart' as http;
+import 'package:pitaka/core/network/request_body_progress.dart';
 
 /// Wraps an inner [http.Client] with connect/idle/total deadlines and a body
 /// byte cap, aborting the underlying request when any of them trips.
@@ -62,16 +70,27 @@ final class TimeoutHttpClient extends http.BaseClient {
     this.timeout = const Duration(seconds: 60),
     Duration? totalDeadline,
     this.maxResponseBytes = defaultMaxResponseBytes,
+    this.requestBodyIdleTimeout,
+    this.responseHeadersTimeout,
+    this.onRequestBodyProgress,
   }) : totalDeadline = totalDeadline ?? timeout,
        assert(
          (totalDeadline ?? timeout) >= timeout,
          'totalDeadline must not be shorter than timeout',
        ),
-       assert(maxResponseBytes > 0, 'maxResponseBytes must be positive');
+       assert(maxResponseBytes > 0, 'maxResponseBytes must be positive'),
+       assert(
+         responseHeadersTimeout == null || requestBodyIdleTimeout != null,
+         'responseHeadersTimeout only applies to upload mode',
+       );
 
   final http.Client _inner;
 
-  /// Per-phase limit (connect/headers, then per body chunk).
+  /// Per-phase limit.
+  ///
+  /// Outside upload mode: connect/headers, then between response body chunks.
+  /// In upload mode ([requestBodyIdleTimeout] set): only the wait for the
+  /// first pulled request-body chunk.
   final Duration timeout;
 
   /// Whole-request limit from send to the last body byte.
@@ -79,6 +98,22 @@ final class TimeoutHttpClient extends http.BaseClient {
 
   /// Hard cap on response body bytes; counted as received, never declared.
   final int maxResponseBytes;
+
+  /// Upload mode: how long the request body may make no progress.
+  ///
+  /// Null (the default) keeps the original behaviour, where [timeout] bounds
+  /// connect AND the whole body upload. Every non-Cloudflare caller is in that
+  /// mode, so this change cannot silently alter GitHub, lookup or viewer
+  /// traffic.
+  final Duration? requestBodyIdleTimeout;
+
+  /// Upload mode: how long the response headers may take after the body ends.
+  ///
+  /// Defaults to [timeout] when upload mode is on and this is null.
+  final Duration? responseHeadersTimeout;
+
+  /// Upload mode: receives cumulative pulled request-body bytes.
+  final void Function(int sent)? onRequestBodyProgress;
 
   /// 64 MiB. Matches the app's own "far beyond a legitimate catalogue"
   /// ceiling (`ImportLimits.maxTextChars`): a 100 000-row `books.json`
@@ -103,22 +138,45 @@ final class TimeoutHttpClient extends http.BaseClient {
       unawaited(abortTrigger.then((_) => deadline.abort()));
     }
 
+    // Upload mode watches the REQUEST body, which only exists once the inner
+    // client pulls it. Null means the unchanged connect+headers behaviour.
+    final progress = requestBodyIdleTimeout == null
+        ? null
+        : RequestBodyProgress(
+            url: request.url,
+            connectTimeout: timeout,
+            idleTimeout: requestBodyIdleTimeout!,
+            headersTimeout: responseHeadersTimeout ?? timeout,
+            onProgress: onRequestBodyProgress,
+          );
+
     final http.StreamedResponse resp;
     try {
-      // (1) Connect + headers. `Future.timeout` alone would only stop
-      // waiting; the abort trigger is what stops the request.
-      resp = await _inner
-          .send(_abortable(request, deadline.abortTrigger))
-          .timeout(
-            timeout,
-            onTimeout: () {
-              deadline.abort();
-              throw http.ClientException(
-                'Request timed out after ${timeout.inSeconds}s',
-                request.url,
-              );
-            },
-          );
+      final sending = _inner.send(
+        _abortable(request, deadline.abortTrigger, progress),
+      );
+      if (progress == null) {
+        // (1) Connect + headers. `Future.timeout` alone would only stop
+        // waiting; the abort trigger is what stops the request.
+        resp = await sending.timeout(
+          timeout,
+          onTimeout: () {
+            deadline.abort();
+            throw http.ClientException(
+              'Request timed out after ${timeout.inSeconds}s',
+              request.url,
+            );
+          },
+        );
+      } else {
+        // The first phase timer is started here so a request that never
+        // reaches `finalize()` still errors instead of hanging.
+        progress.start();
+        resp = await Future.any<http.StreamedResponse>([
+          sending,
+          progress.failed,
+        ]);
+      }
     } on http.RequestAbortedException {
       deadline.cancel();
       throw http.ClientException(
@@ -132,6 +190,9 @@ final class TimeoutHttpClient extends http.BaseClient {
         ..cancel()
         ..abort();
       rethrow;
+    } finally {
+      // Success ends all upload phase timers; the response body has its own.
+      progress?.stop();
     }
 
     // (3) fired while headers were still in flight: the abort is already
@@ -167,7 +228,8 @@ final class TimeoutHttpClient extends http.BaseClient {
   http.BaseRequest _abortable(
     http.BaseRequest original,
     Future<void> trigger,
-  ) => _AbortableRequest(original, trigger);
+    RequestBodyProgress? progress,
+  ) => _AbortableRequest(original, trigger, progress);
 
   /// Forwards [source] enforcing (2) idle, (3) total and (4) size. On any
   /// trip: cancel the source (closes the socket), request the abort, error
@@ -270,7 +332,7 @@ final class TimeoutHttpClient extends http.BaseClient {
 /// uploads outside the deadline. This wrapper keeps the original request as
 /// the body authority and adds exactly one new capability: [abortTrigger].
 final class _AbortableRequest extends http.BaseRequest with http.Abortable {
-  _AbortableRequest(this._original, this.abortTrigger)
+  _AbortableRequest(this._original, this.abortTrigger, this._progress)
     : super(_original.method, _original.url) {
     headers.addAll(_original.headers);
     followRedirects = _original.followRedirects;
@@ -279,6 +341,7 @@ final class _AbortableRequest extends http.BaseRequest with http.Abortable {
   }
 
   final http.BaseRequest _original;
+  final RequestBodyProgress? _progress;
 
   @override
   final Future<void> abortTrigger;
@@ -295,7 +358,9 @@ final class _AbortableRequest extends http.BaseRequest with http.Abortable {
     // MultipartRequest adds its generated boundary header during finalize.
     // Copy final headers AFTER finalizing so IOClient sends that exact header.
     headers.addAll(_original.headers);
-    return body;
+    // Upload mode counts pulled chunks; the bytes themselves are untouched.
+    final progress = _progress;
+    return progress == null ? body : http.ByteStream(progress.watch(body));
   }
 }
 

@@ -857,6 +857,61 @@ void main() {
     },
   );
 
+  test(
+    'a stalled upload shows the stall copy and never deploys (H2)',
+    () async {
+      final h = S8PublishHarness(dir);
+      h.api
+        ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+        ..uploadError = CloudflareApiException(
+          CloudflareApiExceptionKind.uploadStalled,
+        );
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishFailure>());
+      final reason = (result as PublishFailure).reason;
+      expect(
+        reason,
+        contains(CloudflareApiExceptionKind.uploadStalled.message),
+      );
+      expect(reason, contains(CloudflareErrorMessages.liveUnchanged));
+      expect(h.api.deployCalls, 0);
+      expect(h.manifestStore.saves, isEmpty);
+      expect(h.hostStore.stored?.verifiedTarget, isNull);
+    },
+  );
+
+  test(
+    'a too-slow upload shows the too-slow copy and never deploys (H2)',
+    () async {
+      final h = S8PublishHarness(dir);
+      h.api
+        ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+        ..uploadError = CloudflareApiException(
+          CloudflareApiExceptionKind.uploadTooSlow,
+        );
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishFailure>());
+      final reason = (result as PublishFailure).reason;
+      expect(
+        reason,
+        contains(CloudflareApiExceptionKind.uploadTooSlow.message),
+      );
+      expect(reason, contains('Wi-Fi'));
+      expect(h.api.deployCalls, 0);
+      expect(h.manifestStore.saves, isEmpty);
+    },
+  );
+
   test('unverified deploy stays deployed, then exact-marker retry avoids a '
       'second deployment', () async {
     final h = S8PublishHarness(dir)..autoServe = false;

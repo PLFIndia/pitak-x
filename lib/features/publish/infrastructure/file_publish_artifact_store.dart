@@ -3,6 +3,10 @@
 /// Every source reopens its file and yields at most 64 KiB per chunk. Identical
 /// content+extension is stored once. No credential, JWT, log, or response body
 /// is ever written here; cleanup removes only this operation's unique folder.
+///
+/// The folder itself comes from [PublishArtifactSpoolRoot], which puts it in
+/// the app's temporary directory and sweeps what a killed publish left behind
+/// (fix-plan L5).
 library;
 
 import 'dart:async';
@@ -20,14 +24,15 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manife
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
-/// A lazily created temporary artifact spool rooted below [baseDir].
+/// A lazily created temporary artifact spool handed out by [spoolRoot].
 final class FilePublishArtifactStore implements CloudflareArtifactStore {
   /// Creates an empty operation spool. The directory appears on first write.
-  FilePublishArtifactStore({required this.baseDir});
+  FilePublishArtifactStore({required this.spoolRoot});
 
-  /// Parent for the app-owned `publish_artifacts` temporary directory.
-  final String baseDir;
+  /// Owns the roots, the sweep and the set of live run folders.
+  final PublishArtifactSpoolRoot spoolRoot;
 
   static const Failure _invalid = ValidationFailure(
     'The site files could not be prepared safely.',
@@ -87,7 +92,9 @@ final class FilePublishArtifactStore implements CloudflareArtifactStore {
       }
 
       final directory = await _ensureDirectory();
-      final output = File(p.join(directory.path, hash));
+      final run = directory.toNullable();
+      if (run == null) return Left(directory.swap().toNullable()!);
+      final output = File(p.join(run.path, hash));
       final sink = output.openWrite();
       try {
         await for (final chunk in _memoryChunks(file.bytes)) {
@@ -139,15 +146,18 @@ final class FilePublishArtifactStore implements CloudflareArtifactStore {
       return right(unit);
     } on Exception {
       return const Left(_cleanupFailed);
+    } finally {
+      // Even a failed delete stops this process from claiming the folder, so a
+      // later sweep may retry it (fix-plan L5).
+      spoolRoot.release(directory);
     }
   }
 
-  Future<Directory> _ensureDirectory() async {
+  Future<Either<Failure, Directory>> _ensureDirectory() async {
     final existing = _directory;
-    if (existing != null) return existing;
-    final root = Directory(p.join(baseDir, 'publish_artifacts'));
-    await root.create(recursive: true);
-    return _directory = await root.createTemp('run-');
+    if (existing != null) return Right(existing);
+    final created = await spoolRoot.createRunDirectory();
+    return created.map((run) => _directory = run);
   }
 
   static Stream<List<int>> _memoryChunks(List<int> bytes) async* {

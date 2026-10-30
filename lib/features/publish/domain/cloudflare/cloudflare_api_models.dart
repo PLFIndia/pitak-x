@@ -223,7 +223,11 @@ final class CloudflareCompletionToken {
 
 /// An upload session's requested buckets and short-lived upload credential.
 final class CloudflareUploadSession {
-  const CloudflareUploadSession._(this._uploadJwt, this.buckets);
+  const CloudflareUploadSession._(
+    this._uploadJwt,
+    this.buckets,
+    this.issuedAtMillis,
+  );
 
   final String _uploadJwt;
 
@@ -231,6 +235,14 @@ final class CloudflareUploadSession {
   ///
   /// Both the outer list and every bucket are immutable defensive copies.
   final List<List<String>> buckets;
+
+  /// When the adapter created this session, in epoch milliseconds.
+  ///
+  /// Not a secret: it only carries the one-hour upload-JWT lifetime so a
+  /// bucket that could not finish inside it is refused (fix-plan H2). Null
+  /// means "no time recorded" (a test double); the production adapter always
+  /// stamps it.
+  final int? issuedAtMillis;
 
   /// Validates and copies an upload session, or returns null when its JWT or
   /// bucket shape is unsafe.
@@ -242,6 +254,7 @@ final class CloudflareUploadSession {
   static CloudflareUploadSession? tryCreate({
     required String? uploadJwt,
     required List<List<String>> buckets,
+    int? issuedAtMillis,
   }) {
     if (!_hasValidJwtShape(uploadJwt) || !_hasValidBuckets(buckets)) {
       return null;
@@ -252,6 +265,7 @@ final class CloudflareUploadSession {
     return CloudflareUploadSession._(
       uploadJwt!,
       List<List<String>>.unmodifiable(copiedBuckets),
+      issuedAtMillis,
     );
   }
 

@@ -25,6 +25,28 @@ final appDocsDirProvider = FutureProvider<Directory>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef AppDocsDirRef = FutureProviderRef<Directory>;
+String _$appTempDirHash() => r'331ffcb8d0558900523463fe6b1dc22d05de771a';
+
+/// The app's temporary directory, where publish spools live (fix-plan L5).
+///
+/// The OS may clear it at any time and it is never backed up, so a killed
+/// publish cannot leave a full copy of the site in Documents forever.
+///
+/// Copied from [appTempDir].
+@ProviderFor(appTempDir)
+final appTempDirProvider = FutureProvider<Directory>.internal(
+  appTempDir,
+  name: r'appTempDirProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$appTempDirHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef AppTempDirRef = FutureProviderRef<Directory>;
 String _$dataGenerationsHash() => r'5c7eb39a9f63c79decce85093ed046e046d888ce';
 
 /// Versioned data-generation store under `<appDocs>/data` (M02). The

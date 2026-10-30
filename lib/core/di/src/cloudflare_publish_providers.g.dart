@@ -95,9 +95,15 @@ final cloudflareVerifiedStateCommitProvider =
 typedef CloudflareVerifiedStateCommitRef =
     AutoDisposeFutureProviderRef<CloudflareVerifiedStateCommit>;
 String _$cloudflareArtifactStoresHash() =>
-    r'469511be3c068374b00ff0a87764d94c655c80c9';
+    r'9584bbe5a233307943cdd990e94321aa4b8452bd';
 
 /// Fresh operation-scoped public-artifact spools (never shared between runs).
+///
+/// The spool root is built here but does NO file work: the sweep and the run
+/// folder happen on the first `spool()` call, which is always inside a queued
+/// operation. Building a provider must never touch the filesystem, because the
+/// move providers are built outside the queue and could race a publish
+/// (fix-plan L5).
 ///
 /// Copied from [cloudflareArtifactStores].
 @ProviderFor(cloudflareArtifactStores)

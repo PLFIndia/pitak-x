@@ -52,8 +52,85 @@ abstract final class CloudflareLimits {
   /// Abortable total deadline for a normal API call.
   static const Duration apiDeadline = Duration(seconds: 30);
 
-  /// Abortable total deadline for an upload batch.
-  static const Duration uploadDeadline = Duration(seconds: 60);
+  /// Abortable total deadline for a metadata-only deployment.
+  ///
+  /// Deploys carry no file bytes (the assets are already uploaded), so the
+  /// ordinary 60 s is enough. Uploads use the size-derived profile below
+  /// (fix-plan H2).
+  static const Duration deployDeadline = Duration(seconds: 60);
+
+  // ---- Upload timing (fix-plan H2, decided D3) -----------------------------
+  //
+  // Two different questions used to share one 60 s number: "is this
+  // connection dead?" (an idle timeout) and "has this run taken too long?"
+  // (a total deadline). A 56 MB bucket needs 7.5 Mbit/s to finish in 60 s, so
+  // a slow-but-healthy phone was cut off and re-sent the whole bucket from
+  // byte 0. These constants answer each question separately.
+
+  /// Longest wait for a connection before the body's first pulled chunk.
+  static const Duration uploadConnectTimeout = Duration(seconds: 60);
+
+  /// Longest silence between body chunks the network is still draining.
+  static const Duration uploadIdleTimeout = Duration(seconds: 60);
+
+  /// Slowest sustained upload the app is willing to wait for.
+  ///
+  /// 64 KiB/s: slower than any usable mobile link, so a trickle is stopped,
+  /// while a real 3G upload (≈200 KiB/s and up) always fits.
+  static const int uploadFloorBytesPerSecond = 64 * 1024;
+
+  /// Bytes the socket and TLS layer may hold before our progress sees them.
+  ///
+  /// dart:io pauses the request body while the kernel send buffer is full, so
+  /// after the last observed pull up to this much may still be in flight.
+  static const int maxUnobservedInFlightBytes = 8 * 1024 * 1024;
+
+  /// Longest wait for response headers after the body has been sent.
+  ///
+  /// The server must first receive everything still buffered
+  /// ([maxUnobservedInFlightBytes]) at no less than the floor rate, then
+  /// answer: 60 s + 8 MiB ÷ 64 KiB/s = 188 s.
+  static const Duration uploadResponseWait = Duration(
+    milliseconds:
+        60 * 1000 +
+        (maxUnobservedInFlightBytes * 1000) ~/ uploadFloorBytesPerSecond,
+  );
+
+  /// Hard ceiling for one upload request, however large it is.
+  static const Duration maxUploadDeadline = Duration(minutes: 20);
+
+  /// Cloudflare's upload JWT lives one hour; stop well before it expires.
+  ///
+  /// All buckets and the deploy that follows them must fit inside it, so a
+  /// session is refused after this much wall-clock time. 55 min leaves 5 min
+  /// for the final deploy and read-back.
+  static const Duration uploadSessionBudget = Duration(minutes: 55);
+
+  /// Largest body that may be re-sent after the connection failed.
+  ///
+  /// Re-sending more than this over mobile data is worse than asking the user
+  /// to try again on Wi-Fi (fix-plan H2 step 4).
+  static const int blindResendMaxBytes = 1024 * 1024;
+
+  /// A request body above this size uses the upload timing profile (N13).
+  ///
+  /// The upload-session manifest can reach ~1.6 MB for 20 000 files, so it is
+  /// not an API-sized body even though the endpoint is an ordinary JSON call.
+  static const int largeBodyBytes = 256 * 1024;
+
+  /// Total deadline for one upload request carrying [bytes] body bytes.
+  ///
+  /// `60 s + bytes ÷ 64 KiB/s`, capped at [maxUploadDeadline]. A 56,131,788-byte
+  /// request gets about 15.3 min — the size the real-host trial used.
+  static Duration uploadTotalDeadline(int bytes) {
+    final safeBytes = bytes < 0 ? 0 : bytes;
+    final scaled = Duration(
+      milliseconds:
+          uploadIdleTimeout.inMilliseconds +
+          (safeBytes * 1000) ~/ uploadFloorBytesPerSecond,
+    );
+    return scaled < maxUploadDeadline ? scaled : maxUploadDeadline;
+  }
 
   /// Longest `retry-after` honoured once for a 429.
   static const Duration maxRetryAfter = Duration(seconds: 60);

@@ -2,8 +2,13 @@
 ///
 /// One transport serves both role adapters. Tokens arrive per call and are
 /// never fields. Every attempt gets a fresh request and a fresh
-/// [TimeoutHttpClient]
-/// decorator configured with Cloudflare's own deadline and 1 MiB response cap.
+/// [TimeoutHttpClient] decorator configured with the request's
+/// [CloudflareRequestTiming] and a 1 MiB response cap.
+///
+/// Uploads are bounded by progress, not by one wall-clock number (fix-plan
+/// H2): the request body has an idle timer, the total follows the body size,
+/// and an attempt that already sent more than
+/// [CloudflareLimits.blindResendMaxBytes] is never blindly re-sent.
 library;
 
 import 'dart:async';
@@ -16,11 +21,15 @@ import 'package:http/io_client.dart';
 import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_http_response.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_json.dart';
+import 'package:pitaka/features/publish/infrastructure/cloudflare_request_timing.dart';
 
 export 'package:pitaka/features/publish/infrastructure/cloudflare_http_response.dart';
+export 'package:pitaka/features/publish/infrastructure/cloudflare_request_timing.dart';
 
 /// Builds a fresh request for one attempt. Multipart bodies are single-use, so
 /// retries must invoke this factory again rather than re-sending a request.
@@ -85,22 +94,26 @@ final class CloudflareHttpTransport {
     required String bearer,
     required CloudflareRequestBuilder requestBuilder,
     Map<String, String>? queryParameters,
-    Duration deadline = CloudflareLimits.apiDeadline,
+    CloudflareRequestTiming timing = CloudflareRequestTiming.api,
     bool idempotent = true,
     bool statusOnly = false,
     Future<bool?> Function()? recover,
   }) async {
     var attempt = 0;
     var retriedRateLimit = false;
+    // One resend is allowed after a large body hit a 5xx/429 (H2 step 4).
+    var largeBodyResends = 0;
     while (true) {
       attempt++;
+      var bytesSent = 0;
       try {
         final response = await _open(
           path: path,
           bearer: bearer,
           requestBuilder: requestBuilder,
           queryParameters: queryParameters,
-          deadline: deadline,
+          timing: timing,
+          onBodyProgress: (sent) => bytesSent = sent,
         );
         final status = response.statusCode;
         if (status >= 300 && status < 400) {
@@ -116,15 +129,20 @@ final class CloudflareHttpTransport {
           return CloudflareHttpResponse.statusOnly(status);
         }
 
+        final largeBodySent =
+            timing.observesRequestBody &&
+            bytesSent > CloudflareLimits.blindResendMaxBytes;
         final retryableStatus = status == 429 || status >= 500;
         final mayRetryStatus =
             retryableStatus &&
             attempt < CloudflareLimits.maxAttempts &&
             (status != 429 || !retriedRateLimit) &&
+            (!largeBodySent || largeBodyResends < 1) &&
             (idempotent || recover != null);
         if (mayRetryStatus) {
           _discard(response);
           if (status == 429) retriedRateLimit = true;
+          if (largeBodySent) largeBodyResends++;
           if (idempotent) {
             await _sleep(_retryDelay(response, attempt));
             continue;
@@ -145,6 +163,19 @@ final class CloudflareHttpTransport {
         }
         return await _parse(response, uncertain: !idempotent);
       } on CloudflareApiException catch (error) {
+        // These are never retried: the bytes changed locally, the session is
+        // out of time, or re-sending a large body is worse than asking.
+        if (_neverRetried(error.kind)) rethrow;
+        // A failed large upload is not re-sent from byte 0 (H2 step 4): the
+        // user would spend the data twice with no better chance.
+        if (timing.observesRequestBody &&
+            bytesSent > CloudflareLimits.blindResendMaxBytes &&
+            error.kind == CloudflareApiExceptionKind.timeout) {
+          throw CloudflareApiException(
+            CloudflareApiExceptionKind.uploadStalled,
+            statusCode: error.statusCode,
+          );
+        }
         final retryableError =
             error.kind == CloudflareApiExceptionKind.network ||
             error.kind == CloudflareApiExceptionKind.timeout ||
@@ -179,7 +210,8 @@ final class CloudflareHttpTransport {
     required String bearer,
     required CloudflareRequestBuilder requestBuilder,
     required Map<String, String>? queryParameters,
-    required Duration deadline,
+    required CloudflareRequestTiming timing,
+    required void Function(int sent) onBodyProgress,
   }) async {
     final uri = _apiBase.replace(
       path: '${_apiBase.path}$path',
@@ -198,16 +230,45 @@ final class CloudflareHttpTransport {
     } on CloudflareJsonException {
       throw CloudflareApiException(CloudflareApiExceptionKind.invalidRequest);
     }
+    // N13: any body over 256 KiB — including a ~1.6 MB upload-session
+    // manifest — uses the upload profile. Without this the derived total
+    // would not apply to an ordinary JSON call that still moves real bytes.
+    final contentLength = request.contentLength;
+    final effective =
+        !timing.observesRequestBody &&
+            contentLength != null &&
+            contentLength > CloudflareLimits.largeBodyBytes
+        ? const CloudflareRequestTiming.upload()
+        : timing;
     final bounded = TimeoutHttpClient(
       _client(),
-      timeout: deadline,
-      totalDeadline: deadline,
+      timeout: effective.connect,
+      totalDeadline: effective.resolveTotal(contentLength),
+      requestBodyIdleTimeout: effective.idle,
+      responseHeadersTimeout: effective.responseWait,
+      onRequestBodyProgress: effective.observesRequestBody
+          ? onBodyProgress
+          : null,
       maxResponseBytes: CloudflareLimits.maxApiBodyBytes,
     );
     try {
       return await bounded.send(request);
     } on http.ClientException catch (error) {
-      throw _transportException(error, uncertain: request.method != 'GET');
+      throw _transportException(
+        error,
+        uncertain: request.method != 'GET',
+        upload: effective.observesRequestBody,
+      );
+    } on CloudflareByteSourceException {
+      // A spool file vanished or changed while it streamed (fix-plan L8).
+      throw CloudflareApiException(CloudflareApiExceptionKind.artifactChanged);
+    } on CloudflareAssetHashException {
+      // The bytes on this device no longer hash to what Cloudflare accepted,
+      // so another attempt would send different content (fix-plan L8).
+      throw CloudflareApiException(CloudflareApiExceptionKind.artifactChanged);
+    } on CloudflareJsonException {
+      // The upload stream re-checks each hash and the base64 chunk cap.
+      throw CloudflareApiException(CloudflareApiExceptionKind.artifactChanged);
     } on Exception {
       throw CloudflareApiException(
         CloudflareApiExceptionKind.network,
@@ -249,32 +310,73 @@ final class CloudflareHttpTransport {
           envelope: decodeCloudflareEnvelope(bytes.takeBytes()),
         );
       } on CloudflareJsonException {
+        // L8: classify by STATUS first. Cloudflare's edge serves an HTML page
+        // for a 5xx or a second 429, so a non-JSON body there is a server /
+        // rate-limit answer, not "unreadable". A non-JSON 4xx stays
+        // malformed, because setup's 403 branch must not act on an HTML page.
+        final status = response.statusCode;
+        if (status == 429 || status >= 500) {
+          return CloudflareHttpResponse.statusOnly(status);
+        }
         throw CloudflareApiException(
           CloudflareApiExceptionKind.malformedResponse,
-          statusCode: response.statusCode,
+          statusCode: status,
           uncertain: uncertain,
         );
       }
     } on http.ClientException catch (error) {
-      throw _transportException(error, uncertain: uncertain);
+      throw _transportException(error, uncertain: uncertain, upload: false);
     }
   }
+
+  /// True for failure kinds that must never be attempted again.
+  static bool _neverRetried(CloudflareApiExceptionKind kind) =>
+      kind == CloudflareApiExceptionKind.uploadStalled ||
+      kind == CloudflareApiExceptionKind.uploadTooSlow ||
+      kind == CloudflareApiExceptionKind.artifactChanged;
 
   static CloudflareApiException _transportException(
     http.ClientException error, {
     required bool uncertain,
+    required bool upload,
   }) {
     // Inspect only our own fixed wrapper messages to classify the failure. The
     // original text and URI are never copied into the public exception.
     final message = error.message;
-    final kind = message.startsWith('Response exceeded')
-        ? CloudflareApiExceptionKind.responseTooLarge
-        : message.startsWith('Request timed out') ||
-              message.startsWith('Request exceeded') ||
-              message.startsWith('Response stalled')
-        ? CloudflareApiExceptionKind.timeout
-        : CloudflareApiExceptionKind.network;
-    return CloudflareApiException(kind, uncertain: uncertain);
+    if (message.startsWith('Response exceeded')) {
+      return CloudflareApiException(
+        CloudflareApiExceptionKind.responseTooLarge,
+        uncertain: uncertain,
+      );
+    }
+    if (message.startsWith('Upload stalled')) {
+      return CloudflareApiException(
+        CloudflareApiExceptionKind.timeout,
+        uncertain: uncertain,
+      );
+    }
+    if (message.startsWith('Request exceeded')) {
+      // An upload that ran out of its size-derived total is too slow, not
+      // "dead": retrying would spend the same data again (fix-plan H2).
+      return CloudflareApiException(
+        upload
+            ? CloudflareApiExceptionKind.uploadTooSlow
+            : CloudflareApiExceptionKind.timeout,
+        uncertain: uncertain,
+      );
+    }
+    if (message.startsWith('Request timed out') ||
+        message.startsWith('Response stalled') ||
+        message.startsWith('Response headers timed out')) {
+      return CloudflareApiException(
+        CloudflareApiExceptionKind.timeout,
+        uncertain: uncertain,
+      );
+    }
+    return CloudflareApiException(
+      CloudflareApiExceptionKind.network,
+      uncertain: uncertain,
+    );
   }
 
   static Duration _retryDelay(http.StreamedResponse response, int attempt) {

@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 import '../../support/cloudflare_fakes.dart';
 import '../../support/cloudflare_s8_fakes.dart';
@@ -30,7 +31,9 @@ void main() {
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('pitaka_s8_assemble_');
-    store = FilePublishArtifactStore(baseDir: dir.path);
+    store = FilePublishArtifactStore(
+      spoolRoot: PublishArtifactSpoolRoot(tempRoot: dir),
+    );
   });
 
   tearDown(() async {

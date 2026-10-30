@@ -26,6 +26,7 @@ import 'package:pitaka/features/publish/infrastructure/cloudflare_http_transport
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
 import 'package:pitaka/features/publish/infrastructure/http_cloudflare_deploy_api.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 /// Safe metrics from one synthetic public-asset build and upload.
 final class CloudflareMemoryScenarioResult {
@@ -106,7 +107,9 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
     apiBase: Uri.parse('http://127.0.0.1:${server.port}/client/v4'),
     sleep: (_) async {},
   );
-  final store = FilePublishArtifactStore(baseDir: root.path);
+  final store = FilePublishArtifactStore(
+    spoolRoot: PublishArtifactSpoolRoot(tempRoot: root),
+  );
   final rssBefore = ProcessInfo.maxRss;
   try {
     stage('building');

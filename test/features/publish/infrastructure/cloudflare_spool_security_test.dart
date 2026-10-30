@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
+import 'package:pitaka/features/publish/infrastructure/publish_artifact_spool_root.dart';
 
 import '../support/cloudflare_fakes.dart';
 import '../support/cloudflare_s8_fakes.dart';
@@ -12,7 +13,9 @@ void main() {
     'artifact spool and public manifest contain no token or JWT material',
     () async {
       final dir = await Directory.systemTemp.createTemp('pitaka_s8_secret_');
-      final store = FilePublishArtifactStore(baseDir: dir.path);
+      final store = FilePublishArtifactStore(
+        spoolRoot: PublishArtifactSpoolRoot(tempRoot: dir),
+      );
       addTearDown(() async {
         await store.dispose();
         if (dir.existsSync()) await dir.delete(recursive: true);
