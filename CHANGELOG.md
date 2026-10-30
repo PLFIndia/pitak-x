@@ -166,6 +166,31 @@ heading as part of the `chore(release):` commit.
 - **Cloudflare shows the same specific library-read message as GitHub:** an
   unreadable library or an oversized member list now says exactly that instead
   of a generic "could not read your library".
+- **Pre-2026 Cloudflare tokens can connect again:** the unprefixed
+  40-character shape was issued for old user *and* old account tokens, so setup
+  now tries the personal-token check first and, only if Cloudflare refuses it,
+  asks which account it belongs to and verifies it there. Nothing is saved
+  until that account check says "active"; timeouts, 5xx and inactive tokens are
+  reported as-is and never fall back.
+- **"Keep saved address" changes nothing on the kept library:** only the
+  duplicate row is deleted. A public fingerprint can no longer let the other
+  site rename or re-pin the row you chose to keep.
+- **A Cloudflare account with an unrenderable name no longer hides the list:**
+  bidi, zero-width, control and separator characters are replaced by
+  "Account …{last 4}", the replacement is never saved, and the manual Account
+  ID path stays available.
+- **Moving off GitHub Pages waits for GitHub's build:** verifying the old
+  address now uses the same "up to 10 minutes" budget as publishing to GitHub,
+  and the progress line says a build can take a few minutes. Cloudflare keeps
+  its shorter wait.
+- **New Cloudflare Worker names are lower case:** the field shows the
+  lower-cased name as you type, and a Worker whose name differs only in letter
+  case is refused before anything is written. Existing mixed-case Workers keep
+  working.
+- **A failed preference save no longer looks saved:** a failed journal,
+  settings or share-card write restores what the app previously read, so a
+  pending move or a chosen style cannot appear set for the rest of the session
+  and disappear after a restart.
 
 ### Changed
 - **Replacement and recreate dialogs explain the case:** missing files, a
@@ -174,6 +199,10 @@ heading as part of the `chore(release):` commit.
   warning when Cloudflare moved after the review.
 - **Moving to a Cloudflare Worker that no longer exists** is now a normal
   move whose review says Pitak creates the Worker with the whole library.
+- **An events-only publish reads only the events:** it no longer depends on the
+  catalogue, magazine titles or `library.json` being readable, and it no longer
+  re-reads covers it will not write. The catalogue is still carried from the
+  trusted publish record.
 
 ### Security
 - **Cloudflare secrets stay out of state:** the token and target live in ONE
@@ -182,6 +211,12 @@ heading as part of the `chore(release):` commit.
   request-scoped and never persisted, logged, spooled or placed in UI state;
   and every secret-bearing store now uses the shared hardened
   `flutter_secure_storage` factory.
+- **A pasted Cloudflare token is not a login credential:** the token field is
+  explicitly excluded from autofill and from the keyboard's personalised
+  learning, and the external token-creation page reports when it cannot open
+  instead of appearing to work. Account display names pass one shared
+  safe-text rule (C0/C1, zero-width, bidi, separators, BOM) before they can be
+  drawn or stored.
 - **Version URLs fail closed:** the app confirms a Worker's version URLs are
   off before creating another version, and blocks further deploys — and
   retirement completion — while an older copy of the site could be public.

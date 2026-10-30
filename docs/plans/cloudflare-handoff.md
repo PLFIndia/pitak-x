@@ -463,13 +463,23 @@ publishing remains S8.
   Manual proof also records `verifiedWorkerName`: selecting a different Worker
   clears that proof and requires verification again. API-read subdomain
   confirmation is separate and remains valid across Worker choices (row 65).
-- User tokens (including the legacy 40-character shape) verify before their
-  first save. Account tokens list/select first and verify at the chosen account
-  before their first save. The token-creation button uses Cloudflare's
-  account-owned Workers-scripts-only template so one-account scope is the
-  default; compatible pasted user tokens remain supported (Part M row 64).
-- The token exists only in the running async setup operation. Prompt completers
-  contain only non-secret answers; no token is a controller field or UI value.
+- `cfut_` user tokens verify before their first save. `cfat_` account tokens
+  list/select first and verify at the chosen account before their first save.
+  The token-creation button uses Cloudflare's account-owned
+  Workers-scripts-only template so one-account scope is the default; compatible
+  pasted user tokens remain supported (Part M row 64).
+- **A pre-2026 40-character token tries both routes (L1/D7, reversing this
+  section's original "no fallback" rule).** Cloudflare issued that unprefixed
+  shape for old user AND old account tokens, so setup tries
+  `/user/tokens/verify` first. Only a 401/403 falls back to listing accounts;
+  inactive, timeout, 5xx and every other error are reported as-is. The fallback
+  saves nothing: the record is written only after the chosen account's endpoint
+  answers `active`, and the pickup says why the account is being asked for.
+- The token exists only in the running async setup operation. A prompt answer
+  may carry a `CloudflareApiToken` (a scoped, redacted type with no getter and
+  a redacting `toString`) back into that operation — the accepted interval in
+  ADR 0007 — but it is never a controller field, Riverpod state or UI value.
+  Completers carry no raw token `String`.
 - `publishOperationQueueProvider` is the ONE keep-alive app-wide queue. It now
   covers catalogue/events publishes, GitHub token/target mutations and sign-out,
   and every Cloudflare setup command. Dialogs/user waits happen after release;
@@ -592,6 +602,14 @@ and host-neutral publish UI. Moves and retirement remain S9.
   verification is offered only where it can succeed (`canRetryVerification`);
   generic catches log a type, stage and stack through `appLog` (L7). A typed
   library read failure reaches the card with its specific sentence (N6).
+- **Phase 5 (fix-plan) hardening:** an events-only publish reads ONLY the
+  events section and the settings (L6), so an unrelated catalogue/periodical/
+  descriptor problem can no longer block it and no cover is read for nothing;
+  the catalogue is still carried from the trusted record, and a replacement or
+  missing-hash path does a complete read. A failed preferences write restores
+  the previous cached value, so a failed `deployed`/journal save can never look
+  saved for the session (L9). New Worker names must be lower case and a
+  case-variant Worker refuses the new-site path (RH2).
 
 ### 8.1 Evidence
 
@@ -683,6 +701,10 @@ Retry and Skip are deterministic after every remote or persistent side effect.
   messages (N5). Both destinations carry their record-save truth and a
   post-deploy route failure says the deployment was accepted (L12/N4).
   Verification progress labels are emitted before their step, not after (N9).
+  A GitHub SOURCE retirement waits the same Pages budget as a GitHub
+  destination (L17), and its progress copy says a build can take minutes.
+  The schema-1 moved page is byte-frozen and a future renderer must add
+  `moved_v2.html` plus a schema bump (L11).
 
 ### 9.1 Evidence
 
@@ -1149,6 +1171,31 @@ the Part N checklist were run again afterwards.
 - **A result message is a claim about the remote site.** "Verified" is not
   "Published", "accepted" is not "verified live", and Retry verification is
   offered only where a deploy-free check can change the answer.
+- **A moved-page schema's template never changes.** Schema 1 renders
+  `assets/publish/moved.html`; a pending Retry re-renders it byte-for-byte from
+  the stored name and destination. A change to that output needs a new
+  `moved_v2.html` and a schema bump, and `moved_page_freeze_test.dart` pins the
+  hash (fix-plan L11). The renderer does not re-normalize the stored name.
+- **Keeping the saved address changes nothing on the kept row.** Only the
+  duplicate is deleted. The fingerprint is public, so applying the other
+  descriptor's name or pin to a kept row would let a spoofed site rename or
+  re-pin it (fix-plan L10/D11).
+- **A Worker name is an API identity but an address without case.** New names
+  must be lower case; a stored mixed-case name keeps working; and when the
+  existence read says absent, a name differing only in case is refused (a
+  failed or truncated listing fails closed — fix-plan RH2/D9).
+- **Read only the sections you will build.** `PublishInputs` carries a nullable
+  `CatalogueInputs`, and `read(sections:)` is the one rule for what is read.
+  An events-only publish never touches catalogue, periodical, loan-count or
+  descriptor reads (fix-plan L6).
+- **A failed preferences write restores its cached value.** One
+  `core/storage/prefs_write.dart` helper is used by the host journal, settings
+  and share-card stores; `shared_preferences` updates its cache before the
+  platform write, so a `false`/throw is not observable as success (fix-plan
+  L9).
+- **The shipping entry point contains no development harness.** The AOT memory
+  scenario lives in `lib/main_dev_harness.dart` and is run with `-t`; nothing
+  under `lib/dev/` is reachable from `main.dart` (fix-plan L15).
 
 ---
 
@@ -1468,10 +1515,56 @@ integration_test` reported zero issues, and the full non-golden suite passed
 regenerated: Phase 4 changes no golden-pinned pixel, and a golden change must
 still come from the Linux workflow.
 
-**Next — Phase 5, remaining Low items and nits (L1, L6, L9–L11, L13–L15,
-L17, RH2, N17).** Decisions it needs: D7 = A (legacy 40-character tokens fall
-back to account verification after a 401/403), D9 = Yes (lower-case new Worker
-names), D11 = Yes ("Keep saved address" changes nothing on the kept row, which
-also amends `ARCHITECTURE.md` §5). The Phase 6.1 real-host checks need no code
-and should be run early; they only let L2/RH1/RH2/RH3 delete fallbacks. Bucket
-splitting stays an optional follow-up after a real-host trial (H2 step 7).
+**Phase 5 — remaining Low items and nits (L1, L6, L9–L11, L13–L15, L17, RH2,
+N17) is implemented (2026-10-30).** It took the plan's recommended decisions:
+D7 = A, D9 = Yes, D11 = Yes.
+
+- **L1/D7:** the unprefixed 40-character token is its own
+  `CloudflareApiTokenKind.legacy`. It tries `/user/tokens/verify` first and
+  falls back to the account route only on 401/403; the fallback saves nothing,
+  the account endpoint must answer `active`, and the picker explains why. The
+  account stage moved into `cloudflare_account_flow.dart` (the controller was
+  over its 500-line ratchet; it is now 450).
+- **L6:** `PublishInputs.catalogue` is a nullable `CatalogueInputs` and
+  `read(sections:)` reads exactly what will be built. An events-only
+  Cloudflare publish reads only the settings and the events; a replacement or
+  missing-hash path still does a complete read.
+- **L9:** `core/storage/prefs_write.dart` restores the previous cached value
+  after a `false` or thrown write; the host journal, settings and share-card
+  stores use it.
+- **L10/D11:** keeping the saved address deletes the duplicate and changes
+  nothing on the kept row; `ARCHITECTURE.md` §5 records the rule.
+- **L11:** schema 1 maps to one frozen template, the renderer no longer
+  re-normalizes the stored name, the asset comment has no brace tokens, and
+  `moved_page_freeze_test.dart` pins the asset and one rendering.
+- **L13:** the token field opts out of autofill and IME learning, and opening
+  the template page awaits the result and reports a failure.
+- **L14:** one `core/text/safe_display_text.dart` rule (C0/C1, DEL,
+  zero-width, bidi, separators, BOM) serves library and account names; a
+  hostile account name becomes "Account …{last 4}" and is never stored.
+- **L15:** the AOT memory harness has its own `lib/main_dev_harness.dart`;
+  `main.dart` cannot select it, and an architecture test pins that.
+- **L17:** `read_back_budget.dart` is the one source of read-back waits; a
+  GitHub source retirement gets the Pages budget (60 × 10 s) and its own
+  progress copy, while Cloudflare keeps 60 s.
+- **RH2/D9:** new Worker names must be lower case (the dialog lower-cases as
+  it types); stored mixed-case names keep working; a case-variant Worker
+  refuses the new-site path and Skip, and a failed/truncated listing fails
+  closed.
+- **N17:** the dead `nameTaken` kind, the hard-coded `per_page`, the
+  manifest/journal/DI comments and the ignored migration save are settled.
+
+Gates at the Phase 5 closeout (2026-10-30): `build_runner` leaves no diff,
+`dart format --set-exit-if-changed` is clean, `flutter analyze lib test
+integration_test` reports zero issues, and the full non-golden suite passes
+**4,510** tests. No golden was regenerated: Phase 5 changes no golden-pinned
+pixel, and a golden change must still come from the Linux workflow. The
+`publish_connection` golden and the J.7 step-9 evidence remain S11/Phase 6.
+
+**Next — Phase 6: real-host evidence, records and release.** Run the Part 3
+§6.1 checks early on the disposable account; they need no code and only let
+L2/RH1/RH2/RH3 delete fallbacks (including the RH2 case listing if Cloudflare
+proves names case-insensitive). Then the `docs/RELEASING.md` §6.5 matrix
+(including the rows in Part 3 §6.2), the release gates and the release build.
+Bucket splitting stays an optional follow-up after a real-host trial (H2 step
+7).

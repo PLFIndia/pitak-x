@@ -163,7 +163,8 @@ const Guide _publish = Guide(
             '**Connect Cloudflare** and paste a token you create — Pitak opens '
             'Cloudflare with Workers Scripts · Edit, for one account, already '
             'chosen. Then pick the account, your `workers.dev` name and a '
-            'Worker.',
+            'Worker. New Worker names use lower-case letters, numbers and '
+            'hyphens — Cloudflare uses the name in your site address.',
         '**Give the Worker to Pitak alone:** publishing replaces everything '
             'already on it. Cloudflare has no "only if nothing changed" switch '
             'either, so publish from one phone at a time. Pitak proves the '

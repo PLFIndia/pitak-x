@@ -337,8 +337,11 @@ void main() {
     expect(repo.rows, hasLength(1));
     expect(repo.rows.single.id, 5, reason: 'canonical id survives');
     expect(repo.rows.single.siteUrl, site);
-    // The card supplied the display name; the fresh fields are applied.
-    expect(find.text('Added Member Library'), findsOneWidget);
+    // L10/D11: a card proves the address and the identity in person, not the
+    // name/pin/fetch facts, so accepting repoints the row and keeps the stored
+    // name instead of copying the card's.
+    expect(repo.rows.single.name, 'Same library, old URL');
+    expect(find.text('Added Same library, old URL'), findsOneWidget);
   });
 
   testWidgets('C10/R17: keeping the saved address writes nothing', (

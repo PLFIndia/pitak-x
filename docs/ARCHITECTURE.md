@@ -654,6 +654,12 @@ target passed to the current operation — that is what lets a move publish the
   selects an address.
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
+- **A Worker name is an API identity but an address without case.** New names
+  must be lower case (Cloudflare uses the name in the `workers.dev` address);
+  a stored mixed-case name keeps working because read-back proved it, and when
+  the existence read says absent a Worker whose name differs only in case is
+  refused before any write. A failed or truncated Worker listing fails closed
+  (fix-plan RH2/D9).
 - **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,
   60 rows, OFFSET/LIMIT); `CatalogueItemSorter` (domain) is the oracle the SQL
   is tested against.

@@ -4,8 +4,9 @@
   (2 High, 11 Medium, 17 Low, 5 nits, 3 real-host questions, 11 test gaps),
   plus 17 new findings from the verification pass ([Appendix B](#appendix-b--new-findings)).
 - **Baseline:** branch `cloudflare` at `77e6acb`, the reviewed commit.
-- **Status:** In progress. Phases 0, 1A, 1B, 2, 3 and 4 are implemented
-  (2026-10-29/30); Phases 5–6 are open. Part M of
+- **Status:** Phase 6 only. Phases 0, 1A, 1B, 2, 3, 4 and 5 are implemented
+  (2026-10-29/30), each recorded in Part M rows 83–119. Phase 6 (real-host
+  evidence, release records and the release build) is open. Part M of
   [the plan](../../cloudflare_plan-final.md) carries the deviation rows and
   [the handoff](cloudflare-handoff.md) §17 records each phase.
 - **How it was checked:** before any fix was designed, every finding was

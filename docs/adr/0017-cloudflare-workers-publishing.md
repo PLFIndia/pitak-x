@@ -8,9 +8,11 @@
 - **Date:** 2026-10-26 (amended 2026-10-29 by the Cloudflare fix plan,
   Phase 1A: published-record ownership, anchor-bound replacement consent,
   Option-B read-back, and the upload-session Worker baseline; amended
-  2026-10-30 by Phases 3–4: the three move exits, setup's exact-endpoint rule,
-  the pending-deploy record, Version-URL re-checks on every "done" result, and
-  the moved-page name/destination-consent rules)
+  2026-10-30 by Phases 3–5: the three move exits, setup's exact-endpoint rule,
+  the pending-deploy record, Version-URL re-checks on every "done" result, the
+  moved-page name/destination-consent rules, the legacy-token fallback,
+  lower-case new Worker names with a case-variant guard, and the reader's
+  keep-address rule)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -165,6 +167,19 @@ consequences the product cannot hide:
   the selected account before their first save. The creation button uses the
   account-owned Workers-scripts-only template so one-account scope is the
   default, while compatible pasted user tokens remain supported.
+- **S7 accepts a pre-2026 token as either kind (D7).** The unprefixed
+  40-character shape was issued for BOTH old user tokens and old account
+  tokens, so it tries `/user/tokens/verify` first and falls back to the
+  account route only after a 401/403. Inactive, timeout, 5xx and every other
+  error are reported without a fallback, and nothing is saved until the chosen
+  account's endpoint answers `active`.
+- **Worker names are lower-case when newly chosen (D9/RH2).** A new name
+  becomes a DNS label, and DNS ignores case, so new entries must already be
+  lower case (the dialog shows the lower-cased text as it is typed). Stored
+  mixed-case names keep working: a read-back proved them. When the existence
+  read says absent, the account's Worker ids are listed and a name that
+  differs only in case is refused; a failed or truncated listing fails closed.
+  Re-selecting the exact stored spelling stays allowed.
 - **S7 verification is not a live publication.** Manual subdomains stay
   candidates until a marker-only deploy is read back from the exact origin.
   Success stores the confirmed target, but writes no normal live manifest and
