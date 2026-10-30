@@ -50,10 +50,19 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     // permission failure, a wrong account or an HTML edge page also answers
     // 404, and this one read gates replacement consent, the new-site decision
     // and Skip (fix-plan L2/RH3). Everything else fails closed.
-    if (response.statusCode == 404 &&
-        !response.isSuccess &&
-        response.errorCodes.contains(CloudflareLimits.notFoundErrorCode)) {
-      return false;
+    //
+    // 10222 is the opposite answer, and the real host proved it on 2026-10-30:
+    // the Worker EXISTS but has no versions yet, which is exactly the state our
+    // own upload session leaves behind. Treating that as an error made the
+    // first publish to a brand-new Worker fail after its session had already
+    // created the Worker (fix-plan RH1, Part M row 120).
+    if (response.statusCode == 404 && !response.isSuccess) {
+      if (response.errorCodes.contains(CloudflareLimits.notFoundErrorCode)) {
+        return false;
+      }
+      if (response.errorCodes.contains(CloudflareLimits.emptyWorkerErrorCode)) {
+        return true;
+      }
     }
     if (response.statusCode >= 200 && response.statusCode < 300) return true;
     requireCloudflareSuccess(response);

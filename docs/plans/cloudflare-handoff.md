@@ -877,6 +877,18 @@ publish left `events.json` byte-identical (Part M row 123).
   `pitak-trial-705712e9`), which is why it was used for the API-only checks
   above. Disconnecting is not a workaround: it would delete the only stored copy
   of the live account's token.
+- **Fix built and installed during the session.** `workerExists` now treats
+  `404 + 10222` as "the Worker exists, it just has no versions" (Part M row
+  120); `CloudflareLimits.emptyWorkerErrorCode` documents the real-host
+  contract, and `http_cloudflare_deploy_api_test.dart` pins the envelope. The
+  clean rebuild is APK SHA-256
+  `1afbd4634f9ea5861695ae99866ed89beadd1ccddb4caa3d2d98cecbcffa0d33`,
+  installed over the same data. The first build after the edit was **not**
+  trustworthy: Gradle reported `assembleFdroidRelease` UP-TO-DATE and the copy in
+  `flutter-apk/` had a fresh timestamp with the **old** bytes and the old hash,
+  while `build/app/intermediates/flutter/fdroidRelease/jniLibs/*/libapp.so` was
+  new. Always compare the APK hash before and after a code edit; `flutter clean`
+  is the reliable path.
 
 
 ### Current smoke handoff — 2026-10-29

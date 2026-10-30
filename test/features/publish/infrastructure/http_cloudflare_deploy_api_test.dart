@@ -102,6 +102,39 @@ void main() {
       },
     );
 
+    test(
+      '404 + 10222 is a Worker that exists with no versions, not absence',
+      () async {
+        // The real host's answer after our own upload session created the
+        // Worker (Part M row 120). Treating it as an error made the first
+        // publish to a brand-new Worker fail with "The Cloudflare resource is
+        // not available."
+        final api = apiFor(
+          (_) async => envelope(
+            null,
+            status: 404,
+            success: false,
+            errors: [
+              {
+                'code': CloudflareLimits.emptyWorkerErrorCode,
+                'message':
+                    'This Worker has no versions, which means this Worker has '
+                    'no content or versioned settings.',
+              },
+            ],
+          ),
+        );
+        expect(
+          await api.workerExists(
+            token: token,
+            accountId: account,
+            workerName: worker,
+          ),
+          isTrue,
+        );
+      },
+    );
+
     test('a bare 404 is not absence: it is a typed notFound (L2)', () async {
       final api = apiFor(
         (_) async => envelope(null, status: 404, success: false),

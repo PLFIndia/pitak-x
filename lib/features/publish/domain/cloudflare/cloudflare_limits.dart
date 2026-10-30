@@ -58,12 +58,24 @@ abstract final class CloudflareLimits {
 
   /// Cloudflare's "not found" error code for an absent resource.
   ///
-  /// The account-subdomain endpoint documents 10007 for absence. No public
-  /// document confirms the same code for a missing Worker script, so this is
-  /// the working assumption until the Phase 6 real-host check records the
-  /// actual code (fix-plan L2). It is used ONLY together with HTTP 404 and
-  /// `success: false`; any other 404 is a typed `notFound`, never absence.
+  /// The account-subdomain endpoint documents 10007 for absence, and the real
+  /// host confirmed on 2026-10-30 that a Worker which has **never** existed
+  /// also answers `404 + 10007` ("This Worker does not exist on your
+  /// account"). It is used ONLY together with HTTP 404 and `success: false`;
+  /// any other 404 is a typed `notFound`, never absence.
   static const int notFoundErrorCode = 10007;
+
+  /// Cloudflare's answer for a Worker that exists but has no versions yet.
+  ///
+  /// The real host confirmed on 2026-10-30 that `POST …/assets-upload-session`
+  /// creates the Worker entity immediately, and the script read then answers
+  /// `404 + 10222` ("This Worker has no versions, which means this Worker has
+  /// no content or versioned settings") while `…/deployments` and
+  /// `…/subdomain` answer 200. This is **presence**, not absence: a publish
+  /// whose own session created the Worker must still adopt that Worker as its
+  /// baseline (fix-plan RH1) instead of failing with "The Cloudflare resource
+  /// is not available."
+  static const int emptyWorkerErrorCode = 10222;
 
   /// Abortable total deadline for a normal API call.
   static const Duration apiDeadline = Duration(seconds: 30);
