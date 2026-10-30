@@ -12,8 +12,13 @@
 /// What is always enforced:
 ///  - **Android:** AES-GCM via EncryptedSharedPreferences (never plain
 ///    SharedPreferences).
-///  - **iOS/macOS:** the item never migrates to another device through a
-///    backup or iCloud Keychain restore.
+///  - **iOS:** the item never migrates to another device through a backup or
+///    an iCloud Keychain restore.
+///
+/// macOS is not a shipping target, so `mOptions` is deliberately not set. If a
+/// desktop build ever ships, add `MacOsOptions(usesDataProtectionKeychain:
+/// true)` here AND a test that asserts it, because the macOS default differs
+/// (fix-plan N17).
 ///
 /// The ONLY per-store choice is iOS keychain accessibility, because it is a
 /// real security trade-off rather than boilerplate:

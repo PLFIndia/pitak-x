@@ -413,7 +413,9 @@ final class CloudflareSiteManifest implements PreviousPublication {
     for (final value in PublishState.values) {
       if (value.name == raw) return value;
     }
-    // An unknown state is not "live": the caller treats null as `deployed`.
+    // An unknown state is NOT coerced to `deployed`: the caller discards the
+    // WHOLE record, which is safer than trusting a file map this build cannot
+    // classify (fix-plan N17).
     return null;
   }
 

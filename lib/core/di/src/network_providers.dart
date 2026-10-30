@@ -49,10 +49,10 @@ part 'network_providers.g.dart';
 
 /// Thrown by [migrateLegacyBookmarksProvider] when the one-time migration
 /// cannot complete. An `Exception` (not an `Error`) on purpose: every
-/// `on Exception` handler downstream — `PublishController.publish`,
-/// `GitHubConnectionController.publish` — is designed to turn exceptions
-/// into a typed, safe failure state; an `Error` would skip them all and
-/// leave spinners running (review M14).
+/// `on Exception` handler downstream — `PublishController.publish` and the
+/// connection/setup commands — is designed to turn exceptions into a typed,
+/// safe failure state; an `Error` would skip them all and leave spinners
+/// running (review M14).
 ///
 /// Carries only the failure TYPE. The underlying `StorageFailure` message
 /// can quote SQLite diagnostics with bound parameters (site URLs), which must

@@ -209,6 +209,10 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
       activeHost: PublishHost.github,
       verifiedTarget: proven ? target : null,
     );
+    // The save result is deliberately ignored (fix-plan N17): this is a
+    // best-effort migration and the next read retries it. A failed save must
+    // not make a proven address unshareable, and it cannot claim an unproven
+    // one because the returned URL comes from [proven].
     await _store.save(state);
     return proven ? target.siteUrl : null;
   }

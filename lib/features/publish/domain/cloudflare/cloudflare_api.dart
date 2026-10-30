@@ -77,9 +77,6 @@ enum CloudflareApiExceptionKind {
   /// The requested account, Worker or route does not exist.
   notFound('The Cloudflare resource is not available.'),
 
-  /// A requested Worker or account subdomain name is already in use.
-  nameTaken('That Cloudflare name is already in use.'),
-
   /// Cloudflare asked the client to slow down.
   rateLimited('Cloudflare is busy. Try again later.'),
 

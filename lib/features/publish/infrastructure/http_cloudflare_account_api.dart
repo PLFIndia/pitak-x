@@ -61,7 +61,12 @@ final class HttpCloudflareAccountApi implements CloudflareAccountApi {
         await _get(
           token,
           '/accounts',
-          query: {'per_page': '50', 'page': '$page'},
+          query: {
+            // 50 is Cloudflare's documented maximum; the bound lives in the
+            // domain limits so a page size cannot drift from its parser.
+            'per_page': '${CloudflareLimits.accountsPerPage}',
+            'page': '$page',
+          },
         ),
       );
       final fullPage = parseCloudflareResponse(() {
