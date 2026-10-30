@@ -129,6 +129,9 @@ enum MoveSitePhase {
 
   /// Proving the moved page and old-content removal.
   verifyingOldAddress,
+
+  /// Proving a GitHub Pages moved page, which may still be building.
+  verifyingOldAddressGitHubPages,
 }
 
 /// Outcome of an outer move, Retry, or Skip command.

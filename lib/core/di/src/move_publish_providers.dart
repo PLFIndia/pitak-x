@@ -65,6 +65,15 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
     validateMovedHtml: validateMoved,
     sleep: Future<void>.delayed,
   );
+  // A GitHub SOURCE retirement proves a moved page that Pages serves only
+  // after its build, so it gets the same Pages budget as a GitHub destination
+  // (fix-plan L17). Cloudflare keeps the short default.
+  final gitHubMovedVerifier = MovedSiteVerifier.gitHubPages(
+    reader: publicReader,
+    markerCodec: markerCodec,
+    validateMovedHtml: validateMoved,
+    sleep: Future<void>.delayed,
+  );
   final gitHubReader = GitHubMoveReader(
     api: gitHubApi,
     credentials: gitHubCredentials,
@@ -85,7 +94,7 @@ Future<MoveSiteUseCaseFactory> moveSiteUseCase(MoveSiteUseCaseRef ref) async {
       repoAdmin: gitHubApi,
       credentials: gitHubCredentials,
       manifest: gitHubManifest,
-      verifier: movedVerifier,
+      verifier: gitHubMovedVerifier,
       clock: clock,
     ),
     cloudflareSource: CloudflareMoveSource(

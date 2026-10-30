@@ -165,8 +165,11 @@ void main() {
           final verifying = phases.indexOf(MoveSitePhase.verifyingDestination);
           final recording = phases.indexOf(MoveSitePhase.recordingMove);
           final updating = phases.indexOf(MoveSitePhase.updatingOldAddress);
+          // L17: a GitHub old address waits for a Pages build and says so.
           final verifyingOld = phases.indexOf(
-            MoveSitePhase.verifyingOldAddress,
+            direction.oldTarget is GitHubPublishTarget
+                ? MoveSitePhase.verifyingOldAddressGitHubPages
+                : MoveSitePhase.verifyingOldAddress,
           );
           expect(publishing, greaterThanOrEqualTo(0));
           expect(verifying, greaterThan(publishing));

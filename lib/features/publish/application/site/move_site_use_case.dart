@@ -304,7 +304,14 @@ final class MoveSiteUseCase {
     onProgress?.call(MoveSitePhase.updatingOldAddress);
     final retired = await _sourceFor(pending.oldTarget).retire(
       pending,
-      onVerify: () => onProgress?.call(MoveSitePhase.verifyingOldAddress),
+      // GitHub Pages may still be building the moved page, so its wait says
+      // so; Cloudflare serves the retired deploy within seconds (fix-plan
+      // L17).
+      onVerify: () => onProgress?.call(
+        pending.oldTarget.host == PublishHost.github
+            ? MoveSitePhase.verifyingOldAddressGitHubPages
+            : MoveSitePhase.verifyingOldAddress,
+      ),
     );
     final failure = retired.swap().toNullable();
     if (failure != null) return _failure(failure, retirementPending: true);

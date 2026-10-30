@@ -1,6 +1,7 @@
 /// Exact-origin read-back for a moved old site (R16/F.6).
 library;
 
+import 'package:pitaka/features/publish/application/site/read_back_budget.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/move_plan.dart';
@@ -17,12 +18,32 @@ final class MovedSiteVerifier {
     required PublishMarkerCodec markerCodec,
     required MovedHtmlValidationFn validateMovedHtml,
     required Future<void> Function(Duration) sleep,
-    this.attempts = 12,
-    this.interval = const Duration(seconds: 5),
+    this.attempts = ReadBackBudget.defaultAttempts,
+    this.interval = ReadBackBudget.defaultInterval,
   }) : _reader = reader,
        _markerCodec = markerCodec,
        _validateMovedHtml = validateMovedHtml,
        _sleep = sleep;
+
+  /// The same exact-origin checks with GitHub Pages' documented build budget.
+  ///
+  /// A GitHub source retirement proves a moved root that Pages only serves once
+  /// its build finishes, so it must wait as long as a GitHub destination does
+  /// (fix-plan L17). Cloudflare keeps the shorter default, because it serves a
+  /// deploy within seconds.
+  const MovedSiteVerifier.gitHubPages({
+    required PublishedSiteReadVerifier reader,
+    required PublishMarkerCodec markerCodec,
+    required MovedHtmlValidationFn validateMovedHtml,
+    required Future<void> Function(Duration) sleep,
+  }) : this(
+         reader: reader,
+         markerCodec: markerCodec,
+         validateMovedHtml: validateMovedHtml,
+         sleep: sleep,
+         attempts: ReadBackBudget.gitHubPagesAttempts,
+         interval: ReadBackBudget.gitHubPagesInterval,
+       );
 
   final PublishedSiteReadVerifier _reader;
   final PublishMarkerCodec _markerCodec;

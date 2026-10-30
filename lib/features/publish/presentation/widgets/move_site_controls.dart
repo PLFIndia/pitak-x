@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/publish/application/site/move_site_controller.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/read_back_budget.dart';
 import 'package:pitaka/features/publish/presentation/widgets/move_site_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
 
@@ -79,6 +80,9 @@ class _MoveSiteControlsState extends ConsumerState<MoveSiteControls> {
     MoveSitePhase.recordingMove => 'Recording move…',
     MoveSitePhase.updatingOldAddress => 'Updating old address…',
     MoveSitePhase.verifyingOldAddress => 'Verifying old address…',
+    // L17: a GitHub Pages moved page waits for a build that can take minutes.
+    MoveSitePhase.verifyingOldAddressGitHubPages =>
+      'Verifying the old address… ${ReadBackBudget.gitHubPagesWaitNote}',
   };
 
   static String _resultCopy(MoveSiteResult result) => switch (result) {

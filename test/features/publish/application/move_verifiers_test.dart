@@ -5,6 +5,7 @@ import 'package:pitaka/features/publish/application/site/complete_snapshot_verif
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
+import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
@@ -213,6 +214,19 @@ void main() {
       },
     );
 
+    test('the default (Cloudflare) budget is 60 s', () {
+      const verifier = MovedSiteVerifier(
+        reader: _NeverReader(),
+        markerCodec: codec,
+        validateMovedHtml: _neverMoved,
+        sleep: _noSleep,
+      );
+      expect(
+        verifier.interval * verifier.attempts,
+        const Duration(seconds: 60),
+      );
+    });
+
     test('Cloudflare additionally proves the exact retired marker', () async {
       final pending = movePending(oldTarget: moveCloudflareTarget);
       final marker = pending.retirement.marker!;
@@ -229,6 +243,56 @@ void main() {
       );
 
       expect(await verifier.verify(pending, revision: 3), isTrue);
+    });
+
+    test(
+      'L17: a GitHub source waits for a build that lands after 81 s',
+      () async {
+        // GitHub Pages serves the OLD site while it builds, so the moved page
+        // is unreadable until the build lands. The source retirement must wait
+        // as long as a GitHub destination does (fix-plan L17).
+        final pending = movePending(
+          oldTarget: moveGitHubTarget,
+          indexHtml: page,
+        );
+        final reader = _LateMovedReader(
+          page: page,
+          readyAfter: const Duration(seconds: 81),
+        );
+        final verifier = MovedSiteVerifier.gitHubPages(
+          reader: reader,
+          markerCodec: codec,
+          validateMovedHtml: (_) async => true,
+          sleep: (delay) async => reader.elapsed += delay,
+        );
+
+        expect(
+          await verifier.verify(pending, revision: 3),
+          isTrue,
+          reason: 'an 81 s build must verify, not fail',
+        );
+        expect(reader.elapsed, const Duration(seconds: 90));
+      },
+    );
+
+    test('L17: the Cloudflare budget still fails closed at 60 s', () async {
+      final pending = movePending(
+        oldTarget: moveCloudflareTarget,
+        indexHtml: page,
+      );
+      final reader = _LateMovedReader(
+        page: page,
+        readyAfter: const Duration(seconds: 61),
+      );
+      final verifier = MovedSiteVerifier(
+        reader: reader,
+        markerCodec: codec,
+        validateMovedHtml: (_) async => true,
+        sleep: (delay) async => reader.elapsed += delay,
+      );
+
+      expect(await verifier.verify(pending, revision: 3), isFalse);
+      expect(reader.elapsed, const Duration(seconds: 60));
     });
 
     test(
@@ -339,3 +403,27 @@ final class _NeverReader implements PublishedSiteReadVerifier {
 }
 
 Future<void> _noSleep(Duration _) async {}
+
+Future<bool> _neverMoved(PendingMove _) async => false;
+
+/// A moved page that appears only after [readyAfter] of simulated time.
+final class _LateMovedReader implements PublishedSiteReadVerifier {
+  _LateMovedReader({required this.page, required this.readyAfter});
+
+  final List<int> page;
+  final Duration readyAfter;
+  Duration elapsed = Duration.zero;
+
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    if (elapsed < readyAfter) return const PublishedSiteReadUnreadable();
+    return path.isEmpty
+        ? PublishedSiteReadBody(page)
+        : const PublishedSiteReadAbsent();
+  }
+}
