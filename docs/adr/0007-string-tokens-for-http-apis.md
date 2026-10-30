@@ -43,7 +43,10 @@ exception to the wipeable-bytes rule:
   JWT. Never persisted, never placed in Riverpod/UI state, never logged, never
   written to the artifact spool or a manifest. Their scope is one operation,
   and a retry closure may reference the operation's existing value but must not
-  copy it into independent retry/diagnostic state.
+  copy it into independent retry/diagnostic state. The upload JWT's one-hour
+  lifetime is tracked as a non-secret `issuedAtMillis` timestamp on the upload
+  session, so a bucket that cannot finish inside it is refused instead of
+  uploading bytes that can never be deployed (fix-plan H2/N12).
 
 Everything else stays wipeable bytes: vault passphrase, biometric secret,
 master key, and every other secret-bearing type in `lib/core/crypto/`.

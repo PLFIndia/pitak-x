@@ -79,9 +79,16 @@ consequences the product cannot hide:
    retirement completion.
 8. **Bounded, hostile-boundary transport.** API traffic goes only to
    `https://api.cloudflare.com/client/v4` with `AppUserAgent`, refused
-   redirects, abortable 30 s / 60 s deadlines, a 1 MiB streamed response cap,
-   a JSON depth/bounds pre-scan, whitelisted fields and fixed failure messages.
-   Upload/completion JWTs are ephemeral strings (ADR 0007).
+   redirects, a 1 MiB streamed response cap, a JSON depth/bounds pre-scan,
+   whitelisted fields and fixed failure messages. Deadlines answer two separate
+   questions instead of sharing one number (fix-plan H2): an ordinary API call
+   is bounded at 30 s, a metadata-only deploy at 60 s, and an upload by
+   *progress* — a 60 s connect bound, a 60 s idle bound between pulled body
+   chunks, a 60 s + 8 MiB ÷ 64 KiB/s wait for response headers, and a total of
+   `60 s + bytes ÷ 64 KiB/s` capped at 20 min. A failed attempt that already
+   sent more than 1 MiB is never blindly re-sent, and a session older than
+   55 min refuses another bucket because Cloudflare's upload JWT lives one
+   hour. Upload/completion JWTs are ephemeral strings (ADR 0007).
 9. **Reader rules.** `workers.dev` addresses are accepted only in the exact
    `<worker>.<subdomain>.workers.dev/` root form. A moved library is a
    *candidate* for the user to confirm — never an automatic follow — and
@@ -160,7 +167,11 @@ consequences the product cannot hide:
   metadata-only files in Cloudflare snapshots. The assembler deduplicates by
   content hash, and one bucket is streamed at a time through reopenable 64 KiB
   sources. GitHub keeps its original byte-bearing files and byte-for-byte
-  behavior. Temporary spools are operation-scoped and cleaned in `finally`.
+  behavior. Temporary spools are operation-scoped, cleaned in `finally`, live
+  in the OS temporary directory, and swept at the next operation: only real
+  `run-` folders under the app's own `publish_artifacts` roots are deleted,
+  never a link, never a folder this process is using, and a sweep failure
+  never blocks a publish (fix-plan L5).
 - **S8 requires complete publication proof.** Freshness is checked at preflight
   and immediately before deployment. Read-back covers the documented set: the
   fresh marker, `books.json`, the root `index.html`, `library.json` or its real

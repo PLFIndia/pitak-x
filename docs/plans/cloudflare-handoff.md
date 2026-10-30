@@ -1314,3 +1314,41 @@ No token, JWT, account id or credential is committed anywhere in this work.
 The S2 token was read from macOS Keychain into the trial process only. The
 recorded report contains fixed labels, numeric codes and whitelisted headers,
 exactly as Part L requires; it contains no authorization header or raw body.
+
+---
+
+## 17. Fix plan (2026-10-29) — Phase 2 landed
+
+The review-driven fix plan (`cloudflare-fix-plan-2026-10-29.md` and its three
+parts) is being executed phase by phase. **Phase 0, 1A and 1B are committed**
+(`c5f8ef3` … `6fad820`). **Phase 2 (H2, L8, L5) is implemented** and recorded
+as Part M rows 93–95.
+
+- **H2 — deadlines follow size and progress.** `CloudflareLimits` names each
+  bound separately; `TimeoutHttpClient` gained an opt-in upload mode (every new
+  parameter defaults to null, so GitHub, lookup and viewer traffic are
+  unchanged); `CloudflareRequestTiming` is the only place a duration is chosen;
+  a failed attempt that already sent more than 1 MiB is never blindly re-sent;
+  a 401 from the bucket endpoint is `uploadTooSlow`, not "Reconnect Cloudflare";
+  and a session older than 55 min refuses another bucket.
+- **L8 — classify by status first.** A non-JSON 429/5xx becomes a status-only
+  response (so the existing mapping yields `rateLimited`/`server`); a non-JSON
+  4xx stays `malformedResponse`. `CloudflareByteSourceException`,
+  `CloudflareAssetHashException` and the base64 chunk check map to the new
+  non-retryable `artifactChanged`.
+- **L5 — spools live in temporary storage.** `PublishArtifactSpoolRoot` owns
+  the OS temporary root plus the legacy Documents root, a lock and the set of
+  live run folders; `appTempDir` is a keepAlive provider; the sweep runs on the
+  first `spool()`, inside a queued operation, never when a provider is built.
+
+Evidence: `test/core/network/timeout_http_client_upload_progress_test.dart`
+(5), the H2/L8 groups in `cloudflare_http_transport_test.dart` (8),
+`cloudflare_request_timing_test.dart` (8), the deploy-API 401/session-budget
+tests and the rewritten changed-bytes test, the two use-case copy tests, the
+two new real-loopback cases in `cloudflare_socket_abort_test.dart`, and
+`publish_artifact_spool_root_test.dart` (7).
+
+**Still open in the fix plan:** Phases 3–6 (moves and reconnects, truthful
+verification and copy, the remaining Low items, and the real-host evidence).
+Bucket splitting stays an optional follow-up after a real-host trial (H2
+step 7).

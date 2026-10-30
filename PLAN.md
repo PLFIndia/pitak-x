@@ -1,86 +1,112 @@
-# S9 move and retirement plan
+# Phase 2 — large libraries upload on slow networks (H2, L8, L5)
 
 ## Understanding
 
-S9 adds user-confirmed moves between GitHub Pages and Cloudflare Workers in
-both directions. The destination receives a strict complete snapshot and must
-pass full read-back before the source is touched. The old active/verified share
-target remains selected until source retirement is verified. Pending Retry and
-Skip must be deterministic after every remote or persistent side effect.
+Phase 2 of `docs/plans/cloudflare-fix-plan-2026-10-29-1-high.md` fixes three
+findings that all bite a real library on a real mobile link:
+
+- **H2** — one 60 s wall-clock number stood in for two questions ("is the
+  connection dead?" and "has this run taken too long?"). A 56 MB bucket needs
+  ~7.5 Mbit/s to finish in 60 s, so a slow-but-healthy phone was cut off and
+  the whole bucket re-sent from byte 0, up to three times.
+- **L8** — a non-JSON body was always "unreadable response", even for a 5xx or
+  a second 429 (Cloudflare's edge serves HTML there), and a local artifact that
+  changed mid-upload was retried as if it were a network error.
+- **L5** — spools lived under Documents, which is never cleared, so every
+  killed publish left a full copy of the site behind.
+
+The working tree already carried the H2/L8 code (limits, upload-mode
+`TimeoutHttpClient`, `CloudflareRequestTiming`, no-blind-resend, session
+budget, status-first parsing, `artifactChanged`). This session finishes the
+phase: L5, the tests the plan names, and the records.
 
 ## Privacy & threat notes
 
-- Move confirmations disclose complete-snapshot replacement, exact GitHub
-  ownership, dedicated-Worker deletion, peer reconciliation, and card reprint.
-- Pending journal data is public configuration only: sealed targets, source
-  anchor/branch, exact app-owned deletion paths, moved HTML, and retirement
-  marker data. Tokens and upload/completion JWTs never enter it.
-- Moved HTML escapes the library name and validated destination. Cloudflare
-  retired deployments use the R27 response headers; GitHub's meta-CSP limit
-  remains explicit.
-- Source credentials, exact target, branch/head or publish id are revalidated
-  before retirement. A mismatch never falls back to the currently configured
-  different target.
+- No new secret path. The upload JWT still lives only inside
+  `CloudflareUploadSession.useUploadJwt`; `issuedAtMillis` is a timestamp, not
+  a credential, and is never logged or serialized.
+- Progress callbacks carry a byte count only — never bytes, paths or headers.
+- The spool sweep deletes only real directories named `run-[A-Za-z0-9_-]{1,64}`
+  under the app's own `publish_artifacts` roots, never follows links, and never
+  touches a folder this process is using. A symlinked root is not swept, so a
+  hostile/odd filesystem cannot redirect a delete.
+- Spools move from Documents to the OS temporary directory: less data at rest,
+  and the OS may clear it. Nothing is backed up (`allowBackup="false"`).
+
+## Investigation notes
+
+- `CloudflareLimits.uploadDeadline` is gone; `deployDeadline` replaces it and
+  `CloudflareRequestTiming` is the only place a duration is chosen.
+- `TimeoutHttpClient` upload mode is opt-in: every parameter defaults to null,
+  so GitHub, lookup and viewer traffic keep the old behaviour.
+- `FilePublishArtifactStore` was the only spool writer; the memory scenario and
+  seven test files construct it with `baseDir:`.
+
+## Proposed approach
+
+1. `PublishArtifactSpoolRoot` (infrastructure) owns both roots, a lock, and the
+   set of run folders in use. `createRunDirectory()` sweeps then creates;
+   `release()` unregisters; `sweep()` is separately testable.
+2. `appTempDir` keepAlive provider in `platform_providers.dart`.
+3. `FilePublishArtifactStore` takes the spool root instead of a base path.
+4. Tests: upload-progress client, transport classification/retry policy, deploy
+   API 401 + session budget, spool root sweep, and the two real-loopback cases.
+5. Records: ADR 0017 Decision 8, ADR 0007, Part M rows 93–95, CHANGELOG.
 
 ## Decision points
 
-- J.5's “after journal switch but before retirement” means after the
-  pending-move journal write, not after active-host selection. The latter would
-  contradict D.4, F.5, and J.5's final-completion invariant.
-- The E.5 example lacks enough state to recover after a remote retirement but
-  before the old-manifest commit. The pending journal therefore also carries an
-  immutable retirement descriptor: exact moved index/404 bytes, GitHub branch
-  and deletion paths, and Cloudflare retirement publish id/timestamp. Retry uses
-  those bytes rather than mutable settings or a newer app template. Record this
-  as a Part M deviation.
-- The existing shared queue is held only by the outer move/retry/skip command.
-  Confirmation dialogs run after its release; inner host operations never
-  enqueue.
+- A sweep failure must never block a publish (that would be a new dead end), so
+  `createRunDirectory` treats cleanup as best-effort while `sweep()` still
+  returns a typed `Either` for the test and for callers that care.
 
 ## Steps
 
-- [x] Add validated pending-move/retirement-descriptor models, atomic journal
-  transitions, strict prefs decoding, and exact move plans.
-- [x] Add the escaped moved-page template/builder and retirement read-back.
-- [x] Implement complete GitHub/Cloudflare destination publishing with source
-  and destination race checks and digest re-confirmation.
-- [x] Implement idempotent GitHub/Cloudflare retirement, including already-
-  retired recovery, exact ownership, version-URL gates, and manifest commit.
-- [x] Add the outer move controller, Retry/Skip, target-mutation guards, DI,
-  confirmation dialog, persistent banner, and truthful result copy.
-- [x] Add both-direction crash-matrix, security, architecture, and widget tests.
-- [x] Run generation, formatting, analysis, and the non-golden suite; update the
-  handoff and Part M records with evidence.
-
-## Result
-
-S9 is implemented end to end in the working tree. The move state machine takes
-the shared publish queue only for prepare/confirm/Retry/Skip, records one
-atomic pending journal entry with an immutable retirement descriptor, and
-switches the active/verified target only after source retirement is verified.
-Destination publishing is complete-snapshot-only with a canonical digest
-re-check, exact expected-head commit or Cloudflare version-URL gate, and full
-origin-bound read-back. Retirement is idempotent for both hosts, including the
-already-retired path and the warned, existence-checked Skip.
-
-Tests added: outer state machine and crash boundaries in both directions
-(35), host destination/retirement suites (7 GitHub destination, 10 GitHub
-source, 9 Cloudflare source, 5 Cloudflare destination), target resolver (6),
-setup target-mutation guards (2 + 2), verifiers (10), moved HTML (8), pending
-journal (9), move widgets (8), and the outer controller (5) — 116 tests in
-total. A real defect was found and fixed while
-testing: `ConfiguredMoveTargetResolver` threw `StateError` on an unreadable
-Cloudflare credential record instead of returning `setupRequired`; it now
-returns null and fails closed. The shared `PendingMoveTargetGuard` removes the
-duplicated pending-target rule from both setup use cases.
-
-Gates: `build_runner` leaves no new drift; `dart format` clean; `flutter
-analyze` zero issues; full non-golden suite green (4,230 tests on 2026-10-28).
-The Linux `publish_connection` golden remains excluded, and real-host J.7
-smoke remains S11.
+- [x] H2/L8 code (carried in the working tree): limits, upload-mode client,
+      timing profiles, no blind resend, session budget, status-first parsing.
+- [x] L5: `PublishArtifactSpoolRoot`, `appTempDir`, store rewiring.
+- [x] Tests: upload progress, transport, deploy API, spool root, loopback.
+- [x] Records: ADR 0017, ADR 0007, Part M rows 93–95, CHANGELOG, handoff.
+- [x] Gates: build_runner (no diff), format clean, analyze zero issues,
+      non-golden suite green (4,345 tests).
 
 ## Out of scope
 
-- Real-host J.7 smoke remains S11.
-- The intentionally changed Linux `publish_connection` golden remains excluded
-  from local non-golden verification, as in S8 closeout.
+- Splitting buckets (plan H2 step 7: optional follow-up after a real-host trial).
+- Phase 3+ findings (moves, reconnects, copy) and the Phase 6 real-host run.
+
+## Result
+
+Phase 2 is implemented end to end.
+
+- **H2:** `CloudflareLimits` names each bound (60 s connect, 60 s idle,
+  `60 s + 8 MiB ÷ 64 KiB/s` header wait, `60 s + bytes ÷ 64 KiB/s` total capped
+  at 20 min, 55 min session budget, 1 MiB blind-resend limit, 256 KiB
+  large-body threshold). `TimeoutHttpClient` has an opt-in upload mode that
+  counts pulled body chunks and re-arms an idle timer; every new parameter
+  defaults to null, so GitHub/lookup/viewer behaviour is unchanged.
+  `CloudflareRequestTiming` is the only place a duration is chosen. A failed
+  attempt that already sent more than 1 MiB is never blindly re-sent; a 401
+  from the bucket endpoint is `uploadTooSlow`; a session older than 55 min
+  refuses another bucket.
+- **L8:** `_parse` classifies by status first (non-JSON 429/5xx → status-only
+  response; non-JSON 4xx stays `malformedResponse`). `CloudflareByteSourceException`,
+  `CloudflareAssetHashException` and the base64 chunk check map to the new
+  non-retryable `artifactChanged`.
+- **L5:** `PublishArtifactSpoolRoot` owns the OS temporary root plus the legacy
+  Documents root, a lock and the live-run set. `createRunDirectory()` sweeps
+  then creates; the sweep deletes only real `run-[A-Za-z0-9_-]{1,64}` folders
+  under the app's own `publish_artifacts` roots, never follows a link, never
+  touches a live folder, and never blocks a publish when a delete fails.
+  `appTempDir` is a keepAlive provider; the sweep runs on the first `spool()`,
+  inside a queued operation.
+
+Tests added: upload-progress client (5), transport H2/L8 groups (8), request
+timing (8), deploy API 401 + session budget + rewritten changed-bytes (3), use
+case stall/too-slow copy (2), real-loopback stall and slow-drain (2), spool
+root (7) — 35 new tests. A defect found while testing: a hash mismatch inside
+the upload stream was still classified as a retryable network error, so
+`CloudflareAssetHashException` now maps to `artifactChanged`.
+
+Records: ADR 0017 Decision 8 and the S8 spool paragraph, ADR 0007's JWT
+lifetime note, ARCHITECTURE §5.6 bounds and the stored-data table, Part M rows
+93–95, CHANGELOG "Fixed", handoff §17.

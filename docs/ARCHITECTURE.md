@@ -458,8 +458,8 @@ to false** (the `hasX` forward-compat pattern):
 | Publish target URL | derived from the sealed target's identity parts, cross-checked against the stored one; never accepted as an arbitrary `{host, url}` pair | `PublishTarget`, `PrefsPublishHostStore` |
 | Publish read-back body | marker ≤ 4 KiB; `library.json` / `events.json` ≤ 64 KiB; catalogue by its own rule; exact expected origin and site directory, **no** redirect followed, one `?rb=` buster allowed | `BoundedPublishedSiteVerifier`, `PublishedSiteUrlPolicy.readBackUrl` |
 | Cloudflare API body | ≤ 1 MiB streamed, cancelled over cap; string-aware depth ≤ 16 **before** `jsonDecode`; endpoint-specific string/list/map bounds; whitelisted fields only | `CloudflareJson`, `HttpCloudflareApi` |
-| Cloudflare API deadline | 30 s abortable per call; 60 s per upload batch; a redirect is refused | `CloudflareHttpTransport` |
-| Cloudflare retries | ≤ 3 total attempts; one `retry-after` honoured up to 60 s; uncertain create/deploy is re-read, never blindly repeated | `HttpCloudflareAccountApi`, `HttpCloudflareDeployApi` |
+| Cloudflare API deadline | 30 s abortable per call; 60 s for a metadata-only deploy; an upload is bounded by progress (60 s connect, 60 s idle between pulled chunks, 60 s + 8 MiB ÷ 64 KiB/s for headers, `60 s + bytes ÷ 64 KiB/s` total capped at 20 min, 55 min session budget); a redirect is refused | `CloudflareHttpTransport`, `CloudflareRequestTiming` |
+| Cloudflare retries | ≤ 3 total attempts; one `retry-after` honoured up to 60 s; uncertain create/deploy is re-read, never blindly repeated; a failed attempt that already sent > 1 MiB is never blindly re-sent, and a changed local artifact is never retried | `HttpCloudflareAccountApi`, `HttpCloudflareDeployApi` |
 | Cloudflare accounts | ≤ 4 pages of 50, then the explicit manual Account ID path (never a partial picker) | `HttpCloudflareAccountApi` |
 | Cloudflare publish size | ≤ 20 000 files per deploy, ≤ 25 MiB per file; aggregate encoded bytes bounded, one bucket in flight | `CloudflareLimits`, `CloudflareAssetUploader` |
 
@@ -572,7 +572,7 @@ target passed to the current operation — that is what lets a move publish the
 | `publish_manifest.json` | app documents | no | GitHub schema 2: which app-owned files this phone owns |
 | `cloudflare_publish_manifest.json` | app documents | no | Cloudflare schema 2: the complete Worker asset set it owns |
 | `cf_connection` | hardened secure storage | **whole record** | Token plus optional account/Worker/address |
-| Artifact spool | temporary files | no | Public bytes while one publish runs; deleted afterwards |
+| Artifact spool | OS temporary directory | no | Public bytes while one publish runs; deleted afterwards and stale `run-` folders swept at the next operation |
 
 - **The journal, not the manifest, is the share truth.** `publishedSiteUrlProvider`
   reads only `verifiedTarget`, and that pointer is written *after* read-back

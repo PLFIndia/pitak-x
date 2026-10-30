@@ -97,6 +97,23 @@ heading as part of the `chore(release):` commit.
   from an unreachable one, under a bounded deadline. A contradicted earlier
   deployment asks for a replacement instead of blocking; an unreachable one no
   longer blocks an ordinary publish.
+- **Large libraries upload on slow connections:** an upload is now bounded by
+  progress instead of one 60 s number — a 60 s connect bound, a 60 s idle bound
+  between body chunks, a size-derived total (up to 20 min), and a 55 min
+  session budget for Cloudflare's one-hour upload token. A failed attempt that
+  already sent more than 1 MiB is never blindly re-sent, so a slow link no
+  longer spends the same mobile data three times. A stall or an expired upload
+  token now says so and suggests Wi-Fi instead of "Reconnect Cloudflare".
+- **A non-JSON Cloudflare error is classified by status:** an HTML 5xx or a
+  second 429 is a server or rate-limit answer, not "unreadable response", while
+  an HTML 403 still cannot trigger the setup fallbacks. A site file that
+  changed or vanished mid-upload stops the publish with "Publish again" instead
+  of being retried with different bytes.
+- **Publish spools live in temporary storage and are swept:** a killed publish
+  no longer leaves a full copy of the site in Documents. Spools are created in
+  the OS temporary directory, and the next operation deletes stale `run-`
+  folders under the app's own roots — never a link, never a folder in use, and
+  a failed delete never blocks a publish.
 
 ### Changed
 - **Replacement and recreate dialogs explain the case:** missing files, a
