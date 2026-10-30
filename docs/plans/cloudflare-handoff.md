@@ -818,37 +818,66 @@ No token, JWT, account id or raw response body goes in this table.
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
 
-### Phase 6 — real-host checks and the new smoke rows (pending)
+### Phase 6 — real-host checks and the new smoke rows (partly filled)
 
-Two evidence sets are still empty. Both need the disposable Cloudflare account
-and the throwaway GitHub repository; neither is a code change.
+**Part 3 §6.1 checks.** Run on the disposable trial account on 2026-10-30; these
+needed only the documented Workers API, no app build. Part M rows 120–121
+record them.
 
-**Part 3 §6.1 checks — run these first, because their answers let a fallback be
-deleted.** Each design is safe under either answer; the evidence only removes a
-branch (and its tests) or proves the branch must stay.
-
-| Check | Answer to record | Unblocks |
+| Check | Answer recorded | Unblocks |
 |---|---|---|
-| `GET /workers/scripts/{name}` for a Worker that does not exist | HTTP status and error codes | L2's "script not found" code |
-| `POST …/assets-upload-session` for a Worker that does not exist | Whether the session succeeds; whether `GET` then answers 200 or 404; route and preview settings after the session and after the first deploy; the public marker URL before and after the deploy; whether an abandoned session leaves a Worker behind | RH1's baseline branch |
-| Create a Worker named `MyLib`, then `GET` it as `mylib` | Whether the API ignores case | RH2 step 3 (the case-variant listing can be dropped if it does) |
-| A GitHub repository made private or deleted, read with the current token | The repository status and the public `books.json` status | RH3 |
-| Optional: split one bucket into two upload requests | Whether it is accepted and whether the completion token still arrives | H2's optional bucket split |
+| `GET /workers/scripts/{name}` for a Worker that does not exist | **HTTP 404, error code 10007** — exactly `CloudflareLimits.notFoundErrorCode` | L2 is confirmed; no code change |
+| `POST …/assets-upload-session` for a Worker that does not exist | Session answers **200**; the script then reads **404**, so the session does **not** create the Worker. The `…/subdomain` settings read answers **200** (`enabled: false`, `previews_enabled: false`) even for a missing script, so it never proves existence. The public marker is a real **404**. An abandoned session left nothing behind | RH1's "session may create the Worker" baseline cannot occur; the branch can be simplified in a follow-up |
+| Create a Worker named `MyLib`, then `GET` it as `mylib` | Creating `MyLib` is refused: **HTTP 400, code 10016**, "Invalid Worker name. Ensure the name is lowercase…". A mixed-case Worker cannot exist, so no case-variant lookup is needed | RH2 step 3: the bounded case listing (and its tests) can be deleted in a follow-up |
+| A GitHub repository made private or deleted, read with the current token | *pending* — needs a repository the app published to; fold into row 17's run | RH3 |
+| Optional: split one bucket into two upload requests | *not run* — needs a ≥ 40 MB upload; nothing depends on it | H2's optional bucket split |
 
 **Rows 11–19** are the fix plan's Part 3 §6.2 additions; they are in
-`docs/RELEASING.md` §6.5 now. Fill one row here per run, same rules as 1–10.
+`docs/RELEASING.md` §6.5 now. One row per run, same rules as 1–10. The
+2026-10-30 run used the shipped F-Droid release build `6209315` (APK SHA-256
+`0bd94a147db332dbaa02b3a1440fc95197dca3ca1cf90ed2c6311b50dbe210a4`).
 
 | # | Check | Result |
 |---|---|---|
-| 11 | Reconnect to a different Worker, then publish (H1, D1) | *pending* |
-| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* |
-| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | *pending* |
-| 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *pending* |
-| 15 | Switch tabs during a large publish (M1) | *pending* |
-| 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* |
-| 17 | Cancel a pending move; then finish without retiring with a revoked token (M4) | *pending* |
-| 18 | First move into a Worker that holds a setup marker (L16) | *pending* |
-| 19 | Publish after Cloudflare forgets a carried file (N1) | *pending* |
+| 11 | Reconnect to a different Worker, then publish (H1, D1) | *pending* — the app's Cloudflare account needs its own token to choose a different Worker; see the note below |
+| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* — same blocker |
+| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | *pending* — the account's token cannot read its subdomain, so every setup takes the manual path and deploys a marker first; RH1's premise is now answered by row 120 instead |
+| 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
+| 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
+| 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs the account's token |
+| 17 | Cancel a pending move; then finish without retiring with a revoked token (M4) | *pending* — the 2026-10-30 move completed first time, so no pending state existed |
+| 18 | First move into a Worker that holds a setup marker (L16) | *pending* — the move ran into a Worker holding a **retired** marker, which needs no replacement consent |
+| 19 | Publish after Cloudflare forgets a carried file (N1) | *not run* — time-dependent (Cloudflare only drops recently uploaded files); cannot be forced on demand |
+
+**Two matrix rows re-validated on the same build** (they were PASS at
+`691b325`): **row 7**, Move GitHub → Cloudflare, completed first attempt with
+the destination verified before the old site became a moved page (Part M row
+122); and **row 2**, section survival — after an events publish, a catalogue
+publish left `events.json` byte-identical (Part M row 123).
+
+### 2026-10-30 smoke session — device, build and state
+
+- OnePlus LE2101, Android 14, device id `678c5642`. Built after
+  `fvm flutter clean` (`fvm flutter build apk --release --flavor fdroid`) from
+  commit `6209315` and installed with `adb install -r` over the 2026-10-29
+  install, so local app data (and the Cloudflare connection record) survived.
+  Package `dev.khoj.pitaka.fdroid` 1.8.0+31; APK SHA-256
+  `0bd94a147db332dbaa02b3a1440fc95197dca3ca1cf90ed2c6311b50dbe210a4`.
+- Session start state: active host GitHub Pages, Cloudflare connected and
+  confirmed to `pitak-worker` (not active), three synthetic books, no posters.
+- Session end state: **active host is Cloudflare Workers**
+  (`https://pitak-worker.beli-log1234.workers.dev/`), the GitHub repository is
+  retired to exactly `404.html` + `README.md` + `index.html` (its root is the
+  moved page naming the Worker), and the Worker serves the live catalogue
+  (`events.json` empty, no posters). Only synthetic data was published.
+- **Blocker for rows 11, 12 and 16:** choosing a different Worker requires
+  re-entering the account's API token, and that token exists only in the app's
+  secure storage (the reconnect dialog never reloads it). The 2026-10-27 trial
+  token in the macOS Keychain belongs to a **different** account (subdomain
+  `pitak-trial-705712e9`), which is why it was used for the API-only checks
+  above. Disconnecting is not a workaround: it would delete the only stored copy
+  of the live account's token.
+
 
 ### Current smoke handoff — 2026-10-29
 
