@@ -840,7 +840,7 @@ record them.
 | # | Check | Result |
 |---|---|---|
 | 11 | Reconnect to a different Worker, then publish (H1, D1) | **PASS** (2026-10-30, after the row-120 fix): the target-changed review named both addresses and said the old site keeps its last version; after confirming, `pitak-e2e-3` published and verified ("Published! Your site is verified live.", marker `c7432821…`, `library.json.siteUrl` = the new Worker, 3 books, `/events` 200) while `pitak-worker` kept its exact marker `2e3b1a62…` and bytes |
-| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* — needs a dashboard delete of a Worker this phone is pointing at; the recreate path now works (row 13) |
+| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | **PASS** (2026-10-30): after deleting `pitak-e2e-3`, re-selecting it finalized as a new site (no verification deploy), and publishing showed **"Recreate your site?"** — "The Cloudflare Worker 'pitak-e2e-3' no longer exists… recreates it … with this phone's catalogue (3 items)". Confirming recreated the Worker and verified it: marker `5d7a551c…` live, `/`, `books.json`, `library.json`, `/events` all 200, `library.json.siteUrl` = the Worker, and the card read "Published! Your site is verified live." |
 | 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | **PASS after the fix** (2026-10-30): `pitak-e2e-3` was created by the upload session and the publish completed with no "stale" and no "resource is not available" review. Before the fix the same action failed (see the defect note below) |
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
@@ -868,7 +868,8 @@ publish left `events.json` byte-identical (Part M row 123).
 - Session end state: **active host is Cloudflare Workers, now pointing at
   `https://pitak-e2e-3.beli-log1234.workers.dev/`** (the row-11/13 publish). Two
   sites are live: `pitak-worker` (from the move, marker `2e3b1a62…`, untouched
-  by the later publishes) and `pitak-e2e-3` (marker `c7432821…`, 3 books).
+  by the later publishes) and `pitak-e2e-3` (deleted and recreated by row 12,
+  marker `5d7a551c…`, 3 books).
   `pitak-e2e-2` is an empty leftover Worker created by the failed attempt —
   delete it in the dashboard. The GitHub repository is retired to exactly
   `404.html` + `README.md` + `index.html` (its root is the moved page naming
@@ -887,6 +888,11 @@ publish left `events.json` byte-identical (Part M row 123).
   suppressing the replacement review when the destination reports
   `emptyWorkerErrorCode` (a Worker with no versions), or folding the two into
   one dialog.
+- **Display churn after a recreate (cosmetic).** For about a minute after the
+  row-12 recreate deployed, the card showed "Review site replacement — Review
+  the replacement before publishing." before settling on "Published! Your site
+  is verified live." The site was correct throughout, so this is a rendering
+  state that outlived its operation, not a wrong write.
 - **What still needs the account's token:** choosing a different or new Worker
   requires re-entering the API token (the reconnect dialog never reloads it).
   The maintainer pasted it twice on 2026-10-30, which is how rows 11 and 13
