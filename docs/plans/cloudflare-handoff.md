@@ -827,7 +827,7 @@ record them.
 | Check | Answer recorded | Unblocks |
 |---|---|---|
 | `GET /workers/scripts/{name}` for a Worker that does not exist | **HTTP 404, error code 10007** — exactly `CloudflareLimits.notFoundErrorCode` | L2 is confirmed; no code change |
-| `POST …/assets-upload-session` for a Worker that does not exist | Session answers **200**; the script then reads **404**, so the session does **not** create the Worker. The `…/subdomain` settings read answers **200** (`enabled: false`, `previews_enabled: false`) even for a missing script, so it never proves existence. The public marker is a real **404**. An abandoned session left nothing behind | RH1's "session may create the Worker" baseline cannot occur; the branch can be simplified in a follow-up |
+| `POST …/assets-upload-session` for a Worker that does not exist | Session answers **200** and **creates the Worker entity without versions**: afterwards the script read is `404 + 10222` ("This Worker has no versions…") while `…/deployments` and `…/subdomain` answer 200. A Worker that never existed answers `404 + 10007`. The public marker is a real 404 either way | RH1's premise is real — and this is why the **first publish to a brand-new Worker fails today**; see row 13 |
 | Create a Worker named `MyLib`, then `GET` it as `mylib` | Creating `MyLib` is refused: **HTTP 400, code 10016**, "Invalid Worker name. Ensure the name is lowercase…". A mixed-case Worker cannot exist, so no case-variant lookup is needed | RH2 step 3: the bounded case listing (and its tests) can be deleted in a follow-up |
 | A GitHub repository made private or deleted, read with the current token | *pending* — needs a repository the app published to; fold into row 17's run | RH3 |
 | Optional: split one bucket into two upload requests | *not run* — needs a ≥ 40 MB upload; nothing depends on it | H2's optional bucket split |
@@ -839,9 +839,9 @@ record them.
 
 | # | Check | Result |
 |---|---|---|
-| 11 | Reconnect to a different Worker, then publish (H1, D1) | *pending* — the app's Cloudflare account needs its own token to choose a different Worker; see the note below |
-| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* — same blocker |
-| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | *pending* — the account's token cannot read its subdomain, so every setup takes the manual path and deploys a marker first; RH1's premise is now answered by row 120 instead |
+| 11 | Reconnect to a different Worker, then publish (H1, D1) | **Review PASS, publish FAIL** (2026-10-30): the target-changed review named both addresses and said the old site keeps its last version; the publish then failed with "The Cloudflare resource is not available." — the row-13 defect, not a review problem. The old Worker was verified untouched (marker, `books.json`, `events.json` byte-identical) |
+| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *blocked by row 13* — a deleted Worker is recreated by the next upload session, which is exactly the failing path |
+| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | **FAIL** (2026-10-30): `pitak-e2e-2` was confirmed and "ready to publish", the publish failed with "Publish failed: The Cloudflare resource is not available.", and the public address stayed 404 (Cloudflare 1042). Cause: the upload session creates the Worker, the post-session re-read reads `404 + 10222`, and `workerExists` (which accepts only 10007 as absence) throws instead of reporting "our Worker exists, no versions yet" (Part M row 120). Rows 11, 12 and 18 cannot pass until this is fixed |
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
 | 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs the account's token |
