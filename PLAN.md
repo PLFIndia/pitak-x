@@ -1,112 +1,131 @@
-# Phase 2 — large libraries upload on slow networks (H2, L8, L5)
+# Phase 3 — moves and reconnects (L2, RH3, M5, M4, M3, M6, M11)
 
 ## Understanding
 
-Phase 2 of `docs/plans/cloudflare-fix-plan-2026-10-29-1-high.md` fixes three
-findings that all bite a real library on a real mobile link:
+Phase 3 of `docs/plans/cloudflare-fix-plan-2026-10-29-2-medium.md`. Every
+finding is a state the user can enter but not leave, or a write that happens
+before the rule that should have stopped it:
 
-- **H2** — one 60 s wall-clock number stood in for two questions ("is the
-  connection dead?" and "has this run taken too long?"). A 56 MB bucket needs
-  ~7.5 Mbit/s to finish in 60 s, so a slow-but-healthy phone was cut off and
-  the whole bucket re-sent from byte 0, up to three times.
-- **L8** — a non-JSON body was always "unreadable response", even for a 5xx or
-  a second 429 (Cloudflare's edge serves HTML there), and a local artifact that
-  changed mid-upload was retried as if it were a network error.
-- **L5** — spools lived under Documents, which is never cleared, so every
-  killed publish left a full copy of the site behind.
-
-The working tree already carried the H2/L8 code (limits, upload-mode
-`TimeoutHttpClient`, `CloudflareRequestTiming`, no-blind-resend, session
-budget, status-first parsing, `artifactChanged`). This session finishes the
-phase: L5, the tests the plan names, and the records.
+- **L2/RH3** — "absent" is decided from a status code alone on both hosts. A
+  Cloudflare 404 (permission, wrong account, HTML edge page) reads as "no
+  Worker", which gates replacement consent, the new-site decision and Skip.
+  GitHub answers 404 for a private repo the token can no longer see.
+- **M5** — the pending-move guard runs in `_finalize`, long after
+  `selectWorker` saved the candidate and ran a verification deploy. Reconnecting
+  during a pending move can therefore deploy a marker over the move's old
+  Worker, after which Retry says "source changed" and Skip refuses.
+- **M4** — the journal has a "finish" transition but no "undo", and Skip's
+  evidence bar (exact credentials + authenticated "not found") cannot be met in
+  the cases the plan wrote it for (revoked token, deleted account, renamed
+  repo, another phone publishing).
+- **M3** — rotating a token drops the confirmed target, so re-picking the same
+  live Worker runs the destructive marker-only verification deploy, and the
+  dialog claims the other site is untouched.
+- **M6** — dialogs open only on a prompt *change*; the tab is disposed
+  off-screen, so on return the tile is stuck in `awaitingInput` with every
+  button disabled.
+- **M11** — `build()` resets `_disposed` but `_operationActive` and the pending
+  prompt survive, so an invalidate during a queued command strands a completer
+  and every later command silently no-ops.
 
 ## Privacy & threat notes
 
-- No new secret path. The upload JWT still lives only inside
-  `CloudflareUploadSession.useUploadJwt`; `issuedAtMillis` is a timestamp, not
-  a credential, and is never logged or serialized.
-- Progress callbacks carry a byte count only — never bytes, paths or headers.
-- The spool sweep deletes only real directories named `run-[A-Za-z0-9_-]{1,64}`
-  under the app's own `publish_artifacts` roots, never follows links, and never
-  touches a folder this process is using. A symlinked root is not swept, so a
-  hostile/odd filesystem cannot redirect a delete.
-- Spools move from Documents to the OS temporary directory: less data at rest,
-  and the OS may clear it. Nothing is backed up (`allowBackup="false"`).
+- No new secret path. `CloudflareSetupConstraint` holds only public identity
+  parts (account id, subdomain, Worker name) already in the journal.
+- The new "absent" rules fail closed: an ambiguous 404 is `notFound`/
+  `unreadable`, never "gone". Public absence alone never authorizes anything.
+- `GitHubApiException` gains a status kind so 401/403 is "inaccessible", not a
+  network failure; the kind is a number, never response text.
+- Cancel/Finish copy names the old and new addresses (already public) and never
+  a token, JWT or account id.
 
 ## Investigation notes
 
-- `CloudflareLimits.uploadDeadline` is gone; `deployDeadline` replaces it and
-  `CloudflareRequestTiming` is the only place a duration is chosen.
-- `TimeoutHttpClient` upload mode is opt-in: every parameter defaults to null,
-  so GitHub, lookup and viewer traffic keep the old behaviour.
-- `FilePublishArtifactStore` was the only spool writer; the memory scenario and
-  seven test files construct it with `baseDir:`.
+- `statusOnly` in `CloudflareHttpTransport.send` short-circuits both 2xx and
+  404, so the body is discarded before any code can be read.
+- `CloudflareAccountApi.readAccountSubdomain` already requires 404 + 10007.
+- `PublishedSiteReadVerifier` already refuses redirects and distinguishes
+  Body/Absent/Unreadable — exactly the GitHub evidence L2 needs.
+- `PublishHostState` has `beginMove`/`finishMove`; `PublishHostStateRepository`
+  mirrors them. `abandonMove` follows the same shape.
+- `CloudflareSetupPrompts` is the one prompt owner; the generation belongs
+  there, not in the controller.
 
 ## Proposed approach
 
-1. `PublishArtifactSpoolRoot` (infrastructure) owns both roots, a lock, and the
-   set of run folders in use. `createRunDirectory()` sweeps then creates;
-   `release()` unregisters; `sweep()` is separately testable.
-2. `appTempDir` keepAlive provider in `platform_providers.dart`.
-3. `FilePublishArtifactStore` takes the spool root instead of a base path.
-4. Tests: upload-progress client, transport classification/retry policy, deploy
-   API 401 + session budget, spool root sweep, and the two real-loopback cases.
-5. Records: ADR 0017 Decision 8, ADR 0007, Part M rows 93–95, CHANGELOG.
+1. L2: status-first `statusOnly`; `workerExists` requires 404 + `success:false`
+   + code 10007; GitHub `skipCheck` requires repo 404 **and** a public 404 for
+   `books.json` at the exact old address.
+2. M5: `CloudflareSetupConstraint` from the journal, checked before every
+   credential save or remote write; prompts prefilled from it.
+3. M4: `abandonMove` + `MoveSiteUseCase.abandon()`; sealed `SourceSkipCheck`
+   with `finishWithoutRetiring()`; three banner actions with their dialogs.
+4. M3: recognise a proven address (journal `verifiedTarget` or a pending move's
+   `newTarget`) and finalize without a deploy; defer the user-token save.
+5. M6: `initState` + `listenManual(fireImmediately: true)` + post-frame dialog,
+   last-shown serial, and a "Cancel setup" action.
+6. M11: prompt generation; `_operationActive` per generation; `refreshStatus()`
+   replaces the three invalidations.
 
 ## Decision points
 
-- A sweep failure must never block a publish (that would be a new dead end), so
-  `createRunDirectory` treats cleanup as best-effort while `sweep()` still
-  returns a typed `Either` for the test and for callers that care.
+- M4's "which button appears when" table is implemented as one "Skip
+  retirement" action whose result carries `canFinishWithoutRetiring` +
+  `oldSiteAnswers`, so the banner offers "Finish without retiring" only after
+  the check actually said "inaccessible". No extra remote call on mount.
+- M3's proven-address rule covers M5 step 3 (the old endpoint is the journal's
+  `verifiedTarget` during a pending move), so setup can re-authorize it
+  read-only without a second rule.
 
 ## Steps
 
-- [x] H2/L8 code (carried in the working tree): limits, upload-mode client,
-      timing profiles, no blind resend, session budget, status-first parsing.
-- [x] L5: `PublishArtifactSpoolRoot`, `appTempDir`, store rewiring.
-- [x] Tests: upload progress, transport, deploy API, spool root, loopback.
-- [x] Records: ADR 0017, ADR 0007, Part M rows 93–95, CHANGELOG, handoff.
-- [x] Gates: build_runner (no diff), format clean, analyze zero issues,
-      non-golden suite green (4,345 tests).
+- [x] L2/RH3: status-first 404, `workerExists` code rule, GitHub `skipCheck`,
+      `GitHubApiException` status kind.
+- [x] M5: `CloudflareSetupConstraint` + every setup command + prefill.
+- [x] M4: `abandonMove`, `abandon()`, `SourceSkipCheck`,
+      `finishWithoutRetiring()`, banner actions and dialogs.
+- [x] M3: proven-address finalize, deferred user-token save, dialog copy.
+- [x] M6: remount prompts, Cancel setup, GitHub prompts.
+- [x] M11: prompt generation, per-generation lock, `refreshStatus()`.
+- [x] Tests for every item above.
+- [x] Records: ADR 0017 Decision 5/5a + S7, Part M, CHANGELOG, handoff, guide.
+- [x] Gates: build_runner, format, analyze, non-golden suite (4,400 tests).
 
 ## Out of scope
 
-- Splitting buckets (plan H2 step 7: optional follow-up after a real-host trial).
-- Phase 3+ findings (moves, reconnects, copy) and the Phase 6 real-host run.
+- Phase 4+ findings (moved-page name validation, Version-URL re-checks, copy).
+- The Phase 6 real-host run that records the real "script not found" code.
 
 ## Result
 
-Phase 2 is implemented end to end.
+Phase 3 is implemented end to end.
 
-- **H2:** `CloudflareLimits` names each bound (60 s connect, 60 s idle,
-  `60 s + 8 MiB ÷ 64 KiB/s` header wait, `60 s + bytes ÷ 64 KiB/s` total capped
-  at 20 min, 55 min session budget, 1 MiB blind-resend limit, 256 KiB
-  large-body threshold). `TimeoutHttpClient` has an opt-in upload mode that
-  counts pulled body chunks and re-arms an idle timer; every new parameter
-  defaults to null, so GitHub/lookup/viewer behaviour is unchanged.
-  `CloudflareRequestTiming` is the only place a duration is chosen. A failed
-  attempt that already sent more than 1 MiB is never blindly re-sent; a 401
-  from the bucket endpoint is `uploadTooSlow`; a session older than 55 min
-  refuses another bucket.
-- **L8:** `_parse` classifies by status first (non-JSON 429/5xx → status-only
-  response; non-JSON 4xx stays `malformedResponse`). `CloudflareByteSourceException`,
-  `CloudflareAssetHashException` and the base64 chunk check map to the new
-  non-retryable `artifactChanged`.
-- **L5:** `PublishArtifactSpoolRoot` owns the OS temporary root plus the legacy
-  Documents root, a lock and the live-run set. `createRunDirectory()` sweeps
-  then creates; the sweep deletes only real `run-[A-Za-z0-9_-]{1,64}` folders
-  under the app's own `publish_artifacts` roots, never follows a link, never
-  touches a live folder, and never blocks a publish when a delete fails.
-  `appTempDir` is a keepAlive provider; the sweep runs on the first `spool()`,
-  inside a queued operation.
+- **L2/RH3:** `statusOnly` discards only a 2xx body, so a 404 is parsed.
+  `workerExists` returns false only for 404 + `success: false` + code 10007;
+  any other 404 is `notFound` and an HTML 404 is `malformedResponse`. GitHub's
+  Skip check requires a repo 404 **and** a real public 404 at the old root.
+- **M5:** `CloudflareSetupConstraint` (derived from the journal) is checked by
+  every setup command before any credential save or remote write; prompts
+  prefill from `CloudflareSetupHint` and explain why.
+- **M4:** `abandonMove` + `abandon()`, sealed `SourceSkipCheck`,
+  `finishWithoutRetiring()`, three banner actions with their own dialogs, and
+  `GitHubApiException.statusCode` so 401/403 is "inaccessible" (N10).
+- **M3:** `markAddressProven` finalizes a proven address without a deploy; a
+  user token is verified but saved only at account selection; the verification
+  dialog says "This Worker is your live site" when it is.
+- **M6:** `initState` + `listenManual(fireImmediately: true)` + post-frame
+  dialog that re-reads state, last-shown serial, "Cancel setup", and the same
+  remount rule for the GitHub code/repo prompts.
+- **M11:** prompt generations, a per-generation lock, and `refreshStatus()`
+  replacing the three provider invalidations.
 
-Tests added: upload-progress client (5), transport H2/L8 groups (8), request
-timing (8), deploy API 401 + session budget + rewritten changed-bytes (3), use
-case stall/too-slow copy (2), real-loopback stall and slow-drain (2), spool
-root (7) — 35 new tests. A defect found while testing: a hash mismatch inside
-the upload stream was still classified as a retryable network error, so
-`CloudflareAssetHashException` now maps to `artifactChanged`.
+Two files crossed the 500-line ratchet and were split rather than allow-listed:
+`cloudflare_setup_journal.dart` (journal-derived rules) and
+`cloudflare_connection_status_writer.dart` (status projection).
 
-Records: ADR 0017 Decision 8 and the S8 spool paragraph, ADR 0007's JWT
-lifetime note, ARCHITECTURE §5.6 bounds and the stored-data table, Part M rows
-93–95, CHANGELOG "Fixed", handoff §17.
+Tests added: L2 (deploy API 4, GitHub source 3, Cloudflare source 2), M5 (7),
+M3 (6), M4 (domain 4, repository 4, use case 8, widgets 2), M6 (section 2,
+tile 2, page 1), M11 (controller 3) — 48 new tests.
+
+Records: ADR 0017 Decision 5a + Decision 9, Part M rows 96–101, CHANGELOG,
+handoff §9/§13, in-app guide.

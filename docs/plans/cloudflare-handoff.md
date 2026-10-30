@@ -655,11 +655,13 @@ Retry and Skip are deterministic after every remote or persistent side effect.
   old site retired.
 - **Target-mutation guards.** `PendingMoveTargetGuard` is shared by GitHub repo
   setup and Cloudflare Worker activation: while a pending move exists, only the
-  exact recorded destinations may be changed. An unreadable journal fails
-  closed.
+  exact recorded endpoints may be changed. An unreadable journal fails closed.
+  Fix-plan M5 extends the same rule to every Cloudflare setup command through
+  `CloudflareSetupConstraint`, checked before any credential save or remote
+  write.
 - **Presentation.** The publish card shows either the move controls or a
-  persistent pending banner with Retry and the verified new address. Skip has
-  its own warning. Result copy distinguishes verified-but-unrecorded, retirement
+  persistent pending banner with Retry, Skip (or "Finish without retiring") and
+  Cancel, plus the verified new address. Skip has its own warning. Result copy distinguishes verified-but-unrecorded, retirement
   pending, completion pending, skipped retirement and temporary cleanup. Peers
   are explicitly told they do not follow automatically, and the card must be
   reprinted after a move.
@@ -1009,6 +1011,22 @@ the Part N checklist were run again afterwards.
   exists for exactly that; do not treat a card's null location as "sharing off".
 - **Declining a move writes nothing.** Only an accept writes, and it writes in
   one repository transaction with baseline checks.
+- **A pending move has three explicit exits.** Retry resumes missing work, Skip
+  finishes only on an authenticated "not found", and Cancel clears the pending
+  record while keeping the old active/verified target (so the share address does
+  not change). "Finish without retiring" is offered only when the old site
+  cannot be signed in to, and it re-checks inside the queue. Do not collapse
+  these back into one button: each one is the honest action for a different
+  provable state (fix-plan M4, ADR 0017 Decision 5a).
+- **"Absent" needs positive evidence.** A Cloudflare 404 counts only with
+  `success: false` and Cloudflare's not-found code; a GitHub repo 404 counts
+  only with a real public 404 at the old address. Anything else is
+  `notFound`/`unreadable` and authorises nothing (fix-plan L2/RH3).
+- **Setup never overwrites a proven address.** A prospective target equal to the
+  journal's verified target (or a pending move's destination) finalizes without
+  the marker-only deploy, and a new token is not saved until an account is
+  chosen. Every setup command checks the pending move's exact endpoint before
+  any save or remote write (fix-plan M3/M5).
 - **A corrupt read is not empty content.** Publishing uses `loadStrict`; the
   tolerant editor path is explicitly named.
 - **Complete mode fails, it does not omit.** A missing cover/poster aborts.

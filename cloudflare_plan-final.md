@@ -715,11 +715,26 @@ address.
 If the destination cannot be verified, nothing switches or retires. If the
 source changes before retirement, retirement stops and the destination remains
 available but the move is not completed. While retirement is pending, the old
-host and its verified share target remain active and a persistent Retry banner
-shows the verified new address. The active host switches only after retirement
-verifies. Skip is available only behind a warning for a source
-account/repository/Worker that no longer exists; it switches to the verified
-new target but never masquerades as successful retirement.
+host and its verified share target remain active and a persistent banner shows
+the verified new address with three explicit exits (fix-plan M4, ADR 0017
+Decision 5a):
+
+- **Retry move** resumes only the missing retirement work.
+- **Skip retirement** is available only behind a warning for a source
+  account/repository/Worker that no longer exists (an authenticated "not
+  found"); it switches to the verified new target but never masquerades as
+  successful retirement.
+- **Cancel move** clears the pending record and keeps the old active/verified
+  target, so the share address does not change; the already-published copy
+  stays online and Pitak never deletes it. Cancel is refused once the old
+  address already shows the moved page.
+
+When Pitak cannot sign in to the old site at all (401/403, a redirect, or no
+exact credentials), the banner offers **Finish without retiring** instead of
+Skip. It re-checks inside the queue, requires "inaccessible" or "absent", and
+marks no record retired.
+
+The active host switches only after retirement verifies.
 
 ## D.5 Reader reconciliation
 
@@ -1169,7 +1184,9 @@ does not clear verified public manifests or pending history silently. Pending
 retry either reauthorizes the exact recorded target or remains blocked. After
 the explicit warning, Skip switches the active/verified target to the already
 verified destination and clears the journal; it does not mark the old site
-retired.
+retired. Cancel clears the pending record without switching anything, and
+Finish without retiring does the same switch as Skip but only when the old site
+cannot be signed in to (D.4, fix-plan M4).
 
 ## F.9 Failure map
 
@@ -1193,7 +1210,9 @@ retired.
 | Uncertain deploy timeout | Re-read marker/Worker before retry; never blindly repeat. |
 | Deploy succeeded, manifest save failed | Report remote update plus local reconciliation failure; marker/head recovers safely. |
 | Deploy succeeded, read-back incomplete | State remains `deployed`, not verified `live`; retry verification later. |
-| Retirement failed | Keep exact pending journal and Retry; old host/share target remains active until retirement verifies, and the banner exposes the verified new address. |
+| Retirement failed | Keep exact pending journal and Retry; old host/share target remains active until retirement verifies, and the banner exposes the verified new address plus Skip and Cancel. |
+| Old site cannot be signed in to (401/403/redirect/no credentials) | Offer Finish without retiring after a re-check inside the queue; never claim the old site was retired. |
+| Old site still reachable | Refuse Skip and Finish; offer Retry or Cancel. |
 | Wrong target on reconnect | Refuse retirement; never substitute the new configured target. |
 | Over file count/size/type/path limit | Typed failure before upload. |
 
@@ -1617,6 +1636,12 @@ rows; they do not silently edit away the history.
 | 93 | H2: one 60 s wall-clock number bounded both "is the connection dead?" and "has this run taken too long?", so a 56 MB bucket needed 7.5 Mbit/s and a slow-but-healthy phone re-sent the whole bucket from byte 0 up to three times | `CloudflareLimits` names each bound separately (60 s connect, 60 s idle, 60 s + 8 MiB ÷ 64 KiB/s response wait, `60 s + bytes ÷ 64 KiB/s` total capped at 20 min, 55 min session budget, 1 MiB blind-resend limit). `TimeoutHttpClient` gains an opt-in upload mode (all parameters default to null, so GitHub/lookup/viewer are unchanged) that counts pulled body chunks and re-arms an idle timer; `CloudflareRequestTiming` is the only place a duration is chosen, and any body over 256 KiB uses the upload profile. A failed attempt that already sent more than 1 MiB is never blindly re-sent, and a 401 from the bucket endpoint is `uploadTooSlow`, not "Reconnect Cloudflare" | The old number could not answer two questions. Bucket splitting stays an optional follow-up (H2 step 7): it would change plan B.2 and the final-bucket token rule, and cannot split a single 25 MiB file |
 | 94 | L8: any non-JSON body became "unreadable response" whatever the status, and a local artifact that changed mid-upload was retried as a network error | `_parse` classifies by STATUS first: a non-JSON 429/5xx becomes a status-only response (so the existing mapping yields `rateLimited`/`server`), while a non-JSON 4xx stays `malformedResponse` so setup's 403 branch cannot act on an HTML page. `CloudflareByteSourceException`, `CloudflareAssetHashException` and the base64 chunk check map to the new non-retryable `artifactChanged` | Cloudflare's edge serves HTML for a 5xx or a second 429; retrying bytes that no longer match their accepted hash would send different content |
 | 95 | L5: spools lived under Documents, which is never cleared and survives "Clear cache", so every killed publish left a full copy of the site behind | `PublishArtifactSpoolRoot` owns the OS temporary root and the legacy Documents root, a lock, and the set of live run folders. `createRunDirectory()` sweeps then creates; the sweep deletes only real `run-[A-Za-z0-9_-]{1,64}` folders under the app's own `publish_artifacts` roots, never follows a link, never touches a live folder, and never blocks a publish when a delete fails. `appTempDir` is a keepAlive provider; the sweep runs on the first `spool()`, inside a queued operation, never when a provider is built | Documents is never cleared by the OS, and the move providers are built outside the queue, so a build-time sweep could race a running publish |
+| 96 | L2/RH3: "absent" was decided from a status code alone on both hosts, so a Cloudflare 404 (permission, wrong account, HTML edge page) read as "no Worker" and a GitHub 404 for a private repo read as "gone" | `statusOnly` discards only a 2xx body; a 404 goes through the bounded JSON parser. `workerExists` returns false ONLY for 404 + `success: false` + code 10007 (`CloudflareLimits.notFoundErrorCode`); any other 404 is a typed `notFound` and an HTML 404 is `malformedResponse`. GitHub's Skip check requires a repo 404 AND a real public 404 for the old root, read with redirects off; a body is `SourcePresent`, an unreadable read is `SourceCheckFailed` | Both reads gate replacement consent, the new-site decision and Skip. The 10007 code is the working assumption until the Phase 6 real-host check records the Worker-script code |
+| 97 | M5: the pending-move guard ran only in `_finalize`, long after `selectWorker` saved the candidate and ran a verification deploy, so reconnecting during a move could deploy a marker over the move's old Worker | `CloudflareSetupConstraint` is derived from the journal's pending move and checked by every setup command (account select, manual Account ID, create/manual subdomain, Worker select) BEFORE any credential save or remote write; reads stay allowed. Prompts prefill from `CloudflareSetupHint` and say "Reconnect to {address} to finish your move." An unreadable journal fails closed | The old endpoint is the journal's `verifiedTarget` during a move, so M3's proven-address rule re-authorizes it read-only and never deploys to it |
+| 98 | M4: the journal had a "finish" transition but no "undo", and Skip's evidence bar (exact credentials + authenticated "not found") could not be met when the token was revoked, the account deleted or the repo renamed | `PublishHostState.abandonMove` + `PublishHostStateRepository.abandonMove` clear the pending record and keep `activeHost`/`verifiedTarget`; `MoveSiteUseCase.abandon()` refuses once the old address shows the moved page. `authorizeSkip` became a sealed `SourceSkipCheck` (`SourceAbsent`/`SourcePresent`/`SourceInaccessible`/`SourceCheckFailed`); `finishWithoutRetiring()` re-checks inside the queue and requires absent or inaccessible. `GitHubApiException` gained a status kind so 401/403 is "inaccessible", not a network failure (N10). The banner shows Retry, Skip (or Finish without retiring) and Cancel | Decision 5a: the share address does not change on Cancel, so Decision 5 is amended, not reversed. Neither exit needs a new saved phase, so the journal schema stays 1 |
+| 99 | M3: rotating a token dropped the confirmed target, so re-picking the same live Worker ran the destructive marker-only verification deploy while the dialog claimed the other site was untouched | A prospective target whose exact account/subdomain/Worker match the journal's `verifiedTarget` or a pending move's destination is finalized without a deploy (`CloudflareConnection.markAddressProven`, `workersWriteConfirmed` stays false). A user token is verified but NOT saved until `selectAccount`, so abandoning setup keeps the old record. The verification dialog says "This Worker is your live site" when the Worker is the active site at another address, and prompts prefill from the proved address | A new token still starts a fresh `cf_connection`: no flag is copied, the proof comes from the public journal plus a fresh `workerExists` |
+| 100 | M6: dialogs opened only on a prompt CHANGE through a `ref.listen` in `build`, and the tab is disposed off-screen, so on return the tile sat in `awaitingInput` with every button disabled and no dialog | The listener moved to `initState` with `listenManual(fireImmediately: true)`, shows the dialog from a post-frame callback that re-reads the current state, and remembers the last shown serial (reset when the prompt clears). The tile gained "Cancel setup" while `awaitingInput`, and the section closes the dialog when the controller clears the prompt. The GitHub device-code and repo prompts use the same remount rule | A route cannot be pushed during `initState`, and the flow can finish in the same turn, so the callback must re-read rather than trust the captured state |
+| 101 | M11: `build()` reset `_disposed` but `_operationActive` and the pending prompt survived, so an invalidate during a queued command stranded a completer and every later command silently did nothing | `CloudflareSetupPrompts` carries a generation; `build()` starts a new one and cancels the old waits; `_awaitInput`/`_emit` refuse a stale generation and the old run's `finally` cannot unlock the new one. `_operationActive` is reset per build. Publish, events and moves call the new `refreshStatus()` instead of invalidating the provider, so a refresh never cancels an in-progress setup | The 48f6f14 regression (invalidate then act) stays green; the new tests cover invalidate-while-waiting and refresh-during-a-prompt |
 
 ## M.1 S2 sanitized disposable-account report — 2026-10-27
 

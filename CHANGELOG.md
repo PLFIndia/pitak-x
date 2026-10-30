@@ -114,6 +114,26 @@ heading as part of the `chore(release):` commit.
   the OS temporary directory, and the next operation deletes stale `run-`
   folders under the app's own roots — never a link, never a folder in use, and
   a failed delete never blocks a publish.
+- **A pending move can always be finished, skipped or cancelled:** the banner
+  now offers all three. Cancel keeps publishing to your current site and leaves
+  the already-published copy online until you delete it; "Finish without
+  retiring" appears only when Pitak cannot sign in to the old site, and Skip
+  still requires the old repository or Worker to be gone.
+- **"Not found" now means not found:** a Cloudflare 404 without Cloudflare's
+  own not-found code, or a GitHub repository 404 whose old address still
+  answers, no longer counts as "the site is gone". Both fail closed instead of
+  authorising a replacement or a Skip.
+- **Reconnecting during a move can no longer overwrite the old site:** every
+  setup step checks the account, subdomain and Worker against the pending move
+  before saving anything or writing remotely, and the prompts prefill the exact
+  address with "Reconnect to … to finish your move."
+- **Rotating a Cloudflare token no longer replaces your live site:** picking the
+  Worker that is already your verified site finalizes without the marker-only
+  verification deploy, and a new token is not saved until you choose an account,
+  so abandoning setup keeps the old connection.
+- **A setup prompt is never stranded:** dialogs reappear when you return to the
+  tab, a rebuild no longer opens the same prompt twice, and "Cancel setup" is
+  available while a prompt is waiting.
 
 ### Changed
 - **Replacement and recreate dialogs explain the case:** missing files, a

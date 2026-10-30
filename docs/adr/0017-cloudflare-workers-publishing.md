@@ -64,6 +64,15 @@ consequences the product cannot hide:
    Reads distinguish "absent" from "unreadable", so corrupt pending history
    fails closed instead of starting over. The active pointer switches only
    after the destination is verified **and** retirement verifies.
+   **Decision 5a (fix-plan M4):** a pending move has three explicit exits, not
+   one. *Retry* resumes missing work; *Skip* finishes only on an authenticated
+   "not found"; *Cancel* clears the pending record and keeps the old active and
+   verified target, so the share address does not change. A fourth outcome,
+   *finish without retiring*, applies only when the old site cannot be signed
+   in to (401/403, a redirect, or no exact credentials): it re-checks inside
+   the queue, requires "inaccessible" or "absent", and marks no record retired.
+   Cancel is refused once the old address already shows the moved page, and
+   Skip/Finish are refused while the old site is still reachable.
 6. **Marker freshness, not compare-and-swap.** Every Cloudflare deploy writes
    `pitak-publish.json` with a fresh 128-bit `publishId` and a
    `live` / `verification` / `retired` state. A matching marker is the
@@ -89,7 +98,17 @@ consequences the product cannot hide:
    sent more than 1 MiB is never blindly re-sent, and a session older than
    55 min refuses another bucket because Cloudflare's upload JWT lives one
    hour. Upload/completion JWTs are ephemeral strings (ADR 0007).
-9. **Reader rules.** `workers.dev` addresses are accepted only in the exact
+9. **Setup never overwrites a proven address.** A prospective target whose
+   exact account, subdomain and Worker match the journal's `verifiedTarget`
+   (or a pending move's destination) is finalized WITHOUT the marker-only
+   verification deploy: that read-back is the address proof, and a fresh
+   Worker-existence read under the new token proves the token sees it. Write
+   access stays unproven until the next publish. A new token is not saved until
+   an account is chosen, so abandoning setup halfway keeps the old, working
+   connection (fix-plan M3). During a pending move, every setup command checks
+   its input against the move's exact endpoint before any credential save or
+   remote write (fix-plan M5).
+10. **Reader rules.** `workers.dev` addresses are accepted only in the exact
    `<worker>.<subdomain>.workers.dev/` root form. A moved library is a
    *candidate* for the user to confirm — never an automatic follow — and
    acceptance is one transactional merge/repoint that keeps both URL and
