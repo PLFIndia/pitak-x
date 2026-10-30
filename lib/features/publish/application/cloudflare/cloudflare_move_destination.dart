@@ -11,6 +11,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_r
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publication_verifier.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_session_baseline.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verified_state_commit.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
@@ -96,16 +97,26 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         sourceAnchor: sourceAnchor,
       );
       if (prepared case Left(value: final failure)) return Left(failure);
-      final confirmation = prepared.toNullable()!.confirmation;
+      var confirmation = prepared.toNullable()!.confirmation;
       // N2: a deleted Worker is recreated by this complete snapshot. The
       // review says so instead of refusing the move forever.
-      return Right(
-        reviewed.freshness == PublishFreshness.siteUnavailable
-            ? confirmation.withDestinationWarning(
-                MoveSiteMessages.workerMissingDestination(newTarget.siteUrl),
-              )
-            : confirmation,
-      );
+      if (reviewed.freshness == PublishFreshness.siteUnavailable) {
+        confirmation = confirmation.withDestinationWarning(
+          MoveSiteMessages.workerMissingDestination(newTarget.siteUrl),
+        );
+      }
+      // L16: an `unknown` destination already holds content this phone did not
+      // publish (a setup check, another device, a foreign marker). Replacing it
+      // needs explicit consent bound to the exact remote state reviewed.
+      if (_needsReplacementConsent(reviewed)) {
+        confirmation = confirmation.withDestinationConsent(
+          anchor: reviewed.anchor,
+          warning: MoveSiteMessages.unknownDestination(
+            newTarget.workerName.value,
+          ),
+        );
+      }
+      return Right(confirmation);
     } on Exception {
       return const Left(CloudflareFailure(CloudflareErrorMessages.generic));
     } finally {
@@ -193,6 +204,23 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       return MoveDestinationFailed(_message(initialFailure));
     }
     final initial = initialResult.toNullable()!;
+
+    // L16: the consent line is bound to the destination facts the user saw. A
+    // changed destination (or one that became unknown after review) asks
+    // again through the ordinary re-prompt path.
+    if (_needsReplacementConsent(initial)) {
+      final reviewed = confirmation.destinationAnchor;
+      if (reviewed == null || !initial.anchor.matches(reviewed)) {
+        return MoveDestinationConfirmationRequired(
+          complete.confirmation.withDestinationConsent(
+            anchor: initial.anchor,
+            warning: MoveSiteMessages.unknownDestination(
+              target.workerName.value,
+            ),
+          ),
+        );
+      }
+    }
 
     if (initial.freshness == PublishFreshness.known &&
         _matchesSnapshot(current.local, complete.snapshot)) {
@@ -426,6 +454,13 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
     );
     return MoveDestinationPublished(localStateSaved: saved.isRight());
   }
+
+  /// True when deploying deletes content this phone did not publish.
+  ///
+  /// A Worker that does not exist has nothing to replace, so it needs no
+  /// consent even when its marker is contradictory.
+  static bool _needsReplacementConsent(CloudflarePublishPreflight state) =>
+      state.workerExists && state.freshness == PublishFreshness.unknown;
 
   static bool _matchesSnapshot(
     CloudflareSiteManifest local,

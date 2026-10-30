@@ -69,7 +69,13 @@ Future<bool> showMoveSiteDialog(
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Move library'),
+          // L16: a move over content this phone did not publish is a
+          // replacement, and the action must say so.
+          child: Text(
+            confirmation.replacesDestinationContent
+                ? 'Replace and move'
+                : 'Move library',
+          ),
         ),
       ],
     ),

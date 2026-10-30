@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/site/move_site_controller.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
+import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/presentation/widgets/move_site_controls.dart';
 import 'package:pitaka/features/publish/presentation/widgets/move_site_dialog.dart';
 import 'package:pitaka/features/publish/presentation/widgets/pending_move_banner.dart';
@@ -301,6 +303,40 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(answer, isFalse);
+    });
+
+    testWidgets('an unknown destination asks to replace and move (L16)', (
+      tester,
+    ) async {
+      final confirmation = moveConfirmation().withDestinationConsent(
+        anchor: CloudflareRemoteAnchor(
+          workerExists: true,
+          markerKind: CloudflareMarkerKind.present,
+          publishId: 'f' * 32,
+          markerState: PublishMarkerState.verification,
+        ),
+        warning: MoveSiteMessages.unknownDestination('pitak-library'),
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showMoveSiteDialog(context, confirmation),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('already has content this phone did not publish'),
+        findsOneWidget,
+      );
+      expect(find.text('Replace and move'), findsOneWidget);
+      expect(find.text('Move library'), findsNothing);
     });
   });
 }

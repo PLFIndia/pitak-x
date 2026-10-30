@@ -20,6 +20,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
+import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_artifact_store.dart';
@@ -252,6 +253,61 @@ void main() {
     expect(failure.reason, MoveSiteMessages.sourceChanged);
     expect(api.deployCalls, 0);
     expect(manifests.current.state, isNot(PublishState.live));
+  });
+
+  test(
+    'an unknown destination requires reviewed replacement consent (L16)',
+    () async {
+      // A Worker that holds a setup-verification marker this phone never
+      // published: the normal first move into Cloudflare.
+      api.workerExistsValue = true;
+      reader.body(
+        CloudflareLimits.markerPath,
+        s8Marker('f' * 32, state: PublishMarkerState.verification),
+      );
+
+      final confirmation = await prepare();
+
+      expect(confirmation.replacesDestinationContent, isTrue);
+      expect(confirmation.destinationAnchor, isNotNull);
+      expect(
+        confirmation.destinationWarning,
+        contains('already has content this phone did not publish'),
+      );
+      expect(confirmation.destinationWarning, contains('replaces everything'));
+    },
+  );
+
+  test(
+    'a changed destination anchor re-prompts instead of replacing (L16)',
+    () async {
+      api.workerExistsValue = true;
+      reader.body(
+        CloudflareLimits.markerPath,
+        s8Marker('f' * 32, state: PublishMarkerState.verification),
+      );
+      final confirmation = await prepare();
+
+      // Another device published in the meantime.
+      reader.body(CloudflareLimits.markerPath, s8Marker('e' * 32));
+      final result = await destination.publish(
+        confirmation: confirmation,
+        beforeWrite: () async => true,
+      );
+
+      final reReview = result as MoveDestinationConfirmationRequired;
+      expect(reReview.confirmation.replacesDestinationContent, isTrue);
+      expect(reReview.confirmation.destinationAnchor?.publishId, 'e' * 32);
+      expect(api.uploadManifests, isEmpty);
+      expect(api.deployCalls, 0);
+    },
+  );
+
+  test('a new site needs no replacement consent (L16)', () async {
+    final confirmation = await prepare();
+
+    expect(confirmation.destinationAnchor, isNull);
+    expect(confirmation.replacesDestinationContent, isFalse);
   });
 
   test(

@@ -1,6 +1,7 @@
 /// Secret-free move confirmations, progress, and truthful operation outcomes.
 library;
 
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 
@@ -16,6 +17,8 @@ final class MoveSiteConfirmation {
     required this.posterCount,
     required this.availabilityOmitted,
     this.destinationWarning,
+    this.destinationAnchor,
+    this.replacesDestinationContent = false,
   });
 
   /// Exact current site that will later be retired.
@@ -45,18 +48,52 @@ final class MoveSiteConfirmation {
   /// Null for an ordinary destination. It never carries response text.
   final String? destinationWarning;
 
+  /// The destination facts the user reviewed when the destination held content
+  /// this phone did not publish (fix-plan L16).
+  ///
+  /// Publish re-reads the destination and re-prompts when this no longer
+  /// matches, so one review authorises exactly one observed state.
+  final CloudflareRemoteAnchor? destinationAnchor;
+
+  /// True when confirming replaces content the user did not publish here, so
+  /// the dialog's action says "Replace and move" instead of "Move library".
+  final bool replacesDestinationContent;
+
   /// The same review with an extra destination sentence.
   MoveSiteConfirmation withDestinationWarning(String warning) =>
-      MoveSiteConfirmation(
-        oldTarget: oldTarget,
-        newTarget: newTarget,
-        sourceAnchor: sourceAnchor,
-        digest: digest,
-        catalogueItemCount: catalogueItemCount,
-        posterCount: posterCount,
-        availabilityOmitted: availabilityOmitted,
-        destinationWarning: warning,
-      );
+      _copy(destinationWarning: warning);
+
+  /// The same review with an explicit replacement consent for [anchor].
+  ///
+  /// Used when the destination is in an `unknown` state: its content is real
+  /// (a setup check, another device, or a foreign marker) and a move deletes
+  /// it, so the user must see that before confirming (F.5 step 2).
+  MoveSiteConfirmation withDestinationConsent({
+    required CloudflareRemoteAnchor anchor,
+    required String warning,
+  }) => _copy(
+    destinationWarning: warning,
+    destinationAnchor: anchor,
+    replacesDestinationContent: true,
+  );
+
+  MoveSiteConfirmation _copy({
+    String? destinationWarning,
+    CloudflareRemoteAnchor? destinationAnchor,
+    bool? replacesDestinationContent,
+  }) => MoveSiteConfirmation(
+    oldTarget: oldTarget,
+    newTarget: newTarget,
+    sourceAnchor: sourceAnchor,
+    digest: digest,
+    catalogueItemCount: catalogueItemCount,
+    posterCount: posterCount,
+    availabilityOmitted: availabilityOmitted,
+    destinationWarning: destinationWarning ?? this.destinationWarning,
+    destinationAnchor: destinationAnchor ?? this.destinationAnchor,
+    replacesDestinationContent:
+        replacesDestinationContent ?? this.replacesDestinationContent,
+  );
 
   /// True when the reviewed catalogue has no items.
   bool get catalogueIsEmpty => catalogueItemCount == 0;
@@ -330,6 +367,16 @@ abstract final class MoveSiteMessages {
   static String workerMissingDestination(String address) =>
       'The Worker for $address no longer exists. Pitak creates it with your '
       'whole library.';
+
+  /// The destination Worker already holds content this phone did not publish.
+  ///
+  /// This is the NORMAL first move into Cloudflare (a setup check, another
+  /// device, or a foreign marker), so it is a consent line rather than an
+  /// error (fix-plan L16).
+  static String unknownDestination(String workerName) =>
+      'The Cloudflare Worker "$workerName" already has content this phone did '
+      'not publish (for example a setup check or another device). Moving '
+      'replaces everything on that Worker.';
 
   /// Unexpected failures are collapsed to fixed copy without remote details.
   static const String generic =
