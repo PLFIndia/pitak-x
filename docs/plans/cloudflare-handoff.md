@@ -839,9 +839,9 @@ record them.
 
 | # | Check | Result |
 |---|---|---|
-| 11 | Reconnect to a different Worker, then publish (H1, D1) | **Review PASS, publish FAIL** (2026-10-30): the target-changed review named both addresses and said the old site keeps its last version; the publish then failed with "The Cloudflare resource is not available." — the row-13 defect, not a review problem. The old Worker was verified untouched (marker, `books.json`, `events.json` byte-identical) |
-| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *blocked by row 13* — a deleted Worker is recreated by the next upload session, which is exactly the failing path |
-| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | **FAIL** (2026-10-30): `pitak-e2e-2` was confirmed and "ready to publish", the publish failed with "Publish failed: The Cloudflare resource is not available.", and the public address stayed 404 (Cloudflare 1042). Cause: the upload session creates the Worker, the post-session re-read reads `404 + 10222`, and `workerExists` (which accepts only 10007 as absence) throws instead of reporting "our Worker exists, no versions yet" (Part M row 120). Rows 11, 12 and 18 cannot pass until this is fixed |
+| 11 | Reconnect to a different Worker, then publish (H1, D1) | **PASS** (2026-10-30, after the row-120 fix): the target-changed review named both addresses and said the old site keeps its last version; after confirming, `pitak-e2e-3` published and verified ("Published! Your site is verified live.", marker `c7432821…`, `library.json.siteUrl` = the new Worker, 3 books, `/events` 200) while `pitak-worker` kept its exact marker `2e3b1a62…` and bytes |
+| 12 | Delete the Worker in the dashboard, reconnect, publish (H1) | *pending* — needs a dashboard delete of a Worker this phone is pointing at; the recreate path now works (row 13) |
+| 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | **PASS after the fix** (2026-10-30): `pitak-e2e-3` was created by the upload session and the publish completed with no "stale" and no "resource is not available" review. Before the fix the same action failed (see the defect note below) |
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
 | 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs the account's token |
@@ -865,18 +865,41 @@ publish left `events.json` byte-identical (Part M row 123).
   `0bd94a147db332dbaa02b3a1440fc95197dca3ca1cf90ed2c6311b50dbe210a4`.
 - Session start state: active host GitHub Pages, Cloudflare connected and
   confirmed to `pitak-worker` (not active), three synthetic books, no posters.
-- Session end state: **active host is Cloudflare Workers**
-  (`https://pitak-worker.beli-log1234.workers.dev/`), the GitHub repository is
-  retired to exactly `404.html` + `README.md` + `index.html` (its root is the
-  moved page naming the Worker), and the Worker serves the live catalogue
-  (`events.json` empty, no posters). Only synthetic data was published.
-- **Blocker for rows 11, 12 and 16:** choosing a different Worker requires
-  re-entering the account's API token, and that token exists only in the app's
-  secure storage (the reconnect dialog never reloads it). The 2026-10-27 trial
-  token in the macOS Keychain belongs to a **different** account (subdomain
-  `pitak-trial-705712e9`), which is why it was used for the API-only checks
-  above. Disconnecting is not a workaround: it would delete the only stored copy
-  of the live account's token.
+- Session end state: **active host is Cloudflare Workers, now pointing at
+  `https://pitak-e2e-3.beli-log1234.workers.dev/`** (the row-11/13 publish). Two
+  sites are live: `pitak-worker` (from the move, marker `2e3b1a62…`, untouched
+  by the later publishes) and `pitak-e2e-3` (marker `c7432821…`, 3 books).
+  `pitak-e2e-2` is an empty leftover Worker created by the failed attempt —
+  delete it in the dashboard. The GitHub repository is retired to exactly
+  `404.html` + `README.md` + `index.html` (its root is the moved page naming
+  `pitak-worker`). Only synthetic data was published.
+- **The first-publish defect, found and fixed in-session.** Row 13 failed with
+  "Publish failed: The Cloudflare resource is not available." because the
+  upload session creates the Worker without versions (`404 + 10222`) while
+  `workerExists` accepted only `10007` as absence. Fixed in `b2fdf72`; the
+  clean rebuild's APK SHA-256 is
+  `1afbd4634f9ea5861695ae99866ed89beadd1ccddb4caa3d2d98cecbcffa0d33`, and rows
+  11 and 13 then passed on the same device and account.
+- **UX observation from that run (not a correctness gap).** A first publish to a
+  different Worker asks twice: once for the destination change (H1) and once
+  for the whole-site replacement the change implies (R10). The second review
+  names an empty Worker, so it says nothing the first one did not. Consider
+  suppressing the replacement review when the destination reports
+  `emptyWorkerErrorCode` (a Worker with no versions), or folding the two into
+  one dialog.
+- **What still needs the account's token:** choosing a different or new Worker
+  requires re-entering the API token (the reconnect dialog never reloads it).
+  The maintainer pasted it twice on 2026-10-30, which is how rows 11 and 13
+  ran. The 2026-10-27 trial token in the macOS Keychain belongs to a
+  **different** account (subdomain `pitak-trial-705712e9`), so it is only good
+  for the API-level checks above. Disconnecting is not a workaround: it would
+  delete the only stored copy of the live account's token.
+- **Rows 16 and 18 cannot run with this token.** Its setup completed without a
+  manual-subdomain prompt (it can read the account subdomain), so no
+  `verification` marker is ever deployed and the manual path never appears.
+  Both rows need a token restricted so the subdomain read fails, which is the
+  one-account `Workers Scripts · Edit` template's real behaviour — the token in
+  use is evidently broader.
 - **Fix built and installed during the session.** `workerExists` now treats
   `404 + 10222` as "the Worker exists, it just has no versions" (Part M row
   120); `CloudflareLimits.emptyWorkerErrorCode` documents the real-host
