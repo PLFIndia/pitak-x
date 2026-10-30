@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
-import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_name_dialogs.dart';
@@ -148,6 +148,26 @@ void main() {
     expect(find.text('Enter Account ID manually'), findsOneWidget);
     expect(find.textContaining('\u202E'), findsNothing);
     expect(result, isNull, reason: 'nothing was chosen yet');
+  });
+
+  testWidgets('the Worker field lower-cases what is typed (RH2)', (
+    tester,
+  ) async {
+    String? result;
+    await _open(tester, container, (context) async {
+      result = await showCloudflareWorkerNameDialog(context);
+    });
+
+    await tester.enterText(find.byType(TextField), 'My-Library');
+    await tester.pump();
+
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'my-library',
+    );
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(result, 'my-library');
   });
 
   testWidgets('Account ID dialog validates without echoing bad input', (

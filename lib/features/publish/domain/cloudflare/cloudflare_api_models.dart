@@ -15,6 +15,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_typ
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// The token state reported by Cloudflare's verification endpoint.
@@ -92,6 +93,24 @@ final class CloudflareAccountListing {
   ///
   /// A truncated listing requires the manual Account ID path; it must not be
   /// presented as a complete picker.
+  final bool truncated;
+}
+
+/// A bounded listing of Worker names in one account (fix-plan RH2).
+final class CloudflareWorkerNameListing {
+  /// Creates a listing and defensively copies [names].
+  CloudflareWorkerNameListing({
+    required List<CloudflareWorkerName> names,
+    required this.truncated,
+  }) : names = List.unmodifiable(names);
+
+  /// Each script's `id`, which IS the Worker name. No other field is read.
+  final List<CloudflareWorkerName> names;
+
+  /// True when the page budget was exhausted and more Workers may exist.
+  ///
+  /// A truncated listing proves nothing about a missing name, so the caller
+  /// must fail closed rather than assume the name is free.
   final bool truncated;
 }
 

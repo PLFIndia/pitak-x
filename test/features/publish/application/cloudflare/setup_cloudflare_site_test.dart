@@ -6,7 +6,9 @@ import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
@@ -823,5 +825,92 @@ void main() {
         );
       },
     );
+  });
+
+  group('RH2 — Worker-name case', () {
+    CloudflareSetupHarness seeded() =>
+        CloudflareSetupHarness(connection: cloudflareTestConnection());
+
+    test('an upper-case NEW name is refused before any API call', () async {
+      final h = seeded();
+
+      final result = await h.setup.selectWorker('MyLibrary');
+
+      expect(result.isLeft(), isTrue);
+      expect(result.swap().toNullable(), isA<ValidationFailure>());
+      expect(h.api.workerExistsCalls, 0);
+      expect(h.api.listWorkerNamesCalls, 0);
+      expect(h.credentials.saves, isEmpty);
+    });
+
+    test(
+      're-selecting the exact stored mixed-case name is allowed (M3)',
+      () async {
+        final stored = cloudflareTestConnection().selectWorker(
+          CloudflareWorkerName.tryParse('MyLibrary')!,
+        );
+        final h = CloudflareSetupHarness(connection: stored);
+        h.api.workerExistsValue = false;
+
+        final result = await h.setup.selectWorker('MyLibrary');
+
+        // Not refused for its case; it proceeds to the normal prompt path.
+        expect(result, isA<Right<Failure, CloudflareWorkerOutcome>>());
+      },
+    );
+
+    test(
+      'a case variant already owns the address: refused before any write',
+      () async {
+        final h = seeded();
+        h.api.workerNames = [CloudflareWorkerName.tryParse('MyLibrary')!];
+
+        final result = await h.setup.selectWorker('mylibrary');
+
+        expect(result.isLeft(), isTrue);
+        expect(
+          result.swap().toNullable(),
+          isA<ValidationFailure>().having(
+            (failure) => failure.message,
+            'message',
+            CloudflareErrorMessages.workerNameCaseTaken,
+          ),
+        );
+        expect(h.api.listWorkerNamesCalls, 1);
+        expect(h.credentials.saves, isEmpty, reason: 'no candidate was saved');
+        expect(h.api.deployCalls, 0);
+      },
+    );
+
+    test('a failed listing fails closed', () async {
+      final h = seeded();
+      h.api.listWorkerNamesError = CloudflareApiException(
+        CloudflareApiExceptionKind.network,
+      );
+
+      final result = await h.setup.selectWorker('mylibrary');
+
+      expect(result.isLeft(), isTrue);
+      expect(h.credentials.saves, isEmpty);
+      expect(h.api.deployCalls, 0);
+    });
+
+    test('a truncated listing fails closed', () async {
+      final h = seeded();
+      h.api.workerNamesTruncated = true;
+
+      final result = await h.setup.selectWorker('mylibrary');
+
+      expect(result.isLeft(), isTrue);
+      expect(
+        result.swap().toNullable(),
+        isA<CloudflareFailure>().having(
+          (failure) => failure.message,
+          'message',
+          CloudflareErrorMessages.workerNameCheckFailed,
+        ),
+      );
+      expect(h.credentials.saves, isEmpty);
+    });
   });
 }

@@ -330,6 +330,26 @@ void main() {
     expect(check, isA<SourceInaccessible>());
   });
 
+  test('a case variant refuses Skip (RH2)', () async {
+    final pending = movePending(oldTarget: moveCloudflareTarget);
+    api
+      ..workerExistsValue = false
+      ..workerNames = [CloudflareWorkerName.tryParse('PITAK-LIBRARY')!];
+
+    expect(await source.skipCheck(pending), isA<SourceCheckFailed>());
+  });
+
+  test('a failed case listing refuses Skip (RH2)', () async {
+    final pending = movePending(oldTarget: moveCloudflareTarget);
+    api
+      ..workerExistsValue = false
+      ..listWorkerNamesError = CloudflareApiException(
+        CloudflareApiExceptionKind.network,
+      );
+
+    expect(await source.skipCheck(pending), isA<SourceCheckFailed>());
+  });
+
   test('an ambiguous 404 is a failed check, never absence (L2)', () async {
     final pending = movePending(oldTarget: moveCloudflareTarget);
     api.workerExistsError = CloudflareApiException(
@@ -357,6 +377,12 @@ final class _StubbornRouteApi implements CloudflareDeployApi {
 
   final FakeCloudflareApi _inner;
   int deploys = 0;
+
+  @override
+  Future<CloudflareWorkerNameListing> listWorkerNames({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+  }) => _inner.listWorkerNames(token: token, accountId: accountId);
 
   @override
   Future<CloudflareWorkerRoute> updateWorkerRoute({

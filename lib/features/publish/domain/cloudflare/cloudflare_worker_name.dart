@@ -41,6 +41,23 @@ final class CloudflareWorkerName {
   /// True when [raw] is a legal Worker name.
   static bool isValid(String? raw) => tryParse(raw) != null;
 
+  /// Validates a NEW Worker name: the same rule, lower-case only (fix-plan
+  /// RH2 / D9).
+  ///
+  /// A new site is addressed by `name.sub.workers.dev`, and DNS ignores case,
+  /// so `MyLib` and `mylib` are the same address. Requiring lower case at entry
+  /// keeps one site from acquiring two identities. STORED names keep using
+  /// [tryParse]: a mixed-case Worker that read-back already proved must keep
+  /// publishing without a rewrite.
+  static CloudflareWorkerName? tryParseNew(String? raw) {
+    final parsed = tryParse(raw);
+    if (parsed == null || !parsed.isLowerCase) return null;
+    return parsed;
+  }
+
+  /// True when this name is already its own DNS label.
+  bool get isLowerCase => value == dnsLabel;
+
   /// `[A-Za-z0-9-]`.
   static bool _isNameUnit(int unit) =>
       (unit >= 0x61 && unit <= 0x7a) || // a-z

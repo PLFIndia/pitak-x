@@ -270,6 +270,40 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
   }
 
   @override
+  Future<CloudflareWorkerNameListing> listWorkerNames({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+  }) async {
+    final names = <CloudflareWorkerName>[];
+    for (var page = 1; page <= CloudflareLimits.maxWorkerNamePages; page++) {
+      final response = requireCloudflareSuccess(
+        await _get(
+          token,
+          '/accounts/${accountId.value}/workers/scripts',
+          queryParameters: {
+            'per_page': '${CloudflareLimits.workerNamesPerPage}',
+            'page': '$page',
+          },
+        ),
+      );
+      final pageNames = parseCloudflareResponse(() {
+        final entries = cloudflareList(
+          response.result,
+          maxEntries: CloudflareLimits.workerNamesPerPage,
+        );
+        return [for (final raw in entries) _workerNameFrom(raw)];
+      });
+      names.addAll(pageNames);
+      if (pageNames.length < CloudflareLimits.workerNamesPerPage) {
+        return CloudflareWorkerNameListing(names: names, truncated: false);
+      }
+    }
+    // Four full pages: proof of absence is impossible, so the caller fails
+    // closed instead of guessing (fix-plan RH2).
+    return CloudflareWorkerNameListing(names: names, truncated: true);
+  }
+
+  @override
   Future<CloudflareWorkerRoute> readWorkerRoute({
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
@@ -323,11 +357,13 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     CloudflareApiToken token,
     String path, {
     bool statusOnly = false,
+    Map<String, String>? queryParameters,
   }) async {
     final response = await token.use(
       (bearer) => _transport.send(
         path: path,
         bearer: bearer,
+        queryParameters: queryParameters,
         requestBuilder: cloudflareJsonRequest('GET', null),
         statusOnly: statusOnly,
       ),
@@ -384,4 +420,17 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     CloudflareAccountId accountId,
     CloudflareWorkerName workerName,
   ) => '/accounts/${accountId.value}/workers/scripts/${workerName.value}';
+
+  /// Reads ONLY a listed script's `id`, which is its Worker name.
+  ///
+  /// Any other field is ignored, and a missing/invalid id refuses the whole
+  /// listing rather than silently dropping an entry (fix-plan RH2).
+  static CloudflareWorkerName _workerNameFrom(Object? raw) {
+    final entry = cloudflareObject(raw, maxEntries: 16);
+    final name = CloudflareWorkerName.tryParse(
+      cloudflareString(entry['id'], maxLength: CloudflareWorkerName.maxLength),
+    );
+    if (name == null) throw const CloudflareJsonException();
+    return name;
+  }
 }

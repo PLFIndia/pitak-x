@@ -275,6 +275,13 @@ final class FakeCloudflareApi implements CloudflareApi {
   CloudflareApiException? checkSubdomainError;
   CloudflareApiException? createSubdomainError;
   CloudflareApiException? workerExistsError;
+  CloudflareApiException? listWorkerNamesError;
+
+  /// Worker ids returned by [listWorkerNames] (fix-plan RH2). Empty by default,
+  /// i.e. no case variant is listed.
+  List<CloudflareWorkerName> workerNames = const [];
+  bool workerNamesTruncated = false;
+  int listWorkerNamesCalls = 0;
   CloudflareApiException? routeError;
 
   /// Fails only route WRITES, so a test can prove a read-only preflight still
@@ -414,6 +421,21 @@ final class FakeCloudflareApi implements CloudflareApi {
     final error = workerExistsError;
     if (error != null) throw error;
     return workerExistsValue;
+  }
+
+  @override
+  Future<CloudflareWorkerNameListing> listWorkerNames({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+  }) async {
+    listWorkerNamesCalls++;
+    await _awaitGate('listWorkerNames');
+    final error = listWorkerNamesError;
+    if (error != null) throw error;
+    return CloudflareWorkerNameListing(
+      names: workerNames,
+      truncated: workerNamesTruncated,
+    );
   }
 
   @override

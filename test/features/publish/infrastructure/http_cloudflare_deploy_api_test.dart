@@ -898,4 +898,87 @@ void main() {
       );
     });
   });
+
+  group('Worker-name listing (RH2)', () {
+    test('reads only each id across bounded pages', () async {
+      final paths = <String>[];
+      final queries = <Map<String, String>>[];
+      var page = 0;
+      final api = apiFor((request) async {
+        paths.add(request.url.path);
+        queries.add(request.url.queryParameters);
+        page++;
+        final entries = page == 1
+            ? [
+                for (var i = 0; i < CloudflareLimits.workerNamesPerPage; i++)
+                  {'id': 'worker-$i', 'etag': 'ignored'},
+              ]
+            : [
+                {'id': 'last-one', 'created_on': 'ignored'},
+              ];
+        return envelope(entries);
+      });
+
+      final listing = await api.listWorkerNames(
+        token: token,
+        accountId: account,
+      );
+
+      expect(listing.names, hasLength(CloudflareLimits.workerNamesPerPage + 1));
+      expect(listing.names.first.value, 'worker-0');
+      expect(listing.names.last.value, 'last-one');
+      expect(listing.truncated, isFalse);
+      expect(paths.toSet(), {
+        '/client/v4/accounts/${account.value}/workers/scripts',
+      });
+      expect(
+        queries.first,
+        containsPair('per_page', '${CloudflareLimits.workerNamesPerPage}'),
+      );
+      expect(queries.first, containsPair('page', '1'));
+      expect(queries.last, containsPair('page', '2'));
+    });
+
+    test('four full pages are truncated, never proof of absence', () async {
+      final api = apiFor(
+        (request) async => envelope([
+          for (var i = 0; i < CloudflareLimits.workerNamesPerPage; i++)
+            {'id': 'worker-${request.url.queryParameters['page']}-$i'},
+        ]),
+      );
+
+      final listing = await api.listWorkerNames(
+        token: token,
+        accountId: account,
+      );
+
+      expect(
+        listing.names,
+        hasLength(
+          CloudflareLimits.workerNamesPerPage *
+              CloudflareLimits.maxWorkerNamePages,
+        ),
+      );
+      expect(listing.truncated, isTrue);
+    });
+
+    test('a malformed id is a typed malformed response', () async {
+      final api = apiFor(
+        (request) async => envelope([
+          {'id': 'bad name'},
+        ]),
+      );
+
+      await expectLater(
+        api.listWorkerNames(token: token, accountId: account),
+        throwsA(
+          isA<CloudflareApiException>().having(
+            (error) => error.kind,
+            'kind',
+            CloudflareApiExceptionKind.malformedResponse,
+          ),
+        ),
+      );
+    });
+  });
 }

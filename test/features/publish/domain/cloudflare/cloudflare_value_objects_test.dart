@@ -102,6 +102,18 @@ void main() {
       expect(CloudflareWorkerName.isValid('a' * 64), isFalse);
     });
 
+    test('a NEW name must be lower case (RH2/D9)', () {
+      expect(
+        CloudflareWorkerName.tryParseNew('my-library')!.value,
+        'my-library',
+      );
+      expect(CloudflareWorkerName.tryParseNew('My-library'), isNull);
+      expect(CloudflareWorkerName.tryParseNew('MYLIB'), isNull);
+      // The stored-record parse still accepts a proven mixed-case Worker.
+      expect(CloudflareWorkerName.tryParse('MYLIB')!.value, 'MYLIB');
+      expect(CloudflareWorkerName.tryParse('MYLIB')!.isLowerCase, isFalse);
+    });
+
     for (final hostile in <String?>[
       null,
       '',

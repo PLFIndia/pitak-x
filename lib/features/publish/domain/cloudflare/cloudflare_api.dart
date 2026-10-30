@@ -210,6 +210,20 @@ abstract interface class CloudflareDeployApi {
     required CloudflareWorkerName workerName,
   });
 
+  /// Lists the account's Worker script ids, bounded (fix-plan RH2).
+  ///
+  /// Only each script's `id` is read: it is the Worker name. The check exists
+  /// because `workerExists` may be case-sensitive while the public address is
+  /// not, so `mylib` can already answer at `MyLib.sub.workers.dev`.
+  ///
+  /// A permission refusal, a transport failure or a malformed body throws a
+  /// typed exception; a truncated listing is flagged and proves nothing. The
+  /// caller fails closed in every one of those cases.
+  Future<CloudflareWorkerNameListing> listWorkerNames({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+  });
+
   /// Creates an asset-upload session for the complete next Worker manifest.
   Future<CloudflareUploadSession> createUploadSession({
     required CloudflareApiToken token,

@@ -70,9 +70,9 @@ void main() {
   test(
     'the renderer reproduces a stored name exactly, without re-normalizing',
     () {
-      // The normalizer runs once when the pending record is created. Applying it
-      // again during Retry would change bytes for a name the stored document
-      // already contains (M9/L11).
+      // The normalizer runs once when the pending record is created.
+      // Applying it again during Retry would change bytes for a name the
+      // stored document already contains (M9/L11).
       final rendered = MovedHtmlBuilder.render(
         schema: 1,
         template: '<p>{{LIBRARY_NAME}}</p>',

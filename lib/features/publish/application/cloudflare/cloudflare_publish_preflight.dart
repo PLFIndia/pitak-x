@@ -8,6 +8,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_worker_name_guard.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
@@ -166,6 +167,16 @@ final class CloudflarePublishPreflightReader {
         accountId: target.accountId,
         workerName: target.workerName,
       );
+      if (!workerExists) {
+        // RH2: a case variant can already own the public address even when the
+        // API's existence read says absent. Refuse before any write.
+        final free = await CloudflareWorkerNameGuard(_deployApi).ensureFree(
+          token: token,
+          accountId: target.accountId,
+          workerName: target.workerName,
+        );
+        if (free case Left(value: final failure)) return Left(failure);
+      }
       final probe = await _markerProbe.call(
         target: target,
         cacheBuster: cacheBuster,

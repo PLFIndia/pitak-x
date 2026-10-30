@@ -2,6 +2,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show TextEditingValue, TextInputFormatter;
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
@@ -111,14 +113,19 @@ Future<String?> showCloudflareWorkerNameDialog(
   const _NameDialogConfig(
     title: 'Choose a Worker',
     label: 'Worker name',
-    helper: 'Letters, numbers, and hyphens',
+    helper: 'Lower-case letters, numbers, and hyphens',
     explanation:
         'Use a Worker dedicated to Pitak. A new Worker is created by the first '
-        'deployment. An existing Worker needs separate replacement consent.',
+        'deployment. An existing Worker needs separate replacement consent. '
+        'Cloudflare uses the name in your site address, which ignores case.',
     actionLabel: 'Continue',
     maxLength: CloudflareWorkerName.maxLength,
     errorMessage: CloudflareErrorMessages.invalidWorker,
     validate: CloudflareWorkerName.isValid,
+    // RH2/D9: show the lower-cased name while the user types it, instead of
+    // refusing an upper-case name after the fact. A stored mixed-case name
+    // stays exactly as pre-filled until the user edits the field.
+    formatters: [_LowerCaseTextFormatter()],
   ),
   initial: initial,
 );
@@ -142,6 +149,7 @@ class _NameDialogConfig {
     required this.maxLength,
     required this.errorMessage,
     required this.validate,
+    this.formatters = const [],
   });
 
   final String title;
@@ -152,6 +160,29 @@ class _NameDialogConfig {
   final int maxLength;
   final String errorMessage;
   final bool Function(String) validate;
+  final List<TextInputFormatter> formatters;
+}
+
+/// Lower-cases a Worker name as it is entered (fix-plan RH2).
+///
+/// A new name becomes a DNS label, which ignores case; showing the lower-case
+/// form while typing is clearer than a refusal later. Only ASCII letters are
+/// expected here (`[A-Za-z0-9-]`), so lower-casing never changes the length.
+class _LowerCaseTextFormatter extends TextInputFormatter {
+  const _LowerCaseTextFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final lower = newValue.text.toLowerCase();
+    if (lower == newValue.text) return newValue;
+    return TextEditingValue(
+      text: lower,
+      selection: TextSelection.collapsed(offset: lower.length),
+    );
+  }
 }
 
 class _CloudflareNameDialog extends StatefulWidget {
@@ -202,6 +233,7 @@ class _CloudflareNameDialogState extends State<_CloudflareNameDialog> {
               autocorrect: false,
               enableSuggestions: false,
               maxLength: widget.config.maxLength,
+              inputFormatters: widget.config.formatters,
               decoration: InputDecoration(
                 labelText: widget.config.label,
                 helperText: widget.config.helper,

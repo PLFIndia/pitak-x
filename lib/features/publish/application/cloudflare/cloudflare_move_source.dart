@@ -11,6 +11,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_retirement_artifacts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_worker_name_guard.dart';
 import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
@@ -339,7 +340,18 @@ final class CloudflareMoveSource implements MoveSourceOperations {
           workerName: target.workerName,
         ),
       );
-      return exists ? const SourcePresent() : const SourceAbsent();
+      if (exists) return const SourcePresent();
+      // RH2: a case variant may be serving this exact address, so "absent" is
+      // not proof that the old site is gone. Skip authorises overwriting the
+      // old site's address, so it must fail closed here.
+      final free = await connection.connection.useToken(
+        (token) => CloudflareWorkerNameGuard(_deployApi).ensureFree(
+          token: token,
+          accountId: target.accountId,
+          workerName: target.workerName,
+        ),
+      );
+      return free.isRight() ? const SourceAbsent() : const SourceCheckFailed();
     } on CloudflareApiException catch (error) {
       if (error.kind == CloudflareApiExceptionKind.unauthorized ||
           error.kind == CloudflareApiExceptionKind.forbidden) {

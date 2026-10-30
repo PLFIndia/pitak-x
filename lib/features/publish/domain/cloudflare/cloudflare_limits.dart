@@ -40,6 +40,13 @@ abstract final class CloudflareLimits {
   /// Accounts requested per page.
   static const int accountsPerPage = 50;
 
+  /// Worker-name pages read before the case check fails closed (RH2).
+  static const int maxWorkerNamePages = 4;
+
+  /// Workers requested per page. 100 is Cloudflare's documented maximum, so a
+  /// larger page cannot miss a name that a smaller one would return.
+  static const int workerNamesPerPage = 100;
+
   /// Cap on the public publish marker (`pitak-publish.json`).
   static const int maxMarkerBytes = 4 * 1024;
 

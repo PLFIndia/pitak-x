@@ -6,6 +6,8 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 
@@ -166,4 +168,75 @@ void main() {
       expect(first.hasSameAnchor(changed), isFalse);
     },
   );
+
+  group('RH2 — Worker-name case', () {
+    test('a case variant blocks the new-site path before any write', () async {
+      api
+        ..workerExistsValue = false
+        ..workerNames = [CloudflareWorkerName.tryParse('PITAK-LIBRARY')!];
+
+      final result = await preflight.call(
+        token: cloudflareTestToken(),
+        target: target,
+        local: CloudflareSiteManifest.empty,
+        cacheBuster: 'rh2',
+      );
+
+      expect(result.isLeft(), isTrue);
+      expect(
+        result.swap().toNullable(),
+        isA<ValidationFailure>().having(
+          (failure) => failure.message,
+          'message',
+          CloudflareErrorMessages.workerNameCaseTaken,
+        ),
+      );
+      expect(api.listWorkerNamesCalls, 1);
+      expect(api.routeUpdates, isEmpty);
+      expect(api.uploadManifests, isEmpty);
+      expect(api.deployCalls, 0);
+    });
+
+    test('a failed listing fails closed', () async {
+      api
+        ..workerExistsValue = false
+        ..listWorkerNamesError = CloudflareApiException(
+          CloudflareApiExceptionKind.network,
+        );
+
+      final result = await preflight.call(
+        token: cloudflareTestToken(),
+        target: target,
+        local: CloudflareSiteManifest.empty,
+        cacheBuster: 'rh2',
+      );
+
+      expect(result.isLeft(), isTrue);
+      expect(api.deployCalls, 0);
+    });
+
+    test('a stored mixed-case target still publishes (no rewrite)', () async {
+      final mixed = CloudflarePublishTarget.create(
+        accountId: cloudflareTestAccountId,
+        workerName: 'MyLibrary',
+        accountSubdomain: 'library',
+      )!;
+      api.workerExistsValue = true;
+      reader.absent(CloudflareLimits.markerPath);
+
+      final result = await preflight.call(
+        token: cloudflareTestToken(),
+        target: mixed,
+        local: CloudflareSiteManifest.empty,
+        cacheBuster: 'rh2',
+      );
+
+      expect(result.isRight(), isTrue);
+      expect(
+        api.listWorkerNamesCalls,
+        0,
+        reason: 'an existing Worker needs no case check',
+      );
+    });
+  });
 }

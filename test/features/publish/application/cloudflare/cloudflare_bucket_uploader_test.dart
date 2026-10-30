@@ -3,6 +3,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_bucket
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
 
 /// The one bucket loop shared by publish, verification and both move sides.
@@ -149,6 +150,12 @@ final class _ScriptedBucketApi implements CloudflareDeployApi {
   final List<CloudflareCompletionToken?> _responses;
   final List<List<String>> uploads = [];
   CloudflareApiException? error;
+
+  @override
+  Future<CloudflareWorkerNameListing> listWorkerNames({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+  }) async => CloudflareWorkerNameListing(names: const [], truncated: false);
 
   @override
   Future<CloudflareCompletionToken?> uploadBucket({

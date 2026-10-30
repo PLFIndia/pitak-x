@@ -10,6 +10,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_operation_attempt.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_constraint.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_journal.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_worker_name_guard.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_account.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_subdomain.dart';
@@ -227,10 +228,23 @@ final class SetupCloudflareSite {
         const CloudflareFailure(CloudflareErrorMessages.subdomainRequired),
       );
     }
-    final worker = CloudflareWorkerName.tryParse(raw);
-    if (worker == null) {
+    final parsed = CloudflareWorkerName.tryParse(raw);
+    if (parsed == null) {
       return left(
         const ValidationFailure(CloudflareErrorMessages.invalidWorker),
+      );
+    }
+    // RH2/D9: a NEW name must be lower case. Re-selecting the exact stored
+    // spelling stays allowed, because a mixed-case Worker that read-back
+    // already proved must keep working without a rewrite.
+    final storedName =
+        current.workerName?.value ?? _journal.hint()?.workerName.value;
+    final worker = storedName != null && parsed.value == storedName
+        ? parsed
+        : CloudflareWorkerName.tryParseNew(raw);
+    if (worker == null) {
+      return left(
+        const ValidationFailure(CloudflareErrorMessages.invalidWorkerLowercase),
       );
     }
     final constrained = _checkConstraint(
@@ -246,6 +260,18 @@ final class SetupCloudflareSite {
         workerName: worker,
       ),
     );
+    if (!exists) {
+      // RH2: "absent" from the existence read is not proof that the ADDRESS is
+      // free; a case variant may already own it.
+      final free = await current.useToken(
+        (token) => CloudflareWorkerNameGuard(
+          _deployApi,
+        ).ensureFree(token: token, accountId: accountId, workerName: worker),
+      );
+      if (free case Left(value: final failure)) {
+        return left<Failure, CloudflareWorkerOutcome>(failure);
+      }
+    }
     final selected = current.selectWorker(worker); // Prospective record only.
     if (selected.addressConfirmed) {
       if (exists && !replacementConsent) {
