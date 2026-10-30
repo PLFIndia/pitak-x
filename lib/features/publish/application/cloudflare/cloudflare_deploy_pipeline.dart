@@ -243,6 +243,9 @@ final class CloudflareDeployPipeline {
           CloudflarePublishOutcomes.privacyAfterDeploy(
             localStateSaved: localStateSaved,
           ),
+          // Retry verification may disable Version URLs and then prove the
+          // deployment, so it is the honest next step (D8/L3).
+          canRetryVerification: true,
         );
       }
     } on Exception {
@@ -250,6 +253,7 @@ final class CloudflareDeployPipeline {
         CloudflarePublishOutcomes.privacyAfterDeploy(
           localStateSaved: localStateSaved,
         ),
+        canRetryVerification: true,
       );
     }
 

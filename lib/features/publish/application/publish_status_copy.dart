@@ -19,6 +19,12 @@ String cataloguePublishStatusMessage(
         ? 'Cloudflare accepted the deployment, but this device could not save '
               'all publish state. Retry verification before publishing again.'
         : gitHubPublishRecordUnsavedMessage;
+  } else if (!result.newDeployment) {
+    // A deploy-free check of an earlier publication: nothing was published
+    // now, so "Published!" would be a lie (fix-plan L7).
+    message = cloudflare
+        ? 'Verified: your live site matches this phone’s last publish.'
+        : 'Verified: your live site matches this phone’s last commit.';
   } else if (verified) {
     message = cloudflare
         ? 'Published! Your site is verified live.'
@@ -42,6 +48,8 @@ String eventsPublishStatusMessage(PublishSuccess result, {PublishHost? host}) {
         ? 'Cloudflare accepted the deployment, but this device could not save '
               'all publish state. Retry verification before publishing again.'
         : gitHubPublishRecordUnsavedMessage;
+  } else if (!result.newDeployment) {
+    message = 'Verified: your events page is live at ${result.pagesUrl}';
   } else if (verified) {
     message = 'Published! Your events page is at ${result.pagesUrl}';
   } else {

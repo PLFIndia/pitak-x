@@ -94,7 +94,6 @@ void main() {
     () {
       final attempted = CloudflareSiteManifest(
         target: target,
-        state: PublishState.deployed,
         publishId: 'b' * 32,
         hashScheme: 'sha256-b64-ext-32',
         files: manifest.files,

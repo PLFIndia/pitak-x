@@ -106,11 +106,18 @@ final class CloudflareExistingPublicationCheck {
         target: target,
         manifest: local,
       );
-      if (verificationOnly || committed.isLeft()) {
+      if (committed.isLeft()) {
+        // The proof exists but this phone could not record it. Claiming
+        // success hid that the new publish never happened (fix-plan L7).
+        return const CloudflareExistingPublicationFinished(
+          PublishFailure(CloudflareErrorMessages.oldRecordCommitFailed),
+        );
+      }
+      if (verificationOnly) {
         return CloudflareExistingPublicationFinished(
           CloudflarePublishOutcomes.verificationSuccess(
             target,
-            localStateSaved: committed.isRight(),
+            localStateSaved: true,
           ),
         );
       }
@@ -140,11 +147,16 @@ final class CloudflareExistingPublicationCheck {
         target: target,
         manifest: local,
       );
-      if (verificationOnly || committed.isLeft()) {
+      if (committed.isLeft()) {
+        return const CloudflareExistingPublicationFinished(
+          PublishFailure(CloudflareErrorMessages.oldRecordCommitFailed),
+        );
+      }
+      if (verificationOnly) {
         return CloudflareExistingPublicationFinished(
           CloudflarePublishOutcomes.verificationSuccess(
             target,
-            localStateSaved: committed.isRight(),
+            localStateSaved: true,
           ),
         );
       }
@@ -185,7 +197,12 @@ final class CloudflareExistingPublicationCheck {
 
   static const CloudflareExistingPublicationFinished _privacyFailure =
       CloudflareExistingPublicationFinished(
-        PublishFailure(CloudflareErrorMessages.versionUrlPrivacy),
+        PublishFailure(
+          CloudflareErrorMessages.versionUrlPrivacy,
+          // Retry verification may disable Version URLs and then prove the
+          // deployment (D8).
+          canRetryVerification: true,
+        ),
       );
 
   /// Decides what may happen to the verified commit.

@@ -128,6 +128,7 @@ final class PublishSuccess extends PublishResult {
     this.pagesLive,
     this.localStateSaved = true,
     this.temporaryCleanupFailed = false,
+    this.newDeployment = true,
   });
 
   /// The public page URL.
@@ -155,13 +156,23 @@ final class PublishSuccess extends PublishResult {
   /// True when public temporary artifacts could not be removed after the run.
   /// This never means the remote publish failed; the UI reports it separately.
   final bool temporaryCleanupFailed;
+
+  /// False for a deploy-free verification of an earlier publication (fix-plan
+  /// L7), so the card can say "Verified" instead of "Published!".
+  final bool newDeployment;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.
 final class PublishFailure extends PublishResult {
   /// Creates a failure result.
-  const PublishFailure(this.reason);
+  const PublishFailure(this.reason, {this.canRetryVerification = false});
 
   /// Why it failed.
   final String reason;
+
+  /// True only when a deploy-free "Retry verification" can honestly change the
+  /// outcome (fix-plan L7): an unreachable read-back, an uncertain deploy, or
+  /// recoverable local state. A contradiction or a pre-deploy refusal is not
+  /// something another check can fix.
+  final bool canRetryVerification;
 }

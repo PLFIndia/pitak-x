@@ -83,6 +83,15 @@ abstract final class CloudflareErrorMessages {
       'The Cloudflare site changed while publishing was being prepared. '
       'Review the latest state and try again. Your live site was not changed.';
 
+  /// The old publication verified, but recording that fact failed.
+  ///
+  /// Reporting a verification "success" here hid that no new content was
+  /// published (fix-plan L7).
+  static const oldRecordCommitFailed =
+      'Your previous Cloudflare publish is live, but this device could not '
+      'record that, so your new changes were not published. Your live site was '
+      'not changed. Try publishing again.';
+
   /// Retry verification with nothing recorded for this exact site.
   static const nothingToVerify =
       'This phone has no publish on this Cloudflare site to verify yet. '

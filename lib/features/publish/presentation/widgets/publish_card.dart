@@ -12,7 +12,6 @@ import 'package:pitaka/features/publish/application/publish_status_copy.dart';
 import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/presentation/widgets/move_site_controls.dart';
 import 'package:pitaka/features/publish/presentation/widgets/pending_move_banner.dart';
@@ -186,11 +185,10 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     return switch (result) {
       final PublishSuccess success =>
         success.pagesLive == null || !success.localStateSaved,
-      PublishFailure(:final reason) =>
-        // A contradiction needs a reviewed replacement, never another check;
-        // "nothing to verify" is not a transient failure either.
-        reason == CloudflareErrorMessages.siteNotChecked ||
-            reason == CloudflareErrorMessages.publicationVerificationFailed,
+      // The failure says whether another deploy-free check can change it
+      // (fix-plan L7): a contradiction needs a reviewed replacement, and a
+      // pre-deploy refusal needs no verification.
+      PublishFailure(:final canRetryVerification) => canRetryVerification,
       _ => false,
     };
   }

@@ -11,8 +11,18 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 /// text, and distinguishes pre-deploy, uncertain-deploy, and post-deploy truth.
 abstract final class CloudflarePublishOutcomes {
   /// Maps an application-owned failure to a safe publish result.
-  static PublishFailure failure(Failure failure) =>
-      PublishFailure(_messageFor(failure));
+  ///
+  /// A read-back that could not reach the site is retryable; a contradiction
+  /// needs a reviewed replacement (fix-plan L7).
+  static PublishFailure failure(Failure failure) => PublishFailure(
+    _messageFor(failure),
+    canRetryVerification:
+        failure is CloudflareFailure &&
+        (failure.message == CloudflareErrorMessages.siteNotChecked ||
+            failure.message ==
+                CloudflareErrorMessages.publicationVerificationFailed ||
+            failure.message == CloudflareErrorMessages.versionUrlPrivacy),
+  );
 
   /// Success for deploy-free verification/repair of an existing publication.
   static PublishSuccess verificationSuccess(
@@ -23,6 +33,7 @@ abstract final class CloudflarePublishOutcomes {
     uploadedPaths: const [],
     pagesLive: true,
     localStateSaved: localStateSaved,
+    newDeployment: false,
   );
 
   /// Root for catalogue, events.html for an events-only publish.
@@ -32,6 +43,12 @@ abstract final class CloudflarePublishOutcomes {
   ) => section == PublishRequestedSection.events
       ? '${target.siteUrl}events.html'
       : target.siteUrl;
+
+  /// True when the operation reached a point a deploy-free check can resolve.
+  static bool retryableAfter({
+    required bool deployStarted,
+    required bool deployAccepted,
+  }) => deployStarted || deployAccepted;
 
   /// Maps a redacted transport exception using the exact operation stage.
   static String transport(
@@ -75,6 +92,20 @@ abstract final class CloudflarePublishOutcomes {
         ? CloudflareErrorMessages.uploadNotConfirmed
         : '${CloudflareErrorMessages.uploadNotConfirmed} $note';
   }
+
+  /// Debug-only diagnostic for an UNEXPECTED failure (fix-plan L7).
+  ///
+  /// Names the error type and the operation stage, never its message, so a
+  /// thrown bug is visible in debug builds without leaking response text,
+  /// paths, tokens or library data (AGENTS §6.2).
+  static String unexpectedDiagnostic(
+    Object error,
+    CloudflarePublishOperationProgress progress,
+    StackTrace stackTrace,
+  ) =>
+      'CloudflarePublish unexpected failure: ${error.runtimeType}; '
+      'deployStarted=${progress.deployStarted}; '
+      'deployAccepted=${progress.deployAccepted}\n$stackTrace';
 
   /// Debug-only diagnostic for an API failure (sent through `appLog`, so it
   /// never reaches release logs). It names the failure category, numeric

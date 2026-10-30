@@ -128,11 +128,28 @@ final class PublishToCloudflareUseCase {
           deployStarted: progress.deployStarted,
           deployAccepted: progress.deployAccepted,
         ),
+        canRetryVerification: CloudflarePublishOutcomes.retryableAfter(
+          deployStarted: progress.deployStarted,
+          deployAccepted: progress.deployAccepted,
+        ),
       );
-    } on Exception {
+    } on Exception catch (error, stackTrace) {
+      // Type and stage only: a thrown bug must be visible in debug builds
+      // without its message (which may hold response text or a path).
+      appLog(
+        CloudflarePublishOutcomes.unexpectedDiagnostic(
+          error,
+          progress,
+          stackTrace,
+        ),
+      );
       result = PublishFailure(
         CloudflarePublishOutcomes.unexpected(
           assetBytesMayHaveUploaded: progress.assetBytesMayHaveUploaded,
+          deployStarted: progress.deployStarted,
+          deployAccepted: progress.deployAccepted,
+        ),
+        canRetryVerification: CloudflarePublishOutcomes.retryableAfter(
           deployStarted: progress.deployStarted,
           deployAccepted: progress.deployAccepted,
         ),
@@ -263,10 +280,12 @@ final class PublishToCloudflareUseCase {
             replacementReason = reason;
         }
       } else if (verificationOnly) {
-        return PublishFailure(
-          local.target == null
-              ? CloudflareErrorMessages.nothingToVerify
-              : CloudflareErrorMessages.publicationVerificationFailed,
+        if (local.target == null) {
+          return const PublishFailure(CloudflareErrorMessages.nothingToVerify);
+        }
+        return const PublishFailure(
+          CloudflareErrorMessages.publicationVerificationFailed,
+          canRetryVerification: true,
         );
       }
     }

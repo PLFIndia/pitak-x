@@ -204,6 +204,66 @@ void main() {
     expect(controller.calls.last.verificationOnly, isTrue);
   });
 
+  testWidgets('a deploy-free verification says Verified, not Published!', (
+    tester,
+  ) async {
+    final controller = _FakePublishController([
+      PublishSuccess(
+        pagesUrl: target.siteUrl,
+        uploadedPaths: const [],
+        pagesLive: true,
+        newDeployment: false,
+      ),
+    ]);
+    await pump(tester, controller);
+    await tester.tap(find.text('Publish catalogue now'));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text('Verified: your live site matches this phone’s last publish.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('Published!'), findsNothing);
+  });
+
+  testWidgets('an uncertain deploy offers the deploy-free check', (
+    tester,
+  ) async {
+    final controller = _FakePublishController([
+      const PublishFailure(
+        'Cloudflare did not confirm the deployment, so the site may or may '
+        'not have changed. Tap Retry verification to check before publishing '
+        'again.',
+        canRetryVerification: true,
+      ),
+    ]);
+    await pump(tester, controller);
+    await tester.tap(find.text('Publish catalogue now'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Retry verification'));
+    await tester.pumpAndSettle();
+
+    expect(controller.calls, hasLength(2));
+    expect(controller.calls.last.verificationOnly, isTrue);
+  });
+
+  testWidgets('a failure no check can fix offers no Retry verification', (
+    tester,
+  ) async {
+    final controller = _FakePublishController([
+      const PublishFailure(
+        'The live Cloudflare site does not match this phone’s last publish. '
+        'Publish to review a whole-site replacement.',
+      ),
+    ]);
+    await pump(tester, controller);
+    await tester.tap(find.text('Publish catalogue now'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Retry verification'), findsNothing);
+  });
+
   testWidgets('an unreadable publishing record offers a confirmed reset', (
     tester,
   ) async {

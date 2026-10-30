@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
@@ -1084,6 +1085,11 @@ void main() {
       (first as PublishFailure).reason,
       contains(CloudflareErrorMessages.deployUncertain),
     );
+    expect(
+      first.canRetryVerification,
+      isTrue,
+      reason: 'a deploy-free check can resolve an uncertain deploy',
+    );
     expect(h.manifestStore.pending.publishId, cloudflareTestPublishId);
 
     h.api.deployError = null;
@@ -1180,9 +1186,57 @@ void main() {
     );
 
     expect(retry, isA<PublishSuccess>());
-    expect((retry as PublishSuccess).pagesLive, isTrue);
+    final verified = retry as PublishSuccess;
+    expect(verified.pagesLive, isTrue);
+    expect(
+      verified.newDeployment,
+      isFalse,
+      reason: 'nothing was deployed by this command (L7)',
+    );
     expect(h.api.deployCalls, 1);
     expect(h.manifestStore.current.state, PublishState.live);
+  });
+
+  test('a failed old-record commit is a failure, not a verification success '
+      '(L7)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      state: PublishState.deployed,
+    );
+    seed(h, s8CoreFiles(oldId));
+    h.manifestStore.failLiveSave = true;
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    final failure = result as PublishFailure;
+    expect(failure.reason, CloudflareErrorMessages.oldRecordCommitFailed);
+    expect(h.api.deployCalls, 0, reason: 'the new publish never started');
+    expect(h.api.uploadManifests, isEmpty);
+  });
+
+  test('the unexpected diagnostic names a type and stage, never its message '
+      '(L7)', () {
+    const secret = 'token cfut_secret and /private/path';
+    final progress = CloudflarePublishOperationProgress()
+      ..assetBytesMayHaveUploaded = true
+      ..deployStarted = true;
+
+    final diagnostic = CloudflarePublishOutcomes.unexpectedDiagnostic(
+      const FormatException(secret),
+      progress,
+      StackTrace.current,
+    );
+
+    expect(diagnostic, contains('FormatException'));
+    expect(diagnostic, contains('deployStarted=true'));
+    expect(diagnostic, isNot(contains(secret)));
+    expect(diagnostic, isNot(contains('cfut_')));
   });
 
   test(
