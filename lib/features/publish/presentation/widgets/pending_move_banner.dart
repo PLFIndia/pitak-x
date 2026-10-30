@@ -149,7 +149,7 @@ class PendingMoveBanner extends ConsumerWidget {
       context,
       oldAddress: pending.oldTarget.siteUrl,
       newAddress: pending.newTarget.siteUrl,
-      oldHost: pending.oldTarget.host,
+      newHost: pending.newTarget.host,
     );
     if (!confirmed || !context.mounted) return;
     final result = await ref

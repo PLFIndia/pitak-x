@@ -9,13 +9,17 @@ import 'package:flutter/material.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 
 /// Asks before cancelling a pending move. Both sites are untouched.
+///
+/// The "delete it there" sentence is about the **new** site, so it names the
+/// destination's host: a Cloudflare → GitHub move must say GitHub, not
+/// Cloudflare (the real host caught this naming the old host on 2026-10-30).
 Future<bool> showCancelMoveDialog(
   BuildContext context, {
   required String oldAddress,
   required String newAddress,
-  required PublishHost oldHost,
+  required PublishHost newHost,
 }) async {
-  final host = oldHost == PublishHost.github ? 'GitHub' : 'Cloudflare';
+  final host = newHost == PublishHost.github ? 'GitHub' : 'Cloudflare';
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(

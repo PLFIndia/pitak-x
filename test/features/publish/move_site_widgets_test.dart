@@ -184,6 +184,16 @@ void main() {
         find.textContaining('stays online with a copy of your library'),
         findsOneWidget,
       );
+      // The cleanup sentence is about the NEW site (Cloudflare in this
+      // direction), so it must not name the host being left behind.
+      expect(
+        find.textContaining('delete it in your Cloudflare account'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('delete it in your GitHub account'),
+        findsNothing,
+      );
 
       await tester.tap(
         find.descendant(

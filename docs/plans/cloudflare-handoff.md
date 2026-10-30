@@ -845,7 +845,7 @@ record them.
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
 | 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs the account's token |
-| 17 | Cancel a pending move; then finish without retiring with a revoked token (M4) | *pending* — the 2026-10-30 move completed first time, so no pending state existed |
+| 17 | Cancel a pending move; then, with a revoked token, finish without retiring (M4) | **Half observed** (2026-10-30): a move Cloudflare → GitHub was killed the moment the source marker turned `retired` (watcher, 21:23:04), the app reopened with the pending banner, and **Cancel move** was offered, explained (both sites, the share link stays) and then **refused** — "Your old address already shows the moved page. Choose Retry move to finish moving." That is `abandon()`'s documented guard, not a crash; Retry then finished the move to GitHub with no new work. The pre-retirement Cancel and the revoked-token Finish still need their own run |
 | 18 | First move into a Worker that holds a setup marker (L16) | *pending* — the move ran into a Worker holding a **retired** marker, which needs no replacement consent |
 | 19 | Publish after Cloudflare forgets a carried file (N1) | *not run* — time-dependent (Cloudflare only drops recently uploaded files); cannot be forced on demand |
 
@@ -888,6 +888,18 @@ publish left `events.json` byte-identical (Part M row 123).
   suppressing the replacement review when the destination reports
   `emptyWorkerErrorCode` (a Worker with no versions), or folding the two into
   one dialog.
+- **Cancel is offered after retirement, then refused (UX).** The banner keeps
+  Cancel visible whenever a pending move exists, but `abandon()` refuses once
+  the old address already serves the moved page and reports the refusal as a
+  snackbar. A user reads a full dialog that promises to keep publishing to the
+  current site, confirms it, and only then learns the site is already retired.
+  The honest fix is to hide or disable Cancel once retirement is observed, or
+  to show that sentence in the dialog first. Recorded, not changed.
+- **Wrong host in the same dialog (fixed in this session).** Its cleanup
+  sentence is about the NEW site but named the OLD host, so a Cloudflare →
+  GitHub move said "delete it in your Cloudflare account" about a GitHub
+  Pages site. `showCancelMoveDialog` now takes `newHost`; the widget test pins
+  that the message names the destination and never the source.
 - **Display churn after a recreate (cosmetic).** For about a minute after the
   row-12 recreate deployed, the card showed "Review site replacement — Review
   the replacement before publishing." before settling on "Published! Your site
