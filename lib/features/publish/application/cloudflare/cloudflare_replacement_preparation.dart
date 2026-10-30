@@ -18,6 +18,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anch
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 
 /// A complete snapshot and the safe confirmation projection derived from it.
 final class CloudflareCompletePreparation {
@@ -118,12 +119,16 @@ final class CloudflareReplacementPreparation {
     return output.takeBytes();
   }
 
-  /// Reads ordinary or complete inputs, reusing an existing complete read.
+  /// Reads ordinary or complete inputs, reusing an existing read only when it
+  /// already covers every requested section.
   ///
   /// Returns the TYPED failure (fix-plan N6): the snapshot builder already
   /// carries a safe sentence for an unreadable library ("member list too
   /// large", "saved libraries unreadable"), and collapsing it to null made
   /// Cloudflare show the generic read message GitHub never did.
+  ///
+  /// L6: an events-only publish reads only the events section. A replacement
+  /// (complete) or the missing-hash path still reads both.
   Future<Either<Failure, PublishInputs>> readInputs({
     required PublishReads reads,
     required CloudflarePublishTarget target,
@@ -131,15 +136,23 @@ final class CloudflareReplacementPreparation {
     required bool complete,
     PublishInputs? existing,
   }) async {
-    if (existing != null && (existing.events != null || !complete)) {
-      return Right(existing);
-    }
+    final wanted = <SiteSection>{
+      if (complete || section == PublishRequestedSection.catalogue)
+        SiteSection.catalogue,
+      if (complete || section == PublishRequestedSection.events)
+        SiteSection.events,
+    };
+    if (existing != null && _covers(existing, wanted)) return Right(existing);
     return _snapshotBuilder.read(
       reads: reads,
       target: target,
-      includeEvents: complete || section == PublishRequestedSection.events,
+      sections: wanted,
     );
   }
+
+  static bool _covers(PublishInputs inputs, Set<SiteSection> wanted) =>
+      (!wanted.contains(SiteSection.catalogue) || inputs.catalogue != null) &&
+      (!wanted.contains(SiteSection.events) || inputs.events != null);
 
   /// Produces a replacement-required result, including a fresh complete read
   /// when the initiating catalogue command had not read the events section.

@@ -1348,6 +1348,35 @@ void main() {
     },
   );
 
+  test('an events-only publish never reads the catalogue (L6)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    final previous = s8Manifest(target: h.target, publishId: oldId);
+    h.manifestStore.current = previous;
+    alreadyVerified(h);
+    seed(h, s8CoreFiles(oldId));
+    // A broken catalogue read must not matter to an events publish.
+    h.reads.catalogueResult = left(
+      const StorageFailure('synthetic catalogue failure'),
+    );
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.events,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect(h.reads.catalogueCalls, 0);
+    expect(h.reads.eventsCalls, 1);
+    expect(h.reads.libraryJsonCalls, 0);
+    // The catalogue section is carried from the trusted record.
+    expect(
+      h.manifestStore.current.shaFor('books.json'),
+      previous.shaFor('books.json'),
+    );
+    expect(h.manifestStore.current.entryFor('events.json'), isNotNull);
+  });
+
   test(
     'a live manifest with incomplete local state is re-proven before repair',
     () async {

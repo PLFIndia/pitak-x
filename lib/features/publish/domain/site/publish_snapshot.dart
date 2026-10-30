@@ -76,32 +76,27 @@ abstract interface class PublishReads {
   Future<Either<Failure, PublishPageSettings>> pageSettings();
 }
 
-/// The TARGET-FREE inputs one publish reads (R2).
+/// The catalogue-side reads, present ONLY when the catalogue is requested.
 ///
-/// Why this is separate from `PublishSnapshot` (beginner note): reading the
-/// library needs no target, but BUILDING a site does — the section builders
-/// compare against what the target already publishes. Splitting the two is
-/// what lets a publish validate every local read BEFORE it touches the
-/// keystore, the network or the previous-publication record: an unreadable
-/// library then fails instantly instead of after a doomed round trip.
-///
-/// [events] is null when the publish does not include the events section (an
-/// ordinary catalogue publish). A null here never means "the events file was
-/// unreadable" — that is a typed failure, not an empty section (R2).
-final class PublishInputs {
+/// Why one grouped value (fix-plan L6): an events-only publish used to read
+/// the catalogue, the periodicals, the loan counts and `library.json` (which
+/// fetches the live descriptor) and then throw the built catalogue away. That
+/// made an invalid periodical link or an unreadable descriptor block an events
+/// publish, and re-read every cover for nothing. Grouping the four reads makes
+/// "the catalogue was not requested" one nullable value rather than four
+/// fields that could disagree.
+final class CatalogueInputs {
   /// Creates the inputs; every value came from a successful strict read.
-  const PublishInputs({
-    required this.catalogueItems,
+  const CatalogueInputs({
+    required this.items,
     required this.periodicals,
     required this.activeLoanCounts,
     required this.libraryJson,
-    required this.pageSettings,
-    this.events,
   });
 
-  /// Every catalogue row of every kind, removed ones included (the builders
-  /// filter them).
-  final List<CatalogueItem> catalogueItems;
+  /// Every catalogue row of every kind, removed ones included (the builder
+  /// filters them).
+  final List<CatalogueItem> items;
 
   /// Every magazine title, removed ones included.
   final List<Periodical> periodicals;
@@ -113,6 +108,31 @@ final class PublishInputs {
   /// The pre-encoded `library.json` descriptor for this publish's target, or
   /// null when descriptor publication is switched off.
   final List<int>? libraryJson;
+}
+
+/// The TARGET-FREE inputs one publish reads (R2).
+///
+/// Why this is separate from `PublishSnapshot` (beginner note): reading the
+/// library needs no target, but BUILDING a site does — the section builders
+/// compare against what the target already publishes. Splitting the two is
+/// what lets a publish validate every local read BEFORE it touches the
+/// keystore, the network or the previous-publication record: an unreadable
+/// library then fails instantly instead of after a doomed round trip.
+///
+/// [catalogue] is null when the operation did not request the catalogue
+/// section, and [events] is null when it did not request events. A null here
+/// never means "the file was unreadable" — that is a typed failure, not an
+/// empty section (R2).
+final class PublishInputs {
+  /// Creates the inputs; every value came from a successful strict read.
+  const PublishInputs({
+    required this.pageSettings,
+    this.catalogue,
+    this.events,
+  });
+
+  /// Catalogue-side reads, or null when the catalogue was not requested.
+  final CatalogueInputs? catalogue;
 
   /// The events content, or null when this publish carries no events section.
   final EventsContent? events;
@@ -126,10 +146,10 @@ final class PublishSnapshot {
   /// Creates a snapshot.
   const PublishSnapshot({
     required this.mode,
-    required this.catalogue,
     required this.catalogueItemCount,
     required this.posterCount,
     required this.availabilityOmitted,
+    this.catalogue,
     this.events,
   });
 
@@ -142,8 +162,9 @@ final class PublishSnapshot {
   /// "everything is available"). The success UI repeats this.
   final bool availabilityOmitted;
 
-  /// The catalogue section (books.json, index.html, library.json, covers).
-  final PublishSection catalogue;
+  /// The catalogue section (books.json, index.html, library.json, covers), or
+  /// null when this operation requested only the events section (fix-plan L6).
+  final PublishSection? catalogue;
 
   /// The events section, or null when events are not part of this publish.
   final PublishSection? events;
@@ -155,7 +176,10 @@ final class PublishSnapshot {
   final int posterCount;
 
   /// The sections this snapshot carries, in write order.
-  List<PublishSection> get sections => [catalogue, ?events];
+  List<PublishSection> get sections => [
+    if (catalogue case final section?) section,
+    ?events,
+  ];
 
   /// True when the catalogue would publish zero items (the UI warns).
   bool get catalogueIsEmpty => catalogueItemCount == 0;

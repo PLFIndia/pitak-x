@@ -10,6 +10,7 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 
 /// One operation's built snapshot and its small, safe confirmation projection.
 final class MovePreparedSnapshot {
@@ -51,7 +52,12 @@ final class MoveSnapshotPreparation {
     required PublishTarget newTarget,
     required MoveSourceAnchor sourceAnchor,
   }) async {
-    final inputs = await _builder.read(reads: reads, target: newTarget);
+    final inputs = await _builder.read(
+      reads: reads,
+      target: newTarget,
+      // A move carries a COMPLETE site: both sections are required.
+      sections: const {SiteSection.catalogue, SiteSection.events},
+    );
     if (inputs case Left(value: final failure)) return Left(failure);
     final built = await _builder.build(
       inputs: inputs.toNullable()!,

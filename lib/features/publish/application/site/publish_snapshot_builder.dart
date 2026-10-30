@@ -61,55 +61,63 @@ final class PublishSnapshotBuilder {
       'Library settings could not be read. Nothing was published. '
       'Please try again.';
 
-  /// Phase 1: reads every input strictly.
+  /// Phase 1: reads exactly the requested sections, strictly.
   ///
   /// [target] is only used to build the `library.json` descriptor for the
   /// site being published (C3) — it is never a source of "the current site".
-  /// [includeEvents] false skips the events read entirely (an ordinary
-  /// catalogue publish owns no poster files, so it must not depend on, or
-  /// fail because of, the events file).
+  ///
+  /// [sections] is the ONE rule for what gets read (fix-plan L6): an
+  /// events-only operation never reads the catalogue, the periodicals, the
+  /// loan counts or `library.json`, so an unrelated catalogue problem cannot
+  /// block it and no cover is read for nothing. The settings are always read:
+  /// both section builders render with them.
   Future<Either<Failure, PublishInputs>> read({
     required PublishReads reads,
     required PublishTarget target,
-    bool includeEvents = true,
+    required Set<SiteSection> sections,
   }) async {
-    final items = await reads.catalogueItems();
-    final itemsFailure = items.swap().toNullable();
-    if (itemsFailure != null) return Left(itemsFailure);
+    CatalogueInputs? catalogue;
+    if (sections.contains(SiteSection.catalogue)) {
+      final items = await reads.catalogueItems();
+      final itemsFailure = items.swap().toNullable();
+      if (itemsFailure != null) return Left(itemsFailure);
 
-    final titles = await reads.periodicals();
-    final titlesFailure = titles.swap().toNullable();
-    if (titlesFailure != null) return Left(titlesFailure);
+      final titles = await reads.periodicals();
+      final titlesFailure = titles.swap().toNullable();
+      if (titlesFailure != null) return Left(titlesFailure);
 
-    final counts = await reads.activeLoanCounts();
-    final countsFailure = counts.swap().toNullable();
-    if (countsFailure != null) return Left(countsFailure);
+      final counts = await reads.activeLoanCounts();
+      final countsFailure = counts.swap().toNullable();
+      if (countsFailure != null) return Left(countsFailure);
+
+      final descriptor = await reads.libraryJson(target.siteUrl);
+      final descriptorFailure = descriptor.swap().toNullable();
+      if (descriptorFailure != null) return Left(descriptorFailure);
+
+      catalogue = CatalogueInputs(
+        items: items.toNullable()!,
+        periodicals: titles.toNullable()!,
+        activeLoanCounts: counts.toNullable(),
+        libraryJson: descriptor.toNullable(),
+      );
+    }
 
     final settings = await reads.pageSettings();
     final settingsFailure = settings.swap().toNullable();
     if (settingsFailure != null) return Left(settingsFailure);
 
-    final descriptor = await reads.libraryJson(target.siteUrl);
-    final descriptorFailure = descriptor.swap().toNullable();
-    if (descriptorFailure != null) return Left(descriptorFailure);
-
     EventsContent? content;
-    if (includeEvents) {
+    if (sections.contains(SiteSection.events)) {
       final events = await reads.events();
       final eventsFailure = events.swap().toNullable();
       if (eventsFailure != null) return Left(eventsFailure);
       content = events.toNullable();
-    } else {
-      content = null;
     }
 
     return Right(
       PublishInputs(
-        catalogueItems: items.toNullable()!,
-        periodicals: titles.toNullable()!,
-        activeLoanCounts: counts.toNullable(),
-        libraryJson: descriptor.toNullable(),
         pageSettings: settings.toNullable()!,
+        catalogue: catalogue,
         events: content,
       ),
     );
@@ -126,20 +134,27 @@ final class PublishSnapshotBuilder {
     required int now,
     required PublishMode mode,
   }) async {
-    final books = inputs.catalogueItems;
-
-    final catalogue = await _catalogue.build(
-      books: books,
-      periodicals: inputs.periodicals,
-      activeLoanCounts: inputs.activeLoanCounts,
-      libraryJson: inputs.libraryJson,
-      settings: inputs.pageSettings,
-      previous: previous,
-      now: now,
-      mode: mode,
-    );
-    final catalogueFailure = catalogue.swap().toNullable();
-    if (catalogueFailure != null) return Left(catalogueFailure);
+    final catalogueInputs = inputs.catalogue;
+    PublishSection? catalogueSection;
+    var catalogueItemCount = 0;
+    if (catalogueInputs != null) {
+      final catalogue = await _catalogue.build(
+        books: catalogueInputs.items,
+        periodicals: catalogueInputs.periodicals,
+        activeLoanCounts: catalogueInputs.activeLoanCounts,
+        libraryJson: catalogueInputs.libraryJson,
+        settings: inputs.pageSettings,
+        previous: previous,
+        now: now,
+        mode: mode,
+      );
+      final catalogueFailure = catalogue.swap().toNullable();
+      if (catalogueFailure != null) return Left(catalogueFailure);
+      catalogueSection = catalogue.toNullable();
+      catalogueItemCount = catalogueInputs.items
+          .where((b) => !b.removed)
+          .length;
+    }
 
     PublishSection? eventsSection;
     var posterCount = 0;
@@ -162,13 +177,15 @@ final class PublishSnapshotBuilder {
     return Right(
       PublishSnapshot(
         mode: mode,
-        catalogue: catalogue.toNullable()!,
+        catalogue: catalogueSection,
         events: eventsSection,
-        catalogueItemCount: books.where((b) => !b.removed).length,
+        catalogueItemCount: catalogueItemCount,
         posterCount: posterCount,
         // Null counts mean the vault was locked: availability is then omitted
-        // from the payload (never invented as "all available").
-        availabilityOmitted: inputs.activeLoanCounts == null,
+        // from the payload (never invented as "all available"). An events-only
+        // snapshot builds no books.json, so the flag is meaningless there.
+        availabilityOmitted:
+            catalogueInputs != null && catalogueInputs.activeLoanCounts == null,
       ),
     );
   }

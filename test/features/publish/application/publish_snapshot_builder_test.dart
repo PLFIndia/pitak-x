@@ -15,6 +15,7 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// SPECIFICATION of the snapshot builder (Cloudflare plan R2/R4, J.2).
@@ -26,6 +27,8 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 ///    referenced asset;
 ///  - the counts the confirmation dialogs show come from the same snapshot
 ///    that is written.
+const _both = {SiteSection.catalogue, SiteSection.events};
+
 void main() {
   CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
@@ -71,7 +74,11 @@ void main() {
       () async {
         final reads = _FakeReads()
           ..catalogueResult = left(const StorageFailure('private-db-detail'));
-        final result = await builder().read(reads: reads, target: target);
+        final result = await builder().read(
+          reads: reads,
+          target: target,
+          sections: _both,
+        );
 
         expect(result.swap().toNullable(), isA<StorageFailure>());
         expect(
@@ -85,7 +92,11 @@ void main() {
     test('a failed periodical read is a failure, not "no magazines"', () async {
       final reads = _FakeReads()
         ..periodicalsResult = left(const StorageFailure('private-db-detail'));
-      final result = await builder().read(reads: reads, target: target);
+      final result = await builder().read(
+        reads: reads,
+        target: target,
+        sections: _both,
+      );
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, ['catalogue', 'periodicals']);
@@ -94,7 +105,11 @@ void main() {
     test('an unavailable settings read aborts the publish (M8)', () async {
       final reads = _FakeReads()
         ..settingsResult = left(const StorageFailure('settings unavailable'));
-      final result = await builder().read(reads: reads, target: target);
+      final result = await builder().read(
+        reads: reads,
+        target: target,
+        sections: _both,
+      );
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, contains('settings'));
@@ -105,18 +120,22 @@ void main() {
     test('a corrupt events file is a failure, not empty content', () async {
       final reads = _FakeReads()
         ..eventsResult = left(const StorageFailure('corrupt-events-json'));
-      final result = await builder().read(reads: reads, target: target);
+      final result = await builder().read(
+        reads: reads,
+        target: target,
+        sections: _both,
+      );
 
       expect(result.swap().toNullable(), isA<StorageFailure>());
       expect(reads.calls, contains('events'));
     });
 
-    test('includeEvents false never reads the events file at all', () async {
+    test('a catalogue-only read never touches the events file', () async {
       final reads = _FakeReads();
       final inputs = (await builder().read(
         reads: reads,
         target: target,
-        includeEvents: false,
+        sections: const {SiteSection.catalogue},
       )).toNullable()!;
 
       expect(inputs.events, isNull);
@@ -130,12 +149,83 @@ void main() {
         final inputs = (await builder().read(
           reads: reads,
           target: target,
+          sections: _both,
         )).toNullable()!;
 
-        expect(inputs.libraryJson, isNull);
-        expect(inputs.catalogueItems, isEmpty);
+        expect(inputs.catalogue!.libraryJson, isNull);
+        expect(inputs.catalogue!.items, isEmpty);
       },
     );
+
+    test('an events-only read touches nothing catalogue-side (L6)', () async {
+      final reads = _FakeReads();
+
+      final inputs = (await builder().read(
+        reads: reads,
+        target: target,
+        sections: const {SiteSection.events},
+      )).toNullable()!;
+
+      expect(inputs.catalogue, isNull);
+      expect(inputs.events, isNotNull);
+      // Only the settings every builder needs and the events file itself.
+      expect(reads.calls, contains('settings'));
+      expect(reads.calls, contains('events'));
+      for (final forbidden in [
+        'catalogue',
+        'periodicals',
+        'counts',
+        'libraryJson',
+      ]) {
+        expect(reads.calls, isNot(contains(forbidden)), reason: forbidden);
+      }
+    });
+
+    test(
+      'an invalid periodical link cannot block an events-only read (L6)',
+      () async {
+        final reads = _FakeReads()
+          ..periodicalsResult = left(const ValidationFailure('bad link'));
+
+        final result = await builder().read(
+          reads: reads,
+          target: target,
+          sections: const {SiteSection.events},
+        );
+
+        expect(result.isRight(), isTrue);
+      },
+    );
+
+    test('an events-only build reads no cover (L6)', () async {
+      final reads = _FakeReads()..eventsContent = eventsWith('posters/a.jpg');
+      var coverReads = 0;
+      final subject = builder(
+        readLocalCover: (_) async {
+          coverReads++;
+          return utf8.encode('IMG');
+        },
+        readPoster: (_) async => utf8.encode('JPG'),
+      );
+      final inputs = (await subject.read(
+        reads: reads,
+        target: target,
+        sections: const {SiteSection.events},
+      )).toNullable()!;
+
+      final snapshot = (await subject.build(
+        inputs: inputs,
+        previous: PublishManifest.empty,
+        now: 1000,
+        mode: PublishMode.complete,
+      )).toNullable()!;
+
+      expect(coverReads, 0);
+      expect(snapshot.catalogue, isNull);
+      expect(snapshot.sections.map((section) => section.section), [
+        SiteSection.events,
+      ]);
+    });
   });
 
   group('build — complete means refuse, never omit', () {
@@ -146,6 +236,7 @@ void main() {
       final inputs = (await builder().read(
         reads: reads,
         target: target,
+        sections: _both,
       )).toNullable()!;
       final snapshot =
           (await builder(
@@ -172,6 +263,7 @@ void main() {
       final inputs = (await builder().read(
         reads: reads,
         target: target,
+        sections: _both,
       )).toNullable()!;
       final snapshot = (await builder().build(
         inputs: inputs,
@@ -192,6 +284,7 @@ void main() {
         final inputs = (await builder().read(
           reads: reads,
           target: target,
+          sections: _both,
         )).toNullable()!;
 
         final result = await builder().build(
@@ -217,6 +310,7 @@ void main() {
       final inputs = (await builder().read(
         reads: reads,
         target: target,
+        sections: _both,
       )).toNullable()!;
 
       final complete = await builder().build(
@@ -251,6 +345,7 @@ void main() {
         final inputs = (await builder().read(
           reads: reads,
           target: target,
+          sections: _both,
         )).toNullable()!;
         final snapshot = (await builder().build(
           inputs: inputs,
@@ -267,7 +362,7 @@ void main() {
       final inputs = (await builder().read(
         reads: reads,
         target: target,
-        includeEvents: false,
+        sections: const {SiteSection.catalogue},
       )).toNullable()!;
       final snapshot = (await builder().build(
         inputs: inputs,

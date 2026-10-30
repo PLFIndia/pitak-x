@@ -74,8 +74,8 @@ void main() {
     expect(second.isRight(), isTrue);
     expect(first.toNullable(), second.toNullable());
     expect(
-      _snapshot().catalogue.files.first.gitSha,
-      isNot(_snapshot(exportedAt: 999999).catalogue.files.first.gitSha),
+      _snapshot().catalogue!.files.first.gitSha,
+      isNot(_snapshot(exportedAt: 999999).catalogue!.files.first.gitSha),
       reason: 'the raw books.json bytes really did change',
     );
   });

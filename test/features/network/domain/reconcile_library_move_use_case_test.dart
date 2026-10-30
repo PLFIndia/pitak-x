@@ -133,7 +133,7 @@ void main() {
         fetchedName: 'Spoofed name',
         fingerprint: fp,
         // A hostile descriptor claims a different pin.
-        fetchedLocation: point(-1.0, -2.0),
+        fetchedLocation: point(-1, -2),
         fetchedPrecision: LocationPrecision.exact,
         fetchedAt: 500,
       ),

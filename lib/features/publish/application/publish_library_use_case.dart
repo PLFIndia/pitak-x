@@ -43,6 +43,7 @@ import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
@@ -141,7 +142,9 @@ final class PublishLibraryUseCase {
     final read = await _snapshotBuilder.read(
       reads: _reads,
       target: target,
-      includeEvents: false,
+      // This path owns the catalogue section only; the events section has its
+      // own publish (fix-plan L6 reads exactly what is requested).
+      sections: const {SiteSection.catalogue},
     );
     final inputs = read.toNullable();
     if (inputs == null) {
@@ -223,7 +226,12 @@ final class PublishLibraryUseCase {
     if (snapshot == null) {
       return PublishFailure(_messageFor(built.swap().toNullable()!));
     }
+    // The read above requested the catalogue, so it is present; a null here
+    // would be a builder bug, and refusing is safer than publishing nothing.
     final section = snapshot.catalogue;
+    if (section == null) {
+      return const PublishFailure(PublishSnapshotBuilder.readFailedMessage);
+    }
 
     // R7: merge ONLY this section into the publication record. The events
     // section (and any other app-owned path) survives; the section's own

@@ -158,7 +158,8 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
         final deployed = previous.afterCommit(
           commitSha: commitSha,
           mergedShas: desired,
-          coverUrlByBookId: complete.snapshot.catalogue.coverUrlByKey,
+          coverUrlByBookId:
+              complete.snapshot.catalogue?.coverUrlByKey ?? const {},
         );
         // L12: this record is the only proof the commit was ours, so a failed
         // save must reach the user rather than be discarded.
