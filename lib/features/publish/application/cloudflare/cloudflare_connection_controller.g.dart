@@ -7,7 +7,7 @@ part of 'cloudflare_connection_controller.dart';
 // **************************************************************************
 
 String _$cloudflareConnectionControllerHash() =>
-    r'9455c87422bd55e564381c47e97714366d5c1ddd';
+    r'632f15fe4e11274b6ba23c04eb82736a89f5134f';
 
 /// Owns Cloudflare setup while presentation only renders and answers prompts.
 ///

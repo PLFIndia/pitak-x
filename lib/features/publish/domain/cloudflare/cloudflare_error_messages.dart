@@ -45,6 +45,11 @@ abstract final class CloudflareErrorMessages {
       'Could not open the browser. Open the Cloudflare dashboard in a browser '
       'and create a token with Workers Scripts · Edit.';
 
+  /// A legacy 40-character token was refused as a personal token (L1/D7).
+  static const legacyTokenAccountCheck =
+      'Cloudflare did not accept this older token as a personal token. If it '
+      'belongs to an account, choose or enter that account to check it.';
+
   /// Inactive or expired token; nothing new is stored.
   static const inactiveToken =
       'Reconnect Cloudflare. That token is inactive or expired.';

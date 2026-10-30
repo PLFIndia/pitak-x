@@ -10,13 +10,13 @@ import 'dart:async';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_account_flow.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_status_writer.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_constraint.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_prompts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
@@ -45,6 +45,16 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   late final CloudflareSetupPrompts _prompts = CloudflareSetupPrompts(
     emit: _emit,
     current: () => _current,
+  );
+
+  /// The account-picker stage, split out to stay inside the size ratchet
+  /// (fix-plan L1).
+  late final CloudflareAccountFlow _accounts = CloudflareAccountFlow(
+    awaitInput: _awaitInput,
+    enqueue: _enqueueSetup,
+    unwrap: _unwrap,
+    reload: _reload,
+    continueFrom: _continueFromSubdomain,
   );
 
   @override
@@ -150,7 +160,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
       return;
     }
     final discovery = await _enqueueSetup((setup) => setup.begin(token));
-    await _accountFlow(discovery, pendingToken: token);
+    await _accounts.run(discovery, pendingToken: token);
   }
 
   Future<void> _resume() async {
@@ -174,7 +184,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
       final discovery = await _enqueueSetup(
         (setup) => setup.discoverAccounts(),
       );
-      await _accountFlow(discovery);
+      await _accounts.run(discovery);
       return;
     } else if (status.accountSubdomain == null) {
       subdomain = await _unwrap(
@@ -194,69 +204,6 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     } else {
       await _continueFromSubdomain(subdomain);
     }
-  }
-
-  Future<void> _accountFlow(
-    Either<Failure, CloudflareAccountDiscovery> result, {
-    CloudflareApiToken? pendingToken,
-  }) async {
-    final discovery = await _unwrap(result);
-    if (discovery == null) return;
-    final choice = discovery.manualRequired
-        ? const CloudflareAccountChoice(manual: true)
-        : await _awaitInput<CloudflareAccountChoice>(
-            CloudflareSetupPrompt.account,
-            accounts: discovery.accounts,
-          );
-    if (choice == null) {
-      await _reload();
-      return;
-    }
-
-    late final Either<Failure, CloudflareSubdomainOutcome> selected;
-    if (choice.manual) {
-      String? message;
-      while (true) {
-        final raw = await _awaitInput<String>(
-          CloudflareSetupPrompt.manualAccount,
-          message: message,
-        );
-        if (raw == null) {
-          await _reload();
-          return;
-        }
-        if (CloudflareAccountId.tryParse(raw) == null) {
-          message = CloudflareErrorMessages.invalidAccount;
-          continue;
-        }
-        selected = await _enqueueSetup(
-          (setup) => setup.selectAccountId(
-            raw,
-            pendingToken: pendingToken,
-            tokenExpiresOn: discovery.tokenExpiresOn,
-          ),
-        );
-        break;
-      }
-    } else {
-      final account = choice.account;
-      if (account == null) {
-        await _reload();
-        return;
-      }
-      selected = await _enqueueSetup(
-        (setup) => setup.selectAccount(
-          accountId: account.id,
-          // A replacement label is a UI convenience, never a stored fact
-          // (fix-plan L14).
-          accountName: account.storageName,
-          pendingToken: pendingToken,
-          tokenExpiresOn: discovery.tokenExpiresOn,
-        ),
-      );
-    }
-    final subdomain = await _unwrap(selected);
-    if (subdomain != null) await _continueFromSubdomain(subdomain);
   }
 
   Future<bool> _continueFromSubdomain(

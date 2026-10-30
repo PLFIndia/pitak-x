@@ -150,6 +150,28 @@ void main() {
     expect(result, isNull, reason: 'nothing was chosen yet');
   });
 
+  testWidgets('the account picker shows the legacy-token explanation (L1)', (
+    tester,
+  ) async {
+    await _open(tester, container, (context) async {
+      await showCloudflareAccountDialog(
+        context,
+        accounts: [
+          CloudflareAccount(
+            id: CloudflareAccountId.tryParse(cloudflareTestAccountId)!,
+            name: 'Library account',
+          ),
+        ],
+        message: CloudflareErrorMessages.legacyTokenAccountCheck,
+      );
+    });
+
+    expect(
+      find.text(CloudflareErrorMessages.legacyTokenAccountCheck),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('the Worker field lower-cases what is typed (RH2)', (
     tester,
   ) async {

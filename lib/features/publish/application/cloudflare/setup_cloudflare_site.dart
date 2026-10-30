@@ -84,27 +84,12 @@ final class SetupCloudflareSite {
   /// Why (fix-plan M3): saving at token entry replaced the working connection
   /// immediately, so abandoning setup halfway left the user with a fresh,
   /// incomplete record and no way back to the old one.
+  ///
+  /// The token-kind rules (including the legacy fallback, D7/L1) live in
+  /// `setup_cloudflare_account.dart`; this orchestrator only delegates.
   Future<Either<Failure, CloudflareAccountDiscovery>> begin(
     CloudflareApiToken token,
-  ) => _attempt(() async {
-    if (token.kind == CloudflareApiTokenKind.user) {
-      // The legacy 40-character shape deliberately takes this same user route;
-      // there is no undocumented fallback to the account endpoint.
-      final verification = await _accountApi.verifyUserToken(token);
-      final inactive = cloudflareTokenInactive(verification, _clock());
-      if (inactive) {
-        return left(
-          const CloudflareFailure(CloudflareErrorMessages.inactiveToken),
-        );
-      }
-      return discoverCloudflareAccounts(
-        _accountApi,
-        token,
-        tokenExpiresOn: verification.expiresOn,
-      );
-    }
-    return discoverCloudflareAccounts(_accountApi, token);
-  });
+  ) => _attempt(() => beginCloudflareSetup(_accountApi, token, clock: _clock));
 
   /// Resumes account discovery with an already verified stored token.
   Future<Either<Failure, CloudflareAccountDiscovery>> discoverAccounts() =>
@@ -119,6 +104,7 @@ final class SetupCloudflareSite {
     String raw, {
     CloudflareApiToken? pendingToken,
     DateTime? tokenExpiresOn,
+    bool accountVerificationPending = false,
   }) async {
     final accountId = CloudflareAccountId.tryParse(raw);
     if (accountId == null) {
@@ -131,6 +117,7 @@ final class SetupCloudflareSite {
       accountName: null,
       pendingToken: pendingToken,
       tokenExpiresOn: tokenExpiresOn,
+      accountVerificationPending: accountVerificationPending,
     );
   }
 
@@ -141,6 +128,7 @@ final class SetupCloudflareSite {
     required String? accountName,
     CloudflareApiToken? pendingToken,
     DateTime? tokenExpiresOn,
+    bool accountVerificationPending = false,
   }) async {
     if (!CloudflareConnection.isValidAccountName(accountName)) {
       return left<Failure, CloudflareSubdomainOutcome>(
@@ -157,7 +145,14 @@ final class SetupCloudflareSite {
     if (token != null) {
       return _attempt(() async {
         final CloudflareConnection selected;
-        if (token.kind == CloudflareApiTokenKind.account) {
+        // L1: a legacy token proves itself at the chosen ACCOUNT only after
+        // its user-endpoint verification was refused. A `cfut_` token was
+        // already verified as a user token and must not be re-checked here.
+        final needsAccountVerification =
+            token.kind == CloudflareApiTokenKind.account ||
+            (token.kind == CloudflareApiTokenKind.legacy &&
+                accountVerificationPending);
+        if (needsAccountVerification) {
           final verification = await _accountApi.verifyAccountToken(
             token: token,
             accountId: accountId,

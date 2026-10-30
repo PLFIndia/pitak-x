@@ -15,11 +15,17 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name
 Future<CloudflareAccountChoice?> showCloudflareAccountDialog(
   BuildContext context, {
   required List<CloudflareAccount> accounts,
+  String? message,
 }) => showDialog<CloudflareAccountChoice>(
   context: context,
   builder: (dialogContext) => SimpleDialog(
     title: const Text('Choose a Cloudflare account'),
     children: [
+      if (message != null)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+          child: Text(message),
+        ),
       for (final account in accounts)
         ListTile(
           title: Text(account.displayName),

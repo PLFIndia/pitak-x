@@ -41,6 +41,136 @@ void main() {
       },
     );
 
+    test('a legacy token refused as a personal token falls back to the account '
+        'route (L1/D7)', () async {
+      final h = CloudflareSetupHarness();
+      h.api.userVerifyError = CloudflareApiException(
+        CloudflareApiExceptionKind.unauthorized,
+      );
+      final token = cloudflareLegacyTestToken();
+
+      final discovery = _right(await h.setup.begin(token));
+
+      expect(h.api.userVerifyCalls, 1);
+      expect(h.api.listCalls, 1);
+      expect(h.api.accountVerifyCalls, 0);
+      expect(discovery.accountVerificationPending, isTrue);
+      expect(discovery.accounts, hasLength(1));
+      expect(h.credentials.saves, isEmpty, reason: 'nothing saved yet');
+
+      // The record is saved only after the ACCOUNT endpoint says active.
+      _right(
+        await h.setup.selectAccount(
+          accountId: cloudflareTestAccount(),
+          accountName: 'Library account',
+          pendingToken: token,
+          accountVerificationPending: discovery.accountVerificationPending,
+        ),
+      );
+      expect(h.api.accountVerifyCalls, 1);
+      expect(
+        h.credentials.record?.status.accountId?.value,
+        cloudflareTestAccountId,
+      );
+    });
+
+    test('a legacy token whose account listing is refused offers manual entry '
+        '(L1)', () async {
+      final h = CloudflareSetupHarness();
+      h.api
+        ..userVerifyError = CloudflareApiException(
+          CloudflareApiExceptionKind.forbidden,
+        )
+        ..listError = CloudflareApiException(
+          CloudflareApiExceptionKind.unauthorized,
+        );
+
+      final discovery = _right(
+        await h.setup.begin(cloudflareLegacyTestToken()),
+      );
+
+      expect(discovery.manualRequired, isTrue);
+      expect(discovery.accountVerificationPending, isTrue);
+      expect(discovery.accounts, isEmpty);
+      expect(h.credentials.saves, isEmpty);
+    });
+
+    test('a refused legacy account verification saves nothing (L1)', () async {
+      final h = CloudflareSetupHarness();
+      h.api
+        ..userVerifyError = CloudflareApiException(
+          CloudflareApiExceptionKind.unauthorized,
+        )
+        ..accountVerifyError = CloudflareApiException(
+          CloudflareApiExceptionKind.unauthorized,
+        );
+      final token = cloudflareLegacyTestToken();
+      final discovery = _right(await h.setup.begin(token));
+
+      final selected = await h.setup.selectAccount(
+        accountId: cloudflareTestAccount(),
+        accountName: 'Library account',
+        pendingToken: token,
+        accountVerificationPending: discovery.accountVerificationPending,
+      );
+
+      expect(selected.isLeft(), isTrue);
+      expect(h.credentials.saves, isEmpty);
+    });
+
+    test('an inactive legacy token does not fall back (L1)', () async {
+      final h = CloudflareSetupHarness();
+      h.api.userVerification = const CloudflareTokenVerification(
+        status: 'disabled',
+        expiresOn: null,
+      );
+
+      final result = await h.setup.begin(cloudflareLegacyTestToken());
+
+      expect(result.isLeft(), isTrue);
+      expect(h.api.listCalls, 0);
+    });
+
+    test('a transport failure on the legacy user route does not fall back '
+        '(L1)', () async {
+      for (final kind in [
+        CloudflareApiExceptionKind.network,
+        CloudflareApiExceptionKind.timeout,
+        CloudflareApiExceptionKind.server,
+      ]) {
+        final h = CloudflareSetupHarness();
+        h.api.userVerifyError = CloudflareApiException(kind);
+
+        final result = await h.setup.begin(cloudflareLegacyTestToken());
+
+        expect(result.isLeft(), isTrue, reason: kind.name);
+        expect(h.api.listCalls, 0, reason: kind.name);
+      }
+    });
+
+    test('a prefixed user token never falls back (L1)', () async {
+      final h = CloudflareSetupHarness();
+      h.api.userVerifyError = CloudflareApiException(
+        CloudflareApiExceptionKind.unauthorized,
+      );
+
+      final result = await h.setup.begin(cloudflareTestToken());
+
+      expect(result.isLeft(), isTrue);
+      expect(h.api.listCalls, 0);
+    });
+
+    test('a verified legacy user token takes the user route (L1)', () async {
+      final h = CloudflareSetupHarness();
+
+      final discovery = _right(
+        await h.setup.begin(cloudflareLegacyTestToken()),
+      );
+
+      expect(discovery.accountVerificationPending, isFalse);
+      expect(h.api.listCalls, 1);
+    });
+
     test('one hostile account name no longer hides the list (L14)', () async {
       final h = CloudflareSetupHarness();
       h.api.listing = CloudflareAccountListing(

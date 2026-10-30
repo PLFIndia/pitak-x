@@ -45,8 +45,8 @@ Future<Either<Failure, Unit>> writePrefsString(
 /// failure.
 Future<Either<Failure, Unit>> writePrefsBool(
   SharedPreferences prefs,
-  String key,
-  bool value, {
+  String key, {
+  required bool value,
   required String what,
 }) {
   final previous = prefs.getBool(key);

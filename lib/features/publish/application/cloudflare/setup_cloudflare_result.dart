@@ -13,6 +13,7 @@ final class CloudflareAccountDiscovery {
     required List<CloudflareAccount> accounts,
     required this.manualRequired,
     this.tokenExpiresOn,
+    this.accountVerificationPending = false,
   }) : accounts = List.unmodifiable(accounts);
 
   /// Safe account id/name values; never a token.
@@ -25,6 +26,14 @@ final class CloudflareAccountDiscovery {
   /// at account selection instead of at token entry (fix-plan M3). A date is
   /// not a credential.
   final DateTime? tokenExpiresOn;
+
+  /// True when the chosen account must still verify the token (fix-plan L1).
+  ///
+  /// Set only for a legacy 40-character token whose user-endpoint verification
+  /// was refused: the account route lists accounts but has proved nothing yet,
+  /// and the record is saved only after `/accounts/{id}/tokens/verify` says
+  /// `active`. The same flag selects the explanatory prompt copy.
+  final bool accountVerificationPending;
 }
 
 /// What is needed before a Worker address can be selected.

@@ -24,7 +24,7 @@ void main() {
     final offenders = <String>[];
     for (final entity in Directory('lib').listSync(recursive: true)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final path = entity.path.replaceAll('\\', '/');
+      final path = entity.path.replaceAll(Platform.pathSeparator, '/');
       if (path == 'lib/main_dev_harness.dart') continue;
       final source = entity.readAsStringSync();
       if (source.contains('cloudflare_aot_memory_app.dart')) {

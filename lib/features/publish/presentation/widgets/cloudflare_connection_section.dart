@@ -168,6 +168,7 @@ class _CloudflareConnectionSectionState
         final choice = await showCloudflareAccountDialog(
           context,
           accounts: ui.accounts,
+          message: ui.statusMessage,
         );
         controller.answerAccount(choice, serial);
       case CloudflareSetupPrompt.manualAccount:

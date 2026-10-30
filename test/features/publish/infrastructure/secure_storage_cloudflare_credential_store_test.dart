@@ -248,7 +248,9 @@ void main() {
         cloudflareTestToken(account: true).kind,
         CloudflareApiTokenKind.account,
       );
-      expect(cloudflareLegacyTestToken().kind, CloudflareApiTokenKind.user);
+      // L1/D7: the unprefixed shape can be either old ownership kind, so it
+      // has its own route (user first, account after a 401/403).
+      expect(cloudflareLegacyTestToken().kind, CloudflareApiTokenKind.legacy);
     },
   );
 }

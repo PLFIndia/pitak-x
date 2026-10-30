@@ -32,11 +32,20 @@ library;
 /// This is non-secret metadata. Callers must use it instead of inspecting the
 /// token text or its prefix themselves.
 enum CloudflareApiTokenKind {
-  /// Verified with `/user/tokens/verify` (including the legacy 40-char shape).
+  /// Verified with `/user/tokens/verify` (`cfut_`).
   user,
 
-  /// Listed/selected first, then verified at the chosen account's endpoint.
+  /// Listed/selected first, then verified at the chosen account's endpoint
+  /// (`cfat_`).
   account,
+
+  /// The older, unprefixed 40-character shape (fix-plan L1/D7).
+  ///
+  /// Cloudflare issues this shape for BOTH old user tokens and old
+  /// ACCOUNT-owned tokens, so the kind alone cannot choose a route: setup tries
+  /// the user endpoint first and falls back to the account route only after a
+  /// 401/403.
+  legacy,
 }
 
 /// A shape-checked Cloudflare API token that never prints its value.
@@ -83,9 +92,14 @@ final class CloudflareApiToken {
   static bool isValidShape(String? raw) => tryParse(raw) != null;
 
   /// Which verification endpoint and setup order this token requires.
-  CloudflareApiTokenKind get kind => _value.startsWith(_accountPrefix)
-      ? CloudflareApiTokenKind.account
-      : CloudflareApiTokenKind.user;
+  CloudflareApiTokenKind get kind {
+    if (_value.startsWith(_accountPrefix)) {
+      return CloudflareApiTokenKind.account;
+    }
+    if (_value.startsWith(_userPrefix)) return CloudflareApiTokenKind.user;
+    // Unprefixed: the 40-character legacy shape (no other shape parses).
+    return CloudflareApiTokenKind.legacy;
+  }
 
   /// Runs [action] with the token value.
   ///

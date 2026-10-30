@@ -74,7 +74,7 @@ class PrefsSettingsRepository implements SettingsRepository {
       writePrefsString(_prefs, key, value, what: 'settings write: $key');
 
   Future<Either<Failure, Unit>> _writeBool(String key, bool value) =>
-      writePrefsBool(_prefs, key, value, what: 'settings write: $key');
+      writePrefsBool(_prefs, key, value: value, what: 'settings write: $key');
 
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>

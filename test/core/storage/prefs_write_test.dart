@@ -37,7 +37,7 @@ class _FailingStore extends InMemorySharedPreferencesStore {
   }
 }
 
-Future<SharedPreferences> installStore(_FailingStore store) async {
+Future<SharedPreferences> _installStore(_FailingStore store) async {
   // Reset the plugin singleton/cache first, then install the failing store so
   // `getInstance` loads the seeded data through it.
   SharedPreferences.setMockInitialValues({});
@@ -48,7 +48,7 @@ Future<SharedPreferences> installStore(_FailingStore store) async {
 
 void main() {
   test('a successful write is stored and reported', () async {
-    final prefs = await installStore(_FailingStore(failSet: false));
+    final prefs = await _installStore(_FailingStore(failSet: false));
 
     final saved = await writePrefsString(prefs, 'k', 'v', what: 'test');
 
@@ -59,7 +59,9 @@ void main() {
   test('a false result restores the previous cached value', () async {
     // The regression (L9): the plugin updates its cache before the platform
     // write, so without repair this read would return the NEW value.
-    final prefs = await installStore(_FailingStore(data: {'flutter.k': 'old'}));
+    final prefs = await _installStore(
+      _FailingStore(data: {'flutter.k': 'old'}),
+    );
 
     final saved = await writePrefsString(prefs, 'k', 'new', what: 'test');
 
@@ -68,7 +70,7 @@ void main() {
   });
 
   test('a thrown plugin error restores the previous cached value', () async {
-    final prefs = await installStore(
+    final prefs = await _installStore(
       _FailingStore(data: {'flutter.k': 'old'}, throwSet: true),
     );
 
@@ -79,7 +81,7 @@ void main() {
   });
 
   test('a failed first write leaves the key absent, not phantom', () async {
-    final prefs = await installStore(_FailingStore());
+    final prefs = await _installStore(_FailingStore());
 
     final saved = await writePrefsString(prefs, 'k', 'new', what: 'test');
 
@@ -88,18 +90,23 @@ void main() {
   });
 
   test('the bool helper has the same contract', () async {
-    final prefs = await installStore(
+    final prefs = await _installStore(
       _FailingStore(data: {'flutter.flag': true}),
     );
 
-    final saved = await writePrefsBool(prefs, 'flag', false, what: 'test');
+    final saved = await writePrefsBool(
+      prefs,
+      'flag',
+      value: false,
+      what: 'test',
+    );
 
     expect(saved.isLeft(), isTrue);
     expect(prefs.getBool('flag'), isTrue);
   });
 
   test('a failed remove restores the value the cache still holds', () async {
-    final prefs = await installStore(
+    final prefs = await _installStore(
       _FailingStore(data: {'flutter.k': 'old'}, failRemove: true),
     );
 
@@ -110,8 +117,8 @@ void main() {
   });
 
   test('a successful remove deletes the value', () async {
-    final prefs = await installStore(
-      _FailingStore(data: {'flutter.k': 'old'}, failRemove: false),
+    final prefs = await _installStore(
+      _FailingStore(data: {'flutter.k': 'old'}),
     );
 
     final removed = await removePrefs(prefs, 'k', what: 'test');
@@ -123,12 +130,8 @@ void main() {
   test('a restore that also fails still reports the failure', () async {
     // Even when the second platform call fails, the in-memory cache was
     // restored by the attempt, and the caller must never see success.
-    final prefs = await installStore(
-      _FailingStore(
-        data: {'flutter.k': 'old'},
-        failSet: true,
-        failRemove: true,
-      ),
+    final prefs = await _installStore(
+      _FailingStore(data: {'flutter.k': 'old'}, failRemove: true),
     );
 
     final saved = await writePrefsString(prefs, 'k', 'new', what: 'test');
