@@ -705,6 +705,116 @@ void main() {
     expect(h.manifestStore.saves, isEmpty);
   });
 
+  test('verify-only disables Version URLs before it says the site is verified '
+      '(D8/L3)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      state: PublishState.deployed,
+    );
+    seed(h, s8CoreFiles(oldId));
+    // The fake starts with previews ON, like a Worker whose route was
+    // changed outside Pitak.
+    expect(h.api.route.previewsEnabled, isTrue);
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      verificationOnly: true,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect(h.api.deployCalls, 0);
+    expect(h.api.uploadManifests, isEmpty);
+    expect(h.api.routeUpdates, hasLength(1));
+    expect(h.api.routeUpdates.single.previewsEnabled, isFalse);
+    expect(h.manifestStore.current.state, PublishState.live);
+  });
+
+  test('a Version-URL failure during verify-only is reported and commits '
+      'nothing (L3)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(
+      target: h.target,
+      publishId: oldId,
+      state: PublishState.deployed,
+    );
+    seed(h, s8CoreFiles(oldId));
+    h.api.routeUpdateError = CloudflareApiException(
+      CloudflareApiExceptionKind.forbidden,
+    );
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+      verificationOnly: true,
+    );
+
+    final failure = result as PublishFailure;
+    expect(failure.reason, CloudflareErrorMessages.versionUrlPrivacy);
+    expect(h.api.deployCalls, 0);
+    expect(h.manifestStore.current.state, PublishState.deployed);
+    expect(h.manifestStore.saves, isEmpty);
+    expect(h.hostStore.stored?.verifiedTarget, isNull);
+  });
+
+  test('a repair of a live record also proves Version URLs off before it '
+      'commits (L3)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(target: h.target, publishId: oldId);
+    // The journal lost the verified target, so the live record needs repair.
+    seed(h, s8CoreFiles(oldId));
+    h.api.routeUpdateError = CloudflareApiException(
+      CloudflareApiExceptionKind.forbidden,
+    );
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    final failure = result as PublishFailure;
+    expect(failure.reason, CloudflareErrorMessages.versionUrlPrivacy);
+    expect(h.hostStore.stored?.verifiedTarget, isNull);
+    expect(h.api.deployCalls, 0);
+  });
+
+  test('the final pre-deploy check re-proves Version URLs, not the earlier '
+      'route (L3)', () async {
+    final oldId = 'a' * 32;
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.manifestStore.current = s8Manifest(target: h.target, publishId: oldId);
+    seed(h, s8CoreFiles(oldId));
+    // A real session has buckets; the callback fires on the first upload.
+    h.api
+      ..uploadSessionFactory = cloudflareOneBucketPerHashSession
+      ..onBucketUpload = (_) {
+        // Previews were re-enabled after the first gate, so only a second
+        // check immediately before the deploy can catch it.
+        h.api
+          ..route = const CloudflareWorkerRoute(
+            enabled: true,
+            previewsEnabled: true,
+          )
+          ..routeUpdateError = CloudflareApiException(
+            CloudflareApiExceptionKind.forbidden,
+          );
+      };
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    final failure = result as PublishFailure;
+    expect(failure.reason, CloudflareErrorMessages.versionUrlPrivacy);
+    expect(h.api.deployCalls, 0);
+  });
+
   test(
     'a failed pre-deploy Version-URL gate stops before upload or deploy',
     () async {

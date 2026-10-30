@@ -188,8 +188,34 @@ final class CloudflareMoveSource implements MoveSourceOperations {
         retiredMarker,
       );
       if (deployment case Left(value: final failure)) return Left(failure);
+    } else {
+      // N3: the retirement deploy landed earlier but its route update may have
+      // failed. An adopted retirement still proves previews off before the
+      // move may complete (ADR 0017 Decision 7).
+      final private = await _ensurePreviewsOff(connected, target);
+      if (!private) {
+        return const Left(
+          CloudflareFailure(CloudflareErrorMessages.versionUrlPrivacy),
+        );
+      }
     }
     return _verifyAndSave(pending, artifacts.manifest, onVerify: onVerify);
+  }
+
+  /// Proves Version URLs off, mapping any API failure to "not proven".
+  Future<bool> _ensurePreviewsOff(
+    CloudflareMoveConnection connected,
+    CloudflarePublishTarget target,
+  ) async {
+    try {
+      return await CloudflareVersionUrlGate(deployApi: _deployApi).ensureOff(
+        token: connected.connection.useToken((token) => token),
+        accountId: target.accountId,
+        workerName: target.workerName,
+      );
+    } on CloudflareApiException {
+      return false;
+    }
   }
 
   Future<Either<Failure, Unit>> _deployRetirement(

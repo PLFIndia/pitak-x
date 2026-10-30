@@ -179,6 +179,35 @@ void main() {
     expect(manifests.current.state, PublishState.retired);
   });
 
+  test(
+    'an adopted retirement still proves Version URLs are private (N3)',
+    () async {
+      final pending = movePending(oldTarget: moveCloudflareTarget);
+      reader
+        ..body('', pending.retirement.indexHtml)
+        ..absent('books.json')
+        ..body(
+          CloudflareLimits.markerPath,
+          s8Marker(moveRetiredPublishId, state: PublishMarkerState.retired),
+        );
+      api.routeUpdateError = CloudflareApiException(
+        CloudflareApiExceptionKind.forbidden,
+      );
+
+      final result = await source.retire(pending);
+
+      final failure = result.swap().toNullable()!;
+      expect(failure, isA<CloudflareFailure>());
+      expect(
+        (failure as CloudflareFailure).message,
+        CloudflareErrorMessages.versionUrlPrivacy,
+      );
+      expect(api.deployCalls, 0);
+      expect(manifests.current.state, isNot(PublishState.retired));
+      expect(manifests.saves, isEmpty);
+    },
+  );
+
   test('a changed source publication is never retired', () async {
     final pending = movePending(oldTarget: moveCloudflareTarget);
     manifests.current = s8Manifest(

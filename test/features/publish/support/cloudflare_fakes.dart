@@ -276,6 +276,10 @@ final class FakeCloudflareApi implements CloudflareApi {
   CloudflareApiException? createSubdomainError;
   CloudflareApiException? workerExistsError;
   CloudflareApiException? routeError;
+
+  /// Fails only route WRITES, so a test can prove a read-only preflight still
+  /// succeeded and the Version-URL gate is what refused (fix-plan L3).
+  CloudflareApiException? routeUpdateError;
   CloudflareApiException? sessionError;
   CloudflareApiException? uploadError;
   CloudflareApiException? deployError;
@@ -497,7 +501,7 @@ final class FakeCloudflareApi implements CloudflareApi {
     routeUpdates.add(
       CloudflareWorkerRoute(enabled: enabled, previewsEnabled: previewsEnabled),
     );
-    final error = routeError;
+    final error = routeUpdateError ?? routeError;
     if (error != null) throw error;
     return route = CloudflareWorkerRoute(
       enabled: enabled,

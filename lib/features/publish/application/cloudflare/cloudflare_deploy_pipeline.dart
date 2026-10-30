@@ -177,6 +177,28 @@ final class CloudflareDeployPipeline {
       return const PublishFailure(CloudflareErrorMessages.stalePublish);
     }
 
+    // L3: the route is re-read immediately before the deploy, so this is the
+    // last honest moment to prove Version URLs are still private. A failure
+    // here stops before the PUT; it never deploys an exposed version.
+    final lastCheck = last.toNullable()!;
+    if (lastCheck.workerExists && lastCheck.route != null) {
+      try {
+        final private = await gate.ensureOff(
+          token: token,
+          accountId: target.accountId,
+          workerName: target.workerName,
+          route: lastCheck.route,
+        );
+        if (!private) {
+          return const PublishFailure(
+            CloudflareErrorMessages.versionUrlPrivacy,
+          );
+        }
+      } on CloudflareApiException {
+        return const PublishFailure(CloudflareErrorMessages.versionUrlPrivacy);
+      }
+    }
+
     progress.deployStarted = true;
     await _deployApi.deploy(
       token: token,

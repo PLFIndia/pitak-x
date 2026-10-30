@@ -196,7 +196,12 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
 
     if (initial.freshness == PublishFreshness.known &&
         _matchesSnapshot(current.local, complete.snapshot)) {
-      return _verifyExisting(current, target, onVerify: onVerify);
+      return _verifyExisting(
+        current,
+        target,
+        route: initial.route,
+        onVerify: onVerify,
+      );
     }
     final artifacts =
         await CloudflarePublishArtifactAssembler(
@@ -356,8 +361,30 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
   Future<MoveDestinationResult> _verifyExisting(
     CloudflareMoveConnection current,
     CloudflarePublishTarget target, {
+    CloudflareWorkerRoute? route,
     MoveVerificationProgress? onVerify,
   }) async {
+    // L3: adopting an existing destination is still a "verified" result, so
+    // it may not be reported while Version URLs are public. The route is the
+    // one the preflight just read.
+    try {
+      final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
+          .ensureOff(
+            token: current.connection.useToken((token) => token),
+            accountId: target.accountId,
+            workerName: target.workerName,
+            route: route,
+          );
+      if (!private) {
+        return const MoveDestinationFailed(
+          CloudflareErrorMessages.versionUrlPrivacy,
+        );
+      }
+    } on CloudflareApiException {
+      return const MoveDestinationFailed(
+        CloudflareErrorMessages.versionUrlPrivacy,
+      );
+    }
     onVerify?.call();
     final verified = await _verifier.verify(
       target: target,

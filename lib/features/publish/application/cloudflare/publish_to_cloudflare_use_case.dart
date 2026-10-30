@@ -227,6 +227,7 @@ final class PublishToCloudflareUseCase {
             await CloudflareExistingPublicationCheck(
               verifier: _verifier,
               verifiedCommit: _verifiedCommit,
+              deployApi: _deployApi,
               clock: _clock,
             ).call(
               connection: connection,

@@ -13,6 +13,8 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
@@ -251,6 +253,41 @@ void main() {
     expect(api.deployCalls, 0);
     expect(manifests.current.state, isNot(PublishState.live));
   });
+
+  test(
+    'an adopted destination still proves Version URLs are private (L3)',
+    () async {
+      final confirmation = await prepare();
+      await destination.publish(
+        confirmation: confirmation,
+        beforeWrite: () async => true,
+      );
+      final deploys = api.deployCalls;
+      // The route drifted outside Pitak and cannot be repaired now.
+      api
+        ..route = const CloudflareWorkerRoute(
+          enabled: true,
+          previewsEnabled: true,
+        )
+        ..routeUpdateError = CloudflareApiException(
+          CloudflareApiExceptionKind.forbidden,
+        );
+
+      final preparedAgain = await destination.prepare(
+        oldTarget: moveGitHubTarget,
+        newTarget: moveCloudflareTarget,
+        sourceAnchor: moveAnchor(moveGitHubTarget),
+      );
+      final retried = await destination.publish(
+        confirmation: preparedAgain.toNullable()!,
+        beforeWrite: () async => true,
+      );
+
+      final failure = retried as MoveDestinationFailed;
+      expect(failure.reason, CloudflareErrorMessages.versionUrlPrivacy);
+      expect(api.deployCalls, deploys);
+    },
+  );
 
   test(
     'an exact existing destination is verified without redeploying',
