@@ -1,131 +1,137 @@
-# Phase 3 — moves and reconnects (L2, RH3, M5, M4, M3, M6, M11)
+# Phase 4 — truthful verification and messages (M9, L3, N3, L4, L7, L12, L16, N4–N6, N9)
 
 ## Understanding
 
-Phase 3 of `docs/plans/cloudflare-fix-plan-2026-10-29-2-medium.md`. Every
-finding is a state the user can enter but not leave, or a write that happens
-before the rule that should have stopped it:
+Phase 4 of `docs/plans/cloudflare-fix-plan-2026-10-29-2-medium.md`. Every
+finding is a case where Pitak's state, its success messages, or its next step
+disagree with what actually happened on the phone and at the host:
 
-- **L2/RH3** — "absent" is decided from a status code alone on both hosts. A
-  Cloudflare 404 (permission, wrong account, HTML edge page) reads as "no
-  Worker", which gates replacement consent, the new-site decision and Skip.
-  GitHub answers 404 for a private repo the token can no longer see.
-- **M5** — the pending-move guard runs in `_finalize`, long after
-  `selectWorker` saved the candidate and ran a verification deploy. Reconnecting
-  during a pending move can therefore deploy a marker over the move's old
-  Worker, after which Retry says "source changed" and Skip refuses.
-- **M4** — the journal has a "finish" transition but no "undo", and Skip's
-  evidence bar (exact credentials + authenticated "not found") cannot be met in
-  the cases the plan wrote it for (revoked token, deleted account, renamed
-  repo, another phone publishing).
-- **M3** — rotating a token drops the confirmed target, so re-picking the same
-  live Worker runs the destructive marker-only verification deploy, and the
-  dialog claims the other site is untouched.
-- **M6** — dialogs open only on a prompt *change*; the tab is disposed
-  off-screen, so on return the tile is stuck in `awaitingInput` with every
-  button disabled.
-- **M11** — `build()` resets `_disposed` but `_operationActive` and the pending
-  prompt survive, so an invalidate during a queued command strands a completer
-  and every later command silently no-ops.
+- **M9** — the moved-page library name is read and rendered **after** the
+  destination publish. The pending-move record rejects C0 controls and DEL, and
+  `normalizeMovedLibraryName` only trims, so one pasted tab makes every move
+  attempt republish and then fail at the same point, with no pending record and
+  therefore no Retry.
+- **L3 + N3** — Version URLs are repaired before an ordinary deploy, but
+  verify-only, repair, the final pre-deploy check and both move Retry
+  adoptions report success without consulting Cloudflare's route. If a
+  retirement deploy landed and its route update failed, Retry completes the
+  move without proving previews are off — which ADR 0017 Decision 7 forbids.
+- **L4** — an uncertain deploy is a dead end. The new publish id is only saved
+  after the deploy returns, so a lost response cannot be recognised later, and
+  `CloudflareDeployRecovery.retry` is a value nothing can honestly produce.
+- **L7 + N16** — copy lies. A failed old-record commit reports "Cloudflare
+  accepted the deployment…", verify-only says "Published!", Retry verification
+  is offered where it cannot succeed, and generic catches log nothing.
+- **L12 + N4** — both move destinations ignore their `deployed` record save,
+  and both route updates after a deploy can throw into a generic message that
+  hides "the deploy was accepted".
+- **L16** — the first move into a Worker that holds a setup marker (the normal
+  case) replaces it silently; F.5 step 2 requires explicit replacement consent.
+- **N5, N6, N9** — a destination anchor change is reported as "source
+  changed"; Cloudflare drops the typed read failures GitHub shows; move
+  progress labels are emitted after the step they describe.
 
 ## Privacy & threat notes
 
-- No new secret path. `CloudflareSetupConstraint` holds only public identity
-  parts (account id, subdomain, Worker name) already in the journal.
-- The new "absent" rules fail closed: an ambiguous 404 is `notFound`/
-  `unreadable`, never "gone". Public absence alone never authorizes anything.
-- `GitHubApiException` gains a status kind so 401/403 is "inaccessible", not a
-  network failure; the kind is a number, never response text.
-- Cancel/Finish copy names the old and new addresses (already public) and never
-  a token, JWT or account id.
+- No new secret path. The new pending-deploy record holds only public
+  asset/target metadata already in the live record. It is written to the same
+  app-private directory, atomically, and is cleared after a successful save.
+- Every new message is fixed copy. The new debug diagnostic names an error
+  **type**, the stage and the stack through `appLog` (debug builds only) and
+  never a message, path, token, JWT, account id or address.
+- The moved-page normalizer is total by construction: it never returns a value
+  the pending record rejects, so it cannot strand or corrupt a record.
+- A destination `unknown` state is replaced only after the user reviews the
+  exact `CloudflareRemoteAnchor`; a changed anchor re-prompts.
 
 ## Investigation notes
 
-- `statusOnly` in `CloudflareHttpTransport.send` short-circuits both 2xx and
-  404, so the body is discarded before any code can be read.
-- `CloudflareAccountApi.readAccountSubdomain` already requires 404 + 10007.
-- `PublishedSiteReadVerifier` already refuses redirects and distinguishes
-  Body/Absent/Unreadable — exactly the GitHub evidence L2 needs.
-- `PublishHostState` has `beginMove`/`finishMove`; `PublishHostStateRepository`
-  mirrors them. `abandonMove` follows the same shape.
-- `CloudflareSetupPrompts` is the one prompt owner; the generation belongs
-  there, not in the controller.
+- `MoveSiteUseCase.confirm` reads the name before the publish but builds the
+  pending move in `_createPending` afterwards; `prepare` never reads the name.
+- `normalizeMovedLibraryName` (`move_plan.dart`) only trims;
+  `RetirementDescriptor._validLibraryName` rejects `>256`, untrimmed, C0, DEL.
+- `CloudflareExistingPublicationCheck` returns
+  `CloudflarePublishOutcomes.verificationSuccess` in three places, and the
+  non-verify-only commit failure path currently returns that same "success".
+- `CloudflareDeployPipeline` applies the Version-URL gate against
+  `initial.route` before the session and against nothing after the final race
+  check; `CloudflareMoveDestination._verifyExisting` and
+  `CloudflareMoveSource._retire` (already-retired adoption) never check it.
+- `CloudflareManifestStore` has `load`/`save` only. `deploy()` returns void and
+  the adapter calls the recovery callback on an uncertain failure, so a
+  "landed but unconfirmed" deploy is representable only as a pending record.
+- `CloudflarePublishMarkerProbe.recoverLiveDeployment` makes one read; L4 needs
+  bounded polling, so it needs an injectable sleep.
+- `MoveDestinationPublisher.publish`, `MoveSourceOperations.retire`, and
+  `MoveSiteConfirmation` are the extension points for N9 and L16.
+- `PublishFailure` carries only a string, so Retry visibility is inferred from
+  message equality today; L7 needs a typed capability.
+- `cloudflare_replacement_preparation.dart` returns `PublishInputs?`, dropping
+  the typed read failure (N6).
 
 ## Proposed approach
 
-1. L2: status-first `statusOnly`; `workerExists` requires 404 + `success:false`
-   + code 10007; GitHub `skipCheck` requires repo 404 **and** a public 404 for
-   `books.json` at the exact old address.
-2. M5: `CloudflareSetupConstraint` from the journal, checked before every
-   credential save or remote write; prompts prefilled from it.
-3. M4: `abandonMove` + `MoveSiteUseCase.abandon()`; sealed `SourceSkipCheck`
-   with `finishWithoutRetiring()`; three banner actions with their dialogs.
-4. M3: recognise a proven address (journal `verifiedTarget` or a pending move's
-   `newTarget`) and finalize without a deploy; defer the user-token save.
-5. M6: `initState` + `listenManual(fireImmediately: true)` + post-frame dialog,
-   last-shown serial, and a "Cancel setup" action.
-6. M11: prompt generation; `_operationActive` per generation; `refreshStatus()`
-   replaces the three invalidations.
+1. **M9:** a total normalizer in `move_plan.dart` (replace C0/DEL with spaces,
+   trim, cap at 256 units without splitting a surrogate pair, trim, blank →
+   "My Library"). `confirm` and `prepare` build and validate the pending move
+   **before** any write; `confirm` reuses that exact record. New copy:
+   "The moved page for your old address could not be prepared. Nothing was
+   changed."
+2. **L3/N3:** `CloudflareVersionUrlGate.ensureOff` runs before every
+   "verified"/"repaired"/"adopted"/"complete" result and after the final
+   race check; the gate stays the only Version-URL rule. Adoption paths read
+   the route they need rather than assuming it.
+3. **L4:** a second atomic record (`cloudflare_publish_pending.json`) is saved
+   before the PUT and cleared after the `deployed` save. The next preflight
+   promotes it only when the public marker carries its exact publish id, and
+   bounded marker polling (5 × 3 s inside 30 s) replaces the single-read
+   recovery. Delete `CloudflareDeployRecovery.retry`.
+4. **L7/N16:** `PublishSuccess.newDeployment`, a typed
+   `PublishFailure.canRetryVerification`, honest failure copy for a failed
+   old-record commit, and `CloudflarePublishOutcomes.unexpectedDiagnostic`
+   through `appLog` in every generic branch.
+5. **L12/N4/N5:** carry each `deployed` save result into the result/failure,
+   map post-deploy route exceptions to "the deploy was accepted" copy, and
+   split destination drift from source drift with its own message.
+6. **L16:** the Cloudflare destination attaches its reviewed
+   `CloudflareRemoteAnchor` + replacement line when the state is `unknown`, and
+   re-prompts when the anchor changed or is missing.
+7. **N6/N9:** `readInputs` returns `Either` so the typed message reaches the
+   card; verification callbacks put the progress label before its step.
+8. **Records:** ADR 0017 (amendment), plan Part M rows 102+, handoff
+   §8/§9/§13/§17, `CHANGELOG.md` "Fixed", in-app guide where copy is
+   user-visible.
 
 ## Decision points
 
-- M4's "which button appears when" table is implemented as one "Skip
-  retirement" action whose result carries `canFinishWithoutRetiring` +
-  `oldSiteAnswers`, so the banner offers "Finish without retiring" only after
-  the check actually said "inaccessible". No extra remote call on mount.
-- M3's proven-address rule covers M5 step 3 (the old endpoint is the journal's
-  `verifiedTarget` during a pending move), so setup can re-authorize it
-  read-only without a second rule.
+- **D6 = A** (total normalizer) and **D8 = Yes** (Retry verification may
+  disable Version URLs) are taken at the plan's recommended defaults.
+- L4 keeps the live record as the only ownership claim: the pending record is
+  promoted **only** on a marker match, so an uncertain deploy that never landed
+  changes nothing and still protects the last known live record.
+- The `unknown`-destination consent is attached to the existing confirmation
+  rather than a second dialog, so one review still authorises one move.
 
 ## Steps
 
-- [x] L2/RH3: status-first 404, `workerExists` code rule, GitHub `skipCheck`,
-      `GitHubApiException` status kind.
-- [x] M5: `CloudflareSetupConstraint` + every setup command + prefill.
-- [x] M4: `abandonMove`, `abandon()`, `SourceSkipCheck`,
-      `finishWithoutRetiring()`, banner actions and dialogs.
-- [x] M3: proven-address finalize, deferred user-token save, dialog copy.
-- [x] M6: remount prompts, Cancel setup, GitHub prompts.
-- [x] M11: prompt generation, per-generation lock, `refreshStatus()`.
-- [x] Tests for every item above.
-- [x] Records: ADR 0017 Decision 5/5a + S7, Part M, CHANGELOG, handoff, guide.
-- [x] Gates: build_runner, format, analyze, non-golden suite (4,400 tests).
+- [ ] M9: total normalizer, pre-write pending build in `prepare`/`confirm`.
+- [ ] N9: destination/source verification callbacks; progress before steps.
+- [ ] L3/N3: gate before every success result and after the final race check.
+- [ ] L4: pending record, promotion, bounded polling, copy; drop `retry`.
+- [ ] L7/N16: `newDeployment`, typed Retry capability, honest commit copy,
+      unexpected diagnostic.
+- [ ] L12/N4/N5: save results, route exceptions, destination-changed message.
+- [ ] L16: unknown-state anchor + "Replace and move" consent.
+- [ ] N6: `readInputs` returns `Either` and its message reaches the card.
+- [ ] Tests for every item above.
+- [ ] Records: ADR 0017, Part M, CHANGELOG, handoff, guide.
+- [ ] Gates: build_runner, format, analyze, non-golden suite.
 
 ## Out of scope
 
-- Phase 4+ findings (moved-page name validation, Version-URL re-checks, copy).
-- The Phase 6 real-host run that records the real "script not found" code.
+- Phase 5 findings (L1, L6, L9–L11, L13–L15, L17, RH2, nits).
+- Phase 6 real-host evidence and the release build.
 
 ## Result
 
-Phase 3 is implemented end to end.
-
-- **L2/RH3:** `statusOnly` discards only a 2xx body, so a 404 is parsed.
-  `workerExists` returns false only for 404 + `success: false` + code 10007;
-  any other 404 is `notFound` and an HTML 404 is `malformedResponse`. GitHub's
-  Skip check requires a repo 404 **and** a real public 404 at the old root.
-- **M5:** `CloudflareSetupConstraint` (derived from the journal) is checked by
-  every setup command before any credential save or remote write; prompts
-  prefill from `CloudflareSetupHint` and explain why.
-- **M4:** `abandonMove` + `abandon()`, sealed `SourceSkipCheck`,
-  `finishWithoutRetiring()`, three banner actions with their own dialogs, and
-  `GitHubApiException.statusCode` so 401/403 is "inaccessible" (N10).
-- **M3:** `markAddressProven` finalizes a proven address without a deploy; a
-  user token is verified but saved only at account selection; the verification
-  dialog says "This Worker is your live site" when it is.
-- **M6:** `initState` + `listenManual(fireImmediately: true)` + post-frame
-  dialog that re-reads state, last-shown serial, "Cancel setup", and the same
-  remount rule for the GitHub code/repo prompts.
-- **M11:** prompt generations, a per-generation lock, and `refreshStatus()`
-  replacing the three provider invalidations.
-
-Two files crossed the 500-line ratchet and were split rather than allow-listed:
-`cloudflare_setup_journal.dart` (journal-derived rules) and
-`cloudflare_connection_status_writer.dart` (status projection).
-
-Tests added: L2 (deploy API 4, GitHub source 3, Cloudflare source 2), M5 (7),
-M3 (6), M4 (domain 4, repository 4, use case 8, widgets 2), M6 (section 2,
-tile 2, page 1), M11 (controller 3) — 48 new tests.
-
-Records: ADR 0017 Decision 5a + Decision 9, Part M rows 96–101, CHANGELOG,
-handoff §9/§13, in-app guide.
+(To be filled when the phase lands.)
