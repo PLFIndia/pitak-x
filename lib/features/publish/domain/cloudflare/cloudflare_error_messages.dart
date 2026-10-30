@@ -25,6 +25,11 @@ abstract final class CloudflareErrorMessages {
       'Worker names use letters, numbers, and hyphens, with no hyphen at '
       'either end.';
 
+  /// The external browser could not be opened (fix-plan L13).
+  static const tokenPageUnavailable =
+      'Could not open the browser. Open the Cloudflare dashboard in a browser '
+      'and create a token with Workers Scripts · Edit.';
+
   /// Inactive or expired token; nothing new is stored.
   static const inactiveToken =
       'Reconnect Cloudflare. That token is inactive or expired.';

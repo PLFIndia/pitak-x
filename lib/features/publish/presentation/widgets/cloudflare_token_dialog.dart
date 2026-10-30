@@ -1,8 +1,6 @@
 /// Masked Cloudflare API-token entry and fixed external token-creation link.
 library;
 
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:pitaka/core/platform/secret_on_screen.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
@@ -58,6 +56,25 @@ class _CloudflareTokenDialogState extends State<_CloudflareTokenDialog> {
     Navigator.of(context).pop(token);
   }
 
+  Future<void> _openTokenPage() async {
+    var opened = false;
+    try {
+      opened = await launchUrl(
+        cloudflareTokenCreationUri,
+        mode: LaunchMode.externalApplication,
+      );
+    } on Object {
+      // url_launcher throws a PlatformException, but a non-Exception must not
+      // escape and leave the button looking successful (AGENTS §14/M8).
+    }
+    if (opened || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(CloudflareErrorMessages.tokenPageUnavailable),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SecretOnScreen(
@@ -81,12 +98,7 @@ class _CloudflareTokenDialogState extends State<_CloudflareTokenDialog> {
               ),
               const SizedBox(height: 12),
               OutlinedButton.icon(
-                onPressed: () => unawaited(
-                  launchUrl(
-                    cloudflareTokenCreationUri,
-                    mode: LaunchMode.externalApplication,
-                  ),
-                ),
+                onPressed: _openTokenPage,
                 icon: const Icon(Icons.open_in_browser),
                 label: const Text('Open token creation page'),
               ),
@@ -98,6 +110,12 @@ class _CloudflareTokenDialogState extends State<_CloudflareTokenDialog> {
                 enableSuggestions: false,
                 obscureText: !_reveal,
                 keyboardType: TextInputType.visiblePassword,
+                // A pasted API token is not a login credential. Explicitly
+                // disabling autofill stops password managers and Android's
+                // autofill service from offering to save it (fix-plan L13).
+                autofillHints: null,
+                // Do not let the keyboard learn a token typed by hand.
+                enableIMEPersonalizedLearning: false,
                 maxLength: CloudflareApiToken.maxLength,
                 decoration: InputDecoration(
                   labelText: 'Cloudflare API token',

@@ -49,6 +49,11 @@ void main() {
     expect(container.read(screenCaptureProtectedProvider), isTrue);
     TextField field() => tester.widget<TextField>(find.byType(TextField));
     expect(field().obscureText, isTrue);
+    // L13: a pasted API token is not a login credential. The field is
+    // explicitly excluded from autofill (so password managers do not offer to
+    // save it) and from the keyboard's personalised learning.
+    expect(field().autofillHints, isNull);
+    expect(field().enableIMEPersonalizedLearning, isFalse);
 
     await tester.tap(find.byTooltip('Show token'));
     await tester.pump();
