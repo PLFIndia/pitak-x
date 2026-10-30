@@ -26,6 +26,13 @@ abstract interface class MoveTargetResolver {
   Future<Either<Failure, MoveTargets>> call();
 }
 
+/// Reports that a host operation has finished writing and is about to verify.
+///
+/// Fix-plan N9: the label must describe the step that is running, so a
+/// ten-minute GitHub Pages wait never reads "Publishing destination…". The
+/// callback carries nothing and is called at most once per operation.
+typedef MoveVerificationProgress = void Function();
+
 /// What a Skip check proved about the old site (fix-plan M4).
 ///
 /// Skip used to be a yes/no answer that needed exact working credentials AND an
@@ -74,7 +81,13 @@ abstract interface class MoveSourceOperations {
   Future<Either<Failure, MoveSourceAnchor>> readAnchor(PublishTarget oldTarget);
 
   /// Performs only missing retirement work and its required read-back/commits.
-  Future<Either<Failure, SiteRetirementOutcome>> retire(PendingMove pending);
+  ///
+  /// [onVerify] runs when the retirement write is done and its read-back is
+  /// starting, so progress copy describes the current step (N9).
+  Future<Either<Failure, SiteRetirementOutcome>> retire(
+    PendingMove pending, {
+    MoveVerificationProgress? onVerify,
+  });
 
   /// Reports what can be proven about the old site before Skip or Finish.
   /// This never retires the source and never edits its manifest.
@@ -100,8 +113,10 @@ abstract interface class MoveDestinationPublisher {
 
   /// Rebuilds/revalidates a reviewed snapshot. [beforeWrite] runs after the
   /// destination's final anchor check and immediately before commit/deploy.
+  /// [onVerify] runs when the write is done and read-back starts (N9).
   Future<MoveDestinationResult> publish({
     required MoveSiteConfirmation confirmation,
     required Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
   });
 }

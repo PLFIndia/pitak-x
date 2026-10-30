@@ -83,7 +83,22 @@ final class MoveSiteUseCase {
     );
     final failure = prepared.swap().toNullable();
     if (failure != null) return _failure(failure);
-    return MoveSiteConfirmationRequired(prepared.toNullable()!);
+    // M9: the moved page is prepared during the write-free review, so a name
+    // the pending record would reject is discovered before the user confirms
+    // anything, not after a destination publish.
+    final name = await _readLibraryName();
+    if (name.isLeft()) {
+      return const MoveSiteFailure(MoveSiteMessages.settingsUnavailable);
+    }
+    final confirmation = prepared.toNullable()!;
+    final pending = await _preparePending(
+      confirmation,
+      name.toNullable() ?? '',
+    );
+    if (pending == null) {
+      return const MoveSiteFailure(MoveSiteMessages.movedPageNotPrepared);
+    }
+    return MoveSiteConfirmationRequired(confirmation);
   }
 
   /// Revalidates and publishes a reviewed move, then attempts retirement.
@@ -113,13 +128,25 @@ final class MoveSiteUseCase {
     if (nameFailure != null) {
       return const MoveSiteFailure(MoveSiteMessages.settingsUnavailable);
     }
-    final libraryName = name.toNullable() ?? '';
+
+    // M9: build and validate the exact pending record NOW. Once the
+    // destination is published, the only work left is persisting this record
+    // and retiring the source; a name or moved page the record cannot hold
+    // must never be discovered at that point, because there is no Retry yet.
+    final pending = await _preparePending(
+      confirmation,
+      name.toNullable() ?? '',
+    );
+    if (pending == null) {
+      return const MoveSiteFailure(MoveSiteMessages.movedPageNotPrepared);
+    }
 
     onProgress?.call(MoveSitePhase.publishingDestination);
     final published = await _destinationFor(confirmation.newTarget).publish(
       confirmation: confirmation,
       beforeWrite: () =>
           _sourceMatches(confirmation.oldTarget, confirmation.sourceAnchor),
+      onVerify: () => onProgress?.call(MoveSitePhase.verifyingDestination),
     );
     switch (published) {
       case MoveDestinationConfirmationRequired(:final confirmation):
@@ -137,7 +164,6 @@ final class MoveSiteUseCase {
             destinationLocalStateSaved: false,
           );
         }
-        onProgress?.call(MoveSitePhase.verifyingDestination);
         if (!await _sourceMatches(
           confirmation.oldTarget,
           confirmation.sourceAnchor,
@@ -145,10 +171,6 @@ final class MoveSiteUseCase {
           return const MoveSiteFailure(MoveSiteMessages.sourceChanged);
         }
         onProgress?.call(MoveSitePhase.recordingMove);
-        final pending = await _createPending(confirmation, libraryName);
-        if (pending == null || !await _validateMovedHtml(pending)) {
-          return const MoveSiteFailure(MoveSiteMessages.pendingSaveFailed);
-        }
         final recorded = await _hostState.beginMove(pending);
         if (recorded.isLeft()) {
           return MoveSiteFailure(
@@ -277,10 +299,12 @@ final class MoveSiteUseCase {
     bool destinationCleanupFailed = false,
   }) async {
     onProgress?.call(MoveSitePhase.updatingOldAddress);
-    final retired = await _sourceFor(pending.oldTarget).retire(pending);
+    final retired = await _sourceFor(pending.oldTarget).retire(
+      pending,
+      onVerify: () => onProgress?.call(MoveSitePhase.verifyingOldAddress),
+    );
     final failure = retired.swap().toNullable();
     if (failure != null) return _failure(failure, retirementPending: true);
-    onProgress?.call(MoveSitePhase.verifyingOldAddress);
     final outcome = retired.toNullable()!;
     return _finish(
       pending,
@@ -308,15 +332,27 @@ final class MoveSiteUseCase {
     );
   }
 
-  Future<PendingMove?> _createPending(
+  /// Builds, renders and authenticates the pending record WITHOUT writing it.
+  ///
+  /// Returns null when the name, the moved page or the record cannot be
+  /// produced, which is always a pre-write failure (fix-plan M9).
+  Future<PendingMove?> _preparePending(
     MoveSiteConfirmation confirmation,
     String rawLibraryName,
   ) async {
     final libraryName = normalizeMovedLibraryName(rawLibraryName);
-    final moved = await _buildMovedHtml(
-      libraryName: libraryName,
-      newTarget: confirmation.newTarget,
-    );
+    final List<int> moved;
+    try {
+      // The renderer reads a bundled template; a missing or corrupt asset is
+      // an expected local failure, never a crash before the user's site is
+      // touched (fix-plan M9).
+      moved = await _buildMovedHtml(
+        libraryName: libraryName,
+        newTarget: confirmation.newTarget,
+      );
+    } on Exception {
+      return null;
+    }
     final marker = confirmation.oldTarget is CloudflarePublishTarget
         ? PublishMarker(
             publishId: _publishId(),
@@ -324,7 +360,7 @@ final class MoveSiteUseCase {
             state: PublishMarkerState.retired,
           )
         : null;
-    return PendingMove.tryCreate(
+    final pending = PendingMove.tryCreate(
       oldTarget: confirmation.oldTarget,
       newTarget: confirmation.newTarget,
       sourceAnchor: confirmation.sourceAnchor,
@@ -333,6 +369,8 @@ final class MoveSiteUseCase {
       libraryName: libraryName,
       retirementMarker: marker,
     );
+    if (pending == null || !await _validateMovedHtml(pending)) return null;
+    return pending;
   }
 
   Future<bool> _sourceMatches(

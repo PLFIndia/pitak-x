@@ -60,9 +60,19 @@ void main() {
   test(
     'a THROWING move ends loading instead of leaving busy true (M8)',
     () async {
+      // The review reads the name once; the CONFIRMED move throws a
+      // non-Exception on its own read, which is the case M8 protects.
+      var nameReads = 0;
       final h = MoveHarness(
-        readLibraryName: () async =>
-            Future<Either<Failure, String>>.error(StateError('non-Exception')),
+        readLibraryName: () {
+          nameReads++;
+          if (nameReads == 1) {
+            return Future<Either<Failure, String>>.value(right('My Library'));
+          }
+          return Future<Either<Failure, String>>.error(
+            StateError('non-Exception'),
+          );
+        },
       );
       final container = containerFor(h);
       final controller = container.read(moveSiteControllerProvider.notifier);

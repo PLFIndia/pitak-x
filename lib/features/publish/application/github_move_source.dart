@@ -82,8 +82,9 @@ final class GitHubMoveSource implements MoveSourceOperations {
 
   @override
   Future<Either<Failure, SiteRetirementOutcome>> retire(
-    PendingMove pending,
-  ) async {
+    PendingMove pending, {
+    MoveVerificationProgress? onVerify,
+  }) async {
     final target = pending.oldTarget;
     if (target is! GitHubPublishTarget) {
       return const Left(ValidationFailure(MoveSiteMessages.targetMismatch));
@@ -144,6 +145,7 @@ final class GitHubMoveSource implements MoveSourceOperations {
       }
     }
 
+    onVerify?.call();
     final verified = await _verifier.verify(pending, revision: _clock());
     if (!verified) {
       return const Left(ValidationFailure(MoveSiteMessages.retirementFailed));

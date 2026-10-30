@@ -93,8 +93,9 @@ final class CloudflareMoveSource implements MoveSourceOperations {
 
   @override
   Future<Either<Failure, SiteRetirementOutcome>> retire(
-    PendingMove pending,
-  ) async {
+    PendingMove pending, {
+    MoveVerificationProgress? onVerify,
+  }) async {
     final target = pending.oldTarget;
     final retiredMarker = pending.retirement.marker;
     if (target is! CloudflarePublishTarget || retiredMarker == null) {
@@ -103,7 +104,13 @@ final class CloudflareMoveSource implements MoveSourceOperations {
     final store = _artifactStores();
     Either<Failure, SiteRetirementOutcome> result;
     try {
-      result = await _retire(pending, target, retiredMarker, store);
+      result = await _retire(
+        pending,
+        target,
+        retiredMarker,
+        store,
+        onVerify: onVerify,
+      );
     } on CloudflareApiException catch (error) {
       result = Left(CloudflareErrorMessages.fromException(error));
     } on Exception {
@@ -120,8 +127,9 @@ final class CloudflareMoveSource implements MoveSourceOperations {
     PendingMove pending,
     CloudflarePublishTarget target,
     PublishMarker retiredMarker,
-    CloudflareArtifactStore store,
-  ) async {
+    CloudflareArtifactStore store, {
+    MoveVerificationProgress? onVerify,
+  }) async {
     final connectedResult = await _reader.connection(target);
     if (connectedResult case Left(value: final failure)) return Left(failure);
     final connected = connectedResult.toNullable()!;
@@ -181,7 +189,7 @@ final class CloudflareMoveSource implements MoveSourceOperations {
       );
       if (deployment case Left(value: final failure)) return Left(failure);
     }
-    return _verifyAndSave(pending, artifacts.manifest);
+    return _verifyAndSave(pending, artifacts.manifest, onVerify: onVerify);
   }
 
   Future<Either<Failure, Unit>> _deployRetirement(
@@ -252,8 +260,10 @@ final class CloudflareMoveSource implements MoveSourceOperations {
 
   Future<Either<Failure, SiteRetirementOutcome>> _verifyAndSave(
     PendingMove pending,
-    CloudflareSiteManifest retired,
-  ) async {
+    CloudflareSiteManifest retired, {
+    MoveVerificationProgress? onVerify,
+  }) async {
+    onVerify?.call();
     final verified = await _verifier.verify(pending, revision: _clock());
     if (!verified) {
       return const Left(ValidationFailure(MoveSiteMessages.retirementFailed));

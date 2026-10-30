@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/application/site/publish_host_state_repo
 import 'package:pitaka/features/publish/domain/github_branch_name.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/move_plan.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
@@ -149,6 +150,9 @@ final class ScriptedHostStore implements PublishHostStateStore {
   /// Number of save attempts.
   int saves = 0;
 
+  /// Every successfully stored journal, in order (assertion helper).
+  final List<PublishHostState> savedStates = [];
+
   /// 1-based save number that returns a failure; -1 disables.
   int failSaveAt = -1;
 
@@ -167,6 +171,7 @@ final class ScriptedHostStore implements PublishHostStateStore {
       return left(const StorageFailure('synthetic host save failure'));
     }
     stored = state;
+    savedStates.add(state);
     return right(unit);
   }
 
@@ -282,9 +287,11 @@ final class FakeMoveSource implements MoveSourceOperations {
 
   @override
   Future<Either<Failure, SiteRetirementOutcome>> retire(
-    PendingMove pending,
-  ) async {
+    PendingMove pending, {
+    MoveVerificationProgress? onVerify,
+  }) async {
     retireCalls++;
+    onVerify?.call();
     final failure = retireFailure;
     if (failure != null) return left(failure);
     return right(retirementOutcome);
@@ -326,6 +333,9 @@ final class FakeMoveDestination implements MoveDestinationPublisher {
   int publishCalls = 0;
   MoveSiteConfirmation? lastConfirmation;
 
+  /// Verification callback the publisher received (N9).
+  MoveVerificationProgress? onVerify;
+
   @override
   Future<Either<Failure, MoveSiteConfirmation>> prepare({
     required PublishTarget oldTarget,
@@ -349,8 +359,10 @@ final class FakeMoveDestination implements MoveDestinationPublisher {
   Future<MoveDestinationResult> publish({
     required MoveSiteConfirmation confirmation,
     required Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
   }) async {
     publishCalls++;
+    this.onVerify = onVerify;
     lastConfirmation = confirmation;
     final callback = onPublish;
     if (callback != null) return callback(confirmation, beforeWrite);
@@ -366,8 +378,13 @@ final class MoveHarness {
     PublishTarget? newTarget,
     this.withJournal = true,
     MoveLibraryNameReader? readLibraryName,
+    MovedHtmlBuilderFn? buildMovedHtml,
   }) : oldTarget = oldTarget ?? moveGitHubTarget,
        newTarget = newTarget ?? moveCloudflareTarget,
+       buildMovedHtml =
+           buildMovedHtml ??
+           (({required libraryName, required newTarget}) async =>
+               utf8.encode('<html>$libraryName moved</html>')),
        // M9/M8 need a scriptable settings read; the default keeps every
        // existing test on the same name.
        readLibraryName =
@@ -405,8 +422,7 @@ final class MoveHarness {
       cloudflareSource: cloudflareSource,
       gitHubDestination: gitHubDestination,
       cloudflareDestination: cloudflareDestination,
-      buildMovedHtml: ({required libraryName, required newTarget}) async =>
-          utf8.encode('<html>$libraryName moved</html>'),
+      buildMovedHtml: this.buildMovedHtml,
       validateMovedHtml: (pending) async => validateMoved,
       readLibraryName: this.readLibraryName,
       clock: () => 1700000000000,
@@ -419,6 +435,9 @@ final class MoveHarness {
 
   /// Reads the moved-page library name; scriptable since Phase 0.7.
   final MoveLibraryNameReader readLibraryName;
+
+  /// Renders the moved page; scriptable so a failing renderer is testable (M9).
+  final MovedHtmlBuilderFn buildMovedHtml;
 
   /// Direction's source.
   final PublishTarget oldTarget;

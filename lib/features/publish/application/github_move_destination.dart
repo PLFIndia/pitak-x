@@ -81,6 +81,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
   Future<MoveDestinationResult> publish({
     required MoveSiteConfirmation confirmation,
     required Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
   }) async {
     final target = confirmation.newTarget;
     if (target is! GitHubPublishTarget) return _targetMismatch;
@@ -113,7 +114,13 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           ..sort();
     if (_alreadyCommitted(previous, remote.tree.headSha, desired) &&
         deleted.isEmpty) {
-      return _verifyCommitted(target, previous, files, deleted);
+      return _verifyCommitted(
+        target,
+        previous,
+        files,
+        deleted,
+        onVerify: onVerify,
+      );
     }
     if (!await beforeWrite()) {
       return const MoveDestinationFailed(MoveSiteMessages.sourceChanged);
@@ -153,7 +160,13 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           coverUrlByBookId: complete.snapshot.catalogue.coverUrlByKey,
         );
         _manifest.save(deployed);
-        return _verifyCommitted(target, deployed, files, deleted);
+        return _verifyCommitted(
+          target,
+          deployed,
+          files,
+          deleted,
+          onVerify: onVerify,
+        );
     }
   }
 
@@ -161,8 +174,10 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
     GitHubPublishTarget target,
     PublishManifest publication,
     List<PublishFile> files,
-    List<String> deleted,
-  ) async {
+    List<String> deleted, {
+    MoveVerificationProgress? onVerify,
+  }) async {
+    onVerify?.call();
     final verified = await _verifier.verify(
       siteUrl: target.siteUrl,
       files: files,

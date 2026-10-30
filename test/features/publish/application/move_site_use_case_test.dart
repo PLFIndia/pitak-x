@@ -41,10 +41,20 @@ void main() {
             readLibraryName: () async =>
                 left(const StorageFailure('settings unavailable')),
           );
+          // Both the write-free review and the confirmed move stop here.
           final prepared = await h.useCase.prepare();
+          expect(prepared, isA<MoveSiteFailure>());
+          expect(
+            (prepared as MoveSiteFailure).reason,
+            MoveSiteMessages.settingsUnavailable,
+          );
 
           final result = await h.useCase.confirm(
-            (prepared as MoveSiteConfirmationRequired).confirmation,
+            moveConfirmation(
+              oldTarget: direction.oldTarget,
+              newTarget: direction.newTarget,
+              anchor: h.source.anchor,
+            ),
           );
 
           expect(result, isA<MoveSiteFailure>());
@@ -54,6 +64,115 @@ void main() {
           );
           expect(h.destination.publishCalls, 0);
           expect(h.store.saves, 0);
+        },
+      );
+
+      test('a pasted tab in the library name is normalized before any write '
+          '(M9)', () async {
+        final h = MoveHarness(
+          oldTarget: direction.oldTarget,
+          newTarget: direction.newTarget,
+          readLibraryName: () async => right<Failure, String>('\tMy\tLibrary'),
+        );
+
+        final result = await h.useCase.confirm(
+          moveConfirmation(
+            oldTarget: direction.oldTarget,
+            newTarget: direction.newTarget,
+            anchor: h.source.anchor,
+          ),
+        );
+
+        expect(result, isA<MoveSiteSuccess>());
+        final recorded = h.store.savedStates.first.pendingMove!;
+        expect(recorded.retirement.libraryName, 'My Library');
+        expect(h.destination.publishCalls, 1);
+      });
+
+      test('an unprepared moved page stops before the destination publish '
+          '(M9)', () async {
+        final h = MoveHarness(
+          oldTarget: direction.oldTarget,
+          newTarget: direction.newTarget,
+          buildMovedHtml: ({required libraryName, required newTarget}) async =>
+              throw const FormatException('missing template'),
+        );
+
+        final result = await h.useCase.confirm(
+          moveConfirmation(
+            oldTarget: direction.oldTarget,
+            newTarget: direction.newTarget,
+            anchor: h.source.anchor,
+          ),
+        );
+
+        expect(result, isA<MoveSiteFailure>());
+        expect(
+          (result as MoveSiteFailure).reason,
+          MoveSiteMessages.movedPageNotPrepared,
+        );
+        expect(h.destination.publishCalls, 0);
+        expect(h.source.retireCalls, 0);
+        expect(h.store.saves, 0);
+      });
+
+      test(
+        'the write-free review also reports an unprepared moved page (M9)',
+        () async {
+          final h = MoveHarness(
+            oldTarget: direction.oldTarget,
+            newTarget: direction.newTarget,
+            buildMovedHtml:
+                ({required libraryName, required newTarget}) async =>
+                    throw const FormatException('missing template'),
+          );
+
+          final result = await h.useCase.prepare();
+
+          expect(result, isA<MoveSiteFailure>());
+          expect(
+            (result as MoveSiteFailure).reason,
+            MoveSiteMessages.movedPageNotPrepared,
+          );
+          expect(h.destination.publishCalls, 0);
+          expect(h.store.saves, 0);
+        },
+      );
+
+      test(
+        'progress names the step that is running, before it runs (N9)',
+        () async {
+          final h = harness();
+          final phases = <MoveSitePhase>[];
+          h.destination.onPublish = (confirmation, beforeWrite) {
+            h.destination.onVerify?.call();
+            return const MoveDestinationPublished();
+          };
+
+          final result = await h.useCase.confirm(
+            moveConfirmation(
+              oldTarget: direction.oldTarget,
+              newTarget: direction.newTarget,
+              anchor: h.source.anchor,
+            ),
+            onProgress: phases.add,
+          );
+
+          expect(result, isA<MoveSiteSuccess>());
+          final publishing = phases.indexOf(
+            MoveSitePhase.publishingDestination,
+          );
+          final verifying = phases.indexOf(MoveSitePhase.verifyingDestination);
+          final recording = phases.indexOf(MoveSitePhase.recordingMove);
+          final updating = phases.indexOf(MoveSitePhase.updatingOldAddress);
+          final verifyingOld = phases.indexOf(
+            MoveSitePhase.verifyingOldAddress,
+          );
+          expect(publishing, greaterThanOrEqualTo(0));
+          expect(verifying, greaterThan(publishing));
+          expect(recording, greaterThan(verifying));
+          expect(updating, greaterThan(recording));
+          expect(verifyingOld, greaterThan(updating));
         },
       );
 

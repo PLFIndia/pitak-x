@@ -19,10 +19,42 @@ typedef MovedHtmlBuilderFn =
 typedef MovedHtmlValidationFn = Future<bool> Function(PendingMove pending);
 
 /// Normalizes the immutable library name stored with a moved-page descriptor.
+///
+/// This is a TOTAL rule (fix-plan M9/D6): the pending-move record rejects C0
+/// controls, DEL, surrounding whitespace and more than 256 UTF-16 units, and a
+/// rejected name has no Retry — every move attempt would republish and then
+/// fail at the same point. Replacing a rejected unit is therefore safer than
+/// refusing the name, and doing it here (before any write) is what makes the
+/// failure impossible rather than merely visible.
+///
+/// Every name the record accepts today is returned unchanged, so existing
+/// pending records still validate and already-rendered moved pages still match.
 String normalizeMovedLibraryName(String value) {
-  final trimmed = value.trim();
-  return trimmed.isEmpty ? 'My Library' : trimmed;
+  const maxUnits = 256;
+  final buffer = StringBuffer();
+  for (final unit in value.codeUnits) {
+    // C0 controls and DEL become one space. A pasted tab in a library name is
+    // a formatting accident, not content the moved page needs.
+    buffer.writeCharCode(unit < 0x20 || unit == 0x7f ? 0x20 : unit);
+  }
+  final cleaned = buffer.toString().trim();
+  if (cleaned.isEmpty) return 'My Library';
+  if (cleaned.length <= maxUnits) return cleaned;
+
+  var end = maxUnits;
+  // Never cut a surrogate pair in half: 255 units keeps the last code point
+  // whole, because a lone surrogate is not text the renderer can escape.
+  if (_isHighSurrogate(cleaned.codeUnitAt(end - 1)) &&
+      _isLowSurrogate(cleaned.codeUnitAt(end))) {
+    end = maxUnits - 1;
+  }
+  final capped = cleaned.substring(0, end).trim();
+  return capped.isEmpty ? 'My Library' : capped;
 }
+
+bool _isHighSurrogate(int unit) => unit >= 0xd800 && unit <= 0xdbff;
+
+bool _isLowSurrogate(int unit) => unit >= 0xdc00 && unit <= 0xdfff;
 
 /// The one retirement plan derived from a pending move's immutable descriptor.
 final class MovePlan {

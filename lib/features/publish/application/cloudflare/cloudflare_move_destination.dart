@@ -124,6 +124,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
   Future<MoveDestinationResult> publish({
     required MoveSiteConfirmation confirmation,
     required Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
   }) async {
     final target = confirmation.newTarget;
     if (target is! CloudflarePublishTarget) {
@@ -132,7 +133,13 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
     final store = _artifactStores();
     MoveDestinationResult result;
     try {
-      result = await _publish(confirmation, target, store, beforeWrite);
+      result = await _publish(
+        confirmation,
+        target,
+        store,
+        beforeWrite,
+        onVerify,
+      );
     } on CloudflareApiException catch (error) {
       result = MoveDestinationFailed(
         CloudflareErrorMessages.forFailure(
@@ -154,6 +161,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
     CloudflarePublishTarget target,
     CloudflareArtifactStore store,
     Future<bool> Function() beforeWrite,
+    MoveVerificationProgress? onVerify,
   ) async {
     final prepared = await _preparation(store)(
       reads: _reads,
@@ -188,7 +196,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
 
     if (initial.freshness == PublishFreshness.known &&
         _matchesSnapshot(current.local, complete.snapshot)) {
-      return _verifyExisting(current, target);
+      return _verifyExisting(current, target, onVerify: onVerify);
     }
     final artifacts =
         await CloudflarePublishArtifactAssembler(
@@ -298,14 +306,20 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         expected: publication.marker,
       ),
     );
-    return _saveDeployedAndVerify(current, target, publication);
+    return _saveDeployedAndVerify(
+      current,
+      target,
+      publication,
+      onVerify: onVerify,
+    );
   }
 
   Future<MoveDestinationResult> _saveDeployedAndVerify(
     CloudflareMoveConnection current,
     CloudflarePublishTarget target,
-    CloudflarePublicationArtifacts publication,
-  ) async {
+    CloudflarePublicationArtifacts publication, {
+    MoveVerificationProgress? onVerify,
+  }) async {
     _manifest.save(publication.manifest);
     final token = current.connection.useToken((value) => value);
     final private = await CloudflareVersionUrlGate(deployApi: _deployApi)
@@ -319,6 +333,7 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
         CloudflareErrorMessages.versionUrlPrivacy,
       );
     }
+    onVerify?.call();
     final verified = await _verifier.verify(
       target: target,
       manifest: publication.manifest,
@@ -340,8 +355,10 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
 
   Future<MoveDestinationResult> _verifyExisting(
     CloudflareMoveConnection current,
-    CloudflarePublishTarget target,
-  ) async {
+    CloudflarePublishTarget target, {
+    MoveVerificationProgress? onVerify,
+  }) async {
+    onVerify?.call();
     final verified = await _verifier.verify(
       target: target,
       manifest: current.local,

@@ -247,6 +247,12 @@ abstract final class MoveSiteMessages {
   static const String settingsUnavailable =
       'Library settings could not be read. Nothing was moved.';
 
+  /// The moved page could not be built for this library name, so the move
+  /// stopped before any write (fix-plan M9).
+  static const String movedPageNotPrepared =
+      'The moved page for your old address could not be prepared. Nothing was '
+      'changed.';
+
   /// The source is absent or cannot be read reliably enough to retire.
   static const String sourceUnavailable =
       'The current site is unavailable or its publishing state is unreadable.';
