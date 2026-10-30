@@ -126,9 +126,10 @@ class AppDrawer extends ConsumerWidget {
                         showShareLibrarySheet(hostContext, url: siteUrl);
                       },
                     ),
-                  // Short in-app guides, one per job (publish, map, backup,
-                  // vault, hubs). Last in the list: it is help, not a place
-                  // the user goes every day.
+                  // Short in-app guides, one per job (catalogue, wishlist,
+                  // publishing, Cloudflare, events, map, backup, vault,
+                  // hubs). Last in the list: it is help, not a place the user
+                  // goes every day.
                   ListTile(
                     leading: const Icon(Icons.help_outline),
                     title: const Text('How Pitak works'),

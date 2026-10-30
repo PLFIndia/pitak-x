@@ -10,6 +10,7 @@ import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/presentation/pages/settings_page.dart';
 import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
+import 'package:pitaka/features/wishlist/presentation/pages/wishlist_page.dart';
 
 void main() {
   test('magazines → PeriodicalsPage', () {
@@ -29,6 +30,19 @@ void main() {
     final page = pageForGuideDestination(GuideDestination.publishBasicInfo);
     expect(page, isA<PublishPage>());
     expect((page as PublishPage).initialTab, PublishTab.basicInfo);
+  });
+
+  test('publishEvents → PublishPage on the Events tab', () {
+    final page = pageForGuideDestination(GuideDestination.publishEvents);
+    expect(page, isA<PublishPage>());
+    expect((page as PublishPage).initialTab, PublishTab.events);
+  });
+
+  test('wishlist → WishlistPage', () {
+    expect(
+      pageForGuideDestination(GuideDestination.wishlist),
+      isA<WishlistPage>(),
+    );
   });
 
   test('settingsData → SettingsPage on the Data tab', () {

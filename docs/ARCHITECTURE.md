@@ -223,13 +223,17 @@ Library). Drawer: Borrowers vault · Publish · Wishlist · Magazines · Library
 network · Library Bookmarks · Share · How Pitak works · Settings/Share Apps.
 The Library FAB opens an add sheet with one entry per item kind (ADR 0013 U1).
 
-**Guides (`features/guides/`).** The copy of the six guides lives in
-`domain/guide_catalog.dart` as a typed, immutable model (`Guide` → sealed
-`GuideSection`), so the domain-purity gate keeps it free of Flutter and
+**Guides (`features/guides/`).** The copy of the nine guides lives in
+`domain/catalog/*.dart` (grouped by topic; `domain/guide_catalog.dart` holds
+the index order and `guideById`) as a typed, immutable model (`Guide` →
+sealed `GuideSection`), so the domain-purity gate keeps it free of Flutter and
 `guide_catalog_test.dart` can pin its invariants (order, 2–7 steps, ≤ 3
-"Good to know", lossless `**bold**`/`` `code` `` markup, one "spokes", 1:1
-destinations, exact item counts) without pumping a widget. Icons and target pages are mapped in
-presentation from `GuideId` / `GuideDestination`; `GuidePage` takes its
+"Good to know", lossless `**bold**`/`` `code` `` markup, one "spokes",
+destinations 1:1 except the two hosting guides sharing Publish → Connection,
+exact item counts, and the Cloudflare guide's token name and Account ID
+length against the setup code) without pumping a widget. Icons and target
+pages are mapped in presentation from `GuideId` / `GuideDestination`;
+`GuidePage` takes its
 opener as a parameter so tests record the destination instead of pushing
 provider-backed pages. Copy record: `docs/mockups/how-pitak-works.md`.
 

@@ -8,8 +8,8 @@
 /// that IS Flutter (icons, pages) is mapped in presentation from [GuideId]
 /// and [GuideDestination]; it is never stored here.
 ///
-/// Every type in this file is immutable. The six concrete guides are built
-/// once, in `guide_catalog.dart`.
+/// Every type in this file is immutable. The concrete guides are built once,
+/// in `guide_catalog.dart`.
 library;
 
 /// Which guide. Presentation maps this to an icon; tests address guides by it.
@@ -18,8 +18,18 @@ enum GuideId {
   /// ADR 0013).
   catalogue,
 
-  /// "Put your catalogue online" (GitHub Pages publishing).
+  /// "Wishlist: books to buy" (the wishlist and its move into the library).
+  wishlist,
+
+  /// "Put your catalogue online" (both hosts; how publishing works).
   publish,
+
+  /// "Set up Cloudflare Workers" (what the Cloudflare setup asks for and
+  /// where the reader finds each value).
+  cloudflare,
+
+  /// "Events and posters" (the Publish → Events tab).
+  events,
 
   /// "Put your library on the map" (location sharing on the network map).
   map,
@@ -40,11 +50,18 @@ enum GuideDestination {
   /// The Magazines screen (magazine titles and their issues, ADR 0013 U2).
   magazines,
 
-  /// Publish hub, Connection tab (its default tab).
+  /// The Wishlist screen.
+  wishlist,
+
+  /// Publish hub, Connection tab (its default tab). Shared by the publish
+  /// and Cloudflare guides: both end on the screen that holds the host cards.
   publishConnection,
 
   /// Publish hub opened on the Basic info tab.
   publishBasicInfo,
+
+  /// Publish hub opened on the Events tab.
+  publishEvents,
 
   /// Settings opened on the Data tab.
   settingsData,

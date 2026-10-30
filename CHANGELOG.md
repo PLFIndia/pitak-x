@@ -39,8 +39,23 @@ heading as part of the `chore(release):` commit.
   address plus a Retry/Skip banner until completion, warns before Skip, and
   states that peers do not follow a move automatically and the card must be
   reprinted.
+- **How Pitak works: three new guides (nine in total).** *Set up Cloudflare
+  Workers* lists every value the Cloudflare setup asks for (API token,
+  account / Account ID, `workers.dev` subdomain, Worker name), says where to
+  find each one in Cloudflare's dashboard, and walks through token creation
+  and the in-app prompts; *Events and posters* covers the Publish → Events
+  tab; *Wishlist: books to buy* covers adding wanted books and moving one into
+  the library. New deep links open the Events tab and the Wishlist. The
+  publish guide's Cloudflare part is now a short pointer, and the map guide no
+  longer calls every site address "the GitHub Pages link".
+  `guide_catalog_test.dart` pins the guide's token name and Account ID length
+  to the setup code, so the copy cannot silently drift from it.
 
 ### Changed
+- **Guide copy split by topic:** `guide_catalog.dart` now holds only the index
+  order and lookup; the guides live in `features/guides/domain/catalog/`
+  (library, publishing, data-and-network) to stay under the 500-line
+  file-size ratchet. No behaviour change.
 - **One publish pipeline for both hosts:** catalogue and events are built by
   ONE set of section builders, merged by ONE section rule, and every publish
   is bound to one sealed target, so `library.json` always carries the address
