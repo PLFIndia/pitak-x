@@ -845,7 +845,7 @@ record them.
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
 | 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs the account's token |
-| 17 | Cancel a pending move; then, with a revoked token, finish without retiring (M4) | **Half observed** (2026-10-30): a move Cloudflare → GitHub was killed the moment the source marker turned `retired` (watcher, 21:23:04), the app reopened with the pending banner, and **Cancel move** was offered, explained (both sites, the share link stays) and then **refused** — "Your old address already shows the moved page. Choose Retry move to finish moving." That is `abandon()`'s documented guard, not a crash; Retry then finished the move to GitHub with no new work. The pre-retirement Cancel and the revoked-token Finish still need their own run |
+| 17 | Cancel a pending move; then, with a revoked token, finish without retiring (M4) | **PASS for the pre-retirement Cancel; half of the revoked-token case is still open.** Run A (2026-10-30, build `b2fdf72`): a Cloudflare → GitHub move was killed the moment the source marker turned `retired`; the banner offered Cancel, explained it, and then refused — "Your old address already shows the moved page. Choose Retry move to finish moving." That is `abandon()`'s documented guard, and Retry finished the move. Run B (build `4b77ee4d`): a GitHub → Cloudflare move was killed 12 s after the destination marker went live (21:34:20), before GitHub's Pages retirement. Reopening showed the pending banner, and **Cancel move** was allowed: the active target stayed GitHub, its share link did not change, GitHub kept serving (`books.json` 200), and the Cloudflare copy stayed online with marker `c8897081…` — exactly what the dialog promised. The dialog also named the **destination** host ("delete it in your Cloudflare account"), confirming the copy fix on the device. Still open: Finish without retiring with a revoked token |
 | 18 | First move into a Worker that holds a setup marker (L16) | *pending* — the move ran into a Worker holding a **retired** marker, which needs no replacement consent |
 | 19 | Publish after Cloudflare forgets a carried file (N1) | *not run* — time-dependent (Cloudflare only drops recently uploaded files); cannot be forced on demand |
 
@@ -888,10 +888,13 @@ publish left `events.json` byte-identical (Part M row 123).
   suppressing the replacement review when the destination reports
   `emptyWorkerErrorCode` (a Worker with no versions), or folding the two into
   one dialog.
-- **Cancel is offered after retirement, then refused (UX).** The banner keeps
-  Cancel visible whenever a pending move exists, but `abandon()` refuses once
-  the old address already serves the moved page and reports the refusal as a
-  snackbar. A user reads a full dialog that promises to keep publishing to the
+- **Cancel is offered after retirement, then refused (UX).** Observed twice on
+  2026-10-30: the banner offered Cancel after the source had already retired
+  (run A of row 17) and refused it; the pre-retirement run B cancelled
+  cleanly. The banner keeps Cancel visible whenever a pending move exists, but
+  `abandon()` refuses once the old address already serves the moved page and
+  reports the refusal as a snackbar. A user reads a full dialog that promises
+  to keep publishing to the
   current site, confirms it, and only then learns the site is already retired.
   The honest fix is to hide or disable Cancel once retirement is observed, or
   to show that sentence in the dialog first. Recorded, not changed.
