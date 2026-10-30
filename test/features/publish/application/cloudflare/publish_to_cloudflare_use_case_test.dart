@@ -1348,6 +1348,29 @@ void main() {
     },
   );
 
+  test(
+    'a replacement from an events-only publish does a complete read (L6)',
+    () async {
+      final h = S8PublishHarness(dir, workerExists: true);
+      h.reader.body(
+        CloudflareLimits.markerPath,
+        s8Marker('a' * 32, state: PublishMarkerState.verification),
+      );
+      final prepared = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.events,
+      );
+
+      expect(prepared, isA<PublishReplacementRequired>());
+      expect(
+        h.reads.catalogueCalls,
+        greaterThanOrEqualTo(1),
+        reason: 'a complete snapshot needs both sections',
+      );
+      expect(h.reads.eventsCalls, greaterThanOrEqualTo(1));
+    },
+  );
+
   test('an events-only publish never reads the catalogue (L6)', () async {
     final oldId = 'a' * 32;
     final h = S8PublishHarness(dir, workerExists: true);

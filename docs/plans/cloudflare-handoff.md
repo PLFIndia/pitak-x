@@ -1557,7 +1557,7 @@ D7 = A, D9 = Yes, D11 = Yes.
 Gates at the Phase 5 closeout (2026-10-30): `build_runner` leaves no diff,
 `dart format --set-exit-if-changed` is clean, `flutter analyze lib test
 integration_test` reports zero issues, and the full non-golden suite passes
-**4,510** tests. No golden was regenerated: Phase 5 changes no golden-pinned
+**4,511** tests. No golden was regenerated: Phase 5 changes no golden-pinned
 pixel, and a golden change must still come from the Linux workflow. The
 `publish_connection` golden and the J.7 step-9 evidence remain S11/Phase 6.
 
