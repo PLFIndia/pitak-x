@@ -898,6 +898,12 @@ publish left `events.json` byte-identical (Part M row 123).
   current site, confirms it, and only then learns the site is already retired.
   The honest fix is to hide or disable Cancel once retirement is observed, or
   to show that sentence in the dialog first. Recorded, not changed.
+- **Two contradictory lines in the Cloudflare tile (check before release).**
+  After a successful publish the expanded tile showed both "Workers write
+  access and read-back verified." and "Cloudflare is ready to publish. The
+  first publish will test Workers write access." (observed 21:13 on
+  2026-10-30). One of the two is stale in that state; the write-access line
+  should be the only one left once a publish has proved it.
 - **Wrong host in the same dialog (fixed in this session).** Its cleanup
   sentence is about the NEW site but named the OLD host, so a Cloudflare →
   GitHub move said "delete it in your Cloudflare account" about a GitHub
