@@ -12,6 +12,7 @@ final class CloudflareAccountDiscovery {
   CloudflareAccountDiscovery({
     required List<CloudflareAccount> accounts,
     required this.manualRequired,
+    this.tokenExpiresOn,
   }) : accounts = List.unmodifiable(accounts);
 
   /// Safe account id/name values; never a token.
@@ -19,6 +20,11 @@ final class CloudflareAccountDiscovery {
 
   /// Refusal, truncation, or an empty list requires manual Account ID entry.
   final bool manualRequired;
+
+  /// The verified token's optional expiry, carried so the record can be saved
+  /// at account selection instead of at token entry (fix-plan M3). A date is
+  /// not a credential.
+  final DateTime? tokenExpiresOn;
 }
 
 /// What is needed before a Worker address can be selected.
@@ -90,6 +96,7 @@ final class CloudflareVerificationRequired extends CloudflareWorkerOutcome {
   const CloudflareVerificationRequired({
     required this.workerName,
     required this.workerExists,
+    this.isActiveSite = false,
   });
 
   /// The candidate Worker to verify.
@@ -97,4 +104,8 @@ final class CloudflareVerificationRequired extends CloudflareWorkerOutcome {
 
   /// Whether adoption consent must be included in verification consent.
   final bool workerExists;
+
+  /// True when this Worker is the journal's live site at another address, so
+  /// the dialog must say the whole site is replaced (fix-plan M3).
+  final bool isActiveSite;
 }

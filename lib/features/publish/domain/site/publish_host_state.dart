@@ -101,6 +101,22 @@ final class PublishHostState {
     );
   }
 
+  /// Cancels [expected] without touching either site (fix-plan M4).
+  ///
+  /// The share address does not change: `activeHost` and `verifiedTarget` are
+  /// kept exactly as they were, so the user keeps publishing to the old site.
+  /// Null unless [expected] is the exact pending operation; a repeat (nothing
+  /// pending) is a no-op success so a retried Cancel is safe.
+  PublishHostState? abandonMove(PendingMove expected) {
+    final pending = pendingMove;
+    if (pending == null) return this;
+    if (!pending.sameOperation(expected) || !isConsistent) return null;
+    return PublishHostState(
+      activeHost: activeHost,
+      verifiedTarget: verifiedTarget,
+    );
+  }
+
   /// True when [target] is already the exact verified target of this record.
   bool verifies(PublishTarget target) {
     final verified = verifiedTarget;

@@ -61,6 +61,13 @@ class MoveSiteController extends _$MoveSiteController {
   /// Explicitly skips only after the UI warning and host absence proof.
   Future<MoveSiteResult> skip() => _run((useCase, _) => useCase.skip());
 
+  /// Finishes without retiring an old site Pitak cannot sign in to.
+  Future<MoveSiteResult> finishWithoutRetiring() =>
+      _run((useCase, _) => useCase.finishWithoutRetiring());
+
+  /// Cancels the pending move; both sites are untouched.
+  Future<MoveSiteResult> abandon() => _run((useCase, _) => useCase.abandon());
+
   Future<MoveSiteResult> _run(
     Future<MoveSiteResult> Function(
       MoveSiteUseCase useCase,
@@ -87,13 +94,18 @@ class MoveSiteController extends _$MoveSiteController {
       // the persistent recovery banner must appear without a page rebuild.
       final journalChanged =
           result is MoveSiteSuccess ||
+          result is MoveSiteAbandoned ||
           (result is MoveSiteFailure && result.retirementPending);
       if (journalChanged) {
         ref
           ..invalidate(publishSiteStatusProvider)
           ..invalidate(publishedSiteUrlProvider)
-          ..invalidate(gitHubConnectionControllerProvider)
-          ..invalidate(cloudflareConnectionControllerProvider);
+          ..invalidate(gitHubConnectionControllerProvider);
+        // Refresh in place: a rebuild would cancel an in-progress setup
+        // (fix-plan M11).
+        await ref
+            .read(cloudflareConnectionControllerProvider.notifier)
+            .refreshStatus();
       }
       return result;
     } on Object catch (e) {

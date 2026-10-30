@@ -125,8 +125,33 @@ final class PublishHostStateRepository implements PublishHostStateRecorder {
     return _store.save(next);
   }
 
-  /// Deletes an UNREADABLE journal on explicit user request (N7/D10).
-  ///
+  /// Cancels a destination-verified pending move without touching either site
+  /// (fix-plan M4). The active/verified target is kept, so the share address
+  /// does not change. Repeating the exact cancel is a no-write success.
+  Future<Either<Failure, Unit>> abandonMove(PendingMove expected) async {
+    final loaded = _store.load();
+    if (loaded case Left(value: final failure)) return Left(failure);
+    final current = loaded.toNullable();
+    if (current == null) {
+      return left(
+        const ValidationFailure(
+          'The pending move is no longer available. Review the move again.',
+        ),
+      );
+    }
+    final next = current.abandonMove(expected);
+    if (next == null) {
+      return left(
+        const ValidationFailure(
+          'The pending move is no longer available. Review the move again.',
+        ),
+      );
+    }
+    if (identical(next, current)) return right(unit);
+    return _store.save(next);
+  }
+
+  /// Deletes an UNREADABLE journal on explicit user request (N7/D10).  ///
   /// Publishing, moves and setup fail closed forever while the record cannot
   /// be read (for example after installing an older version). This clears it
   /// once, so the next publish can record the site again. A readable record

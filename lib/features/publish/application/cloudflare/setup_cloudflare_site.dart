@@ -8,6 +8,8 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_operation_attempt.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_constraint.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_journal.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_account.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_subdomain.dart';
@@ -69,9 +71,18 @@ final class SetupCloudflareSite {
   /// Non-migrating current host read; setup never infers a live share address.
   PublishHost? currentActiveHost() => _hostState.currentState()?.activeHost;
 
-  /// Starts a NEW connection. A user token is verified and saved as a fresh
-  /// record before account discovery; an account token remains unstored until
-  /// [selectAccount] verifies it at the chosen account.
+  /// The exact address the journal already proved, for prompt prefill.
+  ///
+  /// A pending move's Cloudflare endpoint wins over the verified target,
+  /// because that is the address the user must reconnect to (fix-plan M5).
+  CloudflareSetupHint? setupHint() => _journal.hint();
+
+  /// Starts a NEW connection. A user token is verified but NOT saved yet; the
+  /// whole record is written at [selectAccount], exactly like an account token.
+  ///
+  /// Why (fix-plan M3): saving at token entry replaced the working connection
+  /// immediately, so abandoning setup halfway left the user with a fresh,
+  /// incomplete record and no way back to the old one.
   Future<Either<Failure, CloudflareAccountDiscovery>> begin(
     CloudflareApiToken token,
   ) => _attempt(() async {
@@ -85,12 +96,11 @@ final class SetupCloudflareSite {
           const CloudflareFailure(CloudflareErrorMessages.inactiveToken),
         );
       }
-      final fresh = CloudflareConnection.verifiedToken(
+      return discoverCloudflareAccounts(
+        _accountApi,
         token,
         tokenExpiresOn: verification.expiresOn,
       );
-      final saved = await _credentials.save(fresh);
-      if (saved case Left(value: final failure)) return left(failure);
     }
     return discoverCloudflareAccounts(_accountApi, token);
   });
@@ -107,6 +117,7 @@ final class SetupCloudflareSite {
   Future<Either<Failure, CloudflareSubdomainOutcome>> selectAccountId(
     String raw, {
     CloudflareApiToken? pendingToken,
+    DateTime? tokenExpiresOn,
   }) async {
     final accountId = CloudflareAccountId.tryParse(raw);
     if (accountId == null) {
@@ -118,6 +129,7 @@ final class SetupCloudflareSite {
       accountId: accountId,
       accountName: null,
       pendingToken: pendingToken,
+      tokenExpiresOn: tokenExpiresOn,
     );
   }
 
@@ -127,28 +139,45 @@ final class SetupCloudflareSite {
     required CloudflareAccountId accountId,
     required String? accountName,
     CloudflareApiToken? pendingToken,
+    DateTime? tokenExpiresOn,
   }) async {
     if (!CloudflareConnection.isValidAccountName(accountName)) {
       return left<Failure, CloudflareSubdomainOutcome>(
         CloudflareFailure(CloudflareApiExceptionKind.malformedResponse.message),
       );
     }
+    final constrained = _checkConstraint(
+      (constraint) => constraint.allowsAccount(accountId),
+    );
+    if (constrained case Left(value: final failure)) {
+      return left<Failure, CloudflareSubdomainOutcome>(failure);
+    }
     final token = pendingToken;
-    if (token != null && token.kind == CloudflareApiTokenKind.account) {
+    if (token != null) {
       return _attempt(() async {
-        final verification = await _accountApi.verifyAccountToken(
-          token: token,
-          accountId: accountId,
-        );
-        if (cloudflareTokenInactive(verification, _clock())) {
-          return left(
-            const CloudflareFailure(CloudflareErrorMessages.inactiveToken),
+        final CloudflareConnection selected;
+        if (token.kind == CloudflareApiTokenKind.account) {
+          final verification = await _accountApi.verifyAccountToken(
+            token: token,
+            accountId: accountId,
           );
+          if (cloudflareTokenInactive(verification, _clock())) {
+            return left(
+              const CloudflareFailure(CloudflareErrorMessages.inactiveToken),
+            );
+          }
+          selected = CloudflareConnection.verifiedToken(
+            token,
+            tokenExpiresOn: verification.expiresOn,
+          ).selectAccount(id: accountId, name: accountName);
+        } else {
+          // A user token was verified in `begin`; its expiry came with the
+          // listing, so no second verify call is needed.
+          selected = CloudflareConnection.verifiedToken(
+            token,
+            tokenExpiresOn: tokenExpiresOn,
+          ).selectAccount(id: accountId, name: accountName);
         }
-        final selected = CloudflareConnection.verifiedToken(
-          token,
-          tokenExpiresOn: verification.expiresOn,
-        ).selectAccount(id: accountId, name: accountName);
         return _completeAccountSelection(selected);
       });
     }
@@ -166,12 +195,24 @@ final class SetupCloudflareSite {
   /// Explicitly creates a missing account subdomain after availability proof.
   Future<Either<Failure, CloudflareSubdomainOutcome>> createSubdomain(
     String raw,
-  ) => _withRecord((current) => _subdomains.create(current, raw));
+  ) => _withRecord((current) {
+    final constrained = _checkSubdomain(raw);
+    if (constrained case Left(value: final failure)) {
+      return Future.value(left<Failure, CloudflareSubdomainOutcome>(failure));
+    }
+    return _subdomains.create(current, raw);
+  });
 
   /// Stores a manual candidate only. It cannot become a target before F.2.
   Future<Either<Failure, CloudflareSubdomainOutcome>> useManualSubdomain(
     String raw,
-  ) => _withRecord((current) => _subdomains.useManual(current, raw));
+  ) => _withRecord((current) {
+    final constrained = _checkSubdomain(raw);
+    if (constrained case Left(value: final failure)) {
+      return Future.value(left<Failure, CloudflareSubdomainOutcome>(failure));
+    }
+    return _subdomains.useManual(current, raw);
+  });
 
   /// Checks a Worker and either requests consent/verification or finalizes.
   Future<Either<Failure, CloudflareWorkerOutcome>> selectWorker(
@@ -191,6 +232,12 @@ final class SetupCloudflareSite {
       return left(
         const ValidationFailure(CloudflareErrorMessages.invalidWorker),
       );
+    }
+    final constrained = _checkConstraint(
+      (constraint) => constraint.allowsWorker(worker),
+    );
+    if (constrained case Left(value: final failure)) {
+      return left<Failure, CloudflareWorkerOutcome>(failure);
     }
     final exists = await current.useToken(
       (token) => _deployApi.workerExists(
@@ -212,11 +259,20 @@ final class SetupCloudflareSite {
       return _finalize(selected);
     }
 
+    // M3: the prospective target is already the address this phone proved
+    // live (the journal's verified target, or a pending move's destination).
+    // That read-back IS the address proof, so finalize WITHOUT the destructive
+    // marker-only deploy. Write access is still unproven.
+    if (exists && _isProvenAddress(selected)) {
+      return _finalize(selected.markAddressProven());
+    }
+
     if (!verificationConfirmed) {
       return right(
         CloudflareVerificationRequired(
           workerName: worker,
           workerExists: exists,
+          isActiveSite: _isActiveSite(selected),
         ),
       );
     }
@@ -290,6 +346,22 @@ final class SetupCloudflareSite {
 
   Either<Failure, Unit> _allowTarget(CloudflarePublishTarget target) =>
       PendingMoveTargetGuard(_hostState).allows(target);
+
+  /// The journal-derived rules (constraint, proven address, prefill).
+  CloudflareSetupJournal get _journal => CloudflareSetupJournal(_hostState);
+
+  Either<Failure, Unit> _checkConstraint(
+    bool Function(CloudflareSetupConstraint constraint) rule,
+  ) => _journal.check(rule);
+
+  Either<Failure, Unit> _checkSubdomain(String raw) =>
+      _journal.checkSubdomain(raw);
+
+  bool _isProvenAddress(CloudflareConnection connection) =>
+      _journal.isProvenAddress(connection);
+
+  bool _isActiveSite(CloudflareConnection connection) =>
+      _journal.isActiveSite(connection);
 
   Future<Either<Failure, CloudflareSubdomainOutcome>> _completeAccountSelection(
     CloudflareConnection selected,

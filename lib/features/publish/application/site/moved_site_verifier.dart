@@ -70,6 +70,51 @@ final class MovedSiteVerifier {
     return expectations.isEmpty;
   }
 
+  /// True when the old root still serves the exact recorded moved page.
+  ///
+  /// One bounded read, no polling: this is evidence for "Cancel is no longer
+  /// safe", not a verification loop.
+  Future<bool> rootServesMovedPage(
+    PendingMove pending, {
+    required int revision,
+  }) async {
+    final expected = pending.retirement.indexHtml;
+    final outcome = await _read(
+      siteUrl: pending.oldTarget.siteUrl,
+      path: '',
+      maxBytes: expected.isEmpty ? 1 : expected.length,
+      cacheBuster: 'moved-$revision',
+    );
+    if (outcome is! PublishedSiteReadBody) return false;
+    final actual = outcome.bytes;
+    if (actual.length != expected.length) return false;
+    for (var i = 0; i < actual.length; i++) {
+      if (actual[i] != expected[i]) return false;
+    }
+    return true;
+  }
+
+  /// Whether the old address still serves content, or null when unproven.
+  ///
+  /// A body means the site is still there; a real 404 means it is gone; a
+  /// redirect, a timeout or a refused read proves neither (fix-plan L2).
+  Future<bool?> rootServesContent(
+    PendingMove pending, {
+    required int revision,
+  }) async {
+    final outcome = await _read(
+      siteUrl: pending.oldTarget.siteUrl,
+      path: '',
+      maxBytes: 1,
+      cacheBuster: 'content-$revision',
+    );
+    return switch (outcome) {
+      PublishedSiteReadBody() => true,
+      PublishedSiteReadAbsent() => false,
+      PublishedSiteReadUnreadable() => null,
+    };
+  }
+
   Future<PublishedSiteReadOutcome> _read({
     required String siteUrl,
     required String path,

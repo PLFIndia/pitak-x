@@ -9,7 +9,11 @@ import 'package:pitaka/features/publish/presentation/widgets/provider_tile.dart'
 import '../../support/a11y.dart';
 import 'support/cloudflare_fakes.dart';
 
-Widget _app(CloudflareConnectionUi ui, {VoidCallback? onForget}) => MaterialApp(
+Widget _app(
+  CloudflareConnectionUi ui, {
+  VoidCallback? onForget,
+  VoidCallback? onCancelSetup,
+}) => MaterialApp(
   home: Scaffold(
     body: CloudflareTile(
       ui: ui,
@@ -17,6 +21,7 @@ Widget _app(CloudflareConnectionUi ui, {VoidCallback? onForget}) => MaterialApp(
       onContinue: () {},
       onDisconnect: () {},
       onForgetConnection: onForget ?? () {},
+      onCancelSetup: onCancelSetup ?? () {},
     ),
   ),
 );
@@ -198,5 +203,32 @@ void main() {
     await tester.pumpWidget(_app(const CloudflareConnectionUi()));
     await _expand(tester);
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('an awaiting prompt offers Cancel setup (M6)', (tester) async {
+    var cancelled = 0;
+    await tester.pumpWidget(
+      _app(
+        const CloudflareConnectionUi(
+          phase: CloudflareConnectionPhase.awaitingInput,
+          prompt: CloudflareSetupPrompt.token,
+          promptSerial: 3,
+        ),
+        onCancelSetup: () => cancelled++,
+      ),
+    );
+    await _expand(tester);
+
+    expect(find.text('Cancel setup'), findsOneWidget);
+    await tester.tap(find.text('Cancel setup'));
+    await tester.pumpAndSettle();
+    expect(cancelled, 1);
+  });
+
+  testWidgets('an idle tile has no Cancel setup action (M6)', (tester) async {
+    await tester.pumpWidget(_app(const CloudflareConnectionUi()));
+    await _expand(tester);
+
+    expect(find.text('Cancel setup'), findsNothing);
   });
 }

@@ -10,7 +10,9 @@ import 'dart:async';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_status_writer.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_ui.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_constraint.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_prompts.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
@@ -30,6 +32,15 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   bool _disposed = false;
   bool _operationActive = false;
 
+  /// The generation the current build owns (fix-plan M11).
+  int _generation = 0;
+
+  /// The generation of the run that currently owns the controller.
+  ///
+  /// A rebuild leaves this at the OLD value on purpose, so the old run can
+  /// neither emit state nor unlock the new one.
+  int _runGeneration = 0;
+
   /// One pending prompt and its serial; see [CloudflareSetupPrompts].
   late final CloudflareSetupPrompts _prompts = CloudflareSetupPrompts(
     emit: _emit,
@@ -44,6 +55,11 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     // and every command (e.g. Disconnect) silently did nothing until the page
     // was reopened. Same pattern as `PublishedCatalogueController.build`.
     _disposed = false;
+    // A new build starts a new prompt generation and is unlocked: the previous
+    // run ends through its cancelled waits, never by leaving the lock set
+    // (fix-plan M11).
+    _generation = _prompts.beginGeneration();
+    _operationActive = false;
     ref.onDispose(() {
       _disposed = true;
       _prompts.cancel();
@@ -75,6 +91,27 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
 
   /// Forgets only the secure connection, never the remote Worker/public state.
   Future<void> disconnect() => forgetConnection();
+
+  /// Cancels the prompt the user is looking at (fix-plan M6).
+  ///
+  /// Every flow already treats a null answer as "cancel", so this ends the run
+  /// through its normal path and releases `keepAlive`.
+  void cancelSetup() => _prompts.cancel();
+
+  /// Reloads the safe status projection WITHOUT a rebuild (fix-plan M11).
+  ///
+  /// Publishing, events and moves used to invalidate this provider, which
+  /// cancelled a setup the user was in the middle of. This keeps the current
+  /// phase and prompt and only refreshes the status.
+  Future<void> refreshStatus() async {
+    if (_disposed) return;
+    try {
+      await _writer.refresh();
+    } on Object {
+      // A display refresh must never fail the publish or move that asked for
+      // it: the next build reads the same record anyway.
+    }
+  }
 
   /// Forgets a connection record the app cannot READ.
   ///
@@ -193,7 +230,11 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
           continue;
         }
         selected = await _enqueueSetup(
-          (setup) => setup.selectAccountId(raw, pendingToken: pendingToken),
+          (setup) => setup.selectAccountId(
+            raw,
+            pendingToken: pendingToken,
+            tokenExpiresOn: discovery.tokenExpiresOn,
+          ),
         );
         break;
       }
@@ -208,6 +249,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
           accountId: account.id,
           accountName: account.name,
           pendingToken: pendingToken,
+          tokenExpiresOn: discovery.tokenExpiresOn,
         ),
       );
     }
@@ -230,6 +272,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   }
 
   Future<bool> _subdomainCommandFlow({required bool manual}) async {
+    final hint = await _setupHint();
     String? message;
     String? rejectedInput;
     while (true) {
@@ -237,7 +280,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
         manual
             ? CloudflareSetupPrompt.manualSubdomain
             : CloudflareSetupPrompt.createSubdomain,
-        initialValue: rejectedInput,
+        initialValue: rejectedInput ?? (manual ? hint?.subdomain.value : null),
         message: message,
       );
       if (raw == null) {
@@ -274,11 +317,15 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   }
 
   Future<bool> _workerFlow() async {
-    String? message;
+    final hint = await _setupHint();
+    var message = hint != null && hint.pendingMove
+        ? 'Reconnect to ${hint.siteUrl} to finish your move.'
+        : null;
     while (true) {
       final raw = await _awaitInput<String>(
         CloudflareSetupPrompt.worker,
-        initialValue: _current?.status.workerName?.value,
+        initialValue:
+            _current?.status.workerName?.value ?? hint?.workerName.value,
         message: message,
       );
       if (raw == null) {
@@ -322,11 +369,15 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
           }
           replacementConsent = true;
           verificationConfirmed = verificationRequested;
-        case CloudflareVerificationRequired(:final workerExists):
+        case CloudflareVerificationRequired(
+          :final workerExists,
+          :final isActiveSite,
+        ):
           final confirmed = await _awaitInput<bool>(
             CloudflareSetupPrompt.verification,
             initialValue: workerName,
             workerExists: workerExists,
+            isActiveSite: isActiveSite,
           );
           if (confirmed != true) {
             await _reload();
@@ -351,21 +402,7 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
     );
   }
 
-  Future<T?> _unwrap<T>(Either<Failure, T> result) async {
-    switch (result) {
-      case Right(value: final value):
-        // Successful commands may have persisted progress. Refresh the safe
-        // projection before the next prompt, without making token entry async.
-        await _reload();
-        return value;
-      case Left(value: final failure):
-        await _showFailure(failure);
-        return null;
-    }
-  }
-
-  Future<void> _showFailure(Failure failure) =>
-      _reload(message: CloudflareErrorMessages.forFailure(failure));
+  Future<T?> _unwrap<T>(Either<Failure, T> result) => _writer.unwrap(result);
 
   Future<Either<Failure, T>> _enqueueSetup<T>(
     Future<Either<Failure, T>> Function(SetupCloudflareSite) command,
@@ -376,49 +413,56 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
         .enqueue(() => command(setup));
   }
 
+  /// The journal's proved address, used to prefill prompts (fix-plan M3/M5).
+  Future<CloudflareSetupHint?> _setupHint() async {
+    final setup = await ref.read(setupCloudflareSiteProvider.future);
+    return setup.setupHint();
+  }
+
   Future<T?> _awaitInput<T>(
     CloudflareSetupPrompt prompt, {
     List<CloudflareAccount> accounts = const [],
     String? initialValue,
     bool workerExists = false,
     bool verificationRequested = false,
+    bool isActiveSite = false,
     String? message,
-  }) => _prompts.awaitInput<T>(
-    prompt,
-    accounts: accounts,
-    initialValue: initialValue,
-    workerExists: workerExists,
-    verificationRequested: verificationRequested,
-    message: message,
-  );
-
-  Future<void> _reload({String? message}) async {
-    final setup = await ref.read(setupCloudflareSiteProvider.future);
-    final loaded = await setup.loadStatus();
-    _emit((current) {
-      final status = switch (loaded) {
-        Right(value: final value) => value,
-        Left() => current.status,
-      };
-      final error = switch (loaded) {
-        Left(value: final failure) => CloudflareErrorMessages.forFailure(
-          failure,
-        ),
-        Right() => null,
-      };
-      return current.copyWith(
-        phase: CloudflareConnectionPhase.idle,
-        status: status,
-        activeHost: setup.currentActiveHost(),
-        prompt: null,
-        accounts: const [],
-        statusMessage: error ?? message,
-      );
-    });
+  }) {
+    if (_runGeneration != _generation) return Future<T?>.value();
+    return _prompts.awaitInput<T>(
+      prompt,
+      generation: _runGeneration,
+      accounts: accounts,
+      initialValue: initialValue,
+      workerExists: workerExists,
+      verificationRequested: verificationRequested,
+      isActiveSite: isActiveSite,
+      message: message,
+    );
   }
+
+  Future<void> _reload({String? message}) => _writer.reload(message: message);
+
+  /// The one status projection (fix-plan Phase 3 split).
+  CloudflareConnectionStatusWriter get _writer =>
+      CloudflareConnectionStatusWriter(
+        load: () async {
+          final setup = await ref.read(setupCloudflareSiteProvider.future);
+          final loaded = await setup.loadStatus();
+          return loaded.map(
+            (status) => CloudflareConnectionSnapshot(
+              status: status,
+              activeHost: setup.currentActiveHost(),
+            ),
+          );
+        },
+        emit: _emit,
+      );
 
   Future<void> _start(Future<void> Function() operation) async {
     if (_disposed || _operationActive || _current == null) return;
+    final generation = _generation;
+    _runGeneration = generation;
     _operationActive = true;
     final link = ref.keepAlive();
     try {
@@ -428,22 +472,28 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
       // but the message must be reported rather than escaping unhandled.
       await _reload(message: CloudflareErrorMessages.generic);
     } finally {
-      _operationActive = false;
-      _prompts.cancel();
-      _emit(
-        (current) => current.phase == CloudflareConnectionPhase.idle
-            ? current
-            : current.copyWith(
-                phase: CloudflareConnectionPhase.idle,
-                prompt: null,
-              ),
-      );
+      // A rebuild during this run already unlocked the controller and owns the
+      // state now, so this run must not touch either (fix-plan M11).
+      if (generation == _generation) {
+        _operationActive = false;
+        _prompts.cancel();
+        _emit(
+          (current) => current.phase == CloudflareConnectionPhase.idle
+              ? current
+              : current.copyWith(
+                  phase: CloudflareConnectionPhase.idle,
+                  prompt: null,
+                ),
+        );
+      }
       link.close();
     }
   }
 
   void _emit(CloudflareConnectionUi Function(CloudflareConnectionUi) update) {
     if (_disposed) return;
+    // A run from a previous generation must not move the new build's state.
+    if (_runGeneration != _generation) return;
     final current = _current;
     if (current != null) state = AsyncData(update(current));
   }

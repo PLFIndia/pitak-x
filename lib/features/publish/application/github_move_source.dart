@@ -166,33 +166,79 @@ final class GitHubMoveSource implements MoveSourceOperations {
   }
 
   @override
-  Future<Either<Failure, Unit>> authorizeSkip(PendingMove pending) async {
+  Future<SourceSkipCheck> skipCheck(PendingMove pending) async {
     final target = pending.oldTarget;
-    if (target is! GitHubPublishTarget) return _mismatch();
+    if (target is! GitHubPublishTarget) return const SourceCheckFailed();
+    final String? token;
     try {
       final configured = GitHubPublishTarget.create(
         await _credentials.targetRepo(),
       );
-      final token = await _credentials.token();
+      token = await _credentials.token();
       if (configured == null ||
           token == null ||
           !configured.isSameExactTarget(target)) {
-        return _mismatch();
+        // No exact credentials: Pitak cannot sign in to this repository, which
+        // is the "finish without retiring" case, not a network failure.
+        return SourceInaccessible(
+          oldSiteAnswers: await _oldSiteAnswers(pending),
+        );
       }
+    } on Exception {
+      return const SourceCheckFailed();
+    }
+
+    try {
       final repository = await _repoAdmin.repository(
         owner: target.owner,
         repo: target.repo,
         token: token,
       );
-      return repository == null
-          ? right(unit)
-          : const Left(ValidationFailure(MoveSiteMessages.skipNotAllowed));
-    } on GitHubApiException {
-      return const Left(NetworkFailure());
+      if (repository != null) return const SourcePresent();
+      // A repo 404 alone is not absence: GitHub also answers 404 for a private
+      // repository the token can no longer see. The old address must ALSO be a
+      // real public 404, read with redirects off (fix-plan L2/RH3).
+      final serves = await _verifier.rootServesContent(
+        pending,
+        revision: _clock(),
+      );
+      return switch (serves) {
+        true => const SourcePresent(),
+        false => const SourceAbsent(),
+        null => const SourceCheckFailed(),
+      };
+    } on GitHubApiException catch (error) {
+      if (error.isUnauthorized) {
+        return SourceInaccessible(
+          oldSiteAnswers: await _oldSiteAnswers(pending),
+        );
+      }
+      return const SourceCheckFailed();
     } on Exception {
-      return const Left(ValidationFailure(MoveSiteMessages.generic));
+      return const SourceCheckFailed();
     }
   }
+
+  @override
+  Future<bool> retirementObserved(PendingMove pending) async {
+    final target = pending.oldTarget;
+    if (target is! GitHubPublishTarget) return false;
+    final local = _manifest.load();
+    final branch = pending.retirement.sourceBranch?.value;
+    if (local.state == PublishState.retired &&
+        branch != null &&
+        local.describes(ownerRepo: target.ownerRepo, branch: branch)) {
+      return true;
+    }
+    return _verifier.rootServesMovedPage(pending, revision: _clock());
+  }
+
+  /// Whether the old public address still serves content.
+  ///
+  /// A body means visitors still see the old site; a real 404 or an unreadable
+  /// answer means they do not. Used only for the finish dialog's copy.
+  Future<bool> _oldSiteAnswers(PendingMove pending) async =>
+      await _verifier.rootServesContent(pending, revision: _clock()) ?? false;
 
   static Either<Failure, Never> _mismatch() =>
       const Left(ValidationFailure(MoveSiteMessages.targetMismatch));

@@ -92,7 +92,9 @@ void main() {
       h.notifier.answerToken(token, h.serial);
       await _flush();
       expect(h.last.prompt, CloudflareSetupPrompt.account);
-      expect(h.last.status.hasToken, isTrue);
+      // Nothing is saved at token entry (fix-plan M3): abandoning setup here
+      // must keep the old, working connection.
+      expect(h.last.status.hasToken, isFalse);
 
       h.notifier.answerAccount(
         CloudflareAccountChoice(account: h.graph.api.listing!.accounts.first),
@@ -100,6 +102,7 @@ void main() {
       );
       await _flush();
       expect(h.last.prompt, CloudflareSetupPrompt.worker);
+      expect(h.last.status.hasToken, isTrue);
 
       h.notifier.answerText('new-worker', h.serial);
       await pending;
@@ -471,6 +474,74 @@ void main() {
   // invalidates this provider. Riverpod 2 rebuilds the SAME notifier and runs
   // the previous build's onDispose first, which left `_disposed` true, so
   // Disconnect silently did nothing until the page was reopened.
+  // Fix-plan M11: an invalidate while a command waited in the queue left a
+  // completer nobody could complete, so `_operationActive` stayed true and
+  // every later command silently did nothing.
+  test(
+    'an invalidate while a command waits ends the old run and unlocks',
+    () async {
+      final h = _Harness(connection: cloudflareTestConnection());
+      await h.settle();
+      final gate = Completer<void>();
+      h.graph.api
+        ..gate = gate.future
+        ..gatedCall = 'listAccounts';
+
+      final pending = h.notifier.startConnection();
+      h.notifier.answerToken(cloudflareTestToken(), h.serial);
+      await _flush();
+      expect(h.graph.api.listCalls, 1, reason: 'blocked inside the queue');
+
+      h.container.invalidate(cloudflareConnectionControllerProvider);
+      await h.settle();
+      gate.complete();
+      await pending;
+      await _flush();
+
+      expect(h.last.phase, CloudflareConnectionPhase.idle);
+      expect(h.last.prompt, isNull);
+
+      // The controller is usable again: a new run raises its own prompt.
+      final again = h.notifier.startConnection();
+      await _flush();
+      expect(h.last.prompt, CloudflareSetupPrompt.token);
+      h.notifier.cancelSetup();
+      await again;
+    },
+  );
+
+  test('refreshStatus during a prompt keeps the prompt (M11)', () async {
+    final h = _Harness(connection: cloudflareTestConnection());
+    await h.settle();
+    final pending = h.notifier.startConnection();
+    await _flush();
+    expect(h.last.prompt, CloudflareSetupPrompt.token);
+    final serial = h.serial;
+
+    await h.notifier.refreshStatus();
+
+    expect(h.last.prompt, CloudflareSetupPrompt.token);
+    expect(h.last.promptSerial, serial);
+    expect(h.last.phase, CloudflareConnectionPhase.awaitingInput);
+    h.notifier.cancelSetup();
+    await pending;
+  });
+
+  test('cancelSetup ends the wait and returns to idle (M6)', () async {
+    final h = _Harness(connection: cloudflareTestConnection());
+    await h.settle();
+    final pending = h.notifier.startConnection();
+    await _flush();
+    expect(h.last.phase, CloudflareConnectionPhase.awaitingInput);
+
+    h.notifier.cancelSetup();
+    await pending;
+    await _flush();
+
+    expect(h.last.phase, CloudflareConnectionPhase.idle);
+    expect(h.last.prompt, isNull);
+  });
+
   test('commands still work after the provider is invalidated and rebuilt '
       '(e.g. after a move or publish)', () async {
     final h = _Harness(

@@ -16,8 +16,9 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.
 /// reaching a picker.
 Future<Either<Failure, CloudflareAccountDiscovery>> discoverCloudflareAccounts(
   CloudflareAccountApi api,
-  CloudflareApiToken token,
-) async {
+  CloudflareApiToken token, {
+  DateTime? tokenExpiresOn,
+}) async {
   try {
     final listing = await api.listAccounts(token);
     if (listing.accounts.any(
@@ -31,12 +32,17 @@ Future<Either<Failure, CloudflareAccountDiscovery>> discoverCloudflareAccounts(
       CloudflareAccountDiscovery(
         accounts: listing.accounts,
         manualRequired: listing.truncated || listing.accounts.isEmpty,
+        tokenExpiresOn: tokenExpiresOn,
       ),
     );
   } on CloudflareApiException catch (error) {
     if (error.kind == CloudflareApiExceptionKind.forbidden) {
       return right(
-        CloudflareAccountDiscovery(accounts: const [], manualRequired: true),
+        CloudflareAccountDiscovery(
+          accounts: const [],
+          manualRequired: true,
+          tokenExpiresOn: tokenExpiresOn,
+        ),
       );
     }
     rethrow;

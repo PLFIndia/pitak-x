@@ -162,6 +162,94 @@ void main() {
       );
     });
 
+    testWidgets('Cancel move warns, then reports that both sites are kept', (
+      tester,
+    ) async {
+      final pending = movePending();
+      final controller = _FakeController()
+        ..commandResult = MoveSiteAbandoned(
+          oldTarget: moveGitHubTarget,
+          newTarget: moveCloudflareTarget,
+        );
+      await tester.pumpWidget(
+        app(PendingMoveBanner(pending: pending), controller),
+      );
+
+      await tester.tap(find.text('Cancel move'));
+      await tester.pumpAndSettle();
+      expect(find.text('Cancel this move?'), findsOneWidget);
+      expect(
+        find.textContaining('stays online with a copy of your library'),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Cancel move'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controller.abandonCalls, 1);
+      expect(controller.retryCalls, 0);
+      expect(controller.skipCalls, 0);
+      expect(
+        find.text(
+          MoveSiteMessages.moveCancelled(
+            moveGitHubTarget.siteUrl,
+            moveCloudflareTarget.siteUrl,
+          ),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('an inaccessible old site offers Finish without retiring', (
+      tester,
+    ) async {
+      final pending = movePending();
+      final controller =
+          _FakeController(
+              initial: const MoveSiteState(
+                result: MoveSiteFailure(
+                  MoveSiteMessages.sourceInaccessible,
+                  retirementPending: true,
+                  canFinishWithoutRetiring: true,
+                  oldSiteAnswers: true,
+                ),
+              ),
+            )
+            ..commandResult = MoveSiteSuccess(
+              target: moveCloudflareTarget,
+              retirementSkipped: true,
+            );
+      await tester.pumpWidget(
+        app(PendingMoveBanner(pending: pending), controller),
+      );
+
+      expect(find.text('Skip retirement'), findsNothing);
+      expect(find.text('Finish without retiring'), findsOneWidget);
+
+      await tester.tap(find.text('Finish without retiring'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('still shows your library as it was'),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('Finish move'),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(controller.finishCalls, 1);
+      expect(controller.skipCalls, 0);
+    });
+
     testWidgets('a Retry failure keeps the pending recovery surface', (
       tester,
     ) async {
@@ -226,6 +314,8 @@ final class _FakeController extends MoveSiteController {
   int confirmCalls = 0;
   int retryCalls = 0;
   int skipCalls = 0;
+  int finishCalls = 0;
+  int abandonCalls = 0;
   MoveSiteResult? prepareResult;
   MoveSiteResult? commandResult;
 
@@ -256,6 +346,24 @@ final class _FakeController extends MoveSiteController {
   @override
   Future<MoveSiteResult> skip() async {
     skipCalls++;
+    final result =
+        commandResult ?? const MoveSiteFailure(MoveSiteMessages.generic);
+    state = MoveSiteState(result: result);
+    return result;
+  }
+
+  @override
+  Future<MoveSiteResult> finishWithoutRetiring() async {
+    finishCalls++;
+    final result =
+        commandResult ?? const MoveSiteFailure(MoveSiteMessages.generic);
+    state = MoveSiteState(result: result);
+    return result;
+  }
+
+  @override
+  Future<MoveSiteResult> abandon() async {
+    abandonCalls++;
     final result =
         commandResult ?? const MoveSiteFailure(MoveSiteMessages.generic);
     state = MoveSiteState(result: result);

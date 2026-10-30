@@ -7,7 +7,7 @@ part of 'move_site_controller.dart';
 // **************************************************************************
 
 String _$moveSiteControllerHash() =>
-    r'2a97c77b2a69f5592efcc6fea3899134432aebcc';
+    r'801d8165fe4a011178978818edb7933dc2b2b830';
 
 /// Owns the outer queue for every move command; user waits happen in widgets.
 ///

@@ -154,7 +154,11 @@ void main() {
     );
 
     expect(result, isA<MoveSiteFailure>());
-    expect((result as MoveSiteFailure).retirementPending, isTrue);
+    expect(
+      (result as MoveSiteFailure).retirementPending,
+      isTrue,
+      reason: result.reason,
+    );
     await container.read(publishSiteStatusProvider.future);
     expect(statusBuilds, greaterThan(before));
   });

@@ -273,26 +273,55 @@ final class CloudflareMoveSource implements MoveSourceOperations {
       probe.marker.state == PublishMarkerState.retired;
 
   @override
-  Future<Either<Failure, Unit>> authorizeSkip(PendingMove pending) async {
+  Future<SourceSkipCheck> skipCheck(PendingMove pending) async {
     final target = pending.oldTarget;
-    if (target is! CloudflarePublishTarget) return _mismatch();
+    if (target is! CloudflarePublishTarget) return const SourceCheckFailed();
     final connected = await _reader.connection(target);
-    if (connected case Left(value: final failure)) return Left(failure);
+    final connection = connected.toNullable();
+    if (connection == null) {
+      // No exact credentials for this Worker: Pitak cannot sign in, which is
+      // the "finish without retiring" case (fix-plan M4).
+      return SourceInaccessible(oldSiteAnswers: await _oldSiteAnswers(pending));
+    }
     try {
-      final exists = await connected.toNullable()!.connection.useToken(
+      final exists = await connection.connection.useToken(
         (token) => _deployApi.workerExists(
           token: token,
           accountId: target.accountId,
           workerName: target.workerName,
         ),
       );
-      return exists
-          ? const Left(ValidationFailure(MoveSiteMessages.skipNotAllowed))
-          : right(unit);
+      return exists ? const SourcePresent() : const SourceAbsent();
     } on CloudflareApiException catch (error) {
-      return Left(CloudflareErrorMessages.fromException(error));
+      if (error.kind == CloudflareApiExceptionKind.unauthorized ||
+          error.kind == CloudflareApiExceptionKind.forbidden) {
+        return SourceInaccessible(
+          oldSiteAnswers: await _oldSiteAnswers(pending),
+        );
+      }
+      return const SourceCheckFailed();
+    } on Exception {
+      return const SourceCheckFailed();
     }
   }
+
+  @override
+  Future<bool> retirementObserved(PendingMove pending) async {
+    final target = pending.oldTarget;
+    if (target is! CloudflarePublishTarget) return false;
+    final local = _manifest.load();
+    if (local.state == PublishState.retired && local.describes(target)) {
+      return true;
+    }
+    return _verifier.rootServesMovedPage(pending, revision: _clock());
+  }
+
+  /// Whether the old public address still serves content.
+  ///
+  /// A body means visitors still see the old site; a real 404 or an unreadable
+  /// answer means they do not. Used only for the finish dialog's copy.
+  Future<bool> _oldSiteAnswers(PendingMove pending) async =>
+      await _verifier.rootServesContent(pending, revision: _clock()) ?? false;
 
   static Either<Failure, Never> _mismatch() =>
       const Left(CloudflareFailure(CloudflareErrorMessages.targetMismatch));

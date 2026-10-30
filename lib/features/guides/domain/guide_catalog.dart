@@ -184,9 +184,13 @@ const Guide _publish = Guide(
       paragraphs: [
         'You can move the page between the two hosts. Pitak verifies the new '
             'site first, then turns the old address into a short "moved" page. '
-            'Other phones never follow a move by themselves — they may offer '
-            'the choice to their owner — and a printed library card still '
-            'shows the old address, so reprint it after a move.',
+            'If that last step cannot finish, the publish page keeps three '
+            'choices: Retry move, Skip retirement (only when the old site is '
+            'really gone) and Cancel move (which keeps your current site and '
+            'leaves the new copy online until you delete it). Other phones '
+            'never follow a move by themselves — they may offer the choice to '
+            'their owner — and a printed library card still shows the old '
+            'address, so reprint it after a move.',
       ],
     ),
   ],

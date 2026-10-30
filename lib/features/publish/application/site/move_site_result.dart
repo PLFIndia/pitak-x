@@ -116,6 +116,8 @@ final class MoveSiteFailure extends MoveSiteResult {
     this.reason, {
     this.retirementPending = false,
     this.destinationLocalStateSaved = true,
+    this.canFinishWithoutRetiring = false,
+    this.oldSiteAnswers = false,
   });
 
   /// Fixed safe copy; never a raw response or platform exception.
@@ -127,6 +129,25 @@ final class MoveSiteFailure extends MoveSiteResult {
   /// False discloses a destination local-commit failure without pretending the
   /// destination was not verified.
   final bool destinationLocalStateSaved;
+
+  /// True only when the Skip check proved Pitak cannot sign in to the old
+  /// site, so "Finish without retiring" is the honest next step (fix-plan M4).
+  final bool canFinishWithoutRetiring;
+
+  /// Whether the old public address still answers; selects the finish copy.
+  final bool oldSiteAnswers;
+}
+
+/// The pending move was cancelled; both sites are untouched (fix-plan M4).
+final class MoveSiteAbandoned extends MoveSiteResult {
+  /// Creates a cancelled-move outcome.
+  const MoveSiteAbandoned({required this.oldTarget, required this.newTarget});
+
+  /// The site the user keeps publishing to and sharing.
+  final PublishTarget oldTarget;
+
+  /// The already-published copy that stays online until the user deletes it.
+  final PublishTarget newTarget;
 }
 
 /// The verified destination is selected and pending history is cleared.
@@ -204,7 +225,7 @@ final class SiteRetirementOutcome {
 abstract final class MoveSiteMessages {
   /// A second move may not replace existing recovery history.
   static const String pendingAlreadyExists =
-      'Finish or skip the pending move before starting another one.';
+      'Finish, skip or cancel the pending move before starting another one.';
 
   /// Both sealed endpoints and their address proofs are required.
   static const String setupRequired =
@@ -234,6 +255,32 @@ abstract final class MoveSiteMessages {
   static const String skipNotAllowed =
       'Skip is available only when the old repository or Worker no longer '
       'exists.';
+
+  /// The old site cannot be signed in to, so it can be neither checked nor
+  /// retired. The UI offers "Finish without retiring" (fix-plan M4).
+  static const String sourceInaccessible =
+      'Pitak cannot sign in to the old site, so it cannot check or retire it. '
+      'Reconnect it and choose Retry move. If you no longer have access, you '
+      'can finish the move without retiring the old site.';
+
+  /// The Skip check itself failed; nothing is proven either way.
+  static const String sourceCheckFailed =
+      'Pitak could not check the old site. Try again when you are online.';
+
+  /// Cancel is refused once the old address already shows the moved page.
+  static const String cancelAfterRetirement =
+      'Your old address already shows the moved page. Choose Retry move to '
+      'finish moving.';
+
+  /// Cancel succeeded; both sites are untouched.
+  static String moveCancelled(String oldAddress, String newAddress) =>
+      'Move cancelled. Your site is still $oldAddress. The copy at '
+      '$newAddress stays online until you delete it.';
+
+  /// Finish-without-retiring is refused when the old site is still reachable.
+  static const String finishNotAllowed =
+      'The old site can still be reached, so the move cannot finish without '
+      'retiring it. Choose Retry move.';
 
   /// Complete destination read-back did not pass. The new host may simply
   /// still be building (GitHub Pages can take minutes), so suggest a later

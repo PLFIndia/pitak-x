@@ -65,13 +65,23 @@ void main() {
 
   group('Worker reads and diagnostics', () {
     test(
-      'Worker existence is true only for 2xx and false only for 404',
+      'Worker existence is true for 2xx and false only for 404 + 10007',
       () async {
-        final statuses = [200, 404];
+        final responses = <http.Response>[
+          envelope(null),
+          envelope(
+            null,
+            status: 404,
+            success: false,
+            errors: [
+              {'code': CloudflareLimits.notFoundErrorCode, 'message': 'gone'},
+            ],
+          ),
+        ];
         final api = apiFor((request) async {
           expect(request.method, 'GET');
           expect(request.url.path, workerPath);
-          return envelope(null, status: statuses.removeAt(0), success: false);
+          return responses.removeAt(0);
         });
         expect(
           await api.workerExists(
@@ -91,6 +101,55 @@ void main() {
         );
       },
     );
+
+    test('a bare 404 is not absence: it is a typed notFound (L2)', () async {
+      final api = apiFor(
+        (_) async => envelope(null, status: 404, success: false),
+      );
+      await expectLater(
+        api.workerExists(token: token, accountId: account, workerName: worker),
+        throwsA(
+          isA<CloudflareApiException>().having(
+            (e) => e.kind,
+            'kind',
+            CloudflareApiExceptionKind.notFound,
+          ),
+        ),
+      );
+    });
+
+    test('a 404 with the wrong code is not absence either (L2)', () async {
+      final api = apiFor(
+        (_) async => envelope(
+          null,
+          status: 404,
+          success: false,
+          errors: [
+            {'code': 10000, 'message': 'authentication error'},
+          ],
+        ),
+      );
+      await expectLater(
+        api.workerExists(token: token, accountId: account, workerName: worker),
+        throwsA(isA<CloudflareApiException>()),
+      );
+    });
+
+    test('an HTML 404 is malformed, never absence (L2)', () async {
+      final api = apiFor(
+        (_) async => http.Response('<html>not found</html>', 404),
+      );
+      await expectLater(
+        api.workerExists(token: token, accountId: account, workerName: worker),
+        throwsA(
+          isA<CloudflareApiException>().having(
+            (e) => e.kind,
+            'kind',
+            CloudflareApiExceptionKind.malformedResponse,
+          ),
+        ),
+      );
+    });
 
     test(
       'a permission failure is not Worker absence and stays redacted',
@@ -287,7 +346,14 @@ void main() {
         calls.add('${request.method} ${request.url.path}');
         if (calls.length == 1) throw http.ClientException('socket reset');
         if (request.method == 'GET') {
-          return envelope(null, status: 404, success: false);
+          return envelope(
+            null,
+            status: 404,
+            success: false,
+            errors: [
+              {'code': CloudflareLimits.notFoundErrorCode, 'message': 'gone'},
+            ],
+          );
         }
         return envelope({'jwt': 'upload.jwt', 'buckets': <Object?>[]});
       });
@@ -303,6 +369,29 @@ void main() {
         'POST $workerPath/assets-upload-session',
       ]);
       expect(delays, [const Duration(seconds: 1)]);
+    });
+
+    test('an ambiguous Worker re-read stops the retry (L2)', () async {
+      final calls = <String>[];
+      final api = apiFor((request) async {
+        calls.add('${request.method} ${request.url.path}');
+        if (calls.length == 1) throw http.ClientException('socket reset');
+        // A bare 404 proves nothing, so the uncertain create is not repeated.
+        return envelope(null, status: 404, success: false);
+      });
+      await expectLater(
+        api.createUploadSession(
+          token: token,
+          accountId: account,
+          workerName: worker,
+          manifest: [manifestEntry('a' * 32)],
+        ),
+        throwsA(isA<CloudflareApiException>()),
+      );
+      expect(calls, [
+        'POST $workerPath/assets-upload-session',
+        'GET $workerPath',
+      ]);
     });
   });
 

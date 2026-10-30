@@ -182,19 +182,93 @@ final class MoveSiteUseCase {
 
   /// Explicitly skips retirement after host-specific privacy checks and the
   /// UI's warning. No source manifest is marked retired by this command.
+  ///
+  /// The check reports WHICH fact it proved, so the UI can offer the matching
+  /// next step instead of a dead end (fix-plan M4).
   Future<MoveSiteResult> skip() async {
     final pending = _hostState.currentState()?.pendingMove;
     if (pending == null) {
       return const MoveSiteFailure(MoveSiteMessages.stale);
     }
-    final authorized = await _sourceFor(
-      pending.oldTarget,
-    ).authorizeSkip(pending);
-    final failure = authorized.swap().toNullable();
-    if (failure != null) {
-      return _failure(failure, retirementPending: true);
+    final check = await _sourceFor(pending.oldTarget).skipCheck(pending);
+    switch (check) {
+      case SourceAbsent():
+        return _finish(pending, retirementSkipped: true);
+      case SourcePresent():
+        return const MoveSiteFailure(
+          MoveSiteMessages.skipNotAllowed,
+          retirementPending: true,
+        );
+      case SourceInaccessible(:final oldSiteAnswers):
+        return MoveSiteFailure(
+          MoveSiteMessages.sourceInaccessible,
+          retirementPending: true,
+          canFinishWithoutRetiring: true,
+          oldSiteAnswers: oldSiteAnswers,
+        );
+      case SourceCheckFailed():
+        return const MoveSiteFailure(
+          MoveSiteMessages.sourceCheckFailed,
+          retirementPending: true,
+        );
     }
-    return _finish(pending, retirementSkipped: true);
+  }
+
+  /// Finishes the move without retiring an old site Pitak cannot sign in to.
+  ///
+  /// Re-checks inside the queue and requires "inaccessible" or "absent", so a
+  /// site that came back is never silently abandoned. No record is marked
+  /// retired (fix-plan M4, Decision 5a).
+  Future<MoveSiteResult> finishWithoutRetiring() async {
+    final pending = _hostState.currentState()?.pendingMove;
+    if (pending == null) {
+      return const MoveSiteFailure(MoveSiteMessages.stale);
+    }
+    final check = await _sourceFor(pending.oldTarget).skipCheck(pending);
+    switch (check) {
+      case SourceAbsent():
+      case SourceInaccessible():
+        return _finish(pending, retirementSkipped: true);
+      case SourcePresent():
+        return const MoveSiteFailure(
+          MoveSiteMessages.finishNotAllowed,
+          retirementPending: true,
+        );
+      case SourceCheckFailed():
+        return const MoveSiteFailure(
+          MoveSiteMessages.sourceCheckFailed,
+          retirementPending: true,
+        );
+    }
+  }
+
+  /// Cancels the pending move without touching either site (fix-plan M4).
+  ///
+  /// Refused once the old address already shows the moved page: at that point
+  /// Retry is the honest action, and cancelling would leave a moved page the
+  /// journal no longer knows about.
+  Future<MoveSiteResult> abandon() async {
+    final pending = _hostState.currentState()?.pendingMove;
+    if (pending == null) {
+      return const MoveSiteFailure(MoveSiteMessages.stale);
+    }
+    if (await _sourceFor(pending.oldTarget).retirementObserved(pending)) {
+      return const MoveSiteFailure(
+        MoveSiteMessages.cancelAfterRetirement,
+        retirementPending: true,
+      );
+    }
+    final abandoned = await _hostState.abandonMove(pending);
+    if (abandoned.isLeft()) {
+      return MoveSiteFailure(
+        MoveSiteMessages.completionFailed,
+        retirementPending: _isPending(pending),
+      );
+    }
+    return MoveSiteAbandoned(
+      oldTarget: pending.oldTarget,
+      newTarget: pending.newTarget,
+    );
   }
 
   Future<MoveSiteResult> _retireAndFinish(

@@ -1,4 +1,11 @@
 /// Watches Cloudflare setup state and coordinates its UI-owned dialogs.
+///
+/// The listener lives in `initState` with `fireImmediately: true` (fix-plan
+/// M6). A transition-only `ref.listen` in `build` missed a prompt raised while
+/// this section was unmounted (the publish page keeps tabs alive lazily), so on
+/// return the tile sat in `awaitingInput` with every button disabled and no
+/// dialog. The last shown serial is remembered so one prompt is never shown
+/// twice, while a remount shows it again.
 library;
 
 import 'dart:async';
@@ -26,16 +33,56 @@ class CloudflareConnectionSection extends ConsumerStatefulWidget {
 
 class _CloudflareConnectionSectionState
     extends ConsumerState<CloudflareConnectionSection> {
+  ProviderSubscription<AsyncValue<CloudflareConnectionUi>>? _subscription;
+
+  /// The prompt serial already shown, so a rebuild never opens it twice.
+  int _shownSerial = 0;
+
+  /// Whether a prompt dialog is currently on screen.
+  bool _promptOpen = false;
+
   @override
-  Widget build(BuildContext context) {
-    ref.listen(cloudflareConnectionControllerProvider, (previous, next) {
-      final before = previous?.valueOrNull;
-      final current = next.valueOrNull;
-      if (current == null || current.prompt == null) return;
-      if (before?.promptSerial == current.promptSerial) return;
+  void initState() {
+    super.initState();
+    _subscription = ref.listenManual(
+      cloudflareConnectionControllerProvider,
+      (previous, next) => _onState(next.valueOrNull),
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.close();
+    super.dispose();
+  }
+
+  void _onState(CloudflareConnectionUi? ui) {
+    if (ui == null) return;
+    if (ui.prompt == null) {
+      // The controller cancelled or finished the wait (Cancel setup, a
+      // rebuild, or a command that no longer needs an answer): close the
+      // dialog instead of leaving a modal nobody can answer (fix-plan M6).
+      _dismissPrompt();
+      return;
+    }
+    if (ui.promptSerial == _shownSerial) return;
+    _shownSerial = ui.promptSerial;
+    // A route cannot be pushed during initState, so wait for the frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      // The prompt may already be answered or cancelled by then, so re-read
+      // the current state instead of trusting the captured one.
+      final current = ref
+          .read(cloudflareConnectionControllerProvider)
+          .valueOrNull;
+      if (current == null || current.promptSerial != _shownSerial) return;
       unawaited(_showPrompt(current));
     });
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return ref
         .watch(cloudflareConnectionControllerProvider)
         .when(
@@ -58,6 +105,7 @@ class _CloudflareConnectionSectionState
             onContinue: _continueSetup,
             onDisconnect: _disconnect,
             onForgetConnection: _forgetConnection,
+            onCancelSetup: _cancelSetup,
           ),
         );
   }
@@ -74,12 +122,21 @@ class _CloudflareConnectionSectionState
     ref.read(cloudflareConnectionControllerProvider.notifier).disconnect(),
   );
 
+  void _cancelSetup() =>
+      ref.read(cloudflareConnectionControllerProvider.notifier).cancelSetup();
+
   Future<void> _forgetConnection() async {
     if (!await showForgetCloudflareConnectionDialog(context)) return;
     if (!mounted) return;
     await ref
         .read(cloudflareConnectionControllerProvider.notifier)
         .forgetConnection();
+  }
+
+  void _dismissPrompt() {
+    if (!_promptOpen || !mounted) return;
+    _promptOpen = false;
+    Navigator.of(context, rootNavigator: true).pop();
   }
 
   Future<void> _showPrompt(CloudflareConnectionUi ui) async {
@@ -89,6 +146,20 @@ class _CloudflareConnectionSectionState
     final controller = ref.read(
       cloudflareConnectionControllerProvider.notifier,
     );
+    _promptOpen = true;
+    try {
+      await _answerPrompt(ui, prompt, serial, controller);
+    } finally {
+      _promptOpen = false;
+    }
+  }
+
+  Future<void> _answerPrompt(
+    CloudflareConnectionUi ui,
+    CloudflareSetupPrompt prompt,
+    int serial,
+    CloudflareConnectionController controller,
+  ) async {
     switch (prompt) {
       case CloudflareSetupPrompt.token:
         final token = await showCloudflareTokenDialog(context);
@@ -132,6 +203,7 @@ class _CloudflareConnectionSectionState
           context,
           workerName: ui.promptInitialValue ?? '',
           workerExists: ui.promptWorkerExists,
+          isActiveSite: ui.promptIsActiveSite,
         );
         controller.answerConsent(value: accepted, serial: serial);
     }

@@ -49,6 +49,15 @@ abstract final class CloudflareLimits {
   /// Cap on a public `events.json` read-back.
   static const int maxEventsBytes = 64 * 1024;
 
+  /// Cloudflare's "not found" error code for an absent resource.
+  ///
+  /// The account-subdomain endpoint documents 10007 for absence. No public
+  /// document confirms the same code for a missing Worker script, so this is
+  /// the working assumption until the Phase 6 real-host check records the
+  /// actual code (fix-plan L2). It is used ONLY together with HTTP 404 and
+  /// `success: false`; any other 404 is a typed `notFound`, never absence.
+  static const int notFoundErrorCode = 10007;
+
   /// Abortable total deadline for a normal API call.
   static const Duration apiDeadline = Duration(seconds: 30);
 

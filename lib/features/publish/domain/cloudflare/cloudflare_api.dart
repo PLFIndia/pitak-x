@@ -190,7 +190,13 @@ abstract interface class CloudflareAccountApi {
 
 /// Worker existence, diagnostics, upload, deployment and route operations.
 abstract interface class CloudflareDeployApi {
-  /// Returns true for a present Worker and false only for a confirmed 404.
+  /// Returns true for a present Worker and false ONLY for a confirmed absence.
+  ///
+  /// Absence requires HTTP 404 together with Cloudflare's own not-found error
+  /// code and `success: false`. Any other 404 (a permission failure, a wrong
+  /// account, an HTML edge page) throws a typed `notFound`/`malformedResponse`
+  /// instead, because this one read gates replacement consent, the new-site
+  /// decision and Skip (fix-plan L2/RH3).
   Future<bool> workerExists({
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,

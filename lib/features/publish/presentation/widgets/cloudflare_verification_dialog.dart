@@ -55,6 +55,7 @@ Future<bool> showCloudflareVerificationDialog(
   BuildContext context, {
   required String workerName,
   required bool workerExists,
+  bool isActiveSite = false,
 }) async {
   final accepted = await showDialog<bool>(
     context: context,
@@ -80,11 +81,23 @@ Future<bool> showCloudflareVerificationDialog(
               'state, enables workers.dev, and confirms Version URLs are off. '
               'It then reads that exact marker from the candidate address.',
             ),
+            if (isActiveSite) ...[
+              const SizedBox(height: 12),
+              const Text(
+                'This Worker is your live site. Verifying it replaces the '
+                'whole site with a test page until you publish again.',
+              ),
+            ],
             const SizedBox(height: 12),
-            const Text(
-              'No catalogue, events, or library.json is uploaded. Your other '
-              'active site is not retired or changed. The address becomes a '
-              'publish target only after exact-origin verification succeeds.',
+            Text(
+              isActiveSite
+                  ? 'No catalogue, events, or library.json is uploaded. The '
+                        'address becomes a publish target only after '
+                        'exact-origin verification succeeds.'
+                  : 'No catalogue, events, or library.json is uploaded. Your '
+                        'other active site is not retired or changed. The '
+                        'address becomes a publish target only after '
+                        'exact-origin verification succeeds.',
             ),
           ],
         ),

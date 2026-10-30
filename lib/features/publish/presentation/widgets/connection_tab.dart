@@ -27,30 +27,68 @@ class _ConnectionTabState extends ConsumerState<ConnectionTab> {
   bool? _githubInitiallyExpanded;
   bool _codeDialogOpen = false;
 
+  ProviderSubscription<AsyncValue<GitHubConnectionUi>>? _subscription;
+
+  /// The prompts already shown, so a rebuild never opens one twice while a
+  /// remount still shows it again (fix-plan M6).
+  String? _shownUserCode;
+  String? _shownRepoPrompt;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = ref.listenManual(
+      gitHubConnectionControllerProvider,
+      (previous, next) => _onState(next.valueOrNull),
+      fireImmediately: true,
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.close();
+    super.dispose();
+  }
+
+  void _onState(GitHubConnectionUi? now) {
+    if (now == null) return;
+    final repoPrompt = now.repoPromptInitialName;
+    if (repoPrompt == null) {
+      // Cleared: the next request for the same name must prompt again.
+      _shownRepoPrompt = null;
+    } else if (repoPrompt != _shownRepoPrompt) {
+      _shownRepoPrompt = repoPrompt;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // The prompt may already be gone by the time the frame runs (the
+        // device flow can finish in the same turn), so re-read before opening.
+        final current = ref
+            .read(gitHubConnectionControllerProvider)
+            .valueOrNull;
+        if (current?.repoPromptInitialName != repoPrompt) return;
+        unawaited(_handleRepoPrompt(repoPrompt));
+      });
+    }
+    final code = now.awaitingUserCode;
+    if (code != null && code != _shownUserCode) {
+      _shownUserCode = code;
+      final uri = now.awaitingVerificationUri ?? '';
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final current = ref
+            .read(gitHubConnectionControllerProvider)
+            .valueOrNull;
+        if (current?.awaitingUserCode != code) return;
+        unawaited(_showCodeDialog(userCode: code, verificationUri: uri));
+      });
+    } else if (code == null && _shownUserCode != null) {
+      _shownUserCode = null;
+      _dismissCodeDialog();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    ref.listen(gitHubConnectionControllerProvider, (prev, next) {
-      final before = prev?.valueOrNull;
-      final now = next.valueOrNull;
-      if (now == null) return;
-      if (before?.repoPromptInitialName == null &&
-          now.repoPromptInitialName != null) {
-        unawaited(_handleRepoPrompt(now.repoPromptInitialName!));
-      }
-      final hadCode = before?.awaitingUserCode != null;
-      final hasCode = now.awaitingUserCode != null;
-      if (!hadCode && hasCode) {
-        unawaited(
-          _showCodeDialog(
-            userCode: now.awaitingUserCode!,
-            verificationUri: now.awaitingVerificationUri ?? '',
-          ),
-        );
-      } else if (hadCode && !hasCode) {
-        _dismissCodeDialog();
-      }
-    });
-
     final async = ref.watch(gitHubConnectionControllerProvider);
     return async.when(
       loading: () => const Center(child: CircularProgressIndicator.adaptive()),

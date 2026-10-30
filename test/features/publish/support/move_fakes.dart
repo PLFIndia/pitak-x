@@ -257,13 +257,17 @@ final class FakeMoveSource implements MoveSourceOperations {
   /// Successful retirement outcome.
   SiteRetirementOutcome retirementOutcome = const SiteRetirementOutcome();
 
-  /// Whether Skip is authorized.
-  bool skipAuthorized = true;
+  /// What the Skip check reports.
+  SourceSkipCheck skipCheckResult = const SourceAbsent();
+
+  /// Whether the old site already shows the recorded moved page.
+  bool retirementObservedValue = false;
 
   /// Counters for exact-boundary assertions.
   int readAnchorCalls = 0;
   int retireCalls = 0;
   int skipCalls = 0;
+  int retirementObservedCalls = 0;
 
   @override
   Future<Either<Failure, MoveSourceAnchor>> readAnchor(
@@ -287,15 +291,15 @@ final class FakeMoveSource implements MoveSourceOperations {
   }
 
   @override
-  Future<Either<Failure, Unit>> authorizeSkip(PendingMove pending) async {
+  Future<SourceSkipCheck> skipCheck(PendingMove pending) async {
     skipCalls++;
-    return skipAuthorized
-        ? right(unit)
-        : left(
-            const ValidationFailure(
-              'The old site still exists, so Skip is not allowed.',
-            ),
-          );
+    return skipCheckResult;
+  }
+
+  @override
+  Future<bool> retirementObserved(PendingMove pending) async {
+    retirementObservedCalls++;
+    return retirementObservedValue;
   }
 }
 

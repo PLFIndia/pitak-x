@@ -65,7 +65,7 @@ class _FakeGitHubApi implements GitHubApi {
     this.throwOnUserRepos = false,
   });
 
-  final PollResult pollResult;
+  PollResult pollResult;
   final int intervalSeconds;
   int polls = 0;
 
@@ -822,5 +822,71 @@ void main() {
     await tester.pumpWidget(await _app());
     await tester.pumpAndSettle();
     await expectMeetsA11yGuidelines(tester);
+  });
+
+  testWidgets('the GitHub device code reappears after a tab switch (M6)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final creds = _FakeCreds();
+    // The flow stays awaiting the user, so the code is still in state. A
+    // one-second poll interval keeps the fake from spinning forever.
+    final api = _FakeGitHubApi(
+      pollResult: const PollPending(),
+      intervalSeconds: 1,
+    );
+    SharedPreferences.setMockInitialValues({});
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ..._cloudflareOverrides(),
+          publishCredentialStoreProvider.overrideWithValue(creds),
+          gitHubApiProvider.overrideWithValue(api),
+          eventsRepositoryProvider.overrideWith(
+            (ref) async => _EmptyEventsRepo(),
+          ),
+        ],
+        child: const MaterialApp(home: PublishPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Sign in to GitHub'));
+    // The flow polls forever, so settle by hand instead of pumpAndSettle.
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Authorize in your browser'), findsOneWidget);
+
+    // Dismiss the dialog without answering: the flow keeps waiting.
+    await tester.tapAt(const Offset(10, 10));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(find.text('Authorize in your browser'), findsNothing);
+
+    // Leaving and returning to the tab must show it again, not strand the
+    // user with a disabled tile and no dialog.
+    await tester.tap(find.text('Basic info'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.tap(find.text('Connection'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.text('Authorize in your browser'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    // End the flow so no poll timer outlives the test.
+    api.pollResult = const PollDenied();
+    for (var i = 0; i < 10; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
   });
 }

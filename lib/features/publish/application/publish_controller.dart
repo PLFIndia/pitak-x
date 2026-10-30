@@ -176,9 +176,12 @@ class PublishController extends _$PublishController implements PublishReads {
       verificationOnly: verificationOnly,
     );
     if (result is PublishSuccess) {
-      ref
-        ..invalidate(publishedSiteUrlProvider)
-        ..invalidate(cloudflareConnectionControllerProvider);
+      ref.invalidate(publishedSiteUrlProvider);
+      // A rebuild would cancel a setup the user is in the middle of, so the
+      // connection controller is refreshed in place (fix-plan M11).
+      await ref
+          .read(cloudflareConnectionControllerProvider.notifier)
+          .refreshStatus();
     }
     return result;
   }

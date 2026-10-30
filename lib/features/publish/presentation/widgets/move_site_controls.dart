@@ -84,6 +84,8 @@ class _MoveSiteControlsState extends ConsumerState<MoveSiteControls> {
   static String _resultCopy(MoveSiteResult result) => switch (result) {
     MoveSiteConfirmationRequired() => 'Review the move to continue.',
     MoveSiteFailure(:final reason) => reason,
+    MoveSiteAbandoned(:final oldTarget, :final newTarget) =>
+      MoveSiteMessages.moveCancelled(oldTarget.siteUrl, newTarget.siteUrl),
     MoveSiteSuccess(
       :final retirementSkipped,
       :final temporaryCleanupFailed,

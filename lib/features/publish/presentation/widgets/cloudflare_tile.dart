@@ -29,6 +29,7 @@ class CloudflareTile extends StatelessWidget {
     required this.onContinue,
     required this.onDisconnect,
     required this.onForgetConnection,
+    required this.onCancelSetup,
     super.key,
   });
 
@@ -46,6 +47,9 @@ class CloudflareTile extends StatelessWidget {
 
   /// Forgets a connection record that could not be read (M7).
   final VoidCallback onForgetConnection;
+
+  /// Cancels the prompt the user is looking at (fix-plan M6).
+  final VoidCallback onCancelSetup;
 
   @override
   Widget build(BuildContext context) {
@@ -160,6 +164,15 @@ class CloudflareTile extends StatelessWidget {
                 SizedBox(width: 8),
                 Text('Working…'),
               ],
+            ),
+          ],
+          // A prompt whose dialog is not on screen (the tab was rebuilt or the
+          // app was backgrounded) must still have a way out (fix-plan M6).
+          if (ui.phase == CloudflareConnectionPhase.awaitingInput) ...[
+            const SizedBox(height: 12),
+            OutlinedButton(
+              onPressed: onCancelSetup,
+              child: const Text('Cancel setup'),
             ),
           ],
           if (ui.statusMessage case final message?) ...[

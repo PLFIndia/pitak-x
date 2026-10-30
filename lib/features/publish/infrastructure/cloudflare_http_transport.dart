@@ -124,7 +124,10 @@ final class CloudflareHttpTransport {
             uncertain: !idempotent,
           );
         }
-        if (statusOnly && ((status >= 200 && status < 300) || status == 404)) {
+        if (statusOnly && status >= 200 && status < 300) {
+          // Only a 2xx body is discarded unread (a Worker script body can be
+          // large). A 404 must be PARSED: "absent" needs Cloudflare's own
+          // not-found code, not just the status (fix-plan L2).
           _discard(response);
           return CloudflareHttpResponse.statusOnly(status);
         }

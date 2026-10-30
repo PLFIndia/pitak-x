@@ -46,7 +46,15 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
       _workerPath(accountId, workerName),
       statusOnly: true,
     );
-    if (response.statusCode == 404) return false;
+    // "Absent" needs Cloudflare's own not-found code, not just a 404: a
+    // permission failure, a wrong account or an HTML edge page also answers
+    // 404, and this one read gates replacement consent, the new-site decision
+    // and Skip (fix-plan L2/RH3). Everything else fails closed.
+    if (response.statusCode == 404 &&
+        !response.isSuccess &&
+        response.errorCodes.contains(CloudflareLimits.notFoundErrorCode)) {
+      return false;
+    }
     if (response.statusCode >= 200 && response.statusCode < 300) return true;
     requireCloudflareSuccess(response);
     throw StateError('Unreachable Worker-existence state');

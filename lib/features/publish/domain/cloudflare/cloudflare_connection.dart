@@ -238,6 +238,28 @@ final class CloudflareConnection {
     );
   }
 
+  /// Marks the address proven by the journal's own read-back (fix-plan M3).
+  ///
+  /// Used when the prospective target is already the address this phone proved
+  /// live: that read-back IS the address proof, so no verification deploy is
+  /// needed. Write access is deliberately NOT claimed — `workersWriteConfirmed`
+  /// stays false until the next publish proves it.
+  CloudflareConnection markAddressProven() {
+    if (accountId == null || accountSubdomain == null || workerName == null) {
+      throw StateError('Cloudflare target is incomplete');
+    }
+    return CloudflareConnection._(
+      token: _token,
+      tokenExpiresOn: tokenExpiresOn,
+      accountId: accountId,
+      accountName: accountName,
+      accountSubdomain: accountSubdomain,
+      workerName: workerName,
+      verifiedWorkerName: workerName,
+      addressConfirmed: true,
+    );
+  }
+
   /// Marks an ordinary deployment and required read-back as proven, without
   /// changing the address-proof provenance. Used by the S8 publish flow.
   CloudflareConnection markWorkersWriteReadBack() {

@@ -167,7 +167,10 @@ final class HttpGitHubApi implements GitHubApi {
         headers: _authHeaders(token),
       );
       if (resp.statusCode >= 400) {
-        throw GitHubApiException('repo list: HTTP ${resp.statusCode}');
+        throw GitHubApiException(
+          'repo list: HTTP ${resp.statusCode}',
+          statusCode: resp.statusCode,
+        );
       }
       final list = jsonDecode(resp.body);
       if (list is! List) throw const GitHubApiException('Malformed repo list');
@@ -210,7 +213,10 @@ final class HttpGitHubApi implements GitHubApi {
     );
     if (resp.statusCode == 404) return null;
     if (resp.statusCode >= 400) {
-      throw GitHubApiException('repository: HTTP ${resp.statusCode}');
+      throw GitHubApiException(
+        'repository: HTTP ${resp.statusCode}',
+        statusCode: resp.statusCode,
+      );
     }
     final json = decodeGitHubObject(resp.body);
     final fullName = json['full_name'];
@@ -254,7 +260,10 @@ final class HttpGitHubApi implements GitHubApi {
     );
     if (resp.statusCode == 404) return null;
     if (resp.statusCode >= 400) {
-      throw GitHubApiException('pages: HTTP ${resp.statusCode}');
+      throw GitHubApiException(
+        'pages: HTTP ${resp.statusCode}',
+        statusCode: resp.statusCode,
+      );
     }
     final json = decodeGitHubObject(resp.body);
     // `build_type` is absent on older API shapes; GitHub's default for a
@@ -313,6 +322,7 @@ final class HttpGitHubApi implements GitHubApi {
     if (resp.statusCode >= 400) {
       throw GitHubApiException(
         'repo create: HTTP ${resp.statusCode} ${gitHubExcerpt(resp.body)}',
+        statusCode: resp.statusCode,
       );
     }
     final branch =
@@ -339,6 +349,7 @@ final class HttpGitHubApi implements GitHubApi {
     if (resp.statusCode >= 400 && resp.statusCode != 409) {
       throw GitHubApiException(
         'enable Pages: HTTP ${resp.statusCode} ${gitHubExcerpt(resp.body)}',
+        statusCode: resp.statusCode,
       );
     }
   }

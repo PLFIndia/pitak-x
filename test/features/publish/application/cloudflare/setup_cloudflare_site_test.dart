@@ -3,8 +3,10 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
@@ -20,7 +22,7 @@ T _right<T>(Either<Failure, T> result) => switch (result) {
 void main() {
   group('token verification and account discovery', () {
     test(
-      'user token verifies before fresh storage and account listing',
+      'user token verifies before account listing and is NOT saved yet (M3)',
       () async {
         final h = CloudflareSetupHarness();
         final discovery = _right(await h.setup.begin(cloudflareTestToken()));
@@ -28,10 +30,37 @@ void main() {
         expect(h.api.userVerifyCalls, 1);
         expect(h.api.accountVerifyCalls, 0);
         expect(h.api.listCalls, 1);
-        expect(h.credentials.saves, hasLength(1));
-        expect(h.credentials.record?.status.accountId, isNull);
+        // Deferred on purpose: abandoning setup halfway must keep the old,
+        // working connection (fix-plan M3).
+        expect(h.credentials.saves, isEmpty);
         expect(discovery.manualRequired, isFalse);
         expect(discovery.accounts, hasLength(1));
+        expect(discovery.tokenExpiresOn, isNull);
+      },
+    );
+
+    test(
+      'a user token is saved at account selection, with its expiry',
+      () async {
+        final h = CloudflareSetupHarness();
+        final token = cloudflareTestToken();
+        final discovery = _right(await h.setup.begin(token));
+
+        _right(
+          await h.setup.selectAccount(
+            accountId: cloudflareTestAccount(),
+            accountName: 'Library account',
+            pendingToken: token,
+            tokenExpiresOn: discovery.tokenExpiresOn,
+          ),
+        );
+
+        expect(h.credentials.saves, isNotEmpty);
+        expect(
+          h.credentials.record?.status.accountId?.value,
+          cloudflareTestAccountId,
+        );
+        expect(h.api.userVerifyCalls, 1, reason: 'no second verify call');
       },
     );
 
@@ -492,5 +521,264 @@ void main() {
       );
       expect(h.hostStore.saves, 0);
     });
+  });
+
+  group('M3 — a proven address is never re-verified destructively', () {
+    PublishHostState provenJournal(CloudflarePublishTarget target) =>
+        PublishHostState(
+          activeHost: PublishHost.cloudflare,
+          verifiedTarget: target,
+        );
+
+    test(
+      'rotating the token onto the verified target deploys nothing',
+      () async {
+        final h = CloudflareSetupHarness(
+          // A fresh record after a token rotation: the account and a MANUAL
+          // subdomain, no Worker yet, so the old flow would run the marker-only
+          // verification deploy over the live site.
+          connection: cloudflareTestConnection(
+            withWorker: false,
+            confirmed: false,
+          ),
+          hostState: provenJournal(moveCloudflareTarget),
+        );
+        h.api.workerExistsValue = true;
+
+        final result = await h.setup.selectWorker('pitak-library');
+
+        final ready = _right(result) as CloudflareWorkerReady;
+        expect(ready.target.siteUrl, moveCloudflareTarget.siteUrl);
+        expect(
+          h.api.deployCalls,
+          0,
+          reason: 'the journal is the address proof',
+        );
+        expect(ready.workersWriteConfirmed, isFalse);
+        expect(h.hostStore.stored!.activeHost, PublishHost.cloudflare);
+      },
+    );
+
+    test('the pending move destination is proven the same way', () async {
+      final h = CloudflareSetupHarness(
+        connection: cloudflareTestConnection(
+          withWorker: false,
+          confirmed: false,
+        ),
+        hostState: PublishHostState(
+          activeHost: PublishHost.github,
+          verifiedTarget: moveGitHubTarget,
+        ).beginMove(movePending(oldTarget: moveGitHubTarget)),
+      );
+      h.api.workerExistsValue = true;
+
+      final result = await h.setup.selectWorker('pitak-library');
+
+      expect(result.isRight(), isTrue);
+      expect(h.api.deployCalls, 0);
+    });
+
+    test(
+      'a different Worker still needs the normal verification flow',
+      () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(
+            withWorker: false,
+            confirmed: false,
+          ),
+          hostState: provenJournal(moveCloudflareTarget),
+        );
+        h.api.workerExistsValue = true;
+
+        final result = await h.setup.selectWorker('another-worker');
+
+        expect(_right(result), isA<CloudflareVerificationRequired>());
+        expect(h.api.deployCalls, 0);
+      },
+    );
+
+    test('a missing Worker is not a proven address', () async {
+      final h = CloudflareSetupHarness(
+        connection: cloudflareTestConnection(
+          withWorker: false,
+          confirmed: false,
+        ),
+        hostState: provenJournal(moveCloudflareTarget),
+      );
+      h.api.workerExistsValue = false;
+
+      final result = await h.setup.selectWorker('pitak-library');
+
+      expect(_right(result), isA<CloudflareVerificationRequired>());
+      expect(h.api.deployCalls, 0);
+    });
+
+    test(
+      'the live-site warning appears when the Worker is the active site',
+      () async {
+        // Same account and Worker, DIFFERENT subdomain: not proven, so the
+        // dialog must say the whole site is replaced (fix-plan M3 step 4).
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(
+            withWorker: false,
+            confirmed: false,
+          ).selectSubdomain(cloudflareTestSubdomain('other'), confirmed: false),
+          hostState: provenJournal(moveCloudflareTarget),
+        );
+        h.api.workerExistsValue = true;
+
+        final result = await h.setup.selectWorker('pitak-library');
+
+        final required = _right(result) as CloudflareVerificationRequired;
+        expect(required.isActiveSite, isTrue);
+      },
+    );
+
+    test(
+      'a new token is not saved until an account is chosen (M3 step 3)',
+      () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(),
+        );
+        final before = h.credentials.record;
+
+        _right(await h.setup.begin(cloudflareTestToken()));
+
+        expect(h.credentials.saves, isEmpty);
+        expect(h.credentials.record, same(before));
+      },
+    );
+  });
+
+  group('M5 — the pending-move rule runs before any save or remote write', () {
+    PublishHostState pendingJournal(CloudflarePublishTarget destination) =>
+        PublishHostState(
+          activeHost: PublishHost.github,
+          verifiedTarget: moveGitHubTarget,
+        ).beginMove(
+          movePending(oldTarget: moveGitHubTarget, newTarget: destination),
+        )!;
+
+    CloudflareSetupHarness harnessFor(CloudflarePublishTarget destination) =>
+        CloudflareSetupHarness(
+          connection: cloudflareTestConnection(),
+          hostState: pendingJournal(destination),
+        );
+
+    test('a different account writes nothing and calls nothing', () async {
+      final h = harnessFor(moveCloudflareTarget);
+      final saves = h.credentials.saves.length;
+      final lists = h.api.listCalls;
+
+      final result = await h.setup.selectAccount(
+        accountId: CloudflareAccountId.tryParse('f' * 32)!,
+        accountName: 'Other',
+        pendingToken: cloudflareTestToken(),
+      );
+
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        MoveSiteMessages.targetMismatch,
+      );
+      expect(h.credentials.saves.length, saves);
+      expect(h.api.listCalls, lists);
+      expect(h.api.accountVerifyCalls, 0);
+    });
+
+    test('a different manual Account ID writes nothing', () async {
+      final h = harnessFor(moveCloudflareTarget);
+      final saves = h.credentials.saves.length;
+
+      final result = await h.setup.selectAccountId(
+        'f' * 32,
+        pendingToken: cloudflareTestToken(),
+      );
+
+      expect(result.isLeft(), isTrue);
+      expect(h.credentials.saves.length, saves);
+    });
+
+    test('a different manual subdomain writes nothing', () async {
+      final h = harnessFor(moveCloudflareTarget);
+      final saves = h.credentials.saves.length;
+
+      final result = await h.setup.useManualSubdomain('other-subdomain');
+
+      final failure = result.swap().toNullable()!;
+      expect(
+        (failure as ValidationFailure).message,
+        MoveSiteMessages.targetMismatch,
+      );
+      expect(h.credentials.saves.length, saves);
+    });
+
+    test('creating a different subdomain writes nothing', () async {
+      final h = harnessFor(moveCloudflareTarget);
+      final saves = h.credentials.saves.length;
+
+      final result = await h.setup.createSubdomain('other-subdomain');
+
+      expect(result.isLeft(), isTrue);
+      expect(h.credentials.saves.length, saves);
+      expect(h.api.subdomainCreateCalls, 0);
+    });
+
+    test(
+      'a different Worker is refused before any remote read or write',
+      () async {
+        final h = harnessFor(moveCloudflareTarget);
+        final saves = h.credentials.saves.length;
+
+        final result = await h.setup.selectWorker('another-worker');
+
+        final failure = result.swap().toNullable()!;
+        expect(
+          (failure as ValidationFailure).message,
+          MoveSiteMessages.targetMismatch,
+        );
+        expect(h.credentials.saves.length, saves);
+        expect(h.api.workerExistsCalls, 0);
+      },
+    );
+
+    test('the exact pending Worker is allowed', () async {
+      final h = harnessFor(moveCloudflareTarget);
+
+      final result = await h.setup.selectWorker('pitak-library');
+
+      expect(result.isRight(), isTrue);
+    });
+
+    test(
+      'the old endpoint is re-authorized read-only, never deployed to',
+      () async {
+        // Cloudflare is the SOURCE here, so the journal's verified target is
+        // the old Worker: setup may re-authorize it, but a verification deploy
+        // would overwrite the site the move is about to retire (M5 step 3).
+        final pending = movePending(oldTarget: moveCloudflareTarget);
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection().selectSubdomain(
+            CloudflareSubdomain.tryParse('library')!,
+            confirmed: false,
+          ),
+          hostState: PublishHostState(
+            activeHost: PublishHost.cloudflare,
+            verifiedTarget: moveCloudflareTarget,
+          ).beginMove(pending),
+        );
+        h.api.workerExistsValue = true;
+
+        final result = await h.setup.selectWorker('pitak-library');
+
+        expect(result.isRight(), isTrue);
+        expect(h.api.deployCalls, 0, reason: 'no verification deploy');
+        expect(
+          h.credentials.record?.status.workersWriteConfirmed,
+          isFalse,
+          reason: 'write access is still unproven',
+        );
+      },
+    );
   });
 }

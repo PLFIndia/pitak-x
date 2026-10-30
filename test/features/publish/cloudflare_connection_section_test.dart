@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_connection_section.dart';
 
 import 'support/cloudflare_fakes.dart';
@@ -106,6 +107,86 @@ void main() {
     expect(graph.credentials.clears, 1);
     expect(graph.credentials.record, isNull);
     expect(find.text('Connect Cloudflare'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a prompt raised while the section is unmounted appears on mount '
+      '(M6)', (tester) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final graph = CloudflareSetupHarness();
+    final container = ProviderContainer(
+      overrides: [
+        setupCloudflareSiteProvider.overrideWith((ref) async => graph.setup),
+        cloudflareCredentialStoreProvider.overrideWithValue(graph.credentials),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container.read(cloudflareConnectionControllerProvider.future);
+    final notifier = container.read(
+      cloudflareConnectionControllerProvider.notifier,
+    );
+
+    // The prompt is raised with NO section mounted (the publish page keeps
+    // tabs alive lazily, so this is the real off-screen case).
+    final pending = notifier.startConnection();
+    await tester.pump();
+    expect(find.text('Connect Cloudflare Workers'), findsNothing);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: CloudflareConnectionSection()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Connect Cloudflare Workers'), findsOneWidget);
+    notifier.cancelSetup();
+    await pending;
+    await tester.pumpAndSettle();
+    expect(find.text('Connect Cloudflare Workers'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a rebuild never opens the same prompt twice (M6)', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 1600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final graph = CloudflareSetupHarness();
+    final container = ProviderContainer(
+      overrides: [
+        setupCloudflareSiteProvider.overrideWith((ref) async => graph.setup),
+        cloudflareCredentialStoreProvider.overrideWithValue(graph.credentials),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(
+          home: Scaffold(body: CloudflareConnectionSection()),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Cloudflare Workers'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Connect Cloudflare'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connect Cloudflare Workers'), findsOneWidget);
+
+    // Rebuild the section several times: the dialog must stay single.
+    for (var i = 0; i < 3; i++) {
+      await tester.pump();
+    }
+    expect(find.text('Connect Cloudflare Workers'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

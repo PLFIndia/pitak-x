@@ -103,9 +103,12 @@ class PublishEventsController extends _$PublishEventsController {
           verificationOnly: verificationOnly,
         );
     if (result is PublishSuccess) {
-      ref
-        ..invalidate(publishedSiteUrlProvider)
-        ..invalidate(cloudflareConnectionControllerProvider);
+      ref.invalidate(publishedSiteUrlProvider);
+      // Refresh in place: a rebuild would cancel an in-progress setup
+      // (fix-plan M11).
+      await ref
+          .read(cloudflareConnectionControllerProvider.notifier)
+          .refreshStatus();
     }
     return result;
   }

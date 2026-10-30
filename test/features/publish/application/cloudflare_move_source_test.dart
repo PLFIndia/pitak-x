@@ -6,7 +6,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_r
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_move_source.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_preflight.dart';
-import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
@@ -252,22 +252,46 @@ void main() {
     },
   );
 
-  test('Skip is allowed only when the Worker no longer exists', () async {
+  test('Skip is absent only when the Worker no longer exists', () async {
     final pending = movePending(oldTarget: moveCloudflareTarget);
 
     api.workerExistsValue = false;
-    expect((await source.authorizeSkip(pending)).isRight(), isTrue);
+    expect(await source.skipCheck(pending), isA<SourceAbsent>());
 
     api.workerExistsValue = true;
-    final refused = await source.authorizeSkip(pending);
-    expect(refused.isLeft(), isTrue);
-    refused.mapLeft((failure) {
-      expect(
-        (failure as ValidationFailure).message,
-        MoveSiteMessages.skipNotAllowed,
-      );
-    });
+    expect(await source.skipCheck(pending), isA<SourcePresent>());
   });
+
+  test('a refused token is "inaccessible", not a hidden Worker (M4)', () async {
+    final pending = movePending(oldTarget: moveCloudflareTarget);
+    api.workerExistsError = CloudflareApiException(
+      CloudflareApiExceptionKind.forbidden,
+    );
+
+    final check = await source.skipCheck(pending);
+
+    expect(check, isA<SourceInaccessible>());
+  });
+
+  test('an ambiguous 404 is a failed check, never absence (L2)', () async {
+    final pending = movePending(oldTarget: moveCloudflareTarget);
+    api.workerExistsError = CloudflareApiException(
+      CloudflareApiExceptionKind.notFound,
+    );
+
+    expect(await source.skipCheck(pending), isA<SourceCheckFailed>());
+  });
+
+  test(
+    'retirementObserved is true for a retired record or the moved page',
+    () async {
+      final pending = movePending(oldTarget: moveCloudflareTarget);
+      expect(await source.retirementObserved(pending), isFalse);
+
+      reader.body('', pending.retirement.indexHtml);
+      expect(await source.retirementObserved(pending), isTrue);
+    },
+  );
 }
 
 /// A deploy API that ignores the preview-URL privacy request.

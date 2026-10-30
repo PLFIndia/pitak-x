@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_move_reader.dart';
 import 'package:pitaka/features/publish/application/github_move_source.dart';
-import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/moved_site_verifier.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
@@ -189,42 +189,81 @@ void main() {
     },
   );
 
-  test('Skip is allowed only when the exact repository is gone', () async {
-    final pending = _pending();
+  test(
+    'Skip is absent only when the repo AND the old address are gone',
+    () async {
+      final pending = _pending();
 
-    admin.details = null;
-    expect((await source.authorizeSkip(pending)).isRight(), isTrue);
+      admin.details = null;
+      reader.absent('');
+      expect(await source.skipCheck(pending), isA<SourceAbsent>());
 
-    admin.details = const GitHubRepoDetails(
-      fullName: 'me/library',
-      ownerLogin: 'me',
-      isPrivate: false,
-      isArchived: false,
-      defaultBranch: 'main',
-      canPush: true,
-      canAdmin: true,
-    );
-    final refused = await source.authorizeSkip(pending);
-    expect(refused.isLeft(), isTrue);
-    refused.mapLeft((failure) {
-      expect(
-        (failure as ValidationFailure).message,
-        MoveSiteMessages.skipNotAllowed,
+      admin.details = const GitHubRepoDetails(
+        fullName: 'me/library',
+        ownerLogin: 'me',
+        isPrivate: false,
+        isArchived: false,
+        defaultBranch: 'main',
+        canPush: true,
+        canAdmin: true,
       );
-    });
+      expect(await source.skipCheck(pending), isA<SourcePresent>());
+    },
+  );
+
+  test('a repo 404 with a live old address is not absence (L2)', () async {
+    final pending = _pending();
+    admin.details = null;
+    reader.body('', utf8.encode('<html>still here</html>'));
+
+    expect(await source.skipCheck(pending), isA<SourcePresent>());
+  });
+
+  test('an unreadable old address proves nothing (L2)', () async {
+    final pending = _pending();
+    admin.details = null;
+    reader.unreadable('');
+
+    expect(await source.skipCheck(pending), isA<SourceCheckFailed>());
+  });
+
+  test('credential drift is "inaccessible", not a hidden site (M4)', () async {
+    final pending = _pending();
+    credentials.targetRepoValue = 'me/another';
+    reader.absent('');
+
+    final check = await source.skipCheck(pending);
+
+    expect(check, isA<SourceInaccessible>());
+    expect((check as SourceInaccessible).oldSiteAnswers, isFalse);
+    expect(admin.repositoryCalls, 0);
   });
 
   test(
-    'Skip refuses credential drift instead of hiding another site',
+    'a 401 is "inaccessible" and reports whether the site answers (N10)',
     () async {
       final pending = _pending();
-      credentials.targetRepoValue = 'me/another';
+      admin.repositoryError = const GitHubApiException(
+        'repository: HTTP 401',
+        statusCode: 401,
+      );
+      reader.body('', utf8.encode('<html>old</html>'));
 
-      final result = await source.authorizeSkip(pending);
+      final check = await source.skipCheck(pending);
 
-      final failure = result.swap().toNullable()!;
-      expect(failure, isA<ValidationFailure>());
-      expect(admin.repositoryCalls, 0);
+      expect(check, isA<SourceInaccessible>());
+      expect((check as SourceInaccessible).oldSiteAnswers, isTrue);
+    },
+  );
+
+  test(
+    'retirementObserved is true for a retired record or the moved page',
+    () async {
+      final pending = _pending();
+      expect(await source.retirementObserved(pending), isFalse);
+
+      reader.body('', pending.retirement.indexHtml);
+      expect(await source.retirementObserved(pending), isTrue);
     },
   );
 }
@@ -312,6 +351,7 @@ final class _FakeGitData implements GitHubGitDataApi {
 
 final class _FakeAdmin implements GitHubRepoAdminApi {
   GitHubRepoDetails? details;
+  GitHubApiException? repositoryError;
   int repositoryCalls = 0;
 
   @override
@@ -321,6 +361,8 @@ final class _FakeAdmin implements GitHubRepoAdminApi {
     required String token,
   }) async {
     repositoryCalls++;
+    final error = repositoryError;
+    if (error != null) throw error;
     return details;
   }
 

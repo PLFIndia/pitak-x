@@ -45,7 +45,7 @@ final class ActivePublishTargetResolver {
       if (journal.pendingMove != null) {
         return const Left(
           ValidationFailure(
-            'Finish or skip the pending move before publishing again.',
+            'Finish, skip or cancel the pending move before publishing again.',
           ),
         );
       }

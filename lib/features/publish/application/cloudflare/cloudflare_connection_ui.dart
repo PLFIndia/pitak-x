@@ -74,6 +74,7 @@ final class CloudflareConnectionUi {
     this.promptInitialValue,
     this.promptWorkerExists = false,
     this.promptVerificationRequested = false,
+    this.promptIsActiveSite = false,
     this.accounts = const [],
     this.statusMessage,
   });
@@ -102,6 +103,10 @@ final class CloudflareConnectionUi {
   /// Whether replacement consent should resume manual-address verification.
   final bool promptVerificationRequested;
 
+  /// Whether the verification prompt's Worker is the journal's live site at
+  /// another address, so the dialog must say the whole site is replaced.
+  final bool promptIsActiveSite;
+
   /// Bounded account choices shown only by the account prompt.
   final List<CloudflareAccount> accounts;
 
@@ -118,6 +123,7 @@ final class CloudflareConnectionUi {
     Object? promptInitialValue = _keep,
     bool? promptWorkerExists,
     bool? promptVerificationRequested,
+    bool? promptIsActiveSite,
     List<CloudflareAccount>? accounts,
     Object? statusMessage = _keep,
   }) => CloudflareConnectionUi(
@@ -136,6 +142,7 @@ final class CloudflareConnectionUi {
     promptWorkerExists: promptWorkerExists ?? this.promptWorkerExists,
     promptVerificationRequested:
         promptVerificationRequested ?? this.promptVerificationRequested,
+    promptIsActiveSite: promptIsActiveSite ?? this.promptIsActiveSite,
     accounts: accounts ?? this.accounts,
     statusMessage: identical(statusMessage, _keep)
         ? this.statusMessage

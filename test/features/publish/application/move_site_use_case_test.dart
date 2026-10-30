@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/site/move_site_operations.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
@@ -390,16 +391,127 @@ void main() {
       test('skip refuses while the old site still exists', () async {
         final h = harness()
           ..seedPending()
-          ..source.skipAuthorized = false;
+          ..source.skipCheckResult = const SourcePresent();
 
         final result = await h.useCase.skip();
 
         final failure = result as MoveSiteFailure;
+        expect(failure.reason, MoveSiteMessages.skipNotAllowed);
         expect(failure.retirementPending, isTrue);
         expect(h.source.retireCalls, 0);
         expect(h.store.saves, 0);
         expect(h.store.stored!.pendingMove, isNotNull);
       });
+
+      test(
+        'skip on an inaccessible old site offers finish-without-retiring',
+        () async {
+          final h = harness()
+            ..seedPending()
+            ..source.skipCheckResult = const SourceInaccessible(
+              oldSiteAnswers: true,
+            );
+
+          final result = await h.useCase.skip();
+
+          final failure = result as MoveSiteFailure;
+          expect(failure.reason, MoveSiteMessages.sourceInaccessible);
+          expect(failure.canFinishWithoutRetiring, isTrue);
+          expect(failure.oldSiteAnswers, isTrue);
+          expect(failure.retirementPending, isTrue);
+          expect(h.source.retireCalls, 0);
+          expect(h.store.saves, 0);
+        },
+      );
+
+      test(
+        'skip on a failed check proves nothing and writes nothing',
+        () async {
+          final h = harness()
+            ..seedPending()
+            ..source.skipCheckResult = const SourceCheckFailed();
+
+          final result = await h.useCase.skip();
+
+          final failure = result as MoveSiteFailure;
+          expect(failure.reason, MoveSiteMessages.sourceCheckFailed);
+          expect(failure.canFinishWithoutRetiring, isFalse);
+          expect(h.store.saves, 0);
+        },
+      );
+
+      test('finish without retiring switches only when the site is gone or '
+          'unreachable', () async {
+        final h = harness()
+          ..seedPending()
+          ..source.skipCheckResult = const SourceInaccessible(
+            oldSiteAnswers: false,
+          );
+
+        final result = await h.useCase.finishWithoutRetiring();
+
+        expect(result, isA<MoveSiteSuccess>());
+        expect((result as MoveSiteSuccess).retirementSkipped, isTrue);
+        expect(h.source.retireCalls, 0);
+        expect(h.store.stored!.pendingMove, isNull);
+        expect(h.store.stored!.activeHost, direction.newTarget.host);
+      });
+
+      test(
+        'finish without retiring is refused when the site came back',
+        () async {
+          final h = harness()
+            ..seedPending()
+            ..source.skipCheckResult = const SourcePresent();
+
+          final result = await h.useCase.finishWithoutRetiring();
+
+          final failure = result as MoveSiteFailure;
+          expect(failure.reason, MoveSiteMessages.finishNotAllowed);
+          expect(h.store.saves, 0);
+          expect(h.store.stored!.pendingMove, isNotNull);
+        },
+      );
+
+      test(
+        'cancel keeps the old pointer with one write and no remote call',
+        () async {
+          final h = harness()..seedPending();
+
+          final result = await h.useCase.abandon();
+
+          expect(result, isA<MoveSiteAbandoned>());
+          final abandoned = result as MoveSiteAbandoned;
+          expect(abandoned.oldTarget.targetId, direction.oldTarget.targetId);
+          expect(abandoned.newTarget.targetId, direction.newTarget.targetId);
+          expect(h.store.saves, 1);
+          expect(h.store.stored!.pendingMove, isNull);
+          expect(h.store.stored!.activeHost, direction.oldTarget.host);
+          expect(
+            h.store.stored!.verifiedTarget!.targetId,
+            direction.oldTarget.targetId,
+          );
+          expect(h.source.retireCalls, 0);
+          expect(h.destination.publishCalls, 0);
+        },
+      );
+
+      test(
+        'cancel is refused once the old address shows the moved page',
+        () async {
+          final h = harness()
+            ..seedPending()
+            ..source.retirementObservedValue = true;
+
+          final result = await h.useCase.abandon();
+
+          final failure = result as MoveSiteFailure;
+          expect(failure.reason, MoveSiteMessages.cancelAfterRetirement);
+          expect(failure.retirementPending, isTrue);
+          expect(h.store.saves, 0);
+          expect(h.store.stored!.pendingMove, isNotNull);
+        },
+      );
     });
   }
 

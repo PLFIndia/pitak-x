@@ -168,10 +168,22 @@ final class PublishCommitStale extends PublishCommitResult {
 /// Transport-level failure crossing the GitHub boundary.
 final class GitHubApiException implements Exception {
   /// Creates the exception with a short [message].
-  const GitHubApiException(this.message);
+  ///
+  /// [statusCode] is the HTTP status when the failure came from a response, and
+  /// null for a transport failure. It exists so a caller can tell "the token
+  /// cannot see this repository" (401/403) from "the network is down": a move's
+  /// Skip check must offer "finish without retiring" for the first and retry
+  /// for the second (fix-plan N10).
+  const GitHubApiException(this.message, {this.statusCode});
 
   /// Diagnostic message (not shown verbatim to users).
   final String message;
+
+  /// HTTP status of the failing response, or null for a transport failure.
+  final int? statusCode;
+
+  /// True when GitHub refused the credential rather than failing to answer.
+  bool get isUnauthorized => statusCode == 401 || statusCode == 403;
 
   @override
   String toString() => 'GitHubApiException($message)';

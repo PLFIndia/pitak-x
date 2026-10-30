@@ -13,6 +13,8 @@ import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
+import '../support/move_fakes.dart';
+
 class _Store implements PublishHostStateStore {
   _Store([this.stored]);
   PublishHostState? stored;
@@ -193,6 +195,68 @@ void main() {
 
       expect(url, isNull);
       expect(verifier.calls, isEmpty);
+    });
+  });
+
+  group('abandonMove (fix-plan M4)', () {
+    PublishHostState pendingState() => PublishHostState(
+      activeHost: PublishHost.github,
+      verifiedTarget: moveGitHubTarget,
+    ).beginMove(movePending(oldTarget: moveGitHubTarget))!;
+
+    test(
+      'clears the pending move in one write and keeps the old pointer',
+      () async {
+        final state = pendingState();
+        final store = _Store(state);
+        final repo = repository(store: store);
+
+        final result = await repo.abandonMove(state.pendingMove!);
+
+        expect(result.isRight(), isTrue);
+        expect(store.saves, 1);
+        expect(store.stored!.pendingMove, isNull);
+        expect(store.stored!.activeHost, PublishHost.github);
+        expect(
+          store.stored!.verifiedTarget!.targetId,
+          moveGitHubTarget.targetId,
+        );
+      },
+    );
+
+    test('a repeat is a no-write success', () async {
+      final state = pendingState();
+      final store = _Store(state);
+      final repo = repository(store: store);
+      await repo.abandonMove(state.pendingMove!);
+      final saves = store.saves;
+
+      final again = await repo.abandonMove(state.pendingMove!);
+
+      expect(again.isRight(), isTrue);
+      expect(store.saves, saves);
+    });
+
+    test('a failed save is returned, not swallowed', () async {
+      final state = pendingState();
+      final store = _Store(state)..fails = true;
+
+      final result = await repository(
+        store: store,
+      ).abandonMove(state.pendingMove!);
+
+      expect(result.isLeft(), isTrue);
+      expect(store.stored!.pendingMove, isNotNull);
+    });
+
+    test('an absent journal is a typed failure', () async {
+      final state = pendingState();
+
+      final result = await repository(
+        store: _Store(),
+      ).abandonMove(state.pendingMove!);
+
+      expect(result.isLeft(), isTrue);
     });
   });
 
