@@ -3,9 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
@@ -1020,6 +1023,64 @@ void main() {
       expect(reason, contains('Wi-Fi'));
       expect(h.api.deployCalls, 0);
       expect(h.manifestStore.saves, isEmpty);
+    },
+  );
+
+  test('a typed read failure reaches the result, not the generic message '
+      '(N6)', () async {
+    final h = S8PublishHarness(dir);
+    h.reads.catalogueResult = left(
+      const PublishReadFailure(
+        'Your published member list is too large. Remove some members in the '
+        'Library network list, then publish again.',
+      ),
+    );
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    final failure = result as PublishFailure;
+    expect(failure.reason, contains('member list is too large'));
+    expect(failure.reason, isNot(PublishSnapshotBuilder.readFailedMessage));
+    expect(h.api.uploadManifests, isEmpty);
+    expect(h.api.deployCalls, 0);
+  });
+
+  test(
+    'a typed read failure reaches a confirmed replacement too (N6)',
+    () async {
+      final h = S8PublishHarness(dir);
+      h.reads.catalogueResult = left(
+        const PublishReadFailure(
+          'Could not read your saved libraries. Nothing was published. '
+          'Please try again.',
+        ),
+      );
+      final summary = PublishReplacementSummary(
+        target: h.target,
+        requestedSection: PublishRequestedSection.catalogue,
+        digest: 'a' * 64,
+        catalogueItemCount: 0,
+        posterCount: 0,
+        availabilityOmitted: false,
+        remoteAnchor: const CloudflareRemoteAnchor(
+          workerExists: false,
+          markerKind: CloudflareMarkerKind.absent,
+        ),
+        reason: PublishReplacementReason.unknownRemoteState,
+      );
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+        confirmation: summary,
+      );
+
+      final failure = result as PublishFailure;
+      expect(failure.reason, contains('saved libraries'));
+      expect(h.api.deployCalls, 0);
     },
   );
 

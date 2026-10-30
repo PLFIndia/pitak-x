@@ -180,13 +180,16 @@ final class PublishToCloudflareUseCase {
       return const PublishFailure(CloudflareErrorMessages.stalePublish);
     }
 
-    var inputs = await replacement.readInputs(
+    final readInputs = await replacement.readInputs(
       reads: _reads,
       target: target,
       section: section,
       complete: confirmation != null,
     );
-    if (inputs == null) return const PublishFailure(_readFailed);
+    if (readInputs case Left(value: final failure)) {
+      return CloudflarePublishOutcomes.failure(failure);
+    }
+    var inputs = readInputs.toNullable()!;
 
     final loaded = await _credentials.read();
     final credentialFailure = loaded.swap().toNullable();
@@ -300,14 +303,17 @@ final class PublishToCloudflareUseCase {
     }
     final replacing = replacementReason != null;
     if (replacing) {
-      inputs = await replacement.readInputs(
+      final completeInputs = await replacement.readInputs(
         reads: _reads,
         target: target,
         section: section,
         complete: true,
         existing: inputs,
       );
-      if (inputs == null) return const PublishFailure(_readFailed);
+      if (completeInputs case Left(value: final failure)) {
+        return CloudflarePublishOutcomes.failure(failure);
+      }
+      inputs = completeInputs.toNullable()!;
     }
 
     PublishSnapshot snapshot;
@@ -474,6 +480,4 @@ final class PublishToCloudflareUseCase {
       remoteChangedSinceReview: true,
     );
   }
-
-  static const String _readFailed = PublishSnapshotBuilder.readFailedMessage;
 }

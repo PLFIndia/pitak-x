@@ -119,7 +119,12 @@ final class CloudflareReplacementPreparation {
   }
 
   /// Reads ordinary or complete inputs, reusing an existing complete read.
-  Future<PublishInputs?> readInputs({
+  ///
+  /// Returns the TYPED failure (fix-plan N6): the snapshot builder already
+  /// carries a safe sentence for an unreadable library ("member list too
+  /// large", "saved libraries unreadable"), and collapsing it to null made
+  /// Cloudflare show the generic read message GitHub never did.
+  Future<Either<Failure, PublishInputs>> readInputs({
     required PublishReads reads,
     required CloudflarePublishTarget target,
     required PublishRequestedSection section,
@@ -127,14 +132,13 @@ final class CloudflareReplacementPreparation {
     PublishInputs? existing,
   }) async {
     if (existing != null && (existing.events != null || !complete)) {
-      return existing;
+      return Right(existing);
     }
-    final read = await _snapshotBuilder.read(
+    return _snapshotBuilder.read(
       reads: reads,
       target: target,
       includeEvents: complete || section == PublishRequestedSection.events,
     );
-    return read.toNullable();
   }
 
   /// Produces a replacement-required result, including a fresh complete read
@@ -156,13 +160,13 @@ final class CloudflareReplacementPreparation {
       complete: true,
       existing: inputs,
     );
-    if (completeInputs == null) {
-      return const PublishFailure(PublishSnapshotBuilder.readFailedMessage);
+    if (completeInputs case Left(value: final failure)) {
+      return CloudflarePublishOutcomes.failure(failure);
     }
     final prepared = await prepare(
       target: target,
       requestedSection: requestedSection,
-      inputs: completeInputs,
+      inputs: completeInputs.toNullable()!,
       remoteAnchor: remoteAnchor,
       reason: reason,
       previousSiteUrl: previousSiteUrl,
