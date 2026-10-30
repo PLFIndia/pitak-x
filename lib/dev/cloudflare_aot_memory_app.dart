@@ -15,7 +15,10 @@ const _outputPath = String.fromEnvironment(
       '/data/user/0/dev.khoj.pitaka.fdroid/app_flutter/pitaka_s8_memory.json',
 );
 
-void main() {
+/// Runs the memory harness. Called by `lib/main_dev_harness.dart`, which is
+/// the ONLY entry point that may reference this library (fix-plan L15).
+void runCloudflareMemoryApp() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const _MemoryApp());
 }
 

@@ -50,9 +50,8 @@ delete_device_file() {
 
 cd "$ROOT"
 fvm flutter build apk "--$MODE" --flavor fdroid \
-  --dart-define="S8_MEMORY=true" \
   --dart-define="S8_MEMORY_OUTPUT=$DEVICE_PATH" \
-  -t lib/main.dart 2>&1 | tee "$LOG"
+  -t lib/main_dev_harness.dart 2>&1 | tee "$LOG"
 "$ADB" -s "$DEVICE" uninstall dev.khoj.pitaka.fdroid >/dev/null 2>&1 || true
 "$ADB" -s "$DEVICE" install "build/app/outputs/flutter-apk/app-fdroid-$MODE.apk"
 if [[ "$DEVICE_PATH" == /sdcard/* || "$DEVICE_PATH" == /storage/* ]]; then

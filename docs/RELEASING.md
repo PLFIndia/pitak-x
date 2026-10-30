@@ -206,7 +206,9 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    `S8_AOT_MODE=release S8_MEMORY_OUT=build/cloudflare_aot_memory_release.json ./tool/cloudflare_aot_memory.sh <android-device-id>`.
    Root adb is used only to read the release app's private result file. For an
    AOT profile diagnostic, `./tool/cloudflare_aot_memory.sh <android-device-id>`
-   needs no root adb. Both modes run the real catalogue builder, per-file
+   needs no root adb. Both modes build the dev-only entry point
+   `lib/main_dev_harness.dart`; the shipping `main.dart` contains no harness
+   code and cannot be switched into one (fix-plan L15). Both modes run the real catalogue builder, per-file
    artifact sink, assembler and streamed native upload against a loopback fake
    server. Require `fileCount == 413`, `uploadedAssets == 413`,
    `requestCount == 1` and `metadataOnlyBuild == true`. The script writes the

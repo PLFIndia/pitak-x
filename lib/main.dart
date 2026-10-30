@@ -6,19 +6,16 @@ import 'package:pitaka/core/theme/app_theme.dart';
 import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
-import 'package:pitaka/dev/cloudflare_aot_memory_app.dart' as memory;
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
 import 'package:pitaka/src/rust/frb_generated.dart';
 
 Future<void> main() async {
-  // The profiling build uses the normal entrypoint; normal releases never set
-  // this flag, so they still initialize the vault and the full app below.
-  if (const bool.fromEnvironment('S8_MEMORY')) {
-    memory.main();
-    return;
-  }
+  // The shipping entry point contains no development harness: the AOT memory
+  // scenario lives in `lib/main_dev_harness.dart` and is run with `-t`
+  // (fix-plan L15).
+  //
   // Load the native pitak_crypto core before any vault operation. Must complete
   // before the FFI surface (unlockAndReadVault) is callable.
   WidgetsFlutterBinding.ensureInitialized();
