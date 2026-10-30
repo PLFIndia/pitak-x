@@ -1335,12 +1335,17 @@ exactly as Part L requires; it contains no authorization header or raw body.
 
 ---
 
-## 17. Fix plan (2026-10-29) — Phase 2 landed
+## 17. Fix plan (2026-10-29) — Phase 3 landed
 
 The review-driven fix plan (`cloudflare-fix-plan-2026-10-29.md` and its three
 parts) is being executed phase by phase. **Phase 0, 1A and 1B are committed**
 (`c5f8ef3` … `6fad820`). **Phase 2 (H2, L8, L5) is implemented** and recorded
-as Part M rows 93–95.
+as Part M rows 93–95. **Phase 3 (L2, RH3, M5, M4, M3, M6, M11) landed in
+`7b0b9b7`**, recorded by `6a8f0ab` (ADR 0017 Decisions 5a and 9; Part M rows
+96–101; D.4, F.8, the F.9 failure map, `CHANGELOG`, §9/§13 and the in-app
+guide). The next phase is **Phase 4**.
+
+**Phase 2 — large uploads (H2, L8, L5).**
 
 - **H2 — deadlines follow size and progress.** `CloudflareLimits` names each
   bound separately; `TimeoutHttpClient` gained an opt-in upload mode (every new
@@ -1359,14 +1364,44 @@ as Part M rows 93–95.
   live run folders; `appTempDir` is a keepAlive provider; the sweep runs on the
   first `spool()`, inside a queued operation, never when a provider is built.
 
-Evidence: `test/core/network/timeout_http_client_upload_progress_test.dart`
+Evidence for Phase 2: `test/core/network/timeout_http_client_upload_progress_test.dart`
 (5), the H2/L8 groups in `cloudflare_http_transport_test.dart` (8),
 `cloudflare_request_timing_test.dart` (8), the deploy-API 401/session-budget
 tests and the rewritten changed-bytes test, the two use-case copy tests, the
 two new real-loopback cases in `cloudflare_socket_abort_test.dart`, and
 `publish_artifact_spool_root_test.dart` (7).
 
-**Still open in the fix plan:** Phases 3–6 (moves and reconnects, truthful
-verification and copy, the remaining Low items, and the real-host evidence).
-Bucket splitting stays an optional follow-up after a real-host trial (H2
-step 7).
+- **Phase 3 — every stuck state has an exit.** "Absent" now needs positive
+  evidence on both hosts: a Cloudflare 404 counts only with `success: false`
+  and code 10007, and GitHub's Skip check needs a repo 404 *and* a real public
+  404 at the old root, so `notFound`/`unreadable` authorises nothing (L2/RH3;
+  `GitHubApiException` gained the status so 401/403 is "inaccessible", N10).
+  `CloudflareSetupConstraint` (derived from the journal) runs before every
+  setup save and remote write (M5), and the prompts prefill from
+  `CloudflareSetupHint`. A pending move gained **Cancel** (`abandonMove`) and
+  **Finish without retiring** behind a sealed `SourceSkipCheck`, so the three
+  exits are Retry / Skip / Cancel (M4, Decision 5a). Reconnecting to the
+  already-verified address finalizes without the marker-only deploy (M3,
+  Decision 9), a user token is saved only at account selection, and a prompt
+  is re-shown from `initState` with a generation so a rebuild cancels the old
+  waits instead of stranding them (M6, M11).
+
+Evidence for Phase 3: 48 new tests across L2 (9), M5 (7), M3 (6), M4 (18),
+M6 (5) and M11 (3); `cloudflare_setup_journal.dart` and
+`cloudflare_connection_status_writer.dart` were extracted when two files
+crossed the 500-line ratchet, rather than allow-listed.
+
+**Next — Phase 4, truthful verification and messages (M9, L3+N3, L4,
+L7+N16, L12+N4, L16, N5/N6/N9).** Its entry criteria are met: Phase 3 is in,
+and the two decisions it needs are taken at the plan's recommended defaults
+(D6 — a total moved-page name normalizer that leaves every currently valid
+name unchanged; D8 — Retry verification may disable Version URLs, a route
+write and never a deploy). It must leave `cloudflare_version_url_gate.dart`
+as the only Version-URL rule, add the pending-deploy record instead of a
+schema bump, and keep every "done" message tied to what actually landed.
+
+**Still open after Phase 4:** Phase 5 (remaining Low items and nits: L1, L6,
+L9–L11, L13–L15, L17, RH2, N17) and Phase 6 (real-host evidence, records and
+release gates). Phase 6.1's real-host checks need no code and should be run
+early; they only let L2/RH1/RH2/RH3 delete fallbacks. Bucket splitting stays
+an optional follow-up after a real-host trial (H2 step 7).
