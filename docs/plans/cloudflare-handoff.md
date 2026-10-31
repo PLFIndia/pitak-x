@@ -6,23 +6,34 @@
 > their numbering never changes. Where an older section disagrees with §0,
 > §0 wins.
 
-## 0. Current state (2026-10-31, evening; code at `71322e4`)
+## 0. Current state (2026-10-31, evening; code verified at `71322e4`)
 
-Later commits on the branch touch documents only, unless 0.6 says otherwise.
-The 2026-10-31 device session added three code fixes (`bec678e`, `677d096`,
-`71322e4`); CI has not run on them yet (see 0.1).
+The last code commit is `71322e4`. Every later commit touches documents only,
+unless 0.6 says otherwise.
 
 ### 0.1 Where things are
 
 | What | State |
 |---|---|
-| Branch | `cloudflare`, pushed; up to date with `main` (0 commits behind) |
-| PR | [#20](https://github.com/PLFIndia/pitak-x/pull/20) — **draft** on purpose (see 0.3), mergeable, no review threads |
-| CI at `b887a74` | **All green**: Flutter (locked deps, `build_runner` no diff, analyze, format, fastlane check, tests with coverage, both host-timezone runs, coverage floor, secret scan, Linux goldens), Rust (fmt, clippy, deny, release tests), OSV scan, F-Droid purity + Play positive control |
-| CI at `71322e4` | **Not run yet** — push, then check PR #20 (goldens included; no rendered layout changed) |
-| Local gates at `71322e4` | 4,621 non-golden tests pass (7 new); `flutter analyze lib test integration_test` zero issues; format 0 changed; pre-commit generated-code check clean |
-| Goldens | The Linux `Update goldens` artefact for `b887a74` is byte-identical to all 10 committed PNGs |
+| Branch | `cloudflare`; 0 commits behind `main`. **Not pushed past `b887a74`:** `eff4477` (docs), `bec678e`, `677d096`, `71322e4` (code), `f080c5a` and later (docs) exist only on the maintainer's Mac |
+| PR | [#20](https://github.com/PLFIndia/pitak-x/pull/20) — **draft** on purpose (see 0.3), mergeable, head still `b887a74`, no review threads |
+| CI at `b887a74` | **All green** (re-checked 2026-10-31 evening): Flutter (locked deps, `build_runner` no diff, analyze, format, fastlane check, tests with coverage, both host-timezone runs, coverage floor, secret scan), Linux goldens, Rust (fmt, clippy, deny, release tests), OSV scan, F-Droid purity + Play positive control |
+| CI after `b887a74` | **Not run** — nothing is pushed. Push, then check PR #20 |
+| Local gates at `71322e4` | 4,621 non-golden tests pass (7 new since `b887a74`); line coverage **81.39 %** (24,445 / 30,036 lines, CI's own formula; floor 64 %); `flutter analyze lib test integration_test` zero issues; `dart format` 0 of 1,065 files changed; the pre-commit generated-code check passed on every commit. Not run locally: the two host-timezone matrices, Rust, OSV, F-Droid purity (no Rust, dependency or Gradle change) |
+| Goldens | The Linux `Update goldens` artefact for `b887a74` is byte-identical to all 10 committed PNGs. The later code changes alter no settled layout (a reload no longer shows a spinner; the move phase line shows only while busy; one sentence of dialog copy), so no PNG should change — CI confirms |
+| Device | OnePlus `678c5642` runs the F-Droid release build of `71322e4` (APK SHA-256 `ee07a9aa9f52b2195b5a5de3f2da5981df439e5164cfd3122f1018ffaf6761cd`), active host Cloudflare `pitak-worker` (§12, 2026-10-31 end state) |
 | Plan / records | [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) Part M rows 34–135; ADR 0017 (amended 2026-10-31); ADR 0018 (saved copies) |
+
+**Code changed since `b887a74`** (all found on the phone on 2026-10-31; each
+has a regression test that fails without it):
+
+| Commit | Files | Change |
+|---|---|---|
+| `bec678e` | `presentation/widgets/publish_card.dart`, `presentation/widgets/move_site_controls.dart`; tests `publish_card_test.dart`, `move_site_widgets_test.dart` | The card keeps the last status while it reloads (`skipLoadingOnReload: true`), so the pending-move banner and the move controller's result survive Skip/Retry/Finish; the phase line shows only while a command runs (Part M rows 132–133) |
+| `677d096` | `application/site/moved_site_verifier.dart`; test support `cloudflare_s8_fakes.dart` (`CapHonoringStructuredReader`); tests `move_verifiers_test.dart`, `github_move_source_test.dart` | `rootServesContent` reads up to `rootProbeMaxBytes` (1 MiB) instead of 1 byte: the finish dialog now knows the old site still answers, and GitHub's L2 check reports a live old address as present (row 134) |
+| `71322e4` | `presentation/widgets/replace_site_dialog.dart`; new test `replace_site_dialog_test.dart` | The target-changed review brackets the counts once (row 135) |
+
+All paths are under `lib/features/publish/` or `test/features/publish/`.
 
 ### 0.2 What is done
 
@@ -58,8 +69,8 @@ The 2026-10-31 device session added three code fixes (`bec678e`, `677d096`,
 
 ### 0.3 What is left, in order
 
-1. **Push and get CI green** for `bec678e`, `677d096`, `71322e4` (and the
-   docs commit), including the Linux goldens.
+1. **Push and get CI green** for everything after `b887a74` (three code
+   commits and the docs), including the Linux goldens.
 2. **Maintainer decisions** from the 2026-10-31 session (§14 items 13–16): the
    "contradicted" size gap, the unreachable manual-subdomain path, RH3's
    private-repo-as-gone Skip, and setup's consent prompt for the phone's own
@@ -104,7 +115,9 @@ The 2026-10-31 device session added three code fixes (`bec678e`, `677d096`,
     versions) never asks (row 131);
   - the Worker-name case listing is gone because Cloudflare refuses capitals;
     absence still needs Cloudflare's own 404 + 10007 (row 131);
-  - the release waits for the real-phone rows.
+  - the release waits for the real-phone rows. *(Evening: every runnable
+    row is done; only J.7 step 9's scan on two real phones remains, §0.3
+    item 3 — decide whether the release waits for it.)*
 - The standing list is §13; ADR 0017's amendments are the authority.
 
 ### 0.5 Working notes for whoever continues
@@ -126,6 +139,17 @@ The 2026-10-31 device session added three code fixes (`bec678e`, `677d096`,
   Gradle UP-TO-DATE build that kept the old bytes).
 - **Secrets:** see §16. No token, JWT, account id or raw response body goes
   into any document.
+- **Device runs (learned 2026-10-31):** install a clean *release* build with
+  `adb install -r` — a debug build is signed differently and needs an
+  uninstall that deletes the stored token. Pending-move states are made with
+  airplane mode at the right card phase, not by revoking a token early
+  (`docs/RELEASING.md` §6.5). `uiautomator dump` reads whichever app is in
+  front, so check the foreground app first and delete the dump from
+  `/sdcard`. The emulator needs `-dns-server 1.1.1.1,8.8.8.8` to resolve
+  `workers.dev`.
+- **Test fakes:** for anything that reads a published site, prefer
+  `CapHonoringStructuredReader`; the plain `FakeStructuredReader` ignores the
+  byte cap the real reader enforces (§14 item 13).
 
 ### 0.6 Commit log
 
@@ -176,7 +200,9 @@ Fix plan and Phase 6 (2026-10-29 … 31):
 | `f709514`, `1817d56`, `39df13d` | Branding | App icon reads as an open book face-up; two library goldens regenerated on Linux |
 | `54b73fb` | ADR 0018 | Revalidated saved copies of published files |
 | `b6dc222`, `af670d4`, `b887a74` | §12 fixes | The UX defects and decisions in 0.2/0.4; Part M rows 126–131 |
+| `eff4477` | Docs | §0 current-state handoff and stale-statement sweep |
 | `bec678e`, `677d096`, `71322e4` | 2026-10-31 device session | Move results survive status reloads (+ phase only while busy); the old-site probe reads a real page; single brackets in the target-changed review; Part M rows 132–135 |
+| `f080c5a` | Docs | The device-session evidence (§12), §14 items 13–17, Part M rows 132–135, `RELEASING.md` §6.5 notes |
 
 ---
 
@@ -1848,6 +1874,13 @@ Deleted 2026-10-31: `application/cloudflare/cloudflare_worker_name_guard.dart`.
 `lib/features/network/domain/{entities/published_content,published_file_fetch,repositories/published_file_cache,usecases/published_file_loader}.dart`,
 `lib/features/network/infrastructure/{file_published_file_cache,published_file_cache_index,published_fetch_problem}.dart`,
 `docs/adr/0018-revalidated-saved-copies-of-published-files.md`.
+
+**New since — 2026-10-31 device session:** no new production file (the three
+fixes edit existing ones; §0.1 lists them). Tests:
+`test/features/publish/replace_site_dialog_test.dart` (new) and
+`CapHonoringStructuredReader` in
+`test/features/publish/support/cloudflare_s8_fakes.dart`.
+
 ---
 
 ## 16. Secrets
