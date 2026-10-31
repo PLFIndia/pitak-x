@@ -22,8 +22,16 @@ enum DescriptorRefusal {
   /// More redirect hops than the fetcher follows.
   tooManyRedirects,
 
-  /// The final response was not 2xx (e.g. the site has no library.json yet).
+  /// The final response was not 2xx, and not 404/410 (for example a server
+  /// error, a rate limit or a refused request): "try again later".
   httpStatus,
+
+  /// The host answered 404 or 410: this address serves no `library.json` at
+  /// all (a site that never published one, or a Pitak moved page after a
+  /// completed move). Unlike [httpStatus] this is a POSITIVE answer about the
+  /// address, which is why it may replace a stale identity-conflict badge
+  /// (handoff §12, decided 2026-10-31). Never produced by the parse step.
+  notPublished,
 
   /// The body exceeded the 64 KiB descriptor cap.
   tooLarge,

@@ -196,6 +196,7 @@ void main() {
         DescriptorRefusal.redirectRefused,
         DescriptorRefusal.tooManyRedirects,
         DescriptorRefusal.httpStatus,
+        DescriptorRefusal.notPublished,
         DescriptorRefusal.tooLarge,
         DescriptorRefusal.timedOut,
         DescriptorRefusal.transport,
@@ -242,6 +243,100 @@ void main() {
       await useCase()();
       // The badge must not flicker away because the site went offline.
       expect(rowAfter(seedUrl).fetchStatus, FetchStatus.identityConflict);
+    });
+
+    test(
+      'a failing host (5xx, rate limit) does not demote it either',
+      () async {
+        for (final refusal in [
+          DescriptorRefusal.httpStatus,
+          DescriptorRefusal.timedOut,
+          DescriptorRefusal.transport,
+        ]) {
+          repo.rows = [
+            const NetworkLibrary(
+              id: 1,
+              siteUrl: seedUrl,
+              fingerprint: fpA,
+              fetchStatus: FetchStatus.identityConflict,
+            ),
+          ];
+          fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorRefused(
+            refusal,
+          );
+          await useCase()();
+          expect(
+            rowAfter(seedUrl).fetchStatus,
+            FetchStatus.identityConflict,
+            reason: '$refusal',
+          );
+        }
+      },
+    );
+
+    // Decided 2026-10-31 (handoff §12): a completed move clears the badge.
+    // The old address then serves the moved page, whose library.json is a
+    // real 404 — a positive "nothing is published here".
+    test('an address that no longer publishes (404/410) drops a stale '
+        'conflict badge to unreachable, keeping its cached facts', () async {
+      repo.rows = [
+        const NetworkLibrary(
+          id: 1,
+          siteUrl: seedUrl,
+          name: 'Cached Name',
+          fingerprint: fpA,
+          fetchStatus: FetchStatus.identityConflict,
+          fetchedAt: 500,
+        ),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.notPublished,
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      final row = rowAfter(seedUrl);
+      expect(row.fetchStatus, FetchStatus.unreachable);
+      expect(report.unreachable, 1);
+      expect(report.conflicts, 0);
+      // Nothing else changes: identity and cached facts are kept.
+      expect(row.fingerprint, fpA);
+      expect(row.name, 'Cached Name');
+      expect(row.fetchedAt, 500);
+    });
+
+    test('after a completed move the old row loses its badge and the new '
+        'address is offered as the move, never silently merged', () async {
+      repo.rows = [
+        // The old address: owns the identity, badge from the time both
+        // addresses served it.
+        const NetworkLibrary(
+          id: 1,
+          siteUrl: seedUrl,
+          fingerprint: fpA,
+          fetchStatus: FetchStatus.identityConflict,
+        ),
+        // The new address, saved by the user, with no identity of its own.
+        const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
+      ];
+      // The move completed: the old address serves the moved page (404 for
+      // library.json), the new one publishes the same identity at itself.
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.notPublished,
+      );
+      fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+        descriptor(seed2Url, name: 'Moved Library'),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(rowAfter(seedUrl).fetchStatus, FetchStatus.unreachable);
+      expect(rowAfter(seedUrl).fingerprint, fpA, reason: 'never re-assigned');
+      expect(rowAfter(seed2Url).fingerprint, isNull, reason: 'no auto-merge');
+      expect(report.conflicts, 0);
+      expect(report.moveCandidates, hasLength(1));
+      expect(report.moveCandidates.single.savedSiteUrl, seedUrl);
+      expect(report.moveCandidates.single.fetchedSiteUrl, seed2Url);
     });
 
     test('report counts refusals by class', () async {

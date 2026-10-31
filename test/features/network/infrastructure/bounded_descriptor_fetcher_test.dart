@@ -197,14 +197,42 @@ void main() {
     expect(probe.bodyClosed, isTrue);
   });
 
-  test('non-2xx ⇒ DescriptorRefused(httpStatus)', () async {
-    final fetcher = fetcherFor(
-      streaming(const [
-        [1],
-      ], status: 404),
-    );
-    final result = await fetcher.fetch(fileUrl);
-    expect((result as DescriptorRefused).reason, DescriptorRefusal.httpStatus);
+  test(
+    'a failing host (5xx, 429, 403) ⇒ DescriptorRefused(httpStatus)',
+    () async {
+      for (final status in [500, 503, 429, 403]) {
+        final fetcher = fetcherFor(
+          streaming(const [
+            [1],
+          ], status: status),
+        );
+        final result = await fetcher.fetch(fileUrl);
+        expect(
+          (result as DescriptorRefused).reason,
+          DescriptorRefusal.httpStatus,
+          reason: 'HTTP $status says "try later", not "nothing here"',
+        );
+      }
+    },
+  );
+
+  // A Pitak moved page answers 404 for library.json once a move completes.
+  // "Nothing is published here" is a positive fact the refresh may act on
+  // (a stale conflict badge gives way), unlike a failing host.
+  test('404 and 410 ⇒ DescriptorRefused(notPublished)', () async {
+    for (final status in [404, 410]) {
+      final fetcher = fetcherFor(
+        streaming(const [
+          [1],
+        ], status: status),
+      );
+      final result = await fetcher.fetch(fileUrl);
+      expect(
+        (result as DescriptorRefused).reason,
+        DescriptorRefusal.notPublished,
+        reason: 'HTTP $status',
+      );
+    }
   });
 
   test(

@@ -54,19 +54,33 @@ final class BoundedDescriptorFetcher {
       FetchedBytes(:final bytes) => LibraryDescriptorCodec.decode(
         bytes,
       ).match(DescriptorRefused.new, DescriptorFetched.new),
-      FetchRefused(:final reason) => DescriptorRefused(_mapRefusal(reason)),
+      FetchRefused(:final reason, :final statusCode) => DescriptorRefused(
+        _mapRefusal(reason, statusCode),
+      ),
     };
   }
 
-  /// The core transport refusals map 1:1 onto the descriptor refusals (the
-  /// descriptor set adds only the two parse-step reasons).
-  static DescriptorRefusal _mapRefusal(FetchRefusal reason) => switch (reason) {
-    FetchRefusal.disallowedUrl => DescriptorRefusal.disallowedUrl,
-    FetchRefusal.redirectRefused => DescriptorRefusal.redirectRefused,
-    FetchRefusal.tooManyRedirects => DescriptorRefusal.tooManyRedirects,
-    FetchRefusal.httpStatus => DescriptorRefusal.httpStatus,
-    FetchRefusal.tooLarge => DescriptorRefusal.tooLarge,
-    FetchRefusal.timedOut => DescriptorRefusal.timedOut,
-    FetchRefusal.transport => DescriptorRefusal.transport,
-  };
+  /// The core transport refusals map 1:1 onto the descriptor refusals, except
+  /// that a 404/410 becomes [DescriptorRefusal.notPublished]: "nothing is
+  /// published here" is a different fact from "the host failed" (a 5xx or a
+  /// rate limit), and the refresh treats the two differently. The descriptor
+  /// set also adds the parse-step reasons.
+  static DescriptorRefusal _mapRefusal(FetchRefusal reason, int? statusCode) {
+    if (reason == FetchRefusal.httpStatus &&
+        (statusCode == 404 || statusCode == 410)) {
+      return DescriptorRefusal.notPublished;
+    }
+    return _mapTransport(reason);
+  }
+
+  static DescriptorRefusal _mapTransport(FetchRefusal reason) =>
+      switch (reason) {
+        FetchRefusal.disallowedUrl => DescriptorRefusal.disallowedUrl,
+        FetchRefusal.redirectRefused => DescriptorRefusal.redirectRefused,
+        FetchRefusal.tooManyRedirects => DescriptorRefusal.tooManyRedirects,
+        FetchRefusal.httpStatus => DescriptorRefusal.httpStatus,
+        FetchRefusal.tooLarge => DescriptorRefusal.tooLarge,
+        FetchRefusal.timedOut => DescriptorRefusal.timedOut,
+        FetchRefusal.transport => DescriptorRefusal.transport,
+      };
 }

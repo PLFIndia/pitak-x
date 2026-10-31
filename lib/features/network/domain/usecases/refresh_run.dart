@@ -371,7 +371,19 @@ final class RefreshRun {
     }
     // A KNOWN identity conflict outranks a failed fetch: the badge must not
     // flicker away just because the site went offline (fail closed, visible).
-    if (row.fetchStatus == FetchStatus.identityConflict) return;
+    //
+    // The one exception is a POSITIVE answer that this address no longer
+    // publishes a library at all (404/410), which is exactly what a Pitak
+    // moved page serves once a move has completed. The dispute was about what
+    // this address published; it now publishes nothing, so the stale badge
+    // gives way to `unreachable`. Another address that still claims the
+    // identity keeps its own badge or move offer, so a live dispute stays
+    // visible (decided 2026-10-31, handoff §12). An offline site (timeout,
+    // transport, 5xx) still keeps the badge.
+    if (row.fetchStatus == FetchStatus.identityConflict &&
+        reason != DescriptorRefusal.notPublished) {
+      return;
+    }
     _states[row.siteUrl] = row.copyWith(fetchStatus: status);
   }
 
