@@ -9,6 +9,7 @@ import 'dart:math' show Random;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,54 +64,43 @@ class PrefsSettingsRepository implements SettingsRepository {
     );
   }
 
-  /// Runs one plugin write and turns its boolean/exception contract into a
-  /// typed result (M17). `SharedPreferences` setters report success as a
-  /// `Future<bool>`; discarding it let the UI confirm preferences the device
-  /// never stored. A `false` OR a thrown plugin error is a [StorageFailure].
-  Future<Either<Failure, Unit>> _write(
-    Future<bool> Function() op,
-    String what,
-  ) async {
-    try {
-      final ok = await op();
-      if (!ok) return left(StorageFailure('settings write failed: $what'));
-      return right(unit);
-    } on Exception catch (e) {
-      return left(StorageFailure('settings write failed: $what ($e)'));
-    }
-  }
+  /// One plugin write turned into a typed result (M17) AND a repaired cache.
+  ///
+  /// `SharedPreferences` setters report success as a `Future<bool>`; discarding
+  /// it let the UI confirm preferences the device never stored. The shared
+  /// helper additionally restores the previous cached value after a failure, so
+  /// a failed save cannot look saved for the rest of the session (fix-plan L9).
+  Future<Either<Failure, Unit>> _writeString(String key, String value) =>
+      writePrefsString(_prefs, key, value, what: 'settings write: $key');
+
+  Future<Either<Failure, Unit>> _writeBool(String key, bool value) =>
+      writePrefsBool(_prefs, key, value: value, what: 'settings write: $key');
 
   @override
   Future<Either<Failure, Unit>> setThemeMode(AppThemeMode mode) =>
-      _write(() => _prefs.setString(_themeKey, mode.token), 'theme');
+      _writeString(_themeKey, mode.token);
 
   @override
   Future<Either<Failure, Unit>> setLibraryName(String name) =>
-      _write(() => _prefs.setString(_libraryNameKey, name.trim()), 'name');
+      _writeString(_libraryNameKey, name.trim());
 
   @override
   Future<Either<Failure, String>> getOrCreateLibraryId() async {
     final existing = _prefs.getString(_libraryIdKey);
     if (existing != null && existing.isNotEmpty) return right(existing);
     final minted = _mintLibraryId();
-    final saved = await _write(
-      () => _prefs.setString(_libraryIdKey, minted),
-      'library id',
-    );
+    final saved = await _writeString(_libraryIdKey, minted);
     return saved.match(left, (_) => right(minted));
   }
 
   @override
   Future<Either<Failure, Unit>> setLibraryId(String id) =>
-      _write(() => _prefs.setString(_libraryIdKey, id.trim()), 'library id');
+      _writeString(_libraryIdKey, id.trim());
 
   @override
   Future<Either<Failure, String>> regenerateLibraryId() async {
     final minted = _mintLibraryId();
-    final saved = await _write(
-      () => _prefs.setString(_libraryIdKey, minted),
-      'library id',
-    );
+    final saved = await _writeString(_libraryIdKey, minted);
     return saved.match(left, (_) => right(minted));
   }
 
@@ -126,21 +116,16 @@ class PrefsSettingsRepository implements SettingsRepository {
   }
 
   @override
-  Future<Either<Failure, Unit>> setMaintainerName(String name) => _write(
-    () => _prefs.setString(_maintainerNameKey, name.trim()),
-    'maintainer name',
-  );
+  Future<Either<Failure, Unit>> setMaintainerName(String name) =>
+      _writeString(_maintainerNameKey, name.trim());
 
   @override
   Future<Either<Failure, Unit>> setLibrarySort(LibrarySort sort) =>
-      _write(() => _prefs.setString(_librarySortKey, sort.token), 'sort');
+      _writeString(_librarySortKey, sort.token);
 
   @override
   Future<Either<Failure, Unit>> setLoadRemoteCovers({required bool enabled}) =>
-      _write(
-        () => _prefs.setBool(_loadRemoteCoversKey, enabled),
-        'remote covers',
-      );
+      _writeBool(_loadRemoteCoversKey, enabled);
 
   @override
   Future<Either<Failure, Unit>> setPublishContact({
@@ -151,23 +136,14 @@ class PrefsSettingsRepository implements SettingsRepository {
   }) async {
     // One failed field write aborts the whole contact save (M17): the UI
     // must not report a saved contact that is only half on disk.
-    final writes = <(String, Future<bool> Function())>[
-      (
-        _publishAddressKey,
-        () => _prefs.setString(_publishAddressKey, address.trim()),
-      ),
-      (_publishGpsKey, () => _prefs.setString(_publishGpsKey, gps.trim())),
-      (
-        _publishEmailKey,
-        () => _prefs.setString(_publishEmailKey, email.trim()),
-      ),
-      (
-        _publishPhoneKey,
-        () => _prefs.setString(_publishPhoneKey, phone.trim()),
-      ),
+    final writes = <(String, String)>[
+      (_publishAddressKey, address.trim()),
+      (_publishGpsKey, gps.trim()),
+      (_publishEmailKey, email.trim()),
+      (_publishPhoneKey, phone.trim()),
     ];
-    for (final (key, op) in writes) {
-      final result = await _write(op, 'publish contact ($key)');
+    for (final (key, value) in writes) {
+      final result = await _writeString(key, value);
       if (result.isLeft()) return result;
     }
     return right(unit);
@@ -228,26 +204,18 @@ class PrefsSettingsRepository implements SettingsRepository {
   @override
   Future<Either<Failure, Unit>> setPublishLocationSharing(
     LocationSharing sharing,
-  ) => _write(
-    () => _prefs.setString(_publishLocationSharingKey, sharing.token),
-    'location sharing',
-  );
+  ) => _writeString(_publishLocationSharingKey, sharing.token);
 
   @override
   Future<Either<Failure, Unit>> setNetworkMapTilesConsent({
     required bool enabled,
-  }) => _write(
-    () => _prefs.setBool(_networkMapTilesConsentKey, enabled),
-    'map tiles consent',
-  );
+  }) => _writeBool(_networkMapTilesConsentKey, enabled);
 
   @override
-  Future<Either<Failure, Unit>> setLibraryLogo(String reference) => _write(
-    () => _prefs.setString(_libraryLogoKey, reference.trim()),
-    'library logo',
-  );
+  Future<Either<Failure, Unit>> setLibraryLogo(String reference) =>
+      _writeString(_libraryLogoKey, reference.trim());
 
   @override
   Future<Either<Failure, Unit>> setAppLockBiometric({required bool enabled}) =>
-      _write(() => _prefs.setBool(_appLockBiometricKey, enabled), 'app lock');
+      _writeBool(_appLockBiometricKey, enabled);
 }

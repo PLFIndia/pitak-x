@@ -21,7 +21,7 @@ class EventsController extends _$EventsController {
   @override
   Future<EventsContent> build() async {
     final repo = await ref.read(eventsRepositoryProvider.future);
-    return repo.load();
+    return repo.loadForEditor();
   }
 
   /// Adds a poster from RAW picked image [bytes] (downscaled + EXIF-stripped by

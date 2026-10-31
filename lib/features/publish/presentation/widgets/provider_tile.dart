@@ -8,31 +8,6 @@ library;
 
 import 'package:flutter/material.dart';
 
-/// The Cloudflare Pages tile (S35): always "Not configured" + a "Coming
-/// soon" subtitle until the real Direct-Upload integration lands. Collapsed
-/// by default (D4 applies to GitHub only — auto-expanding an unimplemented
-/// provider would defeat the one-screen goal); the body keeps the honest
-/// explanation and the dashboard workaround, minus the old fake disabled
-/// fields that made the card needlessly tall.
-class CloudflareTile extends StatelessWidget {
-  /// Creates the Cloudflare placeholder tile.
-  const CloudflareTile({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const ProviderTile(
-      title: 'Cloudflare Pages',
-      subtitle: 'Coming soon',
-      status: ProviderConfig.notConfigured,
-      body: Text(
-        'Direct upload from the app is on the way. For now, you can host '
-        'the same GitHub repo on Cloudflare Pages by connecting it in the '
-        'Cloudflare dashboard.',
-      ),
-    );
-  }
-}
-
 /// A provider's configuration state shown in its tile header (S35, D3).
 /// The text label is the primary carrier (accessibility); colour + icon
 /// reinforce at a glance. Shades follow the existing brightness-aware green
@@ -44,8 +19,13 @@ enum ProviderConfig {
   /// Signed in, but no target repo yet.
   partial('Partially configured', Icons.warning_amber_rounded),
 
-  /// Not signed in / nothing set up (also the only state an unimplemented
-  /// provider can ever be in).
+  /// A manual Cloudflare address still needs exact-origin verification.
+  addressNotConfirmed('Address not confirmed yet', Icons.warning_amber_rounded),
+
+  /// Confirmed target, but no deployment/read-back has proved write access.
+  readyToPublish('Ready to publish', Icons.check_circle_outline),
+
+  /// Not signed in / nothing set up.
   notConfigured('Not configured', Icons.cancel);
 
   const ProviderConfig(this.label, this.icon);
@@ -62,20 +42,24 @@ enum ProviderConfig {
       brightness == Brightness.dark
           ? Colors.green.shade400
           : Colors.green.shade700,
-    ProviderConfig.partial =>
+    ProviderConfig.partial || ProviderConfig.addressNotConfirmed =>
       brightness == Brightness.dark
           ? Colors.amber.shade300
           : Colors.amber.shade800,
+    ProviderConfig.readyToPublish =>
+      brightness == Brightness.dark
+          ? Colors.lightBlue.shade300
+          : Colors.blue.shade700,
     ProviderConfig.notConfigured =>
       brightness == Brightness.dark ? Colors.red.shade300 : Colors.red.shade700,
   };
 }
 
-/// A collapsible provider card (S35): header = provider name + status
-/// badge, body = that provider's settings. Matches the publish page's
-/// section-card visuals so the tab reads as one family; collapsing is what
-/// keeps the whole page on one screen. The default rotating chevron stays
-/// as the expand affordance.
+/// A collapsible provider card (S35): header = provider name with the status
+/// badge on the line below it, body = that provider's settings. Matches the
+/// publish page's section-card visuals so the tab reads as one family;
+/// collapsing is what keeps the whole page on one screen. The default
+/// rotating chevron stays as the expand affordance.
 class ProviderTile extends StatelessWidget {
   /// Creates the tile.
   const ProviderTile({
@@ -111,36 +95,37 @@ class ProviderTile extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         initiallyExpanded: initiallyExpanded,
-        // N12 (320px / large text): both the title and the status label
-        // ellipsize; icon and chevron keep their shape.
-        title: Row(
+        // Name on the first line, status on the second. On one line the two
+        // competed for a phone's width and BOTH were cut off ("Cloudflare
+        // Wor…" + a clipped status, S11 smoke 2026-10-29). Stacked, each gets
+        // the full width; N12 (320px / large text) is still covered because
+        // each line wraps once and only then ellipsizes.
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Flexible(
-              child: Text(
-                title,
-                style: theme.textTheme.titleMedium,
-                overflow: TextOverflow.ellipsis,
-              ),
+            Text(
+              title,
+              style: theme.textTheme.titleMedium,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(status.icon, size: 18, color: color),
-                  const SizedBox(width: 6),
-                  Flexible(
-                    child: Text(
-                      status.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                      ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(status.icon, size: 18, color: color),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    status.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
         ),

@@ -6,6 +6,7 @@
 library;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pitaka/core/security/hardened_secure_storage.dart';
 import 'package:pitaka/features/lookup/domain/lookup_key_store.dart';
 
 /// Secure-storage implementation of [LookupKeyStore].
@@ -13,14 +14,8 @@ final class SecureStorageLookupKeyStore implements LookupKeyStore {
   /// Creates the store. [storage] defaults to the hardened secure store;
   /// inject a fake in tests.
   SecureStorageLookupKeyStore({FlutterSecureStorage? storage})
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.unlocked_this_device,
-            ),
-          );
+    // The lookup API key is a bearer credential: device-unlocked only.
+    : _storage = storage ?? hardenedSecureStorage();
 
   final FlutterSecureStorage _storage;
 

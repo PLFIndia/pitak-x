@@ -21,6 +21,25 @@ final class ValidationFailure extends Failure {
   final String message;
 }
 
+/// A publish could not READ an input it needs, so nothing was published.
+///
+/// Why this exists (beginner note; Cloudflare plan R2/M14): a publish must
+/// never turn "I could not read your data" into "you have no data" — that
+/// would replace a live site with an empty one. The read still fails for its
+/// own reason ([StorageFailure], a migration exception, …), but several of
+/// those reasons have a *specific* sentence the user should see (for example
+/// "your saved libraries could not be read"). This variant carries that safe
+/// sentence, so the publish path can surface the real reason without ever
+/// leaking a diagnostic. It is NOT a [ValidationFailure]: the input was not
+/// invalid, it was unreadable.
+final class PublishReadFailure extends Failure {
+  /// Creates a publish-read failure whose [message] is safe to show.
+  const PublishReadFailure(this.message);
+
+  /// Fixed, user-facing sentence. Never built from exception text.
+  final String message;
+}
+
 /// A requested entity/row was not found.
 final class NotFoundFailure extends Failure {
   /// Creates a not-found failure.
@@ -186,6 +205,22 @@ final class BiometricInvalidatedFailure extends Failure {
   const BiometricInvalidatedFailure();
 }
 
+/// The state a write was based on changed (or vanished) before it ran.
+///
+/// Why this exists (Cloudflare plan C10/R17, reader reconciliation): a
+/// refresh reads rows, the user is shown a decision, and the write lands
+/// later. If the same row was edited or deleted on THIS device in between (a
+/// membership decision, a card scan, a removal), the user's newer action must
+/// win — so the repository refuses the stale write instead of overwriting it.
+/// The UI maps this to one plain sentence asking the user to try again.
+final class StaleStateFailure extends Failure {
+  /// Creates a stale-state failure with a short, never-displayed [reason].
+  const StaleStateFailure(this.reason);
+
+  /// Short diagnostic for logs/tests; never shown verbatim to users.
+  final String reason;
+}
+
 /// A persistence/storage operation failed (Drift, file IO, secure storage).
 final class StorageFailure extends Failure {
   /// Creates a storage failure with a short diagnostic [reason].
@@ -201,6 +236,26 @@ final class StorageFailure extends Failure {
 final class NetworkFailure extends Failure {
   /// Creates a network failure.
   const NetworkFailure();
+}
+
+/// An expected Cloudflare setup or publishing failure with fixed safe copy.
+///
+/// The message is selected from application-owned constants. It must never be
+/// built from a token, credential-bearing URL, response body, or platform
+/// exception text.
+final class CloudflareFailure extends Failure {
+  /// Creates a failure whose [message] is safe to display verbatim.
+  const CloudflareFailure(
+    this.message, {
+    this.requiresCompleteSnapshot = false,
+  });
+
+  /// Fixed, user-facing Cloudflare failure copy.
+  final String message;
+
+  /// True only when missing artifact bytes require the R4 replacement flow.
+  /// This is an application control-flow fact, never a UI prompt by itself.
+  final bool requiresCompleteSnapshot;
 }
 
 /// An unexpected error (a bug). Caller should log, wipe sensitive state, and

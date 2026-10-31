@@ -2,14 +2,39 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/github_connection_controller.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
-import 'package:pitaka/features/publish/application/publish_controller.dart';
-import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
+    show PublishManifestGateway;
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'support/cloudflare_fakes.dart'
+    show FakePublishHostStateStore, FakePublishedSiteVerifier;
+
+/// An empty journal for tests that only need the setup guard's read to pass.
+PublishHostStateRepository _emptyHostRepository() => PublishHostStateRepository(
+  store: FakePublishHostStateStore(),
+  manifest: const _NoManifest(),
+  verifier: FakePublishedSiteVerifier(),
+);
+
+final class _NoManifest implements PublishManifestGateway {
+  const _NoManifest();
+
+  @override
+  PublishManifest load() => PublishManifest.empty;
+
+  @override
+  Either<Failure, Unit> save(PublishManifest manifest) => right(unit);
+}
 
 /// In-memory credential store that COUNTS writes, so tests can assert the
 /// token landed in the store exactly once (and never in the UI state).
@@ -160,12 +185,18 @@ class _FakeGitHubApi implements GitHubApi {
       null;
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
-  }) async => const {};
+  }) async => const GitHubTreeSnapshot(
+    repo: 'me/lib',
+    branch: 'main',
+    headSha: 'sha',
+    files: {},
+    truncated: false,
+  );
 
   @override
   Future<PublishCommitResult> commitFiles({
@@ -175,41 +206,26 @@ class _FakeGitHubApi implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async => const PublishCommitSuccess('sha', []);
 }
 
-/// PublishController stand-in that returns a fixed result without touching
-/// the (heavy) publish dependency graph — this test only checks how the
-/// connection controller MAPS the result, not publishing itself (that is
-/// covered by `publish_controller_test.dart`).
-class _FakePublishController extends PublishController {
-  _FakePublishController(this._result);
-  final PublishResult _result;
-  int calls = 0;
-
-  @override
-  FutureOr<PublishResult?> build() => null;
-
-  @override
-  Future<PublishResult> publish() async {
-    calls++;
-    return _result;
-  }
-}
-
 /// Owns a container + the collected UI states for one test.
 class _Harness {
-  _Harness({
-    _FakeCreds? creds,
-    _FakeGitHubApi? api,
-    PublishController? publishController,
-  }) : creds = creds ?? _FakeCreds(),
-       api = api ?? _FakeGitHubApi() {
+  _Harness({_FakeCreds? creds, _FakeGitHubApi? api})
+    : creds = creds ?? _FakeCreds(),
+      api = api ?? _FakeGitHubApi() {
     container = ProviderContainer(
       overrides: [
         publishCredentialStoreProvider.overrideWithValue(this.creds),
         gitHubApiProvider.overrideWithValue(this.api),
+        // S9: setup reads the host journal before changing a target. The real
+        // repository would open the file manifest and prefs; these connection
+        // tests only need a valid empty journal.
+        publishHostStateRepositoryProvider.overrideWith(
+          (ref) async => _emptyHostRepository(),
+        ),
         // Real device flow, but with an instant sleep so tests never wait on
         // real timers.
         gitHubDeviceFlowProvider.overrideWith(
@@ -218,15 +234,6 @@ class _Harness {
             sleep: (_) async {},
           ),
         ),
-        if (publishController != null)
-          publishControllerProvider.overrideWith(() => publishController),
-        // Counting override so publish()'s `ref.invalidate` of the drawer
-        // link provider is observable (each invalidation recomputes it while
-        // listened to).
-        publishedSiteUrlProvider.overrideWith((ref) async {
-          publishedSiteUrlComputations++;
-          return null;
-        }),
       ],
     );
     addTearDown(container.dispose);
@@ -244,9 +251,6 @@ class _Harness {
   final _FakeGitHubApi api;
   late final ProviderSubscription<AsyncValue<GitHubConnectionUi>> subscription;
 
-  /// How often the drawer-link provider was (re)computed.
-  int publishedSiteUrlComputations = 0;
-
   /// Every emitted (non-loading) UI state, in order.
   final List<GitHubConnectionUi> states = [];
 
@@ -261,6 +265,11 @@ class _Harness {
 }
 
 void main() {
+  // S9: setup now reads the host journal before it may change a target. An
+  // empty in-memory journal keeps these connection tests on the same path as
+  // a device that has never published (no pending move, no stored host).
+  setUp(() => SharedPreferences.setMockInitialValues({}));
+
   test('build() loads signed-in flag + target repo; the token itself never '
       'enters the state', () async {
     final h = _Harness(
@@ -278,7 +287,7 @@ void main() {
           (s) =>
               '${s.phase}|${s.signedIn}|${s.targetRepo}|${s.repos}|'
               '${s.awaitingUserCode}|${s.awaitingVerificationUri}|'
-              '${s.repoPromptInitialName}|${s.statusMessage}|${s.publishedUrl}',
+              '${s.repoPromptInitialName}|${s.statusMessage}',
         )
         .join('\n');
     expect(rendered, isNot(contains('SECRET-TOKEN')));
@@ -464,6 +473,9 @@ void main() {
         overrides: [
           publishCredentialStoreProvider.overrideWithValue(creds),
           gitHubApiProvider.overrideWithValue(api),
+          publishHostStateRepositoryProvider.overrideWith(
+            (ref) async => _emptyHostRepository(),
+          ),
           gitHubDeviceFlowProvider.overrideWith(
             (ref) => GitHubDeviceFlow(
               ref.watch(gitHubApiProvider),
@@ -531,6 +543,24 @@ void main() {
         expect(h.last.statusMessage, 'Signed out.');
       },
     );
+
+    // S11 smoke regression (2026-10-29): a completed move invalidates this
+    // provider; Riverpod 2 reruns build on the same notifier after running
+    // the old onDispose, which used to leave every intent a silent no-op.
+    test('still works after the provider is invalidated and rebuilt', () async {
+      final h = _Harness(
+        creds: _FakeCreds(token: 'TKN', targetRepo: 'u/r'),
+      );
+      await h.settle();
+
+      h.container.invalidate(gitHubConnectionControllerProvider);
+      await h.settle();
+      await h.notifier.signOut();
+
+      expect(await h.creds.token(), isNull);
+      expect(h.last.signedIn, isFalse);
+      expect(h.last.statusMessage, 'Signed out.');
+    });
   });
 
   group('loadRepos()', () {
@@ -736,88 +766,6 @@ void main() {
       expect(h.last.phase, GitHubConnectionPhase.idle);
     });
   });
-
-  group('publish()', () {
-    test('success maps to the live message + published URL and refreshes the '
-        'drawer link provider', () async {
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-        publishController: _FakePublishController(
-          const PublishSuccess(
-            pagesUrl: 'https://me.github.io/lib/',
-            uploadedPaths: ['index.html'],
-            pagesLive: true,
-          ),
-        ),
-      );
-      // Keep the drawer-link provider alive so an invalidation recomputes it
-      // eagerly and the counter moves.
-      final urlSub = h.container.listen(
-        publishedSiteUrlProvider,
-        (_, _) {},
-        fireImmediately: true,
-      );
-      addTearDown(urlSub.close);
-      await h.container.read(publishedSiteUrlProvider.future);
-      expect(h.publishedSiteUrlComputations, 1);
-
-      await h.settle();
-      await h.notifier.publish();
-
-      expect(h.last.publishedUrl, 'https://me.github.io/lib/');
-      expect(h.last.statusMessage, 'Published! Your site is live.');
-      expect(h.last.phase, GitHubConnectionPhase.idle);
-      // The drawer share link was invalidated; the recompute is scheduled on
-      // a microtask, so drain it before counting.
-      await Future<void>.delayed(Duration.zero);
-      expect(h.publishedSiteUrlComputations, 2);
-    });
-
-    test(
-      'failure maps to a prefixed reason and clears the published URL',
-      () async {
-        final h = _Harness(
-          creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-          publishController: _FakePublishController(
-            const PublishFailure('safe fixed reason'),
-          ),
-        );
-        await h.settle();
-        await h.notifier.publish();
-
-        expect(h.last.publishedUrl, isNull);
-        expect(h.last.statusMessage, 'Publish failed: safe fixed reason');
-      },
-    );
-
-    test('a publish exception collapses to the fixed safe message', () async {
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN', targetRepo: 'me/lib'),
-        publishController: _ThrowingPublishController(),
-      );
-      await h.settle();
-      await h.notifier.publish();
-
-      expect(h.last.publishedUrl, isNull);
-      expect(
-        h.last.statusMessage,
-        'Publish failed: Something went wrong. Please try again.',
-      );
-    });
-
-    test('publish is refused without a target repo', () async {
-      final fake = _FakePublishController(
-        const PublishSuccess(pagesUrl: 'u', uploadedPaths: []),
-      );
-      final h = _Harness(
-        creds: _FakeCreds(token: 'TKN'),
-        publishController: fake,
-      );
-      await h.settle();
-      await h.notifier.publish();
-      expect(fake.calls, 0);
-    });
-  });
 }
 
 /// requestDeviceCode itself throwing (transport down before the flow starts).
@@ -827,13 +775,4 @@ class _ThrowingRequestApi extends _FakeGitHubApi {
     required String clientId,
     required String scope,
   }) => throw const GitHubApiException('no route to host');
-}
-
-class _ThrowingPublishController extends PublishController {
-  @override
-  FutureOr<PublishResult?> build() => null;
-
-  @override
-  Future<PublishResult> publish() async =>
-      throw const GitHubApiException('private transport detail');
 }

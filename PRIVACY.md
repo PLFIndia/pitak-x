@@ -1,6 +1,11 @@
 # Privacy Policy — Pitak
 
-_Effective date: 2026-10-25 · Publisher: Parallel Line Foundation_
+_Effective date: 2026-10-30 · Publisher: Parallel Line Foundation_
+
+_Changed 2026-10-30 — wording only: the move paragraph now also says what
+Cancel move and Finish without retiring leave public, and that reconnecting to
+another Worker does not touch the previous one. No new data is collected,
+stored or sent._
 
 Pitak is a privacy-first, offline personal library catalogue. This policy
 describes, in plain language, what the app does with your data. The short
@@ -33,8 +38,15 @@ analytics, no advertising, and no tracking of any kind.**
 - **Settings** (theme, library name, sort preferences, and — if you fill them
   in — the contact details you choose to publish) in the app's private
   preferences store.
-- **A GitHub access token**, only if you use the Publish feature, stored in
-  platform secure storage (never in plain preferences).
+- **A GitHub access token**, only if you use the Publish feature to publish to
+  GitHub Pages, stored in platform secure storage (never in plain
+  preferences).
+- **A Cloudflare API token**, only if you connect Cloudflare Workers for
+  publishing, stored the same way. It is created by you, scoped to one
+  Cloudflare account, and limited to editing Workers scripts. Alongside it the
+  app stores the account and Worker you chose and whether the address was
+  verified; that whole record is treated as a secret and replaced as a unit,
+  so a new token can never be paired with an old target.
 - **A Google Books API key**, only if you add your own in Settings, stored in
   platform secure storage.
 
@@ -88,35 +100,86 @@ passive exception (item 8, Google Play builds only):
    library's published viewer; those are memory-only and are covered in
    item 5.
 3. **Publish to web.** If you use Publish, a read-only viewer of your library
-   is uploaded to a GitHub repository *you* own, via GitHub's device-flow
-   sign-in. The permission you grant ("public_repo") is GitHub's narrowest
-   available and covers *all* of your public repositories, not just the site;
-   GitHub's own privacy policy applies to that account and to the traffic.
+   is uploaded to a site *you* control, on **one host at a time**: a GitHub
+   repository you own, or a Cloudflare Worker in your own Cloudflare account.
    The published site is **public to anyone on the internet** — including the
    library name, any contact details or event posters you enter under
-   Publish, and the book covers. Before upload, Pitak redacts private fields
-   (notes, location, source, lender details), and photos are re-encoded with
-   EXIF metadata — including GPS coordinates — stripped. If you type GPS
-   coordinates under Publish › Basic info, a separate opt-in switch controls
-   whether they are published at all: "Not shared" (the default for new
-   installations) publishes no coordinates anywhere; "Approximate" publishes
-   them rounded to about 1 km; "Exact" publishes them as typed — both on your
-   published page and in the machine-readable `library.json` descriptor that
-   the library network reads. During publishing your device also downloads
-   book covers from the same fixed cover hosts listed above and, afterwards,
-   makes up to 12 cache-busted `books.json` requests, five seconds apart, to
-    verify that the public site serves the bytes just published. You can delete the
-   published site at any time from GitHub. Signing out in the app forgets the
-   token on your device; to revoke the app's access on GitHub's side, remove
-   "Pitak" under GitHub → Settings → Applications (the app cannot do this
-   for you).
+   Publish, the book covers, and — if your borrowers vault is unlocked while
+   you publish — which items are available. Before upload, Pitak redacts
+   private fields (notes, location, source, lender details), and photos are
+   re-encoded with EXIF metadata — including GPS coordinates — stripped. If
+   you type GPS coordinates under Publish › Basic info, a separate opt-in
+   switch controls whether they are published at all: "Not shared" (the
+   default for new installations) publishes no coordinates anywhere;
+   "Approximate" publishes them rounded to about 1 km; "Exact" publishes them
+   as typed — both on your published page and in the machine-readable
+   `library.json` descriptor that the library network reads.
+
+   **GitHub Pages.** You sign in with GitHub's device flow. The permission you
+   grant ("public_repo") is GitHub's narrowest available and covers *all* of
+   your public repositories, not just the site; GitHub's own privacy policy
+   applies to that account and to the traffic. You can delete the published
+   site at any time from GitHub. Signing out in the app forgets the token on
+   your device; to revoke the app's access on GitHub's side, remove "Pitak"
+   under GitHub → Settings → Applications (the app cannot do this for you).
+
+   **Cloudflare Workers.** You paste a Cloudflare API token that you create.
+   The app opens Cloudflare's token-creation page with a template already
+   scoped to one account and to "Workers Scripts · Edit", and verifies any
+   token you paste before saving it. Pitak then calls only Cloudflare's API
+   (`api.cloudflare.com/client/v4`) to read your account's `workers.dev`
+   subdomain, open an upload session, upload the site's files and deploy them
+   to the Worker you choose. A Pitak Worker is **dedicated to Pitak**: the
+   first verification and every later publish replace the Worker's whole file
+   set, so files you put there yourself are removed. Pitak creates only the
+   public site files, its covers/posters folders and a small
+   `pitak-publish.json` marker. Identical files are uploaded once, because the
+   API accepts them by content hash — a file used in several places is a
+   single upload — and Cloudflare's servers may keep uploaded file content
+   even when a deployment does not complete. Cloudflare's API and its
+   `workers.dev` edge see your device's IP address and the app's fixed
+   User-Agent, as any web server does. The token stays on your device; Pitak
+   cannot delete the Worker, so remove it in the Cloudflare dashboard if you
+   stop using it, and delete the token there to revoke access. Before creating
+   a new version the app turns the Worker's **version URLs** off and confirms
+   it: while they are on, an older version of your site would itself be
+   publicly readable under a different address. If that cannot be confirmed,
+   publishing stops rather than exposing an older copy.
+
+   **Checking the site and moving it.** After uploading, Pitak reads the site
+   back from its public address to prove it serves the new files — up to 12
+   cache-busted `books.json` requests, five seconds apart, for a catalogue
+   publish; a Cloudflare publish also reads the marker, `library.json` (or its
+   absence), `events.json` and the poster files it just published. These are
+   unauthenticated public requests to the site you published, never API calls
+   that carry your token.
+
+   You can also **move** a site from one host to the other. The new site is
+   published and verified first; the old one then becomes a small "moved" page
+   showing your library name and the new public address, and its catalogue
+   data is deleted. Other Pitak phones never follow a move by themselves: they
+   may show both addresses and change something only when their owner chooses.
+   A printed library card keeps pointing at the old address until you reprint
+   it.
+
+   An interrupted move is never silent: the publish card keeps a banner until
+   the move finishes, and the old site stays exactly as it is until it is
+   verifiably retired. **Cancel** stops the move and leaves the copy already
+   published on the other host online; **Finish without retiring** is offered
+   only when Pitak can no longer sign in to the old site, and leaves that copy
+   online too, unmarked. Pitak never deletes a site for you, so delete either
+   copy at its host if you do not want it public. Reconnecting to a different
+   Cloudflare Worker does not touch the previous Worker, which keeps serving
+   exactly what it last served until you delete it in the Cloudflare dashboard.
 4. **Library network — Refresh.** The Library network screen keeps the list
    of other Pitak libraries you save (by web address, or by scanning a
    library's card in person). Nothing about it leaves your device until you
    tap Refresh; Refresh then downloads the `library.json` descriptor from
-   each saved site — only from GitHub Pages or Cloudflare Pages addresses
-   that the app validated when you saved them — to update names, optional map
-   pins and hub/member links. A downloaded descriptor can itself list other
+   each saved site — only from GitHub Pages, Cloudflare Pages or Cloudflare
+   Workers addresses that the app validated when you saved them — to update
+   names, optional map pins and hub/member links. When a saved library appears
+   to have moved to another address, both addresses are shown and only your
+   explicit choice changes anything. A downloaded descriptor can itself list other
    libraries (a hub's members, or the hubs a library belongs to); Refresh
    also fetches the descriptors of those libraries, even though you never
    saved them yourself, so that they can appear in your list and on the map.
@@ -133,9 +196,18 @@ passive exception (item 8, Google Play builds only):
    when you tap, and only to that library's own site directory (a redirect
    to another host or library is refused), with the fixed User-Agent and
    "no-cache" hint. The site sees your device's IP address for each request.
-   `books.json` and `events.json` are never stored on your device: leaving
-   the screen discards both snapshots; opening the library again fetches them.
-   There is no background refresh, cached copy or offline mode.
+   Pitak keeps one **saved copy** of each library's `books.json` and
+   `events.json` in the app's cache folder (never in backups — neither the
+   phone's nor Pitak's `.pitabak`). Every time you open the library, Pitak
+   first asks the site whether the file changed, sending the short fingerprint
+   (the "ETag") the site gave with the saved copy; an unchanged file is not
+   downloaded again. A site that runs its own server code could use that
+   fingerprint to recognise a returning device even after its IP address
+   changes; GitHub Pages sites cannot choose it. When the site can't be
+   checked, the saved copy is shown with a note saying how old it is. Saved
+   copies take at most 200 MB together (the least recently opened library is
+   removed first), and a library's copies are deleted when you remove it from
+   your saved libraries. There is no background refresh.
    Covers and event posters are SEPARATE requests and obey the
    remote-cover switch in item 2: with it off (the default) the viewer
    shows placeholders and offers a Load covers button; with it on, images load

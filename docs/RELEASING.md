@@ -199,8 +199,32 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    adds a uniquely named bookmark through the real dialog/Drift, opens the
    native viewer, searches/filters, opens the read-only detail, returns,
    reloads once, checks the injected browser hand-off and removes the row.
-   It uses fake catalogue/cover ports, so it needs **no** live network.
-8. Commit.
+   It uses fake catalogue/cover ports, so it needs **no** live network, and
+   the real saved-copy store in a throwaway folder (ADR 0018).
+   Then, by hand, check the saved copy against a real library: open a saved
+   library online; turn on airplane mode and open it again — the catalogue
+   appears under "Showing your saved copy from …"; turn airplane mode off and
+   reopen — the note is gone.
+8. For the Cloudflare S8 publisher, run the Android release/AOT memory gate on
+   a test emulator (the script uninstalls any previous profiling build):
+   `adb root`, then
+   `S8_AOT_MODE=release S8_MEMORY_OUT=build/cloudflare_aot_memory_release.json ./tool/cloudflare_aot_memory.sh <android-device-id>`.
+   Root adb is used only to read the release app's private result file. For an
+   AOT profile diagnostic, `./tool/cloudflare_aot_memory.sh <android-device-id>`
+   needs no root adb. Both modes build the dev-only entry point
+   `lib/main_dev_harness.dart`; the shipping `main.dart` contains no harness
+   code and cannot be switched into one (fix-plan L15). Both modes run the real catalogue builder, per-file
+   artifact sink, assembler and streamed native upload against a loopback fake
+   server. Require `fileCount == 413`, `uploadedAssets == 413`,
+   `requestCount == 1` and `metadataOnlyBuild == true`. The script writes the
+   selected output with those fields, `rawSpoolBytes`, `requestBytes` and
+   Android `peakRssBytes`; record the result in
+   `docs/plans/cloudflare-handoff.md`. Desktop RSS is supplementary only.
+9. If the release touches publishing (anything under
+   `lib/features/publish/`, the `workers.dev` reader grammar, or
+   `assets/publish/`), run the publish smoke matrix (§6.5) on a disposable
+   Cloudflare account and record the outcome.
+10. Commit.
 
 ### 6.2 Google Play
 
@@ -268,6 +292,92 @@ Recipe facts worth knowing:
 
 ---
 
+### 6.5 Publish smoke matrix (GitHub Pages and Cloudflare Workers)
+
+Publishing is the only feature that writes to someone else's servers, so it
+gets a **manual real-host pass** before any release that touches it. Use a
+**disposable Cloudflare account** and a throwaway GitHub repository — never the
+maintainer's real library. The automated J.1–J.6 suites cover the logic; this
+matrix is the only evidence that the *live* hosts behave as documented.
+
+**The restricted token (one account, Workers only).** Sign in to the disposable
+Cloudflare account → My Profile → API Tokens → Create Token → the
+**Workers Scripts · Edit** template. The in-app **Connect Cloudflare** button
+opens that page. Check the token is scoped to **one account**: a user-level
+token's documented default is *all* accounts, which is exactly the permission
+this design forbids. The app verifies the token before saving it and never asks
+for a broader one.
+
+**Where to record it:** append a row to the evidence table in
+`docs/plans/cloudflare-handoff.md` §12 (date, commit, PASS/FAIL per step, the
+sanitized counts). Never paste a token, JWT, account id or raw response body
+into a document or an issue.
+
+| # | Check | Expected |
+|---|---|---|
+| 1 | Connect, including the manual-subdomain fallback when the token cannot read the account subdomain | Candidate stays unconfirmed until the marker-only deploy is read back from its exact origin; a confirmed target is not presented as live |
+| 2 | Publish catalogue, then events, then catalogue again | The events page survives the second catalogue publish (one section never erases the other) |
+| 3 | Remove a poster, then publish **events** (a catalogue publish deliberately leaves the events section, poster included, untouched) | The old poster URL returns 404; an old **version URL** cannot serve it either: the dashboard's Worker → **Domains** page shows Preview URLs **Disabled** |
+| 4 | Root, `index.html`, `events.html`, `/events`, `books.json` and a missing file | 200 / 307 → `/` / 307 → `/events` / 200 / `application/json` / real 404 (`auto-trailing-slash` serves an HTML file without its extension); `Cache-Control: no-cache` and `Access-Control-Allow-Origin: *` on assets |
+| 5 | Reset local Cloudflare state (reinstall or clear app data), then publish | The explicit whole-site replacement warning appears with real counts; cancelling writes nothing |
+| 6 | Move Cloudflare → GitHub | New descriptor carries the GitHub address; Cloudflare serves the moved page plus the full retired headers; the retired marker is `state: "retired"`; old `books.json` is 404 |
+| 7 | Move GitHub → Cloudflare | Reverse of 6; an unrelated `README.md` in the repo still exists afterwards |
+| 8 | Make the local journal unwritable (or kill the app mid-retirement) and retry; then reconnect to a *different* Worker | Retry resumes only the missing work; a wrong target refuses retirement instead of guessing |
+| 9 | Scan the moved library's card on a second updated phone | Both addresses are offered neutrally; accepting leaves one canonical row, no duplicates |
+| 10 | Disconnect | The connection record is forgotten, the remote Worker is untouched, and the share address still reports only what was verified |
+
+Rows 11–19 come from the 2026-10-29 fix plan (Part 3 §6.2). Each one exercises a
+state the review found the code could enter but not leave; every row must be
+recorded like 1–10, with the sanitized counts and no raw response text.
+
+| # | Check | Expected |
+|---|---|---|
+| 11 | Publish to one Worker, then reconnect choosing a **different** Worker and publish (H1, D1) | A "target changed" review names both addresses and says the old site stays as it is; the old Worker is untouched |
+| 12 | Delete the Worker in the dashboard, reconnect to the same target, publish (H1) | A "Worker missing" review offers to recreate it; the site comes back and verifies |
+| 13 | First publish to a brand-new Worker that was set up on the API-subdomain path (RH1) | The publish completes without a false "the site changed" (stale) review |
+| 14 | Publish a library whose largest upload bucket is ≥ 40 MB over a link throttled to about 1 Mbit/s (H2) | The upload completes; forcing a stall fails with the "stopped making progress" copy and does not re-send the same body |
+| 15 | Switch tabs (or background the app) during a large publish (M1) | The publish still completes |
+| 16 | Rotate the token for the site that is already live, using the manual-subdomain path (M3) | No verification deploy happens and the live site is unchanged; the next publish proves write access |
+| 17 | Start a move, then **Cancel** it; separately, revoke the token and choose **Finish without retiring** (M4) | After Cancel the old site is still the active/verified target and nothing is retired; Finish appears only with the stronger warning and still marks nothing as moved |
+| 18 | Publish a first move into a Cloudflare Worker that holds a setup (verification) marker (L16) | The review says "Replace and move" and names the Worker; a changed remote anchor asks again |
+| 19 | Publish when Cloudflare no longer holds files the local record claims (N1) | The "missing files" review can actually be confirmed and deploys; cancelling writes nothing |
+
+Practical notes from the 2026-10-31 run (details in the handoff §12):
+
+- **Rows 16 and 18 as written cannot be reached.** Every token that can
+  deploy, including one made from the one-account template, can also read
+  the account subdomain, so the manual-subdomain path never appears. Run
+  row 16 as a plain token rotation on the live Worker, and row 18 as a move
+  into a Worker holding content this phone did not publish.
+- **A pending move with the old site NOT yet retired** (row 17's second
+  half) needs the network cut after the move is recorded: turn on airplane
+  mode (`adb shell cmd connectivity airplane-mode enable`) the moment the
+  card shows "Updating old address…", then revoke the token. Revoking it
+  before that point only makes the move refuse to start.
+- **A debug build cannot replace a release-signed install** without an
+  uninstall, which deletes the stored token. Use a clean release build and
+  `adb install -r`.
+
+Header evidence (substitute your own address):
+
+```bash
+curl -sI https://<worker>.<subdomain>.workers.dev/ | grep -Ei 'cache-control|access-control'
+curl -s -o /dev/null -w '%{http_code}\n' https://<worker>.<subdomain>.workers.dev/missing.json
+# A retired Worker must also show:
+curl -sI https://<worker>.<subdomain>.workers.dev/ | grep -Ei 'content-security-policy|x-content-type-options|referrer-policy'
+```
+
+Two deliberate asymmetries to confirm rather than "fix":
+
+- **GitHub has no response-header channel** on this publishing path. Its moved
+  page relies on the `<meta>` CSP directives that a meta tag can enforce
+  (`default-src 'none'; style-src 'unsafe-inline'`); the directives it cannot
+  enforce are documented, not simulated.
+- **A missing file is a real 404 on both hosts**, so a dropped asset is visible
+  instead of silently served.
+
+---
+
 ## 7. Toolchain (what the pins mean)
 
 - **Flutter** is pinned in `.fvmrc` **and** `pubspec.yaml`
@@ -295,7 +405,8 @@ Recipe facts worth knowing:
 ## 8. Play Console answers (keep consistent with `PRIVACY.md`)
 
 - **Data safety:** "No data collected or shared." No developer servers; ISBN
-  lookups carry book metadata only; publish, exports, network Refresh and map
+  lookups carry book metadata only; publish (to the user's own GitHub
+  repository or Cloudflare Worker), exports, network Refresh and map
   tiles are **user-directed transfers** to sites/OSM the user chose; a
   published location pin is the user's own deliberate publish choice (off by
   default). If Play ever counts opt-in tiles as "sharing", the honest edit is
@@ -303,8 +414,11 @@ Recipe facts worth knowing:
   still no collection.
 - **Content rating** Everyone · **Target audience** 18+ (keeps the Families
   policy out of scope) · **Ads** No · News / COVID / Government No.
-- **App access:** core needs no account; optional Publish uses the user's own
-  GitHub sign-in.
+- **App access:** core needs no account. Optional Publish uses an account the
+  user already owns — either their own GitHub sign-in (device flow) or a
+  Cloudflare API token they create, scoped to one account with Workers Scripts
+  · Edit. The developer provides neither, holds neither, and can revoke
+  neither; a reviewer can use "Publish to web" without connecting anything.
 - **Privacy policy URL** points at `PRIVACY.md` on the `main` branch —
   moving or renaming that file breaks the link.
 - **Listing** copy: `fastlane/metadata/android/en-US/{short,full}_description.txt`;

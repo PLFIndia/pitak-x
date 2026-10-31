@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/database/app_database.dart';
+import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
@@ -491,5 +492,148 @@ void main() {
     final row = (await repo.loadAll()).single;
     expect(row.location, isNull);
     expect(row.precision, isNull);
+  });
+
+  group('acceptLibraryMove (C10/R17: one transactional merge)', () {
+    const oldSite = 'https://old.github.io/lib/';
+    const newSite = 'https://new.github.io/lib/';
+
+    Future<(NetworkLibrary, NetworkLibrary)> seedPair() async {
+      final canonical = (await repo.upsertBySiteUrl(
+        const NetworkLibrary(
+          siteUrl: oldSite,
+          name: 'Saved',
+          fingerprint: fpA,
+          isMember: true,
+          membership: MembershipState.confirmed,
+          createdAt: 42,
+          sortOrder: 9,
+        ),
+      )).toNullable()!;
+      final placeholder = (await repo.upsertBySiteUrl(
+        const NetworkLibrary(siteUrl: newSite, createdAt: 50, sortOrder: 10),
+      )).toNullable()!;
+      return (canonical, placeholder);
+    }
+
+    test(
+      'use-new: deletes the duplicate and repoints the canonical row',
+      () async {
+        final (canonical, placeholder) = await seedPair();
+        final next = canonical.copyWith(siteUrl: newSite, name: 'Fresh');
+
+        final result = await repo.acceptLibraryMove(
+          canonicalBaseline: canonical,
+          canonicalNext: next,
+          placeholderBaseline: placeholder,
+        );
+
+        final applied = result.toNullable()!;
+        expect(applied.repointed, isTrue);
+        expect(applied.deletedPlaceholder, isTrue);
+        final rows = await repo.loadAll();
+        expect(rows, hasLength(1));
+        expect(rows.single.id, canonical.id, reason: 'canonical id survives');
+        expect(rows.single.siteUrl, newSite);
+        expect(rows.single.name, 'Fresh');
+        expect(rows.single.sortOrder, 9);
+        expect(rows.single.membership, MembershipState.confirmed);
+      },
+    );
+
+    test('keep-saved: deletes the duplicate without repointing', () async {
+      final (canonical, placeholder) = await seedPair();
+      final next = canonical.copyWith(name: 'Fresh');
+
+      final result = await repo.acceptLibraryMove(
+        canonicalBaseline: canonical,
+        canonicalNext: next,
+        placeholderBaseline: placeholder,
+      );
+
+      expect(result.toNullable()!.repointed, isFalse);
+      final rows = await repo.loadAll();
+      expect(rows, hasLength(1));
+      expect(rows.single.siteUrl, oldSite);
+      expect(rows.single.name, 'Fresh');
+    });
+
+    test(
+      'a card offer (no placeholder row) only updates the canonical row',
+      () async {
+        final (canonical, _) = await seedPair();
+        await repo.removeById(
+          (await repo.loadAll()).firstWhere((r) => r.siteUrl == newSite).id,
+        );
+        final next = canonical.copyWith(siteUrl: newSite);
+
+        final result = await repo.acceptLibraryMove(
+          canonicalBaseline: canonical,
+          canonicalNext: next,
+        );
+
+        expect(result.toNullable()!.deletedPlaceholder, isFalse);
+        final rows = await repo.loadAll();
+        expect(rows, hasLength(1));
+        expect(rows.single.siteUrl, newSite);
+      },
+    );
+
+    test('SECURITY: a concurrent local edit aborts the whole write', () async {
+      final (canonical, placeholder) = await seedPair();
+      // The user changed the row (e.g. confirmed membership) while the
+      // decision was on screen; the baseline no longer matches.
+      await repo.upsertBySiteUrl(canonical.copyWith(name: 'Edited by user'));
+      final next = canonical.copyWith(siteUrl: newSite);
+
+      final result = await repo.acceptLibraryMove(
+        canonicalBaseline: canonical,
+        canonicalNext: next,
+        placeholderBaseline: placeholder,
+      );
+
+      expect(result.swap().toNullable(), isA<StaleStateFailure>());
+      final rows = await repo.loadAll();
+      expect(rows, hasLength(2), reason: 'nothing deleted, nothing repointed');
+      expect(rows.firstWhere((r) => r.siteUrl == newSite).id, placeholder.id);
+    });
+
+    test(
+      'SECURITY: a deleted duplicate aborts instead of half-applying',
+      () async {
+        final (canonical, placeholder) = await seedPair();
+        await repo.removeById(placeholder.id);
+
+        final result = await repo.acceptLibraryMove(
+          canonicalBaseline: canonical,
+          canonicalNext: canonical.copyWith(siteUrl: newSite),
+          placeholderBaseline: placeholder,
+        );
+
+        expect(result.swap().toNullable(), isA<StaleStateFailure>());
+        expect((await repo.loadAll()).single.siteUrl, oldSite);
+      },
+    );
+
+    test(
+      'SECURITY: a row added at the target address meanwhile wins',
+      () async {
+        final (canonical, placeholder) = await seedPair();
+        await repo.removeById(placeholder.id);
+        final squatter = (await repo.upsertBySiteUrl(
+          const NetworkLibrary(siteUrl: newSite, name: 'Added meanwhile'),
+        )).toNullable()!;
+
+        final result = await repo.acceptLibraryMove(
+          canonicalBaseline: canonical,
+          canonicalNext: canonical.copyWith(siteUrl: newSite),
+        );
+
+        expect(result.swap().toNullable(), isA<StaleStateFailure>());
+        final rows = await repo.loadAll();
+        expect(rows, hasLength(2));
+        expect(rows.firstWhere((r) => r.siteUrl == newSite).id, squatter.id);
+      },
+    );
   });
 }

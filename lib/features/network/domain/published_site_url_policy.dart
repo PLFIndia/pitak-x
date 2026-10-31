@@ -72,6 +72,81 @@ abstract final class PublishedSiteUrlPolicy {
     return safe;
   }
 
+  /// The PUBLISH read-back address for [path] under [siteUrl], or null.
+  /// An empty [path] means the canonical root itself (used for moved pages).
+  ///
+  /// Why a separate entry point (Cloudflare plan R16): publish verification
+  /// may append a generated `rb` cache-buster so a CDN cannot serve a stale
+  /// copy of the file we JUST wrote. That is the ONLY relaxation, it is
+  /// opt-in per call, and it never touches [sanitizeForSite] — the viewer's
+  /// no-query rule stays exactly as it was.
+  ///
+  /// Every other rule is shared: canonical site root, same origin, inside the
+  /// site's directory, no fragment, no backslash, no dot segments.
+  static String? readBackUrl(
+    String siteUrl,
+    String path, {
+    String? cacheBuster,
+  }) {
+    if (!_isCanonicalSiteRoot(siteUrl)) return null;
+    if (path.isNotEmpty && !_isSafeRelativePath(path)) return null;
+    final bare = path.isEmpty
+        ? Uri.parse(siteUrl)
+        : Uri.parse(siteUrl).resolve(path);
+    // Containment is checked on the QUERY-FREE URL: `sanitizeForSite`
+    // refuses queries by design (the viewer's rule), and re-checking the
+    // exact same origin/directory is what matters here.
+    final safe = sanitizeForSite(siteUrl, bare.toString());
+    if (safe == null) return null;
+    // The buster is a short opaque token chosen by the caller; anything that
+    // could smuggle a second parameter or a fragment is refused.
+    if (cacheBuster == null) return safe;
+    if (!_isSafeQueryValue(cacheBuster)) return null;
+    return Uri.parse(
+      safe,
+    ).replace(queryParameters: {'rb': cacheBuster}).toString();
+  }
+
+  /// A cache-buster value: 1–64 chars of `[A-Za-z0-9._-]`.
+  static bool _isSafeQueryValue(String value) {
+    if (value.isEmpty || value.length > 64) return false;
+    for (final unit in value.codeUnits) {
+      final ok =
+          (unit >= 0x30 && unit <= 0x39) ||
+          (unit >= 0x41 && unit <= 0x5a) ||
+          (unit >= 0x61 && unit <= 0x7a) ||
+          unit == 0x2e ||
+          unit == 0x5f ||
+          unit == 0x2d;
+      if (!ok) return false;
+    }
+    return true;
+  }
+
+  /// A fixed, site-relative file path: 1–3 segments of `[A-Za-z0-9._-]`, no
+  /// leading slash, no `..`/`.` segment, no backslash (R23's `SitePath` rule
+  /// arrives in S5; this is the same rule for the read-back subset).
+  static bool _isSafeRelativePath(String path) {
+    if (path.isEmpty || path.length > 256) return false;
+    if (path.startsWith('/') || path.contains(r'\')) return false;
+    final segments = path.split('/');
+    if (segments.length > 3) return false;
+    for (final segment in segments) {
+      if (segment.isEmpty || segment == '.' || segment == '..') return false;
+      for (final unit in segment.codeUnits) {
+        final ok =
+            (unit >= 0x30 && unit <= 0x39) ||
+            (unit >= 0x41 && unit <= 0x5a) ||
+            (unit >= 0x61 && unit <= 0x7a) ||
+            unit == 0x2e ||
+            unit == 0x5f ||
+            unit == 0x2d;
+        if (!ok) return false;
+      }
+    }
+    return true;
+  }
+
   /// The form `BoundedHttpFetcher` wants: one tear-off per site, applied to
   /// the initial URL and to every redirect `Location`.
   static String? Function(String?) sanitizerFor(String siteUrl) =>

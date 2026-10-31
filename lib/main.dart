@@ -12,6 +12,10 @@ import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart
 import 'package:pitaka/src/rust/frb_generated.dart';
 
 Future<void> main() async {
+  // The shipping entry point contains no development harness: the AOT memory
+  // scenario lives in `lib/main_dev_harness.dart` and is run with `-t`
+  // (fix-plan L15).
+  //
   // Load the native pitak_crypto core before any vault operation. Must complete
   // before the FFI surface (unlockAndReadVault) is callable.
   WidgetsFlutterBinding.ensureInitialized();

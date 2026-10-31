@@ -31,17 +31,31 @@
 /// Pure Dart: no Flutter/IO/Riverpod (AGENTS.md §3.1).
 library;
 
+import 'package:pitaka/core/network/workers_dev_url.dart';
+
 /// Validates (+ canonicalizes) a library site URL.
 ///
 /// Policy (strict, mirrors `CoverUrlAllowList` hardening): `https` only; host
-/// must be `github.io`/`*.github.io` or `pages.dev`/`*.pages.dev` (the only
-/// places a Pitak catalogue is published); no userinfo (`https://x@host`)
-/// credentials; no explicit port other than 443. Everything else → rejected.
-/// Custom domains are intentionally NOT accepted.
+/// must be `github.io`/`*.github.io`, `pages.dev`/`*.pages.dev`, or a strict
+/// Cloudflare Workers address (the only places a Pitak catalogue is
+/// published); no userinfo (`https://x@host`) credentials; no explicit port
+/// other than 443. Everything else → rejected. Custom domains are
+/// intentionally NOT accepted.
+///
+/// Workers addresses (Cloudflare plan R15) follow the shared
+/// `WorkersDevUrl` grammar instead of the loose suffix rule: exactly
+/// `<worker>.<account-subdomain>.workers.dev`, and — for a stored site — the
+/// root path only. The apex, one-label and extra-label forms are refused
+/// because a suffix match alone cannot tell them apart from a hostile
+/// look-alike.
 abstract final class BookmarkUrl {
-  /// Hosts (suffixes) allowed for a network library. A host matches when it
-  /// equals one of these or ends with `.` + one of these (so
+  /// Hosts (suffixes) allowed for a network library by the loose rule. A host
+  /// matches when it equals one of these or ends with `.` + one of these (so
   /// `foo.github.io` is allowed, `github.io.evil.com` is not).
+  ///
+  /// `workers.dev` is deliberately NOT in this set: it is matched by the
+  /// strict [WorkersDevUrl] grammar instead (exactly two leading labels,
+  /// root path for a stored site).
   static const Set<String> allowedHostSuffixes = {'github.io', 'pages.dev'};
 
   /// Length cap (docs/ARCHITECTURE.md §5.6 "URL"): a legitimate Pages address is
@@ -93,6 +107,12 @@ abstract final class BookmarkUrl {
         (segments.last.isEmpty || segments.last == _indexFile)) {
       segments.removeLast();
     }
+    // A Workers site is a ROOT: `https://w.s.workers.dev/books.json` is a
+    // file, not a library address, so it must never become a stored identity
+    // (Cloudflare plan R15). Pages/GitHub keep their existing path rules.
+    if (segments.isNotEmpty && WorkersDevUrl.claimsWorkersSuffix(uri.host)) {
+      return null;
+    }
     final path = segments.isEmpty ? '/' : '/${segments.join('/')}/';
 
     // Rebuilt from parts, not patched as a string: `Uri` re-encodes the
@@ -125,6 +145,12 @@ abstract final class BookmarkUrl {
 
     final host = uri.host.toLowerCase();
     if (host.isEmpty) return null;
+    if (WorkersDevUrl.claimsWorkersSuffix(host)) {
+      // Strict shared grammar (R15): the apex, one-label and extra-label
+      // forms, bad labels and trailing dots are all refused here.
+      if (WorkersDevUrl.parseHost(host) == null) return null;
+      return uri;
+    }
     if (!_hostAllowed(host)) return null;
     return uri;
   }

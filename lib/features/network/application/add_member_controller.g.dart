@@ -7,7 +7,7 @@ part of 'add_member_controller.dart';
 // **************************************************************************
 
 String _$addMemberControllerHash() =>
-    r'1083fdc2915b0c72c3d42272433036b35a6228cd';
+    r'9e77f28958d78f4aad547715f41ee5a80c2f2ee5';
 
 /// Runs `AddMemberUseCase` for a scanned card and exposes the outcome.
 ///
@@ -16,7 +16,7 @@ String _$addMemberControllerHash() =>
 final addMemberControllerProvider =
     AutoDisposeAsyncNotifierProvider<
       AddMemberController,
-      NetworkLibrary?
+      AddMemberResult?
     >.internal(
       AddMemberController.new,
       name: r'addMemberControllerProvider',
@@ -27,6 +27,6 @@ final addMemberControllerProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$AddMemberController = AutoDisposeAsyncNotifier<NetworkLibrary?>;
+typedef _$AddMemberController = AutoDisposeAsyncNotifier<AddMemberResult?>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

@@ -26,6 +26,142 @@ final gitHubApiProvider = AutoDisposeProvider<GitHubApi>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubApiRef = AutoDisposeProviderRef<GitHubApi>;
+String _$cloudflareApiHash() => r'23c1205bd7389572e9500391aa386542d1f30acc';
+
+/// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
+///
+/// KeepAlive is deliberate (fix-plan M1). The controllers `ref.read` their
+/// factories, so with auto-dispose the API lived only while the Connection tab
+/// happened to be listening: switching tabs called `IOClient.close()`
+/// (`close(force: true)`) and cut exactly the in-flight requests. An operation
+/// must own its connections, not whichever widget is visible. This retains no
+/// secret — the facade holds no token or upload/completion JWT, tokens arrive
+/// per call — and idle sockets close themselves, so the cost is bounded.
+///
+/// Copied from [cloudflareApi].
+@ProviderFor(cloudflareApi)
+final cloudflareApiProvider = Provider<CloudflareApi>.internal(
+  cloudflareApi,
+  name: r'cloudflareApiProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$cloudflareApiHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareApiRef = ProviderRef<CloudflareApi>;
+String _$publishOperationQueueHash() =>
+    r'067570ba6162f6cafb7839b7b4617ae132462a22';
+
+/// The ONE app-wide publish queue (R11). Only outermost commands enqueue;
+/// dialogs and other user waits always happen after the queue is released.
+///
+/// Copied from [publishOperationQueue].
+@ProviderFor(publishOperationQueue)
+final publishOperationQueueProvider = Provider<SerialOpQueue>.internal(
+  publishOperationQueue,
+  name: r'publishOperationQueueProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$publishOperationQueueHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishOperationQueueRef = ProviderRef<SerialOpQueue>;
+String _$cloudflareCredentialStoreHash() =>
+    r'a66c1eb47b3598ecfa588a130b20b423ab4cf62b';
+
+/// One versioned, whole-record Cloudflare connection in hardened storage.
+///
+/// Copied from [cloudflareCredentialStore].
+@ProviderFor(cloudflareCredentialStore)
+final cloudflareCredentialStoreProvider =
+    AutoDisposeProvider<CloudflareCredentialStore>.internal(
+      cloudflareCredentialStore,
+      name: r'cloudflareCredentialStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflareCredentialStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareCredentialStoreRef =
+    AutoDisposeProviderRef<CloudflareCredentialStore>;
+String _$publishMarkerCodecHash() =>
+    r'bab91b6486d13dc7464829202b11c812ffd8ccfb';
+
+/// Public-marker JSON codec. It contains no credential or connection state.
+///
+/// Copied from [publishMarkerCodec].
+@ProviderFor(publishMarkerCodec)
+final publishMarkerCodecProvider =
+    AutoDisposeProvider<PublishMarkerCodec>.internal(
+      publishMarkerCodec,
+      name: r'publishMarkerCodecProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishMarkerCodecHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishMarkerCodecRef = AutoDisposeProviderRef<PublishMarkerCodec>;
+String _$verifyCloudflareAddressHash() =>
+    r'0463cd69dbbeca16b309bf91bc7df4b3257f54ef';
+
+/// Marker-only manual-address verification (D.2), never a normal publication.
+///
+/// Copied from [verifyCloudflareAddress].
+@ProviderFor(verifyCloudflareAddress)
+final verifyCloudflareAddressProvider =
+    AutoDisposeProvider<VerifyCloudflareAddress>.internal(
+      verifyCloudflareAddress,
+      name: r'verifyCloudflareAddressProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$verifyCloudflareAddressHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef VerifyCloudflareAddressRef =
+    AutoDisposeProviderRef<VerifyCloudflareAddress>;
+String _$setupCloudflareSiteHash() =>
+    r'5bd4b4c2865b3b06171b6ffc97b8b6d81c9196fa';
+
+/// Staged setup commands. Every mutating call is invoked inside the shared
+/// [publishOperationQueueProvider] by the outer connection controller.
+///
+/// Copied from [setupCloudflareSite].
+@ProviderFor(setupCloudflareSite)
+final setupCloudflareSiteProvider =
+    AutoDisposeFutureProvider<SetupCloudflareSite>.internal(
+      setupCloudflareSite,
+      name: r'setupCloudflareSiteProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$setupCloudflareSiteHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef SetupCloudflareSiteRef =
+    AutoDisposeFutureProviderRef<SetupCloudflareSite>;
 String _$publishCredentialStoreHash() =>
     r'3b31461d16fbf56902e23d43430383b9d60baf70';
 
@@ -66,26 +202,27 @@ final gitHubDeviceFlowProvider = AutoDisposeProvider<GitHubDeviceFlow>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef GitHubDeviceFlowRef = AutoDisposeProviderRef<GitHubDeviceFlow>;
-String _$setupGitHubRepoHash() => r'9281c5b0bdaf50685d0cdf621a85cf7445784933';
+String _$setupGitHubRepoHash() => r'1686f29e04f5075e4fb2cbefad0976e89e713044';
 
 /// One-tap repo setup: create/adopt the publish repo + enable Pages
 /// (mirrors Localcart Orange's github_setup).
 ///
 /// Copied from [setupGitHubRepo].
 @ProviderFor(setupGitHubRepo)
-final setupGitHubRepoProvider = AutoDisposeProvider<SetupGitHubRepo>.internal(
-  setupGitHubRepo,
-  name: r'setupGitHubRepoProvider',
-  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
-      ? null
-      : _$setupGitHubRepoHash,
-  dependencies: null,
-  allTransitiveDependencies: null,
-);
+final setupGitHubRepoProvider =
+    AutoDisposeFutureProvider<SetupGitHubRepo>.internal(
+      setupGitHubRepo,
+      name: r'setupGitHubRepoProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$setupGitHubRepoHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef SetupGitHubRepoRef = AutoDisposeProviderRef<SetupGitHubRepo>;
+typedef SetupGitHubRepoRef = AutoDisposeFutureProviderRef<SetupGitHubRepo>;
 String _$boundedCoverDownloadHash() =>
     r'26bb6879ed58b99cd14babb330131c1e1d3b94a0';
 
@@ -190,29 +327,75 @@ final publishLocalCoverReaderProvider =
 // ignore: unused_element
 typedef PublishLocalCoverReaderRef =
     AutoDisposeFutureProviderRef<Future<List<int>?> Function(String)>;
-String _$publishedFileFetcherHash() =>
-    r'2e06db835520facdf9a4b173f72cea48e65d2ef4';
+String _$publishedSiteVerifierHash() =>
+    r'5df7f558016575d591ad256caa98af05dc356761';
 
-/// Published-file fetcher for the post-publish read-back (à la Localcart
-/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
-/// failure; the read-back treats that as "not visible yet".
+/// Bounded, origin-bound read-back (R16): no auth, no token, no redirects,
+/// streamed cap, abortable deadline. Null on any refusal — the read-back
+/// treats that as "not visible yet".
 ///
-/// Copied from [publishedFileFetcher].
-@ProviderFor(publishedFileFetcher)
-final publishedFileFetcherProvider =
-    AutoDisposeProvider<PublishedFileFetcher>.internal(
-      publishedFileFetcher,
-      name: r'publishedFileFetcherProvider',
+/// Copied from [publishedSiteVerifier].
+@ProviderFor(publishedSiteVerifier)
+final publishedSiteVerifierProvider =
+    AutoDisposeProvider<PublishedSiteVerifier>.internal(
+      publishedSiteVerifier,
+      name: r'publishedSiteVerifierProvider',
       debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
           ? null
-          : _$publishedFileFetcherHash,
+          : _$publishedSiteVerifierHash,
       dependencies: null,
       allTransitiveDependencies: null,
     );
 
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
-typedef PublishedFileFetcherRef = AutoDisposeProviderRef<PublishedFileFetcher>;
+typedef PublishedSiteVerifierRef =
+    AutoDisposeProviderRef<PublishedSiteVerifier>;
+String _$publishedSiteReadVerifierHash() =>
+    r'874d563b3b70ead96c482dec106969f4fe87693a';
+
+/// Structured public reads for marker freshness and expected-404 checks. This
+/// uses the same bounded adapter/policy as [publishedSiteVerifierProvider].
+///
+/// Copied from [publishedSiteReadVerifier].
+@ProviderFor(publishedSiteReadVerifier)
+final publishedSiteReadVerifierProvider =
+    AutoDisposeProvider<PublishedSiteReadVerifier>.internal(
+      publishedSiteReadVerifier,
+      name: r'publishedSiteReadVerifierProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedSiteReadVerifierHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedSiteReadVerifierRef =
+    AutoDisposeProviderRef<PublishedSiteReadVerifier>;
+String _$cloudflarePublishMarkerProbeHash() =>
+    r'6570ff88384d7a6e1130e2fe48285891cc4b04d2';
+
+/// Freshness-marker reads preserve 404 versus unreadable/malformed outcomes.
+///
+/// Copied from [cloudflarePublishMarkerProbe].
+@ProviderFor(cloudflarePublishMarkerProbe)
+final cloudflarePublishMarkerProbeProvider =
+    AutoDisposeProvider<CloudflarePublishMarkerProbe>.internal(
+      cloudflarePublishMarkerProbe,
+      name: r'cloudflarePublishMarkerProbeProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflarePublishMarkerProbeHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflarePublishMarkerProbeRef =
+    AutoDisposeProviderRef<CloudflarePublishMarkerProbe>;
 String _$viewerHtmlFactoryHash() => r'413b4a5cb4c970060bbcf1dcc9511344c1fbc407';
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
@@ -276,6 +459,42 @@ final eventsJsonFactoryProvider =
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef EventsJsonFactoryRef = AutoDisposeProviderRef<EventsJsonFactory>;
+String _$publishSnapshotBuilderHash() =>
+    r'20c7014957a0cb26e4516dc474930a7c1445b419';
+
+/// The ONE snapshot builder every publish host consumes (Cloudflare plan
+/// R2/R3/P5).
+///
+/// Why it lives in DI (beginner note): the catalogue and events sections must
+/// be byte-identical no matter which host receives them, so the four builders
+/// (covers, viewer HTML, events HTML/JSON) and the shared `books.json` encoder
+/// are wired exactly once, here. A second wiring — for example a Cloudflare
+/// adapter assembling its own builder — is how two hosts start publishing
+/// slightly different files without anyone noticing.
+///
+/// The published pages carry the library's CURRENT name and public contact
+/// choices, but they are read through `PublishReads.pageSettings()` as part of
+/// the operation's strict reads (fix-plan M8), NOT here: awaiting the settings
+/// provider at wiring time let one failed settings write fail the builder with
+/// a non-`Exception`, which broke every publish and froze the card's spinner.
+///
+/// Copied from [publishSnapshotBuilder].
+@ProviderFor(publishSnapshotBuilder)
+final publishSnapshotBuilderProvider =
+    AutoDisposeFutureProvider<PublishSnapshotBuilder>.internal(
+      publishSnapshotBuilder,
+      name: r'publishSnapshotBuilderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishSnapshotBuilderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishSnapshotBuilderRef =
+    AutoDisposeFutureProviderRef<PublishSnapshotBuilder>;
 String _$publishCoverIdsHash() => r'3c5bcadbb45d7e23406191680df0ebe5e294b100';
 
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
@@ -318,13 +537,83 @@ final publishManifestStoreProvider =
 // ignore: unused_element
 typedef PublishManifestStoreRef =
     AutoDisposeFutureProviderRef<PublishManifestGateway>;
-String _$publishedSiteUrlHash() => r'b1c5668f3b27c7f3570b9d5cf877fac1410f06c7';
+String _$cloudflareManifestStoreHash() =>
+    r'fa655bfc22cd3c9212d6480fd9719551d2afb6b5';
 
-/// The live URL of the user's published library site, or null when nothing
-/// has been published yet. Derived from the publish manifest's `repo` field,
-/// which is only written AFTER a successful publish — so this is null for a
-/// repo that was created but never published. Public data (the URL is the
-/// whole point); no secrets involved.
+/// Atomic Cloudflare manifest storage, separate from GitHub's public record.
+///
+/// Copied from [cloudflareManifestStore].
+@ProviderFor(cloudflareManifestStore)
+final cloudflareManifestStoreProvider =
+    AutoDisposeFutureProvider<CloudflareManifestStore>.internal(
+      cloudflareManifestStore,
+      name: r'cloudflareManifestStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$cloudflareManifestStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef CloudflareManifestStoreRef =
+    AutoDisposeFutureProviderRef<CloudflareManifestStore>;
+String _$publishHostStateStoreHash() =>
+    r'daee9bc28bd86ab5f6674152a951164c773a6c3c';
+
+/// The host journal's storage (E.5): ONE prefs key, no tokens.
+///
+/// Copied from [publishHostStateStore].
+@ProviderFor(publishHostStateStore)
+final publishHostStateStoreProvider =
+    AutoDisposeFutureProvider<PublishHostStateStore>.internal(
+      publishHostStateStore,
+      name: r'publishHostStateStoreProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishHostStateStoreHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishHostStateStoreRef =
+    AutoDisposeFutureProviderRef<PublishHostStateStore>;
+String _$publishHostStateRepositoryHash() =>
+    r'81f8d97a4ac657d84de96bad54ac963647eb32ec';
+
+/// The journal's rules: the verified site address, its legacy migration and
+/// the write a successful publish is allowed to make (R33).
+///
+/// Copied from [publishHostStateRepository].
+@ProviderFor(publishHostStateRepository)
+final publishHostStateRepositoryProvider =
+    AutoDisposeFutureProvider<PublishHostStateRepository>.internal(
+      publishHostStateRepository,
+      name: r'publishHostStateRepositoryProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishHostStateRepositoryHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishHostStateRepositoryRef =
+    AutoDisposeFutureProviderRef<PublishHostStateRepository>;
+String _$publishedSiteUrlHash() => r'65d136de2503cd25c99a9aa9a567005f62d60d85';
+
+/// The address to share/QR, or null when no site of this library is VERIFIED
+/// live.
+///
+/// Deliberately not derived from the manifest (deviation 33): a manifest says
+/// what one publish wrote, and a failed publish would silently move the share
+/// address to a site that is not serving the library. The journal only gains a
+/// target after a read-back proves it, and an older install is migrated once
+/// with the same proof.
 ///
 /// Copied from [publishedSiteUrl].
 @ProviderFor(publishedSiteUrl)

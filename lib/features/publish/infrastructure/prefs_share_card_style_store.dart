@@ -8,6 +8,7 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/storage/prefs_write.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,15 +27,14 @@ final class PrefsShareCardStyleStore implements ShareCardStyleStore {
       ShareCardStyleX.fromToken(_prefs.getString(key));
 
   @override
-  Future<Either<Failure, Unit>> save(ShareCardStyle style) async {
-    // `SharedPreferences.setString` reports success as a bool; a `false` is
-    // a real failure the UI must not paper over (M17).
-    try {
-      final ok = await _prefs.setString(key, style.token);
-      if (!ok) return left(const StorageFailure('share card style write'));
-      return right(unit);
-    } on Exception catch (e) {
-      return left(StorageFailure('share card style write ($e)'));
-    }
-  }
+  Future<Either<Failure, Unit>> save(ShareCardStyle style) =>
+      // Reports a failed platform write (M17) and restores the previous cached
+      // value, so the share sheet cannot show a style the device never stored
+      // (fix-plan L9).
+      writePrefsString(
+        _prefs,
+        key,
+        style.token,
+        what: 'share card style write',
+      );
 }

@@ -2,14 +2,15 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/application/published_catalogue_query_state.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
+
+import '../../../support/published_file_fakes.dart';
 
 /// Query intent + derived view (viewer plan S3). The debounce, the facet list
 /// and the "a late pass cannot overwrite a newer answer" rule are all pinned
@@ -61,6 +62,9 @@ void main() {
     container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue(fetch.call),
+        publishedFileCacheProvider.overrideWithValue(
+          InMemoryPublishedFileCache(),
+        ),
         publishedCatalogueQueryRunnerProvider.overrideWithValue(runner.call),
       ],
     );
@@ -415,12 +419,13 @@ final class _ImmediateCatalogueFetch {
   PublishedCatalogue catalogue;
   final List<String> calls = [];
 
-  Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> call(
+  Future<PublishedFileFetch<PublishedCatalogue>> call(
     String url, {
+    String? validator,
     Future<void>? abortTrigger,
   }) async {
     calls.add(url);
-    return Right(catalogue);
+    return fetchedValue(catalogue);
   }
 }
 

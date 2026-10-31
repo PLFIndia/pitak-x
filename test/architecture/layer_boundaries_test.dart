@@ -182,7 +182,6 @@ void main() {
       // merge_fields.dart (721 → <500). merge_page.dart left it the same day:
       // the review cards moved to widgets/merge_review_section.dart when the
       // periodical counts landed (538 → <500).
-      'lib/features/publish/application/github_connection_controller.dart': 670,
       // 2026-10 (plan F7 rename sessions): `CatalogueItem`,
       // `CatalogueItemRepository` etc. are longer identifiers, so dart format
       // wrapped signatures and the 80-column lint forced doc-comment reflows:
@@ -205,9 +204,42 @@ void main() {
       // remediation S4): the per-row resolution apply moved to
       // merge_resolution_applier.dart (516 → <500).
       'lib/features/import_export/domain/bounded_zip_extractor.dart': 521,
+      // setup_cloudflare_site.dart left this list on 2026-10-29 (Cloudflare
+      // fix plan 0.4): the subdomain commands moved to
+      // setup_cloudflare_subdomain.dart and the typed attempt boundary to
+      // cloudflare_operation_attempt.dart (509 → <500).
     };
 
     int lineCount(File f) => f.readAsLinesSync().length;
+
+    test('only the settings feature awaits the settings provider future', () {
+      // `Failure` is not an `Exception`, so awaiting that provider's future
+      // and catching `on Exception` is how one failed settings write froze a
+      // publish spinner and unloaded the settings screen for the session
+      // (fix-plan M8). The typed `SettingsController.loaded()` is the one read.
+      final violations = <String>[];
+      for (final file in libFiles()) {
+        if (file.path.startsWith('lib/features/settings/')) continue;
+        // Comment lines may NAME the forbidden call to explain it.
+        final code = file
+            .readAsLinesSync()
+            .where((line) {
+              final trimmed = line.trimLeft();
+              return !trimmed.startsWith('//');
+            })
+            .join('\n');
+        if (code.contains('settingsControllerProvider.future')) {
+          violations.add(file.path);
+        }
+      }
+      expect(
+        violations,
+        isEmpty,
+        reason:
+            'Use ref.read(settingsControllerProvider.notifier).loaded() '
+            'instead of awaiting the provider future outside settings.',
+      );
+    });
 
     test(
       'no non-generated file exceeds 500 lines without an allow-list entry',

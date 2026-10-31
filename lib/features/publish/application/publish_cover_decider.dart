@@ -20,7 +20,7 @@ library;
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
-import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 
 /// Reads a local cover's bytes for [coverUrl], or null when unavailable.
 typedef LocalCoverReader = Future<List<int>?> Function(String coverUrl);
@@ -80,7 +80,7 @@ final class PublishCoverDecider {
   Future<CoverDecision> forItem(
     String? coverUrl, {
     required int itemId,
-    required PublishManifest manifest,
+    required PreviousPublication manifest,
   }) => _decide(
     coverUrl,
     manifest,
@@ -94,7 +94,7 @@ final class PublishCoverDecider {
   Future<CoverDecision> forPeriodical(
     String? coverUrl, {
     required String periodicalUid,
-    required PublishManifest manifest,
+    required PreviousPublication manifest,
   }) => _decide(
     coverUrl,
     manifest,
@@ -104,7 +104,7 @@ final class PublishCoverDecider {
 
   Future<CoverDecision> _decide(
     String? coverUrl,
-    PublishManifest manifest, {
+    PreviousPublication manifest, {
     required Future<String> Function() publishPath,
     required String urlKey,
   }) async {
@@ -135,7 +135,7 @@ final class PublishCoverDecider {
     }
 
     // REMOTE cover: source-identity skip when URL unchanged + already in repo.
-    final urlUnchanged = manifest.coverUrlByBookId[urlKey] == src;
+    final urlUnchanged = manifest.coverSourceFor(urlKey) == src;
     if (urlUnchanged && repoSha != null) {
       return CoverDecision(
         publishPath: path,

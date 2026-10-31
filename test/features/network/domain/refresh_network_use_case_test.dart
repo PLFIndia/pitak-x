@@ -196,6 +196,7 @@ void main() {
         DescriptorRefusal.redirectRefused,
         DescriptorRefusal.tooManyRedirects,
         DescriptorRefusal.httpStatus,
+        DescriptorRefusal.notPublished,
         DescriptorRefusal.tooLarge,
         DescriptorRefusal.timedOut,
         DescriptorRefusal.transport,
@@ -242,6 +243,100 @@ void main() {
       await useCase()();
       // The badge must not flicker away because the site went offline.
       expect(rowAfter(seedUrl).fetchStatus, FetchStatus.identityConflict);
+    });
+
+    test(
+      'a failing host (5xx, rate limit) does not demote it either',
+      () async {
+        for (final refusal in [
+          DescriptorRefusal.httpStatus,
+          DescriptorRefusal.timedOut,
+          DescriptorRefusal.transport,
+        ]) {
+          repo.rows = [
+            const NetworkLibrary(
+              id: 1,
+              siteUrl: seedUrl,
+              fingerprint: fpA,
+              fetchStatus: FetchStatus.identityConflict,
+            ),
+          ];
+          fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorRefused(
+            refusal,
+          );
+          await useCase()();
+          expect(
+            rowAfter(seedUrl).fetchStatus,
+            FetchStatus.identityConflict,
+            reason: '$refusal',
+          );
+        }
+      },
+    );
+
+    // Decided 2026-10-31 (handoff §12): a completed move clears the badge.
+    // The old address then serves the moved page, whose library.json is a
+    // real 404 — a positive "nothing is published here".
+    test('an address that no longer publishes (404/410) drops a stale '
+        'conflict badge to unreachable, keeping its cached facts', () async {
+      repo.rows = [
+        const NetworkLibrary(
+          id: 1,
+          siteUrl: seedUrl,
+          name: 'Cached Name',
+          fingerprint: fpA,
+          fetchStatus: FetchStatus.identityConflict,
+          fetchedAt: 500,
+        ),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.notPublished,
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      final row = rowAfter(seedUrl);
+      expect(row.fetchStatus, FetchStatus.unreachable);
+      expect(report.unreachable, 1);
+      expect(report.conflicts, 0);
+      // Nothing else changes: identity and cached facts are kept.
+      expect(row.fingerprint, fpA);
+      expect(row.name, 'Cached Name');
+      expect(row.fetchedAt, 500);
+    });
+
+    test('after a completed move the old row loses its badge and the new '
+        'address is offered as the move, never silently merged', () async {
+      repo.rows = [
+        // The old address: owns the identity, badge from the time both
+        // addresses served it.
+        const NetworkLibrary(
+          id: 1,
+          siteUrl: seedUrl,
+          fingerprint: fpA,
+          fetchStatus: FetchStatus.identityConflict,
+        ),
+        // The new address, saved by the user, with no identity of its own.
+        const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
+      ];
+      // The move completed: the old address serves the moved page (404 for
+      // library.json), the new one publishes the same identity at itself.
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.notPublished,
+      );
+      fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+        descriptor(seed2Url, name: 'Moved Library'),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(rowAfter(seedUrl).fetchStatus, FetchStatus.unreachable);
+      expect(rowAfter(seedUrl).fingerprint, fpA, reason: 'never re-assigned');
+      expect(rowAfter(seed2Url).fingerprint, isNull, reason: 'no auto-merge');
+      expect(report.conflicts, 0);
+      expect(report.moveCandidates, hasLength(1));
+      expect(report.moveCandidates.single.savedSiteUrl, seedUrl);
+      expect(report.moveCandidates.single.fetchedSiteUrl, seed2Url);
     });
 
     test('report counts refusals by class', () async {
@@ -301,8 +396,11 @@ void main() {
       },
     );
 
-    test('SECURITY: a fetched fp belonging to ANOTHER row flags a cross-row '
-        'conflict', () async {
+    test('C10/R17: a fetched fp belonging to ANOTHER user-added row offers a '
+        'move instead of a conflict, and writes nothing', () async {
+      // Both rows were added by the user (bookmark/saved). That is exactly
+      // the "the library changed address" evidence the plan asks us to
+      // OFFER, not to suppress as a conflict.
       repo.rows = [
         const NetworkLibrary(id: 1, siteUrl: seedUrl, fingerprint: fpA),
         const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
@@ -311,17 +409,162 @@ void main() {
         descriptor(seedUrl, name: 'First'),
       );
       fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
-        descriptor(seed2Url, name: 'Impostor'), // publishes fpA too
+        descriptor(seed2Url, name: 'Moved'), // publishes fpA too
       );
 
       final report = (await useCase()()).toNullable()!;
 
       expect(rowAfter(seedUrl).fetchStatus, FetchStatus.ok);
       final second = rowAfter(seed2Url);
-      expect(second.fetchStatus, FetchStatus.identityConflict);
+      expect(second.fetchStatus, FetchStatus.never, reason: 'no write');
       expect(second.fingerprint, isNull); // never merged
       expect(second.name, ''); // nothing else updated
-      expect(report.conflicts, 1);
+      expect(report.conflicts, 0);
+      expect(report.moveCandidates, hasLength(1));
+      final offer = report.moveCandidates.single;
+      expect(offer.savedRowId, 1);
+      expect(offer.savedSiteUrl, seedUrl);
+      expect(offer.fetchedSiteUrl, seed2Url);
+      expect(offer.fetchedName, 'Moved');
+      expect(offer.fingerprint, fpA);
+    });
+  });
+
+  group('library move offers (C10/R17)', () {
+    test('a user-added address publishing a saved fingerprint offers the '
+        'choice and persists no duplicate identity', () async {
+      repo.rows = [
+        const NetworkLibrary(
+          id: 3,
+          siteUrl: seedUrl,
+          name: 'Saved name',
+          fingerprint: fpA,
+          sortOrder: 2,
+        ),
+        // Added by URL: no identity known yet.
+        const NetworkLibrary(id: 4, siteUrl: seed2Url, sortOrder: 3),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.transport,
+      );
+      fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+        descriptor(
+          seed2Url,
+          name: 'Moved Library',
+          location: GeoPoint.tryCreate(1, 2),
+          precision: LocationPrecision.exact,
+        ),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.moveCandidates, hasLength(1));
+      final offer = report.moveCandidates.single;
+      expect(offer.savedRowId, 3);
+      expect(offer.savedSiteUrl, seedUrl);
+      expect(offer.savedName, 'Saved name');
+      expect(offer.fetchedSiteUrl, seed2Url);
+      expect(offer.fetchedName, 'Moved Library');
+      expect(offer.hasFetchedFacts, isTrue);
+      expect(offer.fetchedLocation!.lat, 1);
+      // Ephemeral: the duplicate identity is never written to the row.
+      expect(rowAfter(seed2Url).fingerprint, isNull);
+      expect(rowAfter(seed2Url).fetchStatus, FetchStatus.never);
+      expect(report.conflicts, 0);
+    });
+
+    test('a CARD-scanned address offers the same choice', () async {
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: seedUrl, fingerprint: fpA),
+        const NetworkLibrary(
+          id: 2,
+          siteUrl: seed2Url,
+          source: NetworkSource.card,
+          sortOrder: 1,
+        ),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.transport,
+      );
+      fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+        descriptor(seed2Url),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.moveCandidates, hasLength(1));
+      expect(report.moveCandidates.single.fetchedSource, NetworkSource.card);
+    });
+
+    test("SECURITY: a DISCOVERED row publishing another row's fingerprint "
+        'keeps the conflict badge (not a trusted move)', () async {
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: seedUrl, fingerprint: fpA),
+        const NetworkLibrary(id: 2, siteUrl: hubUrl, sortOrder: 1),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+        DescriptorRefusal.httpStatus,
+      );
+      // The hub claims a member at m1 with the SAME identity as the saved
+      // row. m1 is discovered => somebody else's claim, never a move offer.
+      fetcher.results[descriptorUrlOf(hubUrl)] = DescriptorFetched(
+        descriptor(
+          hubUrl,
+          fingerprint: fpB,
+          members: [const MemberEntry(fingerprint: fpA, siteUrl: m1Url)],
+        ),
+      );
+      fetcher.results[descriptorUrlOf(m1Url)] = DescriptorFetched(
+        descriptor(m1Url),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.moveCandidates, isEmpty);
+      expect(report.conflicts, greaterThanOrEqualTo(1));
+      expect(rowAfter(m1Url).fetchStatus, FetchStatus.identityConflict);
+    });
+
+    test(
+      'a descriptor that declares a DIFFERENT siteUrl is not evidence',
+      () async {
+        repo.rows = [
+          const NetworkLibrary(id: 1, siteUrl: seedUrl, fingerprint: fpA),
+          const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
+        ];
+        fetcher.results[descriptorUrlOf(seedUrl)] = const DescriptorRefused(
+          DescriptorRefusal.transport,
+        );
+        // Fetched from seed2Url, but the payload says it belongs to seedUrl —
+        // a misdirected/hostile payload must not enable a move.
+        fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+          descriptor(seedUrl),
+        );
+
+        final report = (await useCase()()).toNullable()!;
+
+        expect(report.moveCandidates, isEmpty);
+        expect(report.conflicts, 1);
+      },
+    );
+
+    test('SECURITY: two rows with NO stored fingerprint stay a contested '
+        'conflict (the outcome cannot depend on response order)', () async {
+      repo.rows = [
+        const NetworkLibrary(id: 1, siteUrl: seedUrl),
+        const NetworkLibrary(id: 2, siteUrl: seed2Url, sortOrder: 1),
+      ];
+      fetcher.results[descriptorUrlOf(seedUrl)] = DescriptorFetched(
+        descriptor(seedUrl),
+      );
+      fetcher.results[descriptorUrlOf(seed2Url)] = DescriptorFetched(
+        descriptor(seed2Url),
+      );
+
+      final report = (await useCase()()).toNullable()!;
+
+      expect(report.moveCandidates, isEmpty);
+      expect(report.conflicts, 2);
     });
   });
 

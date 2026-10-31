@@ -52,6 +52,27 @@ multiple-versions = "deny"
 wildcards = "deny"
 highlight = "all"
 
+# Exact, reviewed exceptions for Argon2 0.6's fixed digest chain. Argon2 uses
+# digest 0.11 / block-buffer 0.12, while flutter_rust_bridge_macros still uses
+# md-5 0.10 at compile time (including upstream's newest beta), and aes-gcm
+# remains on the 0.10/0.2 chain. These skips allow only the named old version;
+# they do not waive advisory, license, source, or wildcard checks.
+[[bans.skip]]
+name = "block-buffer"
+version = "0.10.4"
+
+[[bans.skip]]
+name = "cpufeatures"
+version = "0.2.17"
+
+[[bans.skip]]
+name = "crypto-common"
+version = "0.1.7"
+
+[[bans.skip]]
+name = "digest"
+version = "0.10.7"
+
 [sources]
 # crates.io only — no git or registry replacements sneak in unreviewed.
 unknown-registry = "deny"

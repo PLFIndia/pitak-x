@@ -27,9 +27,12 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 
 /// Outcome of a successful setup: the "owner/repo" target now stored.
 final class GitHubSetupResult {
@@ -59,14 +62,22 @@ final class GitHubSetupResult {
 
 /// Creates (or adopts) the publish repo, verifies Pages, and stores the
 /// target — so "connected" always means "ready to publish".
+///
+/// The outer connection command holds the app-wide publish queue for these
+/// methods; this inner use case deliberately never enqueues a nested operation.
 final class SetupGitHubRepo {
   /// Creates the use case.
-  const SetupGitHubRepo(this._api, this._creds);
+  ///
+  /// The optional `guard` is the S9 pending-move rule. Production DI always
+  /// supplies it; the parameter is optional only so older setup-only tests
+  /// can model a phone that has never written a journal.
+  const SetupGitHubRepo(this._api, this._creds, [this._guard]);
 
   /// The repo-ADMIN role of the GitHub port (S5): this use case never
   /// touches device-flow auth or git-data commits.
   final GitHubRepoAdminApi _api;
   final PublishCredentialStore _creds;
+  final PendingMoveTargetGuard? _guard;
 
   /// Valid GitHub repository name: alphanumeric, `.`, `_`, `-`, 1–100 chars.
   /// Hostile-input gate (§6.5): the repo name is user-typed and becomes a
@@ -277,6 +288,15 @@ final class SetupGitHubRepo {
       branch: branch,
       created: created,
     );
+    final guard = _guard;
+    if (guard != null) {
+      final target = GitHubPublishTarget.create(result.fullName);
+      if (target == null) {
+        return left(const ValidationFailure(MoveSiteMessages.targetMismatch));
+      }
+      final allowed = guard.allows(target);
+      if (allowed case Left(value: final failure)) return left(failure);
+    }
     await _creds.setTargetRepo(result.fullName);
     return right(result);
   }

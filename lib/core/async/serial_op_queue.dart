@@ -1,9 +1,15 @@
-/// Serializes vault mutations so two UI actions can never interleave writes
-/// (application layer; vault session split by responsibility).
+/// Serializes asynchronous operations of one owner so two UI actions can never
+/// interleave writes (core utility; the vault and the publish queue share it).
 ///
-/// Why: the Rust core re-derives the vault key per call; interleaving two
-/// operations doubles the KDF cost and races the re-read. A plain Dart
-/// object — unit-testable without any vault IO or Riverpod.
+/// Why: the Rust core re-derives the vault key per call, so interleaving two
+/// vault operations doubles the KDF cost and races the re-read; a publish has
+/// the same "one writer per target" requirement (Cloudflare plan M30/C6). A
+/// plain Dart object — unit-testable without any IO or Riverpod, and free of
+/// nesting: only the OUTERMOST command enqueues (a nested enqueue would
+/// deadlock behind its own caller).
+///
+/// `core/async` rather than a feature folder because more than one feature
+/// needs it; putting it under `vault` would make publishing import vault.
 ///
 /// Errors must not break the chain: the tail completer is completed in a
 /// `finally` (never with an error), so a failed op propagates to ITS caller

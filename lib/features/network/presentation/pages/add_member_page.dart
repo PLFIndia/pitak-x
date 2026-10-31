@@ -18,7 +18,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/core/widgets/qr_scan_page.dart';
 import 'package:pitaka/features/network/application/add_member_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
+import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
+import 'package:pitaka/features/network/presentation/widgets/library_move_prompt.dart';
 import 'package:pitaka/features/network/presentation/widgets/membership_badge.dart';
 
 /// The add-member screen.
@@ -58,7 +61,9 @@ class AddMemberPage extends ConsumerWidget {
     final busy = outcome.isLoading;
     // `valueOrNull` is null both when idle and after an error, which is
     // exactly "no success panel"; the error branch is rendered separately.
-    final added = outcome.valueOrNull;
+    final result = outcome.valueOrNull;
+    final added = result is MemberAdded ? result.row : null;
+    final offer = result is MemberMoveDetected ? result.candidate : null;
     final error = outcome.hasError
         ? AddMemberController.messageFor(outcome.error!)
         : null;
@@ -105,6 +110,32 @@ class AddMemberPage extends ConsumerWidget {
           if (added != null) ...[
             const SizedBox(height: 16),
             _AddedPanel(added),
+          ],
+          if (offer != null) ...[
+            const SizedBox(height: 16),
+            LibraryMovePrompt(
+              candidate: offer,
+              busy: busy,
+              // Keeping the saved address here is a pure dismissal: the card
+              // added no row, so there is nothing to merge away and nothing
+              // is written (D.5). The duplicate third choice would say the
+              // same thing, so it is hidden.
+              showNotSame: false,
+              onKeepSaved: () => ref
+                  .read(addMemberControllerProvider.notifier)
+                  .resolveMove(LibraryMoveChoice.keepSavedAddress),
+              onUseNew: () => ref
+                  .read(addMemberControllerProvider.notifier)
+                  .resolveMove(LibraryMoveChoice.useNewAddress),
+              onNotSame: () {},
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'The card was scanned in person, so it is trusted as evidence of '
+              'the identity — but the saved address is never changed until '
+              'you choose.',
+              style: theme.textTheme.bodySmall,
+            ),
           ],
         ],
       ),

@@ -43,13 +43,13 @@ class LibraryLogoController extends _$LibraryLogoController {
     } on Exception {
       return left(const StorageFailure('could not write the logo file'));
     }
-    try {
-      await ref
-          .read(settingsControllerProvider.notifier)
-          .setLibraryLogo(reference);
-    } on Exception {
+    final stored = await ref
+        .read(settingsControllerProvider.notifier)
+        .setLibraryLogo(reference);
+    if (stored.isLeft()) {
       // Settings write failed: the new file is unreferenced → remove it so a
-      // failed pick leaves no garbage; report the failure honestly.
+      // failed pick leaves no garbage; report the failure honestly (M8: the
+      // setter returns the failure instead of throwing).
       await store.deleteFile(reference);
       return left(const StorageFailure('could not save the logo setting'));
     }
@@ -63,9 +63,10 @@ class LibraryLogoController extends _$LibraryLogoController {
   /// removes the old file when nothing else uses it.
   Future<Either<Failure, Unit>> clearLogo() async {
     final previous = _currentLogoReference();
-    try {
-      await ref.read(settingsControllerProvider.notifier).setLibraryLogo('');
-    } on Exception {
+    final cleared = await ref
+        .read(settingsControllerProvider.notifier)
+        .setLibraryLogo('');
+    if (cleared.isLeft()) {
       return left(const StorageFailure('could not clear the logo setting'));
     }
     await _release(previous);

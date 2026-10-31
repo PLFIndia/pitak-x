@@ -141,12 +141,12 @@ class AppLockController extends _$AppLockController {
       true;
 
   Future<bool> _resolveGateEnabled() async {
-    try {
-      final settings = await ref.read(settingsControllerProvider.future);
-      return settings.appLockBiometric;
-    } on Object {
-      return true; // fail closed
-    }
+    // Typed read (M8): a failed settings SAVE never breaks the gate, and a
+    // never-loaded/corrupt state still fails closed.
+    final settings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    return settings.toNullable()?.appLockBiometric ?? true;
   }
 
   /// Runs the biometric/device-credential prompt. Success → unlocked. Failure
@@ -183,13 +183,13 @@ class AppLockController extends _$AppLockController {
   /// cannot be saved: stay locked and keep the button.
   Future<void> disableAppLock() async {
     if (state.phase != AppLockPhase.locked) return;
-    try {
-      await ref
-          .read(settingsControllerProvider.notifier)
-          .setAppLockBiometric(enabled: false);
-    } on Object {
-      return; // setting not persisted → remain locked
-    }
+    final stored = await ref
+        .read(settingsControllerProvider.notifier)
+        .setAppLockBiometric(enabled: false);
+    // M8: the setter RETURNS the failure instead of throwing, and a failed
+    // write never publishes a value. Stay locked unless the setting is
+    // genuinely off in the loaded state.
+    if (stored.isLeft()) return;
     final saved = ref.read(settingsControllerProvider).valueOrNull;
     if (saved != null && !saved.appLockBiometric) {
       state = const AppLockState(phase: AppLockPhase.unlocked);

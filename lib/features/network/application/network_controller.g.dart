@@ -6,7 +6,7 @@ part of 'network_controller.dart';
 // RiverpodGenerator
 // **************************************************************************
 
-String _$networkListViewHash() => r'6003868b13ef43990084bd59f436b634fe5bca8d';
+String _$networkListViewHash() => r'ef6bd92c971809f2daa233f8643dd926d15ae38f';
 
 /// The Libraries-tab view in ONE snapshot: the window plus its rows in
 /// display order ([NetworkLibrarySort.byDistanceThenName]).
@@ -39,7 +39,7 @@ typedef NetworkListViewRef =
     AutoDisposeFutureProviderRef<
       ({NetworkWindow window, List<NetworkLibrary> rows})
     >;
-String _$networkControllerHash() => r'6ddd21a061c4d5bf793612c1a43b97daf5849166';
+String _$networkControllerHash() => r'6b19ad11ddae1410eb9fa80d86b264bb271a4f31';
 
 /// Loads the network window and runs its mutations.
 ///

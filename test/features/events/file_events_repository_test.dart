@@ -50,7 +50,7 @@ void main() {
     Directory('${tmp.path}/events.json.tmp').createSync();
     final failed = await r.save(EventsContent.empty);
     expect(failed.isLeft(), isTrue);
-    expect((await r.load()).posters.single.description, 'keep me');
+    expect((await r.loadForEditor()).posters.single.description, 'keep me');
   });
 
   test('deletePosterImage removes only files inside posters/', () async {
@@ -75,7 +75,7 @@ void main() {
   });
 
   test('load returns empty when nothing saved', () async {
-    expect((await repo().load()).posters, isEmpty);
+    expect((await repo().loadForEditor()).posters, isEmpty);
   });
 
   test('save then load round-trips content', () async {
@@ -93,7 +93,7 @@ void main() {
     expect(File('${tmp.path}/events.json').existsSync(), isTrue);
 
     // A fresh repo reads it back.
-    final reloaded = await repo().load();
+    final reloaded = await repo().loadForEditor();
     expect(reloaded.posters, hasLength(2));
     expect(reloaded.posters[0].description, 'Hi');
     expect(reloaded.posters[1].imageRef, 'posters/b.jpg');
@@ -132,8 +132,24 @@ void main() {
     },
   );
 
-  test('a corrupt events.json degrades to empty, never throws', () async {
+  test('the TOLERANT editor read degrades a corrupt events.json to empty, '
+      'never throws', () async {
     File('${tmp.path}/events.json').writeAsStringSync('{ not json');
-    expect((await repo().load()).posters, isEmpty);
+    expect((await repo().loadForEditor()).posters, isEmpty);
+  });
+
+  test('the STRICT publish read REFUSES a corrupt events.json (R2: a corrupt '
+      'file is not "no posters")', () async {
+    File('${tmp.path}/events.json').writeAsStringSync('{ not json');
+    final result = await repo().loadStrict();
+    expect(result.isLeft(), isTrue);
+    expect(result.swap().toNullable(), isA<StorageFailure>());
+  });
+
+  test('the STRICT publish read is empty for a library with no file', () async {
+    // Never saved posters: legitimately empty, NOT a failure.
+    final result = await repo().loadStrict();
+    expect(result.isRight(), isTrue);
+    expect(result.toNullable()!.posters, isEmpty);
   });
 }

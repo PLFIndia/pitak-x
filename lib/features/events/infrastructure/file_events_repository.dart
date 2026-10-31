@@ -51,7 +51,7 @@ final class FileEventsRepository implements EventsRepository {
   String get _postersPath => p.join(baseDir, postersDir);
 
   @override
-  Future<EventsContent> load() async {
+  Future<EventsContent> loadForEditor() async {
     try {
       final f = _metaFile;
       if (!f.existsSync()) return EventsContent.empty;
@@ -60,6 +60,22 @@ final class FileEventsRepository implements EventsRepository {
     } on Exception {
       // Metadata is recoverable state, not a source of truth — never crash.
       return EventsContent.empty;
+    }
+  }
+
+  @override
+  Future<Either<Failure, EventsContent>> loadStrict() async {
+    try {
+      final f = _metaFile;
+      // A library that never saved posters has no file: that IS empty, not a
+      // failure (the publish may legitimately write an empty events page).
+      if (!f.existsSync()) return right(EventsContent.empty);
+      final json = jsonDecode(await f.readAsString());
+      return right(EventsContent.fromJson(json));
+    } on Exception {
+      // Corrupt/unreadable metadata: fail closed. The publish must not treat
+      // this as "no posters" and clear the live page (plan R2).
+      return left(const StorageFailure('events metadata unreadable'));
     }
   }
 

@@ -10,6 +10,7 @@ import 'package:pitaka/features/network/domain/entities/library_descriptor.dart'
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/reconcile_library_move_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/library_card_payload.dart';
 import 'package:pitaka/features/network/presentation/pages/add_member_page.dart';
 
@@ -264,6 +265,130 @@ void main() {
     await tester.pumpAndSettle();
     await expectMeetsA11yGuidelines(tester);
   });
+  testWidgets('C10/R17: a card whose identity is already saved elsewhere '
+      'offers a neutral choice and writes nothing until it is made', (
+    tester,
+  ) async {
+    const oldSite = 'https://old-address.github.io/lib/';
+    final repo = _FakeRepo(
+      seed: const [
+        NetworkLibrary(
+          id: 5,
+          siteUrl: oldSite,
+          name: 'Same library, old URL',
+          fingerprint: fp,
+          sortOrder: 4,
+        ),
+      ],
+    );
+    tester.view.physicalSize = const Size(1080, 2280);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          networkRepositoryProvider.overrideWith((ref) async => repo),
+          addMemberUseCaseProvider.overrideWith(
+            (ref) async => AddMemberUseCase(
+              repository: repo,
+              fetchDescriptor: (_) async =>
+                  const DescriptorRefused(DescriptorRefusal.transport),
+              clock: () => 1000,
+            ),
+          ),
+          reconcileLibraryMoveUseCaseProvider.overrideWith(
+            (ref) async => ReconcileLibraryMoveUseCase(
+              repository: repo,
+              clock: () => 2000,
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: AddMemberPage(scanner: fakeScanner([cardPayload])),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Scan a library card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('emit-0'));
+    await tester.pumpAndSettle();
+
+    // The offer names both addresses and promises nothing automatic.
+    expect(
+      find.text('These addresses may identify the same library.'),
+      findsOneWidget,
+    );
+    expect(find.text(oldSite), findsOneWidget);
+    expect(find.text(site), findsOneWidget);
+    expect(
+      find.textContaining('Nothing changes automatically'),
+      findsOneWidget,
+    );
+    // Nothing was written: no second row, the old one untouched.
+    expect(repo.rows, hasLength(1));
+    expect(repo.rows.single.siteUrl, oldSite);
+
+    // Accepting the card address repoints the canonical row.
+    await tester.ensureVisible(find.text('Use member.github.io'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Use member.github.io'));
+    await tester.pumpAndSettle();
+
+    expect(repo.rows, hasLength(1));
+    expect(repo.rows.single.id, 5, reason: 'canonical id survives');
+    expect(repo.rows.single.siteUrl, site);
+    // L10/D11: a card proves the address and the identity in person, not the
+    // name/pin/fetch facts, so accepting repoints the row and keeps the stored
+    // name instead of copying the card's.
+    expect(repo.rows.single.name, 'Same library, old URL');
+    expect(find.text('Added Same library, old URL'), findsOneWidget);
+  });
+
+  testWidgets('C10/R17: keeping the saved address writes nothing', (
+    tester,
+  ) async {
+    const oldSite = 'https://old-address.github.io/lib/';
+    final repo = _FakeRepo(
+      seed: const [
+        NetworkLibrary(id: 5, siteUrl: oldSite, name: 'Saved', fingerprint: fp),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          networkRepositoryProvider.overrideWith((ref) async => repo),
+          addMemberUseCaseProvider.overrideWith(
+            (ref) async => AddMemberUseCase(
+              repository: repo,
+              fetchDescriptor: (_) async =>
+                  const DescriptorRefused(DescriptorRefusal.transport),
+              clock: () => 1000,
+            ),
+          ),
+        ],
+        child: MaterialApp(
+          home: AddMemberPage(scanner: fakeScanner([cardPayload])),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Scan a library card'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('emit-0'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.text('Keep old-address.github.io'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Keep old-address.github.io'));
+    await tester.pumpAndSettle();
+
+    expect(repo.rows, hasLength(1));
+    expect(repo.rows.single.siteUrl, oldSite);
+    expect(repo.rows.single.name, 'Saved');
+    expect(
+      find.text('These addresses may identify the same library.'),
+      findsNothing,
+    );
+  });
 }
 
 class _FakeRepo implements NetworkRepository {
@@ -283,6 +408,25 @@ class _FakeRepo implements NetworkRepository {
     final saved = row.copyWith(id: _nextId++);
     rows.add(saved);
     return right(saved);
+  }
+
+  @override
+  Future<Either<Failure, LibraryMoveApplyResult>> acceptLibraryMove({
+    required NetworkLibrary canonicalBaseline,
+    required NetworkLibrary canonicalNext,
+    NetworkLibrary? placeholderBaseline,
+  }) async {
+    if (placeholderBaseline != null) {
+      rows.removeWhere((r) => r.id == placeholderBaseline.id);
+    }
+    final index = rows.indexWhere((r) => r.id == canonicalBaseline.id);
+    rows[index] = canonicalNext;
+    return right(
+      LibraryMoveApplyResult(
+        repointed: canonicalNext.siteUrl != canonicalBaseline.siteUrl,
+        deletedPlaceholder: placeholderBaseline != null,
+      ),
+    );
   }
 
   @override

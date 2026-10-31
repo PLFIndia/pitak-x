@@ -437,7 +437,7 @@ void main() {
     // async error from an un-awaited setter — and must not publish a
     // preference the device never stored.
     test(
-      'a persist failure becomes AsyncError and keeps the old state',
+      'a persist failure keeps the last value and returns the typed failure',
       () async {
         final container = ProviderContainer(
           overrides: [
@@ -449,17 +449,65 @@ void main() {
         addTearDown(container.dispose);
         await container.read(settingsControllerProvider.future);
 
-        // Must complete normally (no throw) even though the write fails.
-        await container
+        // Must complete normally (no throw) and REPORT the failure (M8).
+        final result = await container
             .read(settingsControllerProvider.notifier)
             .setThemeMode(AppThemeMode.light);
+        expect(result.isLeft(), isTrue);
 
         final s = container.read(settingsControllerProvider);
-        expect(s.hasError, isTrue);
+        // A failed SAVE is not a failed LOAD: the screen keeps its data.
+        expect(s.hasError, isFalse);
+        expect(s.valueOrNull, isNotNull);
         // The failed write was never published as if it had succeeded.
         expect(s.valueOrNull?.themeMode, isNot(AppThemeMode.light));
       },
     );
+
+    test('loaded() answers the last good value after a failed write', () async {
+      final container = ProviderContainer(
+        overrides: [
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => _FailingSettingsRepo(),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final controller = container.read(settingsControllerProvider.notifier);
+      final before = await controller.loaded();
+      expect(before.isRight(), isTrue);
+
+      await controller.setThemeMode(AppThemeMode.light);
+
+      final after = await controller.loaded();
+      expect(after.isRight(), isTrue);
+      expect(
+        after.toNullable()!.themeMode,
+        before.toNullable()!.themeMode,
+        reason: 'a failed save must not change what the app reads',
+      );
+    });
+
+    test('loaded() is a typed left when nothing was ever loaded', () async {
+      final container = ProviderContainer(
+        overrides: [
+          settingsRepositoryProvider.overrideWith(
+            (ref) async => throw StateError('no prefs'),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      // Start the failing build, then read through the typed accessor.
+      container.listen(settingsControllerProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+
+      final loaded = await container
+          .read(settingsControllerProvider.notifier)
+          .loaded();
+
+      expect(loaded.isLeft(), isTrue);
+      expect(loaded.getLeft().toNullable(), isA<StorageFailure>());
+    });
 
     test('setMaintainerName trims and persists', () async {
       SharedPreferences.setMockInitialValues({});
@@ -623,8 +671,11 @@ void main() {
           .setThemeMode(AppThemeMode.dark);
 
       final s = container.read(settingsControllerProvider);
-      expect(s.hasError, isTrue);
-      expect(s.error, isA<StorageFailure>());
+      expect(
+        s.hasError,
+        isFalse,
+        reason: 'M8: a failed save is not a load error',
+      );
       // The failed write was never published; the old value stays readable.
       expect(s.valueOrNull?.themeMode, AppThemeMode.light);
     });
@@ -844,21 +895,20 @@ void main() {
           reason: 'nothing published on a thrown write',
         );
 
-        // Mint the ID first (so the mint inside `current()` has nothing new
-        // to publish), then put the state into AsyncError via a plain setter
-        // (M17 fold). `current()` must still answer: `future` rejects, so the
-        // name comes from the cached last-good state.
+        // A failed setter now keeps AsyncData and returns the failure (M8),
+        // so `current()` answers from the cached last-good value.
         expect((await c.getOrCreateLibraryId()).isRight(), isTrue);
-        await c.setThemeMode(AppThemeMode.light);
-        expect(failing.read(settingsControllerProvider).hasError, isTrue);
+        final failed = await c.setThemeMode(AppThemeMode.light);
+        expect(failed.isLeft(), isTrue);
+        expect(failing.read(settingsControllerProvider).hasError, isFalse);
         final identity = await c.current();
         final value = identity.getOrElse((f) => fail('current failed: $f'));
         expect(value.id, 'a' * 32);
         expect(value.name, '');
         expect(
           failing.read(settingsControllerProvider).hasError,
-          isTrue,
-          reason: 'reading the identity must not mask the failed write',
+          isFalse,
+          reason: 'a failed save must not break the loaded screen',
         );
       });
 

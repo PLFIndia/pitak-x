@@ -20,14 +20,23 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
+import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+
+import 'support/cloudflare_fakes.dart';
 
 const _safeReadFailure =
     'Could not read the library. Nothing was published. '
@@ -70,7 +79,10 @@ void main() {
       expect(h.states.any((state) => state.isLoading), isTrue);
       expect(h.states.any((state) => state.hasError), isFalse);
       expect(h.books.reads, 1);
-      expect(h.credentials.reads, 0);
+      // ONE local read resolves the operation's sealed target (R1/C3) before
+      // the strict reads. That is a repo-name lookup, not a token read: the
+      // token is only fetched once the library itself has been read.
+      expect(h.credentials.reads, 1);
       expect(h.api.reads, 0);
       expect(h.api.commits, isEmpty);
       expect(h.manifest.loads, 0);
@@ -104,9 +116,37 @@ void main() {
             as Map<String, dynamic>;
     expect(payload['books'], isEmpty);
     expect(files.map((file) => file.path), contains('index.html'));
-    expect(h.manifest.saves, 1);
+    // R5: the commit is persisted immediately, then upgraded once the live
+    // site proves it — the record ends `live`.
+    expect(h.manifest.current.state, PublishState.live);
     expect((result as PublishSuccess).pagesLive, isTrue);
   });
+
+  testWidgets(
+    'PublishMode.complete reaches the builder: a missing cover refuses instead '
+    'of dropping it, and an incremental publish still succeeds',
+    (tester) async {
+      final h = _Harness(coverSalt: true);
+      h.books.read = () async => right(const [
+        CatalogueItem(id: 1, title: 'Coverless', coverUrl: 'covers/gone.jpg'),
+      ]);
+
+      // COMPLETE (a move or a whole-site replacement): a referenced cover with
+      // no usable bytes is a typed failure BEFORE any write (R2).
+      final complete = await h.publish(tester, mode: PublishMode.complete);
+      expect(
+        (complete as PublishFailure).reason,
+        CatalogueSectionBuilder.missingCoverMessage,
+      );
+      expect(h.api.commits, isEmpty);
+      expect(h.manifest.saves, 0);
+
+      // INCREMENTAL (an ordinary publish) keeps the historical behaviour: the
+      // cover degrades to the sanitized reference instead of blocking.
+      expect(await h.publish(tester), isA<PublishSuccess>());
+      expect(h.api.commits, hasLength(1));
+    },
+  );
 
   testWidgets('W3: a failed periodical read refuses the publish (no commit)', (
     tester,
@@ -205,6 +245,7 @@ void main() {
           right(const [CatalogueItem(id: 1, title: 'Recovered')]);
       expect(await h.publish(tester), isA<PublishSuccess>());
       final saved = h.manifest.current;
+      final savesAfterSuccess = h.manifest.saves;
       h.books.read = () async => left(const StorageFailure('private-second'));
       final result = await h.publish(tester);
 
@@ -212,7 +253,8 @@ void main() {
       expect(h.states.last.requireValue, same(result));
       expect(h.books.reads, 3);
       expect(h.api.commits, hasLength(1));
-      expect(h.manifest.saves, 1);
+      // The failure wrote nothing: the last successful record is untouched.
+      expect(h.manifest.saves, savesAfterSuccess);
       expect(h.manifest.current, same(saved));
     },
   );
@@ -229,7 +271,10 @@ void main() {
           .publish();
       await tester.pump();
       expect(h.states.last.isLoading, isTrue);
-      expect(h.credentials.reads, 0);
+      // The sealed target is resolved before the library read (R1/C3): that is
+      // the one local credential read that precedes it. The TOKEN, the API and
+      // the manifest all stay untouched while the read is pending.
+      expect(h.credentials.reads, 1);
       expect(h.api.reads, 0);
       expect(h.api.commits, isEmpty);
       expect(h.container.exists(appDocsDirProvider), isFalse);
@@ -237,7 +282,7 @@ void main() {
         succeeds ? right([]) : left(const StorageFailure('private')),
       );
       await tester.pump();
-      await tester.pump(PublishLibraryUseCase.readBackInterval);
+      await tester.pump(PublishedFileReadBack.defaultInterval);
       final result = await pending;
       expect(result, succeeds ? isA<PublishSuccess>() : isA<PublishFailure>());
       expect(h.api.commits, hasLength(succeeds ? 1 : 0));
@@ -258,7 +303,7 @@ void main() {
           succeeds ? right([]) : left(const StorageFailure('private')),
         );
         await tester.pump();
-        await tester.pump(PublishLibraryUseCase.readBackInterval);
+        await tester.pump(PublishedFileReadBack.defaultInterval);
         expect(
           await pending,
           succeeds ? isA<PublishSuccess>() : isA<PublishFailure>(),
@@ -319,7 +364,7 @@ void main() {
     h.books.read = () async => right([]);
     await tester.tap(publish);
     await tester.pump();
-    await tester.pump(PublishLibraryUseCase.readBackInterval);
+    await tester.pump(PublishedFileReadBack.defaultInterval);
     await tester.pumpAndSettle();
     expect(find.text('Published! Your site is live.'), findsOneWidget);
     expect(h.api.commits, hasLength(1));
@@ -562,7 +607,14 @@ class _Harness {
   /// [networkUnavailable] makes the network repository provider fail the way
   /// the composition root does when the legacy-bookmarks migration cannot
   /// complete (review M14).
-  _Harness({bool observe = true, bool networkUnavailable = false}) {
+  _Harness({
+    bool observe = true,
+    bool networkUnavailable = false,
+    bool coverSalt = false,
+  }) {
+    // R6: the fake remote starts as what this phone recorded.
+    api.tree = {...manifest.current.fileShas};
+    api.head = manifest.current.headSha ?? api.head;
     container = ProviderContainer(
       overrides: [
         catalogueItemRepositoryProvider.overrideWith((ref) async => books),
@@ -570,8 +622,17 @@ class _Harness {
         periodicalRepositoryProvider.overrideWith((ref) async => periodicals),
         gitHubApiProvider.overrideWithValue(api),
         publishCredentialStoreProvider.overrideWithValue(credentials),
-        publishCoverIdsProvider.overrideWithValue(PublishCoverIds(_Salt())),
+        cloudflareCredentialStoreProvider.overrideWithValue(
+          InMemoryCloudflareCredentialStore(),
+        ),
+        publishCoverIdsProvider.overrideWithValue(
+          PublishCoverIds(_Salt(coverSalt ? const [1, 2, 3, 4] : null)),
+        ),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
+        // R33: the journal is in memory here. Without this override the real
+        // prefs-backed store would be built, and a widget test has no
+        // platform storage channel to answer it.
+        publishHostStateStoreProvider.overrideWith((ref) async => hostState),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         if (networkUnavailable)
           networkRepositoryProvider.overrideWith(
@@ -588,6 +649,13 @@ class _Harness {
         // this fixture keeps its no-disk-access promise.
         coversDirProvider.overrideWith((ref) async => 'covers'),
         activeLoanCountsProvider.overrideWith((ref) => null),
+        // The snapshot wiring resolves the poster-reader handle up front (the
+        // builder is shared by every host). Stubbing it keeps this fixture's
+        // no-disk-access promise intact.
+        eventsPosterReaderProvider.overrideWith(
+          (ref) async =>
+              (_) async => null,
+        ),
         viewerHtmlFactoryProvider.overrideWithValue(({
           required libraryName,
           required contact,
@@ -600,23 +668,25 @@ class _Harness {
           remoteReads++;
           return null;
         }),
-        publishedFileFetcherProvider.overrideWithValue((url) async {
-          liveReads++;
-          // Routes by URL like the live site: library.json serves the last
-          // committed descriptor (null before the first publish), anything
-          // else is the read-back poll for books.json.
-          if (api.commits.isEmpty) return null;
-          final committed = api.commits.last;
-          if (url.contains('library.json')) {
-            for (final file in committed) {
-              if (file.path == 'library.json') return file.bytes;
+        publishedSiteVerifierProvider.overrideWithValue(
+          _Verifier((path) async {
+            liveReads++;
+            // Routes by PATH like the live site: library.json serves the
+            // last committed descriptor (null before the first publish),
+            // anything else is the read-back poll for books.json.
+            if (api.commits.isEmpty) return null;
+            final committed = api.commits.last;
+            if (path == 'library.json') {
+              for (final file in committed) {
+                if (file.path == 'library.json') return file.bytes;
+              }
+              return null;
             }
-            return null;
-          }
-          return committed
-              .firstWhere((file) => file.path == 'books.json')
-              .bytes;
-        }),
+            return committed
+                .firstWhere((file) => file.path == 'books.json')
+                .bytes;
+          }),
+        ),
         // A clock that ticks a minute per read: two publishes never share a
         // timestamp, so an updatedAt-reuse test is deterministic.
         clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
@@ -638,6 +708,7 @@ class _Harness {
   final api = _Api();
   final credentials = _Credentials();
   final manifest = _Manifest();
+  final hostState = _HostState();
   final settings = _Settings();
   final network = _Network();
   late final ProviderContainer container;
@@ -646,21 +717,31 @@ class _Harness {
   int remoteReads = 0;
   int liveReads = 0;
 
-  Future<PublishResult> publish(WidgetTester tester) async {
+  Future<PublishResult> publish(
+    WidgetTester tester, {
+    PublishMode mode = PublishMode.incremental,
+  }) async {
     final pending = container
         .read(publishControllerProvider.notifier)
-        .publish();
+        .publish(mode: mode);
     await tester.pump();
     // Advance the real use case's read-back delay on the test clock, not wall
     // time. The fake serves the committed bytes on the very first poll.
-    await tester.pump(PublishLibraryUseCase.readBackInterval);
+    await tester.pump(PublishedFileReadBack.defaultInterval);
     return pending;
   }
 }
 
+/// A cover salt that FAILS unless the harness's `coverSalt` flag is set: the
+/// fixture then proves a normal publish never touches cover IO unless it must.
 class _Salt implements PublishCoverSaltStore {
+  _Salt([this._bytes]);
+
+  final List<int>? _bytes;
+
   @override
-  Future<List<int>> salt() => throw UnsupportedError('Unexpected cover access');
+  Future<List<int>> salt() async =>
+      _bytes ?? (throw UnsupportedError('Unexpected cover access'));
 }
 
 class _Books implements CatalogueItemRepository {
@@ -731,11 +812,29 @@ class _Settings implements SettingsRepository {
 
 class _Events implements EventsRepository {
   @override
-  Future<EventsContent> load() async => EventsContent.empty;
+  Future<EventsContent> loadForEditor() async => EventsContent.empty;
+
+  @override
+  Future<Either<Failure, EventsContent>> loadStrict() async =>
+      right(EventsContent.empty);
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected event operation');
+}
+
+/// Read-back fake routed by the site-relative path.
+class _Verifier implements PublishedSiteVerifier {
+  _Verifier(this.answer);
+  final Future<List<int>?> Function(String path) answer;
+
+  @override
+  Future<List<int>?> read({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) => answer(path);
 }
 
 class _Credentials implements PublishCredentialStore {
@@ -758,9 +857,28 @@ class _Credentials implements PublishCredentialStore {
       throw UnsupportedError('Unexpected credential write');
 }
 
+/// In-memory host journal: records every write the publish path makes (R33).
+class _HostState implements PublishHostStateStore {
+  PublishHostState? stored;
+
+  @override
+  Either<Failure, PublishHostState?> load() => right(stored);
+
+  @override
+  Future<Either<Failure, Unit>> save(PublishHostState state) async {
+    stored = state;
+    return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, Unit>> clearUnreadable() async =>
+      left(const ValidationFailure('readable'));
+}
+
 class _Manifest implements PublishManifestGateway {
   PublishManifest current = const PublishManifest(
     repo: 'me/lib',
+    branch: 'main',
     fileShas: {'books.json': 'old-books-sha'},
     coverUrlByBookId: {'1': 'covers/old.jpg'},
   );
@@ -774,15 +892,21 @@ class _Manifest implements PublishManifestGateway {
   }
 
   @override
-  void save(PublishManifest manifest) {
+  Either<Failure, Unit> save(PublishManifest manifest) {
     saves++;
     current = manifest;
+    return right(unit);
   }
 }
 
 class _Api implements GitHubApi {
   int reads = 0;
   final commits = <List<DesiredFile>>[];
+
+  /// The fake remote branch: head + tree, updated by every successful commit
+  /// so a second publish sees exactly what the first one wrote (R6).
+  String head = 'synthetic-commit';
+  Map<String, String> tree = const {};
 
   @override
   Future<PagesSite?> pagesSite({
@@ -799,14 +923,20 @@ class _Api implements GitHubApi {
   }
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     reads++;
-    return const {};
+    return GitHubTreeSnapshot(
+      repo: '$owner/$repo',
+      branch: branch,
+      headSha: head,
+      files: tree,
+      truncated: false,
+    );
   }
 
   @override
@@ -817,10 +947,14 @@ class _Api implements GitHubApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
+    // R6: never overwrite a head this publish was not built from.
+    if (expectedHead != head) return const PublishCommitStale();
     commits.add(files);
-    return const PublishCommitSuccess('synthetic-commit', ['books.json']);
+    tree = {for (final f in files) f.path: f.gitSha};
+    return PublishCommitSuccess(head, ['books.json']);
   }
 
   @override

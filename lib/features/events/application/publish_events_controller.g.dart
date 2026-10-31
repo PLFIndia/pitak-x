@@ -7,16 +7,16 @@ part of 'publish_events_controller.dart';
 // **************************************************************************
 
 String _$publishEventsControllerHash() =>
-    r'40302f5a87378e8d8d5f1987788595f4e99c5325';
+    r'd930f9d9aaddb657ca812a69ddeb95e29011d721';
 
-/// Runs an events publish and exposes its [PublishEventsResult].
+/// Runs an events publish and exposes its shared [PublishResult].
 ///
 /// Copied from [PublishEventsController].
 @ProviderFor(PublishEventsController)
 final publishEventsControllerProvider =
     AutoDisposeAsyncNotifierProvider<
       PublishEventsController,
-      PublishEventsResult?
+      PublishResult?
     >.internal(
       PublishEventsController.new,
       name: r'publishEventsControllerProvider',
@@ -27,7 +27,6 @@ final publishEventsControllerProvider =
       allTransitiveDependencies: null,
     );
 
-typedef _$PublishEventsController =
-    AutoDisposeAsyncNotifier<PublishEventsResult?>;
+typedef _$PublishEventsController = AutoDisposeAsyncNotifier<PublishResult?>;
 // ignore_for_file: type=lint
 // ignore_for_file: subtype_of_sealed_class, invalid_use_of_internal_member, invalid_use_of_visible_for_testing_member, deprecated_member_use_from_same_package

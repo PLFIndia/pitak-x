@@ -14,6 +14,298 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+### Added
+- **Saved copies of opened libraries (ADR 0018):** the native viewer keeps
+  the last `books.json` and `events.json` of each saved library in the OS
+  cache directory and revalidates them on every open with the host's `ETag`
+  (`If-None-Match`; `304` downloads nothing). When the host can't be checked,
+  the saved copy is shown with a note naming when it was last confirmed and
+  why. Saved bytes are SHA-256/size-verified and re-decoded by the bounded
+  codecs; tags are grammar-checked before they are stored or sent. All copies
+  share a 200 MiB cap (least recently opened library evicted first), are
+  excluded from device backups and `.pitabak`, and are deleted when the
+  library leaves the saved list (remove, restore or move). Supersedes ADR
+  0015 decision 3; covers and posters stay memory-only.
+- **Publish to Cloudflare Workers:** connect with a restricted API token
+  scoped to one account (`Workers Scripts · Edit`), choose the account,
+  `workers.dev` subdomain and a Worker dedicated to Pitak, prove the address
+  with a marker-only deploy, then publish the catalogue and events to an
+  assets-only Worker. An unknown remote state requires an explicit
+  whole-Worker replacement whose dialog shows real item and poster counts;
+  cancelling writes nothing.
+- **Read and reconcile `workers.dev` libraries:** strict
+  `<worker>.<subdomain>.workers.dev` root addresses are accepted and hostile
+  forms refused. When a saved library's fingerprint reappears at another
+  verified address, both addresses are offered neutrally and accepting is one
+  transactional merge/repoint that keeps URL and fingerprint uniqueness;
+  declining writes nothing and nothing follows a move automatically.
+- **Move a library site between GitHub Pages and Cloudflare Workers (S9):** a
+  user-confirmed move publishes and verifies a complete destination snapshot
+  before touching the old site, records one atomic pending-journal entry with
+  the exact moved-page bytes and app-owned deletion paths retirement will use,
+  and switches the share/QR address only after the old site is verifiably
+  retired. Retry resumes only missing work; Skip requires the old repository or
+  Worker to be gone and never pretends it was retired.
+- **Persistent move recovery UI:** the publish card shows the verified new
+  address plus a Retry/Skip banner until completion, warns before Skip, and
+  states that peers do not follow a move automatically and the card must be
+  reprinted.
+- **How Pitak works: three new guides (nine in total).** *Set up Cloudflare
+  Workers* lists every value the Cloudflare setup asks for (API token,
+  account / Account ID, `workers.dev` subdomain, Worker name), says where to
+  find each one in Cloudflare's dashboard, and walks through token creation
+  and the in-app prompts; *Events and posters* covers the Publish → Events
+  tab; *Wishlist: books to buy* covers adding wanted books and moving one into
+  the library. New deep links open the Events tab and the Wishlist. The
+  publish guide's Cloudflare part is now a short pointer, and the map guide no
+  longer calls every site address "the GitHub Pages link".
+  `guide_catalog_test.dart` pins the guide's token name and Account ID length
+  to the setup code, so the copy cannot silently drift from it.
+
+### Changed
+- **Guide copy split by topic:** `guide_catalog.dart` now holds only the index
+  order and lookup; the guides live in `features/guides/domain/catalog/`
+  (library, publishing, data-and-network) to stay under the 500-line
+  file-size ratchet. No behaviour change.
+- **One publish pipeline for both hosts:** catalogue and events are built by
+  ONE set of section builders, merged by ONE section rule, and every publish
+  is bound to one sealed target, so `library.json` always carries the address
+  of the operation that wrote it. The host adapters consume the same bytes.
+- **GitHub writes are head-aware and fail closed:** a schema-2 publish record
+  (repo, branch, head, ownership consent), typed non-truncated tree
+  reconciliation, expected-head commits, atomic typed saves, and
+  `deployed` → `live` only after read-back proves the site. A record that no
+  longer describes the repo+branch claims nothing instead of authorising
+  deletions, and tree paths this phone did not write are never adopted.
+- **A corrupt read is not empty content:** publishing uses strict reads, so a
+  damaged events file is a typed failure rather than an empty public page; the
+  tolerant editor read is now explicitly `loadForEditor()`.
+- **Stale covers are deleted on the next publish.** This is a deliberate
+  remote-behaviour change: a cover that is no longer referenced leaves the
+  site instead of lingering at its old URL.
+- **One target-mutation rule:** GitHub repository setup and Cloudflare Worker
+  setup now share the pending-move guard, so neither can change a target while
+  a move is being recovered.
+- **App icon: the book now lies open face-up.** The pages used to rise to a
+  peak at a wide saffron spine band, which read as a book left open
+  face-down. Now three cues say "face-up": the pages curve down into the
+  centre fold, the paper is shaded toward a crease line, and a cream cover
+  edge shows below the pages. Same saffron tile and cream paper; the glyph
+  stays centred. Every PNG was regenerated from `tool/gen_app_icon.py`:
+  launcher icons (Android, iOS, macOS), the in-app and PDF copies under
+  `assets/`, and the store icon and feature graphic
+  (`tool/gen_play_assets.py`). The library goldens that show the logo were
+  regenerated on Linux (`update-goldens` workflow).
+- **"Not showing yet" after a move is explained:** when the new site was
+  written but did not appear within the wait, the move now says the library
+  was copied, that a new GitHub Pages site can take 10 minutes or more
+  (the same budget the check waits for), that the current site was not
+  changed, and to choose Move to other host again. The Cloudflare
+  destination says the same after an accepted deploy.
+- **A completed move clears the reader's identity-conflict badge:** a 404/410
+  for `library.json` is now `DescriptorRefusal.notPublished` (other non-2xx
+  stay `httpStatus`). On that answer, which is what a moved page gives, a
+  known conflict badge becomes `unreachable`; the row keeps its identity and
+  cached facts, an offline site still keeps the badge, and the other address
+  keeps its own badge or move offer (never an auto-merge).
+- **Replacement consent depends on content, not existence:** the Worker read
+  now tells an empty Worker (exists with no versions, code 10222) from one
+  with content (`CloudflareWorkerPresence`). Only a Worker with content asks
+  for replacement consent in setup, warns that verification replaces its
+  assets, or makes a publish or move ask to replace "content this phone did
+  not publish" (ADR 0017 amended).
+- **Worker-name case listing removed:** Cloudflare refuses Worker names with
+  capitals (HTTP 400, code 10016, proven on the real host), so
+  `CloudflareWorkerNameGuard`, `listWorkerNames` and their messages and limits
+  are deleted. New names stay lower-case; stored names keep working.
+
+### Fixed
+- **Contradictory Cloudflare tile after a publish:** the tile no longer shows
+  "write access … verified" next to "The first publish will test Workers write
+  access." The write-access line is derived from the connection status, and
+  the setup message only reports what setup did.
+- **Stale review text while publishing:** after confirming a replacement, the
+  publish card no longer shows "Review site replacement" for the minute the
+  deploy and read-back take; it shows "Publishing…".
+- **Cancel move is no longer offered when it can only be refused:** the old
+  address is checked before the confirmation dialog, and Cancel disappears once
+  the old address is known to show the moved page (including after a final
+  switch that failed after retirement). Retry remains.
+- **No second, empty review for a different Worker:** a Worker that exists
+  with no versions (left by an interrupted first publish) no longer triggers a
+  replacement review on top of the "Publish to a different site?" review.
+- **Unreadable Cloudflare credentials during a move:** the move target resolver
+  threw a `StateError` (not caught by `on Exception`) instead of reporting that
+  setup is required; it now fails closed with the fixed setup message.
+- **Cloudflare publishing can no longer reach a dead end:** a stored record
+  for another Worker or address now claims nothing instead of failing every
+  publish; a deleted Worker is offered a recreate review instead of refusing
+  forever; and Retry verification with no matching record says there is
+  nothing to verify.
+- **A whole-site replacement for missing files can be confirmed:** consent was
+  checked against a freshness category instead of the remote state the user
+  reviewed, so a repair offered for files Cloudflare no longer holds could
+  never be confirmed. Confirmation is now bound to that remote anchor.
+- **The first publish to a new Worker no longer reports "stale":** if the
+  upload session creates the Worker, the publish re-reads the Worker and marker
+  around its own session instead of mistaking its creation for a foreign
+  change.
+- **A Cloudflare connection that can’t be read is no longer a dead end:** the
+  Connection tile explains it and lets the user forget the unreadable record
+  (only the token key is deleted; the site, Worker and share link are
+  untouched) instead of asking for an app restart.
+- **An unreadable publishing record can be reset:** the publish card offers
+  "Reset publishing record" only when the journal cannot be decoded, behind a
+  dialog that says the sites and the old content are unchanged. It never acts
+  as a general reset.
+- **Switching tabs no longer cuts a Cloudflare publish:** the API facade now
+  lives as long as the app process instead of as long as the Connection tab is
+  visible, so in-flight requests are no longer closed mid-publish.
+- **A failed settings save no longer breaks publishing or the settings
+  screens:** the last saved value stays loaded, the screen says it couldn’t
+  save that setting, and a publish keeps its progress instead of freezing.
+- **Cloudflare read-back tells the truth about why it failed:** it reads only
+  the documented set (never covers) and distinguishes a contradicting site
+  from an unreachable one, under a bounded deadline. A contradicted earlier
+  deployment asks for a replacement instead of blocking; an unreachable one no
+  longer blocks an ordinary publish.
+- **Large libraries upload on slow connections:** an upload is now bounded by
+  progress instead of one 60 s number — a 60 s connect bound, a 60 s idle bound
+  between body chunks, a size-derived total (up to 20 min), and a 55 min
+  session budget for Cloudflare's one-hour upload token. A failed attempt that
+  already sent more than 1 MiB is never blindly re-sent, so a slow link no
+  longer spends the same mobile data three times. A stall or an expired upload
+  token now says so and suggests Wi-Fi instead of "Reconnect Cloudflare".
+- **A non-JSON Cloudflare error is classified by status:** an HTML 5xx or a
+  second 429 is a server or rate-limit answer, not "unreadable response", while
+  an HTML 403 still cannot trigger the setup fallbacks. A site file that
+  changed or vanished mid-upload stops the publish with "Publish again" instead
+  of being retried with different bytes.
+- **Publish spools live in temporary storage and are swept:** a killed publish
+  no longer leaves a full copy of the site in Documents. Spools are created in
+  the OS temporary directory, and the next operation deletes stale `run-`
+  folders under the app's own roots — never a link, never a folder in use, and
+  a failed delete never blocks a publish.
+- **A pending move can always be finished, skipped or cancelled:** the banner
+  now offers all three. Cancel keeps publishing to your current site and leaves
+  the already-published copy online until you delete it; "Finish without
+  retiring" appears only when Pitak cannot sign in to the old site, and Skip
+  still requires the old repository or Worker to be gone.
+- **"Not found" now means not found:** a Cloudflare 404 without Cloudflare's
+  own not-found code, or a GitHub repository 404 whose old address still
+  answers, no longer counts as "the site is gone". Both fail closed instead of
+  authorising a replacement or a Skip.
+- **Reconnecting during a move can no longer overwrite the old site:** every
+  setup step checks the account, subdomain and Worker against the pending move
+  before saving anything or writing remotely, and the prompts prefill the exact
+  address with "Reconnect to … to finish your move."
+- **Rotating a Cloudflare token no longer replaces your live site:** picking the
+  Worker that is already your verified site finalizes without the marker-only
+  verification deploy, and a new token is not saved until you choose an account,
+  so abandoning setup keeps the old connection.
+- **A setup prompt is never stranded:** dialogs reappear when you return to the
+  tab, a rebuild no longer opens the same prompt twice, and "Cancel setup" is
+  available while a prompt is waiting.
+- **A library name can no longer break every move:** a pasted tab or other
+  control character in the library name used to be discovered only after the
+  new site was published, so every attempt failed at the same point with no way
+  to resume. The name is normalized before anything is written, and a moved
+  page that cannot be prepared stops with "Nothing was changed."
+- **Older versions can no longer stay publicly reachable:** Version URLs are
+  re-checked after the last moment before a deploy and before every
+  "verified", "repaired", "completed" or adopted-move message. "Retry
+  verification" may now switch them off (a setting change, never an upload or
+  deploy); if it cannot, the fixed privacy message blocks further deploys.
+- **A deployment that reached Cloudflare but lost its answer is recognised next
+  time:** the attempt is recorded before it is sent, so the next publish or
+  "Retry verification" proves it and finishes instead of offering a whole-site
+  replacement for your own deploy. An attempt that never landed leaves the old
+  record untouched.
+- **Cloudflare messages now match what happened:** a check of an earlier
+  publish says "Verified", not "Published!"; a publish that could not record
+  its own state says the previous site is live and the new changes were not
+  published; "Retry verification" appears only where it can change the outcome;
+  and an uncertain deploy says to check before publishing again instead of
+  suggesting a reconnect.
+- **A move reports which save or step failed:** if the new site is live but its
+  record could not be saved, the message says so; a failure after the
+  deployment was accepted says that; and a change on the destination is no
+  longer reported as a change on the old site.
+- **Moving into a Worker that already has content asks first:** the review
+  names the Worker, says the move replaces everything on it, and the button
+  says "Replace and move". If that content changes after the review, Pitak asks
+  again instead of writing.
+- **Cloudflare shows the same specific library-read message as GitHub:** an
+  unreadable library or an oversized member list now says exactly that instead
+  of a generic "could not read your library".
+- **Pre-2026 Cloudflare tokens can connect again:** the unprefixed
+  40-character shape was issued for old user *and* old account tokens, so setup
+  now tries the personal-token check first and, only if Cloudflare refuses it,
+  asks which account it belongs to and verifies it there. Nothing is saved
+  until that account check says "active"; timeouts, 5xx and inactive tokens are
+  reported as-is and never fall back.
+- **"Keep saved address" changes nothing on the kept library:** only the
+  duplicate row is deleted. A public fingerprint can no longer let the other
+  site rename or re-pin the row you chose to keep.
+- **A Cloudflare account with an unrenderable name no longer hides the list:**
+  bidi, zero-width, control and separator characters are replaced by
+  "Account …{last 4}", the replacement is never saved, and the manual Account
+  ID path stays available.
+- **Moving off GitHub Pages waits for GitHub's build:** verifying the old
+  address now uses the same "up to 10 minutes" budget as publishing to GitHub,
+  and the progress line says a build can take a few minutes. Cloudflare keeps
+  its shorter wait.
+- **New Cloudflare Worker names are lower case:** the field shows the
+  lower-cased name as you type, and a Worker whose name differs only in letter
+  case is refused before anything is written. Existing mixed-case Workers keep
+  working.
+- **A failed preference save no longer looks saved:** a failed journal,
+  settings or share-card write restores what the app previously read, so a
+  pending move or a chosen style cannot appear set for the rest of the session
+  and disappear after a restart.
+
+### Changed
+- **Replacement and recreate dialogs explain the case:** missing files, a
+  deleted Worker, and a changed destination or address each get their own
+  title, body and button, and the dialog re-opens with a "the site changed"
+  warning when Cloudflare moved after the review.
+- **Moving to a Cloudflare Worker that no longer exists** is now a normal
+  move whose review says Pitak creates the Worker with the whole library.
+- **An events-only publish reads only the events:** it no longer depends on the
+  catalogue, magazine titles or `library.json` being readable, and it no longer
+  re-reads covers it will not write. The catalogue is still carried from the
+  trusted publish record.
+
+### Security
+- **Cloudflare secrets stay out of state:** the token and target live in ONE
+  versioned `cf_connection` secure-storage record that is replaced as a whole
+  (a new token never pairs with a stale Worker); upload/completion JWTs are
+  request-scoped and never persisted, logged, spooled or placed in UI state;
+  and every secret-bearing store now uses the shared hardened
+  `flutter_secure_storage` factory.
+- **A pasted Cloudflare token is not a login credential:** the token field is
+  explicitly excluded from autofill and from the keyboard's personalised
+  learning, and the external token-creation page reports when it cannot open
+  instead of appearing to work. Account display names pass one shared
+  safe-text rule (C0/C1, zero-width, bidi, separators, BOM) before they can be
+  drawn or stored.
+- **Version URLs fail closed:** the app confirms a Worker's version URLs are
+  off before creating another version, and blocks further deploys — and
+  retirement completion — while an older copy of the site could be public.
+- **Publishing egress is bounded and hostile-input safe:** fixed API origin,
+  refused redirects, genuinely abortable deadlines, streamed response caps, a
+  JSON depth/bounds pre-scan before decoding, whitelisted error codes, and
+  fixed failure messages that never carry a token, URL or response body.
+- **Cloudflare records fail closed:** an unsupported schema/state or a single
+  malformed file entry invalidates the whole record, forcing explicit
+  replacement reconciliation instead of a partial deploy that silently drops a
+  remote asset.
+- **Argon2 uses the fixed digest chain:** Argon2 0.6 moves the shipped KDF to
+  `block-buffer` 0.12.1 (GHSA-qwgh-2vcv-g2f7). The older crate remains only in
+  Flutter Rust Bridge's compile-time MD5 chain; a CI path guard confines the
+  time-limited OSV exception to that chain, and exact-version `cargo-deny`
+  entries permit only the unavoidable upstream major-version splits.
+
 ## [1.8.0] - 2026-10 (tag `1.8.0`, versionCode 31)
 
 Release sentinel (`tool/release_build.sh --sentinel`): `Announcements & Events`.

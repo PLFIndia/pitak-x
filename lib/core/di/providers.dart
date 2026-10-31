@@ -21,11 +21,13 @@ library;
 
 export 'package:pitaka/core/di/src/app_update_providers.dart';
 export 'package:pitaka/core/di/src/backup_providers.dart';
+export 'package:pitaka/core/di/src/cloudflare_publish_providers.dart';
 export 'package:pitaka/core/di/src/database_providers.dart';
 export 'package:pitaka/core/di/src/events_providers.dart';
 export 'package:pitaka/core/di/src/import_export_providers.dart';
 export 'package:pitaka/core/di/src/library_providers.dart';
 export 'package:pitaka/core/di/src/lookup_providers.dart';
+export 'package:pitaka/core/di/src/move_publish_providers.dart';
 export 'package:pitaka/core/di/src/network_providers.dart';
 export 'package:pitaka/core/di/src/periodical_providers.dart';
 export 'package:pitaka/core/di/src/platform_providers.dart';

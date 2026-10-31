@@ -12,26 +12,23 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pitaka/core/security/hardened_secure_storage.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 
 /// Secure-storage cover salt with lazy first-use generation.
 final class SecureStorageCoverSaltStore implements PublishCoverSaltStore {
   /// Creates the store. [storage]/[random] are injectable for tests.
   SecureStorageCoverSaltStore({FlutterSecureStorage? storage, Random? random})
+    // M3 (deliberate): UNLIKE the token / biometric secret, the salt stays
+    // `first_unlock_this_device`. It is NOT a secret — it only hides
+    // enumerable internal book ids on the public page (an attacker with disk
+    // access already has the DB). It must also be readable in background
+    // contexts (e.g. a post-reboot publish) so cover URLs stay stable; the
+    // stricter accessibility would buy nothing and risk breaking that.
     : _storage =
           storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            // M3 (deliberate): UNLIKE the token / biometric secret, the salt
-            // stays `first_unlock_this_device`. It is NOT a secret — it only
-            // hides enumerable internal book ids on the public page (an
-            // attacker with disk access already has the DB). It must also be
-            // readable in background contexts (e.g. a post-reboot publish) so
-            // cover URLs stay stable; the stricter `unlocked_this_device` would
-            // buy nothing here and risk breaking that. Still non-migrating.
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.first_unlock_this_device,
-            ),
+          hardenedSecureStorage(
+            accessibility: KeychainAccessibility.first_unlock_this_device,
           ),
       _random = random ?? Random.secure();
 

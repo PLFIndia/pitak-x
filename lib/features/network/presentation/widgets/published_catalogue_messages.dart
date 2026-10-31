@@ -9,6 +9,8 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 
 /// One inline information banner (newer schema, identity conflict).
 class PublishedCatalogueBanner extends StatelessWidget {
@@ -147,6 +149,32 @@ String messageForCatalogueFailure(PublishedCatalogueFailureReason? reason) =>
         "This library's address can't be opened in Pitak.",
       null => "Couldn't open this published catalogue.",
     };
+
+/// The note shown above a SAVED copy of a catalogue or of events (ADR 0018).
+///
+/// It always names when the library last confirmed the copy (local time) and
+/// one plain reason — never a URL, a status code or an exception. Promise P1:
+/// an old copy must never pass for the current one.
+String savedCopyMessage(SavedCopyNotice notice) {
+  final when = formatSavedCopyTime(notice.checkedAt);
+  final why = switch (notice.problem) {
+    PublishedFileProblem.unreachable =>
+      "Couldn't reach this library to check for updates.",
+    PublishedFileProblem.notServed =>
+      "This library's site didn't serve the latest version.",
+    PublishedFileProblem.unreadable =>
+      "Pitak couldn't read the latest version.",
+  };
+  return 'Showing your saved copy from $when. $why';
+}
+
+/// `YYYY-MM-DD HH:MM` in the device's local time.
+String formatSavedCopyTime(int epochMillis) {
+  final t = DateTime.fromMillisecondsSinceEpoch(epochMillis);
+  String two(int value) => value.toString().padLeft(2, '0');
+  return '${t.year}-${two(t.month)}-${two(t.day)} '
+      '${two(t.hour)}:${two(t.minute)}';
+}
 
 /// A result-area message with optional actions (empty, no matches, …).
 class PublishedCatalogueMessageSliver extends StatelessWidget {

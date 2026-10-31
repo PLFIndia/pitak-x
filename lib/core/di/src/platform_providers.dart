@@ -26,6 +26,23 @@ part 'platform_providers.g.dart';
 Future<Directory> appDocsDir(AppDocsDirRef ref) =>
     getApplicationDocumentsDirectory();
 
+/// The app's temporary directory, where publish spools live (fix-plan L5).
+///
+/// The OS may clear it at any time and it is never backed up, so a killed
+/// publish cannot leave a full copy of the site in Documents forever.
+@Riverpod(keepAlive: true)
+Future<Directory> appTempDir(AppTempDirRef ref) => getTemporaryDirectory();
+
+/// The app's cache directory, where saved copies of other libraries'
+/// published files live (ADR 0018).
+///
+/// Re-downloadable data belongs here, not in Documents: the OS excludes it
+/// from device/cloud backups and may clear it when storage is low, and the
+/// viewer simply downloads again when it does.
+@Riverpod(keepAlive: true)
+Future<Directory> appCacheDir(AppCacheDirRef ref) =>
+    getApplicationCacheDirectory();
+
 /// Versioned data-generation store under `<appDocs>/data` (M02). The
 /// catalogue DB, covers and vault live INSIDE the active generation so a
 /// restore can build a complete new set and switch to it atomically.

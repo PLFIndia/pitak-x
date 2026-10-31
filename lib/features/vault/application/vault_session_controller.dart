@@ -20,13 +20,13 @@ library;
 import 'dart:async';
 
 import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/crypto/secret_bytes.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/application/delete_catalogue_item_use_case.dart';
 import 'package:pitaka/features/library/domain/catalogue_replacement_guard.dart';
 import 'package:pitaka/features/vault/application/lend_book_use_case.dart';
-import 'package:pitaka/features/vault/application/serial_op_queue.dart';
 import 'package:pitaka/features/vault/application/vault_secret_keeper.dart';
 import 'package:pitaka/features/vault/domain/biometric_unlock.dart';
 import 'package:pitaka/features/vault/domain/borrower_deletion.dart';

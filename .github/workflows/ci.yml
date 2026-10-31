@@ -55,6 +55,10 @@ jobs:
       - name: cargo deny check
         working-directory: rust
         run: cargo deny check
+      # The scoped OSV exception below is safe only while 0.10.4 remains in
+      # the bridge's compile-time MD5 chain. Fail if any runtime path appears.
+      - name: block-buffer OSV exception stays bridge-only
+        run: python3 tool/check_block_buffer_exception.py
 
   flutter:
     name: Flutter (analyze, format, test)

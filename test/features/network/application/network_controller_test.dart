@@ -5,11 +5,16 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
+import 'package:pitaka/features/network/domain/usecases/reconcile_library_move_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/geo_point.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
+
+import '../../../support/published_file_fakes.dart';
 
 /// Tests for [NetworkController] (docs/ARCHITECTURE.md §3 network): the window snapshot
 /// and its three mutations, all driven through `ProviderContainer` overrides
@@ -18,14 +23,20 @@ void main() {
   const urlA = 'https://a.github.io/pitak/';
   const urlB = 'https://b.github.io/pitak/';
   late _FakeRepo repo;
+  late InMemoryPublishedFileCache savedCopies;
   late ProviderContainer container;
 
   ProviderContainer buildContainer() {
     final c = ProviderContainer(
       overrides: [
         networkRepositoryProvider.overrideWith((ref) async => repo),
+        publishedFileCacheProvider.overrideWithValue(savedCopies),
         confirmMembershipUseCaseProvider.overrideWith(
           (ref) async => ConfirmMembershipUseCase(repository: repo),
+        ),
+        reconcileLibraryMoveUseCaseProvider.overrideWith(
+          (ref) async =>
+              ReconcileLibraryMoveUseCase(repository: repo, clock: () => 4242),
         ),
         clockProvider.overrideWithValue(() => 4242),
       ],
@@ -39,6 +50,7 @@ void main() {
 
   setUp(() {
     repo = _FakeRepo();
+    savedCopies = InMemoryPublishedFileCache();
     container = buildContainer();
   });
 
@@ -56,6 +68,93 @@ void main() {
       expect(w.rows, hasLength(1));
       expect(w.lastReport, isNull);
       expect(w.lastRefreshedAt, isNull);
+    });
+  });
+
+  group('resolveMove (C10/R17)', () {
+    const oldSite = 'https://old.github.io/lib/';
+    const newSite = 'https://new.github.io/lib/';
+    const fp =
+        'adb28b53d57009ce04d4e0b28563ebcd395375c0d719fd53986908233687f664';
+
+    LibraryMoveCandidate candidate() => const LibraryMoveCandidate(
+      savedRowId: 1,
+      savedSiteUrl: oldSite,
+      savedName: 'Saved',
+      fetchedSiteUrl: newSite,
+      fetchedName: 'Moved',
+      fingerprint: fp,
+      fetchedAt: 900,
+    );
+
+    void seedPair(_FakeRepo repo) {
+      repo.rows = const [
+        NetworkLibrary(
+          id: 1,
+          siteUrl: oldSite,
+          name: 'Saved',
+          fingerprint: fp,
+          sortOrder: 2,
+        ),
+        NetworkLibrary(id: 2, siteUrl: newSite, createdAt: 5, sortOrder: 3),
+      ];
+    }
+
+    test('keep-saved deletes the duplicate and drops the offer', () async {
+      seedPair(repo);
+
+      final ok = await container
+          .read(networkControllerProvider.notifier)
+          .resolveMove(
+            candidate: candidate(),
+            choice: LibraryMoveChoice.keepSavedAddress,
+          );
+
+      expect(ok, isTrue);
+      expect(repo.acceptCalls, 1);
+      expect(repo.rows, hasLength(1));
+      expect(repo.rows.single.siteUrl, oldSite);
+    });
+
+    test('use-new repoints the canonical row', () async {
+      seedPair(repo);
+
+      final ok = await container
+          .read(networkControllerProvider.notifier)
+          .resolveMove(
+            candidate: candidate(),
+            choice: LibraryMoveChoice.useNewAddress,
+          );
+
+      expect(ok, isTrue);
+      expect(repo.rows.single.siteUrl, newSite);
+      expect(repo.rows.single.id, 1);
+    });
+
+    test('a refused write keeps both rows and reports failure', () async {
+      seedPair(repo);
+      repo.moveFailure = const StaleStateFailure('rows changed');
+
+      final ok = await container
+          .read(networkControllerProvider.notifier)
+          .resolveMove(
+            candidate: candidate(),
+            choice: LibraryMoveChoice.useNewAddress,
+          );
+
+      expect(ok, isFalse);
+      expect(repo.rows, hasLength(2));
+    });
+
+    test('dismiss writes NOTHING', () async {
+      seedPair(repo);
+
+      container
+          .read(networkControllerProvider.notifier)
+          .dismissMove(candidate());
+
+      expect(repo.acceptCalls, 0);
+      expect(repo.rows, hasLength(2));
     });
   });
 
@@ -139,6 +238,59 @@ void main() {
           .read(networkControllerProvider.notifier)
           .remove(repo.rows.first);
       expect(ok, isFalse);
+    });
+  });
+
+  group('saved copies of removed libraries (ADR 0018)', () {
+    void seedCopies() => savedCopies
+      ..seed(urlA, PublishedFileKind.catalogue, [1], checkedAt: 1)
+      ..seed(urlA, PublishedFileKind.events, [2], checkedAt: 1)
+      ..seed(urlB, PublishedFileKind.catalogue, [3], checkedAt: 1);
+
+    test(
+      'removing a library deletes its saved copies, and only its own',
+      () async {
+        repo.rows = [
+          const NetworkLibrary(id: 1, siteUrl: urlA, name: 'A'),
+          const NetworkLibrary(id: 2, siteUrl: urlB, name: 'B'),
+        ];
+        container.invalidate(networkControllerProvider);
+        await window();
+        await pumpEventQueue(); // earlier windows' clean-ups have run
+        seedCopies();
+
+        final ok = await container
+            .read(networkControllerProvider.notifier)
+            .remove(repo.rows.first);
+        expect(ok, isTrue);
+        await window();
+        await pumpEventQueue();
+        expect(savedCopies.savedSites, {urlB});
+      },
+    );
+
+    test('any reload drops copies of libraries no longer saved (restore, '
+        'move)', () async {
+      // Let the setUp listener's first window (and its clean-up over the
+      // then-empty table) finish before the copies exist.
+      await window();
+      await pumpEventQueue();
+      seedCopies();
+      // As if a restore replaced the table with only B.
+      repo.rows = const [NetworkLibrary(id: 9, siteUrl: urlB, name: 'B')];
+      container.invalidate(networkControllerProvider);
+      await window();
+      await pumpEventQueue();
+      expect(savedCopies.savedSites, {urlB});
+    });
+
+    test('a clean-up failure never breaks the list', () async {
+      savedCopies.failWrites = true;
+      repo.rows = const [NetworkLibrary(id: 1, siteUrl: urlA, name: 'A')];
+      container.invalidate(networkControllerProvider);
+      final w = await window();
+      await pumpEventQueue();
+      expect(w.rows, hasLength(1));
     });
   });
 
@@ -257,6 +409,8 @@ class _FakeRepo implements NetworkRepository {
     const NetworkLibrary(siteUrl: ''),
   );
   Either<Failure, Unit> removeResult = right(unit);
+  Failure? moveFailure;
+  int acceptCalls = 0;
 
   @override
   Future<List<NetworkLibrary>> loadAll() async => List.of(rows);
@@ -282,6 +436,29 @@ class _FakeRepo implements NetworkRepository {
     if (removeResult.isLeft()) return removeResult;
     rows.removeWhere((r) => r.id == id);
     return right(unit);
+  }
+
+  @override
+  Future<Either<Failure, LibraryMoveApplyResult>> acceptLibraryMove({
+    required NetworkLibrary canonicalBaseline,
+    required NetworkLibrary canonicalNext,
+    NetworkLibrary? placeholderBaseline,
+  }) async {
+    acceptCalls++;
+    if (moveFailure case final failure?) return left(failure);
+    final next = List.of(rows);
+    if (placeholderBaseline != null) {
+      next.removeWhere((r) => r.id == placeholderBaseline.id);
+    }
+    final index = next.indexWhere((r) => r.id == canonicalBaseline.id);
+    next[index] = canonicalNext;
+    rows = next;
+    return right(
+      LibraryMoveApplyResult(
+        repointed: canonicalNext.siteUrl != canonicalBaseline.siteUrl,
+        deletedPlaceholder: placeholderBaseline != null,
+      ),
+    );
   }
 
   @override

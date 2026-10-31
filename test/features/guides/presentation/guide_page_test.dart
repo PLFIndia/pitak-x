@@ -10,16 +10,21 @@ import '../../../support/a11y.dart';
 
 void main() {
   /// Pumps [guide] with a recording opener. Phone width (360 dp) so wrapping
-  /// is realistic; 3000 dp tall so the lazy ListView builds every child —
-  /// the longest guides (catalogue ≈ 2880 dp, backup ≈ 2800 dp) end inside
-  /// that under the test font — and the a11y checks see every node, bottom
-  /// button included. A guide that outgrows the surface fails the "every
-  /// guide renders" test below: that is the copy-length budget, on purpose.
+  /// is realistic; 3800 dp tall so the lazy ListView builds every child —
+  /// the longest guides (publish, which documents two hosts and the three
+  /// move exits, and the Cloudflare setup guide) end inside that under the
+  /// test font — and the a11y checks see every node, bottom button included.
+  /// A guide that outgrows the surface fails the "every guide renders" test
+  /// below: that is the copy-length budget, on purpose. Raise the surface
+  /// only with a deliberate copy decision, never to make a long guide pass.
+  /// (Phase 4 raised it 3400 → 3800 to record the "Replace and move" and
+  /// "Verified" sentences; the Cloudflare setup detail moved into its own
+  /// guide instead of growing the publish guide past it.)
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
   ) async {
-    tester.view.physicalSize = const Size(1080, 9000);
+    tester.view.physicalSize = const Size(1080, 11400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     final opened = <GuideDestination>[];
@@ -49,14 +54,20 @@ void main() {
         findsOneWidget,
       );
 
-      // "You need" chips.
+      // "You need" chips: one chip names both accounts.
       expect(find.text('You need'), findsOneWidget);
-      expect(find.byType(Chip), findsNWidgets(2));
-      expect(find.text('Internet'), findsOneWidget);
+      expect(find.byType(Chip), findsNWidgets(1));
+      expect(find.textContaining('dash.cloudflare.com'), findsOneWidget);
 
       // Section headings and the six step bubbles.
-      expect(find.text('First time'), findsOneWidget);
+      expect(find.text('First time on GitHub Pages'), findsOneWidget);
+      expect(find.text('Or use Cloudflare Workers'), findsOneWidget);
       expect(find.text('Every time after that'), findsOneWidget);
+      expect(find.text('Moving to the other host later'), findsOneWidget);
+      expect(
+        find.textContaining('Give the Worker to Pitak alone'),
+        findsOneWidget,
+      );
       for (var n = 1; n <= 6; n++) {
         expect(find.text('$n'), findsOneWidget, reason: 'step bubble $n');
       }
@@ -101,6 +112,40 @@ void main() {
       await tester.pump();
 
       expect(opened, [GuideDestination.publishConnection]);
+    });
+  });
+
+  group('Cloudflare guide', () {
+    testWidgets('renders the chip, what Pitak asks for, both step lists and '
+        'the button', (tester) async {
+      final opened = await pumpGuide(tester, guideById(GuideId.cloudflare));
+
+      expect(find.text('Set up Cloudflare Workers'), findsOneWidget);
+      expect(find.byType(Chip), findsOneWidget);
+      expect(find.textContaining('dash.cloudflare.com'), findsOneWidget);
+
+      expect(find.text('What Pitak will ask you for'), findsOneWidget);
+      expect(find.text('Create the token (in your browser)'), findsOneWidget);
+      expect(find.text('Finish in Pitak'), findsOneWidget);
+      expect(find.text('Already publishing on GitHub Pages?'), findsOneWidget);
+
+      // Two numbered lists: 6 token steps then 5 finishing steps, so the
+      // bubbles 1–5 appear twice and 6 once.
+      for (var n = 1; n <= 5; n++) {
+        expect(find.text('$n'), findsNWidgets(2), reason: 'bubble $n');
+      }
+      expect(find.text('6'), findsOneWidget);
+
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Open Publish to web →'),
+      );
+      await tester.pump();
+      expect(opened, [GuideDestination.publishConnection]);
+    });
+
+    testWidgets('meets accessibility guidelines', (tester) async {
+      await pumpGuide(tester, guideById(GuideId.cloudflare));
+      await expectMeetsA11yGuidelines(tester);
     });
   });
 

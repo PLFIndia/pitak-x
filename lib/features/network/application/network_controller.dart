@@ -12,18 +12,26 @@
 /// This replaces the S3 stopgap `networkRowsProvider` (handoff §3): screens
 /// watch ONE provider and the remove path no longer calls the repository
 /// from presentation.
+///
+/// Every (re)load also drops the saved copies of libraries that are no longer
+/// in the list (ADR 0018). One hook covers every way a row disappears —
+/// Remove, a restore, an accepted address move — because each of them ends
+/// with this window re-reading the repository.
 library;
 
+import 'dart:async';
+
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/library_move_candidate.dart';
 import 'package:pitaka/features/network/domain/network_library_sort.dart';
 import 'package:pitaka/features/network/domain/usecases/refresh_network_use_case.dart';
 import 'package:pitaka/features/network/domain/value_objects/bookmark_url.dart';
 import 'package:pitaka/features/network/domain/value_objects/network_name.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
-import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_controller.g.dart';
@@ -88,16 +96,13 @@ Future<({NetworkWindow window, List<NetworkLibrary> rows})> networkListView(
   final window = await ref.watch(networkControllerProvider.future);
   // The own pin for distance sorting = the location THIS library publishes
   // (D7 mapping in one place; off/unparseable ⇒ no own pin ⇒ name order).
-  // AWAITED (not valueOrNull): the first frame the tab renders is already
-  // sorted — no flash of name order while settings load. A settings failure
-  // degrades to name order rather than breaking the tab. (Non-final: Dart's
-  // definite-assignment rule forbids assigning a final in try AND catch.)
-  AppSettings? settings;
-  try {
-    settings = await ref.watch(settingsControllerProvider.future);
-  } on Object {
-    settings = null;
-  }
+  // Watched for reactivity, then read through the typed accessor (M8): a
+  // failed settings SAVE keeps the last good value, and a never-loaded state
+  // degrades to name order instead of breaking the tab.
+  ref.watch(settingsControllerProvider);
+  final settings =
+      (await ref.read(settingsControllerProvider.notifier).loaded())
+          .toNullable();
   final own = settings == null
       ? null
       : BuildOwnDescriptor.ownLocation(
@@ -128,6 +133,7 @@ class NetworkController extends _$NetworkController {
     });
     final repo = await ref.watch(networkRepositoryProvider.future);
     final rows = await repo.loadAll();
+    _forgetCopiesOfUnsavedLibraries(rows);
     // Report + stamp live in the keepAlive refresh controller; a plain read
     // (not watch) so a refresh in flight doesn't rebuild this window twice.
     final refresh = ref.read(networkRefreshControllerProvider.notifier);
@@ -135,6 +141,21 @@ class NetworkController extends _$NetworkController {
       rows: rows,
       lastReport: refresh.lastReport,
       lastRefreshedAt: refresh.lastFinishedAt,
+    );
+  }
+
+  /// Deletes saved copies of published files whose library is not in [rows].
+  ///
+  /// Not awaited on purpose: the list must not wait for file clean-up, and a
+  /// clean-up failure changes nothing the user sees (an orphan copy is never
+  /// shown — the viewer is only reachable from a saved row — and the next
+  /// load retries). The store serializes this with any viewer write.
+  void _forgetCopiesOfUnsavedLibraries(List<NetworkLibrary> rows) {
+    final cache = ref.read(publishedFileCacheProvider);
+    unawaited(
+      cache.retainOnly({for (final row in rows) row.siteUrl}).then((result) {
+        if (result.isLeft()) appLog('network: saved copies not cleaned up');
+      }),
     );
   }
 
@@ -181,6 +202,41 @@ class NetworkController extends _$NetworkController {
     ref.invalidateSelf();
     return true;
   }
+
+  /// Applies the user's choice for a move offer (C10/R17): ONE transactional
+  /// merge/delete-plus-repoint, at whichever of the two addresses the user
+  /// kept. Dismissing the offer (they are different libraries) is
+  /// [dismissMove] and writes nothing. False means "nothing was written".
+  Future<bool> resolveMove({
+    required LibraryMoveCandidate candidate,
+    required LibraryMoveChoice choice,
+  }) async {
+    final useCase = await ref.read(reconcileLibraryMoveUseCaseProvider.future);
+    final result = await useCase(candidate: candidate, choice: choice);
+    if (result.isLeft()) return false;
+    // The offer is answered: settle it so it is not shown again.
+    ref
+        .read(networkRefreshControllerProvider.notifier)
+        .forgetMoveCandidate(candidate);
+    ref.invalidateSelf(); // one truth: re-read what the repository stored
+    return true;
+  }
+
+  /// Dismisses a move offer WITHOUT any write: the user says these are two
+  /// different libraries (D.5 "declining makes no write"). The offer is
+  /// remembered as answered for this session; if the evidence persists, the
+  /// next refresh offers it again.
+  void dismissMove(LibraryMoveCandidate candidate) {
+    ref
+        .read(networkRefreshControllerProvider.notifier)
+        .forgetMoveCandidate(candidate);
+    ref.invalidateSelf();
+  }
+
+  /// The plain sentence for a failed move decision (never a raw diagnostic).
+  static const String moveFailedMessage =
+      "Couldn't update that library. Your saved list was not changed. "
+      'Try refresh and decide again.';
 
   /// Records the user's membership decision for the row with [rowId]
   /// (`confirmed` / `declined`, or `pending` for "Reconsider").

@@ -81,7 +81,12 @@ class _GuideCard extends StatelessWidget {
   /// [GuideId] — never stored in the domain model.
   static IconData _iconFor(GuideId id) => switch (id) {
     GuideId.catalogue => Icons.library_books_outlined,
+    // The same icon as the drawer's Wishlist entry, so the reader connects
+    // the card with the place it describes.
+    GuideId.wishlist => Icons.bookmark_border,
     GuideId.publish => Icons.cloud_upload_outlined,
+    GuideId.cloudflare => Icons.vpn_key_outlined,
+    GuideId.events => Icons.campaign_outlined,
     GuideId.map => Icons.place_outlined,
     GuideId.backup => Icons.save_outlined,
     GuideId.vault => Icons.lock_outline,

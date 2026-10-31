@@ -5,7 +5,8 @@
 ///   flutter test integration_test/published_catalogue_smoke_test.dart \
 ///     --flavor fdroid -d <device>
 ///
-/// Real SQLite, real preferences, real navigation and real settings; only the
+/// Real SQLite, real preferences, real navigation, real settings and the real
+/// on-disk saved-copy store (ADR 0018, in a throwaway folder); only the
 /// catalogue, events and cover PORTS are fakes, because the suite must never
 /// depend on the public internet. The journey:
 ///
@@ -17,15 +18,19 @@
 /// so a rerun on the same install starts clean.
 library;
 
+import 'dart:io';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fpdart/fpdart.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/application/network_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
+import 'package:pitaka/features/network/infrastructure/file_published_file_cache.dart';
 import 'package:pitaka/features/network/presentation/pages/library_bookmarks_page.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
@@ -63,19 +68,31 @@ void main() {
 
     var catalogueFetches = 0;
     final launches = <Uri>[];
+    final savedCopiesDir = await Directory.systemTemp.createTemp(
+      'pitak_saved_copies_smoke',
+    );
+    addTearDown(() => savedCopiesDir.delete(recursive: true));
 
     final container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue((
           url, {
+          validator,
           abortTrigger,
         }) async {
           catalogueFetches++;
-          return Right(catalogue);
+          return PublishedFileFetched(value: catalogue, bytes: Uint8List(0));
         }),
-        publishedEventsFetcherProvider(
-          site,
-        ).overrideWithValue((url, {abortTrigger}) async => const Right(null)),
+        publishedEventsFetcherProvider(site).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              const PublishedFileMissing(),
+        ),
+        // The REAL on-disk saved-copy store, in a throwaway folder: the
+        // journey exercises file IO on the device without touching the
+        // app's own cache directory.
+        publishedFileCacheProvider.overrideWithValue(
+          FilePublishedFileCache(resolveRoot: () async => savedCopiesDir.path),
+        ),
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
           (loaded, query) async => PublishedQueryEngine.apply(loaded, query),
         ),

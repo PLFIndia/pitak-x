@@ -1,14 +1,21 @@
 # Mockup — "How Pitak works" (information page in the drawer)
 
 > **Status: approved and implemented; verified against branch `appViewer`,
-> 2026-10-25.** This file is the design and copy record; the copy the app ships
-> is `lib/features/guides/domain/guide_catalog.dart` — edit both together. The
-> six guides below follow the shipped catalog order. The “Facts behind the
-> copy” section lists the code behind each claim.
+> 2026-10-25. Updated 2026-10-30:** three guides added at the maintainer's
+> request — **Wishlist: books to buy**, **Set up Cloudflare Workers** (what
+> the Cloudflare setup asks for and where to find each value) and **Events and
+> posters** — and the publish guide's Cloudflare part now points to the new
+> guide. Updated 2026-10-31: the moving paragraph says Cancel move is
+> offered only until the old address shows the moved page. This file is the
+> design and copy record; the copy the app ships is
+> `lib/features/guides/domain/catalog/*.dart` (grouped by topic), in the order
+> set by `lib/features/guides/domain/guide_catalog.dart` — edit both together.
+> The nine guides below follow the shipped catalog order. The “Facts behind
+> the copy” section lists the code behind each claim.
 >
 > Markdown italics render as plain text in the app; inline markup supports only
 > `**bold**` and `` `code` ``. Every card opens a separate guide page and every
-> guide ends with its destination button. All six guides are included; none is
+> guide ends with its destination button. All nine guides are included; none is
 > optional.
 
 Goal: a librarian who has never used GitHub, never heard of "JSON" and does
@@ -46,7 +53,7 @@ Pitak works remains in the primary list.
 
 ## 2. Page layout
 
-**Page: "How Pitak works"** — a short intro line and six cards. Tapping a
+**Page: "How Pitak works"** — a short intro line and nine cards. Tapping a
 card opens that guide as its own page (not an accordion: an open accordion
 pushes the other topics off-screen, and a page gets a back button + a deep
 link button at the bottom).
@@ -61,9 +68,18 @@ link button at the bottom).
 │ 📚 Books, magazines and other items  │
 │    Three kinds of item, one library  │
 │    — which form to use               │
+│ 🔖 Wishlist: books to buy            │
+│    Note the books you want; add one  │
+│    to the library when it comes      │
 │ ☁️ Put your catalogue online         │
 │    A free public web page of your    │
-│    books — in 6 steps                │
+│    books — on GitHub or Cloudflare   │
+│ 🔑 Set up Cloudflare Workers         │
+│    The other free host — what to     │
+│    type and where to find it         │
+│ 📣 Events and posters                │
+│    Announce story hours, sales and   │
+│    meetings on your web page         │
 │ 📍 Put your library on the map       │
 │    Let nearby libraries find you —   │
 │    you choose how exact              │
@@ -78,7 +94,7 @@ link button at the bottom).
 └──────────────────────────────────────┘
 ```
 
-**Guide page anatomy** (same skeleton for all six):
+**Guide page anatomy** (same skeleton for all nine):
 
 ```
 ┌──────────────────────────────────────┐
@@ -160,19 +176,67 @@ decides which form you fill in.
 
 ---
 
-### 3.2 Put your catalogue online
+### 3.2 Wishlist: books to buy
+
+> **Added 2026-10-30.** Labels checked against `wishlist_page.dart`,
+> `add_wishlist_page.dart` and `wishlist_detail_page.dart`.
+
+Card subtitle: *Note the books you want; add one to the library when it comes*.
+
+**Intro.** The wishlist is your shopping list: books you want for the library
+but do not have yet. It is kept apart from your catalogue, and it never
+appears on your web page.
+
+**Add a book you want**
+
+1. Open **☰ → Wishlist** and tap **+**.
+2. Type the **Title**. Know the ISBN, or have the book in hand? Type the
+   **ISBN** or tap the barcode button (**Scan barcode**), then tap the
+   magnifier (**Look up details**) to fill in the rest.
+3. Optional: choose a **Priority** (Low, Medium or High) and add a **Price
+   estimate** or **Notes**.
+4. Tap **Add**.
+
+**When the book arrives**
+
+1. Open **☰ → Wishlist** and tap the book.
+2. Tap **Purchased — add to library**. Pitak adds it to your catalogue and
+   moves it to the **Purchased** list at the bottom of the wishlist.
+
+**Good to know**
+
+- **Mark as purchased only** records that you bought it but adds nothing to
+  your catalogue.
+- A book whose ISBN is already in your library is not added twice — Pitak
+  only marks the wish as purchased.
+- Scanning only reads the barcode. Pitak goes online only when you tap
+  **Look up details**.
+
+`[ Open Wishlist → ]`
+
+---
+
+### 3.3 Put your catalogue online
+
+> **Updated 2026-10-28 (S10):** the shipping guide documents **two hosts** —
+> GitHub Pages and Cloudflare Workers — because the app publishes to one
+> active host, not to GitHub alone. **Updated 2026-10-30:** the Cloudflare
+> setup details moved to their own guide (§3.4); this one points to it. This
+> section mirrors `catalog/publishing_guides.dart`; the HTML mockup next to
+> this file is a frozen 2026-10-19 design artefact.
 
 **Intro.** Pitak can turn your book list into a simple public web page that
-anyone can open and search. It is free — the page is hosted by GitHub.
+anyone can open and search. It is free: on **GitHub Pages**, or on
+**Cloudflare Workers** in your own account — one address at a time.
 
-**You need:** a free GitHub account (github.com — sign-up takes two
-minutes) · internet.
+**You need:** a free GitHub account (github.com), or a free Cloudflare account
+(dash.cloudflare.com).
 
 **What goes online:** titles, authors, covers, and — if your vault is
 unlocked when you publish — whether a book is available.
 **Never goes online:** borrowers, loans, notes, shelf locations.
 
-**First time**
+**First time on GitHub Pages**
 
 1. Open **☰ → Publish to web**.
 2. Tap **Sign in to GitHub**. Pitak shows a short code.
@@ -180,22 +244,52 @@ unlocked when you publish — whether a book is available.
    computer — log in to GitHub and type the code. Come back to Pitak; it
    continues by itself.
 4. Tap **Set up a repository**, give it a short name like `my-library`, tap
-   **Create**. (A repository is just the folder on GitHub that holds your
-   page. Pitak creates it and switches the page on.)
+   **Create** — that folder is where your page lives.
 5. Tap **Publish catalogue now**.
 6. Your web address appears under **Your site**. Tap **Copy link** or
    **Share**. The first time, the page can take a minute or two to go live.
 
+**Or use Cloudflare Workers**
+
+On **Publish to web**, tap **Connect Cloudflare** on the Cloudflare Workers
+card. Cloudflare needs a few more details than GitHub: a token (a password
+just for Pitak), your account, your `workers.dev` name and a name for your
+site. The next guide, **Set up Cloudflare Workers**, explains each one and
+where to find it.
+
+**Give the Worker to Pitak alone:** every publish replaces everything already
+on it, so publish from one phone at a time. Pitak calls the site live only
+after it reads the published files back. Moving into a Worker that already
+holds a test page or another copy asks first, and the button says **Replace
+and move**.
+
 **Every time after that**
 
 Added or lent books? Open **Publish to web** and tap **Publish catalogue
-now** again. Only what changed is uploaded, so it takes seconds.
+now** again. Only what changed is uploaded, so it takes seconds. It publishes
+to whichever host is active. When Pitak only checks an earlier publish, the
+message says **Verified** — nothing new was published.
+
+**Moving to the other host later**
+
+You can move the page between the two hosts. Pitak verifies the new site
+first, then turns the old address into a short "moved" page. If that last step
+cannot finish, the publish page keeps three choices: Retry move, Skip
+retirement (only when the old site is really gone) and Cancel move (which
+keeps your current site and leaves the new copy online until you delete it;
+it is offered only until the old address shows the moved page).
+If Pitak cannot sign in to the old site at all, Finish without retiring
+replaces Skip behind a stronger warning — that copy also stays online. Other
+phones never follow a move by themselves — they may offer the choice to their
+owner — and a printed library card still shows the old address, so reprint it
+after a move.
 
 **Good to know**
 
 - The **Basic info** tab adds your library's name, address, email and phone
   to the page. Every field is optional.
-- Signing out of GitHub does not take your page down.
+- Signing out of GitHub does not take your page down. Disconnecting
+  Cloudflare only forgets the token — it never deletes the Worker.
 - Sign-in not finishing? Keep the code screen open and type the code in a
   browser on a computer instead.
 
@@ -203,12 +297,133 @@ now** again. Only what changed is uploaded, so it takes seconds.
 
 ---
 
-### 3.3 Put your library on the map
+### 3.4 Set up Cloudflare Workers
+
+> **Added 2026-10-30.** The publish guide could only *name* what Cloudflare
+> asks for; readers also need to know what each value is and where to get it.
+> Pitak's labels are checked against `cloudflare_token_dialog.dart`,
+> `cloudflare_name_dialogs.dart`, `cloudflare_verification_dialog.dart` and
+> `cloudflare_tile.dart`. Cloudflare's own labels (**Workers & Pages**,
+> **Account details**, **Your subdomain**, **Continue to summary**, **Create
+> Token**) come from Cloudflare's documentation (checked 2026-10-30) and can
+> change with its dashboard.
+
+Card subtitle: *The other free host — what to type and where to find it*.
+
+**Intro.** Cloudflare can hold your public catalogue for free, instead of
+GitHub Pages. Your site lives in a "Worker": one small website in your
+Cloudflare account. Setting it up takes about ten minutes, once.
+
+**You need:** a free Cloudflare account (dash.cloudflare.com).
+
+**What Pitak will ask you for**
+
+- **Cloudflare API token** — a secret code, like a password just for Pitak.
+  It can only update your website. You create it on Cloudflare's website
+  (steps below).
+- **Your account** — Pitak lists it; tap it. Asked for an **Account ID**
+  instead? In Cloudflare open **Workers & Pages** and copy it from **Account
+  details** (32 letters and numbers).
+- **workers.dev subdomain** — your account's part of the address:
+  `asha-books` in `asha-books.workers.dev`. If Pitak asks for it, find it in
+  Cloudflare under **Workers & Pages**, next to **Your subdomain**; type only
+  the part before `.workers.dev`.
+- **Worker name** — a name you make up for your site, like `library`, giving
+  `library.asha-books.workers.dev`. Use lower-case letters, numbers and
+  hyphens (-), no hyphen at either end.
+
+**Create the token (in your browser)**
+
+1. Open **☰ → Publish to web** and tap **Connect Cloudflare**.
+2. Tap **Open token creation page** and log in to Cloudflare.
+3. If Cloudflare asks for an account, choose your library's. The form is
+   already filled in (**Pitak Library Publishing**, **Workers Scripts ·
+   Edit**) — change nothing.
+4. Tap **Continue to summary**, then **Create Token**.
+5. Copy the token now — Cloudflare shows it only once.
+6. In Pitak, paste it into **Cloudflare API token** and tap **Connect**.
+
+**Finish in Pitak**
+
+1. In **Choose a Cloudflare account**, tap your account.
+2. Asked for the **workers.dev subdomain**? Type it and tap **Continue**.
+   Offered **Create workers.dev subdomain** instead? Choose a short name with
+   care — every address in your account uses it.
+3. In **Choose a Worker**, type a new **Worker name** and tap **Continue**.
+4. Asked **Verify the Cloudflare address?** Tap **Deploy verification
+   marker**: a tiny test file that proves the address.
+5. When the card shows **Confirmed address**, tap **Publish catalogue now**.
+
+**Already publishing on GitHub Pages?**
+
+Connecting Cloudflare does not switch your site: GitHub stays the active
+host. To switch, tap **Move to other host** (see **Put your catalogue
+online**).
+
+**Good to know**
+
+- Keep the token secret, like a password. Pitak stores it securely on this
+  phone. Lost or expired? Make a new one and tap **Reconnect Cloudflare**.
+- **Use this Worker for Pitak?** means the name is taken in your account.
+  Tap **Replace Worker assets** only if that Worker is for Pitak — everything
+  on it is replaced.
+- **Disconnect** only forgets the token; your site stays online. To remove
+  it, delete the Worker in Cloudflare.
+
+`[ Open Publish to web → ]`
+
+---
+
+### 3.5 Events and posters
+
+> **Added 2026-10-30.** Labels checked against `events_page.dart` (the
+> Publish → Events tab) and the public `index.html` events banner.
+
+Card subtitle: *Announce story hours, sales and meetings on your web page*.
+
+**Intro.** Show up to two posters on your public web page — a story hour, a
+book sale, a meeting. Your catalogue page then shows a banner at the top that
+opens them.
+
+**Put up a poster**
+
+1. Publish your catalogue at least once first (see **Put your catalogue
+   online**).
+2. Open **☰ → Publish to web → Events**.
+3. Tap **Add poster** and pick the poster picture from your gallery.
+4. Optional: tap **Add description** and type a line, like "Story hour,
+   Saturday 10 AM". Tap **Save**.
+5. Tap **Publish events**.
+
+**Change or take down**
+
+- To swap a poster, tap **Remove** on it, add the new one, then tap
+  **Publish events** again.
+- Removed them all? The button becomes **Clear the events page** — tap it to
+  empty the public page.
+- Libraries that bookmarked yours see your posters when they open your
+  library inside Pitak.
+
+**Good to know**
+
+- **Publish catalogue now** does not send posters, and **Publish events**
+  does not send books — use the button for what you changed.
+- Posters are public. On GitHub Pages a removed poster stays in the site's
+  history, so never put private details on one.
+- Posters are not in backups. Keep the original pictures.
+
+`[ Open Events → ]`
+
+---
+
+### 3.6 Put your library on the map
 
 **Intro.** Other Pitak libraries that bookmark yours — by adding your web
-address (the GitHub Pages link Pitak created) to their **Library network**
-list — see it as a pin on their **Library network › Map**. Nothing is shown
-until you switch it on and publish — and you choose how exact the pin is.
+address (the link under **Your site** after you publish) to their **Library
+Bookmarks** list — see it as a pin on their **Library network › Map**.
+Nothing is shown until you switch it on and publish — and you choose how
+exact the pin is. *(2026-10-30: the address is no longer called "the GitHub
+Pages link" — a Cloudflare library has a `workers.dev` one.)*
 
 **Steps**
 
@@ -230,8 +445,10 @@ until you switch it on and publish — and you choose how exact the pin is.
 - Your map shows only the libraries on your own **Library network** list —
   the ones you bookmarked, added as members, or that Pitak found through
   your hubs — and only those that publish a location.
-- Only web addresses made by Pitak can be bookmarked (they end in
-  `github.io` or `pages.dev`). Other websites are not accepted.
+- Only web addresses made by Pitak can be bookmarked: they end in
+  `github.io`, `pages.dev`, or `<worker>.<name>.workers.dev`. Other websites
+  are not accepted. A `workers.dev` library needs a recent Pitak — update the
+  app before adding one.
 - Pin positions come from each library's published page, read when you tap
   **Refresh**. Nobody's location is sent anywhere else.
 
@@ -247,7 +464,7 @@ until you switch it on and publish — and you choose how exact the pin is.
 
 ---
 
-### 3.4 Backup, restore, export, import
+### 3.7 Backup, restore, export, import
 
 **Intro.** All of these live under **☰ → Settings → Data**. Pick by what you
 want to do:
@@ -303,7 +520,7 @@ ISBN.
 
 ---
 
-### 3.5 Lending and the borrowers vault
+### 3.8 Lending and the borrowers vault
 
 **Intro.** The vault is Pitak's locked drawer: who borrowed which item, when
 it is due, and how to reach them. It is encrypted on this phone and opens
@@ -348,7 +565,7 @@ without opening the vault.
 
 ---
 
-### 3.6 Hubs, members and library cards
+### 3.9 Hubs, members and library cards
 
 **Intro.** **☰ → Library network** is your list of other Pitak libraries.
 Nothing leaves your phone until you tap **Refresh**, which reads each
@@ -373,8 +590,10 @@ have no books of its own.
 
 - **☰ → Library Bookmarks → Add Bookmark** saves a library by its web address.
 - Tap a saved library to browse its published catalogue inside Pitak —
-  search, filter and sort it without leaving the app. Needing the full
-  website? Use **Open in browser** on that screen.
+  search, filter and sort it without leaving the app. Pitak keeps a saved
+  copy and downloads it again only when the library changed it; if the
+  library can't be reached, you see the saved copy with a note saying how old
+  it is. Needing the full website? Use **Open in browser** on that screen.
 - **Add member** scans another library's card, in person. That makes you a
   *hub* and lists them on your page as your member.
 - If a hub lists *you*, Pitak asks once: "show that you're a member of X?"
@@ -390,23 +609,49 @@ have no books of its own.
 
 1. **Drawer:** use **How Pitak works** in the scrolling destination list;
    **Settings** remains pinned at the bottom.
-2. **Index:** six cards open separate pages, not an accordion; catalogue is
-   first and the network guide is included.
+2. **Index:** nine cards open separate pages, not an accordion; catalogue is
+   first and the network guide is included. Related guides sit together:
+   wishlist after catalogue; Cloudflare and events right after publish.
 3. **Deep links:** every guide has a destination button; **Open Basic info**
-   selects Publish's Basic info tab and **Open Magazines** opens the
-   magazine-titles page.
+   selects Publish's Basic info tab, **Open Events** selects its Events tab,
+   and **Open Magazines** opens the magazine-titles page. The publish and
+   Cloudflare guides deliberately share **Open Publish to web** — both host
+   cards live on that screen.
 4. **Coordinates:** keep the Google Maps / OpenStreetMap press-and-hold
    instruction; the optional address sentence was not added.
 5. **Repository wording:** keep the real **Set up a repository** label and
    explain "repository" once.
 6. **Contextual help:** no `?` guide icons currently ship in Publish or
    Vault; the drawer is the guide entry point.
+7. **Cloudflare gets its own guide (2026-10-30):** GitHub needs one sign-in
+   code, Cloudflare up to four values fetched from Cloudflare's website.
+   Folding "what each value is and where to find it" into the publish guide
+   would have pushed it past the 3800 dp copy-length budget in
+   `guide_page_test.dart`, so the publish guide keeps a short pointer and the
+   new guide holds the detail.
+8. **"You need" chips:** only the two hosting guides show one (an account to
+   create before starting); every other guide works out of the box.
 
 ## 5. Facts behind the copy (verified on appViewer, 2026-10-25)
 
 | Claim | Where it comes from |
 |---|---|
-| Six cards in catalogue → publish → map → backup → vault → network order; subtitles and destinations | `guide_catalog.dart`; `guides_page.dart`; `guide_destinations.dart` |
+| Nine cards in catalogue → wishlist → publish → Cloudflare → events → map → backup → vault → network order; subtitles and destinations | `guide_catalog.dart` (order); `catalog/*.dart` (copy); `guides_page.dart`; `guide_destinations.dart` |
+| Cloudflare token page opens pre-filled: name "Pitak Library Publishing", permission Workers Scripts · Edit, one account | `cloudflareTokenCreationUri` in `cloudflare_token_dialog.dart` (pinned by `guide_catalog_test.dart`) |
+| Account picker, with a manual **Account ID** path (32 hex characters) when the token cannot list accounts | `CloudflareAccountFlow`; `CloudflareAccountId.length` (pinned by `guide_catalog_test.dart`) |
+| Subdomain: read when allowed; **Create workers.dev subdomain** when the account has none; typed (unverified until the marker is read back) when the token cannot read it | `CloudflareSubdomainCommands`; `cloudflare_name_dialogs.dart` |
+| Worker names: lower-case letters, numbers, hyphens; no hyphen at either end | `CloudflareWorkerName`; `CloudflareErrorMessages.invalidWorker`; `_LowerCaseTextFormatter` |
+| **Use this Worker for Pitak?** / **Replace Worker assets** appears only for an existing Worker; **Deploy verification marker** proves a typed address | `cloudflare_verification_dialog.dart`; `CloudflareConnectionController._runWorkerCommand` |
+| Cloudflare becomes the active host only when no host is active; otherwise **Move to other host** switches | `PublishHostStateRepository.ensureActiveHost`; `move_site_controls.dart` |
+| Disconnect forgets only the token; the Worker and site stay | `CloudflareErrorMessages.disconnected`; `SetupCloudflareSite.disconnect` |
+| Cloudflare dashboard: Account ID under **Workers & Pages → Account details**; subdomain next to **Your subdomain**; token flow **Continue to summary → Create Token** | Cloudflare docs, checked 2026-10-30: "Find account and zone IDs", "workers.dev", "Account API tokens" |
+| Up to two posters, optional description (≤ 280 chars); publishing needs a published catalogue; empty list publishes as **Clear the events page** | `EventsContent.maxPosters`; `EventPoster.maxDescriptionLength`; `events_page.dart` |
+| Catalogue and events publish separately | `PublishLibraryUseCase` (catalogue section only); `PublishEventsUseCase` |
+| The catalogue page shows an events banner when events exist; saved libraries show posters in Pitak | `assets/publish/index.html` (`eventsBanner`); `published_events_section.dart` |
+| GitHub keeps removed posters in Git history | `events_page.dart` removal copy |
+| Wishlist add form: Title required; ISBN scan fills the ISBN only; lookup is a separate tap and fills empty fields | `add_wishlist_page.dart` (`_scanIsbn`, `_lookupIsbn`) |
+| **Purchased — add to library** adds a book unless its ISBN is already there; **Mark as purchased only** adds nothing | `MarkWishlistPurchasedUseCase` (`MarkPurchasedAlreadyInLibrary`); `wishlist_detail_page.dart` |
+| The wishlist is never published | no wishlist reference under `lib/features/publish/` |
 | Magazines sits between Wishlist and Library network; Settings is pinned | `app_drawer.dart` |
 | Tapping a saved library opens its published catalogue in a native, read-only page; the browser is only the explicit **Open in browser** action | `published_catalogue_page.dart` (`PublishedSiteOpener` → `LaunchMode.externalApplication`); `network_page.dart` info note |
 | Sign-in is a code + github.com/login/device, works from another device | `github_connection_dialogs.dart` ("Authorize in your browser", tip text) |

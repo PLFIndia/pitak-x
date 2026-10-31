@@ -2,8 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
+
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -11,23 +14,39 @@ import 'package:pitaka/features/network/domain/repositories/network_repository.d
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/value_objects/periodical_frequency.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
+import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
+import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
+import 'package:pitaka/features/publish/domain/site/publish_state.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../../support/raw_catalogue_rows.dart';
 import '../import_export/bundle_test_fixture.dart';
 import '../library/replacement_harness.dart';
+import 'support/cloudflare_fakes.dart';
 
 class _FakeCreds implements PublishCredentialReader {
-  _FakeCreds({this.tok = 'TKN', this.repo = 'me/lib'});
+  _FakeCreds({this.tok = 'TKN'});
+
   final String? tok;
-  final String? repo;
+
+  /// The catalogue publish no longer reads this: it publishes to the sealed
+  /// target it is given (R1/C3). Kept because the port requires it.
+  final String? repo = 'me/lib';
   @override
   Future<String?> token() async => tok;
   @override
@@ -38,10 +57,60 @@ class _MemManifest implements PublishManifestGateway {
   _MemManifest([this._m = PublishManifest.empty]);
   final PublishManifest _m;
   PublishManifest? saved;
+  bool saveFails = false;
+  bool liveSaveFails = false;
+
+  /// Every record this gateway was asked to persist, in order (R5: the commit
+  /// is saved as `deployed` first, then upgraded to `live`).
+  final List<PublishManifest> saves = [];
+
+  /// The record a load would return right now.
+  PublishManifest get current => saved ?? _m;
+
   @override
-  PublishManifest load() => _m;
+  PublishManifest load() => current;
+
   @override
-  void save(PublishManifest m) => saved = m;
+  Either<Failure, Unit> save(PublishManifest m) {
+    if (saveFails || (liveSaveFails && m.state == PublishState.live)) {
+      return left(const StorageFailure('disk full'));
+    }
+    saved = m;
+    saves.add(m);
+    return right(unit);
+  }
+}
+
+/// Fake read-back: answers by (siteUrl, path) and records every call so the
+/// tests can assert the origin binding and the cache-buster.
+class _FakeVerifier implements PublishedSiteVerifier {
+  _FakeVerifier(this.answer);
+  final Future<List<int>?> Function(String siteUrl, String path) answer;
+  final List<(String, String, String?)> calls = [];
+
+  @override
+  Future<List<int>?> read({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) {
+    calls.add((siteUrl, path, cacheBuster));
+    return answer(siteUrl, path);
+  }
+}
+
+/// Records the verified-target writes a publish is allowed to make (R33).
+class _Recorder implements PublishHostStateRecorder {
+  final List<PublishTarget> recorded = [];
+  bool fails = false;
+
+  @override
+  Future<Either<Failure, Unit>> recordVerified(PublishTarget target) async {
+    if (fails) return left(const StorageFailure('journal write'));
+    recorded.add(target);
+    return right(unit);
+  }
 }
 
 class _FixedSalt implements PublishCoverSaltStore {
@@ -59,13 +128,27 @@ class _CapturingApi implements GitHubGitDataApi {
       isWorkflowBuild: false,
     ),
     this.throwOnPagesSite = false,
+    this.throwOnHeadTree = false,
+    this.treeTruncated = false,
   });
   final Map<String, String> headShas = const {};
 
   /// What `pagesSite()` answers (null = Pages off).
   final PagesSite? pages;
   final bool throwOnPagesSite;
-  final PublishCommitResult? commitResult = null;
+
+  /// The fake remote tree. `makeUseCase` seeds it from the gateway's record,
+  /// which is the state most tests describe ("the site holds what this phone
+  /// published"); a test that wants a DIVERGENT remote sets `treeFiles`
+  /// itself after building the use case.
+  Map<String, String> treeFiles = const {};
+  String treeHead = 'HEAD';
+  bool treeTruncated;
+  final bool throwOnHeadTree;
+  PublishCommitResult? result;
+
+  /// Head the commit was asked to compare-and-swap against (R6).
+  String? committedExpectedHead;
   List<DesiredFile>? committed;
 
   /// deletePaths the commit was asked to remove (M14 / docs/ARCHITECTURE.md §5.1).
@@ -88,14 +171,21 @@ class _CapturingApi implements GitHubGitDataApi {
   }
 
   @override
-  Future<Map<String, String>> headTreeShas({
+  Future<GitHubTreeSnapshot> headTree({
     required String owner,
     required String repo,
     required String branch,
     required String token,
   }) async {
     headTreeBranch = branch;
-    return headShas;
+    if (throwOnHeadTree) throw const GitHubApiException('boom');
+    return GitHubTreeSnapshot(
+      repo: '$owner/$repo',
+      branch: branch,
+      headSha: treeHead,
+      files: treeFiles,
+      truncated: treeTruncated,
+    );
   }
 
   @override
@@ -106,12 +196,18 @@ class _CapturingApi implements GitHubGitDataApi {
     required String token,
     required List<DesiredFile> files,
     required String commitMessage,
+    required String expectedHead,
     List<String> deletePaths = const [],
   }) async {
     committed = files;
     committedBranch = branch;
+    committedExpectedHead = expectedHead;
     deleted = deletePaths;
-    return commitResult ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
+    // Behave like the real port: a head that no longer matches is not
+    // overwritten (R6).
+    if (expectedHead != treeHead) return const PublishCommitStale();
+    treeFiles = {for (final f in files) f.path: f.gitSha};
+    return result ?? const PublishCommitSuccess('NEWCOMMIT', ['x']);
   }
 }
 
@@ -140,6 +236,79 @@ final class _EmptyNetworkRepository implements NetworkRepository {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnsupportedError('Unexpected network write: $invocation');
+}
+
+/// In-memory strict reads for one test publish (Cloudflare plan R2).
+///
+/// Every read succeeds with the data the test chose; the defaults mean "an
+/// empty, healthy library". A test that needs a FAILED read uses
+/// [_FailingReads] instead.
+class _Reads implements PublishReads {
+  _Reads({
+    List<CatalogueItem> books = const [],
+    List<Periodical> periodicals = const [],
+    Map<int, int>? activeLoanCounts = const {},
+    List<int>? libraryJson,
+    EventsContent? events,
+  }) : _books = books,
+       _titles = periodicals,
+       _counts = activeLoanCounts,
+       _descriptor = libraryJson,
+       _events = events ?? EventsContent.empty;
+
+  final List<CatalogueItem> _books;
+  final List<Periodical> _titles;
+  final Map<int, int>? _counts;
+  final List<int>? _descriptor;
+  final EventsContent _events;
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> catalogueItems() async =>
+      right(_books);
+
+  @override
+  Future<Either<Failure, List<Periodical>>> periodicals() async =>
+      right(_titles);
+
+  @override
+  Future<Either<Failure, EventsContent>> events() async => right(_events);
+
+  @override
+  Future<Either<Failure, List<int>?>> libraryJson(String siteUrl) async =>
+      right(_descriptor);
+
+  @override
+  Future<Either<Failure, Map<int, int>?>> activeLoanCounts() async =>
+      right(_counts);
+
+  @override
+  Future<Either<Failure, PublishPageSettings>> pageSettings() async =>
+      right(const PublishPageSettings(libraryName: 'Test Library'));
+}
+
+/// Reads whose catalogue access fails: used to prove NOTHING is written when
+/// an input cannot be read. The default failure is a raw, diagnostic-carrying
+/// one, so the tests also prove the diagnostic never reaches the message.
+final class _FailingReads extends _Reads {
+  _FailingReads([this.failure = const StorageFailure('private-db-detail')]);
+
+  final Failure failure;
+
+  @override
+  Future<Either<Failure, List<CatalogueItem>>> catalogueItems() async =>
+      left(failure);
+}
+
+/// The sealed GitHub target for one test (R1/C3): `me/lib` unless a test asks
+/// for another `owner/repo`.
+GitHubPublishTarget gitHubTarget(String ownerRepo) =>
+    GitHubPublishTarget.create(ownerRepo)!;
+
+/// Runs one publish against the sealed target. Named [run] rather than [call]
+/// so tests read as "run this publish to me/lib".
+extension on PublishLibraryUseCase {
+  Future<PublishResult> run({GitHubPublishTarget? target}) =>
+      call(target: target ?? gitHubTarget('me/lib'));
 }
 
 void main() {
@@ -206,26 +375,126 @@ void main() {
           )
           as Map<String, dynamic>;
 
+  /// Builds the use case over strict in-memory reads.
+  ///
+  /// Why this shape (Cloudflare plan R2): every publish input is now READ
+  /// through [PublishReads] instead of being passed to `call`, so a test
+  /// states its library HERE — exactly the way the real controller supplies
+  /// it. The section is still built by the shared builder, so the bytes under
+  /// test are the production ones.
   PublishLibraryUseCase makeUseCase(
     GitHubGitDataApi api,
     PublishManifestGateway manifest, {
-    PublishedFileFetcher? fetchPublishedFile,
+    PublishedSiteVerifier? verifier,
+    PublishHostStateRecorder? hostState,
     PublishCredentialReader? credentials,
     LocalCoverReader? readLocalCover,
     RemoteCoverFetcher? fetchRemoteCover,
     ViewerHtmlBuilderFn? buildViewerHtml,
-  }) => PublishLibraryUseCase(
-    api: api,
-    credentials: credentials ?? _FakeCreds(),
-    manifest: manifest,
-    coverIds: PublishCoverIds(_FixedSalt()),
-    readLocalCover: readLocalCover ?? (_) async => null,
-    fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
-    buildViewerHtml:
-        buildViewerHtml ?? () async => utf8.encode('<html></html>'),
-    fetchPublishedFile: fetchPublishedFile,
-    sleep: (_) async {}, // no real waiting in tests
-    clock: () => 1000,
+    List<CatalogueItem>? books,
+    List<Periodical>? periodicals,
+    Map<int, int>? activeLoanCounts = const {},
+    List<int>? libraryJson,
+    PublishReads? reads,
+    BooksJsonEncoder? encodeBooksJson,
+  }) {
+    // R6: the fake remote starts as what this phone recorded — the state most
+    // tests describe. Publishing against it therefore re-uploads nothing and
+    // deletes only paths the record already owns.
+    if (api is _CapturingApi) {
+      final local = manifest.load();
+      api
+        ..treeFiles = {...local.fileShas}
+        ..treeHead = local.headSha ?? api.treeHead;
+    }
+    return PublishLibraryUseCase(
+      api: api,
+      credentials: credentials ?? _FakeCreds(),
+      manifest: manifest,
+      snapshotBuilder: PublishSnapshotBuilder(
+        catalogue: CatalogueSectionBuilder(
+          covers: PublishCoverDecider(
+            coverIds: PublishCoverIds(_FixedSalt()),
+            readLocalCover: readLocalCover ?? (_) async => null,
+            fetchRemoteCover: fetchRemoteCover ?? (_) async => null,
+          ),
+          buildViewerHtml:
+              buildViewerHtml ??
+              ({
+                required libraryName,
+                required contact,
+                required sharing,
+              }) async => utf8.encode('<html></html>'),
+          encodeBooksJson: encodeBooksJson ?? encode,
+        ),
+        // Q5=A: a catalogue publish never reads or writes the events section;
+        // the builder still receives it so a complete (move) publish can use
+        // the same wiring.
+        events: EventsSectionBuilder(
+          readPoster: (_) async => null,
+          buildEventsHtml: ({required libraryName, required posters}) async =>
+              const [],
+          buildEventsJson: (_) => const [],
+        ),
+      ),
+      reads:
+          reads ??
+          _Reads(
+            books: books ?? const [],
+            periodicals: periodicals ?? const [],
+            activeLoanCounts: activeLoanCounts,
+            libraryJson: libraryJson,
+          ),
+      hostState: hostState ?? _Recorder(),
+      verifier: verifier,
+      sleep: (_) async {}, // no real waiting in tests
+      clock: () => 1000,
+    );
+  }
+
+  test(
+    'R2: an unreadable library aborts BEFORE any commit or manifest save',
+    () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final result = await makeUseCase(
+        api,
+        manifest,
+        reads: _FailingReads(),
+      ).run();
+
+      // A raw failure degrades to ONE safe sentence — never the diagnostic.
+      expect(
+        (result as PublishFailure).reason,
+        'Something went wrong. Nothing was published.',
+      );
+      expect(result.reason, isNot(contains('private-db-detail')));
+      // Nothing was written: no commit, no manifest, no read-back.
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    },
+  );
+
+  test(
+    'R2: a read failure carrying a safe sentence surfaces that sentence',
+    () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final result = await makeUseCase(
+        api,
+        manifest,
+        reads: _FailingReads(
+          const PublishReadFailure('Could not read your saved libraries.'),
+        ),
+      ).run();
+
+      expect(
+        (result as PublishFailure).reason,
+        'Could not read your saved libraries.',
+      );
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    },
   );
 
   group('read-back verification (à la Localcart Orange)', () {
@@ -233,72 +502,55 @@ void main() {
       'pagesLive true once the live site serves the published bytes',
       () async {
         final api = _CapturingApi();
-        final polled = <String>[];
-        final result =
-            await makeUseCase(
-              api,
-              _MemManifest(),
-              fetchPublishedFile: (url) async {
-                polled.add(url);
-                // Poll 1: stale content; poll 2: the committed bytes.
-                if (polled.length == 1) return utf8.encode('old');
-                return api.committed!
-                    .firstWhere((f) => f.path == 'books.json')
-                    .bytes;
-              },
-            ).call(
-              books: [book()],
-              periodicals: const [],
-              activeLoanCounts: const {},
-              encodeBooksJson: encode,
-              libraryJson: null,
-            );
+        late _FakeVerifier verifier;
+        verifier = _FakeVerifier((_, _) async {
+          // Poll 1: stale content; poll 2: the bytes just committed.
+          if (verifier.calls.length == 1) return utf8.encode('old');
+          return api.committed!.firstWhere((f) => f.path == 'books.json').bytes;
+        });
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
+          verifier: verifier,
+          books: [book()],
+          periodicals: const [],
+        ).run();
         expect((result as PublishSuccess).pagesLive, isTrue);
-        expect(polled, hasLength(2));
-        // Cache-busted, against the real site URL.
-        expect(
-          polled.first,
-          startsWith('https://me.github.io/lib/books.json?rb='),
-        );
-        expect(polled.first, isNot(equals(polled.last))); // unique busters
+        expect(verifier.calls, hasLength(2));
+        // Origin-bound: the exact site root and the fixed file, never a URL.
+        expect(verifier.calls.first.$1, 'https://me.github.io/lib/');
+        expect(verifier.calls.first.$2, 'books.json');
+        // Cache-busted, with a fresh buster per attempt.
+        expect(verifier.calls.first.$3, isNotNull);
+        expect(verifier.calls.first.$3, isNot(verifier.calls.last.$3));
       },
     );
 
     test('bounded: never-matching content stops after readBackAttempts '
         'with pagesLive null (regression: infinite "Publishing…")', () async {
       var polls = 0;
-      final result =
-          await makeUseCase(
-            _CapturingApi(),
-            _MemManifest(),
-            fetchPublishedFile: (_) async {
-              polls++;
-              return utf8.encode('never matches');
-            },
-          ).call(
-            books: [book()],
-            periodicals: const [],
-            activeLoanCounts: const {},
-            encodeBooksJson: encode,
-            libraryJson: null,
-          );
+      final result = await makeUseCase(
+        _CapturingApi(),
+        _MemManifest(),
+        verifier: _FakeVerifier((_, _) async {
+          polls++;
+          return utf8.encode('never matches');
+        }),
+        books: [book()],
+        periodicals: const [],
+      ).run();
       expect((result as PublishSuccess).pagesLive, isNull);
-      expect(polls, PublishLibraryUseCase.readBackAttempts);
+      expect(polls, PublishedFileReadBack.defaultAttempts);
     });
 
     test('fetch failures (null) are tolerated and stay bounded', () async {
-      final result =
-          await makeUseCase(
-            _CapturingApi(),
-            _MemManifest(),
-            fetchPublishedFile: (_) async => null,
-          ).call(
-            books: [book()],
-            periodicals: const [],
-            activeLoanCounts: const {},
-            encodeBooksJson: encode,
-            libraryJson: null,
-          );
+      final result = await makeUseCase(
+        _CapturingApi(),
+        _MemManifest(),
+        verifier: _FakeVerifier((_, _) async => null),
+        books: [book()],
+        periodicals: const [],
+      ).run();
       expect((result as PublishSuccess).pagesLive, isNull);
     });
   });
@@ -306,17 +558,16 @@ void main() {
   test('publishes books.json + index.html and returns the pages URL', () async {
     final api = _CapturingApi();
     final manifest = _MemManifest();
-    final result = await makeUseCase(api, manifest).call(
+    final result = await makeUseCase(
+      api,
+      manifest,
       books: [book()],
       periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
     expect(s.pagesUrl, 'https://me.github.io/lib/');
-    // No fetchPublishedFile wired ⇒ read-back skipped ⇒ unknown liveness.
+    // No verifier wired ⇒ read-back skipped ⇒ unknown liveness.
     expect(s.pagesLive, isNull);
     // books.json + index.html both in the commit.
     final paths = api.committed!.map((f) => f.path).toSet();
@@ -328,13 +579,13 @@ void main() {
   test('an explicitly empty catalogue is a valid publication input', () async {
     final api = _CapturingApi();
     final manifest = _MemManifest();
-    final result = await makeUseCase(api, manifest).call(
+    final result = await makeUseCase(
+      api,
+      manifest,
       books: const [],
       periodicals: const [],
       activeLoanCounts: null,
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
 
     expect(result, isA<PublishSuccess>());
     final files = api.committed!;
@@ -352,13 +603,12 @@ void main() {
 
   test('books.json carries redacted data only (no PII)', () async {
     final api = _CapturingApi();
-    await makeUseCase(api, _MemManifest()).call(
+    await makeUseCase(
+      api,
+      _MemManifest(),
       books: [book()],
       periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     final booksFile = api.committed!.firstWhere((f) => f.path == 'books.json');
     final json = utf8.decode(booksFile.bytes);
     expect(json, contains('The Odyssey'));
@@ -373,13 +623,12 @@ void main() {
       id: 10,
       removed: true,
     ).copyWith(title: 'Removed issue');
-    await makeUseCase(api, _MemManifest()).call(
+    await makeUseCase(
+      api,
+      _MemManifest(),
       books: [book(), removed, removedIssue],
       periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
     );
@@ -392,36 +641,29 @@ void main() {
     // identical inputs ⇒ identical shas ⇒ nothing flagged for upload.
     final api1 = _CapturingApi();
     final m1 = _MemManifest();
-    await makeUseCase(api1, m1).call(
-      books: [book()],
-      periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    await makeUseCase(api1, m1, books: [book()], periodicals: const []).run();
     final seeded = _MemManifest(m1.saved!);
 
     final api2 = _CapturingApi();
-    await makeUseCase(api2, seeded).call(
+    await makeUseCase(
+      api2,
+      seeded,
       books: [book()],
       periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     // Same inputs ⇒ same shas ⇒ nothing flagged for upload.
     expect(api2.committed!.every((f) => !f.upload), isTrue);
   });
 
   test('availability omitted when vault locked (counts null)', () async {
     final api = _CapturingApi();
-    final result = await makeUseCase(api, _MemManifest()).call(
+    final result = await makeUseCase(
+      api,
+      _MemManifest(),
       books: [book()],
       periodicals: const [],
       activeLoanCounts: null,
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     expect((result as PublishSuccess).availabilityOmitted, isTrue);
     final json = utf8.decode(
       api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
@@ -430,22 +672,12 @@ void main() {
   });
 
   test('not signed in fails fast', () async {
-    final uc = PublishLibraryUseCase(
-      api: _CapturingApi(),
+    final r = await makeUseCase(
+      _CapturingApi(),
+      _MemManifest(),
       credentials: _FakeCreds(tok: null),
-      manifest: _MemManifest(),
-      coverIds: PublishCoverIds(_FixedSalt()),
-      readLocalCover: (_) async => null,
-      fetchRemoteCover: (_) async => null,
-      buildViewerHtml: () async => const [],
-    );
-    final r = await uc.call(
       books: [book()],
-      periodicals: const [],
-      activeLoanCounts: const {},
-      encodeBooksJson: encode,
-      libraryJson: null,
-    );
+    ).run();
     expect(r, isA<PublishFailure>());
   });
 
@@ -453,23 +685,12 @@ void main() {
     'local cover is read, sha-d, and uploaded under a salted path',
     () async {
       final api = _CapturingApi();
-      final uc = PublishLibraryUseCase(
-        api: api,
-        credentials: _FakeCreds(),
-        manifest: _MemManifest(),
-        coverIds: PublishCoverIds(_FixedSalt()),
+      await makeUseCase(
+        api,
+        _MemManifest(),
         readLocalCover: (src) async => utf8.encode('IMG'),
-        fetchRemoteCover: (_) async => null,
-        buildViewerHtml: () async => utf8.encode('<html></html>'),
-        clock: () => 1000,
-      );
-      await uc.call(
         books: [book(cover: 'covers/abc.jpg')],
-        periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       final coverFile = api.committed!.firstWhere(
         (f) => f.path.startsWith('covers/'),
       );
@@ -494,13 +715,12 @@ void main() {
             isWorkflowBuild: false,
           ),
         );
-        final result = await makeUseCase(api, _MemManifest()).call(
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
           books: [book()],
           periodicals: const [],
-          activeLoanCounts: const {},
-          encodeBooksJson: encode,
-          libraryJson: null,
-        );
+        ).run();
         expect(result, isA<PublishSuccess>());
         expect(api.committedBranch, 'gh-pages');
         expect(api.headTreeBranch, 'gh-pages');
@@ -510,13 +730,12 @@ void main() {
     test('Pages turned off since setup → typed failure, no commit', () async {
       final api = _CapturingApi(pages: null);
       final manifest = _MemManifest();
-      final result = await makeUseCase(api, manifest).call(
+      final result = await makeUseCase(
+        api,
+        manifest,
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('GitHub Pages'));
       expect(api.committed, isNull);
@@ -533,13 +752,12 @@ void main() {
         PagesSite(sourceBranch: null, sourcePath: null, isWorkflowBuild: true),
       ]) {
         final api = _CapturingApi(pages: site);
-        final result = await makeUseCase(api, _MemManifest()).call(
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
           books: [book()],
           periodicals: const [],
-          activeLoanCounts: const {},
-          encodeBooksJson: encode,
-          libraryJson: null,
-        );
+        ).run();
         expect(result, isA<PublishFailure>());
         expect(api.committed, isNull);
       }
@@ -547,13 +765,12 @@ void main() {
 
     test('a transport failure reading Pages is the network message', () async {
       final api = _CapturingApi(throwOnPagesSite: true);
-      final result = await makeUseCase(api, _MemManifest()).call(
+      final result = await makeUseCase(
+        api,
+        _MemManifest(),
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       expect(result, isA<PublishFailure>());
       expect((result as PublishFailure).reason, contains('connection'));
       expect(api.committed, isNull);
@@ -561,26 +778,17 @@ void main() {
 
     test('a user site (me/me.github.io) reports the ROOT address', () async {
       final api = _CapturingApi();
-      final polled = <String>[];
-      final result =
-          await makeUseCase(
-            api,
-            _MemManifest(),
-            credentials: _FakeCreds(repo: 'me/me.github.io'),
-            fetchPublishedFile: (url) async {
-              polled.add(url);
-              return null;
-            },
-          ).call(
-            books: [book()],
-            periodicals: const [],
-            activeLoanCounts: const {},
-            encodeBooksJson: encode,
-            libraryJson: null,
-          );
+      final verifier = _FakeVerifier((_, _) async => null);
+      final result = await makeUseCase(
+        api,
+        _MemManifest(),
+        verifier: verifier,
+        books: [book()],
+        periodicals: const [],
+      ).run(target: gitHubTarget('me/me.github.io'));
       expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
-      // The read-back polls the same resolved address.
-      expect(polled.first, startsWith('https://me.github.io/books.json?rb='));
+      // The read-back is bound to the same resolved address.
+      expect(verifier.calls.first.$1, 'https://me.github.io/');
     });
   });
 
@@ -589,13 +797,13 @@ void main() {
 
     test('a provided descriptor rides in the same atomic commit', () async {
       final api = _CapturingApi();
-      final result = await makeUseCase(api, _MemManifest()).call(
+      final result = await makeUseCase(
+        api,
+        _MemManifest(),
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
         libraryJson: descriptor,
-      );
+      ).run();
       expect(result, isA<PublishSuccess>());
       expect(api.committed!.map((f) => f.path), [
         'books.json',
@@ -608,13 +816,13 @@ void main() {
     test('unchanged descriptor bytes are not re-uploaded (sha skip)', () async {
       final api1 = _CapturingApi();
       final m1 = _MemManifest();
-      await makeUseCase(api1, m1).call(
+      await makeUseCase(
+        api1,
+        m1,
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
         libraryJson: descriptor,
-      );
+      ).run();
       expect(
         api1.committed!.firstWhere((f) => f.path == 'library.json').upload,
         isTrue,
@@ -624,13 +832,13 @@ void main() {
       // Second run with the persisted manifest: identical bytes ⇒ same git
       // blob sha ⇒ the incremental publish skips the upload.
       final api2 = _CapturingApi();
-      await makeUseCase(api2, _MemManifest(m1.saved!)).call(
+      await makeUseCase(
+        api2,
+        _MemManifest(m1.saved!),
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
         libraryJson: descriptor,
-      );
+      ).run();
       expect(
         api2.committed!.firstWhere((f) => f.path == 'library.json').upload,
         isFalse,
@@ -642,18 +850,21 @@ void main() {
       () async {
         final api = _CapturingApi();
         final manifest = _MemManifest(
+          // A schema-2 record that DESCRIBES this site: only such a record
+          // may authorise a delete (R6).
           const PublishManifest(
             repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
             fileShas: {'library.json': 'OLD_SHA'},
           ),
         );
-        await makeUseCase(api, manifest).call(
+        await makeUseCase(
+          api,
+          manifest,
           books: [book()],
           periodicals: const [],
-          activeLoanCounts: const {},
-          encodeBooksJson: encode,
-          libraryJson: null,
-        );
+        ).run();
         // The opt-out deletes the stale file in the SAME commit (M14), so a
         // previously published location never outlives the switch.
         expect(api.deleted, ['library.json']);
@@ -666,13 +877,12 @@ void main() {
 
     test('null descriptor with nothing published deletes nothing', () async {
       final api = _CapturingApi();
-      await makeUseCase(api, _MemManifest()).call(
+      await makeUseCase(
+        api,
+        _MemManifest(),
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       expect(api.deleted, isEmpty);
     });
   });
@@ -680,7 +890,9 @@ void main() {
   group('W3 — kinds and periodicals in books.json', () {
     test('every entry carries its kind; an issue nests its issue{}', () async {
       final api = _CapturingApi();
-      await makeUseCase(api, _MemManifest()).call(
+      await makeUseCase(
+        api,
+        _MemManifest(),
         books: [
           book(),
           issue(),
@@ -701,10 +913,7 @@ void main() {
           ),
         ],
         periodicals: [series()],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       final payload = committedPayload(api);
       final books = (payload['books'] as List<dynamic>)
           .cast<Map<String, dynamic>>();
@@ -731,13 +940,12 @@ void main() {
       'periodicals[] carries public fields only (private ones stripped)',
       () async {
         final api = _CapturingApi();
-        await makeUseCase(api, _MemManifest()).call(
+        await makeUseCase(
+          api,
+          _MemManifest(),
           books: [issue()],
           periodicals: [series()],
-          activeLoanCounts: const {},
-          encodeBooksJson: encode,
-          libraryJson: null,
-        );
+        ).run();
         final payload = committedPayload(api);
         final periodicals = (payload['periodicals'] as List<dynamic>)
             .cast<Map<String, dynamic>>();
@@ -762,13 +970,12 @@ void main() {
 
     test('no magazines ⇒ the additive periodicals key is omitted', () async {
       final api = _CapturingApi();
-      await makeUseCase(api, _MemManifest()).call(
+      await makeUseCase(
+        api,
+        _MemManifest(),
         books: [book()],
         periodicals: const [],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       expect(committedPayload(api).containsKey('periodicals'), isFalse);
     });
 
@@ -776,18 +983,13 @@ void main() {
       'a removed series publishes no entry; its issue keeps the cover fallback',
       () async {
         final api = _CapturingApi();
-        final result =
-            await makeUseCase(
-              api,
-              _MemManifest(),
-              readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
-            ).call(
-              books: [issue()],
-              periodicals: [series(removed: true, cover: 'covers/series.jpg')],
-              activeLoanCounts: const {},
-              encodeBooksJson: encode,
-              libraryJson: null,
-            );
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
+          readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
+          books: [issue()],
+          periodicals: [series(removed: true, cover: 'covers/series.jpg')],
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         final payload = committedPayload(api);
@@ -816,13 +1018,9 @@ void main() {
         api,
         _MemManifest(),
         readLocalCover: (src) async => utf8.encode('SERIES-IMG'),
-      ).call(
         books: [issue()],
         periodicals: [series(cover: 'covers/series.jpg')],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       // Exactly ONE cover file in the commit: the series' salted path.
       final covers = api.committed!
           .where((f) => f.path.startsWith('covers/'))
@@ -855,21 +1053,16 @@ void main() {
         const source = 'https://covers.openlibrary.org/x.jpg';
         final api = _CapturingApi();
         final requested = <String>[];
-        final result =
-            await makeUseCase(
-              api,
-              _MemManifest(),
-              fetchRemoteCover: (url) async {
-                requested.add(url);
-                return utf8.encode('REMOTE-SERIES-IMG');
-              },
-            ).call(
-              books: [issue()],
-              periodicals: [series(cover: source)],
-              activeLoanCounts: const {},
-              encodeBooksJson: encode,
-              libraryJson: null,
-            );
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
+          fetchRemoteCover: (url) async {
+            requested.add(url);
+            return utf8.encode('REMOTE-SERIES-IMG');
+          },
+          books: [issue()],
+          periodicals: [series(cover: source)],
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         expect(requested, [source]);
@@ -906,13 +1099,9 @@ void main() {
         api,
         _MemManifest(),
         readLocalCover: (src) async => utf8.encode('IMG:$src'),
-      ).call(
         books: [issue(cover: 'covers/issue.jpg')],
         periodicals: [series(cover: 'covers/series.jpg')],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       final salt = ascii.encode('salt-1234567890');
       final payload = committedPayload(api);
       expect(
@@ -942,6 +1131,8 @@ void main() {
       final manifest = _MemManifest(
         PublishManifest(
           repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
           fileShas: {path: 'EXISTING_SHA'},
           coverUrlByBookId: {
             'periodical:uid-1': 'https://covers.openlibrary.org/x.jpg',
@@ -956,13 +1147,9 @@ void main() {
           fetches++;
           return utf8.encode('REMOTE-IMG');
         },
-      ).call(
         books: [issue()],
         periodicals: [series(cover: 'https://covers.openlibrary.org/x.jpg')],
-        activeLoanCounts: const {},
-        encodeBooksJson: encode,
-        libraryJson: null,
-      );
+      ).run();
       // URL unchanged + file already in the repo ⇒ no fetch, no upload.
       expect(fetches, 0);
       final coverFile = api.committed!.firstWhere(
@@ -984,18 +1171,13 @@ void main() {
       () async {
         const uid = 'పత్రిక-१';
         final api = _CapturingApi();
-        final result =
-            await makeUseCase(
-              api,
-              _MemManifest(),
-              readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
-            ).call(
-              books: [issue(uid: uid)],
-              periodicals: [series(uid: uid, cover: 'covers/series.jpg')],
-              activeLoanCounts: const {},
-              encodeBooksJson: encode,
-              libraryJson: null,
-            );
+        final result = await makeUseCase(
+          api,
+          _MemManifest(),
+          readLocalCover: (_) async => utf8.encode('SERIES-IMG'),
+          books: [issue(uid: uid)],
+          periodicals: [series(uid: uid, cover: 'covers/series.jpg')],
+        ).run();
 
         expect(result, isA<PublishSuccess>());
         final covers = api.committed!
@@ -1032,28 +1214,25 @@ void main() {
       var coverReads = 0;
       var viewerBuilds = 0;
       var encodeCalls = 0;
-      final result =
-          await makeUseCase(
-            api,
-            manifest,
-            readLocalCover: (_) async {
-              coverReads++;
-              return utf8.encode('IMG');
-            },
-            buildViewerHtml: () async {
+      final result = await makeUseCase(
+        api,
+        manifest,
+        readLocalCover: (_) async {
+          coverReads++;
+          return utf8.encode('IMG');
+        },
+        buildViewerHtml:
+            ({required libraryName, required contact, required sharing}) async {
               viewerBuilds++;
               return utf8.encode('<html></html>');
             },
-          ).call(
-            books: books,
-            periodicals: periodicals,
-            activeLoanCounts: const {},
-            encodeBooksJson: (export) {
-              encodeCalls++;
-              return encode(export);
-            },
-            libraryJson: null,
-          );
+        encodeBooksJson: (export) {
+          encodeCalls++;
+          return encode(export);
+        },
+        books: books,
+        periodicals: periodicals,
+      ).run();
 
       expect(result, isA<PublishFailure>());
       final reason = (result as PublishFailure).reason;
@@ -1170,6 +1349,13 @@ void main() {
               _ControllerCredentials(),
             ),
             publishManifestStoreProvider.overrideWith((ref) async => manifest),
+            publishHostStateRepositoryProvider.overrideWith(
+              (ref) async => PublishHostStateRepository(
+                store: FakePublishHostStateStore(),
+                manifest: manifest,
+                verifier: _FakeVerifier((_, _) async => null),
+              ),
+            ),
             publishCoverIdsProvider.overrideWithValue(
               PublishCoverIds(_FixedSalt()),
             ),
@@ -1178,6 +1364,12 @@ void main() {
               (ref) async => _EmptyNetworkRepository(),
             ),
             activeLoanCountsProvider.overrideWith((ref) => null),
+            // The snapshot wiring resolves the poster-reader handle up front;
+            // stubbing it keeps this test free of any docs-dir resolution.
+            eventsPosterReaderProvider.overrideWith(
+              (ref) async =>
+                  (_) async => null,
+            ),
             publishLocalCoverReaderProvider.overrideWith(
               (ref) async => (source) async {
                 localCoverReads++;
@@ -1188,10 +1380,12 @@ void main() {
               remoteCoverFetches++;
               return null;
             }),
-            publishedFileFetcherProvider.overrideWithValue((_) async {
-              publishedFileFetches++;
-              return null;
-            }),
+            publishedSiteVerifierProvider.overrideWithValue(
+              _FakeVerifier((_, path) async {
+                publishedFileFetches++;
+                return null;
+              }),
+            ),
             viewerHtmlFactoryProvider.overrideWithValue(({
               required libraryName,
               required contact,
@@ -1239,5 +1433,299 @@ void main() {
         );
       });
     }
+  });
+
+  group('S4 — the record describes the site, not a guess (R5/R6/R9)', () {
+    test(
+      'R6: an unreadable remote tree stops before any commit or save',
+      () async {
+        final api = _CapturingApi(throwOnHeadTree: true);
+        final manifest = _MemManifest();
+        final result = await makeUseCase(api, manifest, books: [book()]).run();
+
+        expect(
+          (result as PublishFailure).reason,
+          gitHubSiteStateUnreadableMessage,
+        );
+        expect(api.committed, isNull);
+        expect(manifest.saved, isNull);
+      },
+    );
+
+    test('R6: a truncated tree stops before any commit or save', () async {
+      final api = _CapturingApi(treeTruncated: true);
+      final manifest = _MemManifest();
+      final result = await makeUseCase(api, manifest, books: [book()]).run();
+
+      expect((result as PublishFailure).reason, gitHubTreeTooLargeMessage);
+      expect(api.committed, isNull);
+      expect(manifest.saved, isNull);
+    });
+
+    test('R6: the commit is anchored to the head that was read', () async {
+      final api = _CapturingApi();
+      await makeUseCase(api, _MemManifest(), books: [book()]).run();
+      expect(api.committedExpectedHead, 'HEAD');
+    });
+
+    test('R6: a head that moved is a typed failure, nothing saved', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final useCase = makeUseCase(api, manifest, books: [book()]);
+      // The record says head-a; the branch is now at head-b, and the commit
+      // itself finds a head that already moved again.
+      api
+        ..treeHead = 'head-b'
+        ..result = const PublishCommitStale();
+
+      final result = await useCase.run();
+      expect((result as PublishFailure).reason, gitHubStalePublishMessage);
+      expect(manifest.saved, isNull);
+      expect(manifest.saves, isEmpty);
+    });
+
+    test('R6: the tree sha wins over a stale local sha', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          fileShas: {'books.json': 'stale-sha', 'index.html': 'stale-index'},
+        ),
+      );
+      final useCase = makeUseCase(api, manifest, books: [book()]);
+      // What the remote really holds for those paths.
+      api.treeFiles = {
+        'books.json': 'remote-books',
+        'index.html': 'remote-index',
+      };
+
+      await useCase.run();
+
+      // The bytes are re-uploaded because the tree sha is not the local sha:
+      // trusting the stale sha would leave the old books.json live forever.
+      expect(
+        api.committed!.firstWhere((f) => f.path == 'books.json').upload,
+        isTrue,
+      );
+      expect(manifest.saved!.shaFor('books.json'), isNot('stale-sha'));
+    });
+
+    test(
+      'R6: a file this phone did not write is never deleted or adopted',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
+            ownershipConfirmed: true,
+            fileShas: {
+              'index.html': 'own-index',
+              'covers/gone.jpg': 'own-cover',
+            },
+          ),
+        );
+        final useCase = makeUseCase(api, manifest, books: const []);
+        api.treeFiles = {
+          'index.html': 'own-index',
+          'covers/gone.jpg': 'own-cover',
+          // Files a human wrote in the same repository.
+          'README.md': 'human-readme',
+          'notes/private.txt': 'human-note',
+        };
+
+        await useCase.run();
+
+        // Only the app-owned path the section dropped is deleted.
+        expect(api.deleted, ['covers/gone.jpg']);
+        final saved = manifest.saved!;
+        expect(saved.shaFor('README.md'), isNull);
+        expect(saved.shaFor('notes/private.txt'), isNull);
+        expect(saved.shaFor('books.json'), isNotNull);
+      },
+    );
+
+    test('R6: a legacy record claims nothing, so it deletes nothing', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest(
+        // Schema 1: no branch, so it does not describe this site.
+        const PublishManifest(
+          schema: 1,
+          repo: 'me/lib',
+          fileShas: {'covers/gone.jpg': 'own-cover', 'index.html': 'old'},
+        ),
+      );
+      final useCase = makeUseCase(api, manifest, books: const []);
+      api.treeFiles = {'covers/gone.jpg': 'own-cover', 'index.html': 'old'};
+
+      await useCase.run();
+
+      expect(api.deleted, isEmpty);
+    });
+
+    test(
+      'R5: the commit is recorded as deployed, then upgraded to live',
+      () async {
+        final api = _CapturingApi();
+        final verifier = _FakeVerifier(
+          (_, _) async =>
+              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+        );
+        final manifest = _MemManifest();
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: verifier,
+          books: [book()],
+        ).run();
+
+        expect((result as PublishSuccess).pagesLive, isTrue);
+        expect(manifest.saves.map((m) => m.state), [
+          PublishState.deployed,
+          PublishState.live,
+        ]);
+        // Both saves describe the commit the API returned.
+        expect(manifest.saves.first.headSha, 'NEWCOMMIT');
+        expect(manifest.current.branch, 'main');
+      },
+    );
+
+    test(
+      'R5: a read-back that never lands leaves the record deployed',
+      () async {
+        final manifest = _MemManifest();
+        final result = await makeUseCase(
+          _CapturingApi(),
+          manifest,
+          verifier: _FakeVerifier((_, _) async => utf8.encode('stale')),
+          books: [book()],
+        ).run();
+
+        expect((result as PublishSuccess).pagesLive, isNull);
+        expect(manifest.current.state, PublishState.deployed);
+      },
+    );
+
+    group('F.4 step 2 — an unconfirmed publication is verified first', () {
+      final liveBooks = utf8.encode('{"books":[]}');
+      final liveSha = GitBlobSha.of(liveBooks);
+
+      PublishManifest unconfirmed() => PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'HEAD',
+        fileShas: {'index.html': 'abc', 'books.json': liveSha},
+      );
+
+      test('a site serving different bytes stops the publish', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier(
+            (_, path) async =>
+                path == 'books.json' ? utf8.encode('{"books":[1]}') : null,
+          ),
+          books: [book()],
+        ).run();
+
+        expect(
+          (result as PublishFailure).reason,
+          gitHubSiteChangedSincePublishMessage,
+        );
+        expect(api.committed, isNull);
+        expect(manifest.saves, isEmpty);
+      });
+
+      test('an unreachable site does not block the publish', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier((_, _) async => null),
+          books: [book()],
+        ).run();
+
+        expect(result, isA<PublishSuccess>());
+        expect(api.committed, isNotNull);
+      });
+
+      test(
+        'a matching site upgrades the record before the new commit',
+        () async {
+          final api = _CapturingApi();
+          final manifest = _MemManifest(unconfirmed());
+          final recorder = _Recorder();
+          final result = await makeUseCase(
+            api,
+            manifest,
+            verifier: _FakeVerifier(
+              (_, path) async => path == 'books.json' ? liveBooks : null,
+            ),
+            hostState: recorder,
+            books: [book()],
+          ).run();
+
+          expect(result, isA<PublishSuccess>());
+          expect(manifest.saves.first.state, PublishState.live);
+          expect(recorder.recorded, isNotEmpty);
+        },
+      );
+
+      test('a live record is not re-verified', () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(unconfirmed().asLive());
+        final result = await makeUseCase(
+          api,
+          manifest,
+          verifier: _FakeVerifier(
+            (_, path) async =>
+                path == 'books.json' ? utf8.encode('something else') : null,
+          ),
+          books: [book()],
+        ).run();
+
+        expect(result, isA<PublishSuccess>());
+      });
+    });
+
+    test('R9: a failed live save does not advance the journal', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest()..liveSaveFails = true;
+      final recorder = _Recorder();
+      final result = await makeUseCase(
+        api,
+        manifest,
+        verifier: _FakeVerifier(
+          (_, _) async =>
+              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
+        ),
+        hostState: recorder,
+        books: [book()],
+      ).run();
+
+      expect((result as PublishSuccess).pagesLive, isTrue);
+      expect(result.localStateSaved, isFalse);
+      expect(manifest.current.state, PublishState.deployed);
+      expect(recorder.recorded, isEmpty);
+    });
+
+    test('R9: a failed save is reported, not swallowed', () async {
+      final manifest = _MemManifest()..saveFails = true;
+      final result = await makeUseCase(
+        _CapturingApi(),
+        manifest,
+        books: [book()],
+      ).run();
+
+      // The commit landed, so the publish IS a success — with the honest
+      // detail that this phone has no record of it.
+      expect((result as PublishSuccess).localStateSaved, isFalse);
+    });
   });
 }

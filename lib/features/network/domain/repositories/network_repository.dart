@@ -35,6 +35,22 @@ final class RefreshApplyResult {
   final int skippedExisting;
 }
 
+/// What one accepted library move did (C10/R17).
+final class LibraryMoveApplyResult {
+  /// Creates the result of one transactional merge/delete-plus-repoint.
+  const LibraryMoveApplyResult({
+    required this.repointed,
+    required this.deletedPlaceholder,
+  });
+
+  /// True when the canonical row's `siteUrl` changed (the user kept the new
+  /// address).
+  final bool repointed;
+
+  /// True when the duplicate row was deleted.
+  final bool deletedPlaceholder;
+}
+
 /// Loads and persists [NetworkLibrary] rows.
 abstract interface class NetworkRepository {
   /// All rows, ordered by [NetworkLibrary.sortOrder], then name — the list
@@ -87,6 +103,29 @@ abstract interface class NetworkRepository {
 
     /// The rows this run READ, by id. See the method doc for the skip rule.
     List<NetworkLibrary> baselines = const [],
+  });
+
+  /// Applies ONE user-confirmed library move (Cloudflare plan C10/R17) in a
+  /// single transaction: [canonicalBaseline] is the row the user chose to
+  /// keep (identified by its real id), [canonicalNext] is that same row with
+  /// the chosen address and the fresh remote fields applied (its `id`,
+  /// `createdAt` and `sortOrder` are preserved), and [placeholderBaseline] is
+  /// the duplicate row to delete, when the other address was saved too (null
+  /// for a card scan whose address was never saved).
+  ///
+  /// Fail closed on concurrent local edits: if either stored row no longer
+  /// matches its baseline (side of the compare inside the transaction), or a
+  /// DIFFERENT row now owns the target address, nothing is written and
+  /// [StaleStateFailure] is returned — the user's newer edit always wins.
+  ///
+  /// Both uniqueness constraints stay in force: the placeholder is deleted
+  /// before the canonical row is repointed, and the target address is
+  /// pre-checked so a concurrent add is reported instead of surfacing as a
+  /// raw constraint error.
+  Future<Either<Failure, LibraryMoveApplyResult>> acceptLibraryMove({
+    required NetworkLibrary canonicalBaseline,
+    required NetworkLibrary canonicalNext,
+    NetworkLibrary? placeholderBaseline,
   });
 
   /// Number of stored rows (cheap check for empty states / migration).

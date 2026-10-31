@@ -10,9 +10,9 @@ import '../../../support/a11y.dart';
 void main() {
   Future<void> pumpIndex(WidgetTester tester) async {
     // Phone width, the app's real theme (the a11y contrast check must see
-    // the colours that ship). 1400 dp tall so all six cards are built: the
-    // list measures ≈ 1100 dp under the test font, more than a phone screen.
-    tester.view.physicalSize = const Size(1080, 4200);
+    // the colours that ship). 2200 dp tall so all nine cards are built: the
+    // list measures ≈ 1650 dp under the test font, more than a phone screen.
+    tester.view.physicalSize = const Size(1080, 6600);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
@@ -21,7 +21,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets('shows the app bar title, the intro line and six cards in the '
+  testWidgets('shows the app bar title, the intro line and nine cards in the '
       'approved order', (tester) async {
     await pumpIndex(tester);
 
@@ -30,7 +30,10 @@ void main() {
 
     const titles = [
       'Books, magazines and other items',
+      'Wishlist: books to buy',
       'Put your catalogue online',
+      'Set up Cloudflare Workers',
+      'Events and posters',
       'Put your library on the map',
       'Backup, restore, export, import',
       'Lending and the borrowers vault',
@@ -42,7 +45,7 @@ void main() {
     // Top-to-bottom order on screen matches the catalog order.
     final ys = [for (final t in titles) tester.getTopLeft(find.text(t)).dy];
     expect(ys, orderedEquals([...ys]..sort()));
-    expect(find.byType(ListTile), findsNWidgets(6));
+    expect(find.byType(ListTile), findsNWidgets(9));
   });
 
   testWidgets('every card is at least 48 dp tall', (tester) async {

@@ -69,12 +69,18 @@ void main() {
     /// pitaka imports allowed from domain: other features' domain layers and
     /// the few pure cross-cutting core files domain code actually needs
     /// (`core/text/` holds plain-Dart string helpers such as the file-name
-    /// slug shared by the publish card and the export file names).
+    /// slug shared by the publish card and the export file names;
+    /// `core/network/workers_dev_url.dart` is the shared, pure
+    /// `<worker>.<subdomain>.workers.dev` grammar the reader's `BookmarkUrl`
+    /// uses — it exists in core precisely so the network domain never has to
+    /// import the publish feature, and it imports nothing but `dart:core`
+    /// string logic).
     final allowedCorePitaka = RegExp(
       "^import 'package:pitaka/(features/[^']+/domain/|"
       'core/error/|'
       'core/text/|'
-      r'core/crypto/secret_bytes\.dart)',
+      r'core/crypto/secret_bytes\.dart|'
+      r'core/network/workers_dev_url\.dart)',
     );
 
     final importUri = RegExp(r"^import\s+'([^']+)'");

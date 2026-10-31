@@ -29,12 +29,15 @@ import 'package:pitaka/features/library/presentation/pages/library_page.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
+import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart';
@@ -47,7 +50,9 @@ import 'package:pitaka/features/vault/presentation/pages/vault_page.dart';
 import '../features/backup/generation_fixture.dart';
 import '../features/library/replacement_test_guard.dart';
 import '../features/periodicals/application/periodical_fakes.dart';
+import '../features/publish/support/cloudflare_fakes.dart';
 import '../features/vault/vault_repository_write_stub.dart';
+import '../support/published_file_fakes.dart';
 import 'golden_names.dart';
 
 /// Golden tests for the five screens users see most.
@@ -178,18 +183,23 @@ void main() {
     final coverBytes = goldenCoverBytes();
     return ProviderScope(
       overrides: [
-        publishedCatalogueFetcherProvider(
-          publishedSite,
-        ).overrideWithValue((url, {abortTrigger}) async => right(catalogue)),
+        publishedCatalogueFetcherProvider(publishedSite).overrideWithValue(
+          (url, {validator, abortTrigger}) async => fetchedValue(catalogue),
+        ),
+        // Saved copies live in memory: a golden never touches the disk.
+        publishedFileCacheProvider.overrideWithValue(
+          InMemoryPublishedFileCache(),
+        ),
         // The production query engine, synchronously. Its isolate adapter is
         // tested separately and must not introduce timing into this image.
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
           (catalogue, query) async =>
               PublishedQueryEngine.apply(catalogue, query),
         ),
-        publishedEventsFetcherProvider(
-          publishedSite,
-        ).overrideWithValue((url, {abortTrigger}) async => const Right(null)),
+        publishedEventsFetcherProvider(publishedSite).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              const PublishedFileMissing(),
+        ),
         publishedCoverFetcherProvider(publishedSite).overrideWithValue(
           (request, {abortTrigger}) async => Uint8List.fromList(coverBytes),
         ),
@@ -298,11 +308,29 @@ void main() {
   });
 
   testWidgets('publish connection tab', (tester) async {
+    final cloudflare = CloudflareSetupHarness();
     await expectGolden(
       tester,
       ProviderScope(
         overrides: [
           publishCredentialStoreProvider.overrideWithValue(_GoldenCreds()),
+          setupCloudflareSiteProvider.overrideWith(
+            (ref) async => cloudflare.setup,
+          ),
+          cloudflareCredentialStoreProvider.overrideWithValue(
+            cloudflare.credentials,
+          ),
+          // Pin the signed-out host projection as well. Without this, the
+          // publish card reads platform storage and its loading spinner makes
+          // pumpAndSettle time out before a screenshot can be taken.
+          publishSiteStatusProvider.overrideWith(
+            (ref) async => const PublishSiteStatus(
+              activeHost: null,
+              target: null,
+              verifiedSiteUrl: null,
+              setupMessage: 'Pick a target repo first.',
+            ),
+          ),
         ],
         child: themedApp(const PublishPage()),
       ),

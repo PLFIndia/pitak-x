@@ -2,12 +2,15 @@
 ///
 /// Lifecycle mirrors the catalogue controller: one load per mount, one manual
 /// refresh at a time, monotonic revisions, caller abort on disposal, and no
-/// persistence or writes. A null value means the optional file is absent.
+/// writes besides the saved copy the use case keeps (ADR 0018). A null value
+/// means the optional file is absent; otherwise the [PublishedContent] says
+/// whether the events are current or a saved copy shown with a note.
 library;
 
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_events_use_case.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -25,7 +28,7 @@ class PublishedEventsController extends _$PublishedEventsController {
   late String _siteUrl;
 
   @override
-  Future<PublishedEvents?> build(String siteUrl) {
+  Future<PublishedContent<PublishedEvents>?> build(String siteUrl) {
     _siteUrl = siteUrl;
     _disposed = false;
     _useCase = ref.watch(loadPublishedEventsUseCaseProvider(siteUrl));
@@ -62,20 +65,24 @@ class PublishedEventsController extends _$PublishedEventsController {
     if (previous != null && !previous.isCompleted) previous.complete();
     final abort = Completer<void>();
     _abort = abort;
-    state = const AsyncLoading<PublishedEvents?>().copyWithPrevious(state);
+    state = const AsyncLoading<PublishedContent<PublishedEvents>?>()
+        .copyWithPrevious(state);
     final either = await _useCase(_siteUrl, abortTrigger: abort.future);
     if (_disposed || revision != _revision) return;
     state = either.match(
-      (failure) => AsyncError<PublishedEvents?>(failure, StackTrace.current),
-      AsyncData<PublishedEvents?>.new,
+      (failure) => AsyncError<PublishedContent<PublishedEvents>?>(
+        failure,
+        StackTrace.current,
+      ),
+      AsyncData<PublishedContent<PublishedEvents>?>.new,
     );
   }
 
-  Future<PublishedEvents?> _load(Future<void> abort) async {
+  Future<PublishedContent<PublishedEvents>?> _load(Future<void> abort) async {
     final revision = ++_revision;
     final either = await _useCase(_siteUrl, abortTrigger: abort);
     if (_disposed || revision != _revision) {
-      return Completer<PublishedEvents?>().future;
+      return Completer<PublishedContent<PublishedEvents>?>().future;
     }
     return either.fold(
       // Riverpod surfaces typed failures through AsyncError; raw text is never

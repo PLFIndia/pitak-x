@@ -1,62 +1,172 @@
-/// Publish-events controller (application layer, AGENTS.md §4, #events).
+/// Host-neutral events publish controller (application layer, AGENTS.md §4).
 ///
-/// Assembles [PublishEventsUseCase] from live providers and runs it on demand,
-/// exposing an [AsyncValue] of the result. Reuses the catalogue's GitHub
-/// credential, target repo, and publish manifest — the events publish is gated
-/// on a prior catalogue publish inside the use case.
+/// The journal selects GitHub or Cloudflare freshly inside the shared queue.
+/// GitHub keeps its anchored commit use case; Cloudflare consumes the SAME
+/// strict snapshot/replacement factory as catalogue. Expected outcomes use the
+/// shared [PublishResult] so one replacement dialog works from either screen.
 library;
 
 import 'package:pitaka/core/di/providers.dart';
-import 'package:pitaka/features/events/application/events_controller.dart';
+import 'package:pitaka/core/platform/app_log.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
+import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
+import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'publish_events_controller.g.dart';
 
-/// Runs an events publish and exposes its [PublishEventsResult].
+/// Runs an events publish and exposes its shared [PublishResult].
 @riverpod
 class PublishEventsController extends _$PublishEventsController {
   @override
-  FutureOr<PublishEventsResult?> build() => null;
+  FutureOr<PublishResult?> build() {
+    // Keep the strict-read provider alive for the whole events operation. This
+    // is only its PublishReads port; no nested publish/queue command is called.
+    ref.listen(publishControllerProvider, (_, _) {});
+    return null;
+  }
 
-  /// Publishes the current events content. Returns the result and stores it.
-  Future<PublishEventsResult> publish() async {
+  /// Publishes or confirms/retry-verifies the current events content.
+  Future<PublishResult> publish({
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    final link = ref.keepAlive();
     state = const AsyncLoading();
     try {
-      final result = await _run();
+      final result = await ref
+          .read(publishOperationQueueProvider)
+          .enqueue(
+            () => _run(
+              confirmation: confirmation,
+              verificationOnly: verificationOnly,
+            ),
+          );
       state = AsyncData(result);
       return result;
-    } on Exception catch (e, st) {
+    } on Object catch (e, st) {
+      // A `Failure` is not an `Exception`; catch both or the spinner freezes
+      // for the session (fix-plan M8). Type only in the log.
+      appLog('events publish failed with: ${e.runtimeType}');
       state = AsyncError(e, st);
       rethrow;
+    } finally {
+      link.close();
     }
   }
 
-  Future<PublishEventsResult> _run() async {
+  Future<PublishResult> _run({
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    final resolver = await ref.read(activePublishTargetResolverProvider.future);
+    final resolved = await resolver.call();
+    final targetFailure = resolved.swap().toNullable();
+    if (targetFailure != null) {
+      return CloudflarePublishOutcomes.failure(targetFailure);
+    }
+    final target = resolved.toNullable()!;
+    if (target is GitHubPublishTarget &&
+        (confirmation != null || verificationOnly)) {
+      return const PublishFailure(
+        'The publishing host changed before this command could continue.',
+      );
+    }
+    return switch (target) {
+      final GitHubPublishTarget gitHub => _runGitHub(gitHub),
+      final CloudflarePublishTarget cloudflare => _runCloudflare(
+        cloudflare,
+        confirmation: confirmation,
+        verificationOnly: verificationOnly,
+      ),
+    };
+  }
+
+  Future<PublishResult> _runCloudflare(
+    CloudflarePublishTarget target, {
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    final factory = await ref.read(publishToCloudflareUseCaseProvider.future);
+    final result = await factory(ref.read(publishControllerProvider.notifier))
+        .call(
+          target: target,
+          section: PublishRequestedSection.events,
+          confirmation: confirmation,
+          verificationOnly: verificationOnly,
+        );
+    if (result is PublishSuccess) {
+      ref.invalidate(publishedSiteUrlProvider);
+      // Refresh in place: a rebuild would cancel an in-progress setup
+      // (fix-plan M11).
+      await ref
+          .read(cloudflareConnectionControllerProvider.notifier)
+          .refreshStatus();
+    }
+    return result;
+  }
+
+  Future<PublishResult> _runGitHub(GitHubPublishTarget target) async {
+    // The strict publish read is deliberately NOT the tolerant editor read:
+    // corrupt events metadata must never become an empty public events page.
+    final stored = await (await ref.read(
+      eventsRepositoryProvider.future,
+    )).loadStrict();
+    final content = stored.toNullable();
+    if (content == null) {
+      return const PublishFailure(PublishSnapshotBuilder.readFailedMessage);
+    }
+
     final api = ref.read(gitHubApiProvider);
     final credentials = ref.read(publishCredentialStoreProvider);
     final manifest = await ref.read(publishManifestStoreProvider.future);
-    // N14: poster file IO arrives via DI (infrastructure port), keeping this
-    // controller free of dart:io (§3.1).
     final readPoster = await ref.read(eventsPosterReaderProvider.future);
-    final settings = await ref.read(settingsControllerProvider.future);
-    final content = await ref.read(eventsControllerProvider.future);
-
-    // The HTML factory is injected via DI (domain port) — the template load
-    // (rootBundle) stays in infrastructure, wired by the composition root.
+    // Typed read (M8): a settings failure stops before the destination write.
+    final loadedSettings = await ref
+        .read(settingsControllerProvider.notifier)
+        .loaded();
+    final settings = loadedSettings.toNullable();
+    if (settings == null) {
+      return const PublishFailure(
+        PublishSnapshotBuilder.settingsUnavailableMessage,
+      );
+    }
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
+    final verifier = ref.read(publishedSiteVerifierProvider);
     final useCase = PublishEventsUseCase(
       api: api,
+      target: target,
       credentials: credentials,
       manifest: manifest,
       readPoster: readPoster,
-      buildEventsHtml: (posters) =>
-          buildEventsHtml(libraryName: settings.libraryName, posters: posters),
+      buildEventsHtml: buildEventsHtml,
       buildEventsJson: buildEventsJson,
+      settings: PublishPageSettings(libraryName: settings.libraryName),
+      hostState: LazyPublishHostStateRecorder(
+        () => ref.read(publishHostStateRepositoryProvider.future),
+      ),
+      verifier: verifier,
     );
 
-    return useCase.call(content);
+    final result = await useCase.call(content);
+    final mapped = switch (result) {
+      final PublishEventsSuccess success => PublishSuccess(
+        pagesUrl: success.eventsUrl,
+        uploadedPaths: success.uploadedPaths,
+        pagesLive: success.pagesLive,
+        localStateSaved: success.localStateSaved,
+      ),
+      PublishEventsFailure(:final reason) => PublishFailure(reason),
+    };
+    if (mapped is PublishSuccess) ref.invalidate(publishedSiteUrlProvider);
+    return mapped;
   }
 }

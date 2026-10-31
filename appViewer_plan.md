@@ -81,6 +81,13 @@ a security, compatibility or privacy rule.
 
 Deferred work needs a new trigger and, where architectural, a new ADR. In particular, persistent caching requires an explicit freshness/eviction/delete-on-remove/restore policy before any table is added.
 
+**Follow-up (2026-10-30):** a user request supplies the trigger for the
+"Offline catalogue/cache" row of Part E. ADR 0018 keeps verified saved copies
+of `books.json` and `events.json` in the OS cache directory, revalidated with
+the host's entity tag on every open, shown with a note when the host can't be
+checked, capped at 200 MiB (least recently opened evicted first) and deleted
+when the library is no longer saved. Covers stay memory-only.
+
 **Follow-up (2026-10-26):** a new user request supplies the trigger for native
 Announcements & Events. ADR 0016 adds an independent `events.json` contract;
 it does not relax V11's image consent, scrape HTML, add a WebView, or change

@@ -4,8 +4,8 @@ A privacy-first, offline personal **library catalogue** for Android. Pitak is a
 Kotlin→Flutter port of the original Android app: catalogue your books,
 magazines and other items, lend them to borrowers from an **encrypted vault**,
 keep a wishlist, import/export (JSON · CSV · PDF), make portable backups,
-publish a read-only library site
-to GitHub Pages with event posters, and link up with other Pitak libraries in
+publish a read-only library site to **GitHub Pages or Cloudflare Workers**
+with event posters, and link up with other Pitak libraries in
 a **library network** (pins on a map, hub/member cards).
 
 > **Status:** published on **F-Droid** (`dev.khoj.pitaka.fdroid`) and
@@ -56,22 +56,47 @@ a **library network** (pins on a map, hub/member cards).
   folder and the app switches to it in one step, so a failed or interrupted
   restore leaves your current data untouched (the previous folder is deleted
   right after a successful switch).
-- **Publish** — push a read-only library viewer to **GitHub Pages** (device-flow
-  auth + git data API), with PII redaction and an https-only cover allow-list.
+- **Publish** — push a read-only library viewer to **one active host**:
+  **GitHub Pages** (device-flow auth + git data API) or **Cloudflare Workers**
+  (a pasted `Workers Scripts · Edit` token, one account, assets-only Worker),
+  with PII redaction and an https-only cover allow-list.
   The optional GPS pin is governed by its own opt-in switch (off /
   approximate ~1 km / exact) and feeds both the page pin and the network
-  descriptor.
+  descriptor. **Honest limits:** a Pitak Worker is *dedicated* to Pitak — a
+  deploy replaces its whole asset set, so other files on it do not survive;
+  and the Workers API has no conditional deploy, so use **one publisher at a
+  time per Worker** (the app's own queue only serialises this phone).
+  **Moving** a library between the two hosts is a user-confirmed move: the new
+  site is published and verified first, the old one becomes a moved page only
+  after that, and other phones never follow the move automatically — they may
+  offer you the choice, and the library card must be reprinted. Older apps
+  must be updated before they can add a `workers.dev` address.
+  An interrupted move keeps a banner on the publish card until it finishes:
+  **Retry** resumes only the missing half, **Skip** is offered only when the
+  old site is provably gone, and **Cancel** keeps publishing to your current
+  site — the copy already published on the other host stays online until you
+  delete it there. If Pitak can no longer sign in to the old site,
+  **Finish without retiring** is offered instead, behind a stronger warning;
+  the old copy also stays online and is never marked as moved. Reconnecting to
+  a **different** Worker leaves the previous Worker serving exactly what it
+  last served — Pitak cannot delete a Worker, so remove it in the Cloudflare
+  dashboard.
+  **Slow connections:** an upload is bounded by progress rather than one fixed
+  timeout, so a large library can publish over a slow link; a stall or an
+  expired upload token says so instead of asking you to reconnect.
 - **Events** — attach a small set of event posters (image + optional short
   description) to the published site and the native saved-library viewer;
   images stay on-device as ordinary files. Publishing also writes a public
   `events.json` sibling for native readers (republish once for an older site).
 - **Library network and Bookmarks** — save *other* Pitak libraries by URL under
   **Library Bookmarks**, or scan a library's card QR under **Library network**;
-  see them on an opt-in map, and refresh their
-  public details on demand. Sites are validated strictly (https only; GitHub
-  Pages / Cloudflare Pages hosts). Refresh is the only thing that reads their
-  published `library.json` descriptors — nothing happens in the background —
-  and identities are checked by fingerprint, never by trusting a name.
+  see them on an opt-in map, and refresh their public details on demand.
+  Sites are validated strictly (https only; GitHub Pages, Cloudflare Pages and
+  strict Cloudflare Workers host forms). Refresh is the only thing that reads
+  their published `library.json` descriptors — nothing happens in the
+  background — and identities are checked by fingerprint, never by trusting a
+  name. If a library moves address, the app offers both addresses for you to
+  choose between; it never switches automatically.
   Tapping a saved library opens its published catalogue and events **inside
   Pitak** in a read-only native viewer (posters, search, filters, sort, item
   detail) — no WebView,
@@ -92,14 +117,17 @@ a **library network** (pins on a map, hub/member cards).
 ## Privacy posture
 
 Local-first by default. The SQLCipher vault database and already-ciphertext
-key blobs are app-private files; GitHub/ISBN tokens and the biometric secret's
+key blobs are app-private files; GitHub/ISBN/Cloudflare tokens and the
+biometric secret's
 ciphertext use `flutter_secure_storage` (Keystore/Keychain). Vault secrets —
 the passphrase on its way to the Rust core and the biometric secret — are held
-as wipeable bytes and never as Dart `String`s; the GitHub token and the
-ISBN-lookup key are the documented exceptions (their HTTP/plugin APIs are
-`String`-typed, so they transit as immutable strings).
+as wipeable bytes and never as Dart `String`s; the GitHub token, the
+ISBN-lookup key and the Cloudflare token are the documented exceptions (their
+HTTP/plugin APIs are `String`-typed, so they transit as immutable strings), as
+are the short-lived Cloudflare upload/completion JWTs that live for at most
+one hour inside one publish.
 Network calls are user-initiated except for Google Play updates: ISBN lookup,
-publish and its live-site read-back, network refresh, remote covers and map
+publish and its bounded live-site read-back, network refresh, remote covers and map
 tiles. Covers are default off, host-allow-listed and downloaded once; map
 tiles require consent; Refresh reads `library.json` from saved and discovered
 libraries. Play builds also check for updates once per launch and, after you
@@ -137,6 +165,16 @@ cover, not a vault lock (see the security notes below).
   passphrase re-wraps the *same* master key (`rust/src/api.rs`). Anyone holding
   an old vault copy *and* the old passphrase can still open that copy; only
   re-creating the vault would rotate the key.
+- **Publishing to a Cloudflare Worker replaces its files:** a Pitak Worker is
+  dedicated to Pitak, so connecting to an existing Worker replaces its complete
+  asset set. And because the Workers API offers no conditional deploy, two
+  phones publishing to one Worker at the same time can lose a write — publish
+  from one device at a time. On GitHub this does not apply: Pitak deletes only
+  the exact files it published.
+- **Version URLs are a privacy gate, not a convenience:** while a Worker's
+  version URLs could be public, the app refuses the next deploy (and the
+  retirement) instead of exposing an older copy of your site. If a check fails
+  after a deploy, the app says so and keeps refusing until it is repaired.
 
 ## Tech stack
 
@@ -164,7 +202,7 @@ lib/
                backup · import_export · settings · guides · app_update
   src/rust/    flutter_rust_bridge generated bindings (analyzer-excluded)
 rust/          pitak_crypto crate (crypto + vault boundary) + tests
-assets/        publish viewer, PDF fonts (Noto Sans Indic), branding
+assets/        publish viewer (index, events, moved page), PDF fonts (Noto Sans Indic), branding
 test/          Dart tests mirroring lib/ (core/, features/); architecture/ holds the
                domain-purity check; fixtures/ the synthetic hermetic vault
 .githooks/     tracked pre-commit hook (see Getting started)

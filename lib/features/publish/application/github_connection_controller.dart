@@ -2,7 +2,7 @@
 /// AGENTS.md §4/§7, presentation stays render-only, AGENTS §7).
 ///
 /// Why a controller: the sign-in flow, token persistence, one-tap repo setup,
-/// repo listing/adoption and publishing are business decisions. Widgets may
+/// repo listing/adoption are business decisions. Widgets may
 /// only RENDER state and forward intents — this class is the single place
 /// those decisions live (and get unit-tested). It replaces the orchestration
 /// that used to live in `_ConnectionTabState` (26 `setState` calls, direct
@@ -19,146 +19,14 @@ import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/github_connection_ui.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
-import 'package:pitaka/features/publish/application/publish_controller.dart';
-import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
+export 'github_connection_ui.dart';
+
 part 'github_connection_controller.g.dart';
-
-/// What the GitHub connection tab is doing right now — the typed replacement
-/// for the old widget's free-text `_status` + `_busy` pair.
-enum GitHubConnectionPhase {
-  /// Nothing running; action buttons enabled.
-  idle,
-
-  /// The device flow is starting or polling (sign-in in progress).
-  signingIn,
-
-  /// Waiting for the user to enter the device code in their browser; the page
-  /// shows the authorization dialog while the controller keeps polling.
-  awaitingUser,
-
-  /// Any other operation (repo setup, listing, adoption, publish) is running.
-  busy,
-}
-
-/// Immutable screen state for the GitHub connection tab.
-///
-/// Why hand-written: matches the repo's UI-state convention (`MergeUiState`,
-/// `ExportUiState`) — plain Dart, no code generation, each field documented.
-///
-/// Nothing in this class is secret, by construction: the token never enters
-/// the state, so no field needs redaction.
-final class GitHubConnectionUi {
-  /// Creates the screen state.
-  const GitHubConnectionUi({
-    this.phase = GitHubConnectionPhase.idle,
-    this.signedIn = false,
-    this.targetRepo,
-    this.repos = const [],
-    this.reposTruncated = false,
-    this.awaitingUserCode,
-    this.awaitingVerificationUri,
-    this.repoPromptInitialName,
-    this.statusMessage,
-    this.publishedUrl,
-  });
-
-  /// What the tab is doing; anything other than [GitHubConnectionPhase.idle]
-  /// disables the action buttons (the single replacement for the old `_busy`
-  /// flag — a tap during an operation can no longer start a second one).
-  final GitHubConnectionPhase phase;
-
-  /// Whether an access token is stored. Deliberately a boolean — the token
-  /// itself is a secret and stays in the secure store (AGENTS §6.2).
-  final bool signedIn;
-
-  /// The chosen "owner/repo" publish target, or null when not set yet.
-  final String? targetRepo;
-
-  /// Repos listed by the "choose existing" picker (most recently updated
-  /// first).
-  final List<GitHubRepo> repos;
-
-  /// True when [repos] hit the fetch page budget and more exist on GitHub —
-  /// the UI says so instead of implying the list is complete (N09, D4-a).
-  final bool reposTruncated;
-
-  /// The code the user types in their browser. Not a secret (it exists to be
-  /// displayed); non-null while the authorization dialog should be up.
-  final String? awaitingUserCode;
-
-  /// Where [awaitingUserCode] is entered; the page validates it via
-  /// `safeGithubVerificationUri` before offering to open it.
-  final String? awaitingVerificationUri;
-
-  /// Non-null ⇒ the page should show the "name your repository" prompt with
-  /// this pre-filled suggestion. Set after a first sign-in with no target
-  /// (one-tap setup) and on a name-validation retry; cleared to null while
-  /// setup runs, so a re-set always re-triggers the page's prompt listener.
-  final String? repoPromptInitialName;
-
-  /// The status line under the tiles. Fixed, safe messages only (AGENTS §5) —
-  /// never raw exception or API text.
-  final String? statusMessage;
-
-  /// The site URL of the most recent successful publish; drives the
-  /// "your site" card with copy + share actions.
-  final String? publishedUrl;
-
-  /// A copy with the given fields replaced.
-  ///
-  /// Beginner note — why the odd `Object?` parameters: a plain
-  /// `String? targetRepo` parameter cannot distinguish "leave as is" from
-  /// "set to null", and this state routinely needs to CLEAR fields (e.g. the
-  /// user code on every terminal sign-in state). Passing `null` explicitly
-  /// sets the field to null; omitting the parameter keeps the old value.
-  /// The [_keep] sentinel is what "omitted" looks like internally.
-  GitHubConnectionUi copyWith({
-    GitHubConnectionPhase? phase,
-    bool? signedIn,
-    Object? targetRepo = _keep,
-    List<GitHubRepo>? repos,
-    bool? reposTruncated,
-    Object? awaitingUserCode = _keep,
-    Object? awaitingVerificationUri = _keep,
-    Object? repoPromptInitialName = _keep,
-    Object? statusMessage = _keep,
-    Object? publishedUrl = _keep,
-  }) {
-    return GitHubConnectionUi(
-      phase: phase ?? this.phase,
-      signedIn: signedIn ?? this.signedIn,
-      targetRepo: identical(targetRepo, _keep)
-          ? this.targetRepo
-          : targetRepo as String?,
-      repos: repos ?? this.repos,
-      reposTruncated: reposTruncated ?? this.reposTruncated,
-      awaitingUserCode: identical(awaitingUserCode, _keep)
-          ? this.awaitingUserCode
-          : awaitingUserCode as String?,
-      awaitingVerificationUri: identical(awaitingVerificationUri, _keep)
-          ? this.awaitingVerificationUri
-          : awaitingVerificationUri as String?,
-      repoPromptInitialName: identical(repoPromptInitialName, _keep)
-          ? this.repoPromptInitialName
-          : repoPromptInitialName as String?,
-      statusMessage: identical(statusMessage, _keep)
-          ? this.statusMessage
-          : statusMessage as String?,
-      publishedUrl: identical(publishedUrl, _keep)
-          ? this.publishedUrl
-          : publishedUrl as String?,
-    );
-  }
-}
-
-/// "Leave this field alone" marker for [GitHubConnectionUi.copyWith] — see
-/// the note on that method.
-const Object _keep = Object();
 
 /// Owns the GitHub connection tab's state machine (application layer).
 ///
@@ -188,6 +56,11 @@ class GitHubConnectionController extends _$GitHubConnectionController {
 
   @override
   FutureOr<GitHubConnectionUi> build() async {
+    // Riverpod 2 keeps THIS notifier across a rebuild (the move controller
+    // invalidates this provider) but first runs the previous build's
+    // onDispose; reset the flag or every intent would silently no-op until
+    // the page was reopened. Same pattern as `PublishedCatalogueController`.
+    _disposed = false;
     ref.onDispose(() => _disposed = true);
     // Only the BOOLEAN "signed in" enters the state — never the token
     // (AGENTS §6.2).
@@ -283,7 +156,11 @@ class GitHubConnectionController extends _$GitHubConnectionController {
               // SECURITY (AGENTS §6.2): the token goes directly into the
               // secure credential store — it never enters GitHubConnectionUi,
               // a status message, or a log.
-              await creds.setToken(accessToken);
+              // Browser authorization stays OUTSIDE the publish queue; only
+              // the credential-write critical section enters it (R11).
+              await ref
+                  .read(publishOperationQueueProvider)
+                  .enqueue(() => creds.setToken(accessToken));
               final repo = await creds.targetRepo();
               _emit(
                 (c) => c.copyWith(
@@ -356,15 +233,16 @@ class GitHubConnectionController extends _$GitHubConnectionController {
   /// Sign-out forgets BOTH the token and the target repo (N09, D3-a). The
   /// target belongs to the account that chose it; a different account signing
   /// in next must never inherit a repository it may not own. The publish
-  /// manifest is kept: the last published site still exists, so the drawer's
-  /// share link stays truthful — [GitHubConnectionUi.publishedUrl] therefore
-  /// also survives sign-out.
+  /// manifest is kept: the last published site still exists, so the journal's
+  /// verified share address remains available after sign-out.
   Future<void> signOut() async {
     if (_current == null) return;
     await _runExclusive(() async {
       final creds = ref.read(publishCredentialStoreProvider);
-      await creds.clearToken();
-      await creds.clearTargetRepo();
+      await ref.read(publishOperationQueueProvider).enqueue(() async {
+        await creds.clearToken();
+        await creds.clearTargetRepo();
+      });
       _emit(
         (c) => c.copyWith(
           phase: GitHubConnectionPhase.idle,
@@ -468,8 +346,12 @@ class GitHubConnectionController extends _$GitHubConnectionController {
       try {
         // .match maps Either→outcome (codebase convention, §5).
         final result = await ref
-            .read(setupGitHubRepoProvider)
-            .call(token: token, repoName: name);
+            .read(publishOperationQueueProvider)
+            .enqueue(
+              () async => (await ref.read(
+                setupGitHubRepoProvider.future,
+              )).call(token: token, repoName: name),
+            );
         await result.match<Future<void>>(
           (failure) async {
             if (failure is ValidationFailure) {
@@ -550,8 +432,12 @@ class GitHubConnectionController extends _$GitHubConnectionController {
       // secure-storage write of the target can throw past the Either mapping.
       try {
         final result = await ref
-            .read(setupGitHubRepoProvider)
-            .adopt(token: token, fullName: fullName);
+            .read(publishOperationQueueProvider)
+            .enqueue(
+              () async => (await ref.read(
+                setupGitHubRepoProvider.future,
+              )).adopt(token: token, fullName: fullName),
+            );
         await result.match<Future<void>>(
           (failure) async {
             // A ValidationFailure carries our own fixed, actionable copy;
@@ -593,77 +479,6 @@ class GitHubConnectionController extends _$GitHubConnectionController {
               ? c.copyWith(phase: GitHubConnectionPhase.idle)
               : c,
         );
-      }
-    });
-  }
-
-  /// Runs a publish via [PublishController] and maps the typed result to the
-  /// status line / "your site" card. Keeping this here (not in the widget)
-  /// preserves a single source of truth for the tab's status line — the old
-  /// widget wrote both connection and publish messages into one `_status`.
-  Future<void> publish() async {
-    final current = _current;
-    if (current == null ||
-        current.phase != GitHubConnectionPhase.idle ||
-        current.targetRepo == null) {
-      return;
-    }
-    await _runExclusive(() async {
-      _emit(
-        (c) => c.copyWith(
-          phase: GitHubConnectionPhase.busy,
-          statusMessage: 'Publishing…',
-        ),
-      );
-      // try/finally: the busy phase MUST clear on every path. Without this,
-      // any exception escaping publish() (the controller rethrows) left the
-      // spinner running forever (fail closed, §7).
-      PublishResult? result;
-      try {
-        result = await ref.read(publishControllerProvider.notifier).publish();
-        // The drawer's "Share Library Website" entry reads the published URL
-        // from the manifest — refresh it now (moved here from the widget:
-        // invalidating a provider is application bookkeeping, not UI work).
-        if (result is PublishSuccess) {
-          ref.invalidate(publishedSiteUrlProvider);
-        }
-      } on Exception {
-        // Fixed message (§5): exception text can carry transport/API detail.
-        result = const PublishFailure(
-          'Something went wrong. Please try again.',
-        );
-      } finally {
-        switch (result) {
-          case PublishSuccess(:final pagesUrl, :final pagesLive):
-            _emit(
-              (c) => c.copyWith(
-                phase: GitHubConnectionPhase.idle,
-                publishedUrl: pagesUrl,
-                statusMessage: (pagesLive ?? false)
-                    ? 'Published! Your site is live.'
-                    : 'Published! The commit is pushed — the site can take a '
-                          'minute to update.',
-              ),
-            );
-          case PublishFailure(:final reason):
-            // `reason` is a fixed safe message produced in the application
-            // layer (§5) — never raw exception text.
-            _emit(
-              (c) => c.copyWith(
-                phase: GitHubConnectionPhase.idle,
-                publishedUrl: null,
-                statusMessage: 'Publish failed: $reason',
-              ),
-            );
-          case null:
-            // Non-Exception Error escaped: still unfreeze the buttons.
-            _emit(
-              (c) => c.copyWith(
-                phase: GitHubConnectionPhase.idle,
-                statusMessage: 'Something went wrong. Please try again.',
-              ),
-            );
-        }
       }
     });
   }

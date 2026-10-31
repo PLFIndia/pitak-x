@@ -6,12 +6,17 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/domain/guide_catalog.dart';
 import 'package:pitaka/features/guides/domain/guide_markup.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
+import 'package:pitaka/features/publish/presentation/widgets/cloudflare_token_dialog.dart';
 
 void main() {
-  test('exactly six guides, unique ids, in the approved order', () {
+  test('exactly nine guides, unique ids, in the approved order', () {
     expect(guideCatalog.map((g) => g.id).toList(), [
       GuideId.catalogue,
+      GuideId.wishlist,
       GuideId.publish,
+      GuideId.cloudflare,
+      GuideId.events,
       GuideId.map,
       GuideId.backup,
       GuideId.vault,
@@ -30,7 +35,10 @@ void main() {
   test('the approved titles, in order', () {
     expect(guideCatalog.map((g) => g.title).toList(), [
       'Books, magazines and other items',
+      'Wishlist: books to buy',
       'Put your catalogue online',
+      'Set up Cloudflare Workers',
+      'Events and posters',
       'Put your library on the map',
       'Backup, restore, export, import',
       'Lending and the borrowers vault',
@@ -71,9 +79,16 @@ void main() {
     // numbers are the mockup's (docs/mockups/how-pitak-works.md §3): per
     // guide, [needs, blocks…, goodToKnow].
     const expected = <GuideId, List<int>>{
-      // §3.6: picker table (3 rows), 5 steps, two bullet blocks of 3.
+      // §3.1: picker table (3 rows), 5 steps, two bullet blocks of 3.
       GuideId.catalogue: [0, 3, 5, 3, 3, 3],
-      GuideId.publish: [2, 2, 6, 1, 3],
+      // §3.2: 4 add steps, 2 purchase steps, 3 "Good to know".
+      GuideId.wishlist: [0, 4, 2, 3],
+      GuideId.publish: [1, 2, 6, 2, 1, 1, 3],
+      // §3.4: one chip, the four values Pitak asks for, 6 token steps, 5
+      // finishing steps, the "already on GitHub" paragraph, 3 "Good to know".
+      GuideId.cloudflare: [1, 4, 6, 5, 1, 3],
+      // §3.5: 5 steps, 3 change/take-down bullets, 3 "Good to know".
+      GuideId.events: [0, 5, 3, 3],
       GuideId.map: [0, 6, 3, 3],
       GuideId.backup: [0, 5, 3, 2, 3, 1, 1, 1, 2],
       GuideId.vault: [0, 3, 3, 3, 3],
@@ -177,22 +192,83 @@ void main() {
         reason: '${guide.id}: the button reads "Open <screen>"',
       );
     }
-    // Each destination is used by exactly one guide; the mapping is 1:1 with
-    // the enum so a new destination without a guide (or vice versa) shows up.
+    // Every destination is used, so a new destination without a guide (or
+    // vice versa) shows up.
     expect(
       guideCatalog.map((g) => g.destination).toSet(),
       GuideDestination.values.toSet(),
     );
+    // Each destination belongs to exactly one guide, with ONE deliberate
+    // exception: the publish and Cloudflare guides both end on the Connection
+    // tab, because that is where both host cards live.
+    final byDestination = <GuideDestination, List<GuideId>>{};
+    for (final guide in guideCatalog) {
+      (byDestination[guide.destination] ??= []).add(guide.id);
+    }
+    for (final MapEntry(key: destination, value: ids)
+        in byDestination.entries) {
+      expect(
+        ids,
+        destination == GuideDestination.publishConnection
+            ? [GuideId.publish, GuideId.cloudflare]
+            : hasLength(1),
+        reason: '$destination',
+      );
+    }
   });
 
-  test('the publish guide is the only one with "You need" chips', () {
+  test('only the two hosting guides have "You need" chips', () {
+    // An account the reader must create BEFORE starting is the one
+    // prerequisite worth a chip; every other guide works out of the box.
     for (final guide in guideCatalog) {
       expect(
         guide.needs.isNotEmpty,
-        guide.id == GuideId.publish,
+        guide.id == GuideId.publish || guide.id == GuideId.cloudflare,
         reason: '${guide.id}',
       );
     }
+  });
+
+  group('Cloudflare guide matches the real setup', () {
+    final text = guideById(GuideId.cloudflare).allText.join('\n');
+
+    test('names every value the setup can ask for, by its on-screen label', () {
+      // The field / dialog labels of cloudflare_token_dialog.dart and
+      // cloudflare_name_dialogs.dart: a reader must recognise each prompt.
+      for (final label in [
+        'Cloudflare API token',
+        'Choose a Cloudflare account',
+        'Account ID',
+        'workers.dev subdomain',
+        'Create workers.dev subdomain',
+        'Choose a Worker',
+        'Worker name',
+        'Open token creation page',
+        'Deploy verification marker',
+        'Replace Worker assets',
+      ]) {
+        expect(text, contains('**$label'), reason: label);
+      }
+    });
+
+    test('the token name it tells the reader to keep is the one Pitak '
+        'pre-fills', () {
+      final name = cloudflareTokenCreationUri.queryParameters['name'];
+      expect(name, isNotNull);
+      expect(text, contains('**$name**'));
+    });
+
+    test('the Account ID length it states is the one Pitak validates', () {
+      expect(
+        text,
+        contains('${CloudflareAccountId.length} letters and numbers'),
+      );
+    });
+
+    test('the publish guide points readers to it', () {
+      final publish = guideById(GuideId.publish).allText.join('\n');
+      expect(publish, contains('**${guideById(GuideId.cloudflare).title}**'));
+    });
   });
 
   test('allText covers every field (nothing is silently unchecked)', () {

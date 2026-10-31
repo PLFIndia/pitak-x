@@ -7,8 +7,10 @@
 > in `docs/RELEASING.md`.
 >
 > The original facts were checked against the code on 2026-10-19; the catalogue
-> contracts were reconciled with the remediation implementation on 2026-10-25.
-> When the code changes, change this file in the same PR.
+> contracts were reconciled with the remediation implementation on 2026-10-25;
+> the Cloudflare Workers publishing host, its stored records and the reader
+> reconciliation were reconciled on 2026-10-28 (ADR 0017). When the code
+> changes, change this file in the same PR.
 
 ---
 
@@ -24,8 +26,9 @@ from a retired Kotlin app with **zero data loss** as the hard guarantee.
   and never crosses the FFI boundary.
 - Import/export: JSON, CSV (incl. Goodreads), PDF (Indic scripts via shaped
   images). `.pitabak` backups restore both Pitak and Kotlin-era archives.
-- Opt-in publish of a read-only site to GitHub Pages; opt-in **library
-  network** (saved libraries, hub/member cards, consent-gated OSM map).
+- Opt-in publish of a read-only site to **one active host**: GitHub Pages or
+  Cloudflare Workers static assets (ADR 0017); opt-in **library network**
+  (saved libraries, hub/member cards, consent-gated OSM map).
 - Shipped on **F-Droid** (`dev.khoj.pitaka.fdroid`) and **Google Play**
   (`dev.khoj.pitaka`) from the same tag. **Android is the only target.**
 - No telemetry, no crash reporting — by design. The lead developer is a
@@ -38,14 +41,23 @@ above the `flutter_zxing` floor of 23).
 
 Network egress is user-initiated except for the Play-only update flow:
 openlibrary.org and Google Books (ISBN lookup); api.github.com (publish,
-device-flow OAuth); remote covers (opt-in, host allow-listed); `library.json`
+device-flow OAuth); `api.cloudflare.com/client/v4` (Cloudflare token
+verification, asset upload and deployment — one fixed origin, redirects
+refused); remote covers (opt-in, host allow-listed); `library.json`
 fetches from saved and discovered libraries (Refresh only);
 tile.openstreetmap.org (map, remembered opt-in, only while the map is open).
-Publishing also performs a bounded public `books.json` read-back: up to 12
-cache-busted GETs, five seconds apart, to verify the live bytes. Play builds
+Publishing also performs a bounded public read-back at the site it just wrote:
+the read-back uses the unauthenticated, origin-bound verifier (§5.6), follows
+no redirect and may add one `?rb=` cache-buster. The catalogue path checks
+`books.json` (up to 12 polls); a Cloudflare publish additionally checks the
+`pitak-publish.json` marker, `library.json` (or its real 404), `events.json`
+and current poster references. Play builds
 check for an update once per launch and start Play's flexible-update flow;
 after the user accepts Play's dialog, the Store downloads in the background.
 The F-Droid flavor has no Play Core/update library and cannot run that check.
+
+Publishing talks to exactly one host at a time. The app never publishes to
+both, never mirrors a site, and never deletes a repository or Worker remotely.
 
 ### 1.1 The five product promises
 
@@ -73,6 +85,19 @@ probably over-engineering.
   floor ≥ 80 % with suspicion of vacuous tests; a second Rust parser; never.
 - **No vault auto-lock** (ADR 0006); **passphrase change is rewrap, not
   rotation** (ADR 0005); **`.pitabak` is not fully encrypted** (§5.5).
+- **No Cloudflare Pages, dashboard Git integration, Workers Builds or custom
+  domains**, and no "Sign in with Cloudflare" OAuth — the token is pasted
+  (ADR 0017). No user Worker code, no Functions, no WebView, no background or
+  scheduled publishing.
+- **No two active hosts, mirrors or automatic peer redirection**, and no
+  machine-readable moved notice for other apps (ADR 0012, ADR 0017). A move is
+  a user decision; other phones may *offer* reconciliation and never follow it.
+- **No promise that arbitrary files on a Cloudflare Worker survive.** A Pitak
+  Worker is dedicated to Pitak and a deploy is a complete asset snapshot; the
+  old host becomes a moved page only after the new one is verified.
+- **No hard cross-device concurrent-writer guarantee.** The Workers API offers
+  no supported conditional deployment, so *one publisher per Worker* is an
+  operating requirement, not a UI suggestion (ADR 0017).
 
 ---
 
@@ -97,9 +122,12 @@ presentation  ->  application  ->  domain  <-  infrastructure
 - **Errors:** `fpdart` `Either<Failure, T>`; sealed `Failure` in
   `lib/core/error/failure.dart`. No exceptions across layers.
 - **Secrets:** `SecretBytes` in Dart (wipeable, redacted `toString`);
-  `Zeroizing<>` + `subtle` in Rust. Honest exceptions: the GitHub token and the
-  ISBN-lookup key transit as `String` because their APIs are `String`-typed
-  (ADR 0007).
+  `Zeroizing<>` + `subtle` in Rust. Honest exceptions: the GitHub token, the
+  ISBN-lookup key and the Cloudflare API token transit as `String` because
+  their APIs are `String`-typed, and a Cloudflare upload/completion JWT lives
+  for at most one hour inside one publish operation (ADR 0007). Every
+  secret-bearing store is built by `core/security/hardened_secure_storage.dart`
+  so the platform options cannot drift.
 
 ### 2.1 Enforced by tests (architecture fitness functions)
 
@@ -126,6 +154,8 @@ lib/
   src/rust/               generated FRB bindings (analyzer-excluded)
   core/
     app_lock/             optional biometric screen gate (NOT a vault lock, ADR 0006)
+    async/                serial_op_queue.dart — the one non-reentrant FIFO that
+                          serialises publishes, moves and credential/target writes
     crypto/               secret_bytes.dart, secure_passphrase_field.dart (append-only)
     database/             app_database.dart (Drift; schema history in its doc comment)
     di/                   providers.dart + src/<feature>_providers.dart
@@ -134,8 +164,12 @@ lib/
                           decoded image (size caps from the header, EXIF/GPS stripped,
                           frame 0 only, runs in Isolate.run)
     network/              bounded_http_fetcher.dart (size cap, deadline, ≤3 re-validated
-                          redirects), app_user_agent.dart, osm_tiles.dart
+                          redirects), app_user_agent.dart, osm_tiles.dart,
+                          workers_dev_url.dart (the ONE workers.dev grammar, shared
+                          by the reader and the publisher)
     platform/             screen_security.dart (FLAG_SECURE), app_log.dart
+    security/             hardened_secure_storage.dart — the ONE hardened
+                          flutter_secure_storage configuration
     widgets/              app_gate.dart (splash → lock → Library), qr_view/qr_scan_page
   features/
     library/              catalogue items (`CatalogueItem`, the base row of every
@@ -150,7 +184,12 @@ lib/
     wishlist/
     lookup/               barcode scan (flutter_zxing) + ISBN lookup chain
                           (Open Library → Google Books, cached)
-    publish/              GitHub Pages: device-flow auth + git data API; PII redaction
+    publish/              ONE active host (ADR 0017): GitHub Pages (device-flow
+                          auth + git data API) or Cloudflare Workers static
+                          assets (pasted restricted token, assets-only Worker);
+                          shared section builders, strict complete snapshots,
+                          sealed targets, schema-2 manifests, moves/retirement;
+                          PII redaction
     events/               event posters for the published site
     network/              library network/bookmarks (ADR 0012): network_libraries
                           table, library.json codec + bounded fetcher, card QR,
@@ -164,7 +203,8 @@ lib/
                           pages; deep-links only — no state, no IO)
   features/<f>/{domain,application,infrastructure,presentation}   (every feature)
 assets/
-  publish/                index.html, events.html (site viewers)
+  publish/                index.html, events.html (site viewers), moved.html
+                          (the retired-site page, rendered from a frozen schema)
   fonts/                  Noto Sans Indic ×10 (PDF), OFL.txt
   branding/
 test/                     mirrors lib/; architecture/ = fitness functions;
@@ -183,13 +223,17 @@ Library). Drawer: Borrowers vault · Publish · Wishlist · Magazines · Library
 network · Library Bookmarks · Share · How Pitak works · Settings/Share Apps.
 The Library FAB opens an add sheet with one entry per item kind (ADR 0013 U1).
 
-**Guides (`features/guides/`).** The copy of the six guides lives in
-`domain/guide_catalog.dart` as a typed, immutable model (`Guide` → sealed
-`GuideSection`), so the domain-purity gate keeps it free of Flutter and
+**Guides (`features/guides/`).** The copy of the nine guides lives in
+`domain/catalog/*.dart` (grouped by topic; `domain/guide_catalog.dart` holds
+the index order and `guideById`) as a typed, immutable model (`Guide` →
+sealed `GuideSection`), so the domain-purity gate keeps it free of Flutter and
 `guide_catalog_test.dart` can pin its invariants (order, 2–7 steps, ≤ 3
-"Good to know", lossless `**bold**`/`` `code` `` markup, one "spokes", 1:1
-destinations, exact item counts) without pumping a widget. Icons and target pages are mapped in
-presentation from `GuideId` / `GuideDestination`; `GuidePage` takes its
+"Good to know", lossless `**bold**`/`` `code` `` markup, one "spokes",
+destinations 1:1 except the two hosting guides sharing Publish → Connection,
+exact item counts, and the Cloudflare guide's token name and Account ID
+length against the setup code) without pumping a widget. Icons and target
+pages are mapped in presentation from `GuideId` / `GuideDestination`;
+`GuidePage` takes its
 opener as a parameter so tests record the destination instead of pushing
 provider-backed pages. Copy record: `docs/mockups/how-pitak-works.md`.
 
@@ -288,6 +332,11 @@ SHA-256 of the ID. Input must pass `LibraryId.normalizeOrNull` first.
   the hub "Add member" screen with a clear message — a scan can never adopt
   someone's ID by accident.
 - QR error-correction level M.
+- The `siteUrl` in a card is the journal's **verified** target
+  (`publish_host_state`), never a manifest's `repo` and never a configured but
+  unproven address: a failed publish must not move the address a printed card
+  points at. A legacy install is migrated once by proving the site serves the
+  `books.json` sha its manifest recorded.
 
 ### 5.4 Application database (Drift; `lib/core/database/app_database.dart`)
 
@@ -393,7 +442,7 @@ to false** (the `hasX` forward-compat pattern):
 | Descriptor fetch deadline | 15 s whole request, abortable | `BoundedHttpFetcher` |
 | Published catalogue body | ≤ 64 MiB, streamed, aborted over cap | `BoundedHttpFetcher`, re-checked by `PublishedCatalogueCodec` |
 | Published catalogue deadline | 30 s whole request, abortable — including on route close | `BoundedPublishedCatalogueFetcher` |
-| Published catalogue origin | canonical Pages site root; same origin AND same site directory on the initial URL and every redirect hop | `PublishedSiteUrlPolicy` |
+| Published catalogue origin | the saved site's canonical root (GitHub Pages or Workers); same origin AND same site directory on the initial URL and every redirect hop | `PublishedSiteUrlPolicy` |
 | Published catalogue rows | ≤ 100 000 per collection (`books`, `periodicals`), truncated and reported | `PublishedCatalogueCodec` |
 | Published catalogue JSON depth | ≤ 32 (string-aware scan, shared with the descriptor) | `JsonNestingDepth` |
 | Published cover body | ≤ 8 MiB, streamed, aborted over cap | `BoundedHttpFetcher` |
@@ -401,7 +450,7 @@ to false** (the `hasX` forward-compat pattern):
 | Published cover origin | same-site: saved origin AND directory; third-party: the cover allow-list; both re-checked on every redirect hop | `PublishedCoverResolver` |
 | Published cover cache | ≤ 100 images / 16 MiB, memory only, LRU eviction, cleared on reload and on route close | `PublishedCatalogueCoverController` |
 | Redirect hops | ≤ 3, each re-validated | `BoundedHttpFetcher` |
-| URL | https, no userinfo, host suffix `github.io` / `pages.dev`, ≤ 2048 chars | `BookmarkUrl` |
+| URL | https, no userinfo, ≤ 2048 chars; host suffix `github.io` / `pages.dev`, OR the strict `<worker>.<account-subdomain>.workers.dev` root form (exactly two leading labels, no other path) | `BookmarkUrl`, `WorkersDevUrl` |
 | Name | 1–80 chars after trim; reject code units < 0x20, 0x7F, U+202A–U+202E, U+2066–U+2069 | `NetworkName` |
 | Fingerprint | exactly 64 `[0-9a-f]` | `LibraryFingerprint.isValid` |
 | lat / lng | finite, [−90, 90] / [−180, 180] | `GeoPoint.tryCreate` |
@@ -410,6 +459,13 @@ to false** (the `hasX` forward-compat pattern):
 | Concurrency | 4 in-flight fetches | `RefreshNetworkUseCase` |
 | QR payload | ≤ 512 bytes; URL validated before fragment | `LibraryCardPayload` |
 | Images | reject > 8192 px / > 40 Mpx from the header; frame 0 only; 400×600 q80 JPEG out | `ImageDownscaler` |
+| Publish target URL | derived from the sealed target's identity parts, cross-checked against the stored one; never accepted as an arbitrary `{host, url}` pair | `PublishTarget`, `PrefsPublishHostStore` |
+| Publish read-back body | marker ≤ 4 KiB; `library.json` / `events.json` ≤ 64 KiB; catalogue by its own rule; exact expected origin and site directory, **no** redirect followed, one `?rb=` buster allowed | `BoundedPublishedSiteVerifier`, `PublishedSiteUrlPolicy.readBackUrl` |
+| Cloudflare API body | ≤ 1 MiB streamed, cancelled over cap; string-aware depth ≤ 16 **before** `jsonDecode`; endpoint-specific string/list/map bounds; whitelisted fields only | `CloudflareJson`, `HttpCloudflareApi` |
+| Cloudflare API deadline | 30 s abortable per call; 60 s for a metadata-only deploy; an upload is bounded by progress (60 s connect, 60 s idle between pulled chunks, 60 s + 8 MiB ÷ 64 KiB/s for headers, `60 s + bytes ÷ 64 KiB/s` total capped at 20 min, 55 min session budget); a redirect is refused | `CloudflareHttpTransport`, `CloudflareRequestTiming` |
+| Cloudflare retries | ≤ 3 total attempts; one `retry-after` honoured up to 60 s; uncertain create/deploy is re-read, never blindly repeated; a failed attempt that already sent > 1 MiB is never blindly re-sent, and a changed local artifact is never retried | `HttpCloudflareAccountApi`, `HttpCloudflareDeployApi` |
+| Cloudflare accounts | ≤ 4 pages of 50, then the explicit manual Account ID path (never a partial picker) | `HttpCloudflareAccountApi` |
+| Cloudflare publish size | ≤ 20 000 files per deploy, ≤ 25 MiB per file; aggregate encoded bytes bounded, one bucket in flight | `CloudflareLimits`, `CloudflareAssetUploader` |
 
 Refusal reasons are coarse enums that never carry URLs or exception text
 (a URL can contain the user's API key).
@@ -423,8 +479,21 @@ redirect must stay on the saved site's origin *and* inside its directory
 (`PublishedSiteUrlPolicy`), so an allow-listed Pages host cannot redirect a
 saved library into another library. The request carries the fixed app
 User-Agent plus `Cache-Control: no-cache`, never cookies or auth; decoding and
-querying run off the UI isolate; the catalogue and its decoded object graph
-live only in auto-dispose providers and disappear when the route closes.
+querying run off the UI isolate; the decoded object graph lives only in
+auto-dispose providers and disappears when the route closes.
+
+**Saved copies (ADR 0018).** The raw `books.json` and `events.json` bytes of
+the last successful read are kept in `<app cache>/published_copies/` (OS cache
+directory: excluded from device/cloud backups and from `.pitabak`). Each open
+first asks the host, sending the copy's validated entity tag as
+`If-None-Match` (`BoundedHttpFetcher.fetchConditional`); `304` means the copy
+is current and nothing is downloaded. A copy is shown without the host's
+confirmation only when the check fails, and then always with a note naming
+when it was last confirmed and why it is not fresh. Saved bytes are verified
+(SHA-256 + size from `index.json`) and decoded by the same bounded codec as a
+download; the store serializes all IO on one queue, writes atomically, caps
+all copies at 200 MiB (least recently opened library evicted first) and drops
+copies of libraries that are no longer saved on every saved-list load.
 
 **Covers in that viewer (S5)** are a second, separately gated pipeline. They
 are never written to disk or Drift and never enter the local `ItemCover`
@@ -504,6 +573,77 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
   valid. The v7 viewer adds the kind facet and groups issues under their
   series when a public series entry is present.
 
+### 5.8 Publish host, target and manifest records (ADR 0017)
+
+Publishing is one operation bound to **one sealed target**. `PublishTarget` is
+sealed into `GitHubPublishTarget` (owner/repo + expected branch) and
+`CloudflarePublishTarget` (account id + Worker name + account subdomain); the
+site URL is *derived* from those identity parts, so no code path can accept an
+arbitrary host-plus-URL pair. `library.json.siteUrl` always comes from the
+target passed to the current operation — that is what lets a move publish the
+**new** address while the old site is still the active one.
+
+| Record | Location | Secret? | Meaning |
+|---|---|---|---|
+| `publish_host_state` | one preferences key | no | Active host, the single `verifiedTarget`, and any pending move |
+| `publish_manifest.json` | app documents | no | GitHub schema 2: which app-owned files this phone owns |
+| `cloudflare_publish_manifest.json` | app documents | no | Cloudflare schema 2: the complete Worker asset set it owns |
+| `cf_connection` | hardened secure storage | **whole record** | Token plus optional account/Worker/address |
+| Artifact spool | OS temporary directory | no | Public bytes while one publish runs; deleted afterwards and stale `run-` folders swept at the next operation |
+
+- **The journal, not the manifest, is the share truth.** `publishedSiteUrlProvider`
+  reads only `verifiedTarget`, and that pointer is written *after* read-back
+  proves the site. A `deployed` state, a failed publish or an unverified target
+  change never erases it, and a first deployment with no pointer is not
+  shareable as live. Pending moves keep the old target selected until
+  retirement verifies. Reads distinguish "absent" from "unreadable": corrupt
+  pending history fails closed instead of quietly starting over. A legacy
+  install is migrated **once**, by proving the site serves the `books.json`
+  content sha its old manifest recorded.
+- **A manifest is reconciliation state, not a cache.** It decides which public
+  files survive the next publish, so its uncertainty has a defined safe
+  outcome. A record that does not describe the exact repo+branch, or the exact
+  Cloudflare account/Worker/address, claims **nothing** — its file map could
+  otherwise authorise deleting another site's files. Shas always come from the
+  remote read (GitHub tree) or the local content; tree or Worker paths this
+  phone did not write are never adopted, so a later drop cannot delete a
+  human's `README.md`.
+- **`state` is truthful, in order.** `deployed` means the host accepted the
+  write but read-back has not completed; `live` means required read-back
+  succeeded for that record's target; `retired` means the site is positively
+  identifiable as retired (a moved page, or the retired Worker set below).
+- **`hashScheme` gates hashes, not paths.** A different Cloudflare asset-hash
+  scheme means "re-hash the bytes", never "forget which files we wrote".
+- **The Cloudflare marker is the freshness anchor.** Every deploy writes
+  `pitak-publish.json` (`schema`, 128-bit `publishId`, diagnostic
+  `publishedAt`, `state`: `live` / `verification` / `retired`). It is public,
+  small, and contains no account id, token or deployment id. A matching id is
+  *positive evidence*; a 404 is never retirement, and a malformed marker is
+  never a fresh site. It detects **observed** staleness — it is not
+  compare-and-swap, which is why one publisher per Worker is an operating
+  requirement.
+- **Snapshots are complete or explicitly incremental.** A move, a
+  whole-Worker replacement and a retirement require a strict complete snapshot
+  (every read succeeds, every referenced poster/cover resolves to bytes,
+  every destination file is accounted for). A missing cover or poster is a
+  typed failure, never a silent omission. Replacement is confirmed in two
+  phases against a canonical digest that excludes operation-generated ids and
+  timestamps (`exportedAt`, `publishId`), so ordinary edits re-prompt but a
+  re-run of the same data does not.
+- **A retired Cloudflare Worker holds exactly** `index.html`, `404.html` and
+  the retired `pitak-publish.json`. A live site serves `Cache-Control:
+  no-cache` and `Access-Control-Allow-Origin: *` (deliberate GitHub CORS
+  parity) and a real 404 for a missing file. The retired site's `_headers`
+  adds the full CSP (`default-src 'none'; style-src 'unsafe-inline';
+  base-uri 'none'; form-action 'none'; frame-ancestors 'none'`),
+  `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+  `Cache-Control: no-cache`. GitHub cannot send response headers through this
+  publishing path, so its moved page keeps only the directives a `<meta>` tag
+  enforces — that gap is documented and smoke-tested, never disguised.
+- **GitHub retirement** writes the moved `index.html`/`404.html` and deletes
+  only exact app-owned paths from the validated manifest, in the same
+  expected-head commit; unrelated files always survive.
+
 ---
 
 ## 6. Standing design decisions (short form; details in `docs/adr/`)
@@ -513,8 +653,42 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
   `library.json`. Existing GPS publishers read as `exact` once (first-read rule).
 - **Identity conflicts** (a fetched fingerprint already belongs to another
   saved row) are marked with a badge, never auto-merged.
+- **A possible library move is an offer, not a decision** (ADR 0017, C10/R17):
+  when the SAME fingerprint a saved row already holds as a fact is published by
+  a descriptor at a DIFFERENT canonical address that the user added by URL or
+  scanned from a card in person, the refresh (and the card scan) offers both
+  addresses neutrally instead of flagging a conflict. The offer is ephemeral —
+  nothing is written until the user chooses. Accepting is ONE transactional
+  merge/delete-plus-repoint that keeps the canonical row's id, local order and
+  consent/membership decisions, applies the fresh remote fields only when a
+  descriptor was actually fetched at the chosen new address, deletes the
+  duplicate and preserves both UNIQUE(site_url) and UNIQUE(fingerprint).
+  **Keeping the saved address changes NOTHING on the kept row** — only the
+  duplicate is deleted; a fingerprint is public, so applying the other
+  descriptor's name or pin to a row the user kept would let a spoofed site
+  rename or re-pin it (fix-plan L10/D11). Declining writes nothing.
+  Discovered/hostile rows keep the conflict badge, and reachability alone never
+  selects an address. A known conflict badge survives a failed fetch (offline,
+  timeout, 5xx), with one exception: a 404/410 for `library.json`
+  (`DescriptorRefusal.notPublished`, what a moved page answers once a move
+  completes) is positive evidence that the address publishes nothing, so its
+  stale badge gives way to `unreachable`. Another address that still claims
+  the identity keeps its own badge or move offer (decided 2026-10-31).
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
+- **A Worker name is an API identity but an address without case.** New names
+  must be lower case (Cloudflare uses the name in the `workers.dev` address);
+  a stored mixed-case name keeps working because read-back proved it. No
+  case-variant listing is needed: Cloudflare refuses to create a Worker whose
+  name has capitals (HTTP 400, code 10016; fix-plan RH2/D9, listing removed
+  2026-10-31).
+- **Replacement consent is about content, not existence.** The Worker read
+  answers absent (404 + 10007), empty (404 + 10222: exists with no versions)
+  or deployed (`CloudflareWorkerPresence`). Only a deployed Worker can lose
+  content, so only it triggers setup's replacement prompt, the publish
+  `unknown` freshness and the move's unknown-destination consent; an empty
+  Worker still exists for the anchor and the RH1 race checks (ADR 0017,
+  amended 2026-10-31).
 - **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,
   60 rows, OFFSET/LIMIT); `CatalogueItemSorter` (domain) is the oracle the SQL
   is tested against.
@@ -551,8 +725,14 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
 - **PDF text is rendered as shaped images** (correct Devanagari conjuncts;
   consequence: not selectable). Cancel discards — a partial catalogue must
   never pass for a complete one.
-- **Publish** is one atomic git-data commit with PII redaction and an
-  https-only cover allow-list mirroring the viewer CSP.
+- **Publish is one operation, one host, one target** (ADR 0017). Either a
+  single atomic git-data commit (GitHub Pages) or a complete assets-only
+  deploy of a Pitak-dedicated Worker, both fed by the SAME section builders so
+  the two hosts cannot publish different bytes. PII redaction and the
+  https-only cover allow-list mirroring the viewer CSP apply to both. The old
+  host becomes a moved page only after the new site is verified and the old
+  one is verifiably retired, and other phones never follow a move on their
+  own.
 - **Lookup order:** Open Library → Google Books → in-memory cache; ISBN-10↔13
   retry on double not-found.
 - **Catalogue-item hard delete stays vault-gated**; periodical-title hard

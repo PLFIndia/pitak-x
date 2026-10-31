@@ -7,6 +7,7 @@
 library;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:pitaka/core/security/hardened_secure_storage.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 
 /// Secure-storage implementation of the publish credential store.
@@ -15,19 +16,11 @@ final class SecureStoragePublishCredentialStore
   /// Creates the store. [storage] defaults to a hardened secure store; inject
   /// a fake in tests.
   SecureStoragePublishCredentialStore({FlutterSecureStorage? storage})
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
-            // M3: the GitHub token is a bearer secret. `unlocked_this_device`
-            // means it is readable ONLY while the device is unlocked (not
-            // merely "unlocked once since boot"), and never migrates to another
-            // device via backup/restore. Least-privilege for a credential that
-            // grants write access to the user's repo.
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.unlocked_this_device,
-            ),
-          );
+    // M3: the GitHub token is a bearer secret, so the default
+    // `unlocked_this_device` accessibility applies: readable ONLY while the
+    // device is unlocked (not merely "unlocked once since boot"), and never
+    // migrating to another device (AGENTS §6.3; see the factory).
+    : _storage = storage ?? hardenedSecureStorage();
 
   final FlutterSecureStorage _storage;
 

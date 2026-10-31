@@ -40,8 +40,8 @@ class LibraryBookmarksPage extends ConsumerWidget {
             'Library added. Tap Refresh to fetch its details.',
           NetworkAddOutcome.alreadySaved => 'That library is already saved.',
           NetworkAddOutcome.invalidUrl =>
-            'That link was not accepted. Use a GitHub Pages or Cloudflare '
-                'Pages address.',
+            'That link was not accepted. Use a GitHub Pages, Cloudflare '
+                'Pages or Cloudflare Workers address.',
           NetworkAddOutcome.storageFailed => "Couldn't add that library.",
         }),
       ),

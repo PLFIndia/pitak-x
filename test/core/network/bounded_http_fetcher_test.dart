@@ -685,4 +685,123 @@ void main() {
       expect(_bytesOf(outcome), [9]);
     });
   });
+
+  group('conditional fetch (ADR 0018)', () {
+    const tag = '"689c7eef-386e"';
+
+    /// Answers [status] (with an optional body/ETag) and records each hop's
+    /// headers.
+    MockClient answering(
+      int status, {
+      List<int> body = const [],
+      Map<String, String> headers = const {},
+      List<Map<String, String>>? sent,
+      _BodyProbe? probe,
+    }) => MockClient.streaming((request, _) async {
+      sent?.add(Map.of(request.headers));
+      final controller = StreamController<List<int>>(
+        onCancel: () => probe?.bodyClosed = true,
+      );
+      if (body.isNotEmpty) controller.add(body);
+      unawaited(controller.close());
+      return http.StreamedResponse(
+        controller.stream,
+        status,
+        headers: headers,
+        request: request,
+      );
+    });
+
+    test(
+      'a valid tag is sent as If-None-Match; 304 is FetchNotModified',
+      () async {
+        final sent = <Map<String, String>>[];
+        final probe = _BodyProbe();
+        final outcome = await _fetcher(
+          answering(304, body: [1, 2, 3], sent: sent, probe: probe),
+        ).fetchConditional(allowed, ifNoneMatch: tag);
+        expect(outcome, isA<FetchNotModified>());
+        expect(sent.single['If-None-Match'], tag);
+        expect(sent.single['User-Agent'], AppUserAgent.value);
+        expect(probe.bodyClosed, isTrue, reason: 'a 304 body is never read');
+      },
+    );
+
+    test('a 200 carries the body and its validated ETag', () async {
+      final outcome = await _fetcher(
+        answering(200, body: [7, 8], headers: {'etag': tag}),
+      ).fetchConditional(allowed, ifNoneMatch: '"old"');
+      expect(outcome, isA<FetchedBytes>());
+      final fetched = outcome as FetchedBytes;
+      expect(fetched.bytes, [7, 8]);
+      expect(fetched.entityTag, tag);
+    });
+
+    test('a malformed response ETag becomes null', () async {
+      final outcome =
+          await _fetcher(
+                answering(200, body: [1], headers: {'etag': 'bare'}),
+              ).fetch(allowed)
+              as FetchedBytes;
+      expect(outcome.entityTag, isNull);
+    });
+
+    test('no tag (or a malformed one) sends no header, and a 304 is then a '
+        'plain refusal', () async {
+      for (final tagOrNull in <String?>[null, '"a"\r\nX-Evil: 1', 'bare']) {
+        final sent = <Map<String, String>>[];
+        final outcome = await _fetcher(
+          answering(304, sent: sent),
+        ).fetchConditional(allowed, ifNoneMatch: tagOrNull);
+        expect(sent.single.containsKey('If-None-Match'), isFalse);
+        expect(outcome, isA<FetchRefused>());
+        expect((outcome as FetchRefused).statusCode, 304);
+      }
+    });
+
+    test('the plain fetch never returns FetchNotModified', () async {
+      final outcome = await _fetcher(answering(304)).fetch(allowed);
+      expect(_reasonOf(outcome), FetchRefusal.httpStatus);
+    });
+
+    test('the tag rides on every redirect hop, re-validated per hop', () async {
+      final sent = <String, String?>{};
+      const next = 'https://covers.openlibrary.org/b/id/456-L.jpg';
+      final client = MockClient.streaming((request, _) async {
+        sent[request.url.toString()] = request.headers['If-None-Match'];
+        if (request.url.toString() == allowed) {
+          return http.StreamedResponse(
+            const Stream<List<int>>.empty(),
+            302,
+            headers: {'location': next},
+            request: request,
+          );
+        }
+        return http.StreamedResponse(
+          const Stream<List<int>>.empty(),
+          304,
+          request: request,
+        );
+      });
+      final outcome = await _fetcher(
+        client,
+      ).fetchConditional(allowed, ifNoneMatch: tag);
+      expect(outcome, isA<FetchNotModified>());
+      expect(sent, {allowed: tag, next: tag});
+    });
+
+    test(
+      'a disallowed URL is refused before any request, tag or not',
+      () async {
+        final hosts = <String>[];
+        final outcome = await _fetcher(
+          _streaming([
+            [1],
+          ], recordHosts: hosts),
+        ).fetchConditional('https://evil.example.com/x', ifNoneMatch: tag);
+        expect(outcome, isA<FetchRefused>());
+        expect(hosts, isEmpty);
+      },
+    );
+  });
 }

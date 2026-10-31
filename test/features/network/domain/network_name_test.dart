@@ -63,9 +63,26 @@ void main() {
       }
     });
 
+    test('security: rejects C1, zero-width, separators and BOM (L14)', () {
+      // The shared safe-text rule (fix-plan L14) also covers characters that
+      // hide or reflow text without being a C0 control.
+      for (final c in [
+        0x80, 0x85, 0x9F, // C1 controls
+        0x200B, 0x200C, 0x200D, 0x200E, 0x200F, // zero-width + bidi marks
+        0x2028, 0x2029, // line/paragraph separators
+        0xFEFF, // zero-width no-break space / BOM
+      ]) {
+        expect(
+          NetworkName.normalizeOrNull('lib${String.fromCharCode(c)}name'),
+          isNull,
+          reason: 'U+${c.toRadixString(16)} must be rejected',
+        );
+      }
+    });
+
     test('accepts the characters just outside the forbidden ranges', () {
       expect(NetworkName.normalizeOrNull('a\u0020b'), 'a\u0020b'); // space
-      expect(NetworkName.normalizeOrNull('a\u2029b'), isNotNull); // U+2029 ok
+      expect(NetworkName.normalizeOrNull('a\u2026b'), isNotNull); // U+2026 …
       expect(NetworkName.normalizeOrNull('a\u2065b'), isNotNull); // U+2065 ok
       expect(NetworkName.normalizeOrNull('a\u206Ab'), isNotNull); // U+206A ok
     });

@@ -1,7 +1,7 @@
 /// Publish-to-GitHub-Pages orchestrator (application layer, AGENTS.md §4, #32).
 ///
-/// Port of Kotlin `PublishLibraryUseCase`. Builds the world-facing bundle
-/// (books.json + index.html viewer + salted covers/) and pushes it as ONE
+/// Port of Kotlin `PublishLibraryUseCase`. Pushes the world-facing catalogue
+/// (books.json + index.html viewer + library.json + salted covers/) as ONE
 /// atomic, incremental commit via [GitHubGitDataApi] (the git-data role of
 /// the GitHub port, S5 — this use case never touches auth or repo admin).
 ///
@@ -9,44 +9,44 @@
 ///  1. Resolve token + target repo + the branch Pages SERVES from (N09: read
 ///     live from the Pages configuration, never assumed to be the default
 ///     branch; Pages off or re-pointed → typed failure before any write).
-///  2. Load (or rebuild) the incremental manifest.
-///  3. Redact every non-removed item (F-01) + coarse availability (gated),
-///     and every non-removed series (ADR 0014 W3 — `periodicals[]`).
-///  4. Decide covers (`PublishCoverDecider`): local read / remote fetch,
-///     salted paths, sha-diff vs manifest to skip unchanged. A series cover
-///     is decided ONCE and shared by its entry and every issue that falls
-///     back to it (W4's `IssueCover.resolve` rule, applied at publish).
-///  5. Build books.json + index.html (name/logo/contact substituted).
-///  6. Commit the changed file set; persist the new manifest; poll Pages.
+///  2. Reconcile the local record against the remote head + tree (R6): every
+///     claimed sha comes from the tree, and foreign files are never adopted.
+///  3. Ask the SHARED [PublishSnapshotBuilder] for the section to write
+///     (Cloudflare plan R2/R3) — the same builder the Cloudflare adapter will
+///     consume, over strict reads, so the two hosts cannot drift and a failed
+///     read aborts before any write.
+///  4. Merge that section into the publication record (R7): only its own
+///     paths are replaced, the events section survives.
+///  5. Commit the changed file set + exact owned deletions, passing the head
+///     read in step 2 as `expectedHead` (a change made meanwhile is reported,
+///     never overwritten), persist the record, then read the live site back
+///     (bounded) and record the result.
 ///
-/// Cover downscaling (Kotlin `ImagePipeline.downscaleForPublish`) is NOT ported
-/// in v1 (Q-P1): covers publish at original size. Correctness is unaffected;
-/// only upload size. Flagged as a follow-up.
+/// Cover images are downscaled by the injected local-cover reader
+/// (`ImageDownscaler`, 400×600 q80 — the single image choke point), so a
+/// publish uploads small JPEGs and EXIF/GPS never leaves the device.
 library;
 
-import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
-import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
-import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
-import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
+import 'package:fpdart/fpdart.dart';
+import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/features/publish/application/github_publication_reconciler.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
-import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
-import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
+import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
-import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
-import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
-import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
-import 'package:pitaka/features/publish/domain/publish_redaction.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
+import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
+import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
-// The cover-IO typedefs live with the decider since S20 (plan magazines);
-// re-exported so existing imports of this file keep resolving (one import
-// per caller, the S19 idiom). Publish results follow the same compatibility
-// rule after their S8 extraction kept this orchestrator below 500 lines.
-export 'publish_cover_decider.dart' show LocalCoverReader, RemoteCoverFetcher;
 export 'publish_result.dart';
 
 /// Coarse publish phases for the UI.
@@ -64,13 +64,6 @@ enum PublishPhase {
   pagesBuilding,
 }
 
-/// Builds the viewer HTML from the bundled template with placeholders filled.
-typedef ViewerHtmlBuilderFn = Future<List<int>> Function();
-
-/// Fetches a PUBLIC published file's bytes from [url] (no auth), or null on
-/// any failure. Used for the post-publish read-back only.
-typedef PublishedFileFetcher = Future<List<int>?> Function(String url);
-
 /// Orchestrates a single publish run.
 final class PublishLibraryUseCase {
   /// Creates the use case over its ports.
@@ -78,91 +71,97 @@ final class PublishLibraryUseCase {
     required GitHubGitDataApi api,
     required PublishCredentialReader credentials,
     required PublishManifestGateway manifest,
-    required PublishCoverIds coverIds,
-    required LocalCoverReader readLocalCover,
-    required RemoteCoverFetcher fetchRemoteCover,
-    required ViewerHtmlBuilderFn buildViewerHtml,
-    PublishedFileFetcher? fetchPublishedFile,
+    required PublishSnapshotBuilder snapshotBuilder,
+    required PublishReads reads,
+    required PublishHostStateRecorder hostState,
+    PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
-       _covers = PublishCoverDecider(
-         coverIds: coverIds,
-         readLocalCover: readLocalCover,
-         fetchRemoteCover: fetchRemoteCover,
-       ),
-       _buildViewerHtml = buildViewerHtml,
-       _fetchPublishedFile = fetchPublishedFile,
+       _snapshotBuilder = snapshotBuilder,
+       _reads = reads,
+       _hostState = hostState,
+       _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
   final PublishManifestGateway _manifest;
-  final PublishCoverDecider _covers;
-  final ViewerHtmlBuilderFn _buildViewerHtml;
+
+  /// The ONE section builder for every host (R3). Building happens here, after
+  /// the reconciled record is known, so exactly one read of the remote state
+  /// feeds the change detection and the merge — the section is never built
+  /// twice.
+  final PublishSnapshotBuilder _snapshotBuilder;
+
+  /// Strict typed reads the snapshot is built from (R2).
+  final PublishReads _reads;
+
+  /// Records the verified live target after a read-back proves it (R33). The
+  /// share/QR address never comes from this publish's own manifest.
+  final PublishHostStateRecorder _hostState;
 
   /// Null ⇒ read-back skipped (tests / no network port wired).
-  final PublishedFileFetcher? _fetchPublishedFile;
+  final PublishedSiteVerifier? _verifier;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
-  /// Read-back budget: [readBackAttempts] polls, [readBackInterval] apart
-  /// (Orange budgets 120 s; 60 s covers typical Pages builds and keeps the
-  /// worst-case wait tolerable on a phone). ALWAYS terminates.
-  static const int readBackAttempts = 12;
+  /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
+  static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
 
-  /// Pause between read-back polls.
-  static const Duration readBackInterval = Duration(seconds: 5);
-
-  /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1). One
-  /// constant so the write, the sha-diff skip and the delete path agree.
-  static const String libraryJsonPath = 'library.json';
-
-  /// Runs the publish. [books] are all library items of any kind (removed
-  /// ones are filtered here). [periodicals] are all magazine titles
-  /// (ADR 0014 W3): the non-removed ones publish as `periodicals[]`; a
-  /// removed series gets no entry, but its issues are still live library
-  /// rows (D8) and publish with the series-cover fallback.
-  /// `activeLoanCounts` is the active-loan count per item id, or null
-  /// when the vault is locked (availability then omitted). `encodeBooksJson`
-  /// serialises the payload (injected so the JSON encoder stays in one place).
+  /// Runs the publish to [target].
   ///
-  /// [libraryJson] is the pre-encoded `library.json` network descriptor
-  /// (docs/ARCHITECTURE.md §5.1), or null when none may be written — null REMOVES a
-  /// previously published descriptor in the same commit (M14 `deletePaths`),
-  /// so a stale location never outlives the user's opt-out.
+  /// [target] is the EXACT destination of this operation (R1/C3). It is the
+  /// only source of the site URL — for the descriptor, the read-back and the
+  /// success message — so a move can publish the new site while the old one is
+  /// still the active host.
+  ///
+  /// Phase 1 reads every input strictly through [_reads]. It runs FIRST, so a
+  /// library that cannot be read fails before a token is fetched, before the
+  /// GitHub API is called and before the manifest is loaded (R2: no remote
+  /// write, and no pointless round trip, for a publish that cannot proceed).
+  ///
+  /// [mode] is [PublishMode.complete] for a move or a whole-site
+  /// replacement: every required cover must then resolve to usable bytes, and
+  /// a missing one fails typed BEFORE any write.
+  ///
+  /// This path publishes the CATALOGUE section only. The events section has
+  /// its own independent publish (`PublishEventsUseCase`, Q5=A), so this
+  /// snapshot never carries poster files and can never delete one.
   Future<PublishResult> call({
-    required List<CatalogueItem> books,
-    required List<Periodical> periodicals,
-    required Map<int, int>? activeLoanCounts,
-    required List<int> Function(PublishExport) encodeBooksJson,
-    required List<int>? libraryJson,
+    required GitHubPublishTarget target,
+    PublishMode mode = PublishMode.incremental,
     void Function(PublishPhase)? onPhase,
   }) async {
     void phase(PublishPhase p) => onPhase?.call(p);
     phase(PublishPhase.preparing);
 
-    final token = await _credentials.token();
-    if (token == null) return const PublishFailure('Not signed in to GitHub.');
-    final ownerRepo = await _credentials.targetRepo();
-    final parts = ownerRepo?.split('/');
-    if (ownerRepo == null || parts == null || parts.length != 2) {
-      return const PublishFailure('Pick a target repo first.');
-    }
-    final owner = parts[0];
-    final repo = parts[1];
-    // The address is derived by the shared resolver (user site vs project
-    // site); a target that cannot be resolved is refused before any write.
-    final pagesUrl = githubPagesUrlFor(ownerRepo);
-    if (pagesUrl == null) {
-      return const PublishFailure('Pick a target repo first.');
+    final read = await _snapshotBuilder.read(
+      reads: _reads,
+      target: target,
+      // This path owns the catalogue section only; the events section has its
+      // own publish (fix-plan L6 reads exactly what is requested).
+      sections: const {SiteSection.catalogue},
+    );
+    final inputs = read.toNullable();
+    if (inputs == null) {
+      // A failed read is never "empty content": nothing is built or written.
+      return PublishFailure(_messageFor(read.swap().toNullable()!));
     }
 
+    final token = await _credentials.token();
+    if (token == null) return const PublishFailure('Not signed in to GitHub.');
+    // The target carries the address (derived, never supplied): no second
+    // derivation here, so the descriptor, the commit and the read-back can
+    // never disagree about where this publish goes.
+    final owner = target.owner;
+    final repo = target.repo;
+    final pagesUrl = target.siteUrl;
+
     final now = _clock();
-    final library = books.where((b) => !b.removed).toList();
 
     // N09 (D2-a): commit to the branch Pages actually serves. Publishing to
     // any other branch would "succeed" without changing the live site.
@@ -177,162 +176,70 @@ final class PublishLibraryUseCase {
       return const PublishFailure(gitHubNetworkErrorMessage);
     }
 
-    // Load manifest; rebuild from the repo tree if missing / for another repo.
-    var manifest = _manifest.load();
-    if (manifest.repo != ownerRepo || manifest.fileShas.isEmpty) {
-      try {
-        final shas = await _api.headTreeShas(
-          owner: owner,
-          repo: repo,
-          branch: branch,
-          token: token,
-        );
-        manifest = PublishManifest(repo: ownerRepo, fileShas: shas);
-      } on GitHubApiException {
-        manifest = PublishManifest(repo: ownerRepo);
-      }
+    // R6: read the remote head + tree and reconcile the local record against
+    // it BEFORE building. Shas come from the tree (never from the local file),
+    // and a path this phone did not write is never claimed — so `mergeSection`
+    // below cannot delete a human's file, and an unchanged file is compared
+    // against what the site really holds.
+    final localRecord = _manifest.load();
+    final reconciliation = await GitHubPublicationReconciler(
+      _api,
+    ).call(target: target, branch: branch, token: token, local: localRecord);
+    final publication = reconciliation.toNullable();
+    if (publication == null) {
+      return PublishFailure(_messageFor(reconciliation.swap().toNullable()!));
     }
+    final previous = publication.manifest;
+    final expectedHead = publication.headSha;
 
-    final availabilityOmitted = activeLoanCounts == null;
-
-    // Resolve every link before cover IO or artifact construction. A malformed
-    // persisted identity must never become an ungrouped/partially covered file.
-    final periodicalByUid = PublishPeriodicalLinks.resolve(
-      books: library,
-      periodicals: periodicals,
+    // F.4 step 2 (deviation 48): if this phone has an UNCONFIRMED commit at the
+    // head we are about to build on, verify it first. A contradiction stops the
+    // publish (a new commit would silently overwrite whatever changed the
+    // site); an unreachable site does not, because a bad connection is not
+    // evidence of a conflict.
+    final verification = await _verifyUnconfirmed(
+      local: localRecord,
+      reconciled: previous,
+      remoteHead: expectedHead,
+      target: target,
+      siteUrl: pagesUrl,
+      anchorPath: CatalogueSectionBuilder.booksJsonPath,
+      maxBytes: publishedCatalogueReadBackMaxBytes,
+      revision: now,
     );
-    if (periodicalByUid == null) {
-      return const PublishFailure(
-        'Some magazine series or issue links are invalid. '
-        'Nothing was published.',
-      );
-    }
-    // Removed series stay in periodicalByUid for issue cover fallback (D8),
-    // but only live series publish a top-level entry.
-    final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
-
-    // Decide covers. A series cover is decided ONCE per publish and shared
-    // by the series entry and every issue that falls back to it — the W4
-    // rule (`IssueCover.resolve`) decides WHICH source an entry shows, the
-    // decider decides where that source's bytes live in the repo.
-    final coverDecisions = <int, CoverDecision>{};
-    final periodicalCoverDecisions = <String, CoverDecision>{};
-    Future<CoverDecision> decidePeriodicalCover(Periodical series) async {
-      final uid = series.periodicalUid!;
-      final cached = periodicalCoverDecisions[uid];
-      if (cached != null) return cached;
-      final decision = await _covers.forPeriodical(
-        series.coverUrl,
-        periodicalUid: uid,
-        manifest: manifest,
-      );
-      return periodicalCoverDecisions[uid] = decision;
+    if (verification == PublishVerificationOutcome.contradicted) {
+      return const PublishFailure(gitHubSiteChangedSincePublishMessage);
     }
 
-    for (final book in library) {
-      final series = periodicalByUid[book.issue?.periodicalUid];
-      final resolved = IssueCover.resolve(book, series);
-      if (resolved == null) continue;
-      if (_isOwnCover(book, resolved)) {
-        coverDecisions[book.id] = await _covers.forItem(
-          book.coverUrl,
-          itemId: book.id,
-          manifest: manifest,
-        );
-      } else if (series != null) {
-        await decidePeriodicalCover(series);
-      }
-    }
-    // A published series with a cover of its own gets its decision even
-    // when no issue falls back to it (the series entry shows it).
-    for (final series in publishedPeriodicals) {
-      if ((series.coverUrl?.trim() ?? '').isNotEmpty) {
-        await decidePeriodicalCover(series);
-      }
-    }
-
-    // books.json from redacted items + series + coarse availability.
-    final publishBooks = [
-      for (final book in library)
-        redactForPublish(
-          book,
-          availability: _availabilityFor(book, activeLoanCounts),
-          resolveCoverUrl: (b) {
-            final series = periodicalByUid[b.issue?.periodicalUid];
-            final resolved = IssueCover.resolve(b, series);
-            if (resolved == null) return null;
-            if (_isOwnCover(b, resolved)) {
-              return coverDecisions[b.id]?.publishedCoverUrl ??
-                  CoverUrlAllowList.sanitize(resolved);
-            }
-            return periodicalCoverDecisions[series!.periodicalUid]
-                    ?.publishedCoverUrl ??
-                CoverUrlAllowList.sanitize(resolved);
-          },
-        ),
-    ];
-    final export = PublishExport(
-      exportedAt: now,
-      books: publishBooks,
-      periodicals: [
-        for (final series in publishedPeriodicals)
-          redactPeriodicalForPublish(
-            series,
-            resolveCoverUrl: (p) =>
-                periodicalCoverDecisions[p.periodicalUid]?.publishedCoverUrl ??
-                CoverUrlAllowList.sanitize(p.coverUrl),
-          ),
-      ],
+    // Phase 2: build the section through the SHARED builders (R3) against the
+    // publication record that will also be merged, so change detection and
+    // the merge can never disagree. A typed failure here means NOTHING was
+    // written. The catalogue section owns no poster path, so a catalogue
+    // publish can never delete one (R7).
+    final built = await _snapshotBuilder.build(
+      inputs: inputs,
+      previous: previous,
+      now: now,
+      mode: mode,
     );
-    final booksJson = encodeBooksJson(export);
-    final viewerHtml = await _buildViewerHtml();
-
-    // Assemble the desired file set with per-file change detection.
-    final desired = <DesiredFile>[
-      _desiredFile('books.json', booksJson, manifest),
-      // The network descriptor rides in the SAME atomic commit (docs/ARCHITECTURE.md
-      // §5.1): books.json, library.json and index.html always agree on the
-      // live site. Incremental publish skips it when the bytes are unchanged
-      // (the codec's stable key order makes equal input ⇒ equal blob sha).
-      if (libraryJson != null)
-        _desiredFile(libraryJsonPath, libraryJson, manifest),
-      _desiredFile('index.html', viewerHtml, manifest),
-    ];
-    for (final d in [
-      ...coverDecisions.values,
-      ...periodicalCoverDecisions.values,
-    ]) {
-      if (d.bytes != null && d.publishPath != null && d.gitSha != null) {
-        desired.add(
-          DesiredFile(
-            path: d.publishPath!,
-            bytes: d.bytes!,
-            gitSha: d.gitSha!,
-            upload: manifest.shaFor(d.publishPath!) != d.gitSha,
-          ),
-        );
-      } else if (d.reuseSha != null && d.publishPath != null) {
-        desired.add(
-          DesiredFile(
-            path: d.publishPath!,
-            bytes: const [],
-            gitSha: d.reuseSha!,
-            upload: false,
-          ),
-        );
-      }
+    final snapshot = built.toNullable();
+    if (snapshot == null) {
+      return PublishFailure(_messageFor(built.swap().toNullable()!));
     }
-    // De-dup by path (deterministic: keep the first).
-    final seen = <String>{};
-    final deduped = [
-      for (final f in desired)
-        if (seen.add(f.path)) f,
-    ];
+    // The read above requested the catalogue, so it is present; a null here
+    // would be a builder bug, and refusing is safer than publishing nothing.
+    final section = snapshot.catalogue;
+    if (section == null) {
+      return const PublishFailure(PublishSnapshotBuilder.readFailedMessage);
+    }
+
+    // R7: merge ONLY this section into the publication record. The events
+    // section (and any other app-owned path) survives; the section's own
+    // dropped paths become exact deletions (never a prefix sweep).
+    final merge = mergeSection(previous: previous, section: section);
 
     phase(
-      deduped.any((f) => f.upload)
-          ? PublishPhase.uploading
-          : PublishPhase.committing,
+      section.hasUploads ? PublishPhase.uploading : PublishPhase.committing,
     );
 
     final PublishCommitResult result;
@@ -342,16 +249,18 @@ final class PublishLibraryUseCase {
         repo: repo,
         branch: branch,
         token: token,
-        files: deduped,
+        files: [
+          for (final f in merge.files)
+            DesiredFile(
+              path: f.path,
+              bytes: f.bytes,
+              gitSha: f.gitSha,
+              upload: f.upload,
+            ),
+        ],
         commitMessage: 'Pitaka publish $now',
-        // Opt-out path (docs/ARCHITECTURE.md §5.1): with no descriptor to write, a
-        // library.json published by an EARLIER run is deleted in this same
-        // commit — GitHub's create-tree drops entries whose sha is null
-        // (M14). Only app-owned paths, only when they exist in the repo.
-        deletePaths:
-            libraryJson == null && manifest.shaFor(libraryJsonPath) != null
-            ? const [libraryJsonPath]
-            : const [],
+        deletePaths: merge.deletePaths,
+        expectedHead: expectedHead,
       );
     } on GitHubApiException {
       // Fixed message (§5): exception text can embed URLs/response detail.
@@ -359,38 +268,53 @@ final class PublishLibraryUseCase {
     }
 
     switch (result) {
-      case PublishCommitSuccess(:final uploadedPaths):
-        _manifest.save(
-          PublishManifest(
-            repo: ownerRepo,
-            fileShas: {for (final f in deduped) f.path: f.gitSha},
-            coverUrlByBookId: {
-              for (final b in library)
-                if (b.coverUrl != null && b.coverUrl!.isNotEmpty)
-                  '${b.id}': b.coverUrl!,
-              // Series covers ride under the decider's 'periodical:' urlKey
-              // so the remote source-identity skip works for them without
-              // sharing the book id key space. Stored TRIMMED to match the
-              // trimmed value the decider compares against.
-              for (final p in periodicalByUid.values)
-                if ((p.coverUrl?.trim() ?? '').isNotEmpty)
-                  'periodical:${p.periodicalUid}': p.coverUrl!.trim(),
-            },
-          ),
+      case PublishCommitStale():
+        // Another writer moved the branch after we read it (R6). Nothing was
+        // written; the next publish starts from their newest state.
+        return const PublishFailure(gitHubStalePublishMessage);
+      case PublishCommitSuccess(:final uploadedPaths, :final commitSha):
+        // R5/R9: persist the commit AS `deployed` before spending a minute on
+        // read-back, so a crash here is recoverable instead of "unknown". A
+        // failed save is reported, never swallowed: the site IS updated.
+        final committed = previous.afterCommit(
+          commitSha: commitSha,
+          mergedShas: merge.fileShas,
+          coverUrlByBookId: section.coverUrlByKey,
         );
+        var localStateSaved = _manifest.save(committed).isRight();
+
         phase(PublishPhase.pagesBuilding);
-        // `pagesUrl` came from the single resolver (github_pages_url.dart),
-        // shared with the events publish and the drawer's share action.
-        // Read-back verification (à la Localcart Orange github_pages.rs §6):
-        // poll the LIVE books.json with a cache-buster until it serves
-        // exactly the bytes we just published. Bounded — it can never spin
-        // forever — and "live" means the real site, not a build-status API.
-        final pagesLive = await _verifyLive(pagesUrl, booksJson, now);
+        // Bounded read-back: poll the LIVE books.json with a cache-buster
+        // until it serves exactly the bytes just published.
+        final booksJson = merge.files
+            .firstWhere((f) => f.path == CatalogueSectionBuilder.booksJsonPath)
+            .bytes;
+        final pagesLive = await _readBack(
+          siteUrl: pagesUrl,
+          path: CatalogueSectionBuilder.booksJsonPath,
+          expected: booksJson,
+          revision: now,
+        );
+        if (pagesLive ?? false) {
+          // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). If the live
+          // upgrade succeeds it supersedes any earlier `deployed`-save failure;
+          // if it fails, the journal must not advance and the partial outcome
+          // remains visible. A journal failure after a successful live save is
+          // also reported rather than hidden behind "Published!".
+          final liveSaved = _manifest.save(committed.asLive()).isRight();
+          localStateSaved = liveSaved;
+          if (liveSaved) {
+            localStateSaved = (await _hostState.recordVerified(
+              target,
+            )).isRight();
+          }
+        }
         return PublishSuccess(
           pagesUrl: pagesUrl,
           uploadedPaths: uploadedPaths,
-          availabilityOmitted: availabilityOmitted,
+          availabilityOmitted: snapshot.availabilityOmitted,
           pagesLive: pagesLive,
+          localStateSaved: localStateSaved,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can
@@ -399,68 +323,74 @@ final class PublishLibraryUseCase {
     }
   }
 
-  /// Polls the live site (bounded) until books.json serves [expected].
-  /// Returns true when verified, null when the budget ran out or no fetch
-  /// port is wired. Never throws, never loops unbounded.
-  Future<bool?> _verifyLive(
-    String pagesUrl,
-    List<int> expected,
-    int revision,
-  ) async {
-    final fetch = _fetchPublishedFile;
-    if (fetch == null) return null;
-    for (var attempt = 0; attempt < readBackAttempts; attempt++) {
-      await _sleep(readBackInterval);
-      // Cache-buster per attempt so a CDN can't serve a stale copy.
-      final body = await fetch('${pagesUrl}books.json?rb=$revision-$attempt');
-      if (body != null && _sameBytes(body, expected)) return true;
+  /// Maps a typed failure to the fixed, user-facing publish message.
+  static String _messageFor(Failure failure) => switch (failure) {
+    // A read failure carries its own already-safe sentence (M14: "could not
+    // read your saved libraries" must not become a generic message).
+    PublishReadFailure(:final message) => message,
+    ValidationFailure(:final message) => message,
+    _ => 'Something went wrong. Nothing was published.',
+  };
+
+  /// Verifies an unconfirmed publication before building on it (F.4 step 2).
+  ///
+  /// A `matched` result upgrades the record to `live` and lets the journal
+  /// claim the address (R33) — the same proof the post-publish read-back gives,
+  /// just later. Both writes are best-effort: the publish continues either way,
+  /// and a failed save leaves `deployed`, which is still the truth.
+  Future<PublishVerificationOutcome> _verifyUnconfirmed({
+    required PublishManifest local,
+    required PublishManifest reconciled,
+    required String remoteHead,
+    required GitHubPublishTarget target,
+    required String siteUrl,
+    required String anchorPath,
+    required int maxBytes,
+    required int revision,
+  }) async {
+    final verifier = _verifier;
+    if (verifier == null) return PublishVerificationOutcome.notApplicable;
+    final outcome =
+        await PublishVerificationCheck(verifier: verifier, sleep: _sleep).call(
+          localState: local.state,
+          localAnchor: local.headSha,
+          remoteAnchor: remoteHead,
+          expectedSha: reconciled.shaFor(anchorPath),
+          siteUrl: siteUrl,
+          anchorPath: anchorPath,
+          maxBytes: maxBytes,
+          revision: revision,
+        );
+    if (outcome == PublishVerificationOutcome.matched) {
+      _manifest.save(reconciled.asLive());
+      await _hostState.recordVerified(target);
     }
-    return null;
+    return outcome;
   }
 
-  static bool _sameBytes(List<int> a, List<int> b) {
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) return false;
-    }
-    return true;
-  }
-
-  String? _availabilityFor(CatalogueItem book, Map<int, int>? counts) {
-    if (counts == null) return null;
-    final active = counts[book.id] ?? 0;
-    return active >= book.copyCount ? PublishItem.out : PublishItem.available;
-  }
-
-  DesiredFile _desiredFile(
-    String path,
-    List<int> bytes,
-    PublishManifest manifest,
-  ) {
-    final sha = GitBlobSha.of(bytes);
-    return DesiredFile(
+  /// Bounded origin-bound read-back of one just-published file.
+  Future<bool?> _readBack({
+    required String siteUrl,
+    required String path,
+    required List<int> expected,
+    required int revision,
+  }) async {
+    final verifier = _verifier;
+    if (verifier == null) return null;
+    return PublishedFileReadBack(verifier: verifier, sleep: _sleep).untilServed(
+      siteUrl: siteUrl,
       path: path,
-      bytes: bytes,
-      gitSha: sha,
-      upload: manifest.shaFor(path) != sha,
+      expected: expected,
+      revision: revision,
     );
-  }
-
-  /// True when [resolved] (the output of `IssueCover.resolve`) is [book]'s
-  /// OWN cover rather than its series' — resolve()'s rule is "non-blank own
-  /// cover, else the series cover", so the same branch decides whose salted
-  /// path (item id vs `periodical:` uid) owns the upload.
-  static bool _isOwnCover(CatalogueItem book, String resolved) {
-    final own = book.coverUrl?.trim() ?? '';
-    return own.isNotEmpty && own == resolved;
   }
 }
 
-/// Load/save view of the manifest the orchestrator needs.
+/// Load/save view of the manifest the orchestrators need.
 abstract interface class PublishManifestGateway {
   /// Loads the manifest (or empty).
   PublishManifest load();
 
-  /// Persists [manifest].
-  void save(PublishManifest manifest);
+  /// Persists [manifest]; a failure is returned, never swallowed (R9).
+  Either<Failure, Unit> save(PublishManifest manifest);
 }

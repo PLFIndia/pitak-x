@@ -43,3 +43,48 @@ const String gitHubNetworkErrorMessage =
 const String gitHubPagesNotServingMessage =
     'GitHub Pages is not serving this repository from a branch any more. '
     'Open Publish › Connection and set up the repository again.';
+
+/// Fixed message when the repository's current state could not be read, so
+/// the publish cannot know which paths it owns (cloudflare plan R6).
+///
+/// A publish that cannot prove which files it wrote must not commit: the
+/// commit would either upload blindly or delete nothing at all.
+const String gitHubSiteStateUnreadableMessage =
+    'Could not check what is currently on your site, so nothing was '
+    'published. Try again in a minute.';
+
+/// Fixed message when GitHub truncated the repository listing (a very large
+/// repository). Refusing is deliberate: a partial listing cannot prove which
+/// paths exist, so it cannot prove which paths this app owns.
+const String gitHubTreeTooLargeMessage =
+    'This repository has too many files for Pitak to check safely, so '
+    'nothing was published. Use a repository that only holds your library '
+    'site.';
+
+/// Fixed message when the branch head moved between this phone's read and its
+/// commit (R6). Nothing was written; the next publish starts from the remote's
+/// newest state instead of overwriting it.
+const String gitHubStalePublishMessage =
+    'Your site was changed by something else after this phone checked it, so '
+    'nothing was published. Publish again to update the newest version.';
+
+/// Fixed message when the live site serves DIFFERENT content than this phone
+/// recorded for its last unconfirmed publish (F.4 step 2, deviation 48).
+///
+/// Nothing is written: a new publish would silently overwrite whatever changed
+/// the site. The user is told what was observed, not what to guess — the site
+/// may have been edited by hand, by another device, or by another app.
+const String gitHubSiteChangedSincePublishMessage =
+    'Your site is showing something different from what this phone last '
+    'published, so nothing was changed. Check the site, then publish again '
+    'if you want to replace it.';
+
+/// Fixed message when the commit landed but the phone could not save its own
+/// record of the publish (R9).
+///
+/// The remote site IS updated — saying "nothing was published" here would be a
+/// lie. The next publish re-reads the remote tree, so the lost record only
+/// costs one reconciliation.
+const String gitHubPublishRecordUnsavedMessage =
+    'Your site was updated, but this phone could not save the record of it. '
+    'The next publish will check the site again.';

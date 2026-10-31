@@ -13,31 +13,52 @@
 /// direction only.
 library;
 
+import 'package:pitaka/core/async/serial_op_queue.dart';
 import 'package:pitaka/core/di/src/database_providers.dart';
+import 'package:pitaka/core/di/src/events_providers.dart';
 import 'package:pitaka/core/di/src/library_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/images/image_downscaler.dart';
 import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/library/application/materialize_remote_cover_use_case.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_manifest_store.dart';
+import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
+import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_site.dart';
+import 'package:pitaka/features/publish/application/cloudflare/verify_cloudflare_address.dart';
 import 'package:pitaka/features/publish/application/github_device_flow.dart';
+import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
-    show PublishManifestGateway, PublishedFileFetcher, RemoteCoverFetcher;
+    show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/setup_github_repo.dart';
+import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
+import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
-import 'package:pitaka/features/publish/domain/github_pages_url.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
+import 'package:pitaka/features/publish/domain/site/publish_marker_codec.dart';
+import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/infrastructure/bounded_cover_fetcher.dart';
+import 'package:pitaka/features/publish/infrastructure/bounded_published_site_verifier.dart';
+import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
 import 'package:pitaka/features/publish/infrastructure/events_html_builder.dart';
 import 'package:pitaka/features/publish/infrastructure/events_json_builder.dart';
+import 'package:pitaka/features/publish/infrastructure/file_cloudflare_manifest_store.dart';
 import 'package:pitaka/features/publish/infrastructure/file_publish_manifest_store.dart';
+import 'package:pitaka/features/publish/infrastructure/http_cloudflare_api.dart';
 import 'package:pitaka/features/publish/infrastructure/http_github_api.dart';
 import 'package:pitaka/features/publish/infrastructure/local_cover_reader.dart';
+import 'package:pitaka/features/publish/infrastructure/prefs_publish_host_store.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_share_card_style_store.dart';
+import 'package:pitaka/features/publish/infrastructure/secure_storage_cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_cover_salt_store.dart';
 import 'package:pitaka/features/publish/infrastructure/secure_storage_publish_credential_store.dart';
 import 'package:pitaka/features/publish/infrastructure/viewer_html_builder.dart';
@@ -50,6 +71,65 @@ part 'publish_providers.g.dart';
 @riverpod
 GitHubApi gitHubApi(GitHubApiRef ref) =>
     HttpGitHubApi(client: ref.watch(httpClientProvider));
+
+/// Fixed-origin Cloudflare account/deploy HTTP adapters (S6).
+///
+/// KeepAlive is deliberate (fix-plan M1). The controllers `ref.read` their
+/// factories, so with auto-dispose the API lived only while the Connection tab
+/// happened to be listening: switching tabs called `IOClient.close()`
+/// (`close(force: true)`) and cut exactly the in-flight requests. An operation
+/// must own its connections, not whichever widget is visible. This retains no
+/// secret — the facade holds no token or upload/completion JWT, tokens arrive
+/// per call — and idle sockets close themselves, so the cost is bounded.
+@Riverpod(keepAlive: true)
+CloudflareApi cloudflareApi(CloudflareApiRef ref) {
+  final api = HttpCloudflareApi();
+  ref.onDispose(api.close);
+  return api;
+}
+
+/// The ONE app-wide publish queue (R11). Only outermost commands enqueue;
+/// dialogs and other user waits always happen after the queue is released.
+@Riverpod(keepAlive: true)
+SerialOpQueue publishOperationQueue(PublishOperationQueueRef ref) =>
+    SerialOpQueue();
+
+/// One versioned, whole-record Cloudflare connection in hardened storage.
+@riverpod
+CloudflareCredentialStore cloudflareCredentialStore(
+  CloudflareCredentialStoreRef ref,
+) => SecureStorageCloudflareCredentialStore();
+
+/// Public-marker JSON codec. It contains no credential or connection state.
+@riverpod
+PublishMarkerCodec publishMarkerCodec(PublishMarkerCodecRef ref) =>
+    const CloudflarePublishMarkerCodec();
+
+/// Marker-only manual-address verification (D.2), never a normal publication.
+@riverpod
+VerifyCloudflareAddress verifyCloudflareAddress(
+  VerifyCloudflareAddressRef ref,
+) => VerifyCloudflareAddress(
+  api: ref.watch(cloudflareApiProvider),
+  verifier: ref.watch(publishedSiteVerifierProvider),
+  codec: ref.watch(publishMarkerCodecProvider),
+  sleep: Future<void>.delayed,
+  clock: ref.watch(clockProvider),
+);
+
+/// Staged setup commands. Every mutating call is invoked inside the shared
+/// [publishOperationQueueProvider] by the outer connection controller.
+@riverpod
+Future<SetupCloudflareSite> setupCloudflareSite(
+  SetupCloudflareSiteRef ref,
+) async => SetupCloudflareSite(
+  accountApi: ref.watch(cloudflareApiProvider),
+  deployApi: ref.watch(cloudflareApiProvider),
+  credentials: ref.watch(cloudflareCredentialStoreProvider),
+  hostState: await ref.watch(publishHostStateRepositoryProvider.future),
+  verifyAddress: ref.watch(verifyCloudflareAddressProvider),
+  clock: ref.watch(clockProvider),
+);
 
 /// Encrypted-at-rest GitHub publish credentials (token + clientId + repo).
 @Riverpod(keepAlive: true)
@@ -64,10 +144,14 @@ GitHubDeviceFlow gitHubDeviceFlow(GitHubDeviceFlowRef ref) =>
 /// One-tap repo setup: create/adopt the publish repo + enable Pages
 /// (mirrors Localcart Orange's github_setup).
 @riverpod
-SetupGitHubRepo setupGitHubRepo(SetupGitHubRepoRef ref) => SetupGitHubRepo(
-  ref.watch(gitHubApiProvider),
-  ref.watch(publishCredentialStoreProvider),
-);
+Future<SetupGitHubRepo> setupGitHubRepo(SetupGitHubRepoRef ref) async =>
+    SetupGitHubRepo(
+      ref.watch(gitHubApiProvider),
+      ref.watch(publishCredentialStoreProvider),
+      PendingMoveTargetGuard(
+        await ref.watch(publishHostStateRepositoryProvider.future),
+      ),
+    );
 
 /// Bounded, typed remote-cover download (M1: allow-list + deadline + byte
 /// cap; N08: the deadline aborts the socket) with the publish downscale
@@ -148,21 +232,28 @@ Future<Future<List<int>?> Function(String)> publishLocalCoverReader(
   return localCoverReader(coversDir);
 }
 
-/// Published-file fetcher for the post-publish read-back (à la Localcart
-/// Orange): plain GET of a PUBLIC Pages URL — no auth, no token. Null on any
-/// failure; the read-back treats that as "not visible yet".
+/// Bounded, origin-bound read-back (R16): no auth, no token, no redirects,
+/// streamed cap, abortable deadline. Null on any refusal — the read-back
+/// treats that as "not visible yet".
 @riverpod
-PublishedFileFetcher publishedFileFetcher(PublishedFileFetcherRef ref) {
-  final client = ref.watch(httpClientProvider);
-  return (url) async {
-    try {
-      final resp = await client.get(Uri.parse(url));
-      return resp.statusCode == 200 ? resp.bodyBytes : null;
-    } on Exception {
-      return null;
-    }
-  };
-}
+PublishedSiteVerifier publishedSiteVerifier(PublishedSiteVerifierRef ref) =>
+    BoundedPublishedSiteVerifier(client: ref.watch(httpClientProvider));
+
+/// Structured public reads for marker freshness and expected-404 checks. This
+/// uses the same bounded adapter/policy as [publishedSiteVerifierProvider].
+@riverpod
+PublishedSiteReadVerifier publishedSiteReadVerifier(
+  PublishedSiteReadVerifierRef ref,
+) => BoundedPublishedSiteVerifier(client: ref.watch(httpClientProvider));
+
+/// Freshness-marker reads preserve 404 versus unreadable/malformed outcomes.
+@riverpod
+CloudflarePublishMarkerProbe cloudflarePublishMarkerProbe(
+  CloudflarePublishMarkerProbeRef ref,
+) => CloudflarePublishMarkerProbe(
+  reader: ref.watch(publishedSiteReadVerifierProvider),
+  codec: ref.watch(publishMarkerCodecProvider),
+);
 
 /// Viewer-HTML factory port: loads the bundled template (rootBundle — a side
 /// effect, so it lives behind this seam) and substitutes the library values.
@@ -188,6 +279,54 @@ EventsHtmlFactory eventsHtmlFactory(EventsHtmlFactoryRef ref) =>
 EventsJsonFactory eventsJsonFactory(EventsJsonFactoryRef ref) =>
     (posters) => const EventsJsonBuilder().build(posters);
 
+/// The ONE snapshot builder every publish host consumes (Cloudflare plan
+/// R2/R3/P5).
+///
+/// Why it lives in DI (beginner note): the catalogue and events sections must
+/// be byte-identical no matter which host receives them, so the four builders
+/// (covers, viewer HTML, events HTML/JSON) and the shared `books.json` encoder
+/// are wired exactly once, here. A second wiring — for example a Cloudflare
+/// adapter assembling its own builder — is how two hosts start publishing
+/// slightly different files without anyone noticing.
+///
+/// The published pages carry the library's CURRENT name and public contact
+/// choices, but they are read through `PublishReads.pageSettings()` as part of
+/// the operation's strict reads (fix-plan M8), NOT here: awaiting the settings
+/// provider at wiring time let one failed settings write fail the builder with
+/// a non-`Exception`, which broke every publish and froze the card's spinner.
+@riverpod
+Future<PublishSnapshotBuilder> publishSnapshotBuilder(
+  PublishSnapshotBuilderRef ref,
+) async {
+  final coverIds = ref.watch(publishCoverIdsProvider);
+  final readLocalCover = await ref.watch(
+    publishLocalCoverReaderProvider.future,
+  );
+  final fetchRemoteCover = ref.watch(remoteCoverFetcherProvider);
+  final viewerHtml = ref.watch(viewerHtmlFactoryProvider);
+  final eventsHtml = ref.watch(eventsHtmlFactoryProvider);
+  final eventsJson = ref.watch(eventsJsonFactoryProvider);
+  final readPoster = await ref.watch(eventsPosterReaderProvider.future);
+
+  return PublishSnapshotBuilder(
+    catalogue: CatalogueSectionBuilder(
+      covers: PublishCoverDecider(
+        coverIds: coverIds,
+        readLocalCover: readLocalCover,
+        fetchRemoteCover: fetchRemoteCover,
+      ),
+      // The factories receive the operation's settings snapshot per call.
+      buildViewerHtml: viewerHtml,
+      encodeBooksJson: encodeBooksJsonBytes,
+    ),
+    events: EventsSectionBuilder(
+      readPoster: readPoster,
+      buildEventsHtml: eventsHtml,
+      buildEventsJson: eventsJson,
+    ),
+  );
+}
+
 /// Salted cover-path ids for publish (no internal-id leak, F-01).
 @riverpod
 PublishCoverIds publishCoverIds(PublishCoverIdsRef ref) =>
@@ -203,15 +342,45 @@ Future<PublishManifestGateway> publishManifestStore(
   return FilePublishManifestStore(baseDir: dir.path);
 }
 
-/// The live URL of the user's published library site, or null when nothing
-/// has been published yet. Derived from the publish manifest's `repo` field,
-/// which is only written AFTER a successful publish — so this is null for a
-/// repo that was created but never published. Public data (the URL is the
-/// whole point); no secrets involved.
+/// Atomic Cloudflare manifest storage, separate from GitHub's public record.
+@riverpod
+Future<CloudflareManifestStore> cloudflareManifestStore(
+  CloudflareManifestStoreRef ref,
+) async {
+  final dir = await ref.watch(appDocsDirProvider.future);
+  return FileCloudflareManifestStore(baseDir: dir.path);
+}
+
+/// The host journal's storage (E.5): ONE prefs key, no tokens.
+@riverpod
+Future<PublishHostStateStore> publishHostStateStore(
+  PublishHostStateStoreRef ref,
+) async =>
+    PrefsPublishHostStore(await ref.watch(sharedPreferencesProvider.future));
+
+/// The journal's rules: the verified site address, its legacy migration and
+/// the write a successful publish is allowed to make (R33).
+@riverpod
+Future<PublishHostStateRepository> publishHostStateRepository(
+  PublishHostStateRepositoryRef ref,
+) async => PublishHostStateRepository(
+  store: await ref.watch(publishHostStateStoreProvider.future),
+  manifest: await ref.watch(publishManifestStoreProvider.future),
+  verifier: ref.watch(publishedSiteVerifierProvider),
+);
+
+/// The address to share/QR, or null when no site of this library is VERIFIED
+/// live.
+///
+/// Deliberately not derived from the manifest (deviation 33): a manifest says
+/// what one publish wrote, and a failed publish would silently move the share
+/// address to a site that is not serving the library. The journal only gains a
+/// target after a read-back proves it, and an older install is migrated once
+/// with the same proof.
 @riverpod
 Future<String?> publishedSiteUrl(PublishedSiteUrlRef ref) async {
-  final store = await ref.watch(publishManifestStoreProvider.future);
-  return githubPagesUrlFor(store.load().repo);
+  final repository = await ref.watch(publishHostStateRepositoryProvider.future);
+  return repository.verifiedSiteUrl();
 }
 
 /// Remembers which look the user last chose for the library share card

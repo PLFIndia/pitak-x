@@ -31,6 +31,11 @@
 /// [FetchRefusal] naming WHICH defence refused. The reason is a developer
 /// diagnostic and never carries the URL.
 ///
+/// [BoundedHttpFetcher.fetchConditional] is the same fetch with one extra,
+/// optional header: `If-None-Match` carrying the entity tag of a copy the
+/// caller already saved (ADR 0018). Its outcome may additionally be
+/// [FetchNotModified]; every defence above applies unchanged.
+///
 /// Pure-ish seam: the `http.Client` and the allow-list are injected, so this
 /// is unit-testable with a `MockClient` and reusable by any feature that needs
 /// a hostile-host-safe GET (today: publish covers, network descriptors).
@@ -42,6 +47,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
+import 'package:pitaka/core/network/entity_tag.dart';
 
 /// Fetches one URL under strict origin / time / size limits.
 final class BoundedHttpFetcher {
@@ -111,6 +117,43 @@ final class BoundedHttpFetcher {
     String rawUrl, {
     Future<void>? abortTrigger,
   }) async {
+    final outcome = await _run(rawUrl, abortTrigger: abortTrigger);
+    return switch (outcome) {
+      final BoundedFetchOutcome plain => plain,
+      // Cannot happen: without a tag, `_fetchBounded` treats a 304 like any
+      // other non-2xx status. Mapped explicitly (not cast) so the type
+      // system — not this comment — keeps plain callers free of the case.
+      FetchNotModified() => const FetchRefused(
+        FetchRefusal.httpStatus,
+        statusCode: 304,
+      ),
+    };
+  }
+
+  /// Like [fetch], but asks the host to skip the body when the caller's saved
+  /// copy is still current (ADR 0018).
+  ///
+  /// [ifNoneMatch] is the entity tag the host sent with the saved copy. It is
+  /// re-checked with `EntityTag.sanitize` before use (it came from disk, and
+  /// originally from an untrusted host); a null or malformed tag means a
+  /// plain, unconditional request. When a tag was sent and the host answers
+  /// `304`, the outcome is [FetchNotModified] and no body is read.
+  Future<ConditionalFetchOutcome> fetchConditional(
+    String rawUrl, {
+    required String? ifNoneMatch,
+    Future<void>? abortTrigger,
+  }) => _run(
+    rawUrl,
+    abortTrigger: abortTrigger,
+    ifNoneMatch: EntityTag.sanitize(ifNoneMatch),
+  );
+
+  /// The shared body of [fetch] and [fetchConditional].
+  Future<ConditionalFetchOutcome> _run(
+    String rawUrl, {
+    Future<void>? abortTrigger,
+    String? ifNoneMatch,
+  }) async {
     // (1) ORIGIN: allow-list first — a poisoned URL is dropped before any
     // network call, so the device never reveals that it holds such a URL.
     final safe = sanitize(rawUrl);
@@ -135,7 +178,7 @@ final class BoundedHttpFetcher {
       abort.complete();
     });
     try {
-      return await _fetchBounded(Uri.parse(safe), abort);
+      return await _fetchBounded(Uri.parse(safe), abort, ifNoneMatch);
     } on http.ClientException {
       // RequestAbortedException is a ClientException; distinguish our own
       // deadline from a genuine transport fault.
@@ -154,8 +197,9 @@ final class BoundedHttpFetcher {
   }
 
   /// Redirect statuses considered (301/302/303/307/308). 304 Not-Modified is
-  /// never applicable here (no conditional headers sent) and falls into the
-  /// non-2xx drop like any other unexpected status.
+  /// not a redirect: it means "your copy is current" and is honoured ONLY
+  /// when this fetch sent `If-None-Match`; otherwise it falls into the non-2xx
+  /// drop like any other unexpected status.
   static bool _isRedirect(int status) =>
       status == 301 ||
       status == 302 ||
@@ -175,9 +219,14 @@ final class BoundedHttpFetcher {
 
   /// Streams the response body, enforcing [maxBytes] as it reads. Throws
   /// [http.ClientException] on transport faults or abort (mapped by [fetch]).
-  Future<BoundedFetchOutcome> _fetchBounded(
+  ///
+  /// [ifNoneMatch] is an already-sanitized tag or null. It rides on every
+  /// hop, like the other headers: a same-site redirect lands on the file the
+  /// tag describes, and the host there decides whether it still matches.
+  Future<ConditionalFetchOutcome> _fetchBounded(
     Uri uri,
     Completer<void> abort,
+    String? ifNoneMatch,
   ) async {
     // Manual redirect loop (REVIEW_FINDINGS_2 S6): `http.Request` defaults to
     // followRedirects = true, which would silently carry the fetch to ANY
@@ -192,6 +241,7 @@ final class BoundedHttpFetcher {
           http.AbortableRequest('GET', current, abortTrigger: abort.future)
             ..followRedirects = false
             ..headers.addAll(headers);
+      if (ifNoneMatch != null) request.headers['If-None-Match'] = ifNoneMatch;
       response = await _client.send(request);
       if (!_isRedirect(response.statusCode)) break;
       _discard(response);
@@ -210,6 +260,13 @@ final class BoundedHttpFetcher {
       }
       current = Uri.parse(target);
       hops++;
+    }
+
+    // "Not modified" is only an answer to a question we asked. Without a tag a
+    // 304 is meaningless here and is refused below like any non-2xx status.
+    if (ifNoneMatch != null && response.statusCode == 304) {
+      _discard(response);
+      return const FetchNotModified();
     }
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -241,6 +298,9 @@ final class BoundedHttpFetcher {
       }
       builder.add(chunk);
     }
-    return FetchedBytes(builder.takeBytes());
+    return FetchedBytes(
+      builder.takeBytes(),
+      entityTag: EntityTag.sanitize(response.headers['etag']),
+    );
   }
 }
