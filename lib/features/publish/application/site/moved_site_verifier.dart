@@ -115,6 +115,16 @@ final class MovedSiteVerifier {
     return true;
   }
 
+  /// The most a root-page probe reads before giving up.
+  ///
+  /// The bounded reader REFUSES a body larger than its cap (it does not
+  /// truncate it), so the cap must fit a real page. Pitak's own catalogue
+  /// root is about 24 KiB and a moved page at most 64 KiB
+  /// (`PendingMove.maxMovedPageBytes`); 1 MiB leaves room for any HTML root
+  /// while keeping the probe cheap. The old cap of 1 byte meant no real site
+  /// could ever "answer" (handoff §12, 2026-10-31).
+  static const int rootProbeMaxBytes = 1024 * 1024;
+
   /// Whether the old address still serves content, or null when unproven.
   ///
   /// A body means the site is still there; a real 404 means it is gone; a
@@ -126,7 +136,7 @@ final class MovedSiteVerifier {
     final outcome = await _read(
       siteUrl: pending.oldTarget.siteUrl,
       path: '',
-      maxBytes: 1,
+      maxBytes: rootProbeMaxBytes,
       cacheBuster: 'content-$revision',
     );
     return switch (outcome) {

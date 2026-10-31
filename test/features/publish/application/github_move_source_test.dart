@@ -44,7 +44,8 @@ void main() {
     admin = _FakeAdmin();
     credentials = _FakeCreds();
     manifest = MemoryManifest(_liveManifest());
-    reader = FakeStructuredReader();
+    // Enforces the read cap like the real reader (handoff §12, 2026-10-31).
+    reader = CapHonoringStructuredReader();
     moveReader = GitHubMoveReader(
       api: gitData,
       credentials: credentials,

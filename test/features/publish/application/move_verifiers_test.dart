@@ -214,6 +214,48 @@ void main() {
       },
     );
 
+    // Regression (handoff §12, 2026-10-31): the probe used a 1-byte cap, and
+    // the real reader refuses an over-cap body, so a live 24 KiB catalogue
+    // root was reported as "not answering".
+    group('rootServesContent with the real cap behaviour', () {
+      MovedSiteVerifier verifierFor(FakeStructuredReader reader) =>
+          MovedSiteVerifier(
+            reader: reader,
+            markerCodec: codec,
+            validateMovedHtml: (_) async => true,
+            sleep: (_) async {},
+            attempts: 1,
+          );
+      final pending = movePending(oldTarget: moveCloudflareTarget);
+
+      test('a real-size live root answers', () async {
+        final reader = CapHonoringStructuredReader()
+          ..body('', List<int>.filled(24 * 1024, 0x61));
+        expect(
+          await verifierFor(reader).rootServesContent(pending, revision: 1),
+          isTrue,
+        );
+        expect(reader.calls.single.$3, MovedSiteVerifier.rootProbeMaxBytes);
+      });
+
+      test('a real 404 is gone; an over-cap body is unproven', () async {
+        final gone = CapHonoringStructuredReader()..absent('');
+        expect(
+          await verifierFor(gone).rootServesContent(pending, revision: 1),
+          isFalse,
+        );
+        final huge = CapHonoringStructuredReader()
+          ..body(
+            '',
+            List<int>.filled(MovedSiteVerifier.rootProbeMaxBytes + 1, 0),
+          );
+        expect(
+          await verifierFor(huge).rootServesContent(pending, revision: 1),
+          isNull,
+        );
+      });
+    });
+
     test('the default (Cloudflare) budget is 60 s', () {
       const verifier = MovedSiteVerifier(
         reader: _NeverReader(),

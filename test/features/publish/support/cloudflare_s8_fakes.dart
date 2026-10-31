@@ -81,6 +81,37 @@ base class FakeStructuredReader implements PublishedSiteReadVerifier {
   }
 }
 
+/// A [FakeStructuredReader] that also enforces the caller's byte cap, exactly
+/// like the real `BoundedPublishedSiteVerifier`: a body larger than `maxBytes`
+/// is refused (unreadable), never returned.
+///
+/// The plain fake ignores the cap. That hid a root probe capped at 1 byte,
+/// which could never see a real site, so the finish dialog always said the
+/// old site "no longer answers" (handoff §12, 2026-10-31). Making EVERY test
+/// use this reader also fails two Cloudflare publication-verifier tests: an
+/// unexpected body larger than the expected one is "unreachable", not
+/// "contradicted", on the real host (recorded in handoff §14).
+final class CapHonoringStructuredReader extends FakeStructuredReader {
+  @override
+  Future<PublishedSiteReadOutcome> readOutcome({
+    required String siteUrl,
+    required String path,
+    required int maxBytes,
+    String? cacheBuster,
+  }) async {
+    final outcome = await super.readOutcome(
+      siteUrl: siteUrl,
+      path: path,
+      maxBytes: maxBytes,
+      cacheBuster: cacheBuster,
+    );
+    if (outcome is PublishedSiteReadBody && outcome.bytes.length > maxBytes) {
+      return const PublishedSiteReadUnreadable();
+    }
+    return outcome;
+  }
+}
+
 /// Answers like a real Pitak Worker (`html_handling: auto-trailing-slash`).
 ///
 /// Tests still seed by ASSET path (`index.html`, `events.html`), but an HTML
