@@ -15,7 +15,6 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_typ
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// The token state reported by Cloudflare's verification endpoint.
@@ -96,24 +95,6 @@ final class CloudflareAccountListing {
   final bool truncated;
 }
 
-/// A bounded listing of Worker names in one account (fix-plan RH2).
-final class CloudflareWorkerNameListing {
-  /// Creates a listing and defensively copies [names].
-  CloudflareWorkerNameListing({
-    required List<CloudflareWorkerName> names,
-    required this.truncated,
-  }) : names = List.unmodifiable(names);
-
-  /// Each script's `id`, which IS the Worker name. No other field is read.
-  final List<CloudflareWorkerName> names;
-
-  /// True when the page budget was exhausted and more Workers may exist.
-  ///
-  /// A truncated listing proves nothing about a missing name, so the caller
-  /// must fail closed rather than assume the name is free.
-  final bool truncated;
-}
-
 /// What Cloudflare reports about a candidate account subdomain.
 enum CloudflareSubdomainAvailability {
   /// The candidate can be used.
@@ -140,6 +121,32 @@ final class CloudflareSubdomainCheckResult {
   /// The outcome, which remains [CloudflareSubdomainAvailability.unknown] when
   /// the service response cannot be interpreted safely.
   final CloudflareSubdomainAvailability availability;
+}
+
+/// What the Worker-existence read proved about one Worker.
+///
+/// Why three answers instead of a yes/no (beginner note): "the Worker exists"
+/// is a fact about the account, while "the Worker holds content" decides
+/// whether replacing it destroys anything. Cloudflare can answer "exists but
+/// has no versions" (error 10222) — the state an interrupted first publish's
+/// upload session leaves behind. Such a Worker serves nothing, so asking the
+/// user to consent to replacing it only repeated a question (handoff §12,
+/// 2026-10-30). It still EXISTS for the race checks that compare facts.
+enum CloudflareWorkerPresence {
+  /// Cloudflare's own not-found answer (404 + code 10007).
+  absent,
+
+  /// The Worker exists but has no versions, so it serves no content.
+  empty,
+
+  /// The Worker exists and has at least one version.
+  deployed;
+
+  /// True for [empty] and [deployed]: the account has this Worker.
+  bool get exists => this != absent;
+
+  /// True only for [deployed]: replacing it can destroy something.
+  bool get hasContent => this == deployed;
 }
 
 /// The Worker's `workers.dev` route and Version URL configuration.

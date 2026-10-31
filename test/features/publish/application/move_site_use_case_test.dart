@@ -630,10 +630,69 @@ void main() {
           final failure = result as MoveSiteFailure;
           expect(failure.reason, MoveSiteMessages.cancelAfterRetirement);
           expect(failure.retirementPending, isTrue);
+          // The banner stops offering Cancel on this flag.
+          expect(failure.oldAddressRetired, isTrue);
           expect(h.store.saves, 0);
           expect(h.store.stored!.pendingMove, isNotNull);
         },
       );
+
+      group('checkCancel (read-only, before the dialog)', () {
+        test(
+          'allows the dialog while the old address is not retired',
+          () async {
+            final h = harness()..seedPending();
+
+            expect(await h.useCase.checkCancel(), isNull);
+            expect(h.store.saves, 0);
+            expect(h.source.retireCalls, 0);
+          },
+        );
+
+        test(
+          'answers with the same refusal abandon gives, writing nothing',
+          () async {
+            final h = harness()
+              ..seedPending()
+              ..source.retirementObservedValue = true;
+
+            final refusal = await h.useCase.checkCancel();
+
+            expect(refusal, isNotNull);
+            expect(refusal!.reason, MoveSiteMessages.cancelAfterRetirement);
+            expect(refusal.oldAddressRetired, isTrue);
+            expect(refusal.retirementPending, isTrue);
+            expect(h.store.saves, 0);
+            expect(h.store.stored!.pendingMove, isNotNull);
+          },
+        );
+
+        test('with no pending move it reports a stale state', () async {
+          final h = harness();
+
+          final refusal = await h.useCase.checkCancel();
+
+          expect(refusal?.reason, MoveSiteMessages.stale);
+        });
+      });
+
+      test('a final switch that fails AFTER retirement never leaves Cancel on '
+          'offer', () async {
+        final h = harness()..store.failSaveAt = 2;
+
+        final result = await h.useCase.confirm(
+          moveConfirmation(
+            oldTarget: direction.oldTarget,
+            newTarget: direction.newTarget,
+            anchor: h.source.anchor,
+          ),
+        );
+
+        final failure = result as MoveSiteFailure;
+        expect(failure.reason, MoveSiteMessages.completionFailed);
+        expect(h.source.retireCalls, 1);
+        expect(failure.oldAddressRetired, isTrue);
+      });
     });
   }
 

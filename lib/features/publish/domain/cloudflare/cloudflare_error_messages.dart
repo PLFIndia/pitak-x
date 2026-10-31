@@ -30,16 +30,6 @@ abstract final class CloudflareErrorMessages {
       'Use lower-case letters, numbers and hyphens for the Worker name. '
       'Cloudflare uses it in your site address.';
 
-  /// A Worker that differs only in letter case already owns this address.
-  static const workerNameCaseTaken =
-      'A Worker whose name differs only in letter case already uses this '
-      'address. Choose another name.';
-
-  /// The case check could not be proved (refused, failed or truncated list).
-  static const workerNameCheckFailed =
-      'Cloudflare could not confirm that this Worker name is free. Nothing was '
-      'changed. Try again, or choose another name.';
-
   /// The external browser could not be opened (fix-plan L13).
   static const tokenPageUnavailable =
       'Could not open the browser. Open the Cloudflare dashboard in a browser '

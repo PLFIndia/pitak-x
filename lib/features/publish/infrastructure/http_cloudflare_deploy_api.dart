@@ -40,6 +40,17 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
     required CloudflareWorkerName workerName,
+  }) async => (await workerPresence(
+    token: token,
+    accountId: accountId,
+    workerName: workerName,
+  )).exists;
+
+  @override
+  Future<CloudflareWorkerPresence> workerPresence({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+    required CloudflareWorkerName workerName,
   }) async {
     final response = await _get(
       token,
@@ -58,13 +69,15 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     // created the Worker (fix-plan RH1, Part M row 120).
     if (response.statusCode == 404 && !response.isSuccess) {
       if (response.errorCodes.contains(CloudflareLimits.notFoundErrorCode)) {
-        return false;
+        return CloudflareWorkerPresence.absent;
       }
       if (response.errorCodes.contains(CloudflareLimits.emptyWorkerErrorCode)) {
-        return true;
+        return CloudflareWorkerPresence.empty;
       }
     }
-    if (response.statusCode >= 200 && response.statusCode < 300) return true;
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return CloudflareWorkerPresence.deployed;
+    }
     requireCloudflareSuccess(response);
     throw StateError('Unreachable Worker-existence state');
   }
@@ -279,40 +292,6 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
   }
 
   @override
-  Future<CloudflareWorkerNameListing> listWorkerNames({
-    required CloudflareApiToken token,
-    required CloudflareAccountId accountId,
-  }) async {
-    final names = <CloudflareWorkerName>[];
-    for (var page = 1; page <= CloudflareLimits.maxWorkerNamePages; page++) {
-      final response = requireCloudflareSuccess(
-        await _get(
-          token,
-          '/accounts/${accountId.value}/workers/scripts',
-          queryParameters: {
-            'per_page': '${CloudflareLimits.workerNamesPerPage}',
-            'page': '$page',
-          },
-        ),
-      );
-      final pageNames = parseCloudflareResponse(() {
-        final entries = cloudflareList(
-          response.result,
-          maxEntries: CloudflareLimits.workerNamesPerPage,
-        );
-        return [for (final raw in entries) _workerNameFrom(raw)];
-      });
-      names.addAll(pageNames);
-      if (pageNames.length < CloudflareLimits.workerNamesPerPage) {
-        return CloudflareWorkerNameListing(names: names, truncated: false);
-      }
-    }
-    // Four full pages: proof of absence is impossible, so the caller fails
-    // closed instead of guessing (fix-plan RH2).
-    return CloudflareWorkerNameListing(names: names, truncated: true);
-  }
-
-  @override
   Future<CloudflareWorkerRoute> readWorkerRoute({
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
@@ -429,17 +408,4 @@ final class HttpCloudflareDeployApi implements CloudflareDeployApi {
     CloudflareAccountId accountId,
     CloudflareWorkerName workerName,
   ) => '/accounts/${accountId.value}/workers/scripts/${workerName.value}';
-
-  /// Reads ONLY a listed script's `id`, which is its Worker name.
-  ///
-  /// Any other field is ignored, and a missing/invalid id refuses the whole
-  /// listing rather than silently dropping an entry (fix-plan RH2).
-  static CloudflareWorkerName _workerNameFrom(Object? raw) {
-    final entry = cloudflareObject(raw, maxEntries: 16);
-    final name = CloudflareWorkerName.tryParse(
-      cloudflareString(entry['id'], maxLength: CloudflareWorkerName.maxLength),
-    );
-    if (name == null) throw const CloudflareJsonException();
-    return name;
-  }
 }

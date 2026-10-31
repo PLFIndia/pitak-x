@@ -127,6 +127,61 @@ void main() {
     expect(find.text('Finish Cloudflare setup'), findsOneWidget);
   });
 
+  // Real host, 2026-10-30: after a successful publish the tile showed both
+  // "write access … verified" and the setup's stored "The first publish will
+  // test Workers write access." The write-access line is now derived from the
+  // status alone, so exactly one of the two can ever be on screen.
+  group('write-access line follows the status, never a stored message', () {
+    testWidgets('an untested target says the first publish tests it', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          CloudflareConnectionUi(
+            status: cloudflareTestConnection().status,
+            statusMessage: 'Cloudflare is ready to publish.',
+          ),
+        ),
+      );
+      await _expand(tester);
+
+      expect(
+        find.text(
+          'Workers write access is not tested yet. The first publish tests '
+          'it.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Workers write access and read-back verified.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('after a publish proves it, only the verified line remains', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          CloudflareConnectionUi(
+            status: cloudflareTestConnection(writeConfirmed: true).status,
+            // The message left behind by setup stays on screen after the
+            // publish refresh; it must not contradict the proven state.
+            statusMessage: 'Cloudflare is ready to publish.',
+          ),
+        ),
+      );
+      await _expand(tester);
+
+      expect(
+        find.text('Workers write access and read-back verified.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('not tested yet'), findsNothing);
+      expect(find.textContaining('first publish'), findsNothing);
+    });
+  });
+
   testWidgets('displays a recorded token expiry when supplied', (tester) async {
     final status = CloudflareConnection.verifiedToken(
       cloudflareTestToken(),

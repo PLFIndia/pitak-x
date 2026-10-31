@@ -267,6 +267,32 @@ final class MoveSiteUseCase {
     }
   }
 
+  /// The one refusal for "Cancel is no longer possible": the old address
+  /// already shows the moved page.
+  static const MoveSiteFailure _cancelRefused = MoveSiteFailure(
+    MoveSiteMessages.cancelAfterRetirement,
+    retirementPending: true,
+    oldAddressRetired: true,
+  );
+
+  /// Read-only: may Cancel still be offered for the pending move?
+  ///
+  /// Null when it may; otherwise the refusal [abandon] would give. The UI
+  /// runs this BEFORE its confirmation dialog, so a user is never asked to
+  /// confirm a cancel that is then refused (handoff §12, 2026-10-30). It
+  /// writes nothing; [abandon] repeats the same read inside the operation
+  /// queue before writing, so this is a courtesy for the UI, never the guard.
+  Future<MoveSiteFailure?> checkCancel() async {
+    final pending = _hostState.currentState()?.pendingMove;
+    if (pending == null) {
+      return const MoveSiteFailure(MoveSiteMessages.stale);
+    }
+    if (await _sourceFor(pending.oldTarget).retirementObserved(pending)) {
+      return _cancelRefused;
+    }
+    return null;
+  }
+
   /// Cancels the pending move without touching either site (fix-plan M4).
   ///
   /// Refused once the old address already shows the moved page: at that point
@@ -278,10 +304,7 @@ final class MoveSiteUseCase {
       return const MoveSiteFailure(MoveSiteMessages.stale);
     }
     if (await _sourceFor(pending.oldTarget).retirementObserved(pending)) {
-      return const MoveSiteFailure(
-        MoveSiteMessages.cancelAfterRetirement,
-        retirementPending: true,
-      );
+      return _cancelRefused;
     }
     final abandoned = await _hostState.abandonMove(pending);
     if (abandoned.isLeft()) {
@@ -320,6 +343,9 @@ final class MoveSiteUseCase {
       pending,
       temporaryCleanupFailed:
           destinationCleanupFailed || outcome.temporaryCleanupFailed,
+      // Retirement just verified, so a failed final switch must not leave
+      // Cancel on offer: it could only be refused.
+      oldAddressRetired: true,
     );
   }
 
@@ -327,12 +353,14 @@ final class MoveSiteUseCase {
     PendingMove pending, {
     bool retirementSkipped = false,
     bool temporaryCleanupFailed = false,
+    bool oldAddressRetired = false,
   }) async {
     final finished = await _hostState.finishMove(pending);
     if (finished.isLeft()) {
       return MoveSiteFailure(
         MoveSiteMessages.completionFailed,
         retirementPending: _isPending(pending),
+        oldAddressRetired: oldAddressRetired,
       );
     }
     return MoveSiteSuccess(

@@ -8,7 +8,6 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_marker_probe.dart';
-import 'package:pitaka/features/publish/application/cloudflare/cloudflare_worker_name_guard.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_token.dart';
@@ -28,7 +27,8 @@ final class CloudflarePublishPreflight {
     required this.route,
     required this.probe,
     required this.freshness,
-  });
+    bool? workerHasContent,
+  }) : workerHasContent = workerHasContent ?? workerExists;
 
   /// Exact operation target.
   final CloudflarePublishTarget target;
@@ -37,7 +37,19 @@ final class CloudflarePublishPreflight {
   final CloudflareSiteManifest local;
 
   /// Whether the Worker existence endpoint proved it present.
+  ///
+  /// Used for FACTS (the anchor, the RH1 race checks, the route read): an
+  /// empty Worker exists.
   final bool workerExists;
+
+  /// Whether the Worker has at least one version, i.e. serves content.
+  ///
+  /// Used for CONTENT decisions (freshness): an empty Worker (no versions,
+  /// what an interrupted first publish leaves) holds nothing that a publish
+  /// could destroy, so it classifies like a Worker that does not exist and
+  /// never asks to "replace" it (handoff §12, 2026-10-30). Defaults to
+  /// [workerExists] for callers that only know existence.
+  final bool workerHasContent;
 
   /// Actual route/version settings for an existing Worker; null for a new one.
   final CloudflareWorkerRoute? route;
@@ -87,13 +99,14 @@ final class CloudflarePublishPreflight {
         target: target,
         local: local,
         workerExists: workerExists,
+        workerHasContent: workerHasContent,
         route: route,
         probe: probe,
         freshness: classifyFreshness(
           localState: local.target == null ? null : local.state,
           localPublishId: local.publishId,
           probe: probe,
-          workerExists: workerExists,
+          workerExists: workerHasContent,
         ),
       );
 
@@ -162,21 +175,15 @@ final class CloudflarePublishPreflightReader {
         if (error.kind != CloudflareApiExceptionKind.forbidden) rethrow;
       }
 
-      final workerExists = await _deployApi.workerExists(
+      final presence = await _deployApi.workerPresence(
         token: token,
         accountId: target.accountId,
         workerName: target.workerName,
       );
-      if (!workerExists) {
-        // RH2: a case variant can already own the public address even when the
-        // API's existence read says absent. Refuse before any write.
-        final free = await CloudflareWorkerNameGuard(_deployApi).ensureFree(
-          token: token,
-          accountId: target.accountId,
-          workerName: target.workerName,
-        );
-        if (free case Left(value: final failure)) return Left(failure);
-      }
+      // No case-variant listing here any more: Cloudflare refuses a Worker
+      // name with capitals (HTTP 400, code 10016, real host 2026-10-30), so no
+      // differently-capitalised Worker can own this lower-case address.
+      final workerExists = presence.exists;
       final probe = await _markerProbe.call(
         target: target,
         cacheBuster: cacheBuster,
@@ -188,17 +195,20 @@ final class CloudflarePublishPreflightReader {
               workerName: target.workerName,
             )
           : null;
+      // Content, not existence, decides freshness: an empty Worker classifies
+      // like an absent one (see `workerHasContent`).
       final freshness = classifyFreshness(
         localState: local.target == null ? null : local.state,
         localPublishId: local.publishId,
         probe: probe,
-        workerExists: workerExists,
+        workerExists: presence.hasContent,
       );
       return Right(
         CloudflarePublishPreflight(
           target: target,
           local: local,
           workerExists: workerExists,
+          workerHasContent: presence.hasContent,
           route: route,
           probe: probe,
           freshness: freshness,

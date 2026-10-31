@@ -393,8 +393,10 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
       revision: _clock(),
     );
     if (verified != CloudflarePublicationVerification.verified) {
+      // The deploy was accepted, so say the library was sent; only the
+      // read-back is missing (the move was not recorded, nothing retired).
       return MoveDestinationFailed(
-        '${MoveSiteMessages.destinationNotVerified}$localNote',
+        '${MoveSiteMessages.cloudflareDestinationNotLiveYet}$localNote',
         localStateSaved: recordSaved,
       );
     }
@@ -457,10 +459,10 @@ final class CloudflareMoveDestination implements MoveDestinationPublisher {
 
   /// True when deploying deletes content this phone did not publish.
   ///
-  /// A Worker that does not exist has nothing to replace, so it needs no
-  /// consent even when its marker is contradictory.
+  /// A Worker that does not exist, or exists with no versions, has nothing to
+  /// replace, so it needs no consent even when its marker is contradictory.
   static bool _needsReplacementConsent(CloudflarePublishPreflight state) =>
-      state.workerExists && state.freshness == PublishFreshness.unknown;
+      state.workerHasContent && state.freshness == PublishFreshness.unknown;
 
   static bool _matchesSnapshot(
     CloudflareSiteManifest local,

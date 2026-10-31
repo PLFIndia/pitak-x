@@ -41,6 +41,30 @@ final class _FakePublishController extends PublishController {
   }
 }
 
+/// Like [_FakePublishController], but each call waits for its own future, so
+/// a test can look at the card WHILE a publish is running. It sets loading
+/// exactly as the real controller does (Riverpod keeps the previous value).
+final class _InFlightPublishController extends PublishController {
+  _InFlightPublishController(this.results);
+
+  final List<Future<PublishResult>> results;
+
+  @override
+  FutureOr<PublishResult?> build() => null;
+
+  @override
+  Future<PublishResult> publish({
+    PublishMode mode = PublishMode.incremental,
+    PublishReplacementSummary? confirmation,
+    bool verificationOnly = false,
+  }) async {
+    state = const AsyncLoading();
+    final result = await results.removeAt(0);
+    state = AsyncData(result);
+    return result;
+  }
+}
+
 void main() {
   final target = cloudflareTestConnection().status.target!;
   final status = PublishSiteStatus(
@@ -70,7 +94,7 @@ void main() {
 
   Future<void> pump(
     WidgetTester tester,
-    _FakePublishController controller, {
+    PublishController controller, {
     PublishSiteStatus? site,
     PublishJournalReset? reset,
   }) async {
@@ -166,6 +190,47 @@ void main() {
     expect(controller.calls, hasLength(2));
     expect(controller.calls.last.confirmation, same(required.summary));
     expect(find.text('Published! Your site is verified live.'), findsOneWidget);
+  });
+
+  // Real host, 2026-10-30 (row 12): for about a minute after confirming a
+  // recreate, the card still said "Review site replacement" / "Review the
+  // replacement before publishing." while the confirmed publish deployed and
+  // verified. Riverpod keeps the previous value during AsyncLoading, so the
+  // card must not render it while a run is in flight.
+  testWidgets('while a confirmed publish runs, the card says Publishing… and '
+      'never the review it just confirmed', (tester) async {
+    final required = PublishReplacementRequired(summary());
+    final inFlight = Completer<PublishResult>();
+    final controller = _InFlightPublishController([
+      Future.value(required),
+      inFlight.future,
+    ]);
+    await pump(tester, controller);
+
+    await tester.tap(find.text('Publish catalogue now'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Replace the site'));
+    // The confirmed run is in flight: its spinner never settles, so pump once.
+    await tester.pump();
+
+    expect(find.text('Publishing…'), findsOneWidget);
+    expect(find.text('Review site replacement'), findsNothing);
+    expect(
+      find.text('Review the replacement before publishing.'),
+      findsNothing,
+    );
+
+    inFlight.complete(
+      PublishSuccess(
+        pagesUrl: target.siteUrl,
+        uploadedPaths: const [],
+        pagesLive: true,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Published! Your site is verified live.'), findsOneWidget);
+    expect(find.text('Publishing…'), findsNothing);
   });
 
   testWidgets('a changed digest opens a new replacement review instead of '

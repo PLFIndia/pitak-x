@@ -191,10 +191,12 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
       revision: _clock(),
     );
     if (!verified) {
+      // The commit landed (we are past PublishCommitSuccess), so the copy
+      // says the library was written and is most likely still building.
       return MoveDestinationFailed(
         recordSaved
-            ? MoveSiteMessages.destinationNotVerified
-            : '${MoveSiteMessages.destinationNotVerified} '
+            ? MoveSiteMessages.gitHubDestinationNotLiveYet
+            : '${MoveSiteMessages.gitHubDestinationNotLiveYet} '
                   '${MoveSiteMessages.localRecordNotSaved}',
         localStateSaved: recordSaved,
       );

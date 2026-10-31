@@ -275,13 +275,6 @@ final class FakeCloudflareApi implements CloudflareApi {
   CloudflareApiException? checkSubdomainError;
   CloudflareApiException? createSubdomainError;
   CloudflareApiException? workerExistsError;
-  CloudflareApiException? listWorkerNamesError;
-
-  /// Worker ids returned by [listWorkerNames] (fix-plan RH2). Empty by default,
-  /// i.e. no case variant is listed.
-  List<CloudflareWorkerName> workerNames = const [];
-  bool workerNamesTruncated = false;
-  int listWorkerNamesCalls = 0;
   CloudflareApiException? routeError;
 
   /// Fails only route WRITES, so a test can prove a read-only preflight still
@@ -423,19 +416,28 @@ final class FakeCloudflareApi implements CloudflareApi {
     return workerExistsValue;
   }
 
+  /// When [workerExistsValue] is true: false (default) means the Worker has
+  /// content (`deployed`), true means Cloudflare's "exists but has no
+  /// versions" answer (`empty`, code 10222).
+  bool workerEmptyValue = false;
+
+  /// Shares [workerExists]' counter, gate and scripted error: it is the same
+  /// remote read, only with the empty/deployed distinction kept.
   @override
-  Future<CloudflareWorkerNameListing> listWorkerNames({
+  Future<CloudflareWorkerPresence> workerPresence({
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
+    required CloudflareWorkerName workerName,
   }) async {
-    listWorkerNamesCalls++;
-    await _awaitGate('listWorkerNames');
-    final error = listWorkerNamesError;
-    if (error != null) throw error;
-    return CloudflareWorkerNameListing(
-      names: workerNames,
-      truncated: workerNamesTruncated,
+    final exists = await workerExists(
+      token: token,
+      accountId: accountId,
+      workerName: workerName,
     );
+    if (!exists) return CloudflareWorkerPresence.absent;
+    return workerEmptyValue
+        ? CloudflareWorkerPresence.empty
+        : CloudflareWorkerPresence.deployed;
   }
 
   @override

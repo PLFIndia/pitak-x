@@ -6,7 +6,6 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/infrastructure/cloudflare_publish_marker_codec.dart';
@@ -169,52 +168,48 @@ void main() {
     },
   );
 
-  group('RH2 — Worker-name case', () {
-    test('a case variant blocks the new-site path before any write', () async {
+  // Real host, 2026-10-30: an interrupted first publish leaves a Worker that
+  // exists with no versions (404 + 10222). It holds no content, so it must not
+  // be treated as "content this phone did not publish".
+  group('an empty Worker (exists, no versions)', () {
+    test('with no record it is a new site, while still existing for the '
+        'race checks', () async {
       api
-        ..workerExistsValue = false
-        ..workerNames = [CloudflareWorkerName.tryParse('PITAK-LIBRARY')!];
+        ..workerExistsValue = true
+        ..workerEmptyValue = true;
+      reader.absent(CloudflareLimits.markerPath);
 
-      final result = await preflight.call(
+      final result = (await preflight.call(
         token: cloudflareTestToken(),
         target: target,
         local: CloudflareSiteManifest.empty,
-        cacheBuster: 'rh2',
-      );
+        cacheBuster: 'empty',
+      )).toNullable()!;
 
-      expect(result.isLeft(), isTrue);
-      expect(
-        result.swap().toNullable(),
-        isA<ValidationFailure>().having(
-          (failure) => failure.message,
-          'message',
-          CloudflareErrorMessages.workerNameCaseTaken,
-        ),
-      );
-      expect(api.listWorkerNamesCalls, 1);
-      expect(api.routeUpdates, isEmpty);
-      expect(api.uploadManifests, isEmpty);
-      expect(api.deployCalls, 0);
+      expect(result.freshness, PublishFreshness.newSite);
+      expect(result.requiresReplacement, isFalse);
+      expect(result.workerExists, isTrue, reason: 'a fact for RH1');
+      expect(result.workerHasContent, isFalse);
+      expect(result.anchor.workerExists, isTrue);
     });
 
-    test('a failed listing fails closed', () async {
-      api
-        ..workerExistsValue = false
-        ..listWorkerNamesError = CloudflareApiException(
-          CloudflareApiExceptionKind.network,
-        );
+    test('a Worker WITH content and no marker stays unknown', () async {
+      api.workerExistsValue = true; // deployed
+      reader.absent(CloudflareLimits.markerPath);
 
-      final result = await preflight.call(
+      final result = (await preflight.call(
         token: cloudflareTestToken(),
         target: target,
         local: CloudflareSiteManifest.empty,
-        cacheBuster: 'rh2',
-      );
+        cacheBuster: 'deployed',
+      )).toNullable()!;
 
-      expect(result.isLeft(), isTrue);
-      expect(api.deployCalls, 0);
+      expect(result.freshness, PublishFreshness.unknown);
+      expect(result.requiresReplacement, isTrue);
     });
+  });
 
+  group('Worker-name case', () {
     test('a stored mixed-case target still publishes (no rewrite)', () async {
       final mixed = CloudflarePublishTarget.create(
         accountId: cloudflareTestAccountId,
@@ -232,11 +227,6 @@ void main() {
       );
 
       expect(result.isRight(), isTrue);
-      expect(
-        api.listWorkerNamesCalls,
-        0,
-        reason: 'an existing Worker needs no case check',
-      );
     });
   });
 }

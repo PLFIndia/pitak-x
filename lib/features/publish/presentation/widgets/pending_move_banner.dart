@@ -3,7 +3,9 @@
 /// Three explicit exits (fix-plan M4): Retry move, Skip retirement, Cancel
 /// move. "Finish without retiring" appears only after the Skip check proved
 /// Pitak cannot sign in to the old site, so the user is never offered a
-/// destructive-looking action before it is the honest one.
+/// destructive-looking action before it is the honest one. For the same
+/// reason Cancel checks the old address BEFORE its dialog and disappears once
+/// the old address is known to show the moved page.
 library;
 
 import 'dart:async' show unawaited;
@@ -30,6 +32,11 @@ class PendingMoveBanner extends ConsumerWidget {
     final result = operation.result;
     final canFinish =
         result is MoveSiteFailure && result.canFinishWithoutRetiring;
+    // Once a command has SEEN the moved page at the old address, Cancel can
+    // only be refused, so it is not offered at all (handoff §12, 2026-10-30).
+    final oldAddressRetired =
+        result is MoveSiteFailure && result.oldAddressRetired;
+    final retrying = operation.busy && !operation.checkingCancel;
     return SectionCard(
       title: 'Finish moving your site',
       child: Column(
@@ -50,7 +57,7 @@ class PendingMoveBanner extends ConsumerWidget {
                 onPressed: operation.busy
                     ? null
                     : () => unawaited(_retry(context, ref)),
-                child: Text(operation.busy ? 'Retrying…' : 'Retry move'),
+                child: Text(retrying ? 'Retrying…' : 'Retry move'),
               ),
               if (canFinish)
                 FilledButton.tonal(
@@ -68,14 +75,19 @@ class PendingMoveBanner extends ConsumerWidget {
                       : () => unawaited(_warnSkip(context, ref)),
                   child: const Text('Skip retirement'),
                 ),
-              TextButton(
-                onPressed: operation.busy
-                    ? null
-                    : () => unawaited(_warnCancel(context, ref)),
-                child: const Text('Cancel move'),
-              ),
+              if (!oldAddressRetired)
+                TextButton(
+                  onPressed: operation.busy
+                      ? null
+                      : () => unawaited(_warnCancel(context, ref)),
+                  child: const Text('Cancel move'),
+                ),
             ],
           ),
+          if (operation.checkingCancel) ...[
+            const SizedBox(height: 8),
+            const Text('Checking your old address…'),
+          ],
           if (result case MoveSiteFailure(:final reason)) ...[
             const SizedBox(height: 8),
             Text(reason),
@@ -145,6 +157,14 @@ class PendingMoveBanner extends ConsumerWidget {
   }
 
   Future<void> _warnCancel(BuildContext context, WidgetRef ref) async {
+    // Check BEFORE the dialog: a user must never read and confirm a promise
+    // ("keep publishing to your current site") that is then refused. The
+    // refusal is already on the banner (and Cancel is gone), so it is not
+    // repeated as a snackbar.
+    final refusal = await ref
+        .read(moveSiteControllerProvider.notifier)
+        .checkCancel();
+    if (refusal != null || !context.mounted) return;
     final confirmed = await showCancelMoveDialog(
       context,
       oldAddress: pending.oldTarget.siteUrl,

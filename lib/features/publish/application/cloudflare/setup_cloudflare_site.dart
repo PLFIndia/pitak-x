@@ -10,7 +10,6 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_operation_attempt.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_constraint.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_setup_journal.dart';
-import 'package:pitaka/features/publish/application/cloudflare/cloudflare_worker_name_guard.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_account.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_result.dart';
 import 'package:pitaka/features/publish/application/cloudflare/setup_cloudflare_subdomain.dart';
@@ -248,28 +247,22 @@ final class SetupCloudflareSite {
     if (constrained case Left(value: final failure)) {
       return left<Failure, CloudflareWorkerOutcome>(failure);
     }
-    final exists = await current.useToken(
-      (token) => _deployApi.workerExists(
+    final presence = await current.useToken(
+      (token) => _deployApi.workerPresence(
         token: token,
         accountId: accountId,
         workerName: worker,
       ),
     );
-    if (!exists) {
-      // RH2: "absent" from the existence read is not proof that the ADDRESS is
-      // free; a case variant may already own it.
-      final free = await current.useToken(
-        (token) => CloudflareWorkerNameGuard(
-          _deployApi,
-        ).ensureFree(token: token, accountId: accountId, workerName: worker),
-      );
-      if (free case Left(value: final failure)) {
-        return left<Failure, CloudflareWorkerOutcome>(failure);
-      }
-    }
+    // Existence is a fact the verification deploy needs (RH1); CONTENT is what
+    // a replacement would destroy. An empty Worker (no versions, what an
+    // interrupted first publish leaves) has none, so it never asks for
+    // replacement consent (handoff §12, 2026-10-30: the second, empty review).
+    final exists = presence.exists;
+    final hasContent = presence.hasContent;
     final selected = current.selectWorker(worker); // Prospective record only.
     if (selected.addressConfirmed) {
-      if (exists && !replacementConsent) {
+      if (hasContent && !replacementConsent) {
         return right(
           CloudflareWorkerReplacementRequired(
             workerName: worker,
@@ -292,12 +285,13 @@ final class SetupCloudflareSite {
       return right(
         CloudflareVerificationRequired(
           workerName: worker,
-          workerExists: exists,
+          // The dialog's "replaces ALL assets" warning is about content.
+          workerExists: hasContent,
           isActiveSite: _isActiveSite(selected),
         ),
       );
     }
-    if (exists && !replacementConsent) {
+    if (hasContent && !replacementConsent) {
       return right(
         CloudflareWorkerReplacementRequired(
           workerName: worker,

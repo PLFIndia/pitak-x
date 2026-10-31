@@ -243,7 +243,12 @@ void main() {
       );
 
       final failure = result as MoveDestinationFailed;
-      expect(failure.reason, MoveSiteMessages.destinationNotVerified);
+      // The commit landed, so the copy says so and that Pages may still be
+      // building — never a bare "could not be verified" (handoff §12).
+      expect(failure.reason, MoveSiteMessages.gitHubDestinationNotLiveYet);
+      expect(failure.reason, contains('copied to the new GitHub Pages site'));
+      expect(failure.reason, contains('10 minutes'));
+      expect(failure.reason, contains('Your current site was not changed.'));
       expect(destinationManifest.value.state, isNot(PublishState.live));
     },
   );

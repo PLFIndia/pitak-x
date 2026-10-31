@@ -103,9 +103,18 @@ class CloudflareTile extends StatelessWidget {
               SelectableText('Confirmed address: ${target.siteUrl}'),
               const Text('A confirmed address is not necessarily live yet.'),
             ],
+            // Derived from the status on every rebuild, so a publish that
+            // proves write access swaps the line instead of leaving a stale
+            // "not tested yet" next to "verified".
             if (status.workersWriteConfirmed) ...[
               const SizedBox(height: 8),
               const Text('Workers write access and read-back verified.'),
+            ] else if (status.target != null) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Workers write access is not tested yet. The first publish '
+                'tests it.',
+              ),
             ],
             const SizedBox(height: 12),
             Wrap(

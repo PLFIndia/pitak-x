@@ -343,11 +343,15 @@ class CloudflareConnectionController extends _$CloudflareConnectionController {
   ) async {
     final outcome = await _unwrap(result);
     if (outcome is! CloudflareWorkerReady) return;
+    // The message reports what this command just did, so it must stay true
+    // after later commands. Whether write access is proven is a STATE that a
+    // publish changes, so the tile derives that line from the status instead
+    // (a stored "the first publish will test it" outlived the publish that
+    // tested it and contradicted the tile, handoff §12 2026-10-30).
     await _reload(
       message: outcome.workersWriteConfirmed
           ? 'Cloudflare is connected and its address is verified.'
-          : 'Cloudflare is ready to publish. The first publish will test '
-                'Workers write access.',
+          : 'Cloudflare is ready to publish.',
     );
   }
 

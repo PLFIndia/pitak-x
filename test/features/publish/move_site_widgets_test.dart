@@ -203,6 +203,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
+      expect(controller.checkCancelCalls, 1, reason: 'checked before dialog');
       expect(controller.abandonCalls, 1);
       expect(controller.retryCalls, 0);
       expect(controller.skipCalls, 0);
@@ -215,6 +216,68 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    // Real host, 2026-10-30 (row 17 run A): the banner offered Cancel after
+    // the old site had retired; the user read and confirmed the whole dialog
+    // and only then learned it was refused.
+    testWidgets('a Cancel the old address already rules out shows no dialog, '
+        'explains why, and removes Cancel', (tester) async {
+      final controller = _FakeController()
+        ..cancelRefusal = const MoveSiteFailure(
+          MoveSiteMessages.cancelAfterRetirement,
+          retirementPending: true,
+          oldAddressRetired: true,
+        );
+      await tester.pumpWidget(
+        app(PendingMoveBanner(pending: movePending()), controller),
+      );
+
+      await tester.tap(find.text('Cancel move'));
+      await tester.pumpAndSettle();
+
+      expect(controller.checkCancelCalls, 1);
+      expect(find.text('Cancel this move?'), findsNothing);
+      expect(controller.abandonCalls, 0);
+      expect(find.text(MoveSiteMessages.cancelAfterRetirement), findsOneWidget);
+      expect(find.text('Cancel move'), findsNothing);
+      expect(find.text('Retry move'), findsOneWidget);
+    });
+
+    testWidgets('Cancel is not offered once a command saw the moved page', (
+      tester,
+    ) async {
+      final controller = _FakeController(
+        initial: const MoveSiteState(
+          result: MoveSiteFailure(
+            MoveSiteMessages.completionFailed,
+            retirementPending: true,
+            oldAddressRetired: true,
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        app(PendingMoveBanner(pending: movePending()), controller),
+      );
+
+      expect(find.text('Cancel move'), findsNothing);
+      expect(find.text('Retry move'), findsOneWidget);
+    });
+
+    testWidgets('the read-only Cancel check says what it is doing', (
+      tester,
+    ) async {
+      final controller = _FakeController(
+        initial: const MoveSiteState(busy: true, checkingCancel: true),
+      );
+      await tester.pumpWidget(
+        app(PendingMoveBanner(pending: movePending()), controller),
+      );
+
+      expect(find.text('Checking your old address…'), findsOneWidget);
+      // Nothing is being retried, so the Retry label must not claim it.
+      expect(find.text('Retrying…'), findsNothing);
+      expect(find.text('Retry move'), findsOneWidget);
     });
 
     testWidgets('an inaccessible old site offers Finish without retiring', (
@@ -362,8 +425,12 @@ final class _FakeController extends MoveSiteController {
   int skipCalls = 0;
   int finishCalls = 0;
   int abandonCalls = 0;
+  int checkCancelCalls = 0;
   MoveSiteResult? prepareResult;
   MoveSiteResult? commandResult;
+
+  /// What the read-only Cancel pre-check answers; null allows the dialog.
+  MoveSiteFailure? cancelRefusal;
 
   @override
   MoveSiteState build() => _initial;
@@ -414,5 +481,13 @@ final class _FakeController extends MoveSiteController {
         commandResult ?? const MoveSiteFailure(MoveSiteMessages.generic);
     state = MoveSiteState(result: result);
     return result;
+  }
+
+  @override
+  Future<MoveSiteFailure?> checkCancel() async {
+    checkCancelCalls++;
+    final refusal = cancelRefusal;
+    if (refusal != null) state = MoveSiteState(result: refusal);
+    return refusal;
   }
 }

@@ -399,6 +399,11 @@ void main() {
       );
 
       final failure = result as MoveDestinationFailed;
+      // The deploy was accepted, so the copy says the library was sent.
+      expect(
+        failure.reason,
+        startsWith(MoveSiteMessages.cloudflareDestinationNotLiveYet),
+      );
       expect(failure.reason, contains(MoveSiteMessages.localRecordNotSaved));
       expect(failure.localStateSaved, isFalse);
     },

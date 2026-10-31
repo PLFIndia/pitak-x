@@ -135,6 +135,50 @@ void main() {
       },
     );
 
+    test(
+      'workerPresence keeps "empty" apart from "deployed" (one read each)',
+      () async {
+        final responses = <http.Response>[
+          envelope(null),
+          envelope(
+            null,
+            status: 404,
+            success: false,
+            errors: [
+              {
+                'code': CloudflareLimits.emptyWorkerErrorCode,
+                'message': 'This Worker has no versions.',
+              },
+            ],
+          ),
+          envelope(
+            null,
+            status: 404,
+            success: false,
+            errors: [
+              {'code': CloudflareLimits.notFoundErrorCode, 'message': 'gone'},
+            ],
+          ),
+        ];
+        var requests = 0;
+        final api = apiFor((request) async {
+          requests++;
+          expect(request.url.path, workerPath);
+          return responses.removeAt(0);
+        });
+        Future<CloudflareWorkerPresence> read() => api.workerPresence(
+          token: token,
+          accountId: account,
+          workerName: worker,
+        );
+
+        expect(await read(), CloudflareWorkerPresence.deployed);
+        expect(await read(), CloudflareWorkerPresence.empty);
+        expect(await read(), CloudflareWorkerPresence.absent);
+        expect(requests, 3);
+      },
+    );
+
     test('a bare 404 is not absence: it is a typed notFound (L2)', () async {
       final api = apiFor(
         (_) async => envelope(null, status: 404, success: false),
@@ -928,89 +972,6 @@ void main() {
           previewsEnabled: false,
         ),
         throwsA(isA<CloudflareApiException>()),
-      );
-    });
-  });
-
-  group('Worker-name listing (RH2)', () {
-    test('reads only each id across bounded pages', () async {
-      final paths = <String>[];
-      final queries = <Map<String, String>>[];
-      var page = 0;
-      final api = apiFor((request) async {
-        paths.add(request.url.path);
-        queries.add(request.url.queryParameters);
-        page++;
-        final entries = page == 1
-            ? [
-                for (var i = 0; i < CloudflareLimits.workerNamesPerPage; i++)
-                  {'id': 'worker-$i', 'etag': 'ignored'},
-              ]
-            : [
-                {'id': 'last-one', 'created_on': 'ignored'},
-              ];
-        return envelope(entries);
-      });
-
-      final listing = await api.listWorkerNames(
-        token: token,
-        accountId: account,
-      );
-
-      expect(listing.names, hasLength(CloudflareLimits.workerNamesPerPage + 1));
-      expect(listing.names.first.value, 'worker-0');
-      expect(listing.names.last.value, 'last-one');
-      expect(listing.truncated, isFalse);
-      expect(paths.toSet(), {
-        '/client/v4/accounts/${account.value}/workers/scripts',
-      });
-      expect(
-        queries.first,
-        containsPair('per_page', '${CloudflareLimits.workerNamesPerPage}'),
-      );
-      expect(queries.first, containsPair('page', '1'));
-      expect(queries.last, containsPair('page', '2'));
-    });
-
-    test('four full pages are truncated, never proof of absence', () async {
-      final api = apiFor(
-        (request) async => envelope([
-          for (var i = 0; i < CloudflareLimits.workerNamesPerPage; i++)
-            {'id': 'worker-${request.url.queryParameters['page']}-$i'},
-        ]),
-      );
-
-      final listing = await api.listWorkerNames(
-        token: token,
-        accountId: account,
-      );
-
-      expect(
-        listing.names,
-        hasLength(
-          CloudflareLimits.workerNamesPerPage *
-              CloudflareLimits.maxWorkerNamePages,
-        ),
-      );
-      expect(listing.truncated, isTrue);
-    });
-
-    test('a malformed id is a typed malformed response', () async {
-      final api = apiFor(
-        (request) async => envelope([
-          {'id': 'bad name'},
-        ]),
-      );
-
-      await expectLater(
-        api.listWorkerNames(token: token, accountId: account),
-        throwsA(
-          isA<CloudflareApiException>().having(
-            (error) => error.kind,
-            'kind',
-            CloudflareApiExceptionKind.malformedResponse,
-          ),
-        ),
       );
     });
   });

@@ -62,8 +62,14 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     PublishSiteStatus site,
     AsyncValue<PublishResult?> publish,
   ) {
-    final result = publish.valueOrNull;
     final busy = publish.isLoading;
+    // While a publish runs, Riverpod still exposes the PREVIOUS result. That
+    // result describes an operation that is already over (for example the
+    // review the user just confirmed), so it is not rendered until the new
+    // run finishes. Otherwise the card said "Review the replacement before
+    // publishing." for the whole minute a confirmed recreate spent deploying
+    // and verifying (handoff §12, 2026-10-30).
+    final result = busy ? null : publish.valueOrNull;
     final review = result is PublishReplacementRequired;
     final target = site.target;
     return Column(
@@ -120,7 +126,11 @@ class _PublishCardState extends ConsumerState<PublishCard> {
                       )
                     : const Icon(Icons.cloud_upload),
                 label: Text(
-                  review ? 'Review site replacement' : 'Publish catalogue now',
+                  busy
+                      ? 'Publishing…'
+                      : review
+                      ? 'Review site replacement'
+                      : 'Publish catalogue now',
                 ),
               ),
               if (_canRetryVerification(site, result)) ...[

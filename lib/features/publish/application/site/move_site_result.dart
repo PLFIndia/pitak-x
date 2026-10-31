@@ -1,6 +1,7 @@
 /// Secret-free move confirmations, progress, and truthful operation outcomes.
 library;
 
+import 'package:pitaka/features/publish/application/site/read_back_budget.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/pending_move.dart';
@@ -158,6 +159,7 @@ final class MoveSiteFailure extends MoveSiteResult {
     this.destinationLocalStateSaved = true,
     this.canFinishWithoutRetiring = false,
     this.oldSiteAnswers = false,
+    this.oldAddressRetired = false,
   });
 
   /// Fixed safe copy; never a raw response or platform exception.
@@ -176,6 +178,12 @@ final class MoveSiteFailure extends MoveSiteResult {
 
   /// Whether the old public address still answers; selects the finish copy.
   final bool oldSiteAnswers;
+
+  /// True when this command SAW the old address already showing the moved
+  /// page. Cancelling would then leave a moved page the journal no longer
+  /// knows about, so the banner stops offering Cancel and Retry is the only
+  /// way on (handoff §12, 2026-10-30).
+  final bool oldAddressRetired;
 }
 
 /// The pending move was cancelled; both sites are untouched (fix-plan M4).
@@ -351,6 +359,29 @@ abstract final class MoveSiteMessages {
   static const String destinationNotVerified =
       'The new site could not be verified yet. The current site was not '
       'changed. Try the move again in a few minutes.';
+
+  /// The whole library WAS committed to the new GitHub Pages site, but the
+  /// read-back did not see it within the Pages wait.
+  ///
+  /// Saying only "could not be verified" read as "the move failed", although
+  /// the files were written and GitHub was most likely still building a
+  /// brand-new site (handoff §12, 2026-10-29: a first Pages build took 81 s,
+  /// longer than the old budget). The wait in this sentence comes from the
+  /// budget the verifier actually used, so the two cannot drift apart.
+  static String get gitHubDestinationNotLiveYet =>
+      'Your library was copied to the new GitHub Pages site, but it is not '
+      'showing there yet. A new GitHub Pages site can take '
+      '${ReadBackBudget.gitHubPagesTotal.inMinutes} minutes or more to '
+      'appear. Your current site was not changed. Wait a few minutes, then '
+      'choose Move to other host again.';
+
+  /// The whole library WAS deployed to the new Worker, but the read-back did
+  /// not confirm it. Same promise as the GitHub sentence: nothing was retired
+  /// and moving again is safe.
+  static const String cloudflareDestinationNotLiveYet =
+      'Your library was sent to the new Cloudflare Worker, but Pitak could not '
+      'confirm it there yet. Your current site was not changed. Wait a few '
+      'minutes, then choose Move to other host again.';
 
   /// Destination proof exists, but the pending journal could not be saved.
   static const String pendingSaveFailed =

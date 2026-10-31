@@ -92,6 +92,17 @@ final class HttpCloudflareApi implements CloudflareApi {
   );
 
   @override
+  Future<CloudflareWorkerPresence> workerPresence({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+    required CloudflareWorkerName workerName,
+  }) => _deploy.workerPresence(
+    token: token,
+    accountId: accountId,
+    workerName: workerName,
+  );
+
+  @override
   Future<String?> latestDeploymentId({
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
@@ -101,12 +112,6 @@ final class HttpCloudflareApi implements CloudflareApi {
     accountId: accountId,
     workerName: workerName,
   );
-
-  @override
-  Future<CloudflareWorkerNameListing> listWorkerNames({
-    required CloudflareApiToken token,
-    required CloudflareAccountId accountId,
-  }) => _deploy.listWorkerNames(token: token, accountId: accountId);
 
   @override
   Future<CloudflareUploadSession> createUploadSession({

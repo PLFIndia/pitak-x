@@ -6,7 +6,6 @@ import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
-import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -969,7 +968,6 @@ void main() {
       expect(result.isLeft(), isTrue);
       expect(result.swap().toNullable(), isA<ValidationFailure>());
       expect(h.api.workerExistsCalls, 0);
-      expect(h.api.listWorkerNamesCalls, 0);
       expect(h.credentials.saves, isEmpty);
     });
 
@@ -989,58 +987,82 @@ void main() {
       },
     );
 
+    // The account-wide case listing was removed: Cloudflare itself refuses a
+    // Worker name with capitals (HTTP 400, code 10016, real host 2026-10-30),
+    // so no differently-capitalised Worker can own a lower-case address.
     test(
-      'a case variant already owns the address: refused before any write',
+      'an absent lower-case name proceeds on the existence read alone',
       () async {
         final h = seeded();
-        h.api.workerNames = [CloudflareWorkerName.tryParse('MyLibrary')!];
+        h.api.workerExistsValue = false;
 
         final result = await h.setup.selectWorker('mylibrary');
 
-        expect(result.isLeft(), isTrue);
-        expect(
-          result.swap().toNullable(),
-          isA<ValidationFailure>().having(
-            (failure) => failure.message,
-            'message',
-            CloudflareErrorMessages.workerNameCaseTaken,
-          ),
-        );
-        expect(h.api.listWorkerNamesCalls, 1);
-        expect(h.credentials.saves, isEmpty, reason: 'no candidate was saved');
-        expect(h.api.deployCalls, 0);
+        expect(result, isA<Right<Failure, CloudflareWorkerOutcome>>());
+        expect(h.api.workerExistsCalls, 1);
       },
     );
-
-    test('a failed listing fails closed', () async {
-      final h = seeded();
-      h.api.listWorkerNamesError = CloudflareApiException(
-        CloudflareApiExceptionKind.network,
-      );
-
-      final result = await h.setup.selectWorker('mylibrary');
-
-      expect(result.isLeft(), isTrue);
-      expect(h.credentials.saves, isEmpty);
-      expect(h.api.deployCalls, 0);
-    });
-
-    test('a truncated listing fails closed', () async {
-      final h = seeded();
-      h.api.workerNamesTruncated = true;
-
-      final result = await h.setup.selectWorker('mylibrary');
-
-      expect(result.isLeft(), isTrue);
-      expect(
-        result.swap().toNullable(),
-        isA<CloudflareFailure>().having(
-          (failure) => failure.message,
-          'message',
-          CloudflareErrorMessages.workerNameCheckFailed,
-        ),
-      );
-      expect(h.credentials.saves, isEmpty);
-    });
   });
+
+  // Real host, 2026-10-30: reconnecting to a Worker that an interrupted first
+  // publish had created WITHOUT versions asked to "replace" it, then the
+  // publish asked again. An empty Worker holds nothing to replace.
+  group(
+    'an empty Worker (exists, no versions) needs no replacement consent',
+    () {
+      test(
+        'a confirmed address finalizes without the replacement prompt',
+        () async {
+          final h = CloudflareSetupHarness(
+            connection: cloudflareTestConnection(withWorker: false),
+          );
+          h.api
+            ..workerExistsValue = true
+            ..workerEmptyValue = true;
+
+          final ready = _right(await h.setup.selectWorker('existing'));
+
+          expect(ready, isA<CloudflareWorkerReady>());
+          expect(h.api.deployCalls, 0);
+        },
+      );
+
+      test('a manual candidate is verified without the replacement prompt, and '
+          'its dialog does not warn about replacing assets', () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(
+            withWorker: false,
+            confirmed: false,
+          ),
+        );
+        h.api
+          ..workerExistsValue = true
+          ..workerEmptyValue = true;
+
+        final required =
+            _right(await h.setup.selectWorker('candidate'))
+                as CloudflareVerificationRequired;
+        expect(required.workerExists, isFalse, reason: 'nothing to replace');
+
+        // Confirming the verification goes straight to the marker deploy: no
+        // second (replacement) prompt.
+        h.verifier.body = cloudflareTestMarkerBytes();
+        final next = _right(
+          await h.setup.selectWorker('candidate', verificationConfirmed: true),
+        );
+        expect(next, isNot(isA<CloudflareWorkerReplacementRequired>()));
+      });
+
+      test('a Worker WITH content still requires consent', () async {
+        final h = CloudflareSetupHarness(
+          connection: cloudflareTestConnection(withWorker: false),
+        );
+        h.api.workerExistsValue = true; // deployed (has versions)
+
+        final consent = _right(await h.setup.selectWorker('existing'));
+
+        expect(consent, isA<CloudflareWorkerReplacementRequired>());
+      });
+    },
+  );
 }

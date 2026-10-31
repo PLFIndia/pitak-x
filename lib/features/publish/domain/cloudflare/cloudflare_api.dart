@@ -197,6 +197,18 @@ abstract interface class CloudflareDeployApi {
     required CloudflareWorkerName workerName,
   });
 
+  /// The same read as [workerExists], keeping "exists but has no versions"
+  /// apart from "exists with content" ([CloudflareWorkerPresence]).
+  ///
+  /// Same fail-closed rules: only Cloudflare's own codes decide (10007 =
+  /// absent, 10222 = empty); any other 404 throws. Used where the answer
+  /// decides whether the user must consent to replacing content.
+  Future<CloudflareWorkerPresence> workerPresence({
+    required CloudflareApiToken token,
+    required CloudflareAccountId accountId,
+    required CloudflareWorkerName workerName,
+  });
+
   /// Returns the optional latest deployment ID for diagnostics only.
   ///
   /// Null means no diagnostic entry. Failures must not collapse to null, and no
@@ -205,20 +217,6 @@ abstract interface class CloudflareDeployApi {
     required CloudflareApiToken token,
     required CloudflareAccountId accountId,
     required CloudflareWorkerName workerName,
-  });
-
-  /// Lists the account's Worker script ids, bounded (fix-plan RH2).
-  ///
-  /// Only each script's `id` is read: it is the Worker name. The check exists
-  /// because `workerExists` may be case-sensitive while the public address is
-  /// not, so `mylib` can already answer at `MyLib.sub.workers.dev`.
-  ///
-  /// A permission refusal, a transport failure or a malformed body throws a
-  /// typed exception; a truncated listing is flagged and proves nothing. The
-  /// caller fails closed in every one of those cases.
-  Future<CloudflareWorkerNameListing> listWorkerNames({
-    required CloudflareApiToken token,
-    required CloudflareAccountId accountId,
   });
 
   /// Creates an asset-upload session for the complete next Worker manifest.

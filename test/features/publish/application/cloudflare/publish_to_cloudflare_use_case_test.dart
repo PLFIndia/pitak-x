@@ -342,6 +342,41 @@ void main() {
     expect(h.api.deployCalls, 0);
   });
 
+  // Real host, 2026-10-30: an interrupted first publish leaves the Worker
+  // existing with no versions. Publishing to it asked to "replace" a site
+  // that holds nothing. An empty Worker is a new site.
+  test('a first publish to an EMPTY Worker deploys without a replacement '
+      'review', () async {
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.api.workerEmptyValue = true;
+    h.reader.absent(CloudflareLimits.markerPath);
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishSuccess>());
+    expect(h.api.deployCalls, 1);
+  });
+
+  test('a first publish to a Worker WITH content still asks first', () async {
+    final h = S8PublishHarness(dir, workerExists: true);
+    h.reader.absent(CloudflareLimits.markerPath);
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+
+    expect(result, isA<PublishReplacementRequired>());
+    expect(
+      (result as PublishReplacementRequired).summary.reason,
+      PublishReplacementReason.unknownRemoteState,
+    );
+    expect(h.api.deployCalls, 0);
+  });
+
   group('H1: publishing dead ends', () {
     test('a record for another Worker is a target-changed review, not an '
         'error, and confirming deploys a complete site', () async {
