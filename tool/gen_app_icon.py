@@ -27,13 +27,24 @@ GLYPH_SCALE = 1.78      # book ~59% of the tile (was ~33%); safe for adaptive cr
 
 BG = (0xE2, 0x58, 0x22)     # pitaka_saffron_400
 PAGE = (0xFF, 0xFA, 0xF5)   # cream pages
-SPINE = (0xC9, 0x4F, 0x1E)  # darker saffron spine
+SPINE = (0xC9, 0x4F, 0x1E)  # darker saffron centre fold (the gutter crease)
 
-# Open-book polygons in 108-viewport coords (left page, right page, spine).
+# Open-book polygons in 108-viewport coords (left page, right page, fold).
+# Image y grows DOWNWARD, so a bigger y is lower on screen.
+#
+# Why the fold is the LOWEST point: a book lying open face-up sags into its
+# centre fold, so seen from the front both page edges dip toward the middle
+# (a shallow "V", as in the 📖 emoji). Until 2026-10 the inner corners sat 4
+# units HIGHER than the outer ones, drawing a roof shape (a peak at the
+# spine), and the 4-unit band read as the spine seen from outside. Together
+# that looked like a book left open face-down. Each page now slopes down 4
+# units toward the fold, and the band is a thin 2-unit crease. The glyph's
+# bounding box (x 36..72, y 36..72) is unchanged, so its size, centring and
+# adaptive-icon safe zone stay exactly as before.
 PATHS = [
-    ([(36, 40), (36, 72), (52, 68), (52, 36)], PAGE),
-    ([(72, 40), (72, 72), (56, 68), (56, 36)], PAGE),
-    ([(52, 36), (52, 68), (56, 68), (56, 36)], SPINE),
+    ([(36, 36), (36, 68), (53, 72), (53, 40)], PAGE),
+    ([(72, 36), (72, 68), (55, 72), (55, 40)], PAGE),
+    ([(53, 40), (53, 72), (55, 72), (55, 40)], SPINE),
 ]
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
