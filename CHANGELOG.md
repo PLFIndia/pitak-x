@@ -75,14 +75,16 @@ heading as part of the `chore(release):` commit.
 - **One target-mutation rule:** GitHub repository setup and Cloudflare Worker
   setup now share the pending-move guard, so neither can change a target while
   a move is being recovered.
-- **App icon: the book now lies open face-up.** The pages used to rise toward
-  a wide spine band (a roof shape), which read as a book left open face-down.
-  Both pages now dip toward a thin centre crease, the way an open book sags
-  into its fold. Same colours, size and safe zone. Every PNG was regenerated
-  from `tool/gen_app_icon.py`: launcher icons (Android, iOS, macOS), the
-  in-app and PDF copies under `assets/`, and the store icon and feature
-  graphic (`tool/gen_play_assets.py`). No golden changes: the logo's asset
-  image never decodes inside the golden tests.
+- **App icon: the book now lies open face-up.** The pages used to rise to a
+  peak at a wide saffron spine band, which read as a book left open
+  face-down. Now three cues say "face-up": the pages curve down into the
+  centre fold, the paper is shaded toward a crease line, and a cream cover
+  edge shows below the pages. Same saffron tile and cream paper; the glyph
+  stays centred. Every PNG was regenerated from `tool/gen_app_icon.py`:
+  launcher icons (Android, iOS, macOS), the in-app and PDF copies under
+  `assets/`, and the store icon and feature graphic
+  (`tool/gen_play_assets.py`). The library goldens that show the logo were
+  regenerated on Linux (`update-goldens` workflow).
 
 ### Fixed
 - **Unreadable Cloudflare credentials during a move:** the move target resolver
