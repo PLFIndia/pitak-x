@@ -2,9 +2,10 @@
 
 - **Status:** Accepted (2026-10-28). Proposed 2026-10-26; S2 trial outcomes
   recorded 2026-10-27, S7/S8/S9 implementation outcomes 2026-10-28, and the
-  S10 consistency audit reconciled every document that cites it. The S11 Linux
-  golden was regenerated on 2026-10-29; the real-host smoke is still
-  outstanding, so the *evidence* is not complete — the decision is.
+  S10 consistency audit reconciled every document that cites it. Real-host
+  evidence (handoff §12) covers J.7 steps 1–8 and 10 and Phase 6 rows 11–13,
+  15 and 17's pre-retirement Cancel; the remaining real-phone rows are listed
+  in handoff §0.3, so the *evidence* is not complete — the decision is.
 - **Date:** 2026-10-26 (amended 2026-10-29 by the Cloudflare fix plan,
   Phase 1A: published-record ownership, anchor-bound replacement consent,
   Option-B read-back, and the upload-session Worker baseline; amended
@@ -12,7 +13,8 @@
   the pending-deploy record, Version-URL re-checks on every "done" result, the
   moved-page name/destination-consent rules, the legacy-token fallback,
   lower-case new Worker names with a case-variant guard, and the reader's
-  keep-address rule)
+  keep-address rule; amended 2026-10-31: replacement consent follows Worker
+  content, and the case-variant listing is removed)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.

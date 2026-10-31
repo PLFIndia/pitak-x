@@ -5,7 +5,9 @@
 > request — **Wishlist: books to buy**, **Set up Cloudflare Workers** (what
 > the Cloudflare setup asks for and where to find each value) and **Events and
 > posters** — and the publish guide's Cloudflare part now points to the new
-> guide. This file is the design and copy record; the copy the app ships is
+> guide. Updated 2026-10-31: the moving paragraph says Cancel move is
+> offered only until the old address shows the moved page. This file is the
+> design and copy record; the copy the app ships is
 > `lib/features/guides/domain/catalog/*.dart` (grouped by topic), in the order
 > set by `lib/features/guides/domain/guide_catalog.dart` — edit both together.
 > The nine guides below follow the shipped catalog order. The “Facts behind
@@ -274,7 +276,8 @@ You can move the page between the two hosts. Pitak verifies the new site
 first, then turns the old address into a short "moved" page. If that last step
 cannot finish, the publish page keeps three choices: Retry move, Skip
 retirement (only when the old site is really gone) and Cancel move (which
-keeps your current site and leaves the new copy online until you delete it).
+keeps your current site and leaves the new copy online until you delete it;
+it is offered only until the old address shows the moved page).
 If Pitak cannot sign in to the old site at all, Finish without retiring
 replaces Skip behind a stronger warning — that copy also stays online. Other
 phones never follow a move by themselves — they may offer the choice to their
