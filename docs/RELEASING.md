@@ -342,6 +342,22 @@ recorded like 1–10, with the sanitized counts and no raw response text.
 | 18 | Publish a first move into a Cloudflare Worker that holds a setup (verification) marker (L16) | The review says "Replace and move" and names the Worker; a changed remote anchor asks again |
 | 19 | Publish when Cloudflare no longer holds files the local record claims (N1) | The "missing files" review can actually be confirmed and deploys; cancelling writes nothing |
 
+Practical notes from the 2026-10-31 run (details in the handoff §12):
+
+- **Rows 16 and 18 as written cannot be reached.** Every token that can
+  deploy, including one made from the one-account template, can also read
+  the account subdomain, so the manual-subdomain path never appears. Run
+  row 16 as a plain token rotation on the live Worker, and row 18 as a move
+  into a Worker holding content this phone did not publish.
+- **A pending move with the old site NOT yet retired** (row 17's second
+  half) needs the network cut after the move is recorded: turn on airplane
+  mode (`adb shell cmd connectivity airplane-mode enable`) the moment the
+  card shows "Updating old address…", then revoke the token. Revoking it
+  before that point only makes the move refuse to start.
+- **A debug build cannot replace a release-signed install** without an
+  uninstall, which deletes the stored token. Use a clean release build and
+  `adb install -r`.
+
 Header evidence (substitute your own address):
 
 ```bash

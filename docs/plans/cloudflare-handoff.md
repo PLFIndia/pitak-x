@@ -6,9 +6,11 @@
 > their numbering never changes. Where an older section disagrees with §0,
 > §0 wins.
 
-## 0. Current state (2026-10-31; code verified at `b887a74`)
+## 0. Current state (2026-10-31, evening; code at `71322e4`)
 
 Later commits on the branch touch documents only, unless 0.6 says otherwise.
+The 2026-10-31 device session added three code fixes (`bec678e`, `677d096`,
+`71322e4`); CI has not run on them yet (see 0.1).
 
 ### 0.1 Where things are
 
@@ -17,9 +19,10 @@ Later commits on the branch touch documents only, unless 0.6 says otherwise.
 | Branch | `cloudflare`, pushed; up to date with `main` (0 commits behind) |
 | PR | [#20](https://github.com/PLFIndia/pitak-x/pull/20) — **draft** on purpose (see 0.3), mergeable, no review threads |
 | CI at `b887a74` | **All green**: Flutter (locked deps, `build_runner` no diff, analyze, format, fastlane check, tests with coverage, both host-timezone runs, coverage floor, secret scan, Linux goldens), Rust (fmt, clippy, deny, release tests), OSV scan, F-Droid purity + Play positive control |
-| Local gates | 4,614 non-golden tests pass; line coverage 81.39 % (CI floor 64 %); 192 tests in each timezone matrix |
+| CI at `71322e4` | **Not run yet** — push, then check PR #20 (goldens included; no rendered layout changed) |
+| Local gates at `71322e4` | 4,621 non-golden tests pass (7 new); `flutter analyze lib test integration_test` zero issues; format 0 changed; pre-commit generated-code check clean |
 | Goldens | The Linux `Update goldens` artefact for `b887a74` is byte-identical to all 10 committed PNGs |
-| Plan / records | [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) Part M rows 34–131; ADR 0017 (amended 2026-10-31); ADR 0018 (saved copies) |
+| Plan / records | [`cloudflare_plan-final.md`](../../cloudflare_plan-final.md) Part M rows 34–135; ADR 0017 (amended 2026-10-31); ADR 0018 (saved copies) |
 
 ### 0.2 What is done
 
@@ -46,29 +49,34 @@ Later commits on the branch touch documents only, unless 0.6 says otherwise.
     feature that rides on this branch;
   - the app icon redrawn as an open book lying face-up
     (`f709514`, `1817d56`, `39df13d`).
+- **2026-10-31 device session** (§12, "2026-10-31 device session"): the three
+  re-checks PASS (row 17 Cancel, rows 11/13 empty Worker, reader badge after a
+  move); J.7 step 9 PASS with an emulator stand-in (address typed); row 16
+  PASS on the API path; row 17's second half PASS; row 18 PASS for foreign
+  content; RH3 recorded. Three defects found on the phone were fixed with
+  regression tests (Part M rows 132–135).
 
 ### 0.3 What is left, in order
 
-1. **Real-phone rows** (record each in §12 and `docs/RELEASING.md` §6.5):
-
-   | Row | Needs | Note |
-   |---|---|---|
-   | J.7 step 9 | a second phone with the updated build | scan the moved card; both addresses offered; accepting leaves one row |
-   | 16 — rotate the token on the manual-subdomain path | a token made from the one-account **Workers Scripts · Edit** template | the token used so far can read the subdomain, so the manual path never appears |
-   | 18 — first move into a Worker holding a setup marker | the same restricted token | |
-   | 17, second half — finish without retiring after the token is revoked | the live account's token | |
-   | RH3 — read a GitHub repo after it is made private or deleted | a repo the app published to | fold into row 17's run |
-   | 14, 19, optional bucket split | not runnable on demand | 14 needs an emulator with `-netspeed`; 19 depends on Cloudflare dropping a file |
-
-2. **Re-check on the next device build** (code changed after the evidence was
-   recorded): row 17 (Cancel is now pre-checked and hidden after retirement),
-   rows 11/13 (an empty Worker no longer asks for replacement consent), and a
-   reader refresh after a completed move (the old row should show
-   *unreachable*, not *identity conflict*).
-3. **Housekeeping:** delete the empty leftover Worker `pitak-e2e-2` in the
-   disposable account's dashboard (no token for that account is on the
-   maintainer's Mac; see §16).
-4. **Release** (only after 1 and 2, per `docs/RELEASING.md` §6.5): bump
+1. **Push and get CI green** for `bec678e`, `677d096`, `71322e4` (and the
+   docs commit), including the Linux goldens.
+2. **Maintainer decisions** from the 2026-10-31 session (§14 items 13–16): the
+   "contradicted" size gap, the unreachable manual-subdomain path, RH3's
+   private-repo-as-gone Skip, and setup's consent prompt for the phone's own
+   live Worker. Plus the small UI notes in §12 (stale tile line after Finish,
+   banner text missing from the accessibility tree, a stale "Published!" line
+   while a move is pending).
+3. **Still device-untested:** J.7 step 9's real **scan** path (two real
+   phones; §14 item 17); rows 14 and 19 and the optional bucket split are not
+   runnable on demand (14 needs an emulator with `-netspeed`; 19 depends on
+   Cloudflare dropping a file).
+4. **Housekeeping (dashboard, by the maintainer):** the disposable account
+   now has `pitak-worker` (active site), `pitak-e2e-2` and `pitak-e2e-3` (old
+   live copies). Delete the two old ones; revoke the token made at 14:51
+   when testing ends, and delete any chat copies of tokens. The repository
+   `degt3rt/my-library5` is private with its old site unretired; delete it or
+   keep it private.
+5. **Release** (only after 1–3 are settled, per `docs/RELEASING.md` §6.5): bump
    `pubspec.yaml` from `1.8.0+31`, add the store "what's new" files
    (`fastlane/metadata/android/en-US/changelogs/321–323.txt` and `32.txt`,
    ≤ 500 chars), move `CHANGELOG.md`'s *Unreleased* entries under the new
@@ -76,9 +84,9 @@ Later commits on the branch touch documents only, unless 0.6 says otherwise.
    The release-note draft in §12 predates the saved copies, the three new
    guides and the new icon: extend it (or decide to leave them out) and re-run
    the character check.
-5. **Play Console:** type the answers drafted in `docs/RELEASING.md` §8 by
+6. **Play Console:** type the answers drafted in `docs/RELEASING.md` §8 by
    hand (App access names the Cloudflare token).
-6. Mark PR #20 ready for review, then merge.
+7. Mark PR #20 ready for review, then merge.
 
 ### 0.4 Decisions to respect
 
@@ -168,6 +176,7 @@ Fix plan and Phase 6 (2026-10-29 … 31):
 | `f709514`, `1817d56`, `39df13d` | Branding | App icon reads as an open book face-up; two library goldens regenerated on Linux |
 | `54b73fb` | ADR 0018 | Revalidated saved copies of published files |
 | `b6dc222`, `af670d4`, `b887a74` | §12 fixes | The UX defects and decisions in 0.2/0.4; Part M rows 126–131 |
+| `bec678e`, `677d096`, `71322e4` | 2026-10-31 device session | Move results survive status reloads (+ phase only while busy); the old-site probe reads a real page; single brackets in the target-changed review; Part M rows 132–135 |
 
 ---
 
@@ -919,7 +928,7 @@ are the in-app guide copy and its pinned tests.
 
 ---
 
-## 12. S11 — real-host smoke evidence (J.7 step 9 pending)
+## 12. S11 — real-host smoke evidence (J.7 step 9: stand-in only; scan path pending)
 
 Run `docs/RELEASING.md` §6.5 on a **disposable** account with the exact
 one-account `Workers Scripts · Edit` token, then record one row per step here.
@@ -935,7 +944,7 @@ No token, JWT, account id or raw response body goes in this table.
 | 6 | Move Cloudflare → GitHub | New descriptor address; moved page + retired headers + retired marker; old `books.json` 404 | **PASS** (2026-10-29, `691b325`; throwaway public repo created by Pitak with an auto-init `README.md`). GitHub got the complete snapshot (`index.html`, `books.json`, `library.json`, `events.*`, `covers/`) with `library.json.siteUrl` = the GitHub address; `README.md` kept. Cloudflare then served the moved page at `/` (it names the new address) with `Cache-Control: no-cache`, the full CSP, `X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`; marker `state: retired` (14:49 IST); `books.json`, `library.json`, `events.json` 404. The first Move attempt committed (14:45:52) but did not move — see note below |
 | 7 | Move GitHub → Cloudflare | Reverse of 6; unrelated `README.md` survives | **PASS** (2026-10-29, `691b325`, one attempt): Cloudflare deployed the complete live snapshot first (marker `live` 14:55:25 IST; `/`, `books.json`, `library.json`, `events.json`, `/events` 200 with no-cache + CORS; `library.json.siteUrl` = workers.dev); then ONE GitHub commit (14:55:55) left exactly `404.html`, `README.md`, `index.html`. The moved root names the Cloudflare address and carries the meta CSP; old `books.json`/`library.json`/`events.*` 404; `README.md` still 200 |
 | 8 | Pending Retry after a simulated local failure; reconnect to another Worker | Retry resumes only missing work; wrong target refuses retirement | **PASS** (2026-10-29, `1e11842`). Move Cloudflare → GitHub with a Mac-side watcher that ran `am force-stop` the instant the public marker turned `retired`: GitHub commit 15:26:29 verified within the new Pages budget, Cloudflare retired deploy 15:27:38, app killed 15:27:53, before the final switch. Reopened: "Finish moving your site… Verified new address: <GitHub>" with **Retry move** / **Skip retirement**. Disconnect + reconnect choosing Worker `pitak-worker-b` was refused, and Retry refused with "The saved Cloudflare target does not match this publish…"; `pitak-worker-b` still answers Cloudflare 1042 (never created), marker and GitHub head unchanged. Reconnected to `pitak-worker` → Retry → "Move complete" with NO new deploy (retired marker `d9d681ee…` unchanged) and NO new commit (head `2f319ed`); share address = GitHub |
-| 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | *pending*: no second phone was available on 2026-10-29. See the reader observation below before running it |
+| 9 | Scan the moved card on a second updated phone | Both addresses offered; accept leaves one canonical row, no duplicates | **PASS with a stand-in** (2026-10-31, build `eff4477`): the second "phone" was the `pitak_s11_api36` emulator (Android 16) with the same F-Droid release APK. It saved the old GitHub address before the move; afterwards the new Worker address was **typed** (Add Bookmark) because the emulator camera could not be aimed at the card. Refresh offered both addresses neutrally (Keep / Use / Not the same library); "Use" left one row that kept its name, and the next refresh found no duplicate. The in-person **scan** path (`AddMemberUseCase` → `MemberMoveDetected`) is still unexercised on a device — see 2026-10-31 below |
 | 10 | Disconnect | Record forgotten, Worker untouched, share address still truthful | **PASS** (2026-10-29, `1e11842`): Cloudflare shows disconnected; "Your site" still shows the verified GitHub address; the Worker still serves the same moved page, retired headers and retired marker `d9d681ee…` |
 
 Record: date, commit, per-step PASS/FAIL, and the sanitized counts only.
@@ -951,7 +960,7 @@ record them.
 | `GET /workers/scripts/{name}` for a Worker that does not exist | **HTTP 404, error code 10007** — exactly `CloudflareLimits.notFoundErrorCode` | L2 is confirmed; no code change |
 | `POST …/assets-upload-session` for a Worker that does not exist | Session answers **200** and **creates the Worker entity without versions**: afterwards the script read is `404 + 10222` ("This Worker has no versions…") while `…/deployments` and `…/subdomain` answer 200. A Worker that never existed answers `404 + 10007`. The public marker is a real 404 either way | RH1's premise is real — and this is why the **first publish to a brand-new Worker failed before `b2fdf72`**; see row 13 |
 | Create a Worker named `MyLib`, then `GET` it as `mylib` | Creating `MyLib` is refused: **HTTP 400, code 10016**, "Invalid Worker name. Ensure the name is lowercase…". A mixed-case Worker cannot exist, so no case-variant lookup is needed | RH2 step 3: the bounded case listing (and its tests) can be deleted in a follow-up — **deleted 2026-10-31** (Part M row 131) |
-| A GitHub repository made private or deleted, read with the current token | *pending* — needs a repository the app published to; fold into row 17's run | RH3 |
+| A GitHub repository made private or deleted, read with the current token | **Recorded 2026-10-31** (phone, pending GitHub → Cloudflare move, repository made private while retirement was outstanding): the app's `public_repo` token can no longer see a private repository (404), and Pages unpublished the site within about 30 s (root and `books.json` real 404s). **Retry** failed closed ("The current site is unavailable or its publishing state is unreadable."); **Skip** classified the source as absent and finished without retiring — see §14 | RH3 |
 | Optional: split one bucket into two upload requests | *not run* — needs a ≥ 40 MB upload; nothing depends on it | H2's optional bucket split |
 
 **Rows 11–19** are the fix plan's Part 3 §6.2 additions; they are in
@@ -967,9 +976,11 @@ with the `93137c0` copy fix.
 | 13 | First publish to a brand-new Worker after an API-subdomain setup (RH1) | **PASS after the fix** (2026-10-30): `pitak-e2e-3` was created by the upload session and the publish completed with no "stale" and no "resource is not available" review. Before the fix the same action failed (see the defect note below) |
 | 14 | ≥ 40 MB bucket over ~1 Mbit/s, then a forced stall (H2) | *not run* — Dart ignores the OS proxy, so a Mac-side throttle cannot slow the app, and the phone has no on-device throttle. Use an emulator with `-netspeed` if this must be proven |
 | 15 | Switch tabs during a publish (M1) | **PASS** (2026-10-30): a catalogue publish started on the Connection tab completed although the app was switched to Basic info and back while it ran (Part M row 123) |
-| 16 | Rotate the token for the live site on the manual-subdomain path (M3) | *pending* — needs a token made from the one-account `Workers Scripts · Edit` template; the token used so far can read the subdomain, so the manual path never appears |
-| 17 | Cancel a pending move; then, with a revoked token, finish without retiring (M4) | **PASS for the pre-retirement Cancel; half of the revoked-token case is still open.** Run A (2026-10-30, build `b2fdf72`): a Cloudflare → GitHub move was killed the moment the source marker turned `retired`; the banner offered Cancel, explained it, and then refused — "Your old address already shows the moved page. Choose Retry move to finish moving." That is `abandon()`'s documented guard, and Retry finished the move. Run B (a build with the `93137c0` copy fix; the id `4b77ee4d` recorded at the time is not a commit in this repository): a GitHub → Cloudflare move was killed 12 s after the destination marker went live (21:34:20), before GitHub's Pages retirement. Reopening showed the pending banner, and **Cancel move** was allowed: the active target stayed GitHub, its share link did not change, GitHub kept serving (`books.json` 200), and the Cloudflare copy stayed online with marker `c8897081…` — exactly what the dialog promised. The dialog also named the **destination** host ("delete it in your Cloudflare account"), confirming the copy fix on the device. Still open: Finish without retiring with a revoked token |
-| 18 | First move into a Worker that holds a setup marker (L16) | *pending* — the move ran into a Worker holding a **retired** marker, which needs no replacement consent. It also needs that restricted token (see "Rows 16 and 18" below) |
+| 16 | Rotate the token for the live site on the manual-subdomain path (M3) | **PASS on the API-subdomain path; the manual path is unreachable** (2026-10-31, build `eff4477`). A new token from the one-account `Workers Scripts · Edit` template **can read the account subdomain** too, so setup went straight to the Worker choice — no token that can deploy will ever see the manual path. Rotating to it on the live Worker `pitak-e2e-2` deployed nothing (marker, `books.json`, `library.json` byte-identical), the tile said write access was not tested yet, and the next publish (14:05 IST) proved it: marker `75b727a5…` live, no review. Setup did ask "Use this Worker for Pitak? … Replace Worker assets" for this phone's own live site (§14) |
+| 17 | Cancel a pending move; then, with a revoked token, finish without retiring (M4) | **PASS for the pre-retirement Cancel; half of the revoked-token case is still open.** Run A (2026-10-30, build `b2fdf72`): a Cloudflare → GitHub move was killed the moment the source marker turned `retired`; the banner offered Cancel, explained it, and then refused — "Your old address already shows the moved page. Choose Retry move to finish moving." That is `abandon()`'s documented guard, and Retry finished the move. Run B (a build with the `93137c0` copy fix; the id `4b77ee4d` recorded at the time is not a commit in this repository): a GitHub → Cloudflare move was killed 12 s after the destination marker went live (21:34:20), before GitHub's Pages retirement. Reopening showed the pending banner, and **Cancel move** was allowed: the active target stayed GitHub, its share link did not change, GitHub kept serving (`books.json` 200), and the Cloudflare copy stayed online with marker `c8897081…` — exactly what the dialog promised. The dialog also named the **destination** host ("delete it in your Cloudflare account"), confirming the copy fix on the device. **Second half PASS after two fixes (2026-10-31):** a Cloudflare → GitHub move from `pitak-e2e-2` was interrupted by airplane mode the moment the card showed "Updating old address…" (pending recorded, GitHub verified, Worker not retired); the app's token was then revoked. Skip → "Pitak cannot sign in to the old site…" with **Finish without retiring**; its dialog gave the stronger "still shows your library as it was … Reprint your card" warning; Finish switched the share link to GitHub, wrote no commit, and left the Worker live (`75b727a5…`). Both fixes are in the 2026-10-31 notes below (Part M rows 132, 134) |
+| 17 (re-check) | Cancel is checked before its dialog and hidden after retirement (Part M row 128) | **PASS** (2026-10-31, build `eff4477`): a GitHub → Cloudflare move was force-stopped by a Mac watcher the instant the retirement commit landed (13:16:58 IST). Reopened after Pages served the moved page: tapping Cancel showed "Checking your old address…", **no dialog**, the banner read "Your old address already shows the moved page. Choose Retry move to finish moving." and Cancel disappeared. Retry finished with no new commit and no new deploy |
+| 18 | First move into a Worker that holds a setup marker (L16) | **PASS for foreign content; the setup-marker variant is unreachable** (2026-10-31, build `4541a286…`, see below). A verification marker exists only after the manual-subdomain path, which no deploy-capable token reaches (row 16). Instead the move went into `pitak-worker`, whose live content no current record on the phone describes: the review said 'The Cloudflare Worker "pitak-worker" already has content this phone did not publish … Moving replaces everything on that Worker.' and the button read **Replace and move**. Confirmed: marker `5a4d4a39…` live. "A changed remote anchor asks again" was not provoked (unit-tested) |
+| 11/13 (re-check) | An empty Worker no longer asks for replacement consent (Part M row 131) | **PASS** (2026-10-31, build `eff4477`): reconnecting to the empty leftover `pitak-e2e-2` asked no consent and deployed nothing; the next publish showed ONE review, "Publish to a different site?", naming both addresses and saying the old site is not changed or deleted, then published and verified (marker `bf800796…`, 3 items, `/events` 200) while `pitak-e2e-3` kept `ab29c6ed…`. The review's copy read "catalogue ((3 items) …" — fixed (Part M row 135) |
 | 19 | Publish after Cloudflare forgets a carried file (N1) | *not run* — time-dependent (Cloudflare only drops recently uploaded files); cannot be forced on demand |
 
 **Two matrix rows re-validated on the same build** (they were PASS at
@@ -977,6 +988,94 @@ with the `93137c0` copy fix.
 the destination verified before the old site became a moved page (Part M row
 122); and **row 2**, section survival — after an events publish, a catalogue
 publish left `events.json` byte-identical (Part M row 123).
+
+### 2026-10-31 device session — builds, state, defects
+
+- **Device and builds.** OnePlus LE2101 (Android 14, `678c5642`); every build
+  was `fvm flutter clean` + `fvm flutter build apk --release --flavor fdroid`,
+  signed with the release key and installed with `adb install -r`, so the app
+  data (connection record, journal, pending move) survived each update.
+  - `eff4477` (= the `b887a74` code): APK SHA-256
+    `98fa285d4aa1404ac056014d9c512d47ccfb13b755d92b21c551bdde8d07da86`,
+    replacing the 2026-10-30 build `4b77ee4d…` (that hash prefix is the "id
+    `4b77ee4d`" row 17 run B recorded; it is an APK hash, not a commit).
+  - with the reload fix: `c6d211f3…`; with the probe fix too: `4541a286…`
+    (rows 17 second half, 18 and RH3 ran on this one); the final build at
+    `71322e4` (APK SHA-256
+    `ee07a9aa9f52b2195b5a5de3f2da5981df439e5164cfd3122f1018ffaf6761cd`) is
+    installed and opens on the end state below.
+  - A debug build was not used: it is signed with the debug key and would
+    have needed an uninstall, wiping the only stored copy of the token.
+- **Second "phone".** The `pitak_s11_api36` emulator with the same APK. Its
+  DNS failed for `workers.dev` until it was restarted with
+  `-dns-server 1.1.1.1,8.8.8.8`. QR scanning through the emulator's
+  virtual-scene camera (`virtualscene-image` + gRPC pose sweep) did not find
+  the card in reasonable time, so row 9 typed the address.
+- **Start state.** Active host GitHub (`degt3rt.github.io/my-library5`, full
+  site); Cloudflare connected to `pitak-e2e-3` (run B's live copy
+  `c8897081…`); `pitak-worker` live `2e3b1a62…`; `pitak-e2e-2` empty.
+- **Reader re-check (Part M row 130) — PASS.** On the phone, the GitHub row
+  was removed and re-added so that it, `pitak-e2e-3` and `pitak-worker`
+  fetched the same identity in one refresh: all three showed "Identity
+  conflict" (13:12 IST). After the GitHub → Cloudflare move completed, the
+  next refresh read "2 up to date · 1 unreachable": the GitHub row lost its
+  badge; the two live Workers kept theirs, as decided. There is no per-row
+  "unreachable" chip by design; the summary line counts it.
+- **Moves run.** GitHub → `pitak-e2e-3` (retirement commit `72a7f99`: removed
+  `books.json`, `library.json`, `events.*` and 3 covers, added `404.html`,
+  changed `index.html`, kept `README.md`); `pitak-e2e-3` → `pitak-e2e-2`
+  publish (target change); `pitak-e2e-2` → GitHub (finished without
+  retiring); GitHub → `pitak-worker` (Replace and move, finished by Skip
+  while the repository was private).
+- **How the pending states were made.** A Mac-side `git ls-remote` watcher
+  force-stopped the app the instant the GitHub retirement commit landed (row
+  17 re-check). For a pending move with the source NOT yet retired, an
+  on-device loop watched the UI and turned on airplane mode the moment the
+  card showed "Updating old address…" (row 17 second half, RH3). Revoking a
+  token earlier does not work: the move re-reads the source with the API
+  right before it records the pending move.
+- **End state.** Active host **Cloudflare `pitak-worker`** (`5a4d4a39…`
+  live, share link = `pitak-worker`). `pitak-e2e-2` (`75b727a5…`) and
+  `pitak-e2e-3` (`ab29c6ed…`) stay live with old copies (neither was
+  retired). The GitHub repository is **private**, so Pages is unpublished;
+  it still holds the full old site, which reappears if it is made public and
+  Pages is re-enabled. Both tokens used today are revoked; the app holds a
+  third one (made 14:51). Only synthetic data was published.
+- **Defects found and fixed in the session** (code commits, each with a
+  regression test that fails without it; Part M rows 132–135):
+  - `bec678e` — the publish card swapped itself for a spinner whenever the
+    site status reloaded, which every journal-changing move command
+    triggers. That unmounted the pending-move banner, the auto-disposed move
+    controller was rebuilt empty, and its result was lost: after a Skip
+    check with a revoked token there was no reason and no **Finish without
+    retiring**; no Retry/Skip message or "Move complete" ever showed. Also:
+    the phase line now shows only while a command runs.
+  - `677d096` — the old-site probe read the root with a 1-byte cap; the
+    bounded reader refuses an over-cap body, so the finish dialog always
+    said the old site "no longer answers" (it answered HTTP 200), and
+    GitHub's L2 check reported "check failed" instead of "present". The
+    plain test reader ignored the cap; `CapHonoringStructuredReader` does
+    not.
+  - `71322e4` — "catalogue ((3 items) and 0 event posters)" in the
+    target-changed review.
+- **Observations, not fixed** (decide before release; also in §14):
+  - Setup asks "Use this Worker for Pitak? … Replace Worker assets" when
+    the chosen Worker is this phone's OWN live site (token rotation). The
+    consent writes nothing, and the next publish is ordinary, but the
+    warning is alarming for a rotation.
+  - Right after Finish without retiring, the expanded Cloudflare tile still
+    said "Cloudflare is the active publishing host." until the next setup
+    command refreshed it; the publish card was already correct.
+  - The pending-move banner's title, body and reason text did not appear
+    in the accessibility tree (`uiautomator dump`), while its buttons and
+    the other cards did. Check with TalkBack.
+  - While a move is pending, the publish card can still show the previous
+    "Published! Your site is verified live." under "Finish, skip or cancel
+    the pending move before publishing again."
+- **Session hygiene.** `uiautomator dump` reads whatever app is in front:
+  once it captured a chat app showing tokens. The helper now refuses to
+  dump unless Pitak is in front and deletes the dump from `/sdcard`
+  immediately. Nothing from that capture was written anywhere.
 
 ### 2026-10-30 smoke session — device, build and state
 
@@ -1059,7 +1158,9 @@ publish left `events.json` byte-identical (Part M row 123).
   `verification` marker is ever deployed and the manual path never appears.
   Both rows need a token restricted so the subdomain read fails, which is the
   one-account `Workers Scripts · Edit` template's real behaviour — the token in
-  use is evidently broader.
+  use is evidently broader. *(Disproved 2026-10-31: a fresh template token
+  reads the subdomain as well, so the manual path is unreachable for any
+  token that can deploy; see rows 16 and 18.)*
 - **Fix built and installed during the session.** `workerExists` now treats
   `404 + 10222` as "the Worker exists, it just has no versions" (Part M row
   120); `CloudflareLimits.emptyWorkerErrorCode` documents the real-host
@@ -1528,6 +1629,43 @@ the Part N checklist were run again afterwards.
     `MarkerAbsent`; malformed/oversize/redirect/timeout/other statuses are
     `MarkerUnreadable`. The legacy nullable verifier remains unchanged for
     existing read-back paths.
+13. **"Contradicted" needs a body no larger than the expected one (found
+    2026-10-31).** Read-back caps each read at the expected file's size, and
+    the bounded reader refuses an over-cap body instead of returning it. So a
+    different body that is LARGER than the expected one (or any body where a
+    404 was expected, cap 1 byte) is `unreachable`, not `contradicted`, on the
+    real host. Before a redeploy, Option B then continues instead of offering
+    the `recordContradicted` replacement. Evidence: switching
+    `FakeStructuredReader` to `CapHonoringStructuredReader` fails
+    `cloudflare_publication_verifier_test.dart` "a wrong root page body is
+    contradicted" and "a body where a 404 was required is contradicted". A
+    proper fix gives the reader its own outcome for "2xx, larger than the
+    cap" (treated as a different body where a body or absence was expected);
+    that touches the sealed outcome and every switch over it, so it was not
+    done mid-smoke.
+14. **The manual-subdomain path is unreachable on the real host (2026-10-31).**
+    Every token that can deploy can also read the account subdomain, so the
+    manual candidate, the `verification` marker and M3's read-only proof never
+    run there; rows 16 and 18 passed only their API-path / foreign-content
+    variants. Keep the code (it is the fallback for an unexpected 403) or
+    retire it — a maintainer decision.
+15. **RH3: a private repository counts as gone (2026-10-31).** With the
+    app's `public_repo` token a private repository answers 404, and on a free
+    account Pages unpublishes it within about 30 s, so both L2 conditions
+    hold and Skip finishes without retiring. Nobody can see the old site at
+    that moment, but if the repository is made public again and Pages is
+    re-enabled, the full old site comes back unretired. Decide whether the
+    Skip dialog should say so.
+16. **Setup asks replacement consent for this phone's own live Worker
+    (2026-10-31).** On the API-subdomain path, re-selecting the live target
+    after a token rotation shows "Replace Worker assets" because the Worker
+    has content. The consent writes nothing and the next publish is
+    ordinary; consider skipping it when the journal's verified target is that
+    Worker (the manual path already does, via M3).
+17. **J.7 step 9's scan path is still device-untested.** The 2026-10-31 stand-in
+    typed the new address on an emulator (refresh-path offer). Scanning a
+    moved card on a second real phone (`AddMemberUseCase` →
+    `MemberMoveDetected`) remains for the next session with two phones.
 
 ---
 
