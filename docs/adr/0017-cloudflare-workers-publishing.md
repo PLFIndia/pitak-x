@@ -176,10 +176,21 @@ consequences the product cannot hide:
 - **Worker names are lower-case when newly chosen (D9/RH2).** A new name
   becomes a DNS label, and DNS ignores case, so new entries must already be
   lower case (the dialog shows the lower-cased text as it is typed). Stored
-  mixed-case names keep working: a read-back proved them. When the existence
-  read says absent, the account's Worker ids are listed and a name that
-  differs only in case is refused; a failed or truncated listing fails closed.
-  Re-selecting the exact stored spelling stays allowed.
+  mixed-case names keep working: a read-back proved them. Re-selecting the
+  exact stored spelling stays allowed. *Amended 2026-10-31:* the account-wide
+  case listing that used to run when the existence read said absent was
+  removed. The real host refuses to create a Worker whose name has capitals
+  (HTTP 400, code 10016), so no differently-capitalised Worker can own a
+  lower-case address, and Cloudflare's own not-found answer (404 + 10007) is
+  proof enough.
+- **Consent is about content, not existence (amended 2026-10-31).** The
+  Worker read distinguishes absent (10007), empty (10222: exists with no
+  versions, what an interrupted first publish's upload session leaves) and
+  deployed. Setup's replacement prompt, the verification dialog's "replaces
+  ALL assets" warning, the publish freshness check and the move's
+  unknown-destination consent all ask only when the Worker has content. An
+  empty Worker still counts as existing for the anchor and the RH1 race
+  checks.
 - **S7 verification is not a live publication.** Manual subdomains stay
   candidates until a marker-only deploy is read back from the exact origin.
   Success stores the confirmed target, but writes no normal live manifest and

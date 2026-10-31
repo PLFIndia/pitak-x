@@ -96,8 +96,44 @@ heading as part of the `chore(release):` commit.
   `assets/`, and the store icon and feature graphic
   (`tool/gen_play_assets.py`). The library goldens that show the logo were
   regenerated on Linux (`update-goldens` workflow).
+- **"Not showing yet" after a move is explained:** when the new site was
+  written but did not appear within the wait, the move now says the library
+  was copied, that a new GitHub Pages site can take 10 minutes or more
+  (the same budget the check waits for), that the current site was not
+  changed, and to choose Move to other host again. The Cloudflare
+  destination says the same after an accepted deploy.
+- **A completed move clears the reader's identity-conflict badge:** a 404/410
+  for `library.json` is now `DescriptorRefusal.notPublished` (other non-2xx
+  stay `httpStatus`). On that answer, which is what a moved page gives, a
+  known conflict badge becomes `unreachable`; the row keeps its identity and
+  cached facts, an offline site still keeps the badge, and the other address
+  keeps its own badge or move offer (never an auto-merge).
+- **Replacement consent depends on content, not existence:** the Worker read
+  now tells an empty Worker (exists with no versions, code 10222) from one
+  with content (`CloudflareWorkerPresence`). Only a Worker with content asks
+  for replacement consent in setup, warns that verification replaces its
+  assets, or makes a publish or move ask to replace "content this phone did
+  not publish" (ADR 0017 amended).
+- **Worker-name case listing removed:** Cloudflare refuses Worker names with
+  capitals (HTTP 400, code 10016, proven on the real host), so
+  `CloudflareWorkerNameGuard`, `listWorkerNames` and their messages and limits
+  are deleted. New names stay lower-case; stored names keep working.
 
 ### Fixed
+- **Contradictory Cloudflare tile after a publish:** the tile no longer shows
+  "write access … verified" next to "The first publish will test Workers write
+  access." The write-access line is derived from the connection status, and
+  the setup message only reports what setup did.
+- **Stale review text while publishing:** after confirming a replacement, the
+  publish card no longer shows "Review site replacement" for the minute the
+  deploy and read-back take; it shows "Publishing…".
+- **Cancel move is no longer offered when it can only be refused:** the old
+  address is checked before the confirmation dialog, and Cancel disappears once
+  the old address is known to show the moved page (including after a final
+  switch that failed after retirement). Retry remains.
+- **No second, empty review for a different Worker:** a Worker that exists
+  with no versions (left by an interrupted first publish) no longer triggers a
+  replacement review on top of the "Publish to a different site?" review.
 - **Unreadable Cloudflare credentials during a move:** the move target resolver
   threw a `StateError` (not caught by `on Exception`) instead of reporting that
   setup is required; it now fails closed with the fixed setup message.

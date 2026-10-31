@@ -668,15 +668,27 @@ target passed to the current operation — that is what lets a move publish the
   descriptor's name or pin to a row the user kept would let a spoofed site
   rename or re-pin it (fix-plan L10/D11). Declining writes nothing.
   Discovered/hostile rows keep the conflict badge, and reachability alone never
-  selects an address.
+  selects an address. A known conflict badge survives a failed fetch (offline,
+  timeout, 5xx), with one exception: a 404/410 for `library.json`
+  (`DescriptorRefusal.notPublished`, what a moved page answers once a move
+  completes) is positive evidence that the address publishes nothing, so its
+  stale badge gives way to `unreachable`. Another address that still claims
+  the identity keeps its own badge or move offer (decided 2026-10-31).
 - **"The URL is the identity"** for saved libraries, hardened by the in-person
   card scan and the fingerprint check on fetch. Signed descriptors deferred.
 - **A Worker name is an API identity but an address without case.** New names
   must be lower case (Cloudflare uses the name in the `workers.dev` address);
-  a stored mixed-case name keeps working because read-back proved it, and when
-  the existence read says absent a Worker whose name differs only in case is
-  refused before any write. A failed or truncated Worker listing fails closed
-  (fix-plan RH2/D9).
+  a stored mixed-case name keeps working because read-back proved it. No
+  case-variant listing is needed: Cloudflare refuses to create a Worker whose
+  name has capitals (HTTP 400, code 10016; fix-plan RH2/D9, listing removed
+  2026-10-31).
+- **Replacement consent is about content, not existence.** The Worker read
+  answers absent (404 + 10007), empty (404 + 10222: exists with no versions)
+  or deployed (`CloudflareWorkerPresence`). Only a deployed Worker can lose
+  content, so only it triggers setup's replacement prompt, the publish
+  `unknown` freshness and the move's unknown-destination consent; an empty
+  Worker still exists for the anchor and the RH1 race checks (ADR 0017,
+  amended 2026-10-31).
 - **Library list reads are paged in SQL** (`CatalogueItemRepository.page`,
   60 rows, OFFSET/LIMIT); `CatalogueItemSorter` (domain) is the oracle the SQL
   is tested against.

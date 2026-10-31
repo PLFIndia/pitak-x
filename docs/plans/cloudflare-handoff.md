@@ -828,7 +828,7 @@ record them.
 |---|---|---|
 | `GET /workers/scripts/{name}` for a Worker that does not exist | **HTTP 404, error code 10007** — exactly `CloudflareLimits.notFoundErrorCode` | L2 is confirmed; no code change |
 | `POST …/assets-upload-session` for a Worker that does not exist | Session answers **200** and **creates the Worker entity without versions**: afterwards the script read is `404 + 10222` ("This Worker has no versions…") while `…/deployments` and `…/subdomain` answer 200. A Worker that never existed answers `404 + 10007`. The public marker is a real 404 either way | RH1's premise is real — and this is why the **first publish to a brand-new Worker fails today**; see row 13 |
-| Create a Worker named `MyLib`, then `GET` it as `mylib` | Creating `MyLib` is refused: **HTTP 400, code 10016**, "Invalid Worker name. Ensure the name is lowercase…". A mixed-case Worker cannot exist, so no case-variant lookup is needed | RH2 step 3: the bounded case listing (and its tests) can be deleted in a follow-up |
+| Create a Worker named `MyLib`, then `GET` it as `mylib` | Creating `MyLib` is refused: **HTTP 400, code 10016**, "Invalid Worker name. Ensure the name is lowercase…". A mixed-case Worker cannot exist, so no case-variant lookup is needed | RH2 step 3: the bounded case listing (and its tests) can be deleted in a follow-up — **deleted 2026-10-31** (Part M row 131) |
 | A GitHub repository made private or deleted, read with the current token | *pending* — needs a repository the app published to; fold into row 17's run | RH3 |
 | Optional: split one bucket into two upload requests | *not run* — needs a ≥ 40 MB upload; nothing depends on it | H2's optional bucket split |
 
@@ -887,7 +887,8 @@ publish left `events.json` byte-identical (Part M row 123).
   names an empty Worker, so it says nothing the first one did not. Consider
   suppressing the replacement review when the destination reports
   `emptyWorkerErrorCode` (a Worker with no versions), or folding the two into
-  one dialog.
+  one dialog. **Fixed 2026-10-31 (Part M row 131):** consent now depends on
+  content — an empty Worker never asks to be replaced.
 - **Cancel is offered after retirement, then refused (UX).** Observed twice on
   2026-10-30: the banner offered Cancel after the source had already retired
   (run A of row 17) and refused it; the pre-retirement run B cancelled
@@ -897,13 +898,16 @@ publish left `events.json` byte-identical (Part M row 123).
   to keep publishing to the
   current site, confirms it, and only then learns the site is already retired.
   The honest fix is to hide or disable Cancel once retirement is observed, or
-  to show that sentence in the dialog first. Recorded, not changed.
+  to show that sentence in the dialog first. **Fixed 2026-10-31 (Part M row
+  128):** the old address is checked before the dialog, and Cancel disappears
+  once the moved page has been seen.
 - **Two contradictory lines in the Cloudflare tile (check before release).**
   After a successful publish the expanded tile showed both "Workers write
   access and read-back verified." and "Cloudflare is ready to publish. The
   first publish will test Workers write access." (observed 21:13 on
   2026-10-30). One of the two is stale in that state; the write-access line
-  should be the only one left once a publish has proved it.
+  should be the only one left once a publish has proved it. **Fixed
+  2026-10-31 (Part M row 126):** the line is derived from the status.
 - **Wrong host in the same dialog (fixed in this session).** Its cleanup
   sentence is about the NEW site but named the OLD host, so a Cloudflare →
   GitHub move said "delete it in your Cloudflare account" about a GitHub
@@ -913,7 +917,8 @@ publish left `events.json` byte-identical (Part M row 123).
   row-12 recreate deployed, the card showed "Review site replacement — Review
   the replacement before publishing." before settling on "Published! Your site
   is verified live." The site was correct throughout, so this is a rendering
-  state that outlived its operation, not a wrong write.
+  state that outlived its operation, not a wrong write. **Fixed 2026-10-31
+  (Part M row 127):** the card shows "Publishing…" while a run is in flight.
 - **What still needs the account's token:** choosing a different or new Worker
   requires re-entering the API token (the reconnect dialog never reloads it).
   The maintainer pasted it twice on 2026-10-30, which is how rows 11 and 13
@@ -1089,6 +1094,8 @@ could say that the new site was written and may still be building; (b) a
 re-confirmed move rebuilds `books.json` with a new `exportedAt`, so the
 "already-committed retry" adoption never matches and each attempt adds one
 expected-head commit. Neither loses data or publishes unverified state.
+**Decided and done 2026-10-31 (Part M row 129):** (a) the copy now says the
+library was copied and may still be building; (b) stays as is.
 The first step-8 attempt confirmed it: commit 15:00:55, but Pages served the
 new `books.json` only at 15:02:16 (81 s), so the 60 s read-back expired and no
 pending move was recorded. `1e11842` gives the GitHub destination
@@ -1110,6 +1117,8 @@ failed fetch (`refresh_run.dart`), so the badge can outlive the move once the
 old address becomes a moved page. Step 9 (a second phone that has only the old
 row) exercises the intended offer; decide whether two saved rows of one library
 should also get the offer, and whether a completed move should clear the badge.
+**Decided and done 2026-10-31 (Part M row 130):** a completed move clears the
+badge (a 404/410 at the old address); the offer rules are unchanged.
 
 **UX observation (not fixed; not a correctness gap).** "Retry verification" is
 shown only from the in-memory result of the last publish. After an app restart
@@ -1118,7 +1127,7 @@ shown only from the in-memory result of the last publish. After an app restart
 record first, commits it `live`, and only then deploys the new snapshot (this is
 what produced the 13:58 deploy) — but a persisted-state Retry button would let a
 user prove the old deployment without publishing again. Decide whether D.3
-wants that before release.
+wants that before release. **Decided 2026-10-31: leave it.**
 
 **Linux golden — done 2026-10-29.** Workflow run `40817772312` exposed a
 `pumpAndSettle` timeout: S8's new publish card was reading the non-overridden
@@ -1721,6 +1730,9 @@ fix-plan §6.3 that needs no hardware is done:
   with an empty Answer column, and rows 11–19 marked pending.
 
 What Phase 6 still owns: the five real-host checks and rows 11–19 (hardware
-and the disposable account), J.7 step 9 (second phone), the three maintainer
-decisions in §12's 2026-10-29 notes, then the release gates and the
-`chore(release)` build.
+and the disposable account), J.7 step 9 (second phone), then the release gates
+and the `chore(release)` build. The three maintainer decisions in §12's
+2026-10-29 notes were made on 2026-10-31 and the §12 UX defects fixed (Part M
+rows 126–131). The release step waits for the real-phone rows. Housekeeping:
+the empty leftover Worker `pitak-e2e-2` still needs deleting in the
+disposable account's dashboard (no token for that account is on this Mac).
