@@ -46,7 +46,11 @@ class _MoveSiteControlsState extends ConsumerState<MoveSiteControls> {
             icon: const Icon(Icons.move_up),
             label: Text(operation.busy ? 'Moving…' : 'Move to other host'),
           ),
-          if (operation.phase case final phase?) ...[
+          // The phase says what a RUNNING command is doing. The controller
+          // keeps the last phase after the command ends, so without the busy
+          // check a finished move read "Updating old address…" next to "New
+          // address selected" (handoff §12, 2026-10-31).
+          if (operation.phase case final phase? when operation.busy) ...[
             const SizedBox(height: 8),
             Text(_phaseCopy(phase)),
           ],

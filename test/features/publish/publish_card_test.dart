@@ -7,6 +7,8 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/move_site_controller.dart';
+import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
@@ -16,6 +18,7 @@ import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/presentation/widgets/publish_card.dart';
 
 import 'support/cloudflare_fakes.dart';
+import 'support/move_fakes.dart';
 
 final class _FakePublishController extends PublishController {
   _FakePublishController(this.results);
@@ -366,6 +369,86 @@ void main() {
     await pump(tester, _FakePublishController([]));
     expect(find.text('Reset publishing record'), findsNothing);
   });
+
+  // Regression (handoff §12, 2026-10-31, found on the phone): a move command
+  // that changes the journal reloads the site status. The card used to show
+  // a spinner while it reloaded, which unmounted the pending-move banner; the
+  // auto-disposed move controller was then rebuilt empty, so "Finish without
+  // retiring" (and every Retry/Skip message) vanished.
+  testWidgets('a status reload keeps the pending-move banner and its result', (
+    tester,
+  ) async {
+    final pending = movePending(oldTarget: target);
+    final site = PublishSiteStatus(
+      activeHost: PublishHost.cloudflare,
+      target: target,
+      verifiedSiteUrl: target.siteUrl,
+      setupMessage: null,
+      pendingMove: pending,
+    );
+    final publish = _FakePublishController([
+      const PublishFailure('Finish, skip or cancel the pending move first.'),
+    ]);
+    var moveControllers = 0;
+    tester.view.physicalSize = const Size(500, 1800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          // Like the real projection, the status depends on another
+          // provider, so a change there RELOADS it (not just refreshes it).
+          publishSiteStatusProvider.overrideWith((ref) async {
+            ref.watch(publishControllerProvider);
+            return site;
+          }),
+          publishControllerProvider.overrideWith(() => publish),
+          moveSiteControllerProvider.overrideWith(() {
+            moveControllers++;
+            // Only the first controller holds the Skip check's answer; a
+            // rebuilt one starts empty, exactly like the real controller.
+            return _ResultMoveController(
+              moveControllers == 1
+                  ? const MoveSiteState(
+                      result: MoveSiteFailure(
+                        MoveSiteMessages.sourceInaccessible,
+                        retirementPending: true,
+                        canFinishWithoutRetiring: true,
+                        oldSiteAnswers: true,
+                      ),
+                    )
+                  : const MoveSiteState(),
+            );
+          }),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(body: SingleChildScrollView(child: PublishCard())),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Finish without retiring'), findsOneWidget);
+
+    // Any change to a dependency reloads the status.
+    unawaited(publish.publish());
+    await tester.pump();
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Finish without retiring'), findsOneWidget);
+    expect(find.text(MoveSiteMessages.sourceInaccessible), findsOneWidget);
+    expect(moveControllers, 1);
+  });
+}
+
+/// A move controller that starts with a given state and runs no command.
+final class _ResultMoveController extends MoveSiteController {
+  _ResultMoveController(this._initial);
+
+  final MoveSiteState _initial;
+
+  @override
+  MoveSiteState build() => _initial;
 }
 
 final class _FakeReset extends PublishJournalReset {

@@ -45,7 +45,16 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     });
     final status = ref.watch(publishSiteStatusProvider);
     final publish = ref.watch(publishControllerProvider);
+    // The status reloads in the background whenever a connection changes,
+    // and every move command that touches the journal triggers that. Keep
+    // showing the last status while it reloads instead of swapping the card
+    // for a spinner: the spinner unmounted the pending-move banner, which let
+    // the auto-disposed move controller forget the command's result. On the
+    // phone that hid "Finish without retiring" after a Skip check and every
+    // Retry/Skip message (handoff §12, 2026-10-31). Only the FIRST load,
+    // when there is nothing to show yet, displays the spinner.
     return status.when(
+      skipLoadingOnReload: true,
       loading: () => const SectionCard(
         title: 'Publish',
         child: Center(child: CircularProgressIndicator()),

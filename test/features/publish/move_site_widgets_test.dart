@@ -86,6 +86,37 @@ void main() {
         findsOneWidget,
       );
     });
+
+    // Regression (handoff §12, 2026-10-31): the controller keeps the last
+    // phase after a command ends, and the card showed it as if still running.
+    testWidgets('a phase is shown only while a command runs', (tester) async {
+      final finished = _FakeController(
+        initial: MoveSiteState(
+          result: MoveSiteSuccess(
+            target: moveCloudflareTarget,
+            retirementSkipped: true,
+          ),
+          phase: MoveSitePhase.updatingOldAddress,
+        ),
+      );
+      await tester.pumpWidget(
+        app(const MoveSiteControls(enabled: true), finished),
+      );
+      expect(find.text('Updating old address…'), findsNothing);
+    });
+
+    testWidgets('a running command shows its phase', (tester) async {
+      final running = _FakeController(
+        initial: const MoveSiteState(
+          phase: MoveSitePhase.updatingOldAddress,
+          busy: true,
+        ),
+      );
+      await tester.pumpWidget(
+        app(const MoveSiteControls(enabled: true), running),
+      );
+      expect(find.text('Updating old address…'), findsOneWidget);
+    });
   });
 
   group('PendingMoveBanner', () {
