@@ -108,14 +108,17 @@ String _reasonMessage(PublishReplacementSummary summary) {
   };
 }
 
+/// [counts] already carries its own brackets ("(3 items) and 0 event
+/// posters"), so it is not wrapped again here: the device showed
+/// "catalogue ((3 items) and 0 event posters)" (handoff §12, 2026-10-31).
 String _targetChanged(PublishReplacementSummary summary, String counts) {
   final previous = summary.previousSiteUrl;
   final warning = summary.remoteAnchor.workerExists
       ? 'Publishing replaces everything already on '
-            '${summary.target.siteUrl} with this phone’s catalogue ($counts).'
+            '${summary.target.siteUrl} with this phone’s catalogue $counts.'
       : 'Publishing creates the Cloudflare Worker '
             '“${summary.target.workerName.value}” with this phone’s catalogue '
-            '($counts).';
+            '$counts.';
   return 'This library was last published from this phone to $previous. That '
       'site is not changed or deleted — it keeps showing its last version. '
       'Your share link switches to ${summary.target.siteUrl} once the new site '
