@@ -1,0 +1,7 @@
+* Publish your catalogue and events to Cloudflare Workers, using a token limited to one account.
+* Move your library site between GitHub Pages and Cloudflare; the new site is verified before the old one changes.
+* Open workers.dev libraries inside Pitak.
+* Offline? Saved libraries show your last saved copy.
+* New guides: Cloudflare setup, Events and posters, Wishlist.
+* Publish from one phone at a time per site.
+* New app icon and many publishing fixes.

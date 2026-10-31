@@ -14,6 +14,18 @@ heading as part of the `chore(release):` commit.
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10 (tag `1.9.0`, versionCode 32)
+
+Release sentinel (`tool/release_build.sh --sentinel`): `Set up Cloudflare Workers`.
+
+AAB sha256: `141b25d855b4ca31ef85d6ae50a6f9ae29d4b72d8fa49017ecb066e965890620`.
+The 206-second `tool/release_build.sh` rebuild (its own `flutter clean`, then
+Rust for three ABIs and Dart AOT) passed upload-signature, package/version,
+Bundletool/ZIP-integrity, fresh-timestamp, all-ABI Dart-sentinel (plus
+`Replace and move` and `Showing your saved copy from`), 64-bit ELF-alignment
+and `PAGE_ALIGNMENT_16K` verification. Built from `cloudflare` at `651d694`
+(CI green) before PR #20 merged.
+
 ### Added
 - **Saved copies of opened libraries (ADR 0018):** the native viewer keeps
   the last `books.json` and `events.json` of each saved library in the OS
@@ -118,6 +130,16 @@ heading as part of the `chore(release):` commit.
   capitals (HTTP 400, code 10016, proven on the real host), so
   `CloudflareWorkerNameGuard`, `listWorkerNames` and their messages and limits
   are deleted. New names stay lower-case; stored names keep working.
+- **Replacement and recreate dialogs explain the case:** missing files, a
+  deleted Worker, and a changed destination or address each get their own
+  title, body and button, and the dialog re-opens with a "the site changed"
+  warning when Cloudflare moved after the review.
+- **Moving to a Cloudflare Worker that no longer exists** is now a normal
+  move whose review says Pitak creates the Worker with the whole library.
+- **An events-only publish reads only the events:** it no longer depends on the
+  catalogue, magazine titles or `library.json` being readable, and it no longer
+  re-reads covers it will not write. The catalogue is still carried from the
+  trusted publish record.
 
 ### Fixed
 - **Contradictory Cloudflare tile after a publish:** the tile no longer shows
@@ -263,18 +285,6 @@ heading as part of the `chore(release):` commit.
   settings or share-card write restores what the app previously read, so a
   pending move or a chosen style cannot appear set for the rest of the session
   and disappear after a restart.
-
-### Changed
-- **Replacement and recreate dialogs explain the case:** missing files, a
-  deleted Worker, and a changed destination or address each get their own
-  title, body and button, and the dialog re-opens with a "the site changed"
-  warning when Cloudflare moved after the review.
-- **Moving to a Cloudflare Worker that no longer exists** is now a normal
-  move whose review says Pitak creates the Worker with the whole library.
-- **An events-only publish reads only the events:** it no longer depends on the
-  catalogue, magazine titles or `library.json` being readable, and it no longer
-  re-reads covers it will not write. The catalogue is still carried from the
-  trusted publish record.
 
 ### Security
 - **Cloudflare secrets stay out of state:** the token and target live in ONE
