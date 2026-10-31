@@ -7,7 +7,7 @@ part of 'published_catalogue_controller.dart';
 // **************************************************************************
 
 String _$publishedCatalogueControllerHash() =>
-    r'352b43d933d90b099bbe684dbcfd674e49041ffb';
+    r'c8536ce5e9a23c3264425585741f0194d64e8be7';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -31,10 +31,13 @@ class _SystemHash {
 }
 
 abstract class _$PublishedCatalogueController
-    extends BuildlessAutoDisposeAsyncNotifier<PublishedCatalogue> {
+    extends
+        BuildlessAutoDisposeAsyncNotifier<
+          PublishedContent<PublishedCatalogue>
+        > {
   late final String siteUrl;
 
-  FutureOr<PublishedCatalogue> build(String siteUrl);
+  FutureOr<PublishedContent<PublishedCatalogue>> build(String siteUrl);
 }
 
 /// The catalogue state for the library saved at `siteUrl`.
@@ -48,7 +51,7 @@ const publishedCatalogueControllerProvider =
 ///
 /// Copied from [PublishedCatalogueController].
 class PublishedCatalogueControllerFamily
-    extends Family<AsyncValue<PublishedCatalogue>> {
+    extends Family<AsyncValue<PublishedContent<PublishedCatalogue>>> {
   /// The catalogue state for the library saved at `siteUrl`.
   ///
   /// Copied from [PublishedCatalogueController].
@@ -90,7 +93,7 @@ class PublishedCatalogueControllerProvider
     extends
         AutoDisposeAsyncNotifierProviderImpl<
           PublishedCatalogueController,
-          PublishedCatalogue
+          PublishedContent<PublishedCatalogue>
         > {
   /// The catalogue state for the library saved at `siteUrl`.
   ///
@@ -122,7 +125,7 @@ class PublishedCatalogueControllerProvider
   final String siteUrl;
 
   @override
-  FutureOr<PublishedCatalogue> runNotifierBuild(
+  FutureOr<PublishedContent<PublishedCatalogue>> runNotifierBuild(
     covariant PublishedCatalogueController notifier,
   ) {
     return notifier.build(siteUrl);
@@ -147,7 +150,7 @@ class PublishedCatalogueControllerProvider
   @override
   AutoDisposeAsyncNotifierProviderElement<
     PublishedCatalogueController,
-    PublishedCatalogue
+    PublishedContent<PublishedCatalogue>
   >
   createElement() {
     return _PublishedCatalogueControllerProviderElement(this);
@@ -171,7 +174,10 @@ class PublishedCatalogueControllerProvider
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 mixin PublishedCatalogueControllerRef
-    on AutoDisposeAsyncNotifierProviderRef<PublishedCatalogue> {
+    on
+        AutoDisposeAsyncNotifierProviderRef<
+          PublishedContent<PublishedCatalogue>
+        > {
   /// The parameter `siteUrl` of this provider.
   String get siteUrl;
 }
@@ -180,7 +186,7 @@ class _PublishedCatalogueControllerProviderElement
     extends
         AutoDisposeAsyncNotifierProviderElement<
           PublishedCatalogueController,
-          PublishedCatalogue
+          PublishedContent<PublishedCatalogue>
         >
     with PublishedCatalogueControllerRef {
   _PublishedCatalogueControllerProviderElement(super.provider);

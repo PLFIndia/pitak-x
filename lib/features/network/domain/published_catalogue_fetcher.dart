@@ -1,11 +1,16 @@
-/// The published-catalogue fetch port (network domain, pure Dart;
-/// ADR 0015, docs/ARCHITECTURE.md §5.6).
+/// The published-catalogue ports (network domain, pure Dart; ADR 0015,
+/// ADR 0018, docs/ARCHITECTURE.md §5.6).
 ///
-/// A function type, not an interface — the same seam style as
-/// `DescriptorFetcher`: the viewer needs exactly one operation, "fetch this
-/// exact `books.json` URL and hand back either a decoded catalogue or a coarse
-/// failure". Tests inject a closure; production injects the bounded
-/// infrastructure adapter from `core/di`.
+/// Function types, not interfaces — the same seam style as
+/// `DescriptorFetcher`: the viewer needs exactly two operations. Tests inject
+/// closures; production injects the bounded infrastructure adapter from
+/// `core/di`.
+///
+///  - [PublishedCatalogueFetcher] performs one CONDITIONAL GET of the exact
+///    `books.json` URL. A `404` is reported as [PublishedFileFailed] (the
+///    catalogue is required), never as [PublishedFileMissing].
+///  - [PublishedCatalogueDecoder] re-reads a saved copy with the same bounded
+///    codec a download uses.
 ///
 /// The optional `abortTrigger` is the caller's cancellation signal: completing
 /// it must abort the in-flight socket (see `BoundedHttpFetcher.fetch`). A
@@ -13,16 +18,11 @@
 /// discards that result because its revision is already superseded.
 library;
 
-import 'package:fpdart/fpdart.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 
-/// Fetches and decodes the catalogue at [url] (an exact file URL).
-///
-/// Never throws for expected failures: every transport refusal, oversize body
-/// or unreadable document is a `Left(PublishedCatalogueFailure)`.
-typedef PublishedCatalogueFetcher =
-    Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> Function(
-      String url, {
-      Future<void>? abortTrigger,
-    });
+/// Fetches and decodes the catalogue at an exact file URL, conditionally.
+typedef PublishedCatalogueFetcher = PublishedFileFetcher<PublishedCatalogue>;
+
+/// Decodes the bytes of a saved catalogue copy.
+typedef PublishedCatalogueDecoder = PublishedFileDecoder<PublishedCatalogue>;

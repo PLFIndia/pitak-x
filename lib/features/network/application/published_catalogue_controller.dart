@@ -12,12 +12,17 @@
 ///    `BoundedHttpFetcher`), supersedes the revision, and the viewer-owned
 ///    client is closed as the backstop by DI;
 ///  - NO repository, settings or descriptor write ever happens here (V15).
+///
+/// The value is a [PublishedContent]: the catalogue plus whether it is the
+/// current version or a saved copy shown with a note (ADR 0018). A failed
+/// load or reload therefore only becomes an error when no saved copy exists.
 library;
 
 import 'dart:async';
 
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
@@ -49,7 +54,7 @@ class PublishedCatalogueController extends _$PublishedCatalogueController {
   late String _siteUrl;
 
   @override
-  Future<PublishedCatalogue> build(String siteUrl) {
+  Future<PublishedContent<PublishedCatalogue>> build(String siteUrl) {
     _siteUrl = siteUrl;
     _disposed = false;
     _useCase = ref.watch(loadPublishedCatalogueUseCaseProvider(siteUrl));
@@ -99,30 +104,34 @@ class PublishedCatalogueController extends _$PublishedCatalogueController {
     final abort = Completer<void>();
     _abort = abort;
 
-    state = const AsyncLoading<PublishedCatalogue>().copyWithPrevious(state);
+    state = const AsyncLoading<PublishedContent<PublishedCatalogue>>()
+        .copyWithPrevious(state);
     final either = await _useCase(_siteUrl, abortTrigger: abort.future);
     if (_disposed || revision != _revision) return;
     state = either.match(
-      (failure) => AsyncError<PublishedCatalogue>(failure, StackTrace.current),
-      AsyncData<PublishedCatalogue>.new,
+      (failure) => AsyncError<PublishedContent<PublishedCatalogue>>(
+        failure,
+        StackTrace.current,
+      ),
+      AsyncData<PublishedContent<PublishedCatalogue>>.new,
     );
   }
 
   /// The initial load. Throws the typed `Failure` so Riverpod surfaces a
   /// typed `AsyncError` (the repo's documented `only_throw_errors` pattern).
-  Future<PublishedCatalogue> _load(Future<void> abort) async {
+  Future<PublishedContent<PublishedCatalogue>> _load(Future<void> abort) async {
     final revision = ++_revision;
     final either = await _useCase(_siteUrl, abortTrigger: abort);
     if (_disposed || revision != _revision) {
       // Disposed/superseded: never resolve, so no stale value can land in a
       // newer session. The element is gone (or rebuilding), so nothing waits.
-      return Completer<PublishedCatalogue>().future;
+      return Completer<PublishedContent<PublishedCatalogue>>().future;
     }
     return either.fold(
       (failure) =>
           // ignore: only_throw_errors, Riverpod surfaces typed errors via throw
           throw failure,
-      (catalogue) => catalogue,
+      (content) => content,
     );
   }
 }

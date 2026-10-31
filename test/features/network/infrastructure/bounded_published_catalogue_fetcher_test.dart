@@ -7,6 +7,8 @@ import 'package:http/testing.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
+import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_catalogue_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
 
@@ -18,9 +20,30 @@ import 'package:pitaka/features/network/infrastructure/published_catalogue_codec
 ///     to the site root;
 ///  2. the adapter — not the outer 66 MiB transport guard — reports `tooLarge`;
 ///  3. every transport refusal maps to its typed catalogue reason;
-///  4. the app User-Agent + `no-cache` ride on every hop, with no auth/cookie.
+///  4. the app User-Agent + `no-cache` ride on every hop, with no auth/cookie;
+///  5. (ADR 0018) a saved copy's tag rides as `If-None-Match`, a `304` is
+///     "unchanged", and a fresh body carries its bytes + validated `ETag`.
 ///
 /// The harness mirrors `bounded_descriptor_fetcher_test.dart`.
+
+/// The decoded catalogue of a fresh result (fails the test otherwise).
+PublishedCatalogue valueOf(PublishedFileFetch<PublishedCatalogue> result) =>
+    switch (result) {
+      PublishedFileFetched(:final value) => value,
+      _ => fail('expected a fetched catalogue, got $result'),
+    };
+
+/// The typed catalogue reason of a failed result (fails the test otherwise).
+PublishedCatalogueFailureReason reasonOf(
+  PublishedFileFetch<PublishedCatalogue> result,
+) => switch (result) {
+  PublishedFileFailed(failure: PublishedCatalogueFailure(:final reason)) =>
+    reason,
+  _ => fail('expected a typed catalogue failure, got $result'),
+};
+
+final Matcher isFetched = isA<PublishedFileFetched<PublishedCatalogue>>();
+
 void main() {
   const site = 'https://kadugodi.github.io/pitak/';
   const fileUrl = 'https://kadugodi.github.io/pitak/books.json';
@@ -125,9 +148,9 @@ void main() {
           streaming([utf8.encode(payload(title: 'The Water Margin'))]),
         );
         final result = await adapter.fetch(fileUrl);
-        expect(result.isRight(), isTrue);
-        expect(result.toNullable()!.items.single.title, 'The Water Margin');
-        expect(result.toNullable()!.periodicals.single.title, 'Series');
+        expect(result, isFetched);
+        expect(valueOf(result).items.single.title, 'The Water Margin');
+        expect(valueOf(result).periodicals.single.title, 'Series');
       },
     );
 
@@ -138,7 +161,7 @@ void main() {
         ]),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(result.toNullable()!.items, isEmpty);
+      expect(valueOf(result).items, isEmpty);
     });
 
     test('a newer schema succeeds with the warning flag', () async {
@@ -146,8 +169,8 @@ void main() {
         streaming([utf8.encode(payload(schemaVersion: 7))]),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(result.toNullable()!.hasNewerSchema, isTrue);
-      expect(result.toNullable()!.items, hasLength(1));
+      expect(valueOf(result).hasNewerSchema, isTrue);
+      expect(valueOf(result).items, hasLength(1));
     });
 
     test('an injected decoder is used instead of the isolate', () async {
@@ -160,7 +183,7 @@ void main() {
         },
       );
       final result = await adapter.fetch(fileUrl);
-      expect(result.isRight(), isTrue);
+      expect(result, isFetched);
       expect(seen, isNotNull);
     });
   });
@@ -169,9 +192,7 @@ void main() {
     Future<PublishedCatalogueFailureReason> failureReason(
       BoundedPublishedCatalogueFetcher adapter,
     ) async {
-      final result = await adapter.fetch(fileUrl);
-      expect(result.isLeft(), isTrue, reason: 'expected a refusal');
-      return result.swap().toNullable()!.reason;
+      return reasonOf(await adapter.fetch(fileUrl));
     }
 
     test('malformed JSON is invalid', () async {
@@ -233,10 +254,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 45));
       caller.complete();
       final result = await pending;
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.transport,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.transport);
     });
   });
 
@@ -248,7 +266,7 @@ void main() {
         maxBytes: bytes.length,
         codec: PublishedCatalogueCodec(maxBodyBytes: bytes.length),
       );
-      expect((await adapter.fetch(fileUrl)).isRight(), isTrue);
+      expect(await adapter.fetch(fileUrl), isFetched);
     });
 
     test('one byte over the cap is tooLarge', () async {
@@ -259,10 +277,7 @@ void main() {
         codec: PublishedCatalogueCodec(maxBodyBytes: bytes.length - 1),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.tooLarge,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.tooLarge);
     });
 
     test(
@@ -285,10 +300,7 @@ void main() {
         // declared length alone refuses it.
         final result = await adapter.fetch(fileUrl);
         expect(pulled, isTrue);
-        expect(
-          result.swap().toNullable()!.reason,
-          PublishedCatalogueFailureReason.tooLarge,
-        );
+        expect(reasonOf(result), PublishedCatalogueFailureReason.tooLarge);
       },
     );
 
@@ -303,10 +315,7 @@ void main() {
         codec: const PublishedCatalogueCodec(maxBodyBytes: 100),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.tooLarge,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.tooLarge);
       expect(bodyClosed, isTrue);
     });
 
@@ -336,10 +345,7 @@ void main() {
         codec: const PublishedCatalogueCodec(maxBodyBytes: 1024),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.tooLarge,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.tooLarge);
     });
   });
 
@@ -377,7 +383,7 @@ void main() {
         }, requested: requested),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(result.isRight(), isTrue);
+      expect(result, isFetched);
       expect(requested, hasLength(4));
       // Every hop stayed inside the saved library.
       expect(
@@ -399,7 +405,7 @@ void main() {
       );
       final result = await adapter.fetch(fileUrl);
       expect(
-        result.swap().toNullable()!.reason,
+        reasonOf(result),
         PublishedCatalogueFailureReason.tooManyRedirects,
       );
     });
@@ -412,10 +418,7 @@ void main() {
         }, requested: requested),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.redirectRefused,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.redirectRefused);
       expect(requested, [fileUrl]);
     });
 
@@ -429,10 +432,7 @@ void main() {
         }, requested: requested),
       );
       final result = await adapter.fetch(fileUrl);
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.redirectRefused,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.redirectRefused);
       expect(requested, [fileUrl]);
     });
 
@@ -441,7 +441,7 @@ void main() {
         redirecting({fileUrl: 'http://kadugodi.github.io/pitak/books.json'}),
       );
       expect(
-        (await adapter.fetch(fileUrl)).swap().toNullable()!.reason,
+        reasonOf(await adapter.fetch(fileUrl)),
         PublishedCatalogueFailureReason.redirectRefused,
       );
     });
@@ -480,7 +480,7 @@ void main() {
             );
           }),
         );
-        expect((await adapter.fetch(fileUrl)).isRight(), isTrue);
+        expect(await adapter.fetch(fileUrl), isFetched);
         expect(headers, hasLength(2));
         for (final sent in headers) {
           expect(sent['User-Agent'], AppUserAgent.value);
@@ -517,11 +517,119 @@ void main() {
       final result = await adapter.fetch(
         'https://kadugodi.github.io/another-library/books.json',
       );
-      expect(
-        result.swap().toNullable()!.reason,
-        PublishedCatalogueFailureReason.disallowedUrl,
-      );
+      expect(reasonOf(result), PublishedCatalogueFailureReason.disallowedUrl);
       expect(requested, isFalse);
     });
+  });
+
+  group('conditional requests (ADR 0018)', () {
+    MockClient answering({
+      required int status,
+      Map<String, String> headers = const {},
+      List<Map<String, String>>? sent,
+    }) => MockClient.streaming((request, _) async {
+      sent?.add(Map.of(request.headers));
+      return http.StreamedResponse(
+        status == 200
+            ? Stream.value(utf8.encode(payload()))
+            : const Stream<List<int>>.empty(),
+        status,
+        headers: headers,
+        request: request,
+      );
+    });
+
+    test('a fresh body carries its exact bytes and validated ETag', () async {
+      final adapter = fetcher(
+        answering(status: 200, headers: {'etag': '"689c7eef-386e"'}),
+      );
+      final result = await adapter.fetch(fileUrl);
+      final fetched = result as PublishedFileFetched<PublishedCatalogue>;
+      expect(fetched.validator, '"689c7eef-386e"');
+      expect(fetched.bytes, utf8.encode(payload()));
+    });
+
+    test(
+      'a malformed ETag is dropped (the copy is saved without a tag)',
+      () async {
+        final adapter = fetcher(
+          answering(status: 200, headers: {'etag': 'no-quotes'}),
+        );
+        final fetched =
+            await adapter.fetch(fileUrl)
+                as PublishedFileFetched<PublishedCatalogue>;
+        expect(fetched.validator, isNull);
+      },
+    );
+
+    test(
+      'the saved tag rides as If-None-Match and 304 means unchanged',
+      () async {
+        final sent = <Map<String, String>>[];
+        final adapter = fetcher(answering(status: 304, sent: sent));
+        final result = await adapter.fetch(fileUrl, validator: '"abc"');
+        expect(result, isA<PublishedFileUnchanged<PublishedCatalogue>>());
+        expect(sent.single['If-None-Match'], '"abc"');
+        expect(sent.single['Cache-Control'], 'no-cache');
+      },
+    );
+
+    test('no tag: no If-None-Match, and a stray 304 is a refusal', () async {
+      final sent = <Map<String, String>>[];
+      final adapter = fetcher(answering(status: 304, sent: sent));
+      final result = await adapter.fetch(fileUrl);
+      expect(reasonOf(result), PublishedCatalogueFailureReason.httpStatus);
+      expect(sent.single.containsKey('If-None-Match'), isFalse);
+    });
+
+    test('a tag that could inject headers is never sent', () async {
+      final sent = <Map<String, String>>[];
+      final adapter = fetcher(answering(status: 200, sent: sent));
+      await adapter.fetch(fileUrl, validator: '"a"\r\nCookie: x');
+      expect(sent.single.containsKey('If-None-Match'), isFalse);
+    });
+
+    test(
+      'a 404 is a failure, never "missing" (the catalogue is required)',
+      () async {
+        final result = await fetcher(answering(status: 404)).fetch(fileUrl);
+        expect(result, isA<PublishedFileFailed<PublishedCatalogue>>());
+        expect(
+          (result as PublishedFileFailed).problem,
+          PublishedFileProblem.notServed,
+        );
+      },
+    );
+
+    test('failures carry the saved-copy note reason', () async {
+      Future<PublishedFileProblem> problemOf(http.Client client) async =>
+          (await fetcher(client).fetch(fileUrl) as PublishedFileFailed).problem;
+      expect(
+        await problemOf(
+          MockClient.streaming(
+            (request, _) async => throw http.ClientException('offline'),
+          ),
+        ),
+        PublishedFileProblem.unreachable,
+      );
+      expect(
+        await problemOf(answering(status: 500)),
+        PublishedFileProblem.notServed,
+      );
+      expect(
+        await problemOf(streaming([utf8.encode('{not json')])),
+        PublishedFileProblem.unreadable,
+      );
+    });
+
+    test(
+      'the shared isolate decoder reads saved bytes like a download',
+      () async {
+        final decoded = await decodePublishedCatalogueInIsolate(
+          utf8.encode(payload(title: 'Saved')),
+        );
+        expect(decoded.toNullable()!.items.single.title, 'Saved');
+      },
+    );
   });
 }

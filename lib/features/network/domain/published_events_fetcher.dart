@@ -1,19 +1,20 @@
-/// The published-events fetch port (network domain, pure Dart).
+/// The published-events ports (network domain, pure Dart; ADR 0016,
+/// ADR 0018).
 ///
-/// A null success means the site has no `events.json` (404), which is normal
-/// for sites published before native events support. Other transport and
-/// payload failures remain typed [Failure]s rather than being mistaken for
-/// "no events".
+/// [PublishedEventsFetcher] reports a `404` as [PublishedFileMissing]: the
+/// site has no `events.json`, which is normal for sites published before
+/// native events support. Other transport and payload failures stay
+/// [PublishedFileFailed] rather than being mistaken for "no events".
+/// [PublishedEventsDecoder] re-reads a saved copy with the same bounded codec.
 library;
 
-import 'package:fpdart/fpdart.dart';
-import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 
-/// Fetches and decodes an exact `events.json` URL. [abortTrigger] cancels the
-/// actual request when the viewer reloads or closes.
-typedef PublishedEventsFetcher =
-    Future<Either<Failure, PublishedEvents?>> Function(
-      String url, {
-      Future<void>? abortTrigger,
-    });
+/// Fetches and decodes an exact `events.json` URL, conditionally.
+/// `abortTrigger` cancels the actual request when the viewer reloads or
+/// closes.
+typedef PublishedEventsFetcher = PublishedFileFetcher<PublishedEvents>;
+
+/// Decodes the bytes of a saved events copy.
+typedef PublishedEventsDecoder = PublishedFileDecoder<PublishedEvents>;

@@ -4,7 +4,8 @@
 /// row repository, the bounded descriptor fetcher (the Refresh path that reads
 /// other libraries' `library.json`), the bounded published-catalogue fetcher
 /// plus its viewer-scoped HTTP client (the native viewer that reads a saved
-/// library's `books.json` on an explicit row tap — ADR 0015), the map's tile
+/// library's `books.json` on an explicit row tap — ADR 0015), the saved-copy
+/// store those reads revalidate against (ADR 0018), the map's tile
 /// HTTP client + disk-cache switch (§5.9 — owned here so the client lifecycle
 /// is DI's, never the widget's; review M4), and the use cases built on those
 /// ports.
@@ -19,6 +20,7 @@ library;
 import 'package:fpdart/fpdart.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/retry.dart';
+import 'package:path/path.dart' as p;
 import 'package:pitaka/core/di/src/database_providers.dart';
 import 'package:pitaka/core/di/src/platform_providers.dart';
 import 'package:pitaka/core/network/timeout_http_client.dart';
@@ -29,6 +31,7 @@ import 'package:pitaka/features/network/domain/published_catalogue_query_runner.
 import 'package:pitaka/features/network/domain/published_cover_fetcher.dart';
 import 'package:pitaka/features/network/domain/published_events_fetcher.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
+import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:pitaka/features/network/domain/usecases/add_member_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/confirm_membership_use_case.dart';
 import 'package:pitaka/features/network/domain/usecases/load_published_catalogue_use_case.dart';
@@ -41,8 +44,10 @@ import 'package:pitaka/features/network/infrastructure/bounded_published_catalog
 import 'package:pitaka/features/network/infrastructure/bounded_published_cover_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/bounded_published_events_fetcher.dart';
 import 'package:pitaka/features/network/infrastructure/drift_network_repository.dart';
+import 'package:pitaka/features/network/infrastructure/file_published_file_cache.dart';
 import 'package:pitaka/features/network/infrastructure/legacy_bookmarks_reader.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_query_runner.dart';
+import 'package:pitaka/features/network/infrastructure/published_events_codec.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'network_providers.g.dart';
@@ -261,6 +266,23 @@ http.Client publishedViewerHttpClient(
   return client;
 }
 
+/// The store of saved copies of other libraries' published files (ADR 0018),
+/// under `<app cache>/published_copies`.
+///
+/// keepAlive is deliberate (AGENTS §4): the store serializes every read and
+/// write of its `index.json` on ONE queue. Two auto-disposed instances alive
+/// at once (the viewer's and the saved list's clean-up) would have two
+/// queues and could lose each other's index updates. The instance holds no
+/// file data in memory — only the folder path and that queue.
+@Riverpod(keepAlive: true)
+PublishedFileCache publishedFileCache(PublishedFileCacheRef ref) =>
+    FilePublishedFileCache(
+      resolveRoot: () async {
+        final cache = await ref.read(appCacheDirProvider.future);
+        return p.join(cache.path, 'published_copies');
+      },
+    );
+
 /// The bounded `books.json` fetcher for the library saved at [siteUrl].
 ///
 /// Watches the viewer-scoped client, so the dependency chain is explicit:
@@ -279,13 +301,24 @@ PublishedCatalogueFetcher publishedCatalogueFetcher(
   return fetcher.fetch;
 }
 
-/// Loads one saved library's published catalogue (ADR 0015).
+/// Re-reads a SAVED catalogue copy with the same bounded codec, on a worker
+/// isolate, that a download uses (ADR 0018). Stateless.
+@riverpod
+PublishedCatalogueDecoder publishedCatalogueDecoder(
+  PublishedCatalogueDecoderRef ref,
+) => decodePublishedCatalogueInIsolate;
+
+/// Loads one saved library's published catalogue — checking the host first
+/// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
 @riverpod
 LoadPublishedCatalogueUseCase loadPublishedCatalogueUseCase(
   LoadPublishedCatalogueUseCaseRef ref,
   String siteUrl,
 ) => LoadPublishedCatalogueUseCase(
   fetch: ref.watch(publishedCatalogueFetcherProvider(siteUrl)),
+  decode: ref.watch(publishedCatalogueDecoderProvider),
+  cache: ref.watch(publishedFileCacheProvider),
+  clock: ref.watch(clockProvider),
 );
 
 /// The bounded optional `events.json` fetcher for this saved site. It shares
@@ -302,13 +335,23 @@ PublishedEventsFetcher publishedEventsFetcher(
   return fetcher.fetch;
 }
 
-/// Loads the independently-published public events for one saved library.
+/// Re-reads a SAVED events copy with the same bounded codec a download uses
+/// (ADR 0018). The file is capped at 64 KiB, so it is decoded inline.
+@riverpod
+PublishedEventsDecoder publishedEventsDecoder(PublishedEventsDecoderRef ref) =>
+    (bytes) async => const PublishedEventsCodec().decode(bytes);
+
+/// Loads the independently-published public events for one saved library,
+/// checking the host first and falling back to the saved copy (ADR 0018).
 @riverpod
 LoadPublishedEventsUseCase loadPublishedEventsUseCase(
   LoadPublishedEventsUseCaseRef ref,
   String siteUrl,
 ) => LoadPublishedEventsUseCase(
   fetch: ref.watch(publishedEventsFetcherProvider(siteUrl)),
+  decode: ref.watch(publishedEventsDecoderProvider),
+  cache: ref.watch(publishedFileCacheProvider),
+  clock: ref.watch(clockProvider),
 );
 
 /// The pure query engine, run in a worker isolate (V12/S3).

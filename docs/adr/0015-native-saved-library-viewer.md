@@ -1,6 +1,7 @@
 # ADR 0015: Native viewer for a saved library's published catalogue
 
-- **Status:** Accepted
+- **Status:** Accepted; decision 3 superseded by
+  [ADR 0018](0018-revalidated-saved-copies-of-published-files.md)
 - **Date:** 2026-10-25
 
 ## Context
@@ -47,6 +48,10 @@ library's current published `books.json`.** Concretely (plan
 3. **Fetch on open, no persistent cache.** One GET of `books.json` per
    explicit open; data lives only in auto-dispose, screen-scoped providers.
    No Drift table, file, backup entry, ETag or background refresh (V5).
+   *Superseded 2026-10-30 by ADR 0018:* each open still asks the host first,
+   but a saved copy is revalidated with its entity tag (`304` = no download)
+   and is shown, with a note, when the host cannot be checked. Still no Drift
+   table, backup entry or background refresh.
 4. **Forward-tolerant reader.** `books.json` schema 1 is read; declared
    schema > 1 still renders the fields this build understands with a
    *persistent* visible warning. Unknown keys are ignored, never retained
@@ -127,7 +132,8 @@ library's current published `books.json`.** Concretely (plan
   offline**: closing the route discards the catalogue, the cover cache and any
   in-flight sockets, and a later open fetches again. Persistent caching needs
   its own freshness/eviction/restore ADR before a table is added (Part E of
-  the plan).
+  the plan). *That ADR is 0018 (2026-10-30): saved copies of `books.json` and
+  `events.json`, revalidated on every open; covers stay memory-only.*
 - Reading a catalogue (and each visible cover) tells the library's host the
   device's IP and User-Agent. That is why consent is explicit, the payload is
   bounded (64 MiB body / 100 000 rows / 30 s for `books.json`, 8 MiB / 15 s for

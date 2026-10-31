@@ -2,14 +2,17 @@
 ///
 /// The optional events load never blocks or replaces the catalogue. Missing
 /// `events.json` (including older published sites) renders nothing; a real
-/// failure gets a small retryable message. Posters remain read-only and use
-/// the same consent-gated memory-only image session as book covers.
+/// failure gets a small retryable message, unless a saved copy exists: then
+/// the saved events are shown with a one-line note saying how old they are
+/// (ADR 0018). Posters remain read-only and use the same consent-gated
+/// memory-only image session as book covers.
 library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/network/application/published_events_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
+import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_event_poster_image.dart';
 
 /// Loads and displays public events for [siteUrl].
@@ -31,7 +34,9 @@ class PublishedEventsSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(publishedEventsControllerProvider(siteUrl));
-    final events = state.valueOrNull;
+    final content = state.valueOrNull;
+    final events = content?.value;
+    final savedCopy = content?.savedCopy;
     if (events == null) {
       if (state.hasError) return _EventsError(siteUrl: siteUrl);
       // Initial loading and a normal 404 are intentionally quiet. Most older
@@ -49,6 +54,10 @@ class PublishedEventsSection extends ConsumerWidget {
       children: [
         const SizedBox(height: 12),
         Text('Announcements & Events', style: textTheme.titleMedium),
+        if (savedCopy != null) ...[
+          const SizedBox(height: 4),
+          Text(savedCopyMessage(savedCopy), style: textTheme.bodySmall),
+        ],
         if (events.hasNewerSchema || events.hasPartialRead) ...[
           const SizedBox(height: 4),
           Text(

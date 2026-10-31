@@ -9,6 +9,9 @@ import 'package:http/testing.dart';
 import 'package:pitaka/core/database/app_database.dart';
 import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
+import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
+import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // Transitive dependency of shared_preferences, imported only for the
 // no-remove store seam below (M14) — the same seam settings_test.dart uses
@@ -16,6 +19,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 // dependency surface stays unchanged.
 // ignore: depend_on_referenced_packages
 import 'package:shared_preferences_platform_interface/shared_preferences_platform_interface.dart';
+
+import '../../support/published_file_fakes.dart';
 
 /// DI-wiring tests for the network module (docs/ARCHITECTURE.md §2): the
 /// repository provider AWAITS the one-time legacy-bookmarks migration, and
@@ -263,14 +268,17 @@ void main() {
         addTearDown(container.dispose);
 
         final fetcher = container.read(publishedCatalogueFetcherProvider(site));
-        final result = await fetcher(catalogueUrl);
-        expect(result.isRight(), isTrue);
-        expect(result.toNullable()!.items.single.title, 'A Book');
+        final result =
+            await fetcher(catalogueUrl)
+                as PublishedFileFetched<PublishedCatalogue>;
+        expect(result.value.items.single.title, 'A Book');
         expect(viewers.single.requests.single.url.toString(), catalogueUrl);
       },
     );
 
-    test('the use case provider resolves the sibling catalogue URL', () async {
+    test('the use case provider resolves the sibling catalogue URL and '
+        'saves the copy in the shared store (ADR 0018)', () async {
+      final cache = InMemoryPublishedFileCache();
       final container = ProviderContainer(
         overrides: [
           publishedViewerClientFactoryProvider.overrideWithValue(
@@ -281,6 +289,7 @@ void main() {
               }),
             ),
           ),
+          publishedFileCacheProvider.overrideWithValue(cache),
         ],
       );
       addTearDown(container.dispose);
@@ -290,6 +299,29 @@ void main() {
       );
       final result = await useCase(site);
       expect(result.isRight(), isTrue);
+      expect(
+        cache.bytesOf(site, PublishedFileKind.catalogue),
+        utf8.encode(payload()),
+      );
+    });
+
+    test('the saved-copy store is ONE instance for the whole app', () async {
+      // keepAlive: its serial queue must be shared by every viewer and by the
+      // saved list's clean-up. Nothing listens here, so an auto-dispose
+      // provider would be disposed and rebuilt after the event queue drains.
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final first = container.read(publishedFileCacheProvider);
+      await pumpEventQueue();
+      expect(container.read(publishedFileCacheProvider), same(first));
+    });
+
+    test('the saved-catalogue decoder reads bytes like a download', () async {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final decode = container.read(publishedCatalogueDecoderProvider);
+      final decoded = await decode(utf8.encode(payload()));
+      expect(decoded.toNullable()!.items.single.title, 'A Book');
     });
   });
 }

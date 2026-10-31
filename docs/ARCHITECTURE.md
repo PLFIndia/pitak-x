@@ -479,8 +479,21 @@ redirect must stay on the saved site's origin *and* inside its directory
 (`PublishedSiteUrlPolicy`), so an allow-listed Pages host cannot redirect a
 saved library into another library. The request carries the fixed app
 User-Agent plus `Cache-Control: no-cache`, never cookies or auth; decoding and
-querying run off the UI isolate; the catalogue and its decoded object graph
-live only in auto-dispose providers and disappear when the route closes.
+querying run off the UI isolate; the decoded object graph lives only in
+auto-dispose providers and disappears when the route closes.
+
+**Saved copies (ADR 0018).** The raw `books.json` and `events.json` bytes of
+the last successful read are kept in `<app cache>/published_copies/` (OS cache
+directory: excluded from device/cloud backups and from `.pitabak`). Each open
+first asks the host, sending the copy's validated entity tag as
+`If-None-Match` (`BoundedHttpFetcher.fetchConditional`); `304` means the copy
+is current and nothing is downloaded. A copy is shown without the host's
+confirmation only when the check fails, and then always with a note naming
+when it was last confirmed and why it is not fresh. Saved bytes are verified
+(SHA-256 + size from `index.json`) and decoded by the same bounded codec as a
+download; the store serializes all IO on one queue, writes atomically, caps
+all copies at 200 MiB (least recently opened library evicted first) and drops
+copies of libraries that are no longer saved on every saved-list load.
 
 **Covers in that viewer (S5)** are a second, separately gated pipeline. They
 are never written to disk or Drift and never enter the local `ItemCover`

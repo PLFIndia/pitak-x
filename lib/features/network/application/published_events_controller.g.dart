@@ -7,7 +7,7 @@ part of 'published_events_controller.dart';
 // **************************************************************************
 
 String _$publishedEventsControllerHash() =>
-    r'7994be4446e47a649da5b6069448c5a737cfc4fe';
+    r'f3a849f078c9b52fd1f5b2e4c5b1ed5c3ef05a7c';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -31,10 +31,11 @@ class _SystemHash {
 }
 
 abstract class _$PublishedEventsController
-    extends BuildlessAutoDisposeAsyncNotifier<PublishedEvents?> {
+    extends
+        BuildlessAutoDisposeAsyncNotifier<PublishedContent<PublishedEvents>?> {
   late final String siteUrl;
 
-  FutureOr<PublishedEvents?> build(String siteUrl);
+  FutureOr<PublishedContent<PublishedEvents>?> build(String siteUrl);
 }
 
 /// The public events state for the library saved at `siteUrl`.
@@ -47,7 +48,7 @@ const publishedEventsControllerProvider = PublishedEventsControllerFamily();
 ///
 /// Copied from [PublishedEventsController].
 class PublishedEventsControllerFamily
-    extends Family<AsyncValue<PublishedEvents?>> {
+    extends Family<AsyncValue<PublishedContent<PublishedEvents>?>> {
   /// The public events state for the library saved at `siteUrl`.
   ///
   /// Copied from [PublishedEventsController].
@@ -89,7 +90,7 @@ class PublishedEventsControllerProvider
     extends
         AutoDisposeAsyncNotifierProviderImpl<
           PublishedEventsController,
-          PublishedEvents?
+          PublishedContent<PublishedEvents>?
         > {
   /// The public events state for the library saved at `siteUrl`.
   ///
@@ -121,7 +122,7 @@ class PublishedEventsControllerProvider
   final String siteUrl;
 
   @override
-  FutureOr<PublishedEvents?> runNotifierBuild(
+  FutureOr<PublishedContent<PublishedEvents>?> runNotifierBuild(
     covariant PublishedEventsController notifier,
   ) {
     return notifier.build(siteUrl);
@@ -146,7 +147,7 @@ class PublishedEventsControllerProvider
   @override
   AutoDisposeAsyncNotifierProviderElement<
     PublishedEventsController,
-    PublishedEvents?
+    PublishedContent<PublishedEvents>?
   >
   createElement() {
     return _PublishedEventsControllerProviderElement(this);
@@ -170,7 +171,7 @@ class PublishedEventsControllerProvider
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 mixin PublishedEventsControllerRef
-    on AutoDisposeAsyncNotifierProviderRef<PublishedEvents?> {
+    on AutoDisposeAsyncNotifierProviderRef<PublishedContent<PublishedEvents>?> {
   /// The parameter `siteUrl` of this provider.
   String get siteUrl;
 }
@@ -179,7 +180,7 @@ class _PublishedEventsControllerProviderElement
     extends
         AutoDisposeAsyncNotifierProviderElement<
           PublishedEventsController,
-          PublishedEvents?
+          PublishedContent<PublishedEvents>?
         >
     with PublishedEventsControllerRef {
   _PublishedEventsControllerProviderElement(super.provider);

@@ -8,6 +8,7 @@ import 'package:pitaka/features/network/domain/descriptor_fetch_result.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/domain/repositories/network_repository.dart';
 import 'package:pitaka/features/network/presentation/pages/library_bookmarks_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/network_library_tile.dart';
@@ -15,6 +16,8 @@ import 'package:pitaka/features/network/presentation/widgets/open_published_site
 import 'package:pitaka/features/network/presentation/widgets/saved_libraries_view.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import '../../../support/published_file_fakes.dart';
 
 /// Standalone bookmark tests also exercise the shared list and native viewer.
 void main() {
@@ -43,12 +46,18 @@ void main() {
           ),
           for (final entry in catalogues.entries) ...[
             publishedCatalogueFetcherProvider(entry.key).overrideWithValue(
-              (url, {abortTrigger}) async => Right(entry.value),
+              (url, {validator, abortTrigger}) async =>
+                  fetchedValue(entry.value),
             ),
             publishedEventsFetcherProvider(entry.key).overrideWithValue(
-              (url, {abortTrigger}) async => const Right(null),
+              (url, {validator, abortTrigger}) async =>
+                  const PublishedFileMissing(),
             ),
           ],
+          // Saved copies in memory: a widget test has no path_provider.
+          publishedFileCacheProvider.overrideWithValue(
+            InMemoryPublishedFileCache(),
+          ),
           // Run the pure viewer engine inline so widget tests can settle.
           publishedCatalogueQueryRunnerProvider.overrideWithValue(
             (catalogue, query) async =>

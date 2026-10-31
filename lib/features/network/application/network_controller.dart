@@ -12,9 +12,17 @@
 /// This replaces the S3 stopgap `networkRowsProvider` (handoff §3): screens
 /// watch ONE provider and the remove path no longer calls the repository
 /// from presentation.
+///
+/// Every (re)load also drops the saved copies of libraries that are no longer
+/// in the list (ADR 0018). One hook covers every way a row disappears —
+/// Remove, a restore, an accepted address move — because each of them ends
+/// with this window re-reading the repository.
 library;
 
+import 'dart:async';
+
 import 'package:pitaka/core/di/providers.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/network/application/build_own_descriptor.dart';
 import 'package:pitaka/features/network/application/network_refresh_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
@@ -125,6 +133,7 @@ class NetworkController extends _$NetworkController {
     });
     final repo = await ref.watch(networkRepositoryProvider.future);
     final rows = await repo.loadAll();
+    _forgetCopiesOfUnsavedLibraries(rows);
     // Report + stamp live in the keepAlive refresh controller; a plain read
     // (not watch) so a refresh in flight doesn't rebuild this window twice.
     final refresh = ref.read(networkRefreshControllerProvider.notifier);
@@ -132,6 +141,21 @@ class NetworkController extends _$NetworkController {
       rows: rows,
       lastReport: refresh.lastReport,
       lastRefreshedAt: refresh.lastFinishedAt,
+    );
+  }
+
+  /// Deletes saved copies of published files whose library is not in [rows].
+  ///
+  /// Not awaited on purpose: the list must not wait for file clean-up, and a
+  /// clean-up failure changes nothing the user sees (an orphan copy is never
+  /// shown — the viewer is only reachable from a saved row — and the next
+  /// load retries). The store serializes this with any viewer write.
+  void _forgetCopiesOfUnsavedLibraries(List<NetworkLibrary> rows) {
+    final cache = ref.read(publishedFileCacheProvider);
+    unawaited(
+      cache.retainOnly({for (final row in rows) row.siteUrl}).then((result) {
+        if (result.isLeft()) appLog('network: saved copies not cleaned up');
+      }),
     );
   }
 

@@ -13,10 +13,12 @@ import 'package:pitaka/features/network/application/published_catalogue_cover_co
 import 'package:pitaka/features/network/application/published_catalogue_query_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/domain/published_cover_resolver.dart';
-import 'package:pitaka/features/network/domain/published_events_fetcher.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
+import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
 import 'package:pitaka/features/network/presentation/pages/published_catalogue_page.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_messages.dart';
@@ -25,11 +27,22 @@ import 'package:pitaka/features/settings/domain/settings_repository.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../support/a11y.dart';
+import '../../../support/published_file_fakes.dart';
+
+/// A test-local catalogue fake: a decoded catalogue or a typed failure.
+/// `makeContainer` adapts it to the conditional port (ADR 0018), so these
+/// tests stay about what the page shows, not about HTTP validators.
+typedef _CatalogueFetch =
+    Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> Function(
+      String url, {
+      Future<void>? abortTrigger,
+    });
 
 /// The native catalogue viewer's states and actions (ADR 0015, viewer plan
 /// S4). The fetcher and the browser hand-off are injected, so these tests
 /// assert both what the user sees and what the app DOES NOT do: no external
 /// launch from a normal action, no extra request from a filter, no write.
+/// Saved copies (ADR 0018) live in an in-memory store per container.
 void main() {
   const site = 'https://kadugodi.github.io/pitak/';
 
@@ -107,14 +120,19 @@ void main() {
 
   late _RecordingLauncher launcher;
   late ProviderContainer container;
+  late InMemoryPublishedFileCache savedCopies;
 
   void makeContainer(
-    Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> Function(
+    _CatalogueFetch fetch, {
+    // A test-local events fake: `Right(null)` means "no events.json" (404).
+    Future<Either<Failure, PublishedEvents?>> Function(
       String url, {
       Future<void>? abortTrigger,
-    })
-    fetch, {
-    PublishedEventsFetcher? eventsFetcher,
+    })?
+    eventsFetcher,
+    InMemoryPublishedFileCache? savedCopyStore,
+    PublishedCatalogue? savedCatalogue,
+    PublishedEvents? savedEvents,
     _CoverPort? coverPort,
     bool coverConsent = true,
     bool coverSettingsFail = false,
@@ -125,12 +143,60 @@ void main() {
     queryRunner,
     void Function(PublishedCatalogueQuery query)? onQuery,
   }) {
+    savedCopies = savedCopyStore ?? InMemoryPublishedFileCache();
     container = ProviderContainer(
       overrides: [
-        publishedCatalogueFetcherProvider(site).overrideWithValue(fetch),
-        publishedEventsFetcherProvider(site).overrideWithValue(
-          eventsFetcher ?? (url, {abortTrigger}) async => const Right(null),
+        publishedCatalogueFetcherProvider(site).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              (await fetch(
+                url,
+                abortTrigger: abortTrigger,
+              )).match<PublishedFileFetch<PublishedCatalogue>>(
+                (failure) => failedFetch(
+                  failure,
+                  problem: switch (failure.reason) {
+                    PublishedCatalogueFailureReason.transport ||
+                    PublishedCatalogueFailureReason.timedOut =>
+                      PublishedFileProblem.unreachable,
+                    PublishedCatalogueFailureReason.tooLarge ||
+                    PublishedCatalogueFailureReason.invalid =>
+                      PublishedFileProblem.unreadable,
+                    _ => PublishedFileProblem.notServed,
+                  },
+                ),
+                fetchedValue,
+              ),
         ),
+        publishedEventsFetcherProvider(site).overrideWithValue(
+          (url, {validator, abortTrigger}) async =>
+              (await (eventsFetcher ??
+                      (url, {abortTrigger}) async =>
+                          const Right(null))(url, abortTrigger: abortTrigger))
+                  .match<PublishedFileFetch<PublishedEvents>>(
+                    failedFetch,
+                    (events) => events == null
+                        ? const PublishedFileMissing()
+                        : fetchedValue(events),
+                  ),
+        ),
+        publishedFileCacheProvider.overrideWithValue(savedCopies),
+        // A saved copy decodes to the given test value; without one, any
+        // saved bytes count as unreadable (and are dropped by the loader).
+        publishedCatalogueDecoderProvider.overrideWithValue(
+          (bytes) async => savedCatalogue == null
+              ? const Left(
+                  PublishedCatalogueFailure(
+                    PublishedCatalogueFailureReason.invalid,
+                  ),
+                )
+              : Right(savedCatalogue),
+        ),
+        publishedEventsDecoderProvider.overrideWithValue(
+          (bytes) async => savedEvents == null
+              ? const Left(ValidationFailure('no saved events'))
+              : Right(savedEvents),
+        ),
+        clockProvider.overrideWithValue(() => 1760000000000),
         // The real engine, synchronously: the isolate adapter has its own
         // suite; page tests must be deterministic.
         publishedCatalogueQueryRunnerProvider.overrideWithValue(
@@ -1146,6 +1212,122 @@ void main() {
     );
   });
 
+  group('saved copies (ADR 0018)', () {
+    const checkedAt = 1750000000000;
+    final savedEvents = PublishedEvents(
+      declaredSchemaVersion: 1,
+      posters: const [
+        PublishedEventPoster(
+          imageRef: 'posters/old.jpg',
+          description: 'Last month book fair',
+        ),
+      ],
+    );
+
+    String noteFor(PublishedFileProblem problem) => savedCopyMessage(
+      SavedCopyNotice(checkedAt: checkedAt, problem: problem),
+    );
+
+    InMemoryPublishedFileCache seeded() => InMemoryPublishedFileCache()
+      ..seed(site, PublishedFileKind.catalogue, [1], checkedAt: checkedAt)
+      ..seed(site, PublishedFileKind.events, [2], checkedAt: checkedAt);
+
+    testWidgets('an unreachable library shows the saved copy with a note', (
+      tester,
+    ) async {
+      makeContainer(
+        (url, {abortTrigger}) async => const Left(
+          PublishedCatalogueFailure(PublishedCatalogueFailureReason.transport),
+        ),
+        savedCopyStore: seeded(),
+        savedCatalogue: catalogue,
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('The Water Margin'), findsOneWidget);
+      expect(
+        find.text(noteFor(PublishedFileProblem.unreachable)),
+        findsOneWidget,
+      );
+      expect(find.textContaining("Couldn't reach this library"), findsOne);
+      // Not the error body: the saved copy IS the content.
+      expect(find.text('Retry'), findsNothing);
+    });
+
+    testWidgets('each reason gets its own plain sentence', (tester) async {
+      for (final (reason, problem) in [
+        (
+          PublishedCatalogueFailureReason.httpStatus,
+          PublishedFileProblem.notServed,
+        ),
+        (
+          PublishedCatalogueFailureReason.invalid,
+          PublishedFileProblem.unreadable,
+        ),
+      ]) {
+        makeContainer(
+          (url, {abortTrigger}) async =>
+              Left(PublishedCatalogueFailure(reason)),
+          savedCopyStore: seeded(),
+          savedCatalogue: catalogue,
+        );
+        await pumpViewer(tester);
+        await tester.pumpAndSettle();
+        expect(find.text(noteFor(problem)), findsOneWidget, reason: '$reason');
+        await tester.pumpWidget(const SizedBox());
+        container.dispose();
+      }
+    });
+
+    testWidgets('a reachable library never shows the saved-copy note', (
+      tester,
+    ) async {
+      makeContainer(
+        _immediate(catalogue),
+        savedCopyStore: seeded(),
+        savedCatalogue: catalogue,
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('saved copy'), findsNothing);
+      expect(find.text('The Water Margin'), findsOneWidget);
+    });
+
+    testWidgets('saved events are shown with their own note', (tester) async {
+      makeContainer(
+        _immediate(catalogue),
+        eventsFetcher: (url, {abortTrigger}) async =>
+            const Left(NetworkFailure()),
+        savedCopyStore: seeded(),
+        savedEvents: savedEvents,
+      );
+      await pumpViewer(tester);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Announcements & Events'), findsOneWidget);
+      expect(find.text('Last month book fair'), findsOneWidget);
+      expect(
+        find.text(noteFor(PublishedFileProblem.unreachable)),
+        findsOneWidget,
+        reason: 'only the events are a saved copy here',
+      );
+      expect(
+        find.text('Couldn’t load announcements and events.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('the note names the local date and time', (tester) async {
+      final text = noteFor(PublishedFileProblem.unreachable);
+      final local = DateTime.fromMillisecondsSinceEpoch(checkedAt);
+      final minutes = local.minute.toString().padLeft(2, '0');
+      expect(text, startsWith('Showing your saved copy from ${local.year}-'));
+      expect(text, contains(':$minutes.'));
+      expect(text, isNot(contains('http')));
+    });
+  });
+
   group('layout and accessibility', () {
     testWidgets('long Indic titles wrap instead of overflowing', (
       tester,
@@ -1262,11 +1444,7 @@ void main() {
 }
 
 /// An immediate fetcher returning [catalogue].
-Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> Function(
-  String url, {
-  Future<void>? abortTrigger,
-})
-_immediate(PublishedCatalogue catalogue) =>
+_CatalogueFetch _immediate(PublishedCatalogue catalogue) =>
     (url, {abortTrigger}) async => Right(catalogue);
 
 /// A controllable fetcher.

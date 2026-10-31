@@ -40,18 +40,44 @@ enum FetchRefusal {
   transport,
 }
 
+/// Outcome of one CONDITIONAL bounded fetch
+/// (`BoundedHttpFetcher.fetchConditional`, ADR 0018): everything a plain
+/// fetch can return, plus [FetchNotModified].
+///
+/// Why two sealed types instead of one (beginner note): only the published
+/// viewer sends `If-None-Match`, so only it can ever see "not modified". If
+/// that case were added to [BoundedFetchOutcome], every other caller (cover
+/// download, descriptor read, publish read-back) would have to handle a
+/// result it can never receive. With this split the compiler proves the plain
+/// `fetch` never returns it, and the conditional callers must handle it.
+sealed class ConditionalFetchOutcome {
+  const ConditionalFetchOutcome();
+}
+
 /// Outcome of one bounded fetch.
-sealed class BoundedFetchOutcome {
+sealed class BoundedFetchOutcome extends ConditionalFetchOutcome {
   const BoundedFetchOutcome();
 }
 
 /// The allow-listed body arrived, complete and within the cap.
 final class FetchedBytes extends BoundedFetchOutcome {
-  /// Creates a success carrying the [bytes].
-  const FetchedBytes(this.bytes);
+  /// Creates a success carrying the [bytes] and the response's validated
+  /// [entityTag], if any.
+  const FetchedBytes(this.bytes, {this.entityTag});
 
   /// The response body.
   final Uint8List bytes;
+
+  /// The response's `ETag`, already checked by `EntityTag.sanitize`; null
+  /// when the host sent none or sent a malformed one.
+  final String? entityTag;
+}
+
+/// The host answered `304 Not Modified` to the tag the caller sent: the copy
+/// the caller already holds is current. No body was read.
+final class FetchNotModified extends ConditionalFetchOutcome {
+  /// Creates the not-modified outcome.
+  const FetchNotModified();
 }
 
 /// The fetch was refused or failed; no bytes.

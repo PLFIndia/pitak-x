@@ -18,11 +18,14 @@
 /// Request headers mirror the web viewer's revalidation intent:
 /// `Cache-Control: no-cache`, no cache-busting query, the app User-Agent
 /// (custom headers REPLACE the core defaults, so it is listed explicitly), and
-/// no cookies/auth on any hop.
+/// no cookies/auth on any hop. When a saved copy exists, its entity tag rides
+/// along as `If-None-Match` (ADR 0018) so an unchanged catalogue costs a
+/// `304` and no body.
 ///
 /// Decoding runs in a worker isolate: a large JSON document and its object
 /// graph would otherwise stall frames. Only public bytes and public view
 /// models cross the isolate boundary. Tests inject a synchronous decoder.
+/// The same [BoundedPublishedCatalogueFetcher.decode] re-reads saved copies.
 library;
 
 import 'dart:isolate';
@@ -34,8 +37,10 @@ import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/domain/published_site_url_policy.dart';
 import 'package:pitaka/features/network/infrastructure/published_catalogue_codec.dart';
+import 'package:pitaka/features/network/infrastructure/published_fetch_problem.dart';
 
 /// Decodes a catalogue body off the UI isolate (injectable for tests).
 typedef PublishedCatalogueBodyDecoder =
@@ -103,20 +108,44 @@ final class BoundedPublishedCatalogueFetcher {
 
   /// Fetches [url] (already resolved by the use case) and decodes the body.
   ///
+  /// [validator] is the saved copy's entity tag (sent as `If-None-Match`);
+  /// a `304` answer becomes [PublishedFileUnchanged]. A `404` is a
+  /// [PublishedFileFailed] — the catalogue is required, never "missing".
   /// Never throws for expected failures. [abortTrigger] cancels the actual
   /// request; a caller-aborted fetch may come back as the coarse transport
   /// reason, which the controller discards because its revision is superseded.
-  Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> fetch(
+  Future<PublishedFileFetch<PublishedCatalogue>> fetch(
     String url, {
+    String? validator,
     Future<void>? abortTrigger,
   }) async {
-    final outcome = await _fetcher.fetch(url, abortTrigger: abortTrigger);
-    return switch (outcome) {
-      FetchedBytes(:final bytes) => await _decode(bytes),
-      FetchRefused(:final reason) => Left(
-        PublishedCatalogueFailure(mapRefusal(reason)),
-      ),
-    };
+    final outcome = await _fetcher.fetchConditional(
+      url,
+      ifNoneMatch: validator,
+      abortTrigger: abortTrigger,
+    );
+    switch (outcome) {
+      case FetchedBytes(:final bytes, :final entityTag):
+        final decoded = await decode(bytes);
+        return decoded.match<PublishedFileFetch<PublishedCatalogue>>(
+          (failure) => PublishedFileFailed(
+            failure: failure,
+            problem: PublishedFileProblem.unreadable,
+          ),
+          (catalogue) => PublishedFileFetched(
+            value: catalogue,
+            bytes: bytes,
+            validator: entityTag,
+          ),
+        );
+      case FetchNotModified():
+        return const PublishedFileUnchanged();
+      case FetchRefused(:final reason):
+        return PublishedFileFailed(
+          failure: PublishedCatalogueFailure(mapRefusal(reason)),
+          problem: publishedFileProblemFor(reason),
+        );
+    }
   }
 
   /// The transport refusal set maps 1:1 onto the catalogue failure reasons.
@@ -134,19 +163,29 @@ final class BoundedPublishedCatalogueFetcher {
         FetchRefusal.transport => PublishedCatalogueFailureReason.transport,
       };
 
-  /// Decode the body on a worker isolate unless a test injected a decoder.
-  Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> _decode(
+  /// Decodes a downloaded body on a worker isolate unless a test injected a
+  /// decoder.
+  Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> decode(
     List<int> bytes,
   ) {
     final override = _decodeOverride;
     if (override != null) return override(bytes);
-    // Capture LOCALS only: a closure over `this` would try to send the HTTP
-    // client's object graph to the isolate and fail. Codec + bytes are plain
-    // data (no secrets), so crossing the boundary is safe.
-    final codec = this.codec;
-    return Isolate.run(
-      () => codec.decode(bytes),
-      debugName: 'pitaka-published-catalogue-decode',
-    );
+    return decodePublishedCatalogueInIsolate(bytes, codec: codec);
   }
 }
+
+/// Decodes a catalogue body on a worker isolate with [codec].
+///
+/// Shared by the download path above and the production
+/// `PublishedCatalogueDecoder` port (DI), so a SAVED copy passes through
+/// exactly the same bounded reader, off the UI isolate, as a download.
+/// A top-level function on purpose: the isolate closure captures only the
+/// codec and the bytes — plain public data — never an HTTP client.
+Future<Either<PublishedCatalogueFailure, PublishedCatalogue>>
+decodePublishedCatalogueInIsolate(
+  List<int> bytes, {
+  PublishedCatalogueCodec codec = const PublishedCatalogueCodec(),
+}) => Isolate.run(
+  () => codec.decode(bytes),
+  debugName: 'pitaka-published-catalogue-decode',
+);

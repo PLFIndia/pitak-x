@@ -469,6 +469,33 @@ class _PublishedViewerHttpClientProviderElement
   String get siteUrl => (origin as PublishedViewerHttpClientProvider).siteUrl;
 }
 
+String _$publishedFileCacheHash() =>
+    r'8a49424fe9d75280d819b22cee6b0664c58df250';
+
+/// The store of saved copies of other libraries' published files (ADR 0018),
+/// under `<app cache>/published_copies`.
+///
+/// keepAlive is deliberate (AGENTS §4): the store serializes every read and
+/// write of its `index.json` on ONE queue. Two auto-disposed instances alive
+/// at once (the viewer's and the saved list's clean-up) would have two
+/// queues and could lose each other's index updates. The instance holds no
+/// file data in memory — only the folder path and that queue.
+///
+/// Copied from [publishedFileCache].
+@ProviderFor(publishedFileCache)
+final publishedFileCacheProvider = Provider<PublishedFileCache>.internal(
+  publishedFileCache,
+  name: r'publishedFileCacheProvider',
+  debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+      ? null
+      : _$publishedFileCacheHash,
+  dependencies: null,
+  allTransitiveDependencies: null,
+);
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedFileCacheRef = ProviderRef<PublishedFileCache>;
 String _$publishedCatalogueFetcherHash() =>
     r'45d2e662cfabc1c8813f169c6af9d53d5f90555b';
 
@@ -634,27 +661,54 @@ class _PublishedCatalogueFetcherProviderElement
   String get siteUrl => (origin as PublishedCatalogueFetcherProvider).siteUrl;
 }
 
-String _$loadPublishedCatalogueUseCaseHash() =>
-    r'599029b61884479fefee02759545f0cbc7301fd7';
+String _$publishedCatalogueDecoderHash() =>
+    r'5329a10a62883a88192df9c90d545f7cdce51146';
 
-/// Loads one saved library's published catalogue (ADR 0015).
+/// Re-reads a SAVED catalogue copy with the same bounded codec, on a worker
+/// isolate, that a download uses (ADR 0018). Stateless.
+///
+/// Copied from [publishedCatalogueDecoder].
+@ProviderFor(publishedCatalogueDecoder)
+final publishedCatalogueDecoderProvider =
+    AutoDisposeProvider<PublishedCatalogueDecoder>.internal(
+      publishedCatalogueDecoder,
+      name: r'publishedCatalogueDecoderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedCatalogueDecoderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedCatalogueDecoderRef =
+    AutoDisposeProviderRef<PublishedCatalogueDecoder>;
+String _$loadPublishedCatalogueUseCaseHash() =>
+    r'50bbc3d0b69f17dc31fa88ff65764a653dfc8c63';
+
+/// Loads one saved library's published catalogue — checking the host first
+/// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
 ///
 /// Copied from [loadPublishedCatalogueUseCase].
 @ProviderFor(loadPublishedCatalogueUseCase)
 const loadPublishedCatalogueUseCaseProvider =
     LoadPublishedCatalogueUseCaseFamily();
 
-/// Loads one saved library's published catalogue (ADR 0015).
+/// Loads one saved library's published catalogue — checking the host first
+/// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
 ///
 /// Copied from [loadPublishedCatalogueUseCase].
 class LoadPublishedCatalogueUseCaseFamily
     extends Family<LoadPublishedCatalogueUseCase> {
-  /// Loads one saved library's published catalogue (ADR 0015).
+  /// Loads one saved library's published catalogue — checking the host first
+  /// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
   ///
   /// Copied from [loadPublishedCatalogueUseCase].
   const LoadPublishedCatalogueUseCaseFamily();
 
-  /// Loads one saved library's published catalogue (ADR 0015).
+  /// Loads one saved library's published catalogue — checking the host first
+  /// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
   ///
   /// Copied from [loadPublishedCatalogueUseCase].
   LoadPublishedCatalogueUseCaseProvider call(String siteUrl) {
@@ -683,12 +737,14 @@ class LoadPublishedCatalogueUseCaseFamily
   String? get name => r'loadPublishedCatalogueUseCaseProvider';
 }
 
-/// Loads one saved library's published catalogue (ADR 0015).
+/// Loads one saved library's published catalogue — checking the host first
+/// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
 ///
 /// Copied from [loadPublishedCatalogueUseCase].
 class LoadPublishedCatalogueUseCaseProvider
     extends AutoDisposeProvider<LoadPublishedCatalogueUseCase> {
-  /// Loads one saved library's published catalogue (ADR 0015).
+  /// Loads one saved library's published catalogue — checking the host first
+  /// and falling back to the saved copy with a note (ADR 0015, ADR 0018).
   ///
   /// Copied from [loadPublishedCatalogueUseCase].
   LoadPublishedCatalogueUseCaseProvider(String siteUrl)
@@ -921,26 +977,53 @@ class _PublishedEventsFetcherProviderElement
   String get siteUrl => (origin as PublishedEventsFetcherProvider).siteUrl;
 }
 
-String _$loadPublishedEventsUseCaseHash() =>
-    r'8d351375d632ec460d7cc25b6770b8d23ce6bf70';
+String _$publishedEventsDecoderHash() =>
+    r'dac1bd9e63d713da5257191f914ec8a87f977bfd';
 
-/// Loads the independently-published public events for one saved library.
+/// Re-reads a SAVED events copy with the same bounded codec a download uses
+/// (ADR 0018). The file is capped at 64 KiB, so it is decoded inline.
+///
+/// Copied from [publishedEventsDecoder].
+@ProviderFor(publishedEventsDecoder)
+final publishedEventsDecoderProvider =
+    AutoDisposeProvider<PublishedEventsDecoder>.internal(
+      publishedEventsDecoder,
+      name: r'publishedEventsDecoderProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishedEventsDecoderHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishedEventsDecoderRef =
+    AutoDisposeProviderRef<PublishedEventsDecoder>;
+String _$loadPublishedEventsUseCaseHash() =>
+    r'36fa153e36cc115b777b7bbb34c1cddf0b4bc182';
+
+/// Loads the independently-published public events for one saved library,
+/// checking the host first and falling back to the saved copy (ADR 0018).
 ///
 /// Copied from [loadPublishedEventsUseCase].
 @ProviderFor(loadPublishedEventsUseCase)
 const loadPublishedEventsUseCaseProvider = LoadPublishedEventsUseCaseFamily();
 
-/// Loads the independently-published public events for one saved library.
+/// Loads the independently-published public events for one saved library,
+/// checking the host first and falling back to the saved copy (ADR 0018).
 ///
 /// Copied from [loadPublishedEventsUseCase].
 class LoadPublishedEventsUseCaseFamily
     extends Family<LoadPublishedEventsUseCase> {
-  /// Loads the independently-published public events for one saved library.
+  /// Loads the independently-published public events for one saved library,
+  /// checking the host first and falling back to the saved copy (ADR 0018).
   ///
   /// Copied from [loadPublishedEventsUseCase].
   const LoadPublishedEventsUseCaseFamily();
 
-  /// Loads the independently-published public events for one saved library.
+  /// Loads the independently-published public events for one saved library,
+  /// checking the host first and falling back to the saved copy (ADR 0018).
   ///
   /// Copied from [loadPublishedEventsUseCase].
   LoadPublishedEventsUseCaseProvider call(String siteUrl) {
@@ -969,12 +1052,14 @@ class LoadPublishedEventsUseCaseFamily
   String? get name => r'loadPublishedEventsUseCaseProvider';
 }
 
-/// Loads the independently-published public events for one saved library.
+/// Loads the independently-published public events for one saved library,
+/// checking the host first and falling back to the saved copy (ADR 0018).
 ///
 /// Copied from [loadPublishedEventsUseCase].
 class LoadPublishedEventsUseCaseProvider
     extends AutoDisposeProvider<LoadPublishedEventsUseCase> {
-  /// Loads the independently-published public events for one saved library.
+  /// Loads the independently-published public events for one saved library,
+  /// checking the host first and falling back to the saved copy (ADR 0018).
   ///
   /// Copied from [loadPublishedEventsUseCase].
   LoadPublishedEventsUseCaseProvider(String siteUrl)

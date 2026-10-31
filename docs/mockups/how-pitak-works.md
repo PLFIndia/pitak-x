@@ -587,8 +587,10 @@ have no books of its own.
 
 - **☰ → Library Bookmarks → Add Bookmark** saves a library by its web address.
 - Tap a saved library to browse its published catalogue inside Pitak —
-  search, filter and sort it without leaving the app. Needing the full
-  website? Use **Open in browser** on that screen.
+  search, filter and sort it without leaving the app. Pitak keeps a saved
+  copy and downloads it again only when the library changed it; if the
+  library can't be reached, you see the saved copy with a note saying how old
+  it is. Needing the full website? Use **Open in browser** on that screen.
 - **Add member** scans another library's card, in person. That makes you a
   *hub* and lists them on your page as your member.
 - If a hub lists *you*, Pitak asks once: "show that you're a member of X?"

@@ -7,6 +7,10 @@
 /// rapid close/reopen is a new mount with fresh data and a default query
 /// intent — never a resurrected stale session (V12).
 ///
+/// When the library cannot be checked, the page shows the device's saved copy
+/// under a banner that says how old it is and why (ADR 0018); it never passes
+/// a saved copy off as current.
+///
 /// The AppBar always carries the explicit **Open in browser** action, on every
 /// state. The normal row tap in the saved list opens THIS page and never the
 /// browser. Nothing here writes to the local catalogue: the payload belongs to
@@ -21,6 +25,7 @@ import 'package:pitaka/features/network/application/published_catalogue_query_co
 import 'package:pitaka/features/network/application/published_events_controller.dart';
 import 'package:pitaka/features/network/domain/entities/network_library.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
 import 'package:pitaka/features/network/domain/published_catalogue_query.dart';
 import 'package:pitaka/features/network/presentation/widgets/open_published_site.dart';
 import 'package:pitaka/features/network/presentation/widgets/published_catalogue_controls.dart';
@@ -156,10 +161,12 @@ class _PublishedCataloguePageState
 
   Widget _buildBody(
     BuildContext context,
-    AsyncValue<PublishedCatalogue> state,
+    AsyncValue<PublishedContent<PublishedCatalogue>> state,
   ) {
-    // A reload keeps the previous payload on screen with a thin progress bar;
-    // a FAILED reload replaces it with the typed error (no stale copy exists).
+    // A reload keeps the previous payload on screen with a thin progress bar.
+    // A failed reload that still had a saved copy arrives as DATA (the saved
+    // copy plus its notice); only a failure with no saved copy is an error,
+    // and it replaces the payload with the typed message.
     if (state.hasValue && !state.hasError) {
       return Column(
         children: [
@@ -214,9 +221,11 @@ class _PublishedCataloguePageState
 
   Widget _buildCatalogue(
     BuildContext context,
-    PublishedCatalogue catalogue, {
+    PublishedContent<PublishedCatalogue> content, {
     required bool coverRequestsPaused,
   }) {
+    final catalogue = content.value;
+    final savedCopy = content.savedCopy;
     final viewAsync = ref.watch(publishedCatalogueViewProvider(_siteUrl));
     final languages = ref.watch(publishedCatalogueLanguagesProvider(_siteUrl));
     // `valueOrNull` keeps the previous rows visible while a new engine pass
@@ -233,7 +242,7 @@ class _PublishedCataloguePageState
     final hasEventPosters = ref.watch(
       publishedEventsControllerProvider(
         _siteUrl,
-      ).select((s) => s.valueOrNull?.posters.isNotEmpty ?? false),
+      ).select((s) => s.valueOrNull?.value.posters.isNotEmpty ?? false),
     );
 
     return CustomScrollView(
@@ -243,6 +252,13 @@ class _PublishedCataloguePageState
           sliver: SliverList(
             delegate: SliverChildListDelegate([
               _headerLine(context, catalogue),
+              if (savedCopy != null) ...[
+                const SizedBox(height: 8),
+                PublishedCatalogueBanner(
+                  icon: Icons.history,
+                  message: savedCopyMessage(savedCopy),
+                ),
+              ],
               if (catalogue.hasNewerSchema) ...[
                 const SizedBox(height: 8),
                 const PublishedCatalogueBanner(

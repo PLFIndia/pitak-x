@@ -126,9 +126,11 @@ Future<PublishedCatalogueView> publishedCatalogueView(
   PublishedCatalogueViewRef ref,
   String siteUrl,
 ) async {
-  final catalogue = await ref.watch(
+  // Only the catalogue matters here; whether it is a saved copy is the
+  // page's banner, not a reason to re-run the query engine.
+  final catalogue = (await ref.watch(
     publishedCatalogueControllerProvider(siteUrl).future,
-  );
+  )).value;
   // A RECORD select: structural equality keeps a filtering/sorting pass from
   // re-running on every keystroke (only the debounced active term is here).
   final intent = ref.watch(
@@ -158,7 +160,8 @@ List<String> publishedCatalogueLanguages(
 ) {
   final catalogue = ref
       .watch(publishedCatalogueControllerProvider(siteUrl))
-      .valueOrNull;
+      .valueOrNull
+      ?.value;
   if (catalogue == null) return const [];
   return PublishedQueryEngine.languagesOf(catalogue);
 }

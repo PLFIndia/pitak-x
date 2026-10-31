@@ -7,11 +7,21 @@ import 'package:pitaka/core/di/providers.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/network/application/published_catalogue_controller.dart';
 import 'package:pitaka/features/network/domain/entities/published_catalogue.dart';
+import 'package:pitaka/features/network/domain/entities/published_content.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
+import 'package:pitaka/features/network/domain/repositories/published_file_cache.dart';
+
+import '../../../support/published_file_fakes.dart';
 
 /// The catalogue controller's lifecycle (ADR 0015 V12, viewer plan S3):
 /// one GET per mount, one in-flight refresh, typed AsyncValue states, caller
 /// abort on disposal, and no stale session resurrection. No real HTTP:
-/// `publishedCatalogueFetcherProvider` is replaced with a fake port.
+/// `publishedCatalogueFetcherProvider` is replaced with a fake port, and the
+/// saved copies (ADR 0018) live in an in-memory store.
+///
+/// The load reads the saved copy's info BEFORE it asks the host (to send its
+/// tag), so the fetch starts a few microtasks after the listen/refresh:
+/// `start()` and `pumpEventQueue()` let it begin before a test inspects it.
 void main() {
   const site = 'https://kadugodi.github.io/pitak/';
   const catalogueUrl = 'https://kadugodi.github.io/pitak/books.json';
@@ -33,40 +43,65 @@ void main() {
   );
 
   late _FakeFetcher fake;
+  late InMemoryPublishedFileCache cache;
   late ProviderContainer container;
 
   setUp(() {
     fake = _FakeFetcher();
+    cache = InMemoryPublishedFileCache();
     container = ProviderContainer(
       overrides: [
         publishedCatalogueFetcherProvider(site).overrideWithValue(fake.call),
+        publishedFileCacheProvider.overrideWithValue(cache),
+        // Every saved copy in this suite decodes to the same marker title.
+        publishedCatalogueDecoderProvider.overrideWithValue(
+          (bytes) async => Right(catalogueWith('Saved')),
+        ),
+        clockProvider.overrideWithValue(() => 1000),
       ],
     );
     addTearDown(container.dispose);
   });
 
-  ProviderSubscription<AsyncValue<PublishedCatalogue>> listen() =>
-      container.listen(
-        publishedCatalogueControllerProvider(site),
-        (_, _) {},
-        fireImmediately: true,
-      );
+  ProviderSubscription<AsyncValue<PublishedContent<PublishedCatalogue>>>
+  listen() => container.listen(
+    publishedCatalogueControllerProvider(site),
+    (_, _) {},
+    fireImmediately: true,
+  );
+
+  /// Listens and lets the initial load reach the fetcher.
+  Future<ProviderSubscription<AsyncValue<PublishedContent<PublishedCatalogue>>>>
+  start() async {
+    final sub = listen();
+    await pumpEventQueue();
+    return sub;
+  }
+
+  String? shownTitle() => container
+      .read(publishedCatalogueControllerProvider(site))
+      .valueOrNull
+      ?.value
+      .items
+      .single
+      .title;
 
   test('the first mount performs exactly one fetch', () async {
-    final sub = listen();
+    final sub = await start();
     expect(fake.calls, [catalogueUrl]);
 
     fake.completeLatest(catalogueWith('First'));
     final loaded = await container.read(
       publishedCatalogueControllerProvider(site).future,
     );
-    expect(loaded.items.single.title, 'First');
+    expect(loaded.value.items.single.title, 'First');
+    expect(loaded.isSavedCopy, isFalse);
     expect(fake.calls, hasLength(1), reason: 'a rebuild must not refetch');
     sub.close();
   });
 
   test('a typed failure becomes AsyncError with the typed Failure', () async {
-    final sub = listen();
+    final sub = await start();
     fake.failLatest(failure);
     await expectLater(
       container.read(publishedCatalogueControllerProvider(site).future),
@@ -80,7 +115,7 @@ void main() {
   });
 
   test('refresh performs one more fetch and retries after an error', () async {
-    final sub = listen();
+    final sub = await start();
     fake.failLatest(failure);
     await expectLater(
       container.read(publishedCatalogueControllerProvider(site).future),
@@ -94,23 +129,16 @@ void main() {
       container.read(publishedCatalogueControllerProvider(site)).isLoading,
       isTrue,
     );
+    await pumpEventQueue();
     expect(fake.calls, hasLength(2));
     fake.completeLatest(catalogueWith('Recovered'));
     await refresh;
-    expect(
-      container
-          .read(publishedCatalogueControllerProvider(site))
-          .valueOrNull!
-          .items
-          .single
-          .title,
-      'Recovered',
-    );
+    expect(shownTitle(), 'Recovered');
     sub.close();
   });
 
   test('a refresh while the initial load is in flight is ignored', () async {
-    final sub = listen();
+    final sub = await start();
     final notifier = container.read(
       publishedCatalogueControllerProvider(site).notifier,
     );
@@ -125,7 +153,7 @@ void main() {
   test(
     'a second concurrent refresh is collapsed into the running one',
     () async {
-      final sub = listen();
+      final sub = await start();
       fake.completeLatest(catalogueWith('First'));
       await container.read(publishedCatalogueControllerProvider(site).future);
 
@@ -134,24 +162,19 @@ void main() {
       );
       final first = notifier.refresh();
       final second = notifier.refresh();
+      await pumpEventQueue();
       expect(fake.calls, hasLength(2), reason: 'only one reload request');
       fake.completeLatest(catalogueWith('Second'));
       await Future.wait([first, second]);
-      expect(
-        container
-            .read(publishedCatalogueControllerProvider(site))
-            .valueOrNull!
-            .items
-            .single
-            .title,
-        'Second',
-      );
+      expect(shownTitle(), 'Second');
       sub.close();
     },
   );
 
   test('canRefresh is the one reload decision (V12)', () async {
-    final sub = listen();
+    // Nothing is saved, so the final failed reload is a real error state.
+    cache.failWrites = true;
+    final sub = await start();
     final notifier = container.read(
       publishedCatalogueControllerProvider(site).notifier,
     );
@@ -166,12 +189,14 @@ void main() {
     // …and a manual reload closes the door again, synchronously.
     final refresh = notifier.refresh();
     expect(notifier.canRefresh, isFalse, reason: 'reload in flight');
+    await pumpEventQueue();
     fake.completeLatest(catalogueWith('Second'));
     await refresh;
     expect(notifier.canRefresh, isTrue);
 
     // A typed error leaves the Retry path available.
     final failed = notifier.refresh();
+    await pumpEventQueue();
     fake.failLatest(failure);
     await failed;
     expect(
@@ -183,7 +208,7 @@ void main() {
   });
 
   test('refresh() refuses exactly when canRefresh is false', () async {
-    final sub = listen();
+    final sub = await start();
     final notifier = container.read(
       publishedCatalogueControllerProvider(site).notifier,
     );
@@ -196,6 +221,7 @@ void main() {
     await container.read(publishedCatalogueControllerProvider(site).future);
     expect(notifier.canRefresh, isTrue);
     final refresh = notifier.refresh();
+    await pumpEventQueue();
     expect(fake.calls, hasLength(2));
     fake.completeLatest(catalogueWith('Second'));
     await refresh;
@@ -203,7 +229,7 @@ void main() {
   });
 
   test('disposal completes the caller abort so the socket closes', () async {
-    final sub = listen();
+    final sub = await start();
     final abort = fake.aborts.single;
     var aborted = false;
     unawaited(abort.then((_) => aborted = true));
@@ -218,7 +244,7 @@ void main() {
   });
 
   test('a rapid close/reopen is exactly one new GET', () async {
-    final firstSub = listen();
+    final firstSub = await start();
     expect(fake.calls, hasLength(1));
     firstSub.close();
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -226,36 +252,79 @@ void main() {
     // inherit its result.
     fake.completeLatest(catalogueWith('Abandoned'));
 
-    final secondSub = listen();
+    final secondSub = await start();
     expect(fake.calls, hasLength(2));
     fake.completeLatest(catalogueWith('Fresh'));
     final loaded = await container.read(
       publishedCatalogueControllerProvider(site).future,
     );
-    expect(loaded.items.single.title, 'Fresh');
+    expect(loaded.value.items.single.title, 'Fresh');
     secondSub.close();
   });
 
-  test('a failed reload replaces the viewing state with the error', () async {
-    final sub = listen();
+  test('a failed reload with NO saved copy replaces the viewing state with '
+      'the error', () async {
+    cache.failWrites = true; // the first load could not be saved
+    final sub = await start();
     fake.completeLatest(catalogueWith('First'));
     await container.read(publishedCatalogueControllerProvider(site).future);
 
     final refresh = container
         .read(publishedCatalogueControllerProvider(site).notifier)
         .refresh();
+    await pumpEventQueue();
     fake.failLatest(failure);
     await refresh;
     final state = container.read(publishedCatalogueControllerProvider(site));
     expect(state.hasError, isTrue);
     expect(state.error, same(failure));
-    // No stale data is presented as fresh (there is no persistent copy).
+    // No stale data is presented as fresh.
     expect(state.isLoading, isFalse);
     sub.close();
   });
 
+  test('a failed reload WITH a saved copy shows it, labelled as saved '
+      '(ADR 0018)', () async {
+    final sub = await start();
+    fake.completeLatest(catalogueWith('First'));
+    await container.read(publishedCatalogueControllerProvider(site).future);
+    expect(cache.peek(site, PublishedFileKind.catalogue), isNotNull);
+
+    final refresh = container
+        .read(publishedCatalogueControllerProvider(site).notifier)
+        .refresh();
+    await pumpEventQueue();
+    fake.failLatest(failure);
+    await refresh;
+    final state = container.read(publishedCatalogueControllerProvider(site));
+    expect(state.hasError, isFalse);
+    final content = state.requireValue;
+    expect(content.value.items.single.title, 'Saved');
+    expect(content.savedCopy!.checkedAt, 1000);
+    expect(content.savedCopy!.problem, PublishedFileProblem.unreachable);
+    sub.close();
+  });
+
+  test('the next open sends the saved copy tag', () async {
+    final first = await start();
+    fake.completeLatest(catalogueWith('First'), validator: '"v1"');
+    await container.read(publishedCatalogueControllerProvider(site).future);
+    first.close();
+    await pumpEventQueue();
+
+    final second = await start();
+    expect(fake.validators, [null, '"v1"']);
+    fake.unchangedLatest();
+    final loaded = await container.read(
+      publishedCatalogueControllerProvider(site).future,
+    );
+    expect(loaded.value.items.single.title, 'Saved');
+    expect(loaded.isSavedCopy, isFalse, reason: 'the host confirmed it');
+    second.close();
+  });
+
   test('reading the state repeatedly does not refetch', () async {
-    final sub = listen();
+    final sub = await start();
     fake.completeLatest(catalogueWith('First'));
     await container.read(publishedCatalogueControllerProvider(site).future);
     for (var i = 0; i < 5; i++) {
@@ -272,25 +341,31 @@ void main() {
 /// A controllable implementation of the fetcher port.
 final class _FakeFetcher {
   final List<String> calls = [];
+  final List<String?> validators = [];
   final List<Future<void>> aborts = [];
-  final List<Completer<Either<PublishedCatalogueFailure, PublishedCatalogue>>>
-  _pending = [];
+  final List<Completer<PublishedFileFetch<PublishedCatalogue>>> _pending = [];
 
-  Future<Either<PublishedCatalogueFailure, PublishedCatalogue>> call(
+  Future<PublishedFileFetch<PublishedCatalogue>> call(
     String url, {
+    String? validator,
     Future<void>? abortTrigger,
   }) {
     calls.add(url);
+    validators.add(validator);
     if (abortTrigger != null) aborts.add(abortTrigger);
-    final completer =
-        Completer<Either<PublishedCatalogueFailure, PublishedCatalogue>>();
+    final completer = Completer<PublishedFileFetch<PublishedCatalogue>>();
     _pending.add(completer);
     return completer.future;
   }
 
-  void completeLatest(PublishedCatalogue catalogue) =>
-      _pending.last.complete(Right(catalogue));
+  void completeLatest(PublishedCatalogue catalogue, {String? validator}) =>
+      _pending.last.complete(
+        fetchedValue(catalogue, bytes: [1], validator: validator),
+      );
+
+  void unchangedLatest() =>
+      _pending.last.complete(const PublishedFileUnchanged());
 
   void failLatest(PublishedCatalogueFailure failure) =>
-      _pending.last.complete(Left(failure));
+      _pending.last.complete(failedFetch(failure));
 }

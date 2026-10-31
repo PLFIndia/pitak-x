@@ -1,19 +1,22 @@
 /// Bounded fetcher for a saved library's optional `events.json` sibling file.
 ///
 /// It reuses the viewer-owned client, same-origin/directory policy, redirect
-/// checks, abortable deadline and no-cache headers. A 404 is a successful null
-/// (no events published); every other refusal stays a typed failure.
+/// checks, abortable deadline and no-cache headers. A 404 is
+/// [PublishedFileMissing] (no events published); every other refusal stays a
+/// typed [PublishedFileFailed]. When a saved copy exists its entity tag is
+/// sent as `If-None-Match` (ADR 0018), so unchanged events cost a `304`.
 library;
 
-import 'package:fpdart/fpdart.dart';
 import 'package:http/http.dart' as http;
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/core/network/app_user_agent.dart';
 import 'package:pitaka/core/network/bounded_fetch_outcome.dart';
 import 'package:pitaka/core/network/bounded_http_fetcher.dart';
 import 'package:pitaka/features/network/domain/entities/published_events.dart';
+import 'package:pitaka/features/network/domain/published_file_fetch.dart';
 import 'package:pitaka/features/network/domain/published_site_url_policy.dart';
 import 'package:pitaka/features/network/infrastructure/published_events_codec.dart';
+import 'package:pitaka/features/network/infrastructure/published_fetch_problem.dart';
 
 /// Fetches and decodes public events under strict transport limits.
 final class BoundedPublishedEventsFetcher {
@@ -60,17 +63,41 @@ final class BoundedPublishedEventsFetcher {
     'Cache-Control': 'no-cache',
   };
 
-  /// Fetches [url]. Only 404 maps to null; it must not hide server failures.
-  Future<Either<Failure, PublishedEvents?>> fetch(
+  /// Fetches [url], sending [validator] as `If-None-Match` when non-null.
+  /// Only 404 maps to [PublishedFileMissing]; it must not hide server
+  /// failures.
+  Future<PublishedFileFetch<PublishedEvents>> fetch(
     String url, {
+    String? validator,
     Future<void>? abortTrigger,
   }) async {
-    final outcome = await _fetcher.fetch(url, abortTrigger: abortTrigger);
+    final outcome = await _fetcher.fetchConditional(
+      url,
+      ifNoneMatch: validator,
+      abortTrigger: abortTrigger,
+    );
     return switch (outcome) {
-      FetchedBytes(:final bytes) => codec.decode(bytes),
+      FetchedBytes(:final bytes, :final entityTag) =>
+        codec
+            .decode(bytes)
+            .match<PublishedFileFetch<PublishedEvents>>(
+              (failure) => PublishedFileFailed(
+                failure: failure,
+                problem: PublishedFileProblem.unreadable,
+              ),
+              (events) => PublishedFileFetched(
+                value: events,
+                bytes: bytes,
+                validator: entityTag,
+              ),
+            ),
+      FetchNotModified() => const PublishedFileUnchanged(),
       FetchRefused(reason: FetchRefusal.httpStatus, statusCode: 404) =>
-        const Right(null),
-      FetchRefused() => const Left(NetworkFailure()),
+        const PublishedFileMissing(),
+      FetchRefused(:final reason) => PublishedFileFailed(
+        failure: const NetworkFailure(),
+        problem: publishedFileProblemFor(reason),
+      ),
     };
   }
 }

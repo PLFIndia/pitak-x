@@ -7,7 +7,7 @@ part of 'published_catalogue_query_controller.dart';
 // **************************************************************************
 
 String _$publishedCatalogueViewHash() =>
-    r'5d5f14f305c6dbfba3d86cf06a4038c420dcb026';
+    r'e84458d9cf8f169fd259af25eb353771b41a9d6f';
 
 /// Copied from Dart SDK
 class _SystemHash {
@@ -204,7 +204,7 @@ class _PublishedCatalogueViewProviderElement
 }
 
 String _$publishedCatalogueLanguagesHash() =>
-    r'aef43b69912d9d9cb11750d327ed33406648d3ff';
+    r'b2edf1bfab0a6e6171fbaa8a825beb1503bead85';
 
 /// The language facet for one catalogue: distinct trimmed values, sorted and
 /// case-insensitively deduplicated. Computed once per decoded payload, not

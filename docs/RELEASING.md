@@ -199,7 +199,12 @@ It does **not** bump the version, write changelogs, commit, tag or upload.
    adds a uniquely named bookmark through the real dialog/Drift, opens the
    native viewer, searches/filters, opens the read-only detail, returns,
    reloads once, checks the injected browser hand-off and removes the row.
-   It uses fake catalogue/cover ports, so it needs **no** live network.
+   It uses fake catalogue/cover ports, so it needs **no** live network, and
+   the real saved-copy store in a throwaway folder (ADR 0018).
+   Then, by hand, check the saved copy against a real library: open a saved
+   library online; turn on airplane mode and open it again — the catalogue
+   appears under "Showing your saved copy from …"; turn airplane mode off and
+   reopen — the note is gone.
 8. For the Cloudflare S8 publisher, run the Android release/AOT memory gate on
    a test emulator (the script uninstalls any previous profiling build):
    `adb root`, then

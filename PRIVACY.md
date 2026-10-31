@@ -196,9 +196,18 @@ passive exception (item 8, Google Play builds only):
    when you tap, and only to that library's own site directory (a redirect
    to another host or library is refused), with the fixed User-Agent and
    "no-cache" hint. The site sees your device's IP address for each request.
-   `books.json` and `events.json` are never stored on your device: leaving
-   the screen discards both snapshots; opening the library again fetches them.
-   There is no background refresh, cached copy or offline mode.
+   Pitak keeps one **saved copy** of each library's `books.json` and
+   `events.json` in the app's cache folder (never in backups — neither the
+   phone's nor Pitak's `.pitabak`). Every time you open the library, Pitak
+   first asks the site whether the file changed, sending the short fingerprint
+   (the "ETag") the site gave with the saved copy; an unchanged file is not
+   downloaded again. A site that runs its own server code could use that
+   fingerprint to recognise a returning device even after its IP address
+   changes; GitHub Pages sites cannot choose it. When the site can't be
+   checked, the saved copy is shown with a note saying how old it is. Saved
+   copies take at most 200 MB together (the least recently opened library is
+   removed first), and a library's copies are deleted when you remove it from
+   your saved libraries. There is no background refresh.
    Covers and event posters are SEPARATE requests and obey the
    remote-cover switch in item 2: with it off (the default) the viewer
    shows placeholders and offers a Load covers button; with it on, images load

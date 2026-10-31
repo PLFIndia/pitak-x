@@ -15,6 +15,17 @@ heading as part of the `chore(release):` commit.
 ## [Unreleased]
 
 ### Added
+- **Saved copies of opened libraries (ADR 0018):** the native viewer keeps
+  the last `books.json` and `events.json` of each saved library in the OS
+  cache directory and revalidates them on every open with the host's `ETag`
+  (`If-None-Match`; `304` downloads nothing). When the host can't be checked,
+  the saved copy is shown with a note naming when it was last confirmed and
+  why. Saved bytes are SHA-256/size-verified and re-decoded by the bounded
+  codecs; tags are grammar-checked before they are stored or sent. All copies
+  share a 200 MiB cap (least recently opened library evicted first), are
+  excluded from device backups and `.pitabak`, and are deleted when the
+  library leaves the saved list (remove, restore or move). Supersedes ADR
+  0015 decision 3; covers and posters stay memory-only.
 - **Publish to Cloudflare Workers:** connect with a restricted API token
   scoped to one account (`Workers Scripts · Edit`), choose the account,
   `workers.dev` subdomain and a Worker dedicated to Pitak, prove the address
