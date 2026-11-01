@@ -1,8 +1,7 @@
 # ADR 0019: Availability fast lane — a separately published availability file
 
-- **Status:** Proposed (2026-11-01). The four open S1 questions were decided by
-  the product owner on 2026-11-01 (Decision 13); acceptance of the whole
-  record is the S1 exit.
+- **Status:** Accepted (2026-11-01) by the product owner. Proposed the same
+  day; the four open S1 questions were decided first (Decision 13).
 - **Date:** 2026-11-01
 - **Amends:** ADR 0015 (a third published file the viewer reads; the
   *Available / Not available* labels; the tag is no longer only a
@@ -39,9 +38,10 @@ coarse tag per item (**P1**); that tag must update as soon as possible
 
 The forces:
 
-1. **Privacy.** Loans live in the encrypted vault. The tag is the only
-   loan-derived data that leaves the phone (`PRIVACY.md` item 3). Publishing it
-   more often does not add data, but it does reveal *when* things happen.
+1. **Public by design (plan P8).** Pitak serves public libraries, whose
+   catalogues exist for the public to see. The catalogue and its availability
+   tag are public data. Borrower names and loan details stay in the encrypted
+   vault (P1); the tag is computed from loan *counts* alone.
 2. **Host limits.** GitHub Pages has a soft limit of 10 builds per hour, and
    every commit stays in the repository's public history. Cloudflare allows
    1,200 API requests per 5 minutes (`CloudflareLimits.apiRequestsPerFiveMinutes`),
@@ -201,7 +201,7 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
      SharedPreferences is acceptable here; AGENTS §6.3 governs secrets. Reads
      tell *absent* apart from *unreadable*, and a damaged store never produces
      an empty list. Turning the switch off clears the stored snapshots once the
-     removal is published.
+     removal is published, so turning it back on never publishes an old set.
    - This narrows the `docs/ARCHITECTURE.md` §1.2 non-goal "no background or
      scheduled publishing" to **no publishing while the app is not running**:
      no OS background work and no scheduler plugin. The lane is the one
@@ -344,16 +344,14 @@ cover.
 
 ## Consequences
 
-- **Privacy: the same data, finer timing, and a public history on GitHub.** The
-  tag was already public. What is new: it updates by itself, a minute or so
-  after each loan. On GitHub every update is a public commit with a timestamp,
-  so anyone can read *when* each title went out and came back. Turning the lane
-  off stops new commits but cannot erase that history. Cloudflare keeps no
-  public history (Version URLs are off, ADR 0017 Decision 7), although the
-  current file is public. `PRIVACY.md`, the in-app guide and the one-time
-  notice must say all of this when the lane is switched on (S8; plan G.2).
-  `asOf` is rounded to the minute. No borrower data, count or internal id
-  leaves the device, and keys are salted and domain-separated.
+- **What is public (plan P8).** The catalogue and the *Available / Not
+  available* tag are meant to be public, so this ADR raises no privacy question
+  about them. Only the speed changes: the tag now updates by itself, about a
+  minute after a loan. On GitHub each update is also a commit in the
+  repository's history, which is public like the site; Cloudflare serves only
+  the current file. Borrower names and loan details stay in the vault (P1).
+  `PRIVACY.md` must describe accurately what the app uploads (a store
+  requirement), so S8 adds one factual sentence about automatic updates.
 - **The one-publisher-per-site rule matters more.** Automatic publishing is on
   by default, so a second phone connected to the same site would now publish
   without a tap. Gate 7b and the marker fail closed (*pending*, never a

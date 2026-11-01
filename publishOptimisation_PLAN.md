@@ -1,6 +1,6 @@
 # Publish optimisation — implementation plan
 
-- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are captured for both hosts on the test library and for Cloudflare on the 1,000-item fixture (Appendix A). Both S0 defects are resolved (A.6 #11, #13). The GitHub fixture row is deliberately not measured (A.6 #14; risk J8). **S0 is complete.** **S1 (2026-11-01):** `docs/adr/0019-availability-fast-lane.md` written (status *Proposed*), with amendment notes in ADR 0015, 0017 and 0018, the index entry, and the ARCHITECTURE §1.2 non-goal edit. The product owner decided the four open questions (A.6 #15–#17; ADR 0019 Decision 13). S1 also recorded five engineering corrections found while writing it (A.6 #18–#22). **S1 exit: the product owner accepts ADR 0019.** No code from Phase 1 onward has started.
+- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are captured for both hosts on the test library and for Cloudflare on the 1,000-item fixture (Appendix A). Both S0 defects are resolved (A.6 #11, #13). The GitHub fixture row is deliberately not measured (A.6 #14; risk J8). **S0 is complete.** **S1 is complete (2026-11-01):** ADR 0019 is **accepted** by the product owner, with amendment notes in ADR 0015, 0017 and 0018, the index entry, and the ARCHITECTURE §1.2 non-goal edit. The product owner decided the four open questions (A.6 #15–#17; ADR 0019 Decision 13) and added **P8, public by design** (A.3). S1 also recorded five engineering corrections (A.6 #18–#22). **S2 has not started; it waits for the product owner's explicit go-ahead.** No code from Phase 1 onward has started.
 - **Branch:** `publishOptimisation`, created 2026-11-01 from `03313a3` (release 1.9.0+32). That commit is the tip of the `cloudflare` branch, not of `main` (see A.6 #1).
 - **Scope, in order:** Phase 0 measure → Phase 1 availability fast lane → Phase 2 cover work avoidance (three fixes) → Phase 3 publish speed. Catalogue chunking is designed but deferred (Part I).
 - **Product decisions:** recorded in A.3 (product owner, 2026-11-01).
@@ -108,6 +108,7 @@ This plan is written as discrete sessions. Each session must end green (every CI
 | P5 | Covers stay **one file per cover**; no cover bundles. Only new or replaced covers may be uploaded. |
 | P6 | Future catalogue chunks hold **100 items**. **Older apps keep reading `books.json`**, so it keeps being written (interpretation in J1). Chunking itself is deferred. |
 | P7 | **How Pitak works** gains "Which host suits you?" — GitHub Pages: quick setup, slower updates; Cloudflare Workers: more setup, fast updates — with a plain-English example. |
+| P8 | **Public by design** (product owner, after S1). Pitak is for public libraries, whose catalogues exist for the public to see. The published catalogue and the *Available / Not available* tag are public data. **Sessions must not raise privacy questions about data the product publishes on purpose.** What stays off the site is already settled and needs no new review: borrower names and loan details (P1, kept in the vault), and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md` is kept factually accurate about what is uploaded, because the app stores require that; that is a statement of fact, not a review. |
 
 ## A.4 Binding engineering decisions
 
@@ -200,11 +201,11 @@ Record a deviation here before the affected session finishes.
 | 13 | B.1 builds the instrumented APK with a plain `flutter build`/`flutter run` | Every measurement build starts with `flutter clean` (`docs/RELEASING.md` §4), and the APK's `libapp.so` is checked before installing | Flutter 3.44's Gradle plugin can package a **stale `libapp.so`**: `merge<Variant>JniLibFolders` stays up to date after a Dart-only change (fixed upstream by flutter/flutter#188119, not in 3.44.2). Every incremental build after 17:13 on 2026-11-01 shipped the 17:13 Dart code. That caused handoff issue 1 (Cloudflare lines without `reads`/`reconcile`). The lines it produced are still valid for the marks they contain, because the marks change no behaviour. |
 | 14 | Appendix A row "Add 1 book + cover, 1,000-item fixture, GitHub" | Not measured; product owner decision, 2026-11-01 | Cover cost does not depend on the host: the same builder runs before either upload, and Cloudflare measured it. GitHub's own costs (commit, Pages) are measured on the test library. A first GitHub publish of 1,000 covers makes more than 1,000 blob requests, one per cover (`http_github_api.dart:416-429`). GitHub documents a limit of about 80 content-creating requests per minute and 500 per hour, so the run would probably be refused partway, and it could block content creation on the account for up to an hour. That risk is now J8 instead. |
 | 15 | A.2: Cloudflare lane ≤ 20 s after Phase 1 and **≤ 10 s after Phase 3**; outcome "within seconds" | ≤ 20 s **measured from the end of the debounce**; the ≤ 10 s target is **withdrawn**; outcome "usually under a minute" until S8 measures the final words. G.5 Phase 3 changes to match. Product owner decision, S1, 2026-11-01 (ADR 0019 Decision 13a) | S1 arithmetic from Appendix A: an availability-only deploy still pays reads, reconcile, the unmarked gates, upload (fixed latency), deploy and a 2-file read-back, ≈ 16–20 s after the debounce, so lend → live is ≈ 36–40 s. The S0 verdict's "≈ 10–12 s after Phase 3" subtracted the 5 s read-back sleep twice (AV13 already removes it for the lane, so SP2 cannot remove it again). With every gate kept, Phase 3 adds only SP3 (≈ 1–2 s), leaving ≈ 14–18 s. |
-| 16 | C.1: `asOf` in epoch milliseconds | `asOf` **rounded down to the whole minute** (still epoch milliseconds). Product owner decision, S1 (ADR 0019 Decision 13b) | Data minimisation: readers show minutes only, and on Cloudflare nothing else public gives the exact moment of a loan. |
-| 17 | AV2 / C.3: `out` lists every item that is not available | Kind **Other is never listed**. Product owner decision, S1 (ADR 0019 Decision 13c) | Neither reader shows a tag for Other once J7 lands, so the data would be public with no use. Lending an Other item then triggers no publish. |
+| 16 | C.1: `asOf` in epoch milliseconds | `asOf` **rounded down to the whole minute** (still epoch milliseconds). Product owner decision, S1 (ADR 0019 Decision 13b) | Readers show minutes only, so nothing finer is needed. |
+| 17 | AV2 / C.3: `out` lists every item that is not available | Kind **Other is never listed**. Product owner decision, S1 (ADR 0019 Decision 13c) | Neither reader shows a tag for Other once J7 lands, so there is nothing to publish. Lending an Other item then triggers no publish. |
 | 18 | AV9: the inline tag is written "exactly as today" | Written at the same times as today, but through the AV1 rule `isBookUnavailable` (S3) | Today `CatalogueSectionBuilder._availabilityFor` repeats `active >= copyCount` without the rule's clamp, a second copy of the rule that AV1 forbids. The output is identical for every row that passed `CatalogueItem.validate` (`copyCount >= 1`). With one function, AV8's "the two sources never disagree" holds by construction. |
 | 19 | AV10(b): "this exact target's live catalogue was published with keys" | The live `books.json` must be **this phone's own keyed publish**. GitHub: the head tree's `books.json` blob equals the record's entry, and the record has `catalogueKeyed`. Cloudflare: the live marker is this phone's own, and the record has `catalogueKeyed` (ADR 0019 Decision 7b) | A flag alone does not prove the live keys came from this phone's salt and ids. Another phone (with a different salt) or an older Pitak may have republished the catalogue since. Unmatched keys would make every item show Available, the dangerous direction. Found in S1. |
-| 20 | AV4: switching off publishes one deletion | Plus: while the lane is off and the record shows `availability.json`, **any** publish that runs first (the removal or a catalogue publish) deletes it in the same commit or deploy. The stored snapshots are cleared once the removal is published (ADR 0019 Decisions 6 and 9) | A removal still pending (offline) must not leave a frozen file live after a catalogue publish. The plaintext lane store should not keep loan-derived data the user has stopped publishing. |
+| 20 | AV4: switching off publishes one deletion | Plus: while the lane is off and the record shows `availability.json`, **any** publish that runs first (the removal or a catalogue publish) deletes it in the same commit or deploy. The stored snapshots are cleared once the removal is published (ADR 0019 Decisions 6 and 9) | A removal still pending (offline) must not leave a frozen file live after a catalogue publish. Clearing the store means turning the lane back on never publishes an old set. |
 | 21 | C.5: the deferred check "reuses `PublishedFileReadBack.untilMatchesSha`" | It **polls until it sees the expected state**, through the structured `PublishedSiteReadVerifier`. Old bytes (or a 404 on a first publish) mean "keep waiting". An **availability removal** is proven by an exact 404 (a new proof-path row). Running out of budget leaves the record `deployed`, never "contradicted" (ADR 0019 Decision 10) | `untilMatchesSha` lets the first readable answer decide, so seconds after a commit it would call Pages' still-old bytes a contradiction. It also returns only bodies, so it cannot prove the 404 that a removal commit leaves. Found in S1. |
 | 22 | C.7 / C.11: reader model `PublishedAvailability` in `network/domain/entities/published_availability.dart` | `PublishedAvailabilityFile` in `network/domain/entities/published_availability_file.dart` | `PublishedAvailability` already names the per-item available/out enum in `published_catalogue.dart`. A second type with that name would collide. |
 | 23 | Part H: `docs/ARCHITECTURE.md` changes in Phase 1 (S8) | S1 already edits the §1.2 non-goal "no background or scheduled publishing" to "no publishing while the app is not running" (the availability write-up in §5/§6 stays in S8) | The lane re-opens a listed non-goal ("do not re-open without a trigger"). The architecture document must not contradict the ADR that re-opens it. |
@@ -465,12 +466,12 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
 - Mirror the copy in `docs/mockups/how-pitak-works.md` §3.3.
 - The Cloudflare wording above follows the S1 decision ("usually under a minute", A.6 #15). If the S8 measurements do not support it (Cloudflare p90 above 20 s after the debounce), the wording changes again before release (G4).
 
-## C.10 Privacy and security review (Phase 1)
+## C.10 Security review (Phase 1)
 
-- **Same data, finer timing.** The coarse tag is already public (`PRIVACY.md:108`). What is new: updates happen automatically in the background, and on GitHub each update becomes a public commit with a timestamp. `PRIVACY.md`, the guide and the one-time notice all say so.
-- Keys reveal nothing about internal ids (salted, domain-separated). Availability carries no borrower data. The set is computed in memory from loan counts and leaves the device only as public keys.
+- **Public by design (P8).** The catalogue and the *Available / Not available* tag are meant for the public, so they need no privacy review. Only the update speed changes. `PRIVACY.md` gains one factual sentence saying availability updates automatically, because it must describe what the app uploads.
+- Availability carries no borrower data (P1); the set is computed from loan counts only. Keys are salted hashes, so internal database ids never appear on the site (the existing rule, `publish_export.dart`).
 - The lane store holds only public keys and timestamps.
-- Logging: type, stage, counts and durations only (ADR 0017 S11 style). Never key lists, titles, URLs or tokens.
+- Logging follows the existing rule (ADR 0017 S11): type, stage, counts and durations only; never tokens.
 - Readers: AV15 caps, no new origin, CSP unchanged, ADR 0015 V18 redirect rules unchanged.
 - Two phones lending for one site remain unsupported (ADR 0017). Stale detection fails closed and the status tells the user.
 
@@ -738,13 +739,13 @@ Every session ends with:
 - Domain and application code touched by this plan: at least 90 % (`AGENTS.md` §10).
 - Every use case is tested for success and for each failure path (stale, offline, missing bytes, gates, damaged store).
 
-## G.2 Security and privacy checklist (before each phase merges)
+## G.2 Security checklist (before each phase merges)
 
 - [ ] No token, credential, borrower field or internal id appears in `availability.json`, `books.json`, logs, backups or the lane store (scan tests).
 - [ ] Both readers enforce AV15; hostile fixtures cover size, count, depth, key pattern, duplicates and a newer schema.
 - [ ] No new origin; CSP unchanged; ADR 0015 V18 redirect rules unchanged.
 - [ ] A background publish never reports "live" without proof and never starts a replacement.
-- [ ] `PRIVACY.md` describes automatic updates and GitHub's public history.
+- [ ] `PRIVACY.md` states, as a fact, that availability updates automatically (it must describe what the app uploads; P8).
 - [ ] Phase 2 backups contain no secrets, and restore fails closed.
 
 ## G.3 Commands
@@ -783,7 +784,7 @@ Every gate in `AGENTS.md` §11, including the architecture boundary check and th
 | `docs/adr/0020-publish-work-avoidance.md` | 2 | New ADR. |
 | ADR 0014 | 2 | Backup publish state. |
 | ADR 0017 | 3 | Non-blocking GitHub outcome. |
-| `PRIVACY.md` | 1, 2 | Automatic updates and GitHub's public history; backup contents. |
+| `PRIVACY.md` | 1, 2 | One factual sentence on automatic availability updates (P8); backup contents. |
 | `SECURITY.md` | 2 | Backup contents (no secrets). |
 | `README.md` | 1 | Feature line; host-choice summary. |
 | `docs/ARCHITECTURE.md` | 1, 2 | Availability section and lane; cover-file invariant. |

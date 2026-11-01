@@ -1,13 +1,23 @@
-# Publish optimisation — handoff (S1 written, 2026-11-01)
+# Publish optimisation — handoff (S1 complete, 2026-11-01)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
 **Sessions:** S0 — Phase 0 "measure first" — **complete** (§1–§5).
-S1 — ADR 0019 — **written, status *Proposed*; waiting for the product owner
-to accept it** (§0). After acceptance, next is **S2 — Domain** (§6).
+S1 — ADR 0019 — **complete; accepted by the product owner 2026-11-01** (§0).
+**S2 — Domain — has NOT started. Do not start it until the product owner
+explicitly says so** (§6 is the prepared checklist).
 
 > Read this file first in any new session. §0 is the S1 state. §1–§5 are the
 > S0 record (plan Appendix A cites the verbatim lines in §3), kept unchanged.
+
+> **Standing product decision P8 — public by design (product owner,
+> 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
+> the public to see. The published catalogue and the *Available / Not
+> available* tag are public data. **Do not raise privacy questions about data
+> the product publishes on purpose.** What stays off the site is already
+> settled and needs no new review: borrower names and loan details (P1, in the
+> vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
+> only has to state accurately what is uploaded (a store requirement).
 
 ---
 
@@ -17,11 +27,11 @@ to accept it** (§0). After acceptance, next is **S2 — Domain** (§6).
 
 | File | Change |
 |---|---|
-| `docs/adr/0019-availability-fast-lane.md` | New ADR, status *Proposed*. Covers AV1–AV18, the S0 timing trade-off, the privacy note and Decision 13 (the product owner's S1 answers). |
+| `docs/adr/0019-availability-fast-lane.md` | New ADR, **accepted**. Covers AV1–AV18, the S0 timing trade-off, the "what is public" note (P8) and Decision 13 (the product owner's S1 answers). |
 | `docs/adr/0015-…`, `0017-…`, `0018-…` | Status/date lines plus an "Amendment 2026-11-01" section each; ADR 0017 also gets an inline pointer in its S8 read-back bullet. |
-| `docs/adr/README.md` | Index entry (marked *Proposed*). |
+| `docs/adr/README.md` | Index entry. |
 | `docs/ARCHITECTURE.md` §1.2 | Non-goal "no background or scheduled publishing" → "no publishing while the app is not running" (plan A.6 #23). |
-| `publishOptimisation_PLAN.md` | Status line; A.2 outcome, target and an "S1 decision" note; A.6 #15–#23; in-place pointers in AV1/AV2/AV4/AV8/AV9/AV10/AV12, C.1, C.3, C.5, C.7, C.9, C.11 and G.5. |
+| `publishOptimisation_PLAN.md` | Status line; **P8 in A.3**; A.2 outcome, target and an "S1 decision" note; A.6 #15–#23; in-place pointers in AV1/AV2/AV4/AV8/AV9/AV10/AV12, C.1, C.3, C.5, C.7, C.9, C.11 and G.5; C.10, G.2 and Part H reworded for P8. |
 
 **Product-owner decisions (2026-11-01; ADR 0019 Decision 13):**
 
@@ -45,7 +55,7 @@ A.6; S2–S7 must follow them, not the original wording):
 |---|---|---|
 | #18 | The inline tag goes through `isBookUnavailable` (S3) | `CatalogueSectionBuilder._availabilityFor` repeats `active >= copyCount` without the clamp. Same output for every valid row. |
 | #19 | Gate AV10(b): the live `books.json` must be **this phone's own keyed publish** (GitHub head-tree blob = record; Cloudflare own marker) | Another phone's salt, or an older Pitak republishing, would make every item show *Available*. |
-| #20 | Lane off: **any** publish that runs first deletes a live `availability.json`; the stored snapshots are cleared once the removal is published | No frozen file after a pending removal; no loan-derived data kept in plaintext after opting out. |
+| #20 | Lane off: **any** publish that runs first deletes a live `availability.json`; the stored snapshots are cleared once the removal is published | No frozen file after a pending removal; turning the lane back on never publishes an old set. |
 | #21 | GitHub deferred check **polls until it sees the expected state** (structured `PublishedSiteReadVerifier`); a removal is proven by an exact 404; out of budget → stays `deployed` | `untilMatchesSha` lets the first readable answer decide, so seconds after a commit it would call the still-old Pages bytes a contradiction, and it cannot see a 404. |
 | #22 | Reader model `PublishedAvailabilityFile` (`published_availability_file.dart`) | `PublishedAvailability` is already the per-item enum in `published_catalogue.dart`. |
 
@@ -55,9 +65,9 @@ Also settled in the ADR (no plan change): keys hash the internal `id`, not
 null. **Invariant:** a flow that replaces the salt or renumbers ids must clear
 `catalogueKeyed` (tests in S2, and again in S11).
 
-**S1 exit:** the product owner accepts ADR 0019. Then change its status line to
-`Accepted (2026-11-01)`, drop *Proposed* from the README index entry, and
-update this section and the plan status line.
+**S1 exit: met.** The product owner accepted ADR 0019 on 2026-11-01 and, in
+the same message, added P8 (public by design; see the box at the top) and said
+**not to start S2 yet**.
 
 ---
 
@@ -236,7 +246,7 @@ throwaway repo.
 
 ---
 
-## 6. Next: S2 — Domain (only after ADR 0019 is accepted)
+## 6. Next: S2 — Domain (on hold until the product owner says go)
 
 Plan Part F, S2: the C.1 key class, the C.3/C.4 pure types, the section enum
 and its ownership, and the record fields with JSON round trips and legacy
