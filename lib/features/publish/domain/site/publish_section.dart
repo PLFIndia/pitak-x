@@ -3,10 +3,12 @@
 ///
 /// A section is the unit of OWNERSHIP: the catalogue owns `books.json`,
 /// `index.html`, `library.json` and `covers/*`; events own `events.html`,
-/// `events.json` and `posters/*`. Merging is section-scoped (R7), so a
-/// section's builder can never delete the other section's files.
+/// `events.json` and `posters/*`; availability owns `availability.json`
+/// (ADR 0019). Merging is section-scoped (R7), so a section's builder can
+/// never delete another section's files.
 library;
 
+import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
@@ -20,12 +22,31 @@ enum SiteSection {
 
   /// The moved page a retired site keeps (index.html + 404.html + marker).
   retirement,
+
+  /// The availability fast lane (ADR 0019): exactly `availability.json`,
+  /// the list of items whose every copy is lent out.
+  availability;
+
+  /// True when ANY section owns [path], i.e. it is one of Pitak's own public
+  /// files.
+  ///
+  /// This is the one "is this an app-owned path?" rule. Records, move plans
+  /// and Cloudflare snapshots all ask it, so adding a section here (as
+  /// ADR 0019 did) can never leave one of them refusing the new file.
+  /// Before S2 that rule was copied into three files.
+  static bool anyOwns(String path) =>
+      SiteSection.values.any((section) => section.owns(path));
 }
 
 /// The app-owned paths each section may write or delete (R7/R13). Exact
 /// prefixes and file names only — never a blind head-tree sweep.
 extension SiteSectionOwnership on SiteSection {
-  /// True when [path] belongs to this section (and only this section).
+  /// True when [path] belongs to this section.
+  ///
+  /// `index.html` is the one path two sections share: the catalogue writes
+  /// the viewer page there, and a retired site replaces it with the moved
+  /// page. They never publish together, because retirement replaces the
+  /// whole site.
   bool owns(String path) {
     if (!SitePath.isValid(path)) return false;
     return switch (this) {
@@ -43,16 +64,10 @@ extension SiteSectionOwnership on SiteSection {
         path == 'index.html' ||
             path == '404.html' ||
             path == 'pitak-publish.json',
+      // One exact file name, never a prefix: the lane must not be able to
+      // touch anything else on the site.
+      SiteSection.availability => path == AvailabilityDocument.path,
     };
-  }
-
-  /// Every owned path in [paths], in order, de-duplicated.
-  List<String> ownedOf(Iterable<String> paths) {
-    final seen = <String>{};
-    return [
-      for (final path in paths)
-        if (owns(path) && seen.add(path)) path,
-    ];
   }
 }
 

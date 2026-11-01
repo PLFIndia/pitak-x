@@ -183,10 +183,11 @@ final class CloudflareSiteManifest implements PreviousPublication {
 
   /// True only for Pitak's fixed public files and reserved asset namespaces.
   /// Unknown paths are never adopted into a complete Worker snapshot (R12/R23).
-  static bool isAllowedPath(String path) =>
-      SiteSection.catalogue.owns(path) ||
-      SiteSection.events.owns(path) ||
-      SiteSection.retirement.owns(path);
+  ///
+  /// The shared [SiteSection.anyOwns] rule, so `availability.json`
+  /// (ADR 0019) is accepted in a record exactly like every other app-owned
+  /// file.
+  static bool isAllowedPath(String path) => SiteSection.anyOwns(path);
 
   /// Validates the file-set invariant for the recorded deployment kind.
   ///

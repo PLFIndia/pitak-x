@@ -62,6 +62,43 @@ void main() {
     expect(plan.fileShas.keys, {'index.html', '404.html'});
   });
 
+  test('a GitHub retirement deletes a live availability.json (AV18)', () {
+    // ADR 0019 Decision 12: retirement deletes availability.json like every
+    // other app-owned path, so a move must not refuse a source that has it.
+    final anchor = MoveSourceAnchor.tryCreate(
+      source: github,
+      value: head,
+      branch: GitHubBranchName.tryParse('main'),
+      ownedPaths: const ['index.html', 'books.json', 'availability.json'],
+    );
+    expect(anchor, isNotNull);
+    final pending = PendingMove.tryCreate(
+      oldTarget: github,
+      newTarget: cloudflare,
+      sourceAnchor: anchor!,
+      indexHtml: page,
+      notFoundHtml: page,
+      libraryName: 'Test Library',
+    )!;
+
+    expect(MovePlan.forGitHub(pending)!.deletePaths, [
+      'availability.json',
+      'books.json',
+    ]);
+  });
+
+  test('an unknown path still refuses the move source', () {
+    expect(
+      MoveSourceAnchor.tryCreate(
+        source: github,
+        value: head,
+        branch: GitHubBranchName.tryParse('main'),
+        ownedPaths: const ['index.html', 'books.json', 'notes.txt'],
+      ),
+      isNull,
+    );
+  });
+
   test('a Cloudflare pending move requires a fresh retired marker', () {
     final pending = PendingMove.tryCreate(
       oldTarget: cloudflare,

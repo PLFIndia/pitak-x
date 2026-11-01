@@ -84,7 +84,7 @@ final class MovePlan {
     final deletes = descriptor.deletePaths;
     if (deletes.toSet().length != deletes.length ||
         deletes.any(
-          (path) => writes.contains(path) || !_ownedByPublishSection(path),
+          (path) => writes.contains(path) || !SiteSection.anyOwns(path),
         )) {
       return null;
     }
@@ -101,8 +101,3 @@ final class MovePlan {
     upload: true,
   );
 }
-
-bool _ownedByPublishSection(String path) =>
-    SiteSection.catalogue.owns(path) ||
-    SiteSection.events.owns(path) ||
-    SiteSection.retirement.owns(path);

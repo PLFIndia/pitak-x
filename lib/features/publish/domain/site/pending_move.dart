@@ -42,7 +42,7 @@ final class MoveSourceAnchor {
     if (unique.length != input.length ||
         !unique.contains('index.html') ||
         !unique.contains('books.json') ||
-        unique.any((path) => !_ownsAnySection(path))) {
+        unique.any((path) => !SiteSection.anyOwns(path))) {
       return null;
     }
     final paths = input..sort();
@@ -145,7 +145,7 @@ final class RetirementDescriptor {
         }
     }
     paths.sort();
-    if (paths.any((path) => !_ownsAnySection(path))) return null;
+    if (paths.any((path) => !SiteSection.anyOwns(path))) return null;
     return RetirementDescriptor._(
       indexHtml: indexHtml,
       notFoundHtml: notFoundHtml,
@@ -265,11 +265,6 @@ final class PendingMove {
   String toString() =>
       'PendingMove(${oldTarget.targetId} -> ${newTarget.targetId}, $phase)';
 }
-
-bool _ownsAnySection(String path) =>
-    SiteSection.catalogue.owns(path) ||
-    SiteSection.events.owns(path) ||
-    SiteSection.retirement.owns(path);
 
 bool _sameStrings(List<String> a, List<String> b) {
   if (a.length != b.length) return false;
