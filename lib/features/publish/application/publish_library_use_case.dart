@@ -136,9 +136,11 @@ final class PublishLibraryUseCase {
   /// replacement: every required cover must then resolve to usable bytes, and
   /// a missing one fails typed BEFORE any write.
   ///
-  /// This path publishes the CATALOGUE section only. The events section has
-  /// its own independent publish (`PublishEventsUseCase`, Q5=A), so this
-  /// snapshot never carries poster files and can never delete one.
+  /// This path publishes the CATALOGUE section, plus the AVAILABILITY section
+  /// when `PublishReads.availability` asks for it (ADR 0019 Decision 6). The
+  /// events section has its own independent publish (`PublishEventsUseCase`,
+  /// Q5=A), so this snapshot never carries poster files and can never delete
+  /// one.
   Future<PublishResult> call({
     required GitHubPublishTarget target,
     PublishMode mode = PublishMode.incremental,
@@ -282,13 +284,20 @@ final class PublishLibraryUseCase {
       return const PublishFailure(PublishSnapshotBuilder.readFailedMessage);
     }
 
-    // R7: merge ONLY this section into the publication record. The events
-    // section (and any other app-owned path) survives; the section's own
-    // dropped paths become exact deletions (never a prefix sweep).
-    final merge = mergeSection(previous: previous, section: section);
+    // R7: merge ONLY this publish's sections into the publication record: the
+    // catalogue, plus availability when the lane asks for it (ADR 0019
+    // Decision 6: one commit, so the two never disagree). The events section
+    // (and any other app-owned path) survives; each section's own dropped
+    // paths become exact deletions (never a prefix sweep).
+    final merge = mergeSections(
+      previous: previous,
+      sections: snapshot.sections,
+    );
 
     phase(
-      section.hasUploads ? PublishPhase.uploading : PublishPhase.committing,
+      merge.files.any((f) => f.upload)
+          ? PublishPhase.uploading
+          : PublishPhase.committing,
     );
 
     // Bytes this commit will really upload: a file reused from the record
@@ -340,6 +349,9 @@ final class PublishLibraryUseCase {
           commitSha: commitSha,
           mergedShas: merge.fileShas,
           coverUrlByBookId: section.coverUrlByKey,
+          // The books.json just committed carries this phone's item keys
+          // (ADR 0019 Decision 7b), so the lane may later publish against it.
+          wroteKeyedCatalogue: snapshot.writesKeyedCatalogue,
         );
         var localStateSaved = _manifest.save(committed).isRight();
 

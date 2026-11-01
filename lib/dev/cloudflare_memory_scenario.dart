@@ -18,6 +18,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -128,8 +129,15 @@ Future<CloudflareMemoryScenarioResult> runCloudflareMemoryScenario({
       encodeBooksJson: encodeBooksJsonBytes,
       sink: CloudflareArtifactSink(store),
     );
+    final books = [for (var i = 0; i < fileCount; i++) _validatedMemoryItem(i)];
+    // The same keys a real publish writes (ADR 0019), from the scenario salt.
+    final itemKeys = (await const PublishItemKeys(
+      _ScenarioSalt(),
+    ).keysFor([for (final book in books) book.id])).toNullable();
+    if (itemKeys == null) throw StateError('Synthetic keys failed');
     final built = await builder.build(
-      books: [for (var i = 0; i < fileCount; i++) _validatedMemoryItem(i)],
+      books: books,
+      itemKeys: itemKeys,
       periodicals: const [],
       activeLoanCounts: null,
       libraryJson: null,

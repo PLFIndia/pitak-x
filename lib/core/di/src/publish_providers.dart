@@ -44,6 +44,7 @@ import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_events_ports.dart';
 import 'package:pitaka/features/publish/domain/publish_html_ports.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/share_card_style.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker_codec.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
@@ -341,6 +342,9 @@ Future<PublishSnapshotBuilder> publishSnapshotBuilder(
       buildEventsHtml: eventsHtml,
       buildEventsJson: eventsJson,
     ),
+    // ADR 0019 Decision 3: item keys use the SAME salt store instance as the
+    // cover names, so keys and cover names always change together.
+    itemKeys: PublishItemKeys(coverIds.saltStore),
   );
 }
 

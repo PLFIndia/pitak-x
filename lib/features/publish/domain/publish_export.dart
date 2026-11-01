@@ -4,7 +4,8 @@
 /// uploaded to GitHub Pages. SEPARATE from the re-importable export payload on
 /// purpose: it carries ONLY viewer-facing catalog metadata plus a coarse
 /// availability flag — never id, notes, location, source, addedDate (those are
-/// stripped before a [PublishItem] is built; see `redactForPublish`).
+/// stripped before a [PublishItem] is built; see `redactForPublish`). The
+/// per-item `key` (ADR 0019) is a salted hash, not the id.
 library;
 
 /// The full world-facing payload serialised to `books.json`.
@@ -55,6 +56,7 @@ final class PublishItem {
   const PublishItem({
     required this.title,
     required this.kind,
+    this.key,
     this.issue,
     this.titleTransliteration,
     this.author,
@@ -82,6 +84,15 @@ final class PublishItem {
   /// `ItemKind.token`). Written for EVERY entry; absent on files published
   /// by older builds, which the viewer reads as `book`.
   final String kind;
+
+  /// The item's public join key (ADR 0019 Decision 3): 16 lower-case hex
+  /// characters, a salted hash of the internal id (`PublishItemKeys`).
+  /// `availability.json` lists these keys, and readers match them to items.
+  /// The internal id itself never leaves the device.
+  ///
+  /// Written for every live item since plan S3; null only in payloads built
+  /// without keys (older builds, or tests). Additive, so the schema stays 1.
+  final String? key;
 
   /// The issue part of a `magazine-issue` entry (public identity fields
   /// only); null for books and others.
@@ -123,6 +134,8 @@ final class PublishItem {
   Map<String, dynamic> toJson() => {
     'title': title,
     'kind': kind,
+    // Right after `kind`, as in the ADR 0019 contract example.
+    if (key != null) 'key': key,
     if (issue != null) 'issue': issue!.toJson(),
     if (titleTransliteration != null)
       'titleTransliteration': titleTransliteration,

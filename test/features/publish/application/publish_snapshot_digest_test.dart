@@ -1,8 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/publish/application/site/availability_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_digest.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -128,4 +131,58 @@ void main() {
       expect((await PublishSnapshotDigest.of(broken)).isLeft(), isTrue);
     },
   );
+
+  group('availability.json (ADR 0019 Decision 12, AV18)', () {
+    PublishSnapshot withAvailability(PublishSection availability) {
+      final base = _snapshot();
+      return PublishSnapshot(
+        mode: base.mode,
+        catalogue: base.catalogue,
+        availability: availability,
+        catalogueItemCount: base.catalogueItemCount,
+        posterCount: base.posterCount,
+        availabilityOmitted: base.availabilityOmitted,
+      );
+    }
+
+    PublishSection availability({required int asOf, List<String>? out}) =>
+        AvailabilitySectionBuilder.write(
+          snapshot: AvailabilitySnapshot.tryCreate(
+            keys: out ?? const ['3f2c7a1b9e4d8051'],
+            asOfMillis: asOf,
+          )!,
+          previous: PublishManifest.empty,
+        );
+
+    test('a later asOf alone needs no renewed confirmation', () async {
+      final first = await PublishSnapshotDigest.of(
+        withAvailability(availability(asOf: 60000)),
+      );
+      final later = await PublishSnapshotDigest.of(
+        withAvailability(availability(asOf: 6000000)),
+      );
+      expect(first.isRight(), isTrue);
+      expect(later.toNullable(), first.toNullable());
+    });
+
+    test('a different set of keys does need it', () async {
+      final first = await PublishSnapshotDigest.of(
+        withAvailability(availability(asOf: 60000)),
+      );
+      final changed = await PublishSnapshotDigest.of(
+        withAvailability(
+          availability(asOf: 60000, out: const ['9a0b44c1d2e3f405']),
+        ),
+      );
+      expect(changed.toNullable(), isNot(first.toNullable()));
+    });
+
+    test('carrying the file at all is part of the reviewed content', () async {
+      final without = await PublishSnapshotDigest.of(_snapshot());
+      final withFile = await PublishSnapshotDigest.of(
+        withAvailability(availability(asOf: 60000)),
+      );
+      expect(withFile.toNullable(), isNot(without.toNullable()));
+    });
+  });
 }

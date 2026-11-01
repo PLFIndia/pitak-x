@@ -10,6 +10,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
@@ -18,6 +19,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
@@ -93,8 +95,84 @@ void main() {
         containsAll(<String>['books.json', 'index.html', 'pitak-publish.json']),
       );
       expect(paths, isNot(contains('events.json')));
+      // ADR 0019: the record says this books.json is this phone's own keyed
+      // publish; the lane is off in this build, so no availability file.
+      expect(h.manifestStore.current.catalogueKeyed, isTrue);
+      expect(paths, isNot(contains('availability.json')));
     },
   );
+
+  group('S3: the combined catalogue + availability deploy (ADR 0019)', () {
+    test('lane on + known counts: one version carries both files, is read '
+        'back, and the record is keyed', () async {
+      final h = S8PublishHarness(dir);
+      h.reads
+        ..availabilityRequest = const AvailabilityFromLoanCounts()
+        ..books = const [
+          CatalogueItem(id: 1, title: 'Lent'),
+          CatalogueItem(id: 2, title: 'On the shelf'),
+        ]
+        ..counts = const {1: 1};
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishSuccess>());
+      expect(h.api.deployCalls, 1);
+      final paths = h.api.uploadManifests.single.map((e) => e.path.value);
+      expect(paths, containsAll(<String>['books.json', 'availability.json']));
+      final record = h.manifestStore.current;
+      expect(record.state, PublishState.live);
+      expect(record.catalogueKeyed, isTrue);
+      final bytes = h.artifactStore.bytesByPath['availability.json']!;
+      final file = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+      expect(file['out'], [
+        PublishItemKeys.keyFor(salt: utf8.encode('salt-1234567890'), itemId: 1),
+      ]);
+      expect(record.shaFor('availability.json'), isNotNull);
+      // The read-back set includes the new file (Decision 11).
+      expect(h.reader.calls.map((c) => c.$2), contains('availability.json'));
+    });
+
+    test('lane off: a catalogue deploy drops a recorded availability.json and '
+        'proves its 404', () async {
+      final previousId = 'a' * 32;
+      final availability = s8File(
+        'availability.json',
+        utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+      );
+      final h = S8PublishHarness(
+        dir,
+        workerExists: true,
+        manifest: s8Manifest(
+          target: defaultTarget,
+          publishId: previousId,
+          additional: {'availability.json': availability},
+          catalogueKeyed: true,
+        ),
+      );
+      seed(h, {...s8CoreFiles(previousId), 'availability.json': availability});
+      h.reader.absent('library.json');
+      alreadyVerified(h);
+      h.api.onDeploy = () {
+        h.serveDeployed();
+        h.reader.absent('availability.json');
+      };
+
+      final result = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(result, isA<PublishSuccess>());
+      final paths = h.api.uploadManifests.single.map((e) => e.path.value);
+      expect(paths, isNot(contains('availability.json')));
+      expect(h.manifestStore.current.entryFor('availability.json'), isNull);
+      expect(h.manifestStore.current.catalogueKeyed, isTrue);
+    });
+  });
 
   test('unknown state prepares without writes, then confirmation deploys the '
       'reviewed complete snapshot', () async {

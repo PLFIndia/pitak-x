@@ -1,9 +1,10 @@
 /// Canonical, operation-independent identity of a publish snapshot (R4).
 ///
 /// Replacement confirmation compares this digest after rebuilding from current
-/// local data. Ordinary assets use their content hashes. The two JSON documents
-/// with operation timestamps are canonicalized without those fields, so a new
-/// clock alone never invalidates confirmation while real content edits do.
+/// local data. Ordinary assets use their content hashes. The three JSON
+/// documents with operation timestamps are canonicalized without those fields,
+/// so a new clock alone never invalidates confirmation while real content
+/// edits do.
 library;
 
 import 'dart:convert';
@@ -12,6 +13,7 @@ import 'package:crypto/crypto.dart';
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
@@ -72,6 +74,9 @@ abstract final class PublishSnapshotDigest {
     final volatileField = switch (file.path) {
       CatalogueSectionBuilder.booksJsonPath => 'exportedAt',
       CatalogueSectionBuilder.libraryJsonPath => 'updatedAt',
+      // ADR 0019 Decision 12 (AV18): the same "not available" set must not
+      // need a new confirmation just because a minute passed.
+      AvailabilityDocument.path => 'asOf',
       _ => null,
     };
     if (volatileField == null) return file.gitSha;

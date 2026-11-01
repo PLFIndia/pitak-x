@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/value_objects/item_details.dart';
@@ -10,8 +11,10 @@ import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 
 /// CHARACTERIZATION of the catalogue section (Cloudflare plan S3/R3).
@@ -20,10 +23,23 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 /// extraction into a shared builder (and its reuse by the Cloudflare adapter)
 /// cannot change the published bytes or file set. If a change here is
 /// deliberate, update the expectations AND record the behavior change.
+///
+/// Deliberate change, publish-optimisation S3 (ADR 0019 Decision 3): every
+/// item gains `key`, right after `kind`. Nothing else in `books.json`
+/// changed; the exact bytes are pinned below.
 void main() {
   const salt = 'salt-1234567890';
 
   final fixedSalt = _FixedSalt(ascii.encode(salt));
+
+  // The public item keys for this salt, pinned as literals:
+  // sha256(salt + "item:<id>")[0..16]. A test below proves they are exactly
+  // what `PublishItemKeys` computes.
+  const keys = {
+    1: 'f1256752587d05c1',
+    2: '1afb3bc2efa863e0',
+    9: '2151cb8080cc871a',
+  };
 
   CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
@@ -58,9 +74,6 @@ void main() {
     ),
   );
 
-  List<int> encode(PublishExport e) =>
-      utf8.encode(const JsonEncoder.withIndent('  ').convert(e.toJson()));
-
   CatalogueSectionBuilder builder({
     LocalCoverReader? readLocal,
     RemoteCoverFetcher? fetchRemote,
@@ -73,7 +86,8 @@ void main() {
     buildViewerHtml:
         ({required libraryName, required contact, required sharing}) async =>
             utf8.encode('<html></html>'),
-    encodeBooksJson: encode,
+    // The production encoder, so the pinned bytes are the published bytes.
+    encodeBooksJson: encodeBooksJsonBytes,
   );
 
   test(
@@ -93,6 +107,7 @@ void main() {
             settings: const PublishPageSettings(libraryName: 'Test Library'),
             previous: PublishManifest.empty,
             now: 1000,
+            itemKeys: keys,
           )).toNullable()!;
 
       // Paths, in the historical write order (books.json, descriptor, viewer,
@@ -145,8 +160,175 @@ void main() {
         (periodicals.single as Map<String, dynamic>)['coverUrl'],
         'covers/8a6f3469e99e562b.jpg',
       );
+
+      // The exact published bytes. S3 added the two `"key"` lines and changed
+      // nothing else (checked against the pre-S3 builder's output).
+      expect(
+        utf8.decode(
+          section.files.firstWhere((f) => f.path == 'books.json').bytes,
+        ),
+        _expectedBooksJson,
+      );
     },
   );
+
+  test('the pinned keys are exactly what PublishItemKeys computes', () {
+    for (final entry in keys.entries) {
+      expect(
+        PublishItemKeys.keyFor(salt: ascii.encode(salt), itemId: entry.key),
+        entry.value,
+      );
+    }
+  });
+
+  group('item keys (ADR 0019 Decision 3)', () {
+    Future<Either<Failure, PublishSection>> buildWith(
+      List<CatalogueItem> books,
+      Map<int, String> itemKeys, {
+      List<Periodical> periodicals = const [],
+    }) => builder().build(
+      books: books,
+      periodicals: periodicals,
+      activeLoanCounts: null,
+      libraryJson: null,
+      settings: const PublishPageSettings(libraryName: 'Test Library'),
+      previous: PublishManifest.empty,
+      now: 1,
+      itemKeys: itemKeys,
+    );
+
+    List<Map<String, dynamic>> rows(PublishSection section) {
+      final payload =
+          jsonDecode(
+                utf8.decode(
+                  section.files.firstWhere((f) => f.path == 'books.json').bytes,
+                ),
+              )
+              as Map<String, dynamic>;
+      return (payload['books'] as List).cast<Map<String, dynamic>>();
+    }
+
+    test('every kind carries its key, Others included', () async {
+      const other = CatalogueItem(
+        id: 9,
+        title: 'Board game',
+        details: OtherItemOf(),
+      );
+      final section = (await buildWith(
+        [book(), issue(), other],
+        keys,
+        periodicals: [series()],
+      )).toNullable()!;
+      expect(
+        [for (final row in rows(section)) row['key']],
+        [keys[1], keys[2], keys[9]],
+      );
+    });
+
+    test('a removed item needs no key and is not published', () async {
+      final section = (await buildWith(
+        [book(), const CatalogueItem(id: 3, title: 'Gone', removed: true)],
+        const {1: 'f1256752587d05c1'},
+      )).toNullable()!;
+      expect([for (final row in rows(section)) row['key']], [keys[1]]);
+    });
+
+    test(
+      'a live item without a key refuses the build before any cover IO',
+      () async {
+        var coverReads = 0;
+        final result =
+            await builder(
+              readLocal: (_) async {
+                coverReads++;
+                return utf8.encode('IMG');
+              },
+            ).build(
+              books: [
+                book(cover: 'covers/local.jpg'),
+                book(id: 3),
+              ],
+              periodicals: const [],
+              activeLoanCounts: null,
+              libraryJson: null,
+              settings: const PublishPageSettings(libraryName: 'Test Library'),
+              previous: PublishManifest.empty,
+              now: 1,
+              itemKeys: const {1: 'f1256752587d05c1'},
+            );
+        expect(
+          (result.swap().toNullable()! as ValidationFailure).message,
+          PublishItemKeys.collisionMessage,
+        );
+        expect(coverReads, 0, reason: 'keys are checked before covers');
+      },
+    );
+
+    test('a malformed key refuses the build', () async {
+      final result = await buildWith([book()], const {1: 'NOT-A-KEY'});
+      expect(
+        (result.swap().toNullable()! as ValidationFailure).message,
+        PublishItemKeys.collisionMessage,
+      );
+    });
+
+    test('two items sharing a key refuse the build', () async {
+      final result = await buildWith(
+        [book(), book(id: 3)],
+        const {1: 'f1256752587d05c1', 3: 'f1256752587d05c1'},
+      );
+      expect(
+        (result.swap().toNullable()! as ValidationFailure).message,
+        PublishItemKeys.collisionMessage,
+      );
+    });
+  });
+
+  group('inline availability through the ONE rule (A.6 #18)', () {
+    Future<String?> inlineTag(CatalogueItem item, Map<int, int>? counts) async {
+      final section = (await builder().build(
+        books: [item],
+        periodicals: const [],
+        activeLoanCounts: counts,
+        libraryJson: null,
+        settings: const PublishPageSettings(libraryName: 'Test Library'),
+        previous: PublishManifest.empty,
+        now: 1,
+        itemKeys: const {1: 'f1256752587d05c1'},
+      )).toNullable()!;
+      final payload =
+          jsonDecode(
+                utf8.decode(
+                  section.files.firstWhere((f) => f.path == 'books.json').bytes,
+                ),
+              )
+              as Map<String, dynamic>;
+      final row = (payload['books'] as List).single as Map<String, dynamic>;
+      return row['availability'] as String?;
+    }
+
+    test('locked vault: no tag at all, never "available"', () async {
+      expect(await inlineTag(book(), null), isNull);
+    });
+
+    test('some copies free: available; every copy out: out', () async {
+      const threeCopies = CatalogueItem(id: 1, title: 'T', copyCount: 3);
+      expect(await inlineTag(threeCopies, const {1: 2}), PublishItem.available);
+      expect(await inlineTag(threeCopies, const {1: 3}), PublishItem.out);
+    });
+
+    test(
+      'a malformed copy count is clamped like isBookUnavailable does',
+      () async {
+        // copyCount 0 never passes CatalogueItem.validate, but the builder
+        // must still follow the vault rule: 0 copies counts as 1, so a book
+        // with no loans is available (the old inline copy said "out").
+        const zeroCopies = CatalogueItem(id: 1, title: 'T', copyCount: 0);
+        expect(await inlineTag(zeroCopies, const {}), PublishItem.available);
+        expect(await inlineTag(zeroCopies, const {1: 1}), PublishItem.out);
+      },
+    );
+  });
 
   test('an unchanged published file is reused, not re-uploaded (R3)', () async {
     const manifest = PublishManifest(
@@ -161,6 +343,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: manifest,
       now: 1000,
+      itemKeys: keys,
     )).toNullable()!;
 
     final viewer = section.files.firstWhere((f) => f.path == 'index.html');
@@ -189,6 +372,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: manifest,
         now: 1,
+        itemKeys: keys,
       )).toNullable()!;
 
       expect(section.deletePaths, ['library.json']);
@@ -206,6 +390,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
+        itemKeys: keys,
         mode: PublishMode.complete,
       );
 
@@ -228,6 +413,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
+        itemKeys: keys,
         mode: PublishMode.complete,
       );
 
@@ -250,6 +436,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
+        itemKeys: keys,
       )).toNullable()!;
       expect(
         section.files.map((f) => f.path),
@@ -279,11 +466,54 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
+        itemKeys: keys,
       );
       expect(result.swap().toNullable(), isA<ValidationFailure>());
     },
   );
 }
+
+/// The exact `books.json` of the first test (production encoder, two-space
+/// indent). Pre-S3 it was the same text without the two `"key"` lines.
+/// (Dart drops the newline right after the opening quotes.)
+const _expectedBooksJson = '''
+{
+  "schemaVersion": 1,
+  "exportedAt": 1000,
+  "books": [
+    {
+      "title": "The Odyssey",
+      "kind": "book",
+      "key": "f1256752587d05c1",
+      "author": "Homer",
+      "coverUrl": "covers/3368361cb6e5a33e.jpg",
+      "availability": "out"
+    },
+    {
+      "title": "Chandamama — Vol 249 No 10 (Oct 2026)",
+      "kind": "magazine-issue",
+      "key": "1afb3bc2efa863e0",
+      "issue": {
+        "periodicalUid": "uid-1",
+        "volume": 249,
+        "issueNumber": 10,
+        "issueDate": 1759276800000
+      },
+      "coverUrl": "covers/8a6f3469e99e562b.jpg",
+      "availability": "available"
+    }
+  ],
+  "periodicals": [
+    {
+      "periodicalUid": "uid-1",
+      "title": "Chandamama",
+      "issn": "0577-6058",
+      "publisher": "Chandamama Publications",
+      "coverUrl": "covers/8a6f3469e99e562b.jpg",
+      "frequency": "monthly"
+    }
+  ]
+}''';
 
 class _FixedSalt implements PublishCoverSaltStore {
   const _FixedSalt(this.bytes);

@@ -15,6 +15,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -74,6 +75,15 @@ abstract interface class PublishReads {
   /// The published-page settings. A failure stops the publish before any
   /// write; it is never replaced by defaults (handoff §13).
   Future<Either<Failure, PublishPageSettings>> pageSettings();
+
+  /// What this publish does with `availability.json` (ADR 0019 Decision 6):
+  /// write it from this publish's own loan counts (the lane is on), or delete
+  /// a recorded copy (the lane is off).
+  ///
+  /// Read for EVERY operation, like [pageSettings], so a catalogue publish,
+  /// an events publish, a move and a replacement all follow one rule
+  /// (plan A.6 #20). A failure stops the publish before any write.
+  Future<Either<Failure, AvailabilityRequest>> availability();
 }
 
 /// The catalogue-side reads, present ONLY when the catalogue is requested.
@@ -127,6 +137,7 @@ final class PublishInputs {
   /// Creates the inputs; every value came from a successful strict read.
   const PublishInputs({
     required this.pageSettings,
+    required this.availability,
     this.catalogue,
     this.events,
   });
@@ -139,6 +150,10 @@ final class PublishInputs {
 
   /// The settings both section builders render with (one snapshot per run).
   final PublishPageSettings pageSettings;
+
+  /// What this publish does with `availability.json` (read for every
+  /// operation; never null, so no flow can skip the decision).
+  final AvailabilityRequest availability;
 }
 
 /// The immutable result of one snapshot build.
@@ -151,6 +166,7 @@ final class PublishSnapshot {
     required this.availabilityOmitted,
     this.catalogue,
     this.events,
+    this.availability,
   });
 
   /// Whether this must be complete (a move/replacement) or may reuse
@@ -169,6 +185,10 @@ final class PublishSnapshot {
   /// The events section, or null when events are not part of this publish.
   final PublishSection? events;
 
+  /// The availability section (ADR 0019): `availability.json` written, or its
+  /// deletion. Null when this publish leaves the live file as it is.
+  final PublishSection? availability;
+
   /// Live catalogue items in this snapshot (never including removed rows).
   final int catalogueItemCount;
 
@@ -179,7 +199,18 @@ final class PublishSnapshot {
   List<PublishSection> get sections => [
     if (catalogue case final section?) section,
     ?events,
+    ?availability,
   ];
+
+  /// True when this snapshot writes a `books.json` with item keys.
+  ///
+  /// Every catalogue section carries keys since plan S3: the catalogue builder
+  /// refuses to build without a valid, unique key for every live item. So
+  /// "this publish builds the catalogue" IS "this publish writes a keyed
+  /// catalogue", and the hosts pass this to the publish records'
+  /// `wroteKeyedCatalogue` (ADR 0019 Decision 7b). One getter keeps the four
+  /// hosts' flows from deciding it four times.
+  bool get writesKeyedCatalogue => catalogue != null;
 
   /// True when the catalogue would publish zero items (the UI warns).
   bool get catalogueIsEmpty => catalogueItemCount == 0;

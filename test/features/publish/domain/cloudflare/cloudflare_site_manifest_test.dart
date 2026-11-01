@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
+import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
 /// SPECIFICATION of the Cloudflare publish record (Cloudflare plan R5/R7/E.5,
 /// J.1).
@@ -281,6 +282,41 @@ void main() {
           paths: {...moved, 'books.json'},
         ),
         isFalse,
+      );
+    });
+
+    // Plan C.2 item 6 (ADR 0019): the availability file is an ordinary,
+    // optional app-owned file of a normal site, and never part of a moved
+    // page (retirement deletes it like every other owned path, AV18).
+    test('availability.json: allowed on a normal site, never when retired', () {
+      const core = {'books.json', 'index.html', 'pitak-publish.json'};
+      expect(CloudflareSiteManifest.isAllowedPath('availability.json'), isTrue);
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.live,
+          paths: {...core, 'availability.json'},
+        ),
+        isTrue,
+      );
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.deployed,
+          paths: {...core, 'availability.json', 'events.html', 'events.json'},
+        ),
+        isTrue,
+      );
+      const moved = {'index.html', '404.html', 'pitak-publish.json'};
+      expect(
+        CloudflareSiteManifest.isValidFileSet(
+          state: PublishState.retired,
+          paths: {...moved, 'availability.json'},
+        ),
+        isFalse,
+      );
+      // It is served as JSON, from the existing content-type allow-list.
+      expect(
+        CloudflareContentType.forPath(SitePath.tryParse('availability.json')!),
+        CloudflareContentType.json,
       );
     });
   });

@@ -85,6 +85,58 @@ SectionMerge mergeSection({
   );
 }
 
+/// Merges several [sections] into the record described by [previous], one
+/// after the other, as ONE write (ADR 0019 Decision 6: a catalogue publish
+/// with the lane on also writes `availability.json` in the same commit).
+///
+/// Each section goes through [mergeSection] against the record the previous
+/// section left behind, so every ownership rule above still applies to each
+/// section on its own. Sections own disjoint paths (`SiteSection.owns`), so
+/// the order does not change the result; it only fixes the order of
+/// [SectionMerge.files]. The result carries every written file, the union of
+/// the exact deletions and the final app-owned set.
+SectionMerge mergeSections({
+  required PreviousPublication previous,
+  required List<PublishSection> sections,
+}) {
+  var current = previous;
+  final files = <PublishFile>[];
+  final deletions = <String>{};
+  var fileShas = <String, String>{
+    for (final entry in _safeEntries(previous)) entry.key: entry.value,
+  };
+  for (final section in sections) {
+    final merge = mergeSection(previous: current, section: section);
+    files.addAll(merge.files);
+    deletions.addAll(merge.deletePaths);
+    fileShas = merge.fileShas;
+    current = _MergedRecord(merge.fileShas);
+  }
+  return SectionMerge(
+    fileShas: fileShas,
+    deletePaths: deletions.toList()..sort(),
+    files: files,
+  );
+}
+
+/// The record one section's merge leaves behind, as the next section's
+/// "previous publication". Only paths and shas matter to [mergeSection];
+/// cover sources are never read by it.
+final class _MergedRecord implements PreviousPublication {
+  const _MergedRecord(this._fileShas);
+
+  final Map<String, String> _fileShas;
+
+  @override
+  String? shaFor(String path) => _fileShas[path];
+
+  @override
+  String? coverSourceFor(String key) => null;
+
+  @override
+  Iterable<String> get ownedPaths => _fileShas.keys;
+}
+
 /// The previous record's entries that pass the path policy.
 Iterable<MapEntry<String, String>> _safeEntries(PreviousPublication previous) =>
     previous.ownedPaths

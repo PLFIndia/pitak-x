@@ -149,6 +149,111 @@ void main() {
 
     expect(merge.fileShas.keys, ['books.json']);
   });
+
+  group('mergeSections — several sections, ONE write (ADR 0019)', () {
+    const catalogue = PublishSection(
+      section: SiteSection.catalogue,
+      files: [
+        PublishFile(
+          path: 'books.json',
+          bytes: [1],
+          gitSha: 'new-books',
+          upload: true,
+        ),
+      ],
+      deletePaths: ['library.json'],
+    );
+
+    test('catalogue + availability: every file, every deletion, one set', () {
+      final previous = _Previous({
+        'books.json': 'old-books',
+        'library.json': 'old-descriptor',
+        'events.json': 'keep-events',
+      });
+      final merge = mergeSections(
+        previous: previous,
+        sections: [
+          catalogue,
+          PublishSection(
+            section: SiteSection.availability,
+            files: [file('availability.json', sha: 'avail')],
+          ),
+        ],
+      );
+
+      expect(merge.files.map((f) => f.path), [
+        'books.json',
+        'availability.json',
+      ]);
+      expect(merge.deletePaths, ['library.json']);
+      expect(merge.fileShas, {
+        'events.json': 'keep-events',
+        'books.json': 'new-books',
+        'availability.json': 'avail',
+      });
+    });
+
+    test('a removal rides along with the catalogue (A.6 #20)', () {
+      final merge = mergeSections(
+        previous: _Previous({
+          'books.json': 'old-books',
+          'availability.json': 'stale',
+        }),
+        sections: [
+          catalogue,
+          const PublishSection(
+            section: SiteSection.availability,
+            files: [],
+            deletePaths: ['availability.json'],
+          ),
+        ],
+      );
+      // The catalogue's own deletion and the lane's removal, in one write.
+      expect(merge.deletePaths, ['availability.json', 'library.json']);
+      expect(merge.fileShas, {'books.json': 'new-books'});
+    });
+
+    test('the order of the sections does not change the record', () {
+      final previous = _Previous({
+        'books.json': 'old-books',
+        'library.json': 'd',
+        'availability.json': 'old-avail',
+      });
+      final availability = PublishSection(
+        section: SiteSection.availability,
+        files: [file('availability.json', sha: 'new-avail')],
+      );
+      final forward = mergeSections(
+        previous: previous,
+        sections: [catalogue, availability],
+      );
+      final backward = mergeSections(
+        previous: previous,
+        sections: [availability, catalogue],
+      );
+      expect(backward.fileShas, forward.fileShas);
+      expect(backward.deletePaths, forward.deletePaths);
+    });
+
+    test('one section gives exactly what mergeSection gives', () {
+      final previous = _Previous({'books.json': 'b', 'covers/x.jpg': 'c'});
+      final single = mergeSection(previous: previous, section: catalogue);
+      final many = mergeSections(previous: previous, sections: [catalogue]);
+      expect(many.fileShas, single.fileShas);
+      expect(many.deletePaths, single.deletePaths);
+      expect(many.files, single.files);
+    });
+
+    test('no sections leave the safe record unchanged', () {
+      final merge = mergeSections(
+        previous: _Previous({'books.json': 'b', '../evil': 'x'}),
+        sections: const [],
+      );
+      expect(merge.fileShas, {'books.json': 'b'});
+      expect(merge.deletePaths, isEmpty);
+      expect(merge.files, isEmpty);
+    });
+  });
 }
 
 class _Previous implements PreviousPublication {

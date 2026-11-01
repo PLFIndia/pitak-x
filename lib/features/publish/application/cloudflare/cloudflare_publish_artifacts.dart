@@ -102,6 +102,12 @@ final class CloudflarePublishArtifactAssembler {
   );
 
   /// Builds the complete next Worker map without performing any remote write.
+  ///
+  /// [onlySection] is the ordinary section the user asked to publish; null
+  /// for a complete snapshot (a move or a replacement), which carries every
+  /// section. The availability section (ADR 0019) rides along with whichever
+  /// section is published, because the lane's write or removal belongs in the
+  /// same atomic version (Decision 6).
   Future<Either<Failure, CloudflarePublicationArtifacts>> assemble({
     required CloudflarePublishTarget target,
     required CloudflareSiteManifest previous,
@@ -127,17 +133,22 @@ final class CloudflarePublishArtifactAssembler {
     final sourcesByHash = <String, CloudflareBucketAsset>{};
     final pathsByHash = <String, List<String>>{};
     final deletedPaths = <String>{};
-    var current = previous.target == null
+    final recorded = previous.target == null
         ? CloudflareSiteManifest.empty
         : previous;
+    var current = recorded;
     var coverSources = current.coverUrlByBookId;
     final missing = <String>[];
     final sections = snapshot.sections
         .where(
-          (section) => onlySection == null || section.section == onlySection,
+          (section) =>
+              onlySection == null ||
+              section.section == onlySection ||
+              section.section == SiteSection.availability,
         )
         .toList();
-    if (onlySection != null && sections.length != 1) {
+    if (onlySection != null &&
+        sections.where((s) => s.section == onlySection).length != 1) {
       return const Left(
         CloudflareFailure(CloudflareErrorMessages.artifactInvalid),
       );
@@ -212,15 +223,26 @@ final class CloudflarePublishArtifactAssembler {
     final validationFailure = _validateFiles(files);
     if (validationFailure != null) return Left(validationFailure);
 
-    final manifest =
-        CloudflareSiteManifest(
-          target: target,
-          liveId: current.liveId,
-        ).afterDeploy(
-          publishId: marker.publishId,
-          files: files,
-          coverUrlByBookId: coverSources,
-        );
+    // The receiver carries the previous record's books.json and keyed flag,
+    // so an unchanged books.json keeps the flag (an events-only or
+    // availability-only deploy) while a new catalogue sets it and anything
+    // else clears it — `afterDeploy` holds that rule (ADR 0019 Decision 7b).
+    // A replacement passes the EMPTY previous record, so nothing carries.
+    final recordBefore = CloudflareSiteManifest(
+      target: target,
+      liveId: current.liveId,
+      files: recorded.files,
+      catalogueKeyed: recorded.catalogueKeyed,
+    );
+    final manifest = recordBefore.afterDeploy(
+      publishId: marker.publishId,
+      files: files,
+      coverUrlByBookId: coverSources,
+      // The snapshot's catalogue is keyed, and this deploy carries it.
+      wroteKeyedCatalogue:
+          snapshot.writesKeyedCatalogue &&
+          sections.any((section) => section.section == SiteSection.catalogue),
+    );
     final uploadManifest = <CloudflareAssetManifestEntry>[
       for (final path in files.keys.toList()..sort())
         CloudflareAssetManifestEntry(

@@ -10,8 +10,10 @@ import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -43,7 +45,9 @@ void main() {
   PublishSnapshotBuilder builder({
     LocalCoverReader? readLocalCover,
     PosterBytesReader? readPoster,
+    PublishCoverSaltStore keySalt = const _FixedSalt(_saltBytes),
   }) => PublishSnapshotBuilder(
+    itemKeys: PublishItemKeys(keySalt),
     catalogue: CatalogueSectionBuilder(
       covers: PublishCoverDecider(
         coverIds: const PublishCoverIds(_FixedSalt(_saltBytes)),
@@ -377,6 +381,206 @@ void main() {
       expect(snapshot.sections.map((s) => s.section.name), ['catalogue']);
     });
   });
+
+  group('keys and availability (ADR 0019, plan S3)', () {
+    Future<Either<Failure, PublishSnapshot>> readAndBuild(
+      _FakeReads reads, {
+      Set<SiteSection> sections = const {SiteSection.catalogue},
+      PublishManifest previous = PublishManifest.empty,
+      PublishSnapshotBuilder? subject,
+      int now = 1761984345678,
+    }) async {
+      final chosen = subject ?? builder();
+      final inputs = (await chosen.read(
+        reads: reads,
+        target: target,
+        sections: sections,
+      )).toNullable()!;
+      return chosen.build(
+        inputs: inputs,
+        previous: previous,
+        now: now,
+        mode: PublishMode.incremental,
+      );
+    }
+
+    Map<String, dynamic> json(PublishSection section, String path) =>
+        jsonDecode(
+              utf8.decode(
+                section.files.firstWhere((f) => f.path == path).bytes,
+              ),
+            )
+            as Map<String, dynamic>;
+
+    test('the request is read for EVERY operation (A.6 #20)', () async {
+      for (final sections in [
+        const {SiteSection.catalogue},
+        const {SiteSection.events},
+        _both,
+      ]) {
+        final reads = _FakeReads();
+        final inputs = (await builder().read(
+          reads: reads,
+          target: target,
+          sections: sections,
+        )).toNullable()!;
+        expect(reads.calls, contains('availability'), reason: '$sections');
+        expect(inputs.availability, isA<AvailabilityRemoval>());
+      }
+    });
+
+    test('a failed request read aborts before anything is built', () async {
+      final reads = _FakeReads()
+        ..availabilityResult = left(const StorageFailure('settings'));
+      final result = await builder().read(
+        reads: reads,
+        target: target,
+        sections: _both,
+      );
+      expect(result.swap().toNullable(), isA<StorageFailure>());
+      expect(reads.calls, isNot(contains('events')));
+    });
+
+    test('lane on + known counts: books.json and availability.json agree, '
+        'through ONE key map (AV8)', () async {
+      final reads = _FakeReads()
+        ..availabilityResult = right(const AvailabilityFromLoanCounts())
+        ..books = [
+          book(),
+          book(id: 2),
+          const CatalogueItem(id: 3, title: 'Three copies', copyCount: 3),
+        ]
+        ..counts = const {1: 1, 3: 2};
+      final snapshot = (await readAndBuild(reads)).toNullable()!;
+
+      expect(snapshot.sections.map((s) => s.section), [
+        SiteSection.catalogue,
+        SiteSection.availability,
+      ]);
+      final rows = (json(snapshot.catalogue!, 'books.json')['books'] as List)
+          .cast<Map<String, dynamic>>();
+      final file = json(snapshot.availability!, 'availability.json');
+      expect(file['out'], [
+        for (final row in rows)
+          if (row['availability'] == 'out') row['key'],
+      ]);
+      expect(file['out'], [
+        PublishItemKeys.keyFor(salt: _saltBytes, itemId: 1),
+      ]);
+      // asOf is this publish's own time, rounded down to the minute.
+      expect(file['asOf'], 1761984300000);
+      expect(file['schemaVersion'], 1);
+    });
+
+    test('lane on + locked vault: the live file is left alone (AV5)', () async {
+      final reads = _FakeReads()
+        ..availabilityResult = right(const AvailabilityFromLoanCounts())
+        ..books = [book()]
+        ..counts = null;
+      const recorded = PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'availability.json': 'sha-live'},
+      );
+      final snapshot = (await readAndBuild(
+        reads,
+        previous: recorded,
+      )).toNullable()!;
+      expect(snapshot.availability, isNull);
+      expect(snapshot.availabilityOmitted, isTrue);
+    });
+
+    test('lane on + events-only publish: nothing to compute from', () async {
+      final reads = _FakeReads()
+        ..availabilityResult = right(const AvailabilityFromLoanCounts());
+      final snapshot = (await readAndBuild(
+        reads,
+        sections: const {SiteSection.events},
+      )).toNullable()!;
+      expect(snapshot.availability, isNull);
+      expect(snapshot.writesKeyedCatalogue, isFalse);
+    });
+
+    test('lane off: a recorded file is deleted by whichever publish runs, '
+        'events included', () async {
+      const recorded = PublishManifest(
+        repo: 'me/lib',
+        fileShas: {'availability.json': 'sha-live'},
+      );
+      for (final sections in [
+        const {SiteSection.catalogue},
+        const {SiteSection.events},
+      ]) {
+        final snapshot = (await readAndBuild(
+          _FakeReads()..books = [book()],
+          sections: sections,
+          previous: recorded,
+        )).toNullable()!;
+        expect(snapshot.availability!.deletePaths, ['availability.json']);
+        expect(snapshot.availability!.files, isEmpty);
+        expect(snapshot.sections.last.section, SiteSection.availability);
+      }
+    });
+
+    test('lane off and nothing recorded: no availability section', () async {
+      final snapshot = (await readAndBuild(
+        _FakeReads()..books = [book()],
+      )).toNullable()!;
+      expect(snapshot.availability, isNull);
+      expect(snapshot.writesKeyedCatalogue, isTrue);
+    });
+
+    test(
+      'an unreadable salt stops the build before any cover is read',
+      () async {
+        var coverReads = 0;
+        final subject = builder(
+          keySalt: const _FailingSalt(),
+          readLocalCover: (_) async {
+            coverReads++;
+            return utf8.encode('IMG');
+          },
+        );
+        final result = await readAndBuild(
+          _FakeReads()..books = [book(cover: 'covers/a.jpg')],
+          subject: subject,
+        );
+        expect(
+          (result.swap().toNullable()! as ValidationFailure).message,
+          PublishItemKeys.saltUnavailableMessage,
+        );
+        expect(coverReads, 0);
+      },
+    );
+
+    test(
+      'a set too large for every reader stops the publish (fail closed)',
+      () async {
+        // More items out than `AvailabilitySnapshot.maxKeys`: far beyond a real
+        // library, but the file must then never be dropped silently.
+        final books = [
+          for (var id = 1; id <= 50001; id++) CatalogueItem(id: id, title: 'B'),
+        ];
+        final reads = _FakeReads()
+          ..availabilityResult = right(const AvailabilityFromLoanCounts())
+          ..books = books
+          ..counts = {for (final b in books) b.id: 1};
+        final result = await readAndBuild(reads);
+        expect(
+          (result.swap().toNullable()! as ValidationFailure).message,
+          PublishSnapshotBuilder.availabilityUnpublishableMessage,
+        );
+      },
+    );
+  });
+}
+
+/// Fails like unreadable secure storage (a platform error is an Exception).
+final class _FailingSalt implements PublishCoverSaltStore {
+  const _FailingSalt();
+
+  @override
+  Future<List<int>> salt() async =>
+      throw const FormatException('secure storage unreadable');
 }
 
 /// A fixed cover salt: the decider's deterministic salted paths.
@@ -404,6 +608,9 @@ final class _FakeReads implements PublishReads {
   Either<Failure, EventsContent>? eventsResult;
   Either<Failure, List<int>?>? descriptorResult;
   Either<Failure, PublishPageSettings>? settingsResult;
+  Either<Failure, AvailabilityRequest> availabilityResult = right(
+    const AvailabilityRemoval(),
+  );
 
   final calls = <String>[];
 
@@ -442,5 +649,11 @@ final class _FakeReads implements PublishReads {
   Future<Either<Failure, Map<int, int>?>> activeLoanCounts() async {
     calls.add('counts');
     return right(counts);
+  }
+
+  @override
+  Future<Either<Failure, AvailabilityRequest>> availability() async {
+    calls.add('availability');
+    return availabilityResult;
   }
 }

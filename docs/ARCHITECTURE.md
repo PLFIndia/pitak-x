@@ -552,14 +552,19 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
 - **`books.json`** (published) stays schema **1**. Older viewers ignore
   additive keys, and null optional values are omitted. The exact public key
   sets are:
-  - book: `title`, `kind`, optional `titleTransliteration`, `author`, `isbn`,
-    `publisher`, `publishedYear`, `genre`, `language`, `coverUrl`, `ageGroup`
-    and coarse `availability`;
+  - book: `title`, `kind`, `key`, optional `titleTransliteration`, `author`,
+    `isbn`, `publisher`, `publishedYear`, `genre`, `language`, `coverUrl`,
+    `ageGroup` and coarse `availability`;
   - issue: that same item set plus `issue{periodicalUid, volume, issueNumber,
     issueDate, boundUntil, label}` (the nested nulls are omitted too);
-  - other: only `title`, `kind`, resolved `coverUrl`, `language` and `ageGroup`
-    — never availability, issue data, transliteration, notes, source, or any
-    book-specific field;
+  - other: only `title`, `kind`, `key`, resolved `coverUrl`, `language` and
+    `ageGroup` — never availability, issue data, transliteration, notes,
+    source, or any book-specific field;
+  - `key` (ADR 0019 Decision 3, written since publish-optimisation S3): the
+    item's public join key for `availability.json`, the first 16 hex
+    characters of SHA-256(salt ‖ `"item:" + id`) with the cover-name salt. It
+    reveals no internal id; a publish without a valid, unique key for every
+    live item writes nothing;
   - top-level `periodicals[]`: `periodicalUid`, `title`, optional
     `titleTransliteration`, `issn`, `publisher`, `language`, `coverUrl`,
     `frequency` and `ageGroup`. Subscription windows, notes, location,

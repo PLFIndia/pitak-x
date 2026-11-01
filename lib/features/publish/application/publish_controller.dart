@@ -28,6 +28,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -375,6 +376,17 @@ class PublishController extends _$PublishController implements PublishReads {
         sharing: settings.publishLocationSharing,
       ),
     );
+  }
+
+  @override
+  Future<Either<Failure, AvailabilityRequest>> availability() async {
+    // The availability lane does not exist in this build yet: its switch,
+    // store and timers arrive in plan S6 and it starts in S8. Until then the
+    // lane counts as OFF, which is the safe reading (ADR 0019 Decision 6):
+    // no publish writes `availability.json`, and one that this phone's record
+    // still shows (for example after going back from a newer build) is
+    // deleted, so readers never see a file that has stopped updating.
+    return right(const AvailabilityRemoval());
   }
 
   @override

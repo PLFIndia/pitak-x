@@ -25,6 +25,7 @@ import 'package:pitaka/features/publish/application/site/events_section_builder.
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
@@ -33,6 +34,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
@@ -202,6 +204,9 @@ final class RecordingArtifactStore implements CloudflareArtifactStore {
 }
 
 final class FakeS8Reads implements PublishReads {
+  /// What the lane asks of this publish (ADR 0019 Decision 6). Off by
+  /// default, like the app before the lane ships.
+  AvailabilityRequest availabilityRequest = const AvailabilityRemoval();
   List<CatalogueItem> books = const [];
   List<Periodical> titles = const [];
   EventsContent eventsContent = EventsContent.empty;
@@ -231,6 +236,10 @@ final class FakeS8Reads implements PublishReads {
   @override
   Future<Either<Failure, Map<int, int>?>> activeLoanCounts() async =>
       right(counts);
+
+  @override
+  Future<Either<Failure, AvailabilityRequest>> availability() async =>
+      right(availabilityRequest);
 
   @override
   Future<Either<Failure, EventsContent>> events() async {
@@ -303,6 +312,7 @@ final class S8PublishHarness {
     };
 
     final builder = PublishSnapshotBuilder(
+      itemKeys: const PublishItemKeys(_FixedSalt()),
       catalogue: CatalogueSectionBuilder(
         covers: PublishCoverDecider(
           coverIds: const PublishCoverIds(_FixedSalt()),
@@ -447,6 +457,7 @@ CloudflareSiteManifest s8Manifest({
   required String publishId,
   PublishState state = PublishState.live,
   Map<String, PublishFile> additional = const {},
+  bool catalogueKeyed = false,
 }) {
   final files = {...s8CoreFiles(publishId), ...additional};
   return CloudflareSiteManifest(
@@ -455,5 +466,6 @@ CloudflareSiteManifest s8Manifest({
     publishId: publishId,
     hashScheme: CloudflareAssetHash.scheme,
     files: {for (final entry in files.entries) entry.key: s8Entry(entry.value)},
+    catalogueKeyed: catalogueKeyed,
   );
 }

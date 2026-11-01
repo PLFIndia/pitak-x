@@ -3,15 +3,18 @@
 /// What is checked is the DOCUMENTED read-back set (ADR 0017 S8): the marker,
 /// `books.json`, the root `index.html`, `library.json` or its real 404, the
 /// events files when recorded, at most two posters, and the exact
-/// removed-poster 404s. Covers are deliberately not read back: the upload
-/// protocol already guaranteed every hash before the completion token, and a
-/// version is atomic (fix-plan M2).
+/// removed-poster 404s — plus, since ADR 0019 (Decision 11),
+/// `availability.json` when recorded or its exact 404 after a removal.
+/// Covers are deliberately not read back: the upload protocol already
+/// guaranteed every hash before the completion token, and a version is atomic
+/// (fix-plan M2).
 ///
 /// Three outcomes replace the old verified/not-verified pair, because "the
 /// site answered with different bytes" and "the site could not be reached" need
 /// different next steps.
 library;
 
+import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_html_routing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
@@ -167,6 +170,16 @@ final class CloudflarePublicationVerifier {
       if (path.startsWith('posters/') && !pending.containsKey(path)) {
         pending[path] = const _Expectation.absent();
       }
+    }
+
+    // ADR 0019 Decision 11: `availability.json` joins the set — its recorded
+    // bytes when the deploy carries it, or its exact 404 when this deploy
+    // removed it. The file is tiny, so it costs one small read.
+    final availability = manifest.entryFor(AvailabilityDocument.path);
+    if (availability != null) {
+      pending[AvailabilityDocument.path] = _Expectation.content(availability);
+    } else if (deletedPaths.contains(AvailabilityDocument.path)) {
+      pending[AvailabilityDocument.path] = const _Expectation.absent();
     }
     return pending;
   }

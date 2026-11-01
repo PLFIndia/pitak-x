@@ -18,6 +18,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
@@ -150,6 +151,8 @@ void main() {
       isTrue,
     );
     expect(manifests.current.state, PublishState.live);
+    // The move wrote this phone's keyed catalogue (ADR 0019 Decision 7b).
+    expect(manifests.current.catalogueKeyed, isTrue);
     expect(manifests.current.publishId, moveRetiredPublishId);
     // The OLD site remains the journal's active/verified target until the
     // outer move records pending and retirement, then switches exactly once.
@@ -487,6 +490,7 @@ void main() {
 }
 
 PublishSnapshotBuilder _builder() => PublishSnapshotBuilder(
+  itemKeys: const PublishItemKeys(_FixedSalt()),
   catalogue: CatalogueSectionBuilder(
     covers: PublishCoverDecider(
       coverIds: const PublishCoverIds(_FixedSalt()),

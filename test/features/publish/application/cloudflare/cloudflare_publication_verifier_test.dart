@@ -180,6 +180,81 @@ void main() {
     expect(result, CloudflarePublicationVerification.contradicted);
   });
 
+  group('availability.json joins the set (ADR 0019 Decision 11)', () {
+    final availability = s8File(
+      'availability.json',
+      utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+    );
+    final withAvailability = s8Manifest(
+      target: target,
+      publishId: cloudflareTestPublishId,
+      additional: {...additional, 'availability.json': availability},
+    );
+
+    test('a recorded file is read back and must match', () async {
+      reader.body('availability.json', availability.bytes);
+      final verified = await verifier().verify(
+        target: target,
+        manifest: withAvailability,
+        revision: 1,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        budget: oneRound,
+      );
+      expect(verified, CloudflarePublicationVerification.verified);
+      expect(reader.calls.map((c) => c.$2), contains('availability.json'));
+
+      reader.body('availability.json', utf8.encode('{"out":["stale"]}'));
+      final contradicted = await verifier().verify(
+        target: target,
+        manifest: withAvailability,
+        revision: 2,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        budget: oneRound,
+      );
+      expect(contradicted, CloudflarePublicationVerification.contradicted);
+    });
+
+    test('a removal is proven only by its exact 404', () async {
+      reader.absent('availability.json');
+      final proven = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        deletedPaths: const ['availability.json'],
+        budget: oneRound,
+      );
+      expect(proven, CloudflarePublicationVerification.verified);
+      expect(reader.calls.map((c) => c.$2), contains('availability.json'));
+
+      reader.body('availability.json', availability.bytes);
+      final stillServed = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 2,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        deletedPaths: const ['availability.json'],
+        budget: oneRound,
+      );
+      expect(stillServed, CloudflarePublicationVerification.contradicted);
+    });
+
+    test('a site that never had the file does not read it', () async {
+      final result = await verifier().verify(
+        target: target,
+        manifest: manifest,
+        revision: 1,
+        markerBytes: files['pitak-publish.json']!.bytes,
+        budget: oneRound,
+      );
+      expect(result, CloudflarePublicationVerification.verified);
+      expect(
+        reader.calls.map((c) => c.$2),
+        isNot(contains('availability.json')),
+      );
+    });
+  });
+
   test(
     'a later propagation round can still finish the grouped verification',
     () async {

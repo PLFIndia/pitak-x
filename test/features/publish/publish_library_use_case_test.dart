@@ -21,6 +21,7 @@ import 'package:pitaka/features/publish/application/site/events_section_builder.
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
@@ -28,6 +29,7 @@ import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
@@ -250,12 +252,15 @@ class _Reads implements PublishReads {
     Map<int, int>? activeLoanCounts = const {},
     List<int>? libraryJson,
     EventsContent? events,
+    AvailabilityRequest availability = const AvailabilityRemoval(),
   }) : _books = books,
        _titles = periodicals,
        _counts = activeLoanCounts,
        _descriptor = libraryJson,
-       _events = events ?? EventsContent.empty;
+       _events = events ?? EventsContent.empty,
+       _availability = availability;
 
+  final AvailabilityRequest _availability;
   final List<CatalogueItem> _books;
   final List<Periodical> _titles;
   final Map<int, int>? _counts;
@@ -284,6 +289,10 @@ class _Reads implements PublishReads {
   @override
   Future<Either<Failure, PublishPageSettings>> pageSettings() async =>
       right(const PublishPageSettings(libraryName: 'Test Library'));
+
+  @override
+  Future<Either<Failure, AvailabilityRequest>> availability() async =>
+      right(_availability);
 }
 
 /// Reads whose catalogue access fails: used to prove NOTHING is written when
@@ -397,6 +406,7 @@ void main() {
     List<int>? libraryJson,
     PublishReads? reads,
     BooksJsonEncoder? encodeBooksJson,
+    AvailabilityRequest availability = const AvailabilityRemoval(),
   }) {
     // R6: the fake remote starts as what this phone recorded — the state most
     // tests describe. Publishing against it therefore re-uploads nothing and
@@ -412,6 +422,7 @@ void main() {
       credentials: credentials ?? _FakeCreds(),
       manifest: manifest,
       snapshotBuilder: PublishSnapshotBuilder(
+        itemKeys: PublishItemKeys(_FixedSalt()),
         catalogue: CatalogueSectionBuilder(
           covers: PublishCoverDecider(
             coverIds: PublishCoverIds(_FixedSalt()),
@@ -444,6 +455,7 @@ void main() {
             periodicals: periodicals ?? const [],
             activeLoanCounts: activeLoanCounts,
             libraryJson: libraryJson,
+            availability: availability,
           ),
       hostState: hostState ?? _Recorder(),
       verifier: verifier,
@@ -1727,5 +1739,126 @@ void main() {
       // detail that this phone has no record of it.
       expect((result as PublishSuccess).localStateSaved, isFalse);
     });
+  });
+
+  group('S3 — keys and the combined availability commit (ADR 0019)', () {
+    const twoBooks = [
+      CatalogueItem(id: 1, title: 'Lent'),
+      CatalogueItem(id: 2, title: 'On the shelf'),
+    ];
+    final salt = ascii.encode('salt-1234567890');
+    final keyOf1 = PublishItemKeys.keyFor(salt: salt, itemId: 1);
+
+    List<int> committedBytes(_CapturingApi api, String path) =>
+        api.committed!.firstWhere((f) => f.path == path).bytes;
+
+    test('a catalogue commit is keyed, and the record says so', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final result = await makeUseCase(api, manifest, books: twoBooks).run();
+
+      expect(result, isA<PublishSuccess>());
+      final rows = (committedPayload(api)['books'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(rows.map((row) => row['key']), [
+        keyOf1,
+        PublishItemKeys.keyFor(salt: salt, itemId: 2),
+      ]);
+      expect(manifest.current.catalogueKeyed, isTrue);
+      // Lane off and nothing recorded: no availability file, no deletion.
+      expect(
+        api.committed!.map((f) => f.path),
+        isNot(contains('availability.json')),
+      );
+      expect(api.deleted, isEmpty);
+    });
+
+    test('lane on + known counts: ONE commit carries both files, and the '
+        'record holds both shas', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final result = await makeUseCase(
+        api,
+        manifest,
+        books: twoBooks,
+        activeLoanCounts: const {1: 1},
+        availability: const AvailabilityFromLoanCounts(),
+      ).run();
+
+      expect(result, isA<PublishSuccess>());
+      final availability = committedBytes(api, 'availability.json');
+      expect(
+        utf8.decode(availability),
+        '{"schemaVersion":1,"asOf":0,"out":["$keyOf1"]}',
+        reason: 'the clock is 1000 ms, which rounds down to minute 0',
+      );
+      expect(
+        api.committed!.firstWhere((f) => f.path == 'availability.json').upload,
+        isTrue,
+      );
+      // The inline tag and the file agree (AV8).
+      final rows = (committedPayload(api)['books'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(rows.first['availability'], 'out');
+      expect(rows.last['availability'], 'available');
+
+      final record = manifest.current;
+      expect(record.shaFor('availability.json'), GitBlobSha.of(availability));
+      expect(record.catalogueKeyed, isTrue);
+      // The combined commit is proven through books.json, as before (S4
+      // records the proof path; until then it stays the per-section file).
+      expect(record.proofPath, isNull);
+    });
+
+    test(
+      'lane on + locked vault: the recorded file is kept untouched',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
+            ownershipConfirmed: true,
+            fileShas: {'availability.json': 'live-avail', 'books.json': 'old'},
+          ),
+        );
+        await makeUseCase(
+          api,
+          manifest,
+          books: twoBooks,
+          activeLoanCounts: null,
+          availability: const AvailabilityFromLoanCounts(),
+        ).run();
+
+        expect(api.deleted, isNot(contains('availability.json')));
+        expect(
+          api.committed!.map((f) => f.path),
+          isNot(contains('availability.json')),
+        );
+        expect(manifest.current.shaFor('availability.json'), 'live-avail');
+      },
+    );
+
+    test(
+      'lane off: the catalogue commit deletes a recorded file (A.6 #20)',
+      () async {
+        final api = _CapturingApi();
+        final manifest = _MemManifest(
+          const PublishManifest(
+            repo: 'me/lib',
+            branch: 'main',
+            headSha: 'HEAD',
+            ownershipConfirmed: true,
+            fileShas: {'availability.json': 'stale', 'books.json': 'old'},
+          ),
+        );
+        final result = await makeUseCase(api, manifest, books: twoBooks).run();
+
+        expect(result, isA<PublishSuccess>());
+        expect(api.deleted, ['availability.json']);
+        expect(manifest.current.shaFor('availability.json'), isNull);
+      },
+    );
   });
 }

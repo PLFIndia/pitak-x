@@ -14,6 +14,12 @@
 /// coarse availability flag. ADR 0013 O2 deliberately narrows an Other to
 /// title, kind, resolved cover, language and ageGroup — nothing else.
 ///
+/// Every kind also carries its public `key` (ADR 0019 Decision 3): a salted
+/// hash of the id that reveals nothing about the database. It is the one
+/// addition ADR 0019 makes to the O2 set, so an Other is still matched to
+/// `availability.json` by the same rule as every other item (and is simply
+/// never listed in it).
+///
 /// Stripped from a periodical: the subscription window, notes, location,
 /// sourceType/sourceDetail, addedDate/addedBy, removed*, and the per-device
 /// id. Preserved: periodicalUid (the viewer's grouping key), title,
@@ -22,7 +28,9 @@
 ///
 /// The cover URL is decided entirely by the `resolveCoverUrl` callback — it
 /// receives the original entity (id/uid intact, so callers can hash/look it
-/// up) and returns the value to publish, or null to drop the cover.
+/// up) and returns the value to publish, or null to drop the cover. The key
+/// is decided the same way by `resolveKey`, so this pure function never needs
+/// the salt.
 library;
 
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
@@ -33,17 +41,24 @@ import 'package:pitaka/features/publish/domain/publish_export.dart';
 /// Maps [book] to a redacted [PublishItem]. [availability] is the coarse,
 /// vault-derived status ([PublishItem.available]/[PublishItem.out]) or null.
 /// It applies only to books and issues; ADR 0013 O2 excludes it from Others.
+///
+/// [resolveKey] returns the item's public key (`PublishItemKeys`), or null
+/// when the payload is built without keys. It is required so no caller can
+/// forget to decide.
 PublishItem redactForPublish(
   CatalogueItem book, {
   required String? Function(CatalogueItem) resolveCoverUrl,
+  required String? Function(CatalogueItem) resolveKey,
   String? availability,
 }) {
   final coverUrl = resolveCoverUrl(book);
+  final key = resolveKey(book);
   final issue = book.issue;
   return switch (book.details) {
     OtherItemOf() => PublishItem(
       title: book.title,
       kind: book.kind.token,
+      key: key,
       language: book.language,
       coverUrl: coverUrl,
       ageGroup: book.ageGroup?.token,
@@ -51,6 +66,7 @@ PublishItem redactForPublish(
     IssueOf() || null => PublishItem(
       title: book.title,
       kind: book.kind.token,
+      key: key,
       issue: issue == null
           ? null
           : PublishIssue(

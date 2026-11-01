@@ -23,10 +23,12 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
@@ -126,7 +128,7 @@ void main() {
     'PublishMode.complete reaches the builder: a missing cover refuses instead '
     'of dropping it, and an incremental publish still succeeds',
     (tester) async {
-      final h = _Harness(coverSalt: true);
+      final h = _Harness();
       h.books.read = () async => right(const [
         CatalogueItem(id: 1, title: 'Coverless', coverUrl: 'covers/gone.jpg'),
       ]);
@@ -207,6 +209,66 @@ void main() {
       ),
       isNot(contains('private series note')),
     );
+  });
+
+  group('item keys and availability (ADR 0019, plan S3)', () {
+    testWidgets('every published item carries its key; the record is keyed', (
+      tester,
+    ) async {
+      final h = _Harness();
+      h.books.read = () async =>
+          right(const [CatalogueItem(id: 5, title: 'Keyed')]);
+
+      expect(await h.publish(tester), isA<PublishSuccess>());
+      final commit = h.api.commits.single;
+      final payload =
+          jsonDecode(
+                utf8.decode(
+                  commit.firstWhere((file) => file.path == 'books.json').bytes,
+                ),
+              )
+              as Map<String, dynamic>;
+      final row = (payload['books'] as List).single as Map<String, dynamic>;
+      // The harness salt names the key exactly like it names the covers.
+      expect(
+        row['key'],
+        PublishItemKeys.keyFor(salt: const [1, 2, 3, 4], itemId: 5),
+      );
+      // Gate 7b's half in the record: this books.json is this phone's own,
+      // keyed publish.
+      expect(h.manifest.current.catalogueKeyed, isTrue);
+      // The lane is not part of this build: nothing writes availability.json.
+      expect(
+        commit.map((file) => file.path),
+        isNot(contains('availability.json')),
+      );
+    });
+
+    testWidgets('an unreadable salt stops the publish before any write', (
+      tester,
+    ) async {
+      final h = _Harness(saltAvailable: false);
+      h.books.read = () async =>
+          right(const [CatalogueItem(id: 5, title: 'Keyed')]);
+
+      final result = await h.publish(tester);
+      expect(
+        (result as PublishFailure).reason,
+        PublishItemKeys.saltUnavailableMessage,
+      );
+      expect(h.api.commits, isEmpty);
+      expect(h.manifest.saves, 0);
+    });
+
+    testWidgets('until the lane ships, every publish asks for the removal', (
+      tester,
+    ) async {
+      final h = _Harness();
+      final request = await h.container
+          .read(publishControllerProvider.notifier)
+          .availability();
+      expect(request.toNullable(), isA<AvailabilityRemoval>());
+    });
   });
 
   testWidgets(
@@ -610,7 +672,7 @@ class _Harness {
   _Harness({
     bool observe = true,
     bool networkUnavailable = false,
-    bool coverSalt = false,
+    bool saltAvailable = true,
   }) {
     // R6: the fake remote starts as what this phone recorded.
     api.tree = {...manifest.current.fileShas};
@@ -626,7 +688,7 @@ class _Harness {
           InMemoryCloudflareCredentialStore(),
         ),
         publishCoverIdsProvider.overrideWithValue(
-          PublishCoverIds(_Salt(coverSalt ? const [1, 2, 3, 4] : null)),
+          PublishCoverIds(_Salt(saltAvailable ? const [1, 2, 3, 4] : null)),
         ),
         publishManifestStoreProvider.overrideWith((ref) async => manifest),
         // R33: the journal is in memory here. Without this override the real
@@ -732,8 +794,10 @@ class _Harness {
   }
 }
 
-/// A cover salt that FAILS unless the harness's `coverSalt` flag is set: the
-/// fixture then proves a normal publish never touches cover IO unless it must.
+/// The publish salt. Every catalogue publish reads it since plan S3: it names
+/// the covers AND gives every item its public key (ADR 0019 Decision 3).
+/// With `saltAvailable: false` it fails like unreadable secure storage does
+/// (a `PlatformException` is an `Exception`), so the publish must stop.
 class _Salt implements PublishCoverSaltStore {
   _Salt([this._bytes]);
 
@@ -741,7 +805,7 @@ class _Salt implements PublishCoverSaltStore {
 
   @override
   Future<List<int>> salt() async =>
-      _bytes ?? (throw UnsupportedError('Unexpected cover access'));
+      _bytes ?? (throw const FormatException('secure storage unreadable'));
 }
 
 class _Books implements CatalogueItemRepository {

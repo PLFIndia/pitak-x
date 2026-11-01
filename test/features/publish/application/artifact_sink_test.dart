@@ -34,6 +34,10 @@ final class _Salt implements PublishCoverSaltStore {
   Future<List<int>> salt() async => ascii.encode('salt-1234567890');
 }
 
+/// A valid public key for item 1 (ADR 0019): the builder refuses an item
+/// without one.
+const _keys = {1: '0123456789abcdef'};
+
 void main() {
   CatalogueSectionBuilder catalogue(_Sink sink) => CatalogueSectionBuilder(
     covers: PublishCoverDecider(
@@ -68,6 +72,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
+      itemKeys: _keys,
       mode: PublishMode.complete,
     )).toNullable()!;
 
@@ -104,6 +109,7 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       previous: PublishManifest.empty,
       now: 1,
+      itemKeys: _keys,
       mode: PublishMode.complete,
     );
     final eventsResult = await events(sink).build(

@@ -31,9 +31,13 @@ void main() {
     final p = redactForPublish(
       sample(),
       resolveCoverUrl: (b) => 'covers/${b.id}.jpg',
+      // The key callback also sees the real id (ADR 0019 Decision 3).
+      resolveKey: (b) => b.id == 42 ? '0123456789abcdef' : null,
       availability: PublishItem.out,
     );
     expect(p.title, 'The Odyssey');
+    expect(p.key, '0123456789abcdef');
+    expect(p.toJson()['key'], '0123456789abcdef');
     expect(p.author, 'Homer');
     expect(p.isbn, '9780140449136');
     expect(p.publisher, 'Penguin');
@@ -50,7 +54,10 @@ void main() {
     final json = redactForPublish(
       sample(),
       resolveCoverUrl: (_) => null,
+      resolveKey: (_) => null,
     ).toJson();
+    // A payload built without keys simply has no `key` field.
+    expect(json.containsKey('key'), isFalse);
     expect(json.containsKey('notes'), isFalse);
     expect(json.containsKey('location'), isFalse);
     expect(json.containsKey('sourceType'), isFalse);
@@ -68,7 +75,11 @@ void main() {
 
   group('kinds (ADR 0014 W3)', () {
     test('a book publishes kind book and no issue object', () {
-      final p = redactForPublish(sample(), resolveCoverUrl: (_) => null);
+      final p = redactForPublish(
+        sample(),
+        resolveCoverUrl: (_) => null,
+        resolveKey: (_) => null,
+      );
       expect(p.kind, 'book');
       expect(p.issue, isNull);
       final json = p.toJson();
@@ -91,6 +102,7 @@ void main() {
           details: issue,
         ),
         resolveCoverUrl: (_) => null,
+        resolveKey: (_) => null,
       );
       expect(p.kind, 'magazine-issue');
       expect(p.toJson()['issue'], {
@@ -111,6 +123,7 @@ void main() {
       final json = redactForPublish(
         const CatalogueItem(id: 9, title: 'Bound', details: issue),
         resolveCoverUrl: (_) => null,
+        resolveKey: (_) => null,
       ).toJson();
       expect(
         (json['issue'] as Map<String, dynamic>)['boundUntil'],
@@ -118,7 +131,8 @@ void main() {
       );
     });
 
-    test('an Other emits exactly the O2 key set and no excluded values', () {
+    test('an Other emits exactly the O2 key set plus its public key, and no '
+        'excluded values', () {
       final json = redactForPublish(
         const CatalogueItem(
           id: 9,
@@ -145,12 +159,16 @@ void main() {
           details: OtherItemOf(),
         ),
         resolveCoverUrl: (_) => 'covers/resolved.jpg',
+        resolveKey: (_) => 'fedcba9876543210',
         availability: PublishItem.out,
       ).toJson();
 
+      // ADR 0019 Decision 3 adds `key` (a salted hash, not the id) to the
+      // O2 set; availability still never applies to an Other.
       expect(json, {
         'title': 'Carrom board',
         'kind': 'other',
+        'key': 'fedcba9876543210',
         'coverUrl': 'covers/resolved.jpg',
         'language': 'te',
         'ageGroup': 'above-10',

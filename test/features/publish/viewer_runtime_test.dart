@@ -63,6 +63,8 @@ void main() {
       ),
       resolveCoverUrl: (_) =>
           'https://covers.openlibrary.org/cover.jpg" onerror="alert(1)',
+      // A real publish keys every row (ADR 0019); the viewer must ignore it.
+      resolveKey: (_) => '0123456789abcdef',
       availability: PublishItem.out,
     ).toJson();
     final payload = <String, dynamic>{

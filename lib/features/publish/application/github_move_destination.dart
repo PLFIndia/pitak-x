@@ -160,6 +160,9 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           mergedShas: desired,
           coverUrlByBookId:
               complete.snapshot.catalogue?.coverUrlByKey ?? const {},
+          // A move writes the complete, keyed catalogue (ADR 0019
+          // Decision 7b), so the lane may publish against the new site.
+          wroteKeyedCatalogue: complete.snapshot.writesKeyedCatalogue,
         );
         // L12: this record is the only proof the commit was ours, so a failed
         // save must reach the user rather than be discarded.

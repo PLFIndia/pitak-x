@@ -43,9 +43,11 @@ final class PublishItemKeys {
   /// Length of every key, in lower-case hex characters (64 bits).
   static const int keyLength = PublishCoverIds.hashHexChars;
 
-  /// Shown when two items would get the same key.
+  /// Shown when two items would get the same key, or when an item that is
+  /// about to be published has no valid key (the catalogue builder's check,
+  /// plan S3).
   ///
-  /// At 100,000 items the chance is about 2.7 × 10⁻¹⁰
+  /// At 100,000 items the chance of a collision is about 2.7 × 10⁻¹⁰
   /// (`publish_cover_ids.dart`), but readers would show the wrong tag for
   /// both items, so the publish stops before anything is written.
   static const String collisionMessage =

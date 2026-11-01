@@ -47,6 +47,7 @@ void main() {
     'redacted books, issues and Others round-trip with public fields only',
     () {
       const book = CatalogueItem(
+        id: 1,
         title: 'The Water Margin',
         titleTransliteration: 'Shuihu Zhuan',
         author: "Shi Nai'an",
@@ -66,6 +67,7 @@ void main() {
         copyCount: 4,
       );
       const issue = CatalogueItem(
+        id: 2,
         title: 'Chandamama — Vol 249 No 10',
         details: IssueOf(
           periodicalUid: 'chandamama',
@@ -78,6 +80,7 @@ void main() {
         notes: 'SENTINEL-ISSUE-NOTES',
       );
       const other = CatalogueItem(
+        id: 3,
         title: 'Picture Dictionary',
         author: 'SENTINEL-OTHER-AUTHOR',
         details: OtherItemOf(),
@@ -101,16 +104,19 @@ void main() {
           redactForPublish(
             book,
             resolveCoverUrl: (item) => item.coverUrl,
+            resolveKey: _keyOf,
             availability: PublishItem.available,
           ),
           redactForPublish(
             issue,
             resolveCoverUrl: (item) => item.coverUrl,
+            resolveKey: _keyOf,
             availability: PublishItem.out,
           ),
           redactForPublish(
             other,
             resolveCoverUrl: (item) => item.coverUrl,
+            resolveKey: _keyOf,
             // ADR 0013 O2: an Other never carries availability.
             availability: PublishItem.available,
           ),
@@ -128,6 +134,14 @@ void main() {
       expect(raw, isNot(contains('SENTINEL')));
       expect(raw, isNot(contains('addedDate')));
       expect(raw, isNot(contains('copyCount')));
+
+      // ADR 0019: every row carries its public key, and today's reader reads
+      // the payload completely (an unknown field is not a partial read).
+      final rows = (jsonDecode(raw) as Map<String, dynamic>)['books'] as List;
+      expect(
+        [for (final row in rows) (row as Map)['key']],
+        ['aaaaaaaaaaaaaaaa', 'bbbbbbbbbbbbbbbb', 'cccccccccccccccc'],
+      );
 
       final decoded = decode(export);
       expect(decoded.exportedAt, 1760000000000);
@@ -193,6 +207,7 @@ void main() {
         redactForPublish(
           const CatalogueItem(title: 'Book'),
           resolveCoverUrl: (_) => null,
+          resolveKey: (_) => null,
         ),
       ],
     );
@@ -236,3 +251,12 @@ void main() {
     expect(jsonDecode(result.stdout as String), nativeRows);
   });
 }
+
+/// Stand-in public keys (ADR 0019 Decision 3) for the three contract items:
+/// valid key shapes, so the reader sees exactly what a publish writes.
+String? _keyOf(CatalogueItem item) => switch (item.id) {
+  1 => 'aaaaaaaaaaaaaaaa',
+  2 => 'bbbbbbbbbbbbbbbb',
+  3 => 'cccccccccccccccc',
+  _ => null,
+};

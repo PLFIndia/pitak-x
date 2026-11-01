@@ -11,14 +11,24 @@
 /// publish never mistakes "I could not read your data" for "there is nothing
 /// to publish" — the bug that would otherwise replace a live site (or a whole
 /// library) with an empty one.
+///
+/// Item keys (ADR 0019 Decision 3) are resolved HERE, once per build: the
+/// catalogue writes them into `books.json`, and the availability section maps
+/// the "not available" ids through the very same map, so the two files always
+/// agree on which key names which item.
 library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
+import 'package:pitaka/features/publish/application/availability/not_available_items.dart';
+import 'package:pitaka/features/publish/application/site/availability_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
@@ -30,24 +40,42 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 export 'package:pitaka/features/publish/domain/site/publish_snapshot.dart'
     show PublishInputs, PublishReads, PublishSnapshot;
 
-/// Assembles one snapshot from [PublishReads] + the two shared builders.
+/// Assembles one snapshot from [PublishReads] + the shared section builders.
 final class PublishSnapshotBuilder {
-  /// Creates the builder over the two section builders.
+  /// Creates the builder over the two section builders and the item keys.
+  ///
+  /// [itemKeys] must use the SAME salt store as the cover names
+  /// (`PublishCoverIds`), so keys and cover names always change together
+  /// (ADR 0019 Decision 3). The availability section needs no injected
+  /// builder: it has no IO and exactly one encoder.
   const PublishSnapshotBuilder({
     required CatalogueSectionBuilder catalogue,
     required EventsSectionBuilder events,
+    required PublishItemKeys itemKeys,
   }) : _catalogue = catalogue,
-       _events = events;
+       _events = events,
+       _itemKeys = itemKeys;
 
   final CatalogueSectionBuilder _catalogue;
   final EventsSectionBuilder _events;
+  final PublishItemKeys _itemKeys;
 
-  /// Uses the same two builders with immediate artifact consumption (R24).
+  /// Uses the same builders with immediate artifact consumption (R24).
   PublishSnapshotBuilder withArtifactSink(PublishArtifactSink sink) =>
       PublishSnapshotBuilder(
         catalogue: _catalogue.withArtifactSink(sink),
         events: _events.withArtifactSink(sink),
+        itemKeys: _itemKeys,
       );
+
+  /// Shown when the "not available" set cannot be turned into a publishable
+  /// file. It cannot happen for a real library (it needs more than 50,000
+  /// items out at once, `AvailabilitySnapshot.maxKeys`), but dropping the
+  /// file would leave an older one live beside a newer inline tag, so the
+  /// publish stops instead (fail closed).
+  static const String availabilityUnpublishableMessage =
+      'Pitak could not prepare the list of lent-out items. '
+      'Nothing was published.';
 
   /// Shown when a required read fails. Fixed text: read diagnostics can carry
   /// private database detail and never reach the UI (AGENTS §5). The wording
@@ -71,7 +99,9 @@ final class PublishSnapshotBuilder {
   /// events-only operation never reads the catalogue, the periodicals, the
   /// loan counts or `library.json`, so an unrelated catalogue problem cannot
   /// block it and no cover is read for nothing. The settings are always read:
-  /// both section builders render with them.
+  /// both section builders render with them. The availability request is
+  /// always read too: a lane that is off must delete a recorded
+  /// `availability.json` whichever publish runs first (plan A.6 #20).
   Future<Either<Failure, PublishInputs>> read({
     required PublishReads reads,
     required PublishTarget target,
@@ -107,6 +137,10 @@ final class PublishSnapshotBuilder {
     final settingsFailure = settings.swap().toNullable();
     if (settingsFailure != null) return Left(settingsFailure);
 
+    final availability = await reads.availability();
+    final availabilityFailure = availability.swap().toNullable();
+    if (availabilityFailure != null) return Left(availabilityFailure);
+
     EventsContent? content;
     if (sections.contains(SiteSection.events)) {
       final events = await reads.events();
@@ -118,6 +152,7 @@ final class PublishSnapshotBuilder {
     return Right(
       PublishInputs(
         pageSettings: settings.toNullable()!,
+        availability: availability.toNullable()!,
         catalogue: catalogue,
         events: content,
       ),
@@ -128,7 +163,9 @@ final class PublishSnapshotBuilder {
   ///
   /// [mode] `complete` upgrades every "unreadable optional thing" into a
   /// failure. The events section is built only when [PublishInputs.events] is
-  /// non-null, so a catalogue-only publish can never delete a poster.
+  /// non-null, so a catalogue-only publish can never delete a poster. The
+  /// availability section follows [PublishInputs.availability] (see
+  /// [_availabilitySection]).
   Future<Either<Failure, PublishSnapshot>> build({
     required PublishInputs inputs,
     required PreviousPublication previous,
@@ -139,7 +176,16 @@ final class PublishSnapshotBuilder {
     final catalogueInputs = inputs.catalogue;
     PublishSection? catalogueSection;
     var catalogueItemCount = 0;
+    var itemKeys = const <int, String>{};
     if (catalogueInputs != null) {
+      final live = catalogueInputs.items.where((b) => !b.removed).toList();
+      // One salt read for the whole catalogue, before any cover is read. An
+      // unreadable salt or a key collision stops the publish here with the
+      // fixed message, so nothing is built or written (ADR 0019 Decision 3).
+      final keys = await _itemKeys.keysFor([for (final b in live) b.id]);
+      if (keys case Left(value: final failure)) return Left(failure);
+      itemKeys = keys.toNullable()!;
+
       final catalogue = await _catalogue.build(
         books: catalogueInputs.items,
         periodicals: catalogueInputs.periodicals,
@@ -148,15 +194,14 @@ final class PublishSnapshotBuilder {
         settings: inputs.pageSettings,
         previous: previous,
         now: now,
+        itemKeys: itemKeys,
         mode: mode,
         timing: timing,
       );
       final catalogueFailure = catalogue.swap().toNullable();
       if (catalogueFailure != null) return Left(catalogueFailure);
       catalogueSection = catalogue.toNullable();
-      catalogueItemCount = catalogueInputs.items
-          .where((b) => !b.removed)
-          .length;
+      catalogueItemCount = live.length;
     }
 
     PublishSection? eventsSection;
@@ -177,11 +222,21 @@ final class PublishSnapshotBuilder {
           .length;
     }
 
+    final availability = _availabilitySection(
+      request: inputs.availability,
+      catalogue: catalogueInputs,
+      itemKeys: itemKeys,
+      previous: previous,
+      now: now,
+    );
+    if (availability case Left(value: final failure)) return Left(failure);
+
     return Right(
       PublishSnapshot(
         mode: mode,
         catalogue: catalogueSection,
         events: eventsSection,
+        availability: availability.toNullable(),
         catalogueItemCount: catalogueItemCount,
         posterCount: posterCount,
         // Null counts mean the vault was locked: availability is then omitted
@@ -191,5 +246,52 @@ final class PublishSnapshotBuilder {
             catalogueInputs != null && catalogueInputs.activeLoanCounts == null,
       ),
     );
+  }
+
+  /// The availability section for [request], or null to leave the live
+  /// `availability.json` exactly as it is.
+  ///
+  /// - [AvailabilityFromLoanCounts] (the lane is on): written only when this
+  ///   publish built the catalogue AND the loan counts are known, from the
+  ///   same counts and the same [itemKeys] as the inline tag (plan AV8). The
+  ///   counts were read during this publish, so `asOf` is this publish's own
+  ///   time (rounded down to the minute by the snapshot).
+  /// - [AvailabilityRemoval] (the lane is off): the deletion when [previous]
+  ///   records the file (plan AV4, A.6 #20).
+  static Either<Failure, PublishSection?> _availabilitySection({
+    required AvailabilityRequest request,
+    required CatalogueInputs? catalogue,
+    required Map<int, String> itemKeys,
+    required PreviousPublication previous,
+    required int now,
+  }) {
+    switch (request) {
+      case AvailabilityRemoval():
+        return Right(AvailabilitySectionBuilder.removal(previous: previous));
+      case AvailabilityFromLoanCounts():
+        final counts = catalogue?.activeLoanCounts;
+        // Unknown counts are "unknown", never "everything is available"
+        // (AV5): the live file stays as the lane last published it.
+        if (catalogue == null || counts == null) return const Right(null);
+        final snapshot = AvailabilitySnapshot.fromIds(
+          ids: notAvailableItemIds(
+            items: catalogue.items,
+            activeCounts: counts,
+          ),
+          keysById: itemKeys,
+          asOfMillis: now,
+        );
+        if (snapshot == null) {
+          return const Left(
+            ValidationFailure(availabilityUnpublishableMessage),
+          );
+        }
+        return Right(
+          AvailabilitySectionBuilder.write(
+            snapshot: snapshot,
+            previous: previous,
+          ),
+        );
+    }
   }
 }

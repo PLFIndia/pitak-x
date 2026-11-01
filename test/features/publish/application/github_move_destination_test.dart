@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/github_move_destination.dart';
 import 'package:pitaka/features/publish/application/github_move_reader.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
@@ -9,10 +10,12 @@ import 'package:pitaka/features/publish/application/site/complete_snapshot_verif
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
@@ -41,6 +44,7 @@ void main() {
     reads = FakeS8Reads();
     reader = FakeStructuredReader();
     final builder = PublishSnapshotBuilder(
+      itemKeys: const PublishItemKeys(_FixedSalt()),
       catalogue: CatalogueSectionBuilder(
         covers: PublishCoverDecider(
           coverIds: const PublishCoverIds(_FixedSalt()),
@@ -136,6 +140,42 @@ void main() {
     expect(destinationManifest.value.headSha, 'commit-1');
     // One save records the accepted commit, the second records read-back.
     expect(destinationManifest.saves, 2);
+    // The move wrote this phone's keyed catalogue (ADR 0019 Decision 7b).
+    expect(destinationManifest.value.catalogueKeyed, isTrue);
+    // The lane is off in this build, so the new site gets no availability.
+    expect(
+      commit.files.map((file) => file.path),
+      isNot(contains('availability.json')),
+    );
+  });
+
+  test('a lane-on move carries availability.json to the new site '
+      '(AV18)', () async {
+    reads
+      ..availabilityRequest = const AvailabilityFromLoanCounts()
+      ..books = const [CatalogueItem(id: 1, title: 'Lent')]
+      ..counts = const {1: 1};
+    final prepared = await destination.prepare(
+      oldTarget: moveCloudflareTarget,
+      newTarget: moveGitHubTarget,
+      sourceAnchor: moveAnchor(moveCloudflareTarget),
+    );
+    api.onCommit = (files) {
+      for (final file in files) {
+        reader.body(file.path, file.bytes);
+      }
+    };
+
+    final result = await destination.publish(
+      confirmation: prepared.toNullable()!,
+      beforeWrite: () async => true,
+    );
+
+    expect(result, isA<MoveDestinationPublished>());
+    final paths = api.commits.single.files.map((file) => file.path);
+    expect(paths, contains('availability.json'));
+    expect(destinationManifest.value.shaFor('availability.json'), isNotNull);
+    expect(destinationManifest.value.catalogueKeyed, isTrue);
   });
 
   test('a digest mismatch re-prompts before any destination write', () async {

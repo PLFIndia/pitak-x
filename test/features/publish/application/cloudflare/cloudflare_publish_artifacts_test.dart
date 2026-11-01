@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_artifacts.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
@@ -50,12 +51,14 @@ void main() {
   PublishSnapshot snapshot({
     required List<PublishFile> catalogue,
     List<PublishFile>? events,
+    PublishSection? availability,
   }) => PublishSnapshot(
     mode: PublishMode.complete,
     catalogue: PublishSection(section: SiteSection.catalogue, files: catalogue),
     events: events == null
         ? null
         : PublishSection(section: SiteSection.events, files: events),
+    availability: availability,
     catalogueItemCount: 0,
     posterCount:
         events?.where((f) => f.path.startsWith('posters/')).length ?? 0,
@@ -179,5 +182,141 @@ void main() {
     final failure = result.swap().toNullable()!;
     expect(failure, isA<CloudflareFailure>());
     expect((failure as CloudflareFailure).requiresCompleteSnapshot, isTrue);
+  });
+
+  group('availability rides along; the keyed flag (ADR 0019)', () {
+    final availabilityFile = s8File(
+      'availability.json',
+      utf8.encode('{"schemaVersion":1,"asOf":0,"out":[]}'),
+    );
+    final catalogueFiles = [
+      s8File('books.json', utf8.encode('{"books":[1]}')),
+      s8File('index.html', utf8.encode('<html>new</html>')),
+    ];
+
+    test(
+      'a catalogue deploy carries the availability section and is keyed',
+      () async {
+        final previous = s8Manifest(target: target, publishId: 'a' * 32);
+        final result = await assembler().assemble(
+          target: target,
+          previous: previous,
+          snapshot: snapshot(
+            catalogue: catalogueFiles,
+            availability: PublishSection(
+              section: SiteSection.availability,
+              files: [availabilityFile],
+            ),
+          ),
+          marker: marker,
+          onlySection: SiteSection.catalogue,
+        );
+
+        final artifacts = result.toNullable()!;
+        expect(
+          artifacts.manifest.shaFor('availability.json'),
+          availabilityFile.gitSha,
+        );
+        expect(
+          artifacts.uploadManifest.map((entry) => entry.path.value),
+          contains('availability.json'),
+        );
+        expect(artifacts.manifest.catalogueKeyed, isTrue);
+      },
+    );
+
+    test('an events deploy carries a removal and keeps an unchanged keyed '
+        'catalogue (A.6 #20)', () async {
+      final previous = s8Manifest(
+        target: target,
+        publishId: 'a' * 32,
+        additional: {'availability.json': availabilityFile},
+        catalogueKeyed: true,
+      );
+      final result = await assembler().assemble(
+        target: target,
+        previous: previous,
+        snapshot: snapshot(
+          catalogue: catalogueFiles,
+          events: [
+            s8File('events.html', utf8.encode('<html>e</html>')),
+            s8File('events.json', utf8.encode('{"posters":[]}')),
+          ],
+          availability: const PublishSection(
+            section: SiteSection.availability,
+            files: [],
+            deletePaths: ['availability.json'],
+          ),
+        ),
+        marker: marker,
+        onlySection: SiteSection.events,
+      );
+
+      final artifacts = result.toNullable()!;
+      expect(artifacts.deletedPaths, ['availability.json']);
+      expect(artifacts.manifest.entryFor('availability.json'), isNull);
+      // books.json was carried unchanged, so the keyed claim still holds.
+      expect(
+        artifacts.manifest.shaFor('books.json'),
+        previous.shaFor('books.json'),
+      );
+      expect(artifacts.manifest.catalogueKeyed, isTrue);
+    });
+
+    test(
+      'an events deploy never turns an unkeyed catalogue into a keyed one',
+      () async {
+        final previous = s8Manifest(target: target, publishId: 'a' * 32);
+        final result = await assembler().assemble(
+          target: target,
+          previous: previous,
+          snapshot: snapshot(
+            catalogue: catalogueFiles,
+            events: [
+              s8File('events.html', utf8.encode('<html>e</html>')),
+              s8File('events.json', utf8.encode('{"posters":[]}')),
+            ],
+          ),
+          marker: marker,
+          onlySection: SiteSection.events,
+        );
+        expect(result.toNullable()!.manifest.catalogueKeyed, isFalse);
+      },
+    );
+
+    test('a complete snapshot over an empty record is keyed', () async {
+      final result = await assembler().assemble(
+        target: target,
+        previous: CloudflareSiteManifest.empty,
+        snapshot: snapshot(catalogue: catalogueFiles),
+        marker: marker,
+      );
+      expect(result.toNullable()!.manifest.catalogueKeyed, isTrue);
+    });
+
+    test(
+      'availability alone cannot stand in for the requested section',
+      () async {
+        final previous = s8Manifest(target: target, publishId: 'a' * 32);
+        final result = await assembler().assemble(
+          target: target,
+          previous: previous,
+          snapshot: PublishSnapshot(
+            mode: PublishMode.incremental,
+            availability: PublishSection(
+              section: SiteSection.availability,
+              files: [availabilityFile],
+            ),
+            catalogueItemCount: 0,
+            posterCount: 0,
+            availabilityOmitted: false,
+          ),
+          marker: marker,
+          onlySection: SiteSection.catalogue,
+        );
+        final failure = result.swap().toNullable()! as CloudflareFailure;
+        expect(failure.message, CloudflareErrorMessages.artifactInvalid);
+      },
+    );
   });
 }

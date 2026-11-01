@@ -31,6 +31,7 @@ import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
 import 'package:pitaka/features/publish/domain/publish_redaction.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
@@ -41,6 +42,7 @@ import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 import 'package:pitaka/features/settings/domain/app_settings.dart'
     show LocationSharing;
+import 'package:pitaka/features/vault/domain/availability.dart';
 
 /// Builds the viewer HTML from the bundled template with placeholders filled.
 ///
@@ -126,6 +128,11 @@ final class CatalogueSectionBuilder {
   /// (availability then omitted). [libraryJson] is the pre-encoded network
   /// descriptor, or null when none may be written — null REMOVES a previously
   /// published descriptor, so a stale location never outlives an opt-out.
+  ///
+  /// [itemKeys] maps item id → public key (`PublishItemKeys.keysFor`,
+  /// ADR 0019 Decision 3). Every live item must have a valid key, and no two
+  /// may share one; otherwise nothing is built (fail closed), because an item
+  /// without its key could never be matched to `availability.json`.
   Future<Either<Failure, PublishSection>> build({
     required List<CatalogueItem> books,
     required List<Periodical> periodicals,
@@ -134,6 +141,7 @@ final class CatalogueSectionBuilder {
     required PublishPageSettings settings,
     required PreviousPublication previous,
     required int now,
+    required Map<int, String> itemKeys,
     PublishMode mode = PublishMode.incremental,
     PublishTimingRecorder? timing,
   }) async {
@@ -149,6 +157,13 @@ final class CatalogueSectionBuilder {
     if (periodicalByUid == null) {
       return const Left(ValidationFailure(invalidLinksMessage));
     }
+
+    // Keys are checked with the links, before any cover is read: like a bad
+    // link, a missing or shared key stops the publish before any work or
+    // write (ADR 0019 Decision 3).
+    final keyCheck = _liveKeys(library, itemKeys);
+    if (keyCheck case Left(value: final failure)) return Left(failure);
+    final keys = keyCheck.toNullable()!;
     // Removed series stay in periodicalByUid for issue cover fallback (D8),
     // but only live series publish a top-level entry.
     final publishedPeriodicals = periodicals.where((p) => !p.removed).toList();
@@ -239,6 +254,7 @@ final class CatalogueSectionBuilder {
           redactForPublish(
             book,
             availability: _availabilityFor(book, activeLoanCounts),
+            resolveKey: (b) => keys[b.id],
             resolveCoverUrl: (b) {
               final series = periodicalByUid[b.issue?.periodicalUid];
               final resolved = IssueCover.resolve(b, series);
@@ -390,10 +406,40 @@ final class CatalogueSectionBuilder {
     );
   }
 
+  /// The inline tag, through the ONE rule (`isBookUnavailable`, ADR 0019
+  /// Decision 1, plan A.6 #18). `notAvailableItemIds` uses the same function,
+  /// so the inline tag and `availability.json` agree for the same counts.
+  /// Null counts (vault locked) publish no tag, never "available".
   static String? _availabilityFor(CatalogueItem book, Map<int, int>? counts) {
     if (counts == null) return null;
-    final active = counts[book.id] ?? 0;
-    return active >= book.copyCount ? PublishItem.out : PublishItem.available;
+    return isBookUnavailable(
+          bookId: book.id,
+          copyCount: book.copyCount,
+          activeCounts: counts,
+        )
+        ? PublishItem.out
+        : PublishItem.available;
+  }
+
+  /// The key of every live item, or the fixed refusal when one is missing,
+  /// malformed, or shared with another item.
+  ///
+  /// The caller computed [itemKeys] with `PublishItemKeys.keysFor`, which
+  /// already guarantees all three. Checking again here keeps the guarantee
+  /// with the ONE `books.json` builder, whoever calls it.
+  static Either<Failure, Map<int, String>> _liveKeys(
+    List<CatalogueItem> library,
+    Map<int, String> itemKeys,
+  ) {
+    final keys = <int, String>{};
+    for (final item in library) {
+      final key = itemKeys[item.id];
+      if (key == null || !PublishItemKeys.isValidKey(key)) {
+        return const Left(ValidationFailure(PublishItemKeys.collisionMessage));
+      }
+      keys[item.id] = key;
+    }
+    return PublishItemKeys.requireUnique(keys);
   }
 
   /// True when [resolved] (the output of `IssueCover.resolve`) is [book]'s
