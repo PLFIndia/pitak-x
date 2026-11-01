@@ -1,6 +1,6 @@
 # Publish optimisation — implementation plan
 
-- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements in Appendix A are still empty: they need a real phone. Nothing from Phase 1 onward has started.
+- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are partly captured — see `publishOptimisation_HANDOFF.md` §3 for the verbatim lines, §4 for two open defects, §5 for what is left. Nothing from Phase 1 onward has started.
 - **Branch:** `publishOptimisation`, created 2026-11-01 from `03313a3` (release 1.9.0+32). That commit is the tip of the `cloudflare` branch, not of `main` (see A.6 #1).
 - **Scope, in order:** Phase 0 measure → Phase 1 availability fast lane → Phase 2 cover work avoidance (three fixes) → Phase 3 publish speed. Catalogue chunking is designed but deferred (Part I).
 - **Product decisions:** recorded in A.3 (product owner, 2026-11-01).
@@ -795,14 +795,14 @@ Fill in during S0 (before) and after each phase. Each cell holds the total time 
 
 How to capture a row (S0): run the instrumented AOT build (B.1), do the scenario, and copy the `publish timings …` line from `adb logcat`. One publish writes one line; nothing is logged in any other build.
 
-**Status:** empty — S0 needs the phone. The code side (timings, sink, seeder) is done and committed.
+**Status:** partly filled from the 2026-11-01 device session; the verbatim log lines, the interpretation and the remaining rows are in `publishOptimisation_HANDOFF.md`.
 
 | Scenario | Host | Before (S0) | After Phase 1 | After Phase 2 | After Phase 3 |
 |---|---|---|---|---|---|
-| Unchanged republish, 80 books | GitHub | | | | |
-| Unchanged republish, 80 books | Cloudflare | | | | |
-| Add 1 book + cover, 80 books | GitHub | | | | |
-| Add 1 book + cover, 80 books | Cloudflare | | | | |
+| Unchanged republish, 80 books | GitHub | pending (move, not an unchanged run) | | | |
+| Unchanged republish, 80 books | Cloudflare | total 23,969 ms: coverDecisions 882 ms (1 read), build 932 ms, upload 3,473 ms (1,795 B), deploy 1,837 ms, readBack 6,401 ms (1 round) — head not yet marked in that build | | | |
+| Add 1 book + cover, 80 books | GitHub | total 57,307 ms: reads 434 ms, reconcile 6,526 ms, coverDecisions 1,318 ms (1 read), build 1,324 ms, commit 7,218 ms (30,065 B), readBack 41,720 ms (8 rounds) | | | |
+| Add 1 book + cover, 80 books | Cloudflare | total 26,514 ms: coverDecisions 1,208 ms (1 read), build 1,236 ms, upload 6,552 ms (43,321 B), deploy 1,329 ms, readBack 6,461 ms (1 round) | | | |
 | Add 1 book + cover, 1,000-item fixture | GitHub | | | | |
 | Add 1 book + cover, 1,000-item fixture | Cloudflare | | | | |
 | Lend → visible on the site | GitHub | n/a | | | |
