@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S2 complete, 2026-11-01)
+# Publish optimisation — handoff (S3 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -6,12 +6,15 @@
 S1 — ADR 0019 — **complete; accepted by the product owner 2026-11-01** (§0).
 S2 — Domain — **complete** (§S2), started on the product owner's go-ahead
 the same day.
-**S3 — Writer — has NOT started. Do not start it until the product owner
-explicitly says so** (§6 is the prepared checklist).
+S3 — Writer — **complete** (§S3), started on the product owner's go-ahead
+("go ahead for next session", 2026-11-02).
+**S4 (GitHub path) and S5 (Cloudflare path) have NOT started. Do not start
+them until the product owner explicitly says so** (§6 is the prepared
+checklist).
 
-> Read this file first in any new session. §S2 is the newest state, §0 the S1
-> state. §1–§5 are the S0 record (plan Appendix A cites the verbatim lines in
-> §3), kept unchanged.
+> Read this file first in any new session. §S3 is the newest state, then §S2,
+> then §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
+> lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -21,6 +24,111 @@ explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S3 — Writer (code; one change visible on published sites)
+
+**What changed on a published site:** every item in `books.json` now has a
+`key` (16 lower-case hex characters, right after `kind`). Nothing else in
+`books.json` changed, and **no site gets `availability.json`**: the lane still
+counts as off. Older readers ignore the new field. Nothing changed in the app's
+screens.
+
+**What the code does now:**
+
+- **Keys** (A.6 #32). `PublishSnapshotBuilder` takes `PublishItemKeys` (DI:
+  `PublishItemKeys(coverIds.saltStore)`, the same store instance as the cover
+  names) and calls `keysFor` once per build, before any cover is read.
+  `CatalogueSectionBuilder.build(itemKeys:)` re-checks completeness, shape and
+  uniqueness, then feeds them through `redactForPublish(resolveKey:)` (now a
+  required parameter). Others carry a key too (plan C.1; ADR 0013 O2's set
+  plus `key`, documented in the redaction header and ARCHITECTURE §5.7).
+  **Every catalogue publish now reads the salt**, also without covers; an
+  unreadable salt stops it with "Pitak could not read its publishing key.
+  Nothing was published."
+- **Inline tag through the one rule** (A.6 #18): `_availabilityFor` calls
+  `isBookUnavailable`. Pinned by a `copyCount: 0` test (old code said "out").
+- **The out-set**: `application/availability/not_available_items.dart`,
+  `notAvailableItemIds({items, activeCounts})` — live, not Other, all copies
+  out, through `isBookUnavailable`.
+- **The availability section**: `application/site/availability_section_builder.dart`.
+  `encodeAvailabilityJsonBytes` (compact, the one encoder);
+  `AvailabilitySectionBuilder.write({snapshot, previous})` (one file, upload
+  only when the sha changed) and `.removal({previous})` (the exact deletion, or
+  null when the record does not show the file).
+- **The request** (A.6 #33): sealed `AvailabilityRequest`
+  (`domain/availability/availability_request.dart`) =
+  `AvailabilityFromLoanCounts` | `AvailabilityRemoval`. New strict read
+  `PublishReads.availability()`, read for every operation, carried in
+  `PublishInputs.availability`. **`PublishController.availability()` returns
+  `AvailabilityRemoval` until S6.** The snapshot builder turns it into
+  `PublishSnapshot.availability`:
+  - from loan counts: only with a catalogue and known counts, from the same
+    counts and key map as the inline tag, `asOf` = this publish's time floored
+    to the minute (A.6 #34); a locked vault leaves the live file alone; more
+    than 50,000 out fails closed (`availabilityUnpublishableMessage`);
+  - removal: the deletion when the record shows the file, for any publish
+    (catalogue or Cloudflare events).
+- **`PublishSnapshot`**: `availability` section (last in `sections`) and
+  `writesKeyedCatalogue` (A.6 #39).
+- **Digest**: `availability.json`'s `asOf` is volatile like `exportedAt`
+  (AV18).
+- **GitHub**: `mergeSections` (domain, A.6 #38) folds the catalogue and the
+  availability section into ONE commit; `afterCommit(wroteKeyedCatalogue:
+  snapshot.writesKeyedCatalogue)`. The combined commit is still proven through
+  `books.json` (S4 adds the proof path). The GitHub **move** passes
+  `wroteKeyedCatalogue` too and carries `availability.json` when the snapshot
+  has it.
+- **Cloudflare** (A.6 #36/#37): the assembler lets the availability section
+  ride along with the requested section (catalogue or events), calls
+  `afterDeploy` on a receiver carrying the previous files and flag, and sets
+  `wroteKeyedCatalogue` when the deploy carries the keyed catalogue (ordinary
+  deploys, replacements and moves). The read-back set now includes
+  `availability.json` (its bytes when recorded, its exact 404 after a removal),
+  also in the existing-publication check and retry verification.
+- **Docs**: ARCHITECTURE §5.7 key sets gain `key` (A.6 #40).
+
+**Characterization** (A.6 #41): `catalogue_section_builder_test.dart` now pins
+the exact `books.json` text through the production encoder. The pre-S3 builder
+(a throwaway worktree of `f8793bf`) produced exactly the new text minus the two
+`"key"` lines.
+
+**Tests added or extended:** `not_available_items_test.dart`,
+`availability_section_builder_test.dart` (new); key, inline-rule and
+exact-bytes groups in `catalogue_section_builder_test.dart`; `mergeSections`
+group in `section_merge_test.dart`; keys-and-availability group in
+`publish_snapshot_builder_test.dart`; `asOf` group in
+`publish_snapshot_digest_test.dart`; S3 groups in
+`publish_library_use_case_test.dart`, `publish_controller_test.dart`,
+`cloudflare_publish_artifacts_test.dart`, `cloudflare_publication_verifier_test.dart`,
+`publish_to_cloudflare_use_case_test.dart`; assertions in both move-destination
+tests; the C.2 item 6 file-set test in `cloudflare_site_manifest_test.dart`.
+The controller harness's salt now always answers (keys need it); with
+`saltAvailable: false` it fails like unreadable secure storage.
+
+**Gates at the end of S3 (2026-11-02, macOS):**
+
+- build_runner: only the two provider source hashes changed
+  (`publish_providers.g.dart`, `publish_controller.g.dart`); committed with
+  the source.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed`: 0 changed.
+- `flutter test --coverage`: **4,810 passed** (S2 ended at 4,752), plus the
+  3 tests of `availability_request_test.dart` added afterwards. The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`;
+  a clean worktree of `f8793bf` fails exactly the same 10 (checked by name).
+  Goldens are regenerated only by the Linux workflow.
+- Line coverage: the three new files 100 %; `publish_snapshot.dart`,
+  `publish_export.dart`, `publish_redaction.dart` 100 %; the other touched
+  files 90–99 %. Every missed line is an older failure branch, except the
+  unreachable `coverSourceFor` of `mergeSections`' private record view.
+- File sizes ≤ 500 (largest touched: the two use cases at 478).
+- Rust untouched.
+
+**Line budgets to remember (G5):** `publish_library_use_case.dart` is at
+**478** lines and `publish_to_cloudflare_use_case.dart` at **478**. S4's proof
+path and S5's section inputs must go into collaborators.
 
 ---
 
@@ -334,46 +442,70 @@ throwaway repo.
 
 ---
 
-## 6. Next: S3 — Writer (on hold until the product owner says go)
+## 6. Next: S4 (GitHub) and S5 (Cloudflare) — on hold until the product owner says go
 
-Plan Part F, S3 = C.2: `key` in `books.json`, the availability section
-builder, and the combined catalogue + availability publish on both hosts
-(tests only; the lane is not started). Update the `books.json`
-characterization bytes deliberately (keys added, nothing else changed).
+Both depend only on S3, so either may come first. The S3 checklist that stood
+here is done; §S3 records how each item landed.
 
-Carry these from S2 (they are easy to miss in the plan's original wording):
+**S4 — GitHub path (plan C.5).**
 
-- **Keys:** resolve them with `PublishItemKeys.keysFor(all live ids)` before
-  any artifact is written (like cover decisions). A `Left` stops the publish
-  with its fixed message. Feed them through `redactForPublish` (C.2 item 3).
-- **Inline tag through the one rule** (A.6 #18):
-  `CatalogueSectionBuilder._availabilityFor` must call `isBookUnavailable`.
-- **`availability.json` bytes:** one compact encoder in the application
-  builder, `utf8.encode(jsonEncode(AvailabilityDocument(snapshot).toJson()))`
-  (no indent; the `books.json` encoder indents, so do not reuse it).
-- **Set the flag where a keyed `books.json` is written:**
-  - GitHub catalogue commits: `afterCommit(wroteKeyedCatalogue: true)`.
-  - Cloudflare deploys that built the catalogue section:
-    `afterDeploy(wroteKeyedCatalogue: true)`.
-  - **Watch out:** the Cloudflare assembler calls `afterDeploy` on a FRESH
-    `CloudflareSiteManifest(target:, liveId:)`
-    (`cloudflare_publish_artifacts.dart`, near the end of `assemble`). With
-    that receiver the flag can never carry over an unchanged `books.json`, so
-    carry `catalogueKeyed` from the previous record when an
-    availability-only deploy (S5) leaves `books.json` alone.
-  - The GitHub move destination writes a keyed `books.json` from S3 on, so it
-    should pass `wroteKeyedCatalogue: true` too.
-- **Lane off while the record shows `availability.json`** (A.6 #20): any
-  publish deletes it in the same commit or deploy. The section's
-  `deletePaths: ['availability.json']` goes through `mergeSection`, which
-  already allows only the owning section to delete it (tested in
-  `site_section_ownership_test.dart`).
-- **Proof path:** not S3. `afterCommit` still sets none; S4 adds the
-  parameter and changes `PublishVerificationCheck`. Legacy null → the
-  per-section file.
-- **J9** (restore of another library) needs a decision before S6's gates;
-  do not forget it.
-- Every gate in `AGENTS.md` §11 must be green at the end (CI runs
-  `flutter analyze lib test integration_test`; a bare `dart analyze` also
-  scans the vendored `rust_builder/cargokit`, whose old findings are not
-  ours). Commit messages use Conventional Commits.
+- `PublishAvailabilityUseCase`, modelled on `PublishEventsUseCase`: reconcile
+  → gates → section → `mergeSections` → `commitFiles(expectedHead)` → save
+  `deployed` with a proof path → return "going live". No Pages polling inside
+  the queue.
+- **Gate 7b on GitHub is already in the record:** `reconciledFrom` drops
+  `catalogueKeyed` unless the head tree's `books.json` equals the recorded
+  one, so "the reconciled record is keyed" is the whole GitHub half.
+- **Build the section from the lane's saved snapshot** with
+  `AvailabilitySectionBuilder.write(snapshot:, previous: reconciled)`, or
+  `.removal(previous:)` when the switch is off. If the file is unchanged
+  (`upload == false`) and nothing else changes, do not commit at all.
+- **Proof path:** add `afterCommit(proofPath:)`. Catalogue (combined
+  included) → `booksJson`; events → `eventsJson`; availability →
+  `availabilityJson`; removal → `availabilityJsonAbsent`.
+  `PublishVerificationCheck` reads the path and expected sha from the record
+  (legacy null → today's per-section constant); a removal needs the
+  structured reader for the exact 404. Add the A.1 item 8 regression test.
+- `DeferredPublishVerification` (shared with SP1): first read at 30 s, then
+  every 10 s, up to 150 s; polls until the expected state; never
+  "contradicted"; upgrades only an unchanged `deployed` record.
+- Add `PublishRequestedSection.availability` and the lane outcomes now
+  (A.6 #35).
+- **Line budget:** `publish_library_use_case.dart` is at 478. Put the proof
+  path selection and the pre-check in a collaborator.
+
+**S5 — Cloudflare path (plan C.6).**
+
+- An availability-only snapshot is `PublishSnapshot(availability: section)`
+  assembled with `onlySection: SiteSection.availability`. The S3 assembler
+  already accepts it, carries every other file by its recorded hash and keeps
+  `catalogueKeyed` (the events-deploy test proves the carry rule).
+- Section inputs go into the new `cloudflare_section_inputs.dart`:
+  `publish_to_cloudflare_use_case.dart` is at 478.
+- `CloudflareReadBackScope.availabilityOnly`: the fresh marker plus
+  `availability.json` (or its 404), first round immediately. The ordinary set
+  already includes `availability.json` since S3 (A.6 #36).
+- **The lane never replaces a site.** Today a missing bucket hash makes the
+  use case return `PublishReplacementRequired` (`prepareResult`). The
+  availability path must map that, and an unknown, foreign or retired marker,
+  to "pending: Open Publish to web to repair the site" without calling the
+  replacement preparation.
+- Gate 7b on Cloudflare: the live marker is this phone's own and the record
+  has `catalogueKeyed`.
+
+**For S6 (do not lose these):**
+
+- `PublishController.availability()` must read the switch and return
+  `AvailabilityFromLoanCounts` when the lane is on (it returns
+  `AvailabilityRemoval` until then).
+- **The GitHub events publish does not build snapshots**, so it does not get
+  the removal rule from `PublishReads.availability()` (A.6 #33). S6 must give
+  it the same rule.
+- AV18 when the vault is locked during a move: `AvailabilityFromLoanCounts`
+  can gain a `saved` snapshot field (the type is sealed for exactly this).
+- **J9** (restore of another library) needs its decision before S6's gates.
+
+Every gate in `AGENTS.md` §11 must be green at the end (CI runs
+`flutter analyze lib test integration_test`; a bare `dart analyze` also scans
+the vendored `rust_builder/cargokit`, whose old findings are not ours).
+Commit messages use Conventional Commits.
