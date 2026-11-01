@@ -34,6 +34,7 @@ import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -77,6 +78,7 @@ final class PublishLibraryUseCase {
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
+    PublishTimingSink? timingSink,
   }) : _api = api,
        _credentials = credentials,
        _manifest = manifest,
@@ -85,7 +87,8 @@ final class PublishLibraryUseCase {
        _hostState = hostState,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
-       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
+       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
+       _timingSink = timingSink;
 
   final GitHubGitDataApi _api;
   final PublishCredentialReader _credentials;
@@ -108,6 +111,11 @@ final class PublishLibraryUseCase {
   final PublishedSiteVerifier? _verifier;
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
+
+  /// Publish-timings sink (plan S0). Null in every normal build, so no stage
+  /// is timed and nothing is logged; only `--dart-define=publishTimings=true`
+  /// supplies one.
+  final PublishTimingSink? _timingSink;
 
   /// Repo-relative path of the network descriptor (docs/ARCHITECTURE.md §5.1).
   static const String libraryJsonPath = CatalogueSectionBuilder.libraryJsonPath;
@@ -136,9 +144,43 @@ final class PublishLibraryUseCase {
     PublishMode mode = PublishMode.incremental,
     void Function(PublishPhase)? onPhase,
   }) async {
+    // Plan S0: ONE recorder per publish. A null sink (release builds) turns the
+    // whole recorder into a no-op, so no timing code runs there. `finally`
+    // guarantees the line is emitted even when the publish fails early — a
+    // failed publish is where the wasted time usually is.
+    final timings = PublishTimingRecorder(
+      sink: _timingSink,
+      operation: 'catalogue',
+      clock: _clock,
+    );
+    try {
+      return await _run(
+        target: target,
+        mode: mode,
+        onPhase: onPhase,
+        timings: timings,
+      );
+    } finally {
+      timings.finish();
+    }
+  }
+
+  /// The publish pipeline itself.
+  ///
+  /// Timing note (plan S0): each stage is marked once, on its happy path, so a
+  /// publish that fails early reports only the stages that actually ran. The
+  /// marks never change behaviour — no wait, no read and no write depends on
+  /// them.
+  Future<PublishResult> _run({
+    required GitHubPublishTarget target,
+    required PublishMode mode,
+    required void Function(PublishPhase)? onPhase,
+    required PublishTimingRecorder timings,
+  }) async {
     void phase(PublishPhase p) => onPhase?.call(p);
     phase(PublishPhase.preparing);
 
+    final readStartedAt = timings.begin();
     final read = await _snapshotBuilder.read(
       reads: _reads,
       target: target,
@@ -146,6 +188,7 @@ final class PublishLibraryUseCase {
       // own publish (fix-plan L6 reads exactly what is requested).
       sections: const {SiteSection.catalogue},
     );
+    timings.end(PublishTimingStage.reads, readStartedAt);
     final inputs = read.toNullable();
     if (inputs == null) {
       // A failed read is never "empty content": nothing is built or written.
@@ -165,6 +208,7 @@ final class PublishLibraryUseCase {
 
     // N09 (D2-a): commit to the branch Pages actually serves. Publishing to
     // any other branch would "succeed" without changing the live site.
+    final reconcileStartedAt = timings.begin();
     final String branch;
     try {
       final site = await _api.pagesSite(owner: owner, repo: repo, token: token);
@@ -207,6 +251,7 @@ final class PublishLibraryUseCase {
       maxBytes: publishedCatalogueReadBackMaxBytes,
       revision: now,
     );
+    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
     if (verification == PublishVerificationOutcome.contradicted) {
       return const PublishFailure(gitHubSiteChangedSincePublishMessage);
     }
@@ -216,12 +261,16 @@ final class PublishLibraryUseCase {
     // the merge can never disagree. A typed failure here means NOTHING was
     // written. The catalogue section owns no poster path, so a catalogue
     // publish can never delete one (R7).
+    final buildStartedAt = timings.begin();
     final built = await _snapshotBuilder.build(
       inputs: inputs,
       previous: previous,
       now: now,
       mode: mode,
+      // Plan S0: the builder marks `coverDecisions` (nested inside this mark).
+      timing: timings,
     );
+    timings.end(PublishTimingStage.build, buildStartedAt);
     final snapshot = built.toNullable();
     if (snapshot == null) {
       return PublishFailure(_messageFor(built.swap().toNullable()!));
@@ -242,6 +291,14 @@ final class PublishLibraryUseCase {
       section.hasUploads ? PublishPhase.uploading : PublishPhase.committing,
     );
 
+    // Bytes this commit will really upload: a file reused from the record
+    // contributes nothing (plan S0 records the number, it never changes it).
+    final uploadBytes = timings.enabled
+        ? merge.files
+              .where((f) => f.upload)
+              .fold<int>(0, (sum, f) => sum + f.bytes.length)
+        : null;
+    final commitStartedAt = timings.begin();
     final PublishCommitResult result;
     try {
       result = await _api.commitFiles(
@@ -266,6 +323,9 @@ final class PublishLibraryUseCase {
       // Fixed message (§5): exception text can embed URLs/response detail.
       return const PublishFailure(gitHubNetworkErrorMessage);
     }
+    // GitHub uploads blobs inside commitFiles, so one mark carries both the
+    // upload and the commit (`bytes` says how much of it was upload).
+    timings.end(PublishTimingStage.commit, commitStartedAt, bytes: uploadBytes);
 
     switch (result) {
       case PublishCommitStale():
@@ -289,11 +349,19 @@ final class PublishLibraryUseCase {
         final booksJson = merge.files
             .firstWhere((f) => f.path == CatalogueSectionBuilder.booksJsonPath)
             .bytes;
+        final readBackStartedAt = timings.begin();
+        var readBackRounds = 0;
         final pagesLive = await _readBack(
           siteUrl: pagesUrl,
           path: CatalogueSectionBuilder.booksJsonPath,
           expected: booksJson,
           revision: now,
+          onRound: timings.enabled ? (round) => readBackRounds = round : null,
+        );
+        timings.end(
+          PublishTimingStage.readBack,
+          readBackStartedAt,
+          rounds: timings.enabled ? readBackRounds : null,
         );
         if (pagesLive ?? false) {
           // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). If the live
@@ -374,6 +442,7 @@ final class PublishLibraryUseCase {
     required String path,
     required List<int> expected,
     required int revision,
+    void Function(int round)? onRound,
   }) async {
     final verifier = _verifier;
     if (verifier == null) return null;
@@ -382,6 +451,7 @@ final class PublishLibraryUseCase {
       path: path,
       expected: expected,
       revision: revision,
+      onRound: onRound,
     );
   }
 }

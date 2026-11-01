@@ -36,6 +36,7 @@ import 'package:pitaka/features/publish/application/publish_library_use_case.dar
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
 import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -112,6 +113,7 @@ final class PublishEventsUseCase {
     PublishedSiteVerifier? verifier,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
+    PublishTimingSink? timingSink,
   }) : _api = api,
        _target = target,
        _credentials = credentials,
@@ -125,7 +127,8 @@ final class PublishEventsUseCase {
        _hostState = hostState,
        _verifier = verifier,
        _sleep = sleep ?? Future<void>.delayed,
-       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
+       _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
+       _timingSink = timingSink;
 
   final GitHubGitDataApi _api;
 
@@ -144,6 +147,10 @@ final class PublishEventsUseCase {
   final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
+  /// Publish-timings sink (plan S0). Null in every normal build; only
+  /// `--dart-define=publishTimings=true` supplies one.
+  final PublishTimingSink? _timingSink;
+
   /// Repo path of the catalogue page whose presence proves "already published".
   static const String _catalogueMarker = 'index.html';
 
@@ -155,6 +162,26 @@ final class PublishEventsUseCase {
   Future<PublishEventsResult> call(
     EventsContent content, {
     PublishMode mode = PublishMode.incremental,
+  }) async {
+    // Plan S0: one recorder per publish; a null sink (release builds) makes
+    // every mark a no-op. `finally` emits the line on failure paths too.
+    final timings = PublishTimingRecorder(
+      sink: _timingSink,
+      operation: 'events',
+      clock: _clock,
+    );
+    try {
+      return await _run(content, mode: mode, timings: timings);
+    } finally {
+      timings.finish();
+    }
+  }
+
+  /// The events pipeline itself (timing marks only — no behaviour change).
+  Future<PublishEventsResult> _run(
+    EventsContent content, {
+    required PublishMode mode,
+    required PublishTimingRecorder timings,
   }) async {
     final token = await _credentials.token();
     if (token == null) {
@@ -170,6 +197,7 @@ final class PublishEventsUseCase {
 
     // N09 (D2-a): commit to the branch Pages actually serves (see the
     // catalogue use case for the reasoning).
+    final reconcileStartedAt = timings.begin();
     final String branch;
     try {
       final site = await _api.pagesSite(owner: owner, repo: repo, token: token);
@@ -207,6 +235,7 @@ final class PublishEventsUseCase {
       siteUrl: target.siteUrl,
       revision: _clock(),
     );
+    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
     if (verification == PublishVerificationOutcome.contradicted) {
       return const PublishEventsFailure(gitHubSiteChangedSincePublishMessage);
     }
@@ -222,12 +251,14 @@ final class PublishEventsUseCase {
     // Build the section with the SHARED builder: one filtered poster list
     // feeds HTML, JSON and the uploads, so unreadable posters can never
     // appear in one representation but not another.
+    final buildStartedAt = timings.begin();
     final built = await _section.build(
       content: content,
       settings: _settings,
       previous: manifest,
       mode: mode,
     );
+    timings.end(PublishTimingStage.build, buildStartedAt);
     final failure = built.swap().toNullable();
     if (failure != null) {
       return PublishEventsFailure(switch (failure) {
@@ -239,6 +270,12 @@ final class PublishEventsUseCase {
     final merge = mergeSection(previous: manifest, section: section);
 
     final now = _clock();
+    final uploadBytes = timings.enabled
+        ? merge.files
+              .where((f) => f.upload)
+              .fold<int>(0, (sum, f) => sum + f.bytes.length)
+        : null;
+    final commitStartedAt = timings.begin();
     final PublishCommitResult result;
     try {
       result = await _api.commitFiles(
@@ -263,6 +300,7 @@ final class PublishEventsUseCase {
       // Fixed message (§5): exception text can embed URLs/response detail.
       return const PublishEventsFailure(gitHubNetworkErrorMessage);
     }
+    timings.end(PublishTimingStage.commit, commitStartedAt, bytes: uploadBytes);
 
     switch (result) {
       case PublishCommitStale():
@@ -289,6 +327,8 @@ final class PublishEventsUseCase {
             .firstOrNull
             ?.bytes;
         if (verifier != null && eventsJson != null) {
+          final readBackStartedAt = timings.begin();
+          var readBackRounds = 0;
           pagesLive =
               await PublishedFileReadBack(
                 verifier: verifier,
@@ -298,7 +338,15 @@ final class PublishEventsUseCase {
                 path: EventsSectionBuilder.eventsJsonPath,
                 expected: eventsJson,
                 revision: now,
+                onRound: timings.enabled
+                    ? (round) => readBackRounds = round
+                    : null,
               );
+          timings.end(
+            PublishTimingStage.readBack,
+            readBackStartedAt,
+            rounds: timings.enabled ? readBackRounds : null,
+          );
           if (pagesLive ?? false) {
             // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). The
             // successful live record supersedes an earlier deployed-save

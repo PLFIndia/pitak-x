@@ -9,7 +9,6 @@ library;
 
 import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
-import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_artifact_store.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_deploy_pipeline.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_existing_publication_check.dart';
@@ -24,6 +23,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verifi
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
@@ -56,6 +56,7 @@ final class PublishToCloudflareUseCase {
     required CloudflareVerifiedStateCommit verifiedCommit,
     required int Function() clock,
     String Function()? publishId,
+    PublishTimingSink? timingSink,
   }) : _deployApi = deployApi,
        _credentials = credentials,
        _manifest = manifest,
@@ -69,7 +70,8 @@ final class PublishToCloudflareUseCase {
        _verifier = verifier,
        _verifiedCommit = verifiedCommit,
        _clock = clock,
-       _publishId = publishId ?? PublishMarker.generatePublishId;
+       _publishId = publishId ?? PublishMarker.generatePublishId,
+       _timingSink = timingSink;
 
   final CloudflareDeployApi _deployApi;
   final CloudflareCredentialStore _credentials;
@@ -86,6 +88,10 @@ final class PublishToCloudflareUseCase {
   final int Function() _clock;
   final String Function() _publishId;
 
+  /// Publish-timings sink (plan S0). Null in every normal build; only
+  /// `--dart-define=publishTimings=true` supplies one.
+  final PublishTimingSink? _timingSink;
+
   /// Runs with the queue already held. [confirmation] is the exact summary
   /// returned earlier; changed content produces a new summary instead of using
   /// stale bytes. [verificationOnly] can never create an upload or deployment.
@@ -100,6 +106,13 @@ final class PublishToCloudflareUseCase {
     final snapshotBuilder = _snapshotBuilder.withArtifactSink(sink);
     final replacement = _replacement.withArtifactStore(store);
     final progress = CloudflarePublishOperationProgress();
+    // Plan S0: ONE recorder for the whole Cloudflare publish, so the log line
+    // carries the build, upload, deploy and read-back marks together.
+    final timings = PublishTimingRecorder(
+      sink: _timingSink,
+      operation: 'cloudflare',
+      clock: _clock,
+    );
     PublishResult? result;
     try {
       result = await _run(
@@ -111,50 +124,16 @@ final class PublishToCloudflareUseCase {
         snapshotBuilder: snapshotBuilder,
         replacement: replacement,
         progress: progress,
-      );
-    } on CloudflareApiException catch (error, stackTrace) {
-      // Debug builds only (appLog): which API stage failed, never secrets.
-      appLog(
-        CloudflarePublishOutcomes.apiFailureDiagnostic(
-          error,
-          progress,
-          stackTrace,
-        ),
-      );
-      result = PublishFailure(
-        CloudflarePublishOutcomes.transport(
-          error,
-          assetBytesMayHaveUploaded: progress.assetBytesMayHaveUploaded,
-          deployStarted: progress.deployStarted,
-          deployAccepted: progress.deployAccepted,
-        ),
-        canRetryVerification: CloudflarePublishOutcomes.retryableAfter(
-          deployStarted: progress.deployStarted,
-          deployAccepted: progress.deployAccepted,
-        ),
+        timings: timings,
       );
     } on Exception catch (error, stackTrace) {
-      // Type and stage only: a thrown bug must be visible in debug builds
-      // without its message (which may hold response text or a path).
-      appLog(
-        CloudflarePublishOutcomes.unexpectedDiagnostic(
-          error,
-          progress,
-          stackTrace,
-        ),
-      );
-      result = PublishFailure(
-        CloudflarePublishOutcomes.unexpected(
-          assetBytesMayHaveUploaded: progress.assetBytesMayHaveUploaded,
-          deployStarted: progress.deployStarted,
-          deployAccepted: progress.deployAccepted,
-        ),
-        canRetryVerification: CloudflarePublishOutcomes.retryableAfter(
-          deployStarted: progress.deployStarted,
-          deployAccepted: progress.deployAccepted,
-        ),
-      );
+      // One mapping for every thrown error (plan S0/G5): type and stage only,
+      // never a message, a token or a response body.
+      result = CloudflarePublishOutcomes.thrown(error, stackTrace, progress);
     } finally {
+      // Plan S0: emit the timings line before the spool cleanup, so the
+      // numbers describe the publish, not the cleanup.
+      timings.finish();
       final cleanup = await store.dispose();
       if (cleanup.isLeft() && result != null) {
         result = CloudflarePublishOutcomes.cleanupFailed(result);
@@ -172,6 +151,7 @@ final class PublishToCloudflareUseCase {
     required PublishSnapshotBuilder snapshotBuilder,
     required CloudflareReplacementPreparation replacement,
     required CloudflarePublishOperationProgress progress,
+    required PublishTimingRecorder timings,
   }) async {
     if (confirmation != null &&
         (confirmation.target.targetId != target.targetId ||
@@ -339,12 +319,15 @@ final class PublishToCloudflareUseCase {
           local.entryFor(CatalogueSectionBuilder.indexHtmlPath) == null) {
         return const PublishFailure(CloudflareErrorMessages.catalogueFirst);
       }
+      final buildStartedAt = timings.begin();
       final built = await snapshotBuilder.build(
         inputs: inputs,
         previous: local,
         now: _clock(),
         mode: PublishMode.incremental,
+        timing: timings,
       );
+      timings.end(PublishTimingStage.build, buildStartedAt);
       final failure = built.swap().toNullable();
       if (failure != null) return CloudflarePublishOutcomes.failure(failure);
       snapshot = built.toNullable()!;
@@ -406,6 +389,7 @@ final class PublishToCloudflareUseCase {
       replacing: replacing,
       availabilityOmitted: snapshot.availabilityOmitted,
       progress: progress,
+      timings: timings,
     );
   }
 

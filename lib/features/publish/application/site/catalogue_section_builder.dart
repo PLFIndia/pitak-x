@@ -26,6 +26,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/issue_cover.dart';
 import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
@@ -134,6 +135,7 @@ final class CatalogueSectionBuilder {
     required PreviousPublication previous,
     required int now,
     PublishMode mode = PublishMode.incremental,
+    PublishTimingRecorder? timing,
   }) async {
     final library = books.where((b) => !b.removed).toList();
 
@@ -170,6 +172,12 @@ final class CatalogueSectionBuilder {
     // the series entry and every issue that falls back to it — `IssueCover`
     // resolves WHICH source an entry shows, the decider decides where that
     // source's bytes live.
+    //
+    // Plan S0: this is the stage that re-processes EVERY local cover on every
+    // publish today, so it gets its own timing mark with the two counts that
+    // matter (covers whose bytes had to be produced, versus covers reused from
+    // the record). A null recorder makes the mark a no-op.
+    final coverStartedAt = timing?.begin();
     final coverDecisions = <int, CoverDecision>{};
     final periodicalCoverDecisions = <String, CoverDecision>{};
     Future<CoverDecision> decidePeriodicalCover(Periodical series) async {
@@ -207,6 +215,19 @@ final class CatalogueSectionBuilder {
       if ((series.coverUrl?.trim() ?? '').isNotEmpty) {
         await decidePeriodicalCover(series);
       }
+    }
+
+    if (timing != null) {
+      final decisions = <CoverDecision>[
+        ...coverDecisions.values,
+        ...periodicalCoverDecisions.values,
+      ];
+      timing.end(
+        PublishTimingStage.coverDecisions,
+        coverStartedAt,
+        coversRead: decisions.where((d) => d.bytes != null).length,
+        coversReused: decisions.where((d) => d.reuseSha != null).length,
+      );
     }
 
     if (missingCover case final failure?) return Left(failure);

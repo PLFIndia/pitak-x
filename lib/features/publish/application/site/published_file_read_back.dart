@@ -79,8 +79,12 @@ final class PublishedFileReadBack {
     required String path,
     required List<int> expected,
     required int revision,
+    void Function(int round)? onRound,
   }) async {
     for (var attempt = 0; attempt < attempts; attempt++) {
+      // Plan S0: report the round count to the debug-only publish timings.
+      // A null callback (release builds) makes this a no-op.
+      onRound?.call(attempt + 1);
       await _sleep(interval);
       // Origin-bound, redirect-free, capped at exactly the expected size.
       final body = await _verifier.read(

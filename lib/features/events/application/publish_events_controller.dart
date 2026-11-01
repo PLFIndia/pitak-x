@@ -154,6 +154,8 @@ class PublishEventsController extends _$PublishEventsController {
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),
       verifier: verifier,
+      // Debug-only timings (plan S0); null in release builds.
+      timingSink: ref.read(publishTimingSinkProvider),
     );
 
     final result = await useCase.call(content);

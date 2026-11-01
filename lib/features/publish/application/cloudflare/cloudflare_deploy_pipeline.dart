@@ -18,6 +18,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_verifi
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_version_url_gate.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
@@ -62,6 +63,11 @@ final class CloudflareDeployPipeline {
   ///
   /// [initial] is the preflight the operation was prepared against; it is
   /// compared with a fresh read immediately before the deploy.
+  ///
+  /// [timings] is the CALLER's recorder (plan S0, instrumented builds only):
+  /// the Cloudflare use case owns it, so one publish produces one log line
+  /// carrying this pipeline's upload / deploy / read-back marks. Null ⇒ no
+  /// timing at all.
   Future<PublishResult> run({
     required CloudflareConnection connection,
     required CloudflarePublishTarget target,
@@ -73,6 +79,7 @@ final class CloudflareDeployPipeline {
     required bool replacing,
     required bool availabilityOmitted,
     required CloudflarePublishOperationProgress progress,
+    PublishTimingRecorder? timings,
   }) async {
     final token = connection.useToken((value) => value);
     final gate = CloudflareVersionUrlGate(deployApi: _deployApi);
@@ -128,6 +135,7 @@ final class CloudflareDeployPipeline {
       return CloudflarePublishOutcomes.failure(baselineFailure);
     }
     final baseline = baselineResult.toNullable()!;
+    final uploadStartedAt = timings?.begin();
     final upload = await CloudflareBucketUploader(_deployApi).upload(
       accountId: target.accountId,
       session: session,
@@ -162,6 +170,16 @@ final class CloudflareDeployPipeline {
       for (final hash in uploaded.uploadedHashes)
         ...publication.pathsForHash(hash),
     ];
+    if (timings != null) {
+      timings.end(
+        PublishTimingStage.upload,
+        uploadStartedAt,
+        bytes: uploaded.uploadedHashes.fold<int>(
+          0,
+          (sum, hash) => sum + (publication.assetForHash(hash)?.size ?? 0),
+        ),
+      );
+    }
 
     final last = await _preflight.call(
       token: token,
@@ -210,6 +228,7 @@ final class CloudflareDeployPipeline {
       );
     }
 
+    final deployStartedAt = timings?.begin();
     progress.deployStarted = true;
     await _deployApi.deploy(
       token: token,
@@ -223,6 +242,7 @@ final class CloudflareDeployPipeline {
       ),
     );
     progress.deployAccepted = true;
+    timings?.end(PublishTimingStage.deploy, deployStartedAt);
 
     final deployedSaved = _manifest.save(publication.manifest);
     var localStateSaved = deployedSaved.isRight();
@@ -257,13 +277,25 @@ final class CloudflareDeployPipeline {
       );
     }
 
+    final readBackStartedAt = timings?.begin();
+    var readBackRounds = 0;
     final verified = await _verifier.verify(
       target: target,
       manifest: publication.manifest,
       markerBytes: publication.markerBytes,
       deletedPaths: publication.deletedPaths,
       revision: _clock(),
+      onRounds: (timings?.enabled ?? false)
+          ? (rounds) => readBackRounds = rounds
+          : null,
     );
+    if (timings != null) {
+      timings.end(
+        PublishTimingStage.readBack,
+        readBackStartedAt,
+        rounds: timings.enabled ? readBackRounds : null,
+      );
+    }
     if (verified == CloudflarePublicationVerification.verified) {
       final committed = await _verifiedCommit.call(
         connection: connection,

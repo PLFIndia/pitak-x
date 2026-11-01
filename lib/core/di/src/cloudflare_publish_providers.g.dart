@@ -123,7 +123,7 @@ final cloudflareArtifactStoresProvider =
 typedef CloudflareArtifactStoresRef =
     AutoDisposeFutureProviderRef<CloudflareArtifactStoreFactory>;
 String _$publishToCloudflareUseCaseHash() =>
-    r'1972ad58831eea4801439e651c585a09dc76eeaa';
+    r'aace9ad44e1393de8d4061572dca75a5595ad952';
 
 /// The ONE Cloudflare ordinary-publish wiring shared by catalogue and events.
 ///

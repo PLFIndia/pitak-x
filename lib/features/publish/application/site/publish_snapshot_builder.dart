@@ -18,6 +18,7 @@ import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/events/domain/entities/event_poster.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
@@ -133,6 +134,7 @@ final class PublishSnapshotBuilder {
     required PreviousPublication previous,
     required int now,
     required PublishMode mode,
+    PublishTimingRecorder? timing,
   }) async {
     final catalogueInputs = inputs.catalogue;
     PublishSection? catalogueSection;
@@ -147,6 +149,7 @@ final class PublishSnapshotBuilder {
         previous: previous,
         now: now,
         mode: mode,
+        timing: timing,
       );
       final catalogueFailure = catalogue.swap().toNullable();
       if (catalogueFailure != null) return Left(catalogueFailure);

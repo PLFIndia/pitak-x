@@ -2,6 +2,7 @@
 library;
 
 import 'package:pitaka/core/error/failure.dart';
+import 'package:pitaka/core/platform/app_log.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_error_messages.dart';
@@ -49,6 +50,51 @@ abstract final class CloudflarePublishOutcomes {
     required bool deployStarted,
     required bool deployAccepted,
   }) => deployStarted || deployAccepted;
+
+  /// Maps a THROWN error from one publish run to the honest result.
+  ///
+  /// Why this lives here (beginner note): every other "what does the user see
+  /// now" decision for Cloudflare publishing is made in this file, so the
+  /// exception policy belongs here too. It was moved out of the orchestrator
+  /// unchanged when the publish-timings work pushed that file over the
+  /// 500-line ratchet (plan S0/G5) — behaviour is identical.
+  ///
+  /// Callers catch `Exception` only: a genuine `Error` still propagates, and
+  /// the diagnostic is debug-only (`appLog`) and carries no message, token,
+  /// URL or response body.
+  static PublishResult thrown(
+    Object error,
+    StackTrace stackTrace,
+    CloudflarePublishOperationProgress progress,
+  ) {
+    if (error is CloudflareApiException) {
+      appLog(apiFailureDiagnostic(error, progress, stackTrace));
+      return PublishFailure(
+        transport(
+          error,
+          assetBytesMayHaveUploaded: progress.assetBytesMayHaveUploaded,
+          deployStarted: progress.deployStarted,
+          deployAccepted: progress.deployAccepted,
+        ),
+        canRetryVerification: retryableAfter(
+          deployStarted: progress.deployStarted,
+          deployAccepted: progress.deployAccepted,
+        ),
+      );
+    }
+    appLog(unexpectedDiagnostic(error, progress, stackTrace));
+    return PublishFailure(
+      unexpected(
+        assetBytesMayHaveUploaded: progress.assetBytesMayHaveUploaded,
+        deployStarted: progress.deployStarted,
+        deployAccepted: progress.deployAccepted,
+      ),
+      canRetryVerification: retryableAfter(
+        deployStarted: progress.deployStarted,
+        deployAccepted: progress.deployAccepted,
+      ),
+    );
+  }
 
   /// Maps a redacted transport exception using the exact operation stage.
   static String transport(

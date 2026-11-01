@@ -70,6 +70,7 @@ final class CloudflarePublicationVerifier {
     List<int> markerBytes = const [],
     List<String> deletedPaths = const [],
     CloudflareReadBackBudget budget = CloudflareReadBackBudget.afterDeploy,
+    void Function(int rounds)? onRounds,
   }) async {
     final pending = _expectations(
       manifest: manifest,
@@ -112,6 +113,9 @@ final class CloudflarePublicationVerifier {
         }
       }
     }
+    // Plan S0: hand the round count to the debug-only publish timings. A null
+    // callback (release builds) makes this a no-op.
+    onRounds?.call(attempt);
     if (pending.isEmpty) return CloudflarePublicationVerification.verified;
     return wrongContent.isEmpty
         ? CloudflarePublicationVerification.unreachable

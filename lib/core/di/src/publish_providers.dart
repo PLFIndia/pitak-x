@@ -35,6 +35,7 @@ import 'package:pitaka/features/publish/application/site/events_section_builder.
 import 'package:pitaka/features/publish/application/site/pending_move_target_guard.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_credential_store.dart';
 import 'package:pitaka/features/publish/domain/cover_fetch_result.dart';
@@ -93,6 +94,22 @@ CloudflareApi cloudflareApi(CloudflareApiRef ref) {
 @Riverpod(keepAlive: true)
 SerialOpQueue publishOperationQueue(PublishOperationQueueRef ref) =>
     SerialOpQueue();
+
+/// Publish-timings sink for an explicitly instrumented build (plan S0).
+///
+/// Why a provider (beginner note): the publish use cases take an optional
+/// `PublishTimingSink`. Wiring it here — the composition root — is what keeps
+/// the application layer free of build-mode and logging decisions.
+///
+/// Null in EVERY normal build (debug, profile and release), so nothing is
+/// timed and nothing is logged. Only a build compiled with
+/// `--dart-define=publishTimings=true` gets a sink, which writes exactly one
+/// line per publish carrying stage names and NUMBERS only (AGENTS.md §6.2).
+/// That is the build the S0 measurements must be taken on: the debug VM is far
+/// slower than the AOT code users run.
+@riverpod
+PublishTimingSink? publishTimingSink(PublishTimingSinkRef ref) =>
+    publishTimingsBuild ? (timings) => timingsLog(timings.describe()) : null;
 
 /// One versioned, whole-record Cloudflare connection in hardened storage.
 @riverpod

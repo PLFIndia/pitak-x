@@ -99,6 +99,8 @@ Future<PublishToCloudflareUseCaseFactory> publishToCloudflareUseCase(
     cloudflareVerifiedStateCommitProvider.future,
   );
   final clock = ref.watch(clockProvider);
+  // Debug-only publish timings (plan S0); null in release builds.
+  final timingSink = ref.watch(publishTimingSinkProvider);
   return (PublishReads reads) => PublishToCloudflareUseCase(
     deployApi: deployApi,
     credentials: credentials,
@@ -113,6 +115,7 @@ Future<PublishToCloudflareUseCaseFactory> publishToCloudflareUseCase(
     verifier: verifier,
     verifiedCommit: verifiedCommit,
     clock: clock,
+    timingSink: timingSink,
   );
 }
 

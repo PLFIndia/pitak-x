@@ -74,6 +74,37 @@ final publishOperationQueueProvider = Provider<SerialOpQueue>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef PublishOperationQueueRef = ProviderRef<SerialOpQueue>;
+String _$publishTimingSinkHash() => r'59de64141d471e40ad7f3154e4626dc17f61a67e';
+
+/// Publish-timings sink for an explicitly instrumented build (plan S0).
+///
+/// Why a provider (beginner note): the publish use cases take an optional
+/// `PublishTimingSink`. Wiring it here — the composition root — is what keeps
+/// the application layer free of build-mode and logging decisions.
+///
+/// Null in EVERY normal build (debug, profile and release), so nothing is
+/// timed and nothing is logged. Only a build compiled with
+/// `--dart-define=publishTimings=true` gets a sink, which writes exactly one
+/// line per publish carrying stage names and NUMBERS only (AGENTS.md §6.2).
+/// That is the build the S0 measurements must be taken on: the debug VM is far
+/// slower than the AOT code users run.
+///
+/// Copied from [publishTimingSink].
+@ProviderFor(publishTimingSink)
+final publishTimingSinkProvider =
+    AutoDisposeProvider<PublishTimingSink?>.internal(
+      publishTimingSink,
+      name: r'publishTimingSinkProvider',
+      debugGetCreateSourceHash: const bool.fromEnvironment('dart.vm.product')
+          ? null
+          : _$publishTimingSinkHash,
+      dependencies: null,
+      allTransitiveDependencies: null,
+    );
+
+@Deprecated('Will be removed in 3.0. Use Ref instead')
+// ignore: unused_element
+typedef PublishTimingSinkRef = AutoDisposeProviderRef<PublishTimingSink?>;
 String _$cloudflareCredentialStoreHash() =>
     r'a66c1eb47b3598ecfa588a130b20b423ab4cf62b';
 

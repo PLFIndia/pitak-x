@@ -1,7 +1,7 @@
 # Publish optimisation — implementation plan
 
-- **Status:** Proposed 2026-11-01. No code written yet.
-- **Branch:** `publishOptimisation`, to be created from `main` at `03313a3` (release 1.9.0+32).
+- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements in Appendix A are still empty: they need a real phone. Nothing from Phase 1 onward has started.
+- **Branch:** `publishOptimisation`, created 2026-11-01 from `03313a3` (release 1.9.0+32). That commit is the tip of the `cloudflare` branch, not of `main` (see A.6 #1).
 - **Scope, in order:** Phase 0 measure → Phase 1 availability fast lane → Phase 2 cover work avoidance (three fixes) → Phase 3 publish speed. Catalogue chunking is designed but deferred (Part I).
 - **Product decisions:** recorded in A.3 (product owner, 2026-11-01).
 - **Authoritative contracts:** `AGENTS.md`, `docs/ARCHITECTURE.md`, ADR 0013, ADR 0014, ADR 0015, ADR 0016, ADR 0017, ADR 0018.
@@ -176,7 +176,14 @@ Record a deviation here before the affected session finishes.
 
 | # | Plan said | What shipped | Why |
 |---|---|---|---|
-| — | — | — | — |
+| 1 | Branch created from `main` at `03313a3` | Created from `03313a3` as it exists on the `cloudflare` branch | `03313a3` (release 1.9.0+32) is the `cloudflare` tip and is not on `main` (`main` = `e8c4d8e`). Same commit, same baseline. Product owner approved 2026-11-01. |
+| 2 | Test at `test/features/publish/application/site/publish_timings_test.dart` | `test/features/publish/application/publish_timings_test.dart` | The repo keeps application tests flat under `application/` (`catalogue_section_builder_test.dart` does the same for a `site/` source file). |
+| 3 | Timings marks only in the four named files | Three more production files take a pass-through parameter: `publish_controller.dart` and `publish_events_controller.dart` (they construct the use cases), `publish_to_cloudflare_use_case.dart` (it constructs the deploy pipeline and owns the Cloudflare recorder) | The sink has to reach the use cases through DI; nothing else changed in them. |
+| 4 | `PublishSnapshotBuilder.build` unchanged | Optional `PublishTimingRecorder? timing` parameter forwarded to the catalogue builder | It is the only way a per-publish cover count can be recorded without a second builder or shared mutable state. |
+| 5 | `readBack` mark "with rounds" | Rounds are reported through optional `onRound` / `onRounds` callbacks added to `published_file_read_back.dart` and `cloudflare_publication_verifier.dart` | Rounds were otherwise private to those loops; the appendix asks for them. Additive, no behaviour change. |
+| 6 | `publish_to_cloudflare_use_case.dart` stays at 483 lines | 467 lines, because the thrown-error mapping moved to `CloudflarePublishOutcomes.thrown` | The timing work pushed it over the 500-line ratchet (G5). Pure code movement; the two `on` clauses collapsed into one `on Exception` (an `Error` still propagates, as before). |
+| 7 | Sink is "debug-only"; measurement is on a release build | The sink is enabled by `--dart-define=publishTimings=true` (`publishTimingsBuild` in `core/platform/app_log.dart`), not by `kDebugMode` | B.1 asks for `flutter run --release`, but a release build cannot log through the debug-only `appLog` — the two cannot both hold. The flag is a `const` defaulting to false, so every normal build (debug, profile, release) compiles the branch away and logs nothing. A test pins "an ordinary build wires no sink". |
+| 8 | New test only at `publish_timings_test.dart` | Plus `test/core/di/publish_timing_sink_provider_test.dart` | Pins the shipped-build guarantee (no sink without the flag), which the value-object test cannot see. |
 
 ---
 
@@ -185,8 +192,15 @@ Record a deviation here before the affected session finishes.
 ## B.1 What and how
 
 - Add a pure value object `PublishTimings` (application) that records named marks: `reads`, `reconcile`, `coverDecisions` (with counts of covers read and re-encoded), `build`, `upload` (with bytes), `commit`/`deploy`, `readBack` (with rounds), `total`.
-- The use cases call an optional injected `PublishTimingSink`. The composition root supplies a debug-only sink that writes one `appLog` line per publish; in release the sink is null and no timing code runs. Never log paths, URLs, keys, tokens or titles — only names, counts, bytes and milliseconds.
-- Measure on a real mid-range Android phone in a release build (`flutter run --release`) against both hosts:
+- The use cases call an optional injected `PublishTimingSink`. The composition root supplies a sink **only in a build compiled with `--dart-define=publishTimings=true`** (A.6 #7: a release build cannot log through the debug-only `appLog`); every normal build gets null and no timing code runs. Never log paths, URLs, keys, tokens or titles — only names, counts, bytes and milliseconds.
+- Measure on a real mid-range Android phone against both hosts, in the instrumented AOT build (profile or release — never debug, whose numbers are not the user's):
+
+  ```bash
+  ./.fvm/flutter_sdk/bin/flutter run --profile --flavor fdroid \
+      --dart-define=publishTimings=true -d <device-id>
+  adb logcat -s flutter | grep "publish timings"
+  ```
+
   1. an unchanged republish of the real 80-book library;
   2. adding one book with a cover, then publishing;
   3. the same two runs on a synthetic 1,000-item fixture with local covers, created by a debug-only seeding tool that is never shipped.
@@ -196,10 +210,13 @@ Record a deviation here before the affected session finishes.
 
 | File | Change |
 |---|---|
-| `lib/features/publish/application/site/publish_timings.dart` (new) | Value object and sink port. |
-| `lib/core/di/src/publish_providers.dart`, `lib/core/di/src/cloudflare_publish_providers.dart` | Provide the debug-only sink. |
+| `lib/features/publish/application/site/publish_timings.dart` (new) | Value object, recorder and sink port. |
+| `lib/core/platform/app_log.dart` | `publishTimingsBuild` compile-time flag and `timingsLog` (still the only file allowed to print). |
+| `lib/core/di/src/publish_providers.dart`, `lib/core/di/src/cloudflare_publish_providers.dart` | Provide the sink (null unless the flag is set). |
 | `publish_library_use_case.dart`, `publish_events_use_case.dart`, `cloudflare_deploy_pipeline.dart`, `catalogue_section_builder.dart` | Timing marks only; no behaviour change. |
-| `test/features/publish/application/site/publish_timings_test.dart` (new) | Marks, ordering, and "null sink does no work". |
+| `publish_controller.dart`, `publish_events_controller.dart`, `publish_to_cloudflare_use_case.dart`, `publish_snapshot_builder.dart`, `published_file_read_back.dart`, `cloudflare_publication_verifier.dart`, `cloudflare_publish_outcomes.dart` (thrown-error mapping moved out) | Pass-through parameters and read-back round reporting; see A.6 #3–#6. |
+| `test/features/publish/application/publish_timings_test.dart` (new) | Marks, ordering, and "null sink does no work". |
+| `test/core/di/publish_timing_sink_provider_test.dart` (new) | An ordinary build wires no sink (A.6 #8). |
 
 ---
 
