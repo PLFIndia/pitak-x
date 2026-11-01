@@ -9,6 +9,7 @@ import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_api_models.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
@@ -1551,5 +1552,34 @@ void main() {
     expect(line, isNot(contains('synthetic-upload-jwt')));
     expect(line, isNot(contains(h.target.siteUrl)));
     expect(line, isNot(contains(h.target.accountId.value)));
+  });
+  test('plan S0: one line carries reads, reconcile, build and the tail marks '
+      'of a Cloudflare catalogue publish', () async {
+    PublishTimings? captured;
+    final h = S8PublishHarness(dir, timingSink: (t) => captured = t);
+
+    final result = await h.useCase.call(
+      target: h.target,
+      section: PublishRequestedSection.catalogue,
+    );
+    expect(result, isA<PublishSuccess>());
+
+    final timings = captured!;
+    final stages = timings.marks.map((mark) => mark.stage).toList();
+    // The device measurement showed the Cloudflare line missing its head —
+    // reads and reconcile — so this pins the whole set in order.
+    expect(
+      stages,
+      containsAllInOrder(<PublishTimingStage>[
+        PublishTimingStage.reads,
+        PublishTimingStage.reconcile,
+        PublishTimingStage.coverDecisions,
+        PublishTimingStage.build,
+        PublishTimingStage.upload,
+        PublishTimingStage.deploy,
+        PublishTimingStage.readBack,
+      ]),
+    );
+    expect(timings.describe(), startsWith('publish timings cloudflare: '));
   });
 }

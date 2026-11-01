@@ -29,6 +29,7 @@
 /// ```
 library;
 
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -58,23 +59,28 @@ const String _action = String.fromEnvironment(
 const int _batchSize = 100;
 
 /// A distinct 400×600 q80 JPEG, the exact shape the publish downscaler stores
-/// (AGENTS: one image choke point). Each item gets different pixels, so the
-/// publish cannot dedupe them and the measurement stays honest.
+/// (AGENTS: one image choke point), sized like a photograph.
+///
+/// Why noise (beginner note): a flat-colour test image compresses to about
+/// 20 KB, while a real camera cover in this app averages about 146 KB (plan
+/// A.1). A fixture of tiny images would make the "before" numbers look better
+/// than reality, so each cover gets per-pixel noise and averages ~130 KB.
+/// Each item's pixels differ, so no two blob hashes match and GitHub cannot
+/// dedupe them.
 Uint8List _coverFor(int index) {
   final image = img.Image(width: 400, height: 600);
-  img.fill(
-    image,
-    color: img.ColorRgb8(index % 251, (index * 7) % 251, (index * 13) % 251),
-  );
-  for (var y = 0; y < 600; y += 40) {
-    img.fillRect(
-      image,
-      x1: 0,
-      y1: y,
-      x2: 399,
-      y2: y + 20,
-      color: img.ColorRgb8(255 - (index % 200), y % 255, 40),
-    );
+  final random = Random(index);
+  for (var y = 0; y < 600; y++) {
+    for (var x = 0; x < 400; x++) {
+      final noise = random.nextInt(110);
+      image.setPixelRgb(
+        x,
+        y,
+        ((x + y + index) % 200 + noise).clamp(0, 255),
+        (80 + noise + x % 40).clamp(0, 255),
+        (140 + y % 60 + noise ~/ 2).clamp(0, 255),
+      );
+    }
   }
   return Uint8List.fromList(img.encodeJpg(image, quality: 80));
 }

@@ -24,6 +24,7 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
+import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_connection.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
@@ -272,7 +273,9 @@ final class S8PublishHarness {
     CloudflareSiteManifest? manifest,
     PublishHostState? hostState,
     bool workerExists = false,
-  }) : credentials = InMemoryCloudflareCredentialStore(
+    PublishTimingSink? timingSink,
+  }) : _timingSink = timingSink,
+       credentials = InMemoryCloudflareCredentialStore(
          connection ?? cloudflareTestConnection(),
        ),
        manifestStore = InMemoryCloudflareManifestStore(
@@ -366,8 +369,11 @@ final class S8PublishHarness {
       ),
       clock: () => cloudflareTestNow,
       publishId: () => cloudflareTestPublishId,
+      timingSink: _timingSink,
     );
   }
+
+  final PublishTimingSink? _timingSink;
 
   static const codec = CloudflarePublishMarkerCodec();
   final FakeCloudflareApi api = FakeCloudflareApi();

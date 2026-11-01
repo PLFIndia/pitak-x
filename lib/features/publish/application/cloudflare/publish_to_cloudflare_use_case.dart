@@ -160,6 +160,9 @@ final class PublishToCloudflareUseCase {
       return const PublishFailure(CloudflareErrorMessages.stalePublish);
     }
 
+    // Plan S0: strict reads of the local inputs, the same first stage the
+    // GitHub path measures, so the two hosts stay comparable.
+    final readsStartedAt = timings.begin();
     final readInputs = await replacement.readInputs(
       reads: _reads,
       target: target,
@@ -169,6 +172,7 @@ final class PublishToCloudflareUseCase {
     if (readInputs case Left(value: final failure)) {
       return CloudflarePublishOutcomes.failure(failure);
     }
+    timings.end(PublishTimingStage.reads, readsStartedAt);
     var inputs = readInputs.toNullable()!;
 
     final loaded = await _credentials.read();
@@ -194,6 +198,11 @@ final class PublishToCloudflareUseCase {
     // it as an error stranded the user until they cleared app data (H1).
     var local = stored.forTarget(target);
 
+    // Plan S0: everything that establishes the remote baseline — preflight,
+    // pending-record promotion, the existing-publication check and the
+    // replacement decision. This is the unmarked gap the first Cloudflare
+    // measurement exposed (~10 s of a 24 s publish).
+    final reconcileStartedAt = timings.begin();
     final preflight = await _preflight.call(
       token: connection.useToken((token) => token),
       target: target,
@@ -295,6 +304,8 @@ final class PublishToCloudflareUseCase {
       }
       inputs = completeInputs.toNullable()!;
     }
+
+    timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
 
     PublishSnapshot snapshot;
     if (replacing) {
