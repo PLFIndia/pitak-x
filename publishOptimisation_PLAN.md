@@ -682,7 +682,7 @@ Every session ends with:
 - *Exit:* Appendix A filled in for both hosts (the real 80-book library and the 1,000-item fixture). The A.2 targets are confirmed, or adjusted with a deviation note.
 
 **S1 — ADR 0019.**
-- *Steps:* write `docs/adr/0019-availability-fast-lane.md` from `docs/adr/0000-template.md`, covering AV1–AV18, the GitHub/Cloudflare timing trade-off and the privacy note. Add amendment notes to ADR 0015, ADR 0017 (S8 read-back set; AV12 deferred check) and ADR 0018 (third saved file). Update `docs/adr/README.md`.
+- *Steps:* write `docs/adr/0019-availability-fast-lane.md` from `docs/adr/0000-template.md`, covering AV1–AV18, the GitHub/Cloudflare timing trade-off and the "what is public" note (P8). Add amendment notes to ADR 0015, ADR 0017 (S8 read-back set; AV12 deferred check) and ADR 0018 (third saved file). Update `docs/adr/README.md`.
 - *Exit:* the product owner accepts the ADR. No code changes.
 
 **S2 — Domain.**
