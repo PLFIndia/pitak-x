@@ -203,7 +203,18 @@ Record a deviation here before the affected session finishes.
 
   1. an unchanged republish of the real 80-book library;
   2. adding one book with a cover, then publishing;
-  3. the same two runs on a synthetic 1,000-item fixture with local covers, created by a debug-only seeding tool that is never shipped.
+  3. the same two runs on a synthetic 1,000-item fixture with local covers, created by `integration_test/publish_fixture_seed_test.dart` (a debug-only seeding journey that is never shipped):
+
+     ```bash
+     # seed 1000 items + covers into THAT flavour's separate app data
+     ./.fvm/flutter_sdk/bin/flutter test integration_test/publish_fixture_seed_test.dart \
+         --flavor fdroid -d <device-id>
+     # remove them again, cover files included
+     ./.fvm/flutter_sdk/bin/flutter test integration_test/publish_fixture_seed_test.dart \
+         --flavor fdroid -d <device-id> --dart-define=fixtureAction=clear
+     ```
+
+     Run the fixture in a flavour that does not hold the real library (`fdroid` and `play` are separate apps with separate data).
 - Record the results in Appendix A. They replace the estimates in A.1 and confirm or adjust the targets in A.2.
 
 ## B.2 Files
@@ -781,6 +792,10 @@ Every gate in `AGENTS.md` §11, including the architecture boundary check and th
 # Appendix A — Measurements
 
 Fill in during S0 (before) and after each phase. Each cell holds the total time plus the `PublishTimings` split: covers read and re-encoded, upload bytes, read-back rounds.
+
+How to capture a row (S0): run the instrumented AOT build (B.1), do the scenario, and copy the `publish timings …` line from `adb logcat`. One publish writes one line; nothing is logged in any other build.
+
+**Status:** empty — S0 needs the phone. The code side (timings, sink, seeder) is done and committed.
 
 | Scenario | Host | Before (S0) | After Phase 1 | After Phase 2 | After Phase 3 |
 |---|---|---|---|---|---|
