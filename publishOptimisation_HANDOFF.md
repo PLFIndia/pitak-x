@@ -1,14 +1,17 @@
-# Publish optimisation — handoff (S1 complete, 2026-11-01)
+# Publish optimisation — handoff (S2 complete, 2026-11-01)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
 **Sessions:** S0 — Phase 0 "measure first" — **complete** (§1–§5).
 S1 — ADR 0019 — **complete; accepted by the product owner 2026-11-01** (§0).
-**S2 — Domain — has NOT started. Do not start it until the product owner
+S2 — Domain — **complete** (§S2), started on the product owner's go-ahead
+the same day.
+**S3 — Writer — has NOT started. Do not start it until the product owner
 explicitly says so** (§6 is the prepared checklist).
 
-> Read this file first in any new session. §0 is the S1 state. §1–§5 are the
-> S0 record (plan Appendix A cites the verbatim lines in §3), kept unchanged.
+> Read this file first in any new session. §S2 is the newest state, §0 the S1
+> state. §1–§5 are the S0 record (plan Appendix A cites the verbatim lines in
+> §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -18,6 +21,91 @@ explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S2 — Domain (code; no behaviour visible to users)
+
+Everything below is pure domain code plus tests. Nothing in the app calls the
+new types yet. The two record fields are written to disk, but they are always
+`false` / absent until S3 and S4 set them.
+
+**New files** (`lib/features/publish/domain/…`):
+
+| File | What it holds |
+|---|---|
+| `publish_item_keys.dart` | `PublishItemKeys`: static `keyFor({salt, itemId})` = `shortHashHexForKey(salt, 'item:$id')`; `keysFor(ids)` reads the salt once and returns `Either`; `requireUnique` (collision → `ValidationFailure`); `isValidKey` (`^[0-9a-f]{16}$`). An empty or unreadable salt fails closed. |
+| `availability/availability_snapshot.dart` | `AvailabilitySnapshot`: sorted, duplicate-free keys; `asOf` rounded down to the minute; `tryCreate` / `fromIds` return null for a bad key, a missing key, more than `maxKeys` (50,000) keys, or a negative time; `contentHash` and `sameKeysAs` ignore `asOf`. |
+| `availability/availability_document.dart` | `AvailabilityDocument`: `path`, `schemaVersion` 1, reader caps, and the fixed-order map `{schemaVersion, asOf, out}`. Encoding to bytes is S3's job (one compact encoder in the section builder). |
+| `availability/availability_pacing.dart` | `AvailabilityPacing` (clock injected, epoch ms): `automaticStartAt` (debounce; on GitHub also the 6 min spacing and the 10-per-60-min budget), `retryStartAt` (backoff 1/2/5/10, then 10, on top of those), `manualStart` (now, plus `gitHubBudgetUsedUp` for the "GitHub may delay this update" text), `delayUntil`. A stored time in the future counts as "now". |
+| `availability/availability_lane_state.dart` | `AvailabilityLaneState` (pending snapshot, `AvailabilityPublished` record, newest 10 GitHub commit times, notice flag) and `decode` → `AvailabilityLaneAbsent` / `Unreadable` / `Loaded`. One bad field makes the whole value unreadable. |
+| `availability/availability_lane_store.dart` | The `AvailabilityLaneStore` port (`read`, `write`). S6 implements it with SharedPreferences. |
+| `site/publish_proof_path.dart` | `PublishProofPath` enum: `booksJson`, `eventsJson`, `availabilityJson`, `availabilityJsonAbsent` (`path`, `expectsAbsent`, `tryParse`, `agreesWith`). |
+
+**Changed files:**
+
+- `site/publish_section.dart`: `SiteSection.availability` owns exactly
+  `availability.json`. `SiteSection.anyOwns(path)` is now the one
+  "app-owned path" rule. `move_plan.dart`, `pending_move.dart` and
+  `CloudflareSiteManifest.isAllowedPath` use it instead of their own copies
+  (A.6 #24). So a GitHub move of a site that has `availability.json` deletes
+  it at retirement (AV18), and a Cloudflare record or snapshot with it is
+  valid. The unused `SiteSectionOwnership.ownedOf` helper was removed
+  (nothing called it).
+- `publish_manifest.dart` (GitHub):
+  - `proofPath` (absent → null = the per-section file);
+  - `catalogueKeyed` (absent → false);
+  - `reconciledFrom` keeps the proof only for the same head, and keeps
+    `catalogueKeyed` only while the tree's `books.json` equals the recorded
+    one;
+  - `afterCommit(wroteKeyedCatalogue:)` keeps the flag only when
+    `books.json` is unchanged;
+  - `asRetired` clears both;
+  - a damaged proof in a `deployed` record forgets the head (A.6 #26/#27).
+- `cloudflare/cloudflare_site_manifest.dart`: `catalogueKeyed` (lenient
+  read; never true for a retired record or one without `books.json`), and
+  `afterDeploy(wroteKeyedCatalogue:)` with the same rule. **No `proofPath`
+  here** (A.6 #25).
+
+**Tests** (all new or extended under `test/features/publish/domain/`):
+`publish_item_keys_test.dart`, `publish_proof_path_test.dart`,
+`site_section_ownership_test.dart`, `availability/*_test.dart` (snapshot,
+document, pacing under `fake_async`, lane state), plus new groups in
+`publish_manifest_test.dart`, `cloudflare/cloudflare_site_manifest_test.dart`
+and `pending_move_test.dart`. Architecture:
+`test/architecture/publish_salt_invariant_test.dart` (A.6 #30).
+
+**Gates at the end of S2 (2026-11-01, macOS):**
+
+- build_runner: no diff.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed`: 0 changed.
+- `flutter test --coverage`: 4,752 passed. The 10 failures are all in
+  `test/golden/key_screens_test.dart`, and the same 10 fail on a clean
+  checkout of `974137b`: macOS renders text differently, and goldens are
+  regenerated only by the Linux workflow (`dart_test.yaml`).
+- Rust untouched.
+- Line coverage of the new domain files is 100 %. The changed files are at
+  96–98 %, and the only missed lines are older `toString`s.
+
+**Plan changes:** status line, A.6 #24–#31, C.11 file map, and the new open
+risk **J9** (below).
+
+**Decision taken without asking (recorded as A.6 #25):** `proofPath` lives
+only in the GitHub record. If S5 finds it needs a Cloudflare proof scope, it
+adds the field with its own deviation.
+
+**Open risk found in S2 — plan J9 (needs a decision by S6).** The publish
+records and the salt live outside the data generation that a restore
+replaces. Restoring another library's backup therefore keeps
+`catalogueKeyed = true`, while the restored ids name different items. The
+lane would then put wrong tags on real items until the next catalogue
+publish, and gate 7b cannot see it. It cannot happen before S8, when the
+lane starts. The fix is one of:
+
+- clear `catalogueKeyed` in both records when a restore activates a new
+  data generation;
+- bind the flag to the data generation.
 
 ---
 
@@ -246,34 +334,46 @@ throwaway repo.
 
 ---
 
-## 6. Next: S2 — Domain (on hold until the product owner says go)
+## 6. Next: S3 — Writer (on hold until the product owner says go)
 
-Plan Part F, S2: the C.1 key class, the C.3/C.4 pure types, the section enum
-and its ownership, and the record fields with JSON round trips and legacy
-reads. No behaviour visible to users; ≥ 90 % coverage of new domain code.
+Plan Part F, S3 = C.2: `key` in `books.json`, the availability section
+builder, and the combined catalogue + availability publish on both hosts
+(tests only; the lane is not started). Update the `books.json`
+characterization bytes deliberately (keys added, nothing else changed).
 
-Carry these from ADR 0019 into S2 (they are easy to miss in the plan's
-original wording):
+Carry these from S2 (they are easy to miss in the plan's original wording):
 
-- **`PublishItemKeys`** hashes `'item:$id'` with the cover salt through
-  `PublishCoverIds.shortHashHexForKey`. Test domain separation against both
-  `'$id'` (book covers) and `'periodical:$uid'`.
-- **`AvailabilityDocument` / `AvailabilitySnapshot`:** `asOf` is **rounded
-  down to the whole minute** (A.6 #16). `out` is sorted and duplicate-free,
-  with deterministic compact bytes. Snapshot equality for "unchanged" compares
-  the key set and target, not `asOf`.
-- **The proof-path record field must be able to say "expected absent"**, for
-  the availability removal (A.6 #21), not only "this path at this hash".
-  Legacy records without the field read as "use the per-section constant".
-- **`catalogueKeyed`** is additive and reads `false` when absent. Add a test
-  that pins the invariant: any salt replacement clears it (S11 adds the backup
-  path).
-- **`AvailabilityPacing`** is pure, with the clock injected: 20 s debounce,
-  6 min GitHub spacing, 10 per rolling 60 min across all sections, backoff
-  1/2/5/10 min then every 10. Test it under `fake_async`.
-- **`AvailabilityLaneStore`** port: *absent* versus *unreadable*, and a
-  damaged store never produces an empty list.
-- **`SiteSection.availability`** owns exactly `availability.json`. Check that
-  no other section's `owns` accepts it, and that retirement does not.
-- Every gate in `AGENTS.md` §11 must be green at the end. Commit messages use
-  Conventional Commits.
+- **Keys:** resolve them with `PublishItemKeys.keysFor(all live ids)` before
+  any artifact is written (like cover decisions). A `Left` stops the publish
+  with its fixed message. Feed them through `redactForPublish` (C.2 item 3).
+- **Inline tag through the one rule** (A.6 #18):
+  `CatalogueSectionBuilder._availabilityFor` must call `isBookUnavailable`.
+- **`availability.json` bytes:** one compact encoder in the application
+  builder, `utf8.encode(jsonEncode(AvailabilityDocument(snapshot).toJson()))`
+  (no indent; the `books.json` encoder indents, so do not reuse it).
+- **Set the flag where a keyed `books.json` is written:**
+  - GitHub catalogue commits: `afterCommit(wroteKeyedCatalogue: true)`.
+  - Cloudflare deploys that built the catalogue section:
+    `afterDeploy(wroteKeyedCatalogue: true)`.
+  - **Watch out:** the Cloudflare assembler calls `afterDeploy` on a FRESH
+    `CloudflareSiteManifest(target:, liveId:)`
+    (`cloudflare_publish_artifacts.dart`, near the end of `assemble`). With
+    that receiver the flag can never carry over an unchanged `books.json`, so
+    carry `catalogueKeyed` from the previous record when an
+    availability-only deploy (S5) leaves `books.json` alone.
+  - The GitHub move destination writes a keyed `books.json` from S3 on, so it
+    should pass `wroteKeyedCatalogue: true` too.
+- **Lane off while the record shows `availability.json`** (A.6 #20): any
+  publish deletes it in the same commit or deploy. The section's
+  `deletePaths: ['availability.json']` goes through `mergeSection`, which
+  already allows only the owning section to delete it (tested in
+  `site_section_ownership_test.dart`).
+- **Proof path:** not S3. `afterCommit` still sets none; S4 adds the
+  parameter and changes `PublishVerificationCheck`. Legacy null → the
+  per-section file.
+- **J9** (restore of another library) needs a decision before S6's gates;
+  do not forget it.
+- Every gate in `AGENTS.md` §11 must be green at the end (CI runs
+  `flutter analyze lib test integration_test`; a bare `dart analyze` also
+  scans the vendored `rust_builder/cargokit`, whose old findings are not
+  ours). Commit messages use Conventional Commits.
