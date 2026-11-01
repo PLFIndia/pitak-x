@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// A tree with the given blobs at [head].
@@ -237,6 +238,38 @@ void main() {
       expect(live.fileShas, committed.fileShas);
     });
 
+    test('asLive keeps the ADR 0019 fields', () {
+      const committed = PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'h',
+        fileShas: {'books.json': 'sha'},
+        proofPath: PublishProofPath.booksJson,
+        catalogueKeyed: true,
+      );
+      final live = committed.asLive();
+      expect(live.proofPath, PublishProofPath.booksJson);
+      expect(live.catalogueKeyed, isTrue);
+    });
+
+    test('asRetired drops keys and proof (a moved page has neither)', () {
+      const live = PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'h',
+        state: PublishState.live,
+        fileShas: {'books.json': 'sha'},
+        proofPath: PublishProofPath.booksJson,
+        catalogueKeyed: true,
+      );
+      final retired = live.asRetired(
+        commitSha: 'r',
+        movedFileShas: {'index.html': 'm'},
+      );
+      expect(retired.catalogueKeyed, isFalse);
+      expect(retired.proofPath, isNull);
+    });
+
     test('describes() requires both repo and branch', () {
       const manifest = PublishManifest(repo: 'me/lib', branch: 'main');
       expect(manifest.describes(ownerRepo: 'me/lib', branch: 'main'), isTrue);
@@ -249,6 +282,274 @@ void main() {
         PublishManifest.empty.describes(ownerRepo: 'me/lib', branch: 'main'),
         isFalse,
       );
+    });
+  });
+
+  group('ADR 0019: proofPath', () {
+    Map<String, dynamic> stored({
+      Object? proof,
+      bool includeProof = true,
+      String state = 'deployed',
+      Map<String, String> files = const {'books.json': 'b', 'events.json': 'e'},
+    }) => {
+      'schema': 2,
+      'repo': 'me/lib',
+      'branch': 'main',
+      'headSha': 'head-a',
+      'ownershipConfirmed': true,
+      'state': state,
+      'fileShas': files,
+      'coverUrlByBookId': <String, String>{},
+      if (includeProof) 'proofPath': proof,
+    };
+
+    test('round-trips every proof through JSON', () {
+      for (final proof in PublishProofPath.values) {
+        final files = proof.expectsAbsent
+            ? const {'books.json': 'b'}
+            : {proof.path: 'x', 'books.json': 'b'};
+        final manifest = PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'h',
+          fileShas: files,
+          proofPath: proof,
+        );
+        final json = manifest.toJson();
+        expect(json['proofPath'], proof.name);
+        expect(PublishManifest.fromJson(json).proofPath, proof);
+      }
+    });
+
+    test('a record without the field reads as null (per-section file)', () {
+      final decoded = PublishManifest.fromJson(stored(includeProof: false));
+      expect(decoded.proofPath, isNull);
+      expect(decoded.headSha, 'head-a');
+      expect(PublishManifest.empty.toJson().containsKey('proofPath'), isFalse);
+    });
+
+    test('an unknown proof forgets the head of an unproven record', () {
+      // No later check may "prove" this commit through a guessed file
+      // (plan A.1 item 8): it reads like a legacy record in unknown state.
+      for (final bad in ['somethingNew', 7, null]) {
+        final decoded = PublishManifest.fromJson(stored(proof: bad));
+        expect(decoded.proofPath, isNull, reason: '$bad');
+        expect(decoded.headSha, isNull, reason: '$bad');
+        expect(decoded.state, PublishState.deployed, reason: '$bad');
+        // Ownership is untouched: the paths are still ours to delete.
+        expect(decoded.ownedPaths, containsAll(['books.json', 'events.json']));
+      }
+    });
+
+    test('a proof that contradicts the record files is unreadable', () {
+      final expectedButMissing = PublishManifest.fromJson(
+        stored(proof: 'availabilityJson'),
+      );
+      expect(expectedButMissing.proofPath, isNull);
+      expect(expectedButMissing.headSha, isNull);
+
+      final absentButRecorded = PublishManifest.fromJson(
+        stored(
+          proof: 'availabilityJsonAbsent',
+          files: const {'books.json': 'b', 'availability.json': 'a'},
+        ),
+      );
+      expect(absentButRecorded.proofPath, isNull);
+      expect(absentButRecorded.headSha, isNull);
+    });
+
+    test('a settled (live) record keeps its head when the proof is bad', () {
+      final decoded = PublishManifest.fromJson(
+        stored(proof: 'somethingNew', state: 'live'),
+      );
+      expect(decoded.state, PublishState.live);
+      expect(decoded.headSha, 'head-a');
+      expect(decoded.proofPath, isNull);
+    });
+
+    test('reconciliation keeps the proof only for the same head', () {
+      const local = PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'head-a',
+        ownershipConfirmed: true,
+        fileShas: {'availability.json': 'a', 'books.json': 'b'},
+        proofPath: PublishProofPath.availabilityJson,
+      );
+      final files = {'availability.json': 'a', 'books.json': 'b'};
+      expect(
+        local
+            .reconciledFrom(
+              tree: tree(files),
+              ownerRepo: 'me/lib',
+              branch: 'main',
+            )
+            .proofPath,
+        PublishProofPath.availabilityJson,
+      );
+      expect(
+        local
+            .reconciledFrom(
+              tree: tree(files, head: 'head-b'),
+              ownerRepo: 'me/lib',
+              branch: 'main',
+            )
+            .proofPath,
+        isNull,
+      );
+      expect(
+        local
+            .reconciledFrom(
+              tree: tree(files, branch: 'gh-pages'),
+              ownerRepo: 'me/lib',
+              branch: 'gh-pages',
+            )
+            .proofPath,
+        isNull,
+      );
+    });
+
+    test('afterCommit sets no proof yet (S4 adds it)', () {
+      const local = PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        proofPath: PublishProofPath.eventsJson,
+      );
+      expect(
+        local
+            .afterCommit(
+              commitSha: 'c',
+              mergedShas: {'books.json': 'b'},
+              coverUrlByBookId: const {},
+            )
+            .proofPath,
+        isNull,
+      );
+    });
+  });
+
+  group('ADR 0019: catalogueKeyed', () {
+    const keyed = PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'head-a',
+      ownershipConfirmed: true,
+      fileShas: {'books.json': 'keyed-books', 'events.json': 'e'},
+      catalogueKeyed: true,
+    );
+
+    test('round-trips through JSON', () {
+      final json = keyed.toJson();
+      expect(json['catalogueKeyed'], isTrue);
+      expect(PublishManifest.fromJson(json).catalogueKeyed, isTrue);
+    });
+
+    test('an older record without the field reads as false', () {
+      final json = keyed.toJson()..remove('catalogueKeyed');
+      expect(PublishManifest.fromJson(json).catalogueKeyed, isFalse);
+      expect(PublishManifest.empty.catalogueKeyed, isFalse);
+    });
+
+    test('anything but a stored true reads as false', () {
+      for (final value in ['true', 1, null, false]) {
+        final json = keyed.toJson()..['catalogueKeyed'] = value;
+        expect(
+          PublishManifest.fromJson(json).catalogueKeyed,
+          isFalse,
+          reason: '$value',
+        );
+      }
+    });
+
+    test('a keyed claim without a recorded books.json reads as false', () {
+      final json = keyed.toJson()
+        ..['fileShas'] = <String, String>{'events.json': 'e'};
+      expect(PublishManifest.fromJson(json).catalogueKeyed, isFalse);
+    });
+
+    group('reconciledFrom (gate 7b, plan A.6 #19)', () {
+      test("survives while the branch holds this phone's books.json", () {
+        final reconciled = keyed.reconciledFrom(
+          tree: tree({'books.json': 'keyed-books', 'events.json': 'e2'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(reconciled.catalogueKeyed, isTrue);
+      });
+
+      test("another writer's books.json clears it (other salt or old app)", () {
+        final reconciled = keyed.reconciledFrom(
+          tree: tree({'books.json': 'someone-else', 'events.json': 'e'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(reconciled.catalogueKeyed, isFalse);
+      });
+
+      test('a deleted books.json clears it', () {
+        final reconciled = keyed.reconciledFrom(
+          tree: tree({'events.json': 'e'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(reconciled.catalogueKeyed, isFalse);
+      });
+
+      test('another repo or branch never inherits it', () {
+        for (final (repo, branch) in [('me/other', 'main'), ('me/lib', 'gh')]) {
+          final reconciled = keyed.reconciledFrom(
+            tree: tree(
+              {'books.json': 'keyed-books'},
+              repo: repo,
+              branch: branch,
+            ),
+            ownerRepo: repo,
+            branch: branch,
+          );
+          expect(reconciled.catalogueKeyed, isFalse, reason: '$repo@$branch');
+        }
+      });
+    });
+
+    group('afterCommit', () {
+      test('a commit that wrote a keyed books.json sets it', () {
+        const unkeyed = PublishManifest(repo: 'me/lib', branch: 'main');
+        final committed = unkeyed.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'books.json': 'new-books'},
+          coverUrlByBookId: const {},
+          wroteKeyedCatalogue: true,
+        );
+        expect(committed.catalogueKeyed, isTrue);
+      });
+
+      test('an events commit that left books.json alone keeps it', () {
+        final committed = keyed.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'books.json': 'keyed-books', 'events.json': 'e2'},
+          coverUrlByBookId: const {},
+        );
+        expect(committed.catalogueKeyed, isTrue);
+      });
+
+      test('a commit that wrote an unkeyed books.json clears it', () {
+        final committed = keyed.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'books.json': 'unkeyed-books'},
+          coverUrlByBookId: const {},
+        );
+        expect(committed.catalogueKeyed, isFalse);
+      });
+
+      test('no books.json means not keyed, whatever the caller says', () {
+        final committed = keyed.afterCommit(
+          commitSha: 'c',
+          mergedShas: {'events.json': 'e'},
+          coverUrlByBookId: const {},
+          wroteKeyedCatalogue: true,
+        );
+        expect(committed.catalogueKeyed, isFalse);
+      });
     });
   });
 }

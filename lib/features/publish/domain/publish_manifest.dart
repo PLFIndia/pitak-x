@@ -25,12 +25,22 @@
 /// paths it finds in the tree — a repository may hold files a human wrote, and
 /// those are not ours to delete or to claim.
 ///
+/// Two additive fields arrived with ADR 0019 (schema stays 2; an older record
+/// simply lacks them):
+///  - `proofPath` says which file proves the last commit
+///    ([PublishProofPath]); absent means "use the per-section file", as
+///    before;
+///  - `catalogueKeyed` says the live `books.json` carries item keys written
+///    by THIS phone, so the availability lane may publish against it
+///    (gate 7b). Absent reads as false.
+///
 /// PUBLIC data only — repo paths, git blob shas, public cover URLs — so it
 /// needs no encryption.
 library;
 
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 /// What was last published, for incremental diffing and exact deletions.
@@ -45,6 +55,8 @@ final class PublishManifest implements PreviousPublication {
     this.state = PublishState.deployed,
     this.fileShas = const {},
     this.coverUrlByBookId = const {},
+    this.proofPath,
+    this.catalogueKeyed = false,
   });
 
   /// Parses a manifest from [json]; tolerant of missing/odd fields.
@@ -59,6 +71,16 @@ final class PublishManifest implements PreviousPublication {
   ///
   /// [headSha] stays null for a legacy record, which is what makes every later
   /// publish treat it as "unknown state" and reconcile against the remote tree.
+  ///
+  /// The ADR 0019 fields:
+  ///  - no `proofPath` → [proofPath] null (the per-section file, as before);
+  ///  - a `proofPath` that is not a known name, or that disagrees with the
+  ///    record's own files, cannot prove anything. For an unproven
+  ///    (`deployed`) record the head is then forgotten too, so the record
+  ///    reads exactly like a legacy one in "unknown state" and no later check
+  ///    can prove it through a guessed file (plan A.1 item 8). A `live` or
+  ///    `retired` record is already settled and needs no proof;
+  ///  - `catalogueKeyed` is true only for a stored `true`.
   factory PublishManifest.fromJson(Map<String, dynamic> json) {
     Map<String, String> strMap(Object? o) => o is Map
         ? {
@@ -72,16 +94,28 @@ final class PublishManifest implements PreviousPublication {
     // read a bad file as "nothing recorded" (fail closed) instead of throwing
     // a TypeError the file loader's `on Exception` would not catch.
     String? str(Object? o) => o is String ? o : null;
+    final state = _stateFrom(json['state']) ?? PublishState.deployed;
+    final proof = PublishProofPath.tryParse(json['proofPath']);
+    final proofUnreadable =
+        json.containsKey('proofPath') &&
+        (proof == null || !proof.agreesWith(fileShas));
+    final unknownHead = proofUnreadable && state == PublishState.deployed;
     return PublishManifest(
       schema: schema is int ? schema : 1,
       repo: str(json['repo']),
       branch: str(json['branch']),
-      headSha: str(json['headSha']),
+      headSha: unknownHead ? null : str(json['headSha']),
       ownershipConfirmed:
           json['ownershipConfirmed'] as bool? ?? fileShas.isNotEmpty,
-      state: _stateFrom(json['state']) ?? PublishState.deployed,
+      state: state,
       fileShas: fileShas,
       coverUrlByBookId: strMap(json['coverUrlByBookId']),
+      proofPath: proofUnreadable ? null : proof,
+      // A keyed catalogue without a recorded books.json is a contradiction,
+      // and the safe reading of a contradiction is "not keyed".
+      catalogueKeyed:
+          json['catalogueKeyed'] == true &&
+          fileShas.containsKey(_booksJsonPath),
     );
   }
 
@@ -115,8 +149,28 @@ final class PublishManifest implements PreviousPublication {
   /// source-identity skip for REMOTE covers.
   final Map<String, String> coverUrlByBookId;
 
+  /// The file that proves the commit at [headSha] (ADR 0019 Decision 10), or
+  /// null for a record written before ADR 0019 — the caller then uses the
+  /// per-section file it always used.
+  final PublishProofPath? proofPath;
+
+  /// True when the `books.json` recorded here carries item keys written by
+  /// this phone (ADR 0019 Decision 7b), so `availability.json` can be matched
+  /// against it.
+  ///
+  /// It is a claim about ONE exact `books.json`: it survives only while the
+  /// branch still holds that file ([reconciledFrom], [afterCommit]).
+  ///
+  /// INVARIANT (ADR 0019 Decision 3): keys depend on the cover salt and the
+  /// internal ids. Any flow that replaces the salt or renumbers ids must
+  /// clear this flag (`test/architecture/publish_salt_invariant_test.dart`).
+  final bool catalogueKeyed;
+
   /// The empty manifest (no publication recorded on this phone).
   static const PublishManifest empty = PublishManifest();
+
+  /// The catalogue file whose keys [catalogueKeyed] describes.
+  static const String _booksJsonPath = 'books.json';
 
   /// True when this record predates schema 2.
   bool get isLegacy => schema < currentSchema;
@@ -154,7 +208,12 @@ final class PublishManifest implements PreviousPublication {
   ///    they belong to the human, and the section merge must not be able to
   ///    delete them;
   ///  - `state` survives only while it describes this exact head; otherwise
-  ///    the record is `deployed` again (an unproven commit).
+  ///    the record is `deployed` again (an unproven commit). The proof path
+  ///    describes that same head, so it follows the same rule;
+  ///  - `catalogueKeyed` survives only while the branch still holds the exact
+  ///    `books.json` this phone recorded. Another phone (with another salt)
+  ///    or an older Pitak may have republished the catalogue since, and its
+  ///    keys would not match ours (ADR 0019 Decision 7b, plan A.6 #19).
   PublishManifest reconciledFrom({
     required GitHubTreeSnapshot tree,
     required String ownerRepo,
@@ -167,11 +226,13 @@ final class PublishManifest implements PreviousPublication {
       final sha = tree.files[path];
       if (sha != null) confirmed[path] = sha;
     }
-    final stillProven =
-        sameSite &&
-        state != PublishState.deployed &&
-        headSha != null &&
-        headSha == tree.headSha;
+    final sameHead = sameSite && headSha != null && headSha == tree.headSha;
+    final stillProven = sameHead && state != PublishState.deployed;
+    final recordedBooks = claimed[_booksJsonPath];
+    final stillKeyed =
+        catalogueKeyed &&
+        recordedBooks != null &&
+        tree.files[_booksJsonPath] == recordedBooks;
     return PublishManifest(
       repo: ownerRepo,
       branch: branch,
@@ -184,6 +245,8 @@ final class PublishManifest implements PreviousPublication {
       // they survive a target change: they only tell the next publish whether
       // a remote cover URL is still the same source.
       coverUrlByBookId: coverUrlByBookId,
+      proofPath: sameHead ? proofPath : null,
+      catalogueKeyed: stillKeyed,
     );
   }
 
@@ -192,18 +255,38 @@ final class PublishManifest implements PreviousPublication {
   /// [mergedShas] is the merge's complete app-owned set. The record's
   /// ownership flag becomes true because this app has just written those paths
   /// itself, and its state is `deployed` until a read-back proves otherwise.
+  ///
+  /// [wroteKeyedCatalogue] says that this commit wrote a `books.json` with
+  /// item keys (a catalogue publish from plan S3 on). [catalogueKeyed] then
+  /// becomes:
+  ///  - true when this commit wrote a keyed `books.json`;
+  ///  - unchanged when the commit left `books.json` exactly as it was (an
+  ///    events or availability commit), because the keyed file is still the
+  ///    one on the branch;
+  ///  - false otherwise, including when no `books.json` is recorded at all.
+  ///
+  /// The proof path is not set here yet: until plan S4 every commit is proven
+  /// through the per-section file, exactly as before.
   PublishManifest afterCommit({
     required String commitSha,
     required Map<String, String> mergedShas,
     required Map<String, String> coverUrlByBookId,
-  }) => PublishManifest(
-    repo: repo,
-    branch: branch,
-    headSha: commitSha,
-    ownershipConfirmed: true,
-    fileShas: mergedShas,
-    coverUrlByBookId: coverUrlByBookId,
-  );
+    bool wroteKeyedCatalogue = false,
+  }) {
+    final books = mergedShas[_booksJsonPath];
+    final booksUnchanged = books != null && books == fileShas[_booksJsonPath];
+    return PublishManifest(
+      repo: repo,
+      branch: branch,
+      headSha: commitSha,
+      ownershipConfirmed: true,
+      fileShas: mergedShas,
+      coverUrlByBookId: coverUrlByBookId,
+      catalogueKeyed:
+          books != null &&
+          (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),
+    );
+  }
 
   /// The same record, now proven to be served by the live site.
   PublishManifest asLive() => PublishManifest(
@@ -215,12 +298,16 @@ final class PublishManifest implements PreviousPublication {
     state: PublishState.live,
     fileShas: fileShas,
     coverUrlByBookId: coverUrlByBookId,
+    proofPath: proofPath,
+    catalogueKeyed: catalogueKeyed,
   );
 
   /// The exact moved-page record after retirement read-back succeeds.
   ///
   /// The head is the retirement commit (or an already-retired head found by
-  /// Retry), never the old live anchor. Only moved files remain owned.
+  /// Retry), never the old live anchor. Only moved files remain owned. A
+  /// moved page has no catalogue, so it carries no keys and needs no proof
+  /// path (a retired record is never checked again).
   PublishManifest asRetired({
     required String commitSha,
     required Map<String, String> movedFileShas,
@@ -245,6 +332,8 @@ final class PublishManifest implements PreviousPublication {
     'state': state.name,
     'fileShas': fileShas,
     'coverUrlByBookId': coverUrlByBookId,
+    if (proofPath case final proofPath?) 'proofPath': proofPath.name,
+    'catalogueKeyed': catalogueKeyed,
   };
 
   static PublishState? _stateFrom(Object? raw) {

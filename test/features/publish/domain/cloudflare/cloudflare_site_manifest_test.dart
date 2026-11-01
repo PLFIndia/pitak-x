@@ -331,6 +331,123 @@ void main() {
     });
   });
 
+  group('ADR 0019: catalogueKeyed', () {
+    CloudflareSiteManifest keyed() => CloudflareSiteManifest(
+      target: target,
+      state: PublishState.live,
+      publishId: 'a' * 32,
+      hashScheme: CloudflareAssetHash.scheme,
+      files: {
+        'books.json': entry('sha-books'),
+        'index.html': entry('sha-index', type: CloudflareContentType.html),
+        'pitak-publish.json': entry('sha-marker'),
+        'availability.json': entry('sha-availability'),
+      },
+      catalogueKeyed: true,
+    );
+
+    test('round-trips through JSON, with availability.json in the files', () {
+      final json = keyed().toJson();
+      expect(json['catalogueKeyed'], isTrue);
+      final decoded = CloudflareSiteManifest.fromJson(json);
+      expect(decoded.describes(target), isTrue);
+      expect(decoded.catalogueKeyed, isTrue);
+      expect(decoded.shaFor('availability.json'), 'sha-availability');
+    });
+
+    test('an older record without the field reads as false, files kept', () {
+      final json = keyed().toJson()..remove('catalogueKeyed');
+      final decoded = CloudflareSiteManifest.fromJson(json);
+      expect(decoded.catalogueKeyed, isFalse);
+      expect(decoded.ownedPaths, contains('books.json'));
+      expect(CloudflareSiteManifest.empty.catalogueKeyed, isFalse);
+    });
+
+    test('a malformed value reads as false without discarding the record', () {
+      for (final value in ['true', 1, null]) {
+        final json = keyed().toJson()..['catalogueKeyed'] = value;
+        final decoded = CloudflareSiteManifest.fromJson(json);
+        expect(decoded.catalogueKeyed, isFalse, reason: '$value');
+        expect(decoded.target, isNotNull, reason: '$value');
+      }
+    });
+
+    test('a retired record never reads as keyed', () {
+      final json = CloudflareSiteManifest(
+        target: target,
+        state: PublishState.retired,
+        publishId: 'c' * 32,
+        hashScheme: CloudflareAssetHash.scheme,
+        files: {
+          'index.html': entry('m', type: CloudflareContentType.html),
+          '404.html': entry('n', type: CloudflareContentType.html),
+          'pitak-publish.json': entry('r'),
+        },
+      ).toJson()..['catalogueKeyed'] = true;
+      expect(CloudflareSiteManifest.fromJson(json).catalogueKeyed, isFalse);
+    });
+
+    test('asLive keeps it; asRetired and forTarget(other) drop it', () {
+      expect(keyed().asLive().catalogueKeyed, isTrue);
+      expect(
+        keyed()
+            .asRetired(publishId: 'c' * 32, files: {'index.html': entry('m')})
+            .catalogueKeyed,
+        isFalse,
+      );
+      final other = CloudflarePublishTarget.create(
+        accountId: '0123456789abcdef0123456789abcdef',
+        workerName: 'other-library',
+        accountSubdomain: 'kadugodi',
+      )!;
+      expect(keyed().forTarget(other).catalogueKeyed, isFalse);
+      expect(keyed().forTarget(target).catalogueKeyed, isTrue);
+    });
+
+    group('afterDeploy', () {
+      test('a deploy that wrote a keyed books.json sets it', () {
+        final next = live().afterDeploy(
+          publishId: 'b' * 32,
+          files: {'books.json': entry('sha-new-books')},
+          coverUrlByBookId: const {},
+          wroteKeyedCatalogue: true,
+        );
+        expect(next.catalogueKeyed, isTrue);
+      });
+
+      test('carrying the same books.json forward keeps it', () {
+        final next = keyed().afterDeploy(
+          publishId: 'b' * 32,
+          files: {
+            ...keyed().files,
+            'availability.json': entry('sha-availability-2'),
+          },
+          coverUrlByBookId: const {},
+        );
+        expect(next.catalogueKeyed, isTrue);
+      });
+
+      test('a different, unkeyed books.json clears it', () {
+        final next = keyed().afterDeploy(
+          publishId: 'b' * 32,
+          files: {'books.json': entry('sha-other-books')},
+          coverUrlByBookId: const {},
+        );
+        expect(next.catalogueKeyed, isFalse);
+      });
+
+      test('no books.json means not keyed, whatever the caller says', () {
+        final next = keyed().afterDeploy(
+          publishId: 'b' * 32,
+          files: {'index.html': entry('i')},
+          coverUrlByBookId: const {},
+          wroteKeyedCatalogue: true,
+        );
+        expect(next.catalogueKeyed, isFalse);
+      });
+    });
+  });
+
   group('section merge', () {
     PublishFile file(String path, String sha) =>
         PublishFile(path: path, bytes: const [], gitSha: sha, upload: false);

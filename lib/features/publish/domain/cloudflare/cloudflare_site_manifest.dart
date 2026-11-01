@@ -19,6 +19,12 @@
 /// hashes — the bytes are re-hashed, and bytes that are gone send the publish
 /// into replacement reconciliation instead of a permanent missing-hash loop.
 ///
+/// `catalogueKeyed` (ADR 0019, additive; schema stays 2) says the recorded
+/// `books.json` carries item keys written by THIS phone, so the availability
+/// lane may publish against it. An older record lacks it and reads false.
+/// Unlike GitHub, Cloudflare needs no proof path: the marker's fresh id
+/// proves the whole atomic version (plan A.6 #25).
+///
 /// PUBLIC data only — paths, content hashes, sizes, content types and public
 /// cover URLs. No token, no JWT, no account secret.
 library;
@@ -121,6 +127,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
     this.hashScheme,
     this.files = const {},
     this.coverUrlByBookId = const {},
+    this.catalogueKeyed = false,
   });
 
   /// Decodes a record, or the EMPTY record when it does not describe a target.
@@ -128,6 +135,10 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// Fails closed on purpose: without a target the file map is meaningless (it
   /// could authorise deleting another Worker's files), so a record whose target
   /// cannot be rebuilt claims nothing at all.
+  ///
+  /// `catalogueKeyed` is the one field read leniently: anything but a stored
+  /// `true` reads as false, which is already the safe direction (the lane
+  /// waits for a catalogue publish) and is no reason to discard the files.
   factory CloudflareSiteManifest.fromJson(Map<String, dynamic> json) {
     final target = _targetFrom(json['target']);
     if (target == null || json['schema'] != currentSchema) return empty;
@@ -172,6 +183,10 @@ final class CloudflareSiteManifest implements PreviousPublication {
           : null,
       files: Map.unmodifiable(files),
       coverUrlByBookId: _stringMap(json['coverUrlByBookId']),
+      catalogueKeyed:
+          json['catalogueKeyed'] == true &&
+          state != PublishState.retired &&
+          files.containsKey(_booksJsonPath),
     );
   }
 
@@ -244,6 +259,17 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// Book id (as string) → the `coverUrl` value at last publish.
   final Map<String, String> coverUrlByBookId;
 
+  /// True when the `books.json` recorded here carries item keys written by
+  /// this phone (ADR 0019 Decision 7b). The lane also requires the live
+  /// marker to be this phone's own, which pins the whole version.
+  ///
+  /// INVARIANT (ADR 0019 Decision 3): keys depend on the cover salt and the
+  /// internal ids. Any flow that replaces the salt or renumbers ids must
+  /// clear this flag (`test/architecture/publish_salt_invariant_test.dart`).
+  final bool catalogueKeyed;
+
+  static const String _booksJsonPath = 'books.json';
+
   /// True when the recorded hashes were computed with this build's formula.
   ///
   /// False means the hashes are unusable, NOT that the paths are unknown: the
@@ -288,18 +314,32 @@ final class CloudflareSiteManifest implements PreviousPublication {
   ///
   /// [files] is the COMPLETE snapshot the deploy sent — a Cloudflare deploy
   /// replaces the whole asset set, so a partial map would be a lie.
+  ///
+  /// [wroteKeyedCatalogue] says that this deploy wrote a `books.json` with
+  /// item keys. [catalogueKeyed] then becomes true for that, stays as it was
+  /// when the deploy carried this record's `books.json` forward unchanged,
+  /// and is false otherwise — the same rule as `PublishManifest.afterCommit`.
   CloudflareSiteManifest afterDeploy({
     required String publishId,
     required Map<String, CloudflareAssetEntry> files,
     required Map<String, String> coverUrlByBookId,
-  }) => CloudflareSiteManifest(
-    target: target,
-    publishId: publishId,
-    liveId: liveId,
-    hashScheme: CloudflareAssetHash.scheme,
-    files: files,
-    coverUrlByBookId: coverUrlByBookId,
-  );
+    bool wroteKeyedCatalogue = false,
+  }) {
+    final books = files[_booksJsonPath]?.sha;
+    final booksUnchanged =
+        books != null && books == this.files[_booksJsonPath]?.sha;
+    return CloudflareSiteManifest(
+      target: target,
+      publishId: publishId,
+      liveId: liveId,
+      hashScheme: CloudflareAssetHash.scheme,
+      files: files,
+      coverUrlByBookId: coverUrlByBookId,
+      catalogueKeyed:
+          books != null &&
+          (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),
+    );
+  }
 
   /// The same record, now proven to be served by the live site.
   CloudflareSiteManifest asLive() => _copy(state: PublishState.live);
@@ -307,7 +347,8 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// The same record after the site became a moved page.
   ///
   /// A retirement deploy is a fresh deploy with a fresh publish id and only the
-  /// moved files, so the file map is replaced, not merged (F.6).
+  /// moved files, so the file map is replaced, not merged (F.6). A moved page
+  /// has no catalogue, so it carries no keys.
   CloudflareSiteManifest asRetired({
     required String publishId,
     required Map<String, CloudflareAssetEntry> files,
@@ -364,6 +405,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
       for (final entry in files.entries) entry.key: entry.value.toJson(),
     },
     'coverUrlByBookId': coverUrlByBookId,
+    'catalogueKeyed': catalogueKeyed,
   };
 
   CloudflareSiteManifest _copy({required PublishState state}) =>
@@ -376,6 +418,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
         hashScheme: hashScheme,
         files: files,
         coverUrlByBookId: coverUrlByBookId,
+        catalogueKeyed: catalogueKeyed,
       );
 
   static Map<String, Object?> _targetJson(CloudflarePublishTarget target) => {
