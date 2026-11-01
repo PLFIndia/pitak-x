@@ -17,7 +17,8 @@
 /// ```bash
 /// # 1. seed (default: 1000 items, one generated cover each)
 /// flutter test integration_test/publish_fixture_seed_test.dart \
-///     --flavor fdroid -d <device-id> --dart-define=fixtureItems=1000
+///     --flavor fdroid -d <device-id> --no-uninstall \
+///     --dart-define=fixtureItems=1000
 ///
 /// # 2. measure (separate command, see the plan's B.1)
 /// flutter run --profile --flavor fdroid \
@@ -25,8 +26,17 @@
 ///
 /// # 3. remove the fixture and its cover files
 /// flutter test integration_test/publish_fixture_seed_test.dart \
-///     --flavor fdroid -d <device-id> --dart-define=fixtureAction=clear
+///     --flavor fdroid -d <device-id> --no-uninstall \
+///     --dart-define=fixtureAction=clear
 /// ```
+///
+/// Why `--no-uninstall` (beginner note): when an integration test finishes,
+/// `flutter test` UNINSTALLS the app by default — and uninstalling an Android
+/// app deletes its data. Without the flag the 1,000 seeded items vanish the
+/// moment the seeder reports success (plan A.6 #11).
+///
+/// The vault is created with the smoke passphrase (`smokePassphrase` in
+/// `smoke_support.dart`); unlock the seeded app with that one.
 library;
 
 import 'dart:math';

@@ -1,6 +1,6 @@
 # Publish optimisation — implementation plan
 
-- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are partly captured — see `publishOptimisation_HANDOFF.md` §3 for the verbatim lines, §4 for two open defects, §5 for what is left. Nothing from Phase 1 onward has started.
+- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are captured for both hosts on the test library and for Cloudflare on the 1,000-item fixture (Appendix A). Both S0 defects are resolved (A.6 #11, #13). The GitHub fixture row is deliberately not measured (A.6 #14; risk J8). **S0 is complete. Next: S1 (ADR 0019).** Nothing from Phase 1 onward has started.
 - **Branch:** `publishOptimisation`, created 2026-11-01 from `03313a3` (release 1.9.0+32). That commit is the tip of the `cloudflare` branch, not of `main` (see A.6 #1).
 - **Scope, in order:** Phase 0 measure → Phase 1 availability fast lane → Phase 2 cover work avoidance (three fixes) → Phase 3 publish speed. Catalogue chunking is designed but deferred (Part I).
 - **Product decisions:** recorded in A.3 (product owner, 2026-11-01).
@@ -87,6 +87,13 @@ This plan is written as discrete sessions. Each session must end green (every CI
 | Unchanged republish of the 80-book library: covers processed | 0 (after Phase 2) |
 | Add 1 book with a cover to a 1,000-item fixture: covers processed | 1 (after Phase 2) |
 | GitHub catalogue publish: time until the button returns | commit time only, no Pages wait (after Phase 3) |
+
+**S0 verdict on the targets (2026-11-01).** These are inputs for the product owner in S1. No target has been changed.
+
+- *Covers processed* (0 and 1): **confirmed and worth it.** Today the numbers are 8 and 9 on the test library and 1,000 and 1,001 on the fixture, which costs 4 min 46 s – 4 min 50 s per publish at 1,000 items.
+- *GitHub button returns at commit time*: **confirmed.** The button would return after 4–9 s of app work plus a 3.3–7.2 s commit, instead of after 43–57 s.
+- *Lane on Cloudflare, ≤ 20 s after Phase 1*: **achievable only if measured from the end of the 20 s debounce.** That is how the GitHub row is already worded. An availability-only deploy still pays the fixed Cloudflare overhead of reconcile, pipeline gates, upload, deploy and read-back. Without the 5 s sleep (AV13), that comes to about 15–17 s. With the debounce included, a change takes about 35–40 s to go live, so the A.2 wording "within seconds" needs S8's measured copy (G4).
+- *Lane on Cloudflare, ≤ 10 s after Phase 3*: **at risk.** SP2 and SP3 together remove an estimated 5–8 s, which leaves about 10–12 s. Keep it as the goal and re-measure in S13/S15.
 
 ## A.3 Product decisions (product owner, 2026-11-01)
 
@@ -184,6 +191,12 @@ Record a deviation here before the affected session finishes.
 | 6 | `publish_to_cloudflare_use_case.dart` stays at 483 lines | 467 lines, because the thrown-error mapping moved to `CloudflarePublishOutcomes.thrown` | The timing work pushed it over the 500-line ratchet (G5). Pure code movement; the two `on` clauses collapsed into one `on Exception` (an `Error` still propagates, as before). |
 | 7 | Sink is "debug-only"; measurement is on a release build | The sink is enabled by `--dart-define=publishTimings=true` (`publishTimingsBuild` in `core/platform/app_log.dart`), not by `kDebugMode` | B.1 asks for `flutter run --release`, but a release build cannot log through the debug-only `appLog` — the two cannot both hold. The flag is a `const` defaulting to false, so every normal build (debug, profile, release) compiles the branch away and logs nothing. A test pins "an ordinary build wires no sink". |
 | 8 | New test only at `publish_timings_test.dart` | Plus `test/core/di/publish_timing_sink_provider_test.dart` | Pins the shipped-build guarantee (no sink without the flag), which the value-object test cannot see. |
+| 9 | All Appendix A rows on a release build (G.4) | The 1,000-item fixture rows are measured on a **profile** build of the `play` flavour | The seeded install is debug-signed, and only a debug-keystore build can upgrade it without wiping the data; Flutter's `profile` build type is debug-signed. Profile is AOT-compiled like release, so the numbers are release-like. |
+| 10 | B.1 names the seeder but B.2 does not list it | `integration_test/publish_fixture_seed_test.dart` (commit `47f8fdb`, photo-like covers since `cea712a`) | Typing 1,000 items is impossible; the journey writes them through the app's own repository and cover store. Never shipped (`integration_test/`). |
+| 11 | Seeder command without extra flags | The seeder must run with `--no-uninstall` | `flutter test` uninstalls the integration-test app when the run ends (`--uninstall` defaults to true in Flutter 3.44), deleting the seeded rows. This, not a wrong passphrase, is why the first seeded app showed no items (handoff §4, issue 2): the next `install -r` was a fresh install. |
+| 12 | Test library rows on "the real 80-book library" | Measured on the product owner's test library with 7–9 items with covers | That is the library on the test phone. Cover cost is per cover, so the 1,000-item fixture rows carry the size-dependent answer. |
+| 13 | B.1 builds the instrumented APK with a plain `flutter build`/`flutter run` | Every measurement build starts with `flutter clean` (`docs/RELEASING.md` §4), and the APK's `libapp.so` is checked before installing | Flutter 3.44's Gradle plugin can package a **stale `libapp.so`**: `merge<Variant>JniLibFolders` stays up to date after a Dart-only change (fixed upstream by flutter/flutter#188119, not in 3.44.2). Every incremental build after 17:13 on 2026-11-01 shipped the 17:13 Dart code. That caused handoff issue 1 (Cloudflare lines without `reads`/`reconcile`). The lines it produced are still valid for the marks they contain, because the marks change no behaviour. |
+| 14 | Appendix A row "Add 1 book + cover, 1,000-item fixture, GitHub" | Not measured; product owner decision, 2026-11-01 | Cover cost does not depend on the host: the same builder runs before either upload, and Cloudflare measured it. GitHub's own costs (commit, Pages) are measured on the test library. A first GitHub publish of 1,000 covers makes more than 1,000 blob requests, one per cover (`http_github_api.dart:416-429`). GitHub documents a limit of about 80 content-creating requests per minute and 500 per hour, so the run would probably be refused partway, and it could block content creation on the account for up to an hour. That risk is now J8 instead. |
 
 ---
 
@@ -196,10 +209,14 @@ Record a deviation here before the affected session finishes.
 - Measure on a real mid-range Android phone against both hosts, in the instrumented AOT build (profile or release — never debug, whose numbers are not the user's):
 
   ```bash
+  # ALWAYS clean first: Flutter 3.44 can package a stale libapp.so (A.6 #13)
+  ./.fvm/flutter_sdk/bin/flutter clean && ./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
   ./.fvm/flutter_sdk/bin/flutter run --profile --flavor fdroid \
       --dart-define=publishTimings=true -d <device-id>
   adb logcat -s flutter | grep "publish timings"
   ```
+
+  Before installing an APK, check that its packaged `libapp.so` differs from the installed one (`unzip -p <apk> lib/arm64-v8a/libapp.so | md5`). If the change adds an ASCII string, check that the string is present (`docs/RELEASING.md` §4).
 
   1. an unchanged republish of the real 80-book library;
   2. adding one book with a cover, then publishing;
@@ -208,13 +225,13 @@ Record a deviation here before the affected session finishes.
      ```bash
      # seed 1000 items + covers into THAT flavour's separate app data
      ./.fvm/flutter_sdk/bin/flutter test integration_test/publish_fixture_seed_test.dart \
-         --flavor fdroid -d <device-id>
+         --flavor fdroid -d <device-id> --no-uninstall
      # remove them again, cover files included
      ./.fvm/flutter_sdk/bin/flutter test integration_test/publish_fixture_seed_test.dart \
-         --flavor fdroid -d <device-id> --dart-define=fixtureAction=clear
+         --flavor fdroid -d <device-id> --no-uninstall --dart-define=fixtureAction=clear
      ```
 
-     Run the fixture in a flavour that does not hold the real library (`fdroid` and `play` are separate apps with separate data).
+     Run the fixture in a flavour that does not hold the real library (`fdroid` and `play` are separate apps with separate data). **`--no-uninstall` is mandatory:** `flutter test` uninstalls an integration-test app when the run ends (its `--uninstall` flag defaults to true), which deletes the seeded data with it (A.6 #11).
 - Record the results in Appendix A. They replace the estimates in A.1 and confirm or adjust the targets in A.2.
 
 ## B.2 Files
@@ -786,6 +803,7 @@ Every gate in `AGENTS.md` §11, including the architecture boundary check and th
 | J5 | The original Kotlin app tolerates the new backup entry and flag. | Verify in S11 before shipping Fix 2. |
 | J6 | GitHub Pages' edge ignores query-string cache-busters (A.1 item 9), so the existing read-back relies on GitHub's purge rather than its cache-buster. | Review separately; no change in this plan. |
 | J7 | The web viewer shows an inline tag on "Other" items today (`index.html:396-401`), while the native viewer never does. | The web viewer adopts the native rule in v8, so both agree. |
+| J8 | **Risk found in S0.** A GitHub publish that must upload more than about 500 files (a first publish, a move to GitHub, or a whole-site replacement of a large library) may exceed GitHub's content-creation limit: about 80 per minute and 500 per hour ([GitHub REST rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). Blobs are uploaded serially, one request each, before the single commit. A refused run commits nothing, and a retry uploads every blob again, because the skip rule compares against the head tree and not against blobs already sent. | Unverified. In S10 (CV5), verify against a throwaway repo whether `POST /git/blobs` counts towards the limit. If it does, the fix needs its own decision (for example, pacing, or reusing blobs created by a refused attempt) before Phase 2 ships. |
 
 ---
 
@@ -795,18 +813,29 @@ Fill in during S0 (before) and after each phase. Each cell holds the total time 
 
 How to capture a row (S0): run the instrumented AOT build (B.1), do the scenario, and copy the `publish timings …` line from `adb logcat`. One publish writes one line; nothing is logged in any other build.
 
-**Status:** partly filled from the 2026-11-01 device session; the verbatim log lines, the interpretation and the remaining rows are in `publishOptimisation_HANDOFF.md`.
+**Status (S0, 2026-11-01):** filled from the device session on a OnePlus 9R (Android 14). The test library holds 7–9 items with covers, not 80 (A.6 #12). Fixture rows use a profile build (A.6 #9). The verbatim log lines are in `publishOptimisation_HANDOFF.md` §3. "Covers read" counts covers whose bytes were produced this run; "reused" was 0 in every run. Read `coverDecisions` as part of `build`, because the two overlap.
 
 | Scenario | Host | Before (S0) | After Phase 1 | After Phase 2 | After Phase 3 |
 |---|---|---|---|---|---|
-| Unchanged republish, 80 books | GitHub | pending (move, not an unchanged run) | | | |
-| Unchanged republish, 80 books | Cloudflare | total 23,969 ms: coverDecisions 882 ms (1 read), build 932 ms, upload 3,473 ms (1,795 B), deploy 1,837 ms, readBack 6,401 ms (1 round) — head not yet marked in that build | | | |
-| Add 1 book + cover, 80 books | GitHub | total 57,307 ms: reads 434 ms, reconcile 6,526 ms, coverDecisions 1,318 ms (1 read), build 1,324 ms, commit 7,218 ms (30,065 B), readBack 41,720 ms (8 rounds) | | | |
-| Add 1 book + cover, 80 books | Cloudflare | total 26,514 ms: coverDecisions 1,208 ms (1 read), build 1,236 ms, upload 6,552 ms (43,321 B), deploy 1,329 ms, readBack 6,461 ms (1 round) | | | |
-| Add 1 book + cover, 1,000-item fixture | GitHub | | | | |
-| Add 1 book + cover, 1,000-item fixture | Cloudflare | | | | |
+| Unchanged republish, test library | GitHub | total 43,121 ms: reads 464, reconcile 1,760, coverDecisions 1,345 (7 read), build 1,349, commit 3,300 (2,000 B), readBack 36,155 (7 rounds) | | | |
+| Unchanged republish, test library | Cloudflare | total 25,035 ms: reads 660, reconcile 3,269, coverDecisions 1,428 (8 read), build 1,483, upload 3,074 (2,486 B), deploy 1,311, readBack 6,730 (1 round); ≈ 8.5 s unmarked pipeline gates | | | |
+| Add 1 book + cover, test library | GitHub | total 57,307 ms: reads 434, reconcile 6,526, coverDecisions 1,318 (7 read), build 1,324, commit 7,218 (30,065 B), readBack 41,720 (8 rounds) | | | |
+| Add 1 book + cover, test library | Cloudflare | total 25,725 ms: reads 600, reconcile 3,335, coverDecisions 1,650 (9 read), build 1,688, upload 4,812 (48,720 B), deploy 1,223, readBack 6,811 (1 round) | | | |
+| Unchanged republish, 1,000-item fixture | Cloudflare | total 324,879 ms: reads 666, reconcile 3,460, **coverDecisions 285,799 (1,000 read)**, build 298,772, upload 4,814 (185,174 B), deploy 1,408, readBack 7,319 (1 round) | | | |
+| Add 1 book + cover, 1,000-item fixture | Cloudflare | total 327,524 ms: reads 586, reconcile 3,186, **coverDecisions 290,449 (1,001 read)**, build 303,409, upload 3,781 (185,558 B; the new cover was not uploaded because Cloudflare already held identical bytes: the same photo was added in the F-Droid app's run, and renditions are deterministic), deploy 1,299, readBack 6,660 (1 round) | | | |
+| First publish (whole-site replacement), 1,000-item fixture | Cloudflare | review: total 308,328 ms (reads 575, reconcile 3,337; the rest is unmarked complete-snapshot preparation). Confirmed run: total 395,911 ms: reads 662, reconcile 3,349, upload 74,825 (135,007,872 B), deploy 1,295, readBack 7,015 (1 round) | | | |
+| Add 1 book + cover, 1,000-item fixture | GitHub | not measured (A.6 #14; risk J8) | | | |
 | Lend → visible on the site | GitHub | n/a | | | |
 | Lend → visible on the site | Cloudflare | n/a | | | |
+
+**What the S0 numbers say** (the full reasoning is in the handoff):
+
+1. **Covers dominate as libraries grow.** On the phone, one cover costs about 180 ms (the test library's real photos) to 286 ms (the fixture's 130 KB photo-like covers). That is 4–6× the Mac benchmark (A.1 item 3; answers J4). An unchanged republish of 1,000 items spends **4 min 46 s** re-processing covers, which is 88 % of its 5 min 25 s. Phase 2 is justified.
+2. **A whole-site replacement prepares the complete snapshot twice.** It happens once for the review and again after the user confirms, about 5 min each at 1,000 covers. This is an input to S9 (CV4).
+3. **GitHub waits for Pages for 36–42 s** of a 43–57 s publish. The app's own work before the commit is 4–9 s. SP1 is the biggest felt win on small libraries.
+4. **Cloudflare has a fixed overhead of about 18 s whatever the library size:** reconcile 3.2–3.5 s, about 7–8.5 s of unmarked pipeline gates (Version-URL checks, upload session, two more preflights, the verified commit), deploy 1.2–1.4 s, and read-back 6.7–7.3 s. Read-back is about 5 s of sleep plus the reads. SP2 and SP3 target real time.
+5. **An "unchanged" republish is never a no-op.** `books.json` carries `exportedAt`, so every publish writes 2–2.5 KB. On GitHub that still costs a full Pages wait.
+6. **Chunking (Part I) is not triggered.** `books.json` at 1,000 items is about 185 KB. Its upload takes 3.8–4.8 s, which is fixed latency, not bytes.
 
 # Appendix B — Sources and methods
 
