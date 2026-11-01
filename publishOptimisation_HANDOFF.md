@@ -1,11 +1,63 @@
-# Publish optimisation — S0 handoff (2026-11-01, 19:40)
+# Publish optimisation — handoff (S1 written, 2026-11-01)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
-**Session:** S0 — Phase 0 "measure first" (plan Part B). **Complete.** Next is **S1 — ADR 0019** (§6).
+**Sessions:** S0 — Phase 0 "measure first" — **complete** (§1–§5).
+S1 — ADR 0019 — **written, status *Proposed*; waiting for the product owner
+to accept it** (§0). After acceptance, next is **S2 — Domain** (§6).
 
-> Read this file first in any new session. It records what was measured, why
-> two earlier results were wrong, and what S1 must take from the numbers.
+> Read this file first in any new session. §0 is the S1 state. §1–§5 are the
+> S0 record (plan Appendix A cites the verbatim lines in §3), kept unchanged.
+
+---
+
+## 0. S1 — ADR 0019 (docs only, no code)
+
+**Written:**
+
+| File | Change |
+|---|---|
+| `docs/adr/0019-availability-fast-lane.md` | New ADR, status *Proposed*. Covers AV1–AV18, the S0 timing trade-off, the privacy note and Decision 13 (the product owner's S1 answers). |
+| `docs/adr/0015-…`, `0017-…`, `0018-…` | Status/date lines plus an "Amendment 2026-11-01" section each; ADR 0017 also gets an inline pointer in its S8 read-back bullet. |
+| `docs/adr/README.md` | Index entry (marked *Proposed*). |
+| `docs/ARCHITECTURE.md` §1.2 | Non-goal "no background or scheduled publishing" → "no publishing while the app is not running" (plan A.6 #23). |
+| `publishOptimisation_PLAN.md` | Status line; A.2 outcome, target and an "S1 decision" note; A.6 #15–#23; in-place pointers in AV1/AV2/AV4/AV8/AV9/AV10/AV12, C.1, C.3, C.5, C.7, C.9, C.11 and G.5. |
+
+**Product-owner decisions (2026-11-01; ADR 0019 Decision 13):**
+
+- **a. Targets.** The Cloudflare lane target is ≤ 20 s **from the end of the
+  debounce** (lend → live ≈ 36–40 s). The "≤ 10 s after Phase 3" goal is
+  **withdrawn**. Draft copy: Cloudflare "usually under a minute", GitHub "about
+  a minute, up to about 7 minutes in a busy hour"; S8 sets the final words.
+  *Why it differs from the S0 verdict:* S0's "≈ 10–12 s after Phase 3"
+  subtracted the 5 s read-back sleep twice (AV13 already removes it for the
+  lane), and "≈ 15–17 s" left out upload (3.1–4.8 s of fixed latency even for
+  2 KB) and reads. Recomputed: ≈ 16–20 s after the debounce, and ≈ 14–18 s after
+  Phase 3 (only SP3 adds anything).
+- **b.** `asOf` is rounded down to the whole minute.
+- **c.** Items of kind Other are never listed in `availability.json`.
+- **d.** The order stays lane → covers → speed (P4).
+
+**Engineering corrections found while writing the ADR** (all recorded in plan
+A.6; S2–S7 must follow them, not the original wording):
+
+| A.6 | Correction | Why |
+|---|---|---|
+| #18 | The inline tag goes through `isBookUnavailable` (S3) | `CatalogueSectionBuilder._availabilityFor` repeats `active >= copyCount` without the clamp. Same output for every valid row. |
+| #19 | Gate AV10(b): the live `books.json` must be **this phone's own keyed publish** (GitHub head-tree blob = record; Cloudflare own marker) | Another phone's salt, or an older Pitak republishing, would make every item show *Available*. |
+| #20 | Lane off: **any** publish that runs first deletes a live `availability.json`; the stored snapshots are cleared once the removal is published | No frozen file after a pending removal; no loan-derived data kept in plaintext after opting out. |
+| #21 | GitHub deferred check **polls until it sees the expected state** (structured `PublishedSiteReadVerifier`); a removal is proven by an exact 404; out of budget → stays `deployed` | `untilMatchesSha` lets the first readable answer decide, so seconds after a commit it would call the still-old Pages bytes a contradiction, and it cannot see a 404. |
+| #22 | Reader model `PublishedAvailabilityFile` (`published_availability_file.dart`) | `PublishedAvailability` is already the per-item enum in `published_catalogue.dart`. |
+
+Also settled in the ADR (no plan change): keys hash the internal `id`, not
+`itemUid`. Loans are keyed by `id`, `.pitabak` restore preserves it
+(`legacy_db_reader.dart`), cover names already hash it, and `itemUid` can be
+null. **Invariant:** a flow that replaces the salt or renumbers ids must clear
+`catalogueKeyed` (tests in S2, and again in S11).
+
+**S1 exit:** the product owner accepts ADR 0019. Then change its status line to
+`Accepted (2026-11-01)`, drop *Proposed* from the README index entry, and
+update this section and the plan status line.
 
 ---
 
@@ -184,23 +236,34 @@ throwaway repo.
 
 ---
 
-## 6. Next: S1 — ADR 0019 (no code)
+## 6. Next: S2 — Domain (only after ADR 0019 is accepted)
 
-Write `docs/adr/0019-availability-fast-lane.md` from `docs/adr/0000-template.md`,
-add the amendment notes to ADR 0015/0017/0018, and add the index entry in
-`docs/adr/README.md`. The product owner must accept it.
+Plan Part F, S2: the C.1 key class, the C.3/C.4 pure types, the section enum
+and its ownership, and the record fields with JSON round trips and legacy
+reads. No behaviour visible to users; ≥ 90 % coverage of new domain code.
 
-Take these from S0 into the ADR's trade-off section:
+Carry these from ADR 0019 into S2 (they are easy to miss in the plan's
+original wording):
 
-- **Read the "S0 verdict on the targets" note under plan A.2.** The ≤ 20 s
-  Cloudflare lane target holds only if it is measured **from the end of the
-  20 s debounce** (≈ 15–17 s). Change → live is ≈ 35–40 s, so the outcome's
-  "within seconds" wording needs the product owner's call and S8's measured
-  copy. The ≤ 10 s after Phase 3 target is **at risk** (≈ 10–12 s estimated).
-- On a small library, SP1/SP2 are cheaper wins than Phase 2. On a large one,
-  Phase 2 dominates everything (§3 items 1–2). The plan's order (P4: lane →
-  covers → speed) is a product decision; the ADR should state these numbers so
-  the order is chosen knowingly.
-- An availability-only Cloudflare deploy still pays the ~18 s fixed overhead
-  minus the 5 s read-back sleep, because AV13 keeps every freshness and
-  Version-URL gate. Say so plainly.
+- **`PublishItemKeys`** hashes `'item:$id'` with the cover salt through
+  `PublishCoverIds.shortHashHexForKey`. Test domain separation against both
+  `'$id'` (book covers) and `'periodical:$uid'`.
+- **`AvailabilityDocument` / `AvailabilitySnapshot`:** `asOf` is **rounded
+  down to the whole minute** (A.6 #16). `out` is sorted and duplicate-free,
+  with deterministic compact bytes. Snapshot equality for "unchanged" compares
+  the key set and target, not `asOf`.
+- **The proof-path record field must be able to say "expected absent"**, for
+  the availability removal (A.6 #21), not only "this path at this hash".
+  Legacy records without the field read as "use the per-section constant".
+- **`catalogueKeyed`** is additive and reads `false` when absent. Add a test
+  that pins the invariant: any salt replacement clears it (S11 adds the backup
+  path).
+- **`AvailabilityPacing`** is pure, with the clock injected: 20 s debounce,
+  6 min GitHub spacing, 10 per rolling 60 min across all sections, backoff
+  1/2/5/10 min then every 10. Test it under `fake_async`.
+- **`AvailabilityLaneStore`** port: *absent* versus *unreadable*, and a
+  damaged store never produces an empty list.
+- **`SiteSection.availability`** owns exactly `availability.json`. Check that
+  no other section's `owns` accepts it, and that retirement does not.
+- Every gate in `AGENTS.md` §11 must be green at the end. Commit messages use
+  Conventional Commits.

@@ -1,7 +1,8 @@
 # ADR 0018: Revalidated saved copies of a saved library's published files
 
-- **Status:** Accepted (supersedes decision 3 of ADR 0015)
-- **Date:** 2026-10-30
+- **Status:** Accepted (supersedes decision 3 of ADR 0015); amended by
+  [ADR 0019](0019-availability-fast-lane.md) (a third saved file)
+- **Date:** 2026-10-30 (amended 2026-11-01)
 
 ## Context
 
@@ -97,6 +98,28 @@ fact: the hash file, then the file).
    the exception type (never a path); viewing continues without a copy.
 10. **Covers and posters are unchanged:** still consent-gated, downscaled and
     memory-only (ADR 0015 decision 11). Only the two JSON files are saved.
+    *Amended 2026-11-01:* three JSON files (below).
+
+## Amendment 2026-11-01 — a third saved file (ADR 0019)
+
+A saved library's `availability.json` becomes a third saved copy, handled
+exactly like the other two:
+
+- **A new kind, not a new mechanism.** `PublishedFileKind.availability`, stored
+  as `availability.bin` in the library's existing folder and listed in its
+  `index.json`. It goes through the same `PublishedFileLoader` algorithm
+  (decision 1), entity-tag rules (decision 2), conditional fetch (decision 3)
+  and SHA-256 guard (decision 4).
+- **`404` behaves as for events:** the saved copy is deleted and the viewer
+  uses the inline tags from `books.json`.
+- **Byte cap:** 1 MiB per file (ADR 0019 Decision 4), inside the unchanged
+  200 MiB total (decision 7). A larger body is refused and never saved.
+- **Freshness is unchanged** (decision 6): the native viewer revalidates on
+  every open and does no background refresh while a page is open. The web
+  viewer's 60-second re-check is the web page's own behaviour and does not
+  apply here.
+- **Delete-on-remove, restore and moves** need nothing new: the copy lives in
+  the per-library folder that `retainOnly` already sweeps (decision 8).
 
 ## Consequences
 

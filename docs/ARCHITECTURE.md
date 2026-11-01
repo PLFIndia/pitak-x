@@ -87,8 +87,10 @@ probably over-engineering.
   rotation** (ADR 0005); **`.pitabak` is not fully encrypted** (§5.5).
 - **No Cloudflare Pages, dashboard Git integration, Workers Builds or custom
   domains**, and no "Sign in with Cloudflare" OAuth — the token is pasted
-  (ADR 0017). No user Worker code, no Functions, no WebView, no background or
-  scheduled publishing.
+  (ADR 0017). No user Worker code, no Functions, no WebView, and no publishing
+  while the app is not running (no OS background work, no scheduler plugin).
+  The one automatic publisher is the in-process availability lane, which runs
+  only while the app is open (ADR 0019).
 - **No two active hosts, mirrors or automatic peer redirection**, and no
   machine-readable moved notice for other apps (ADR 0012, ADR 0017). A move is
   a user decision; other phones may *offer* reconciliation and never follow it.

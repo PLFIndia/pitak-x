@@ -1,6 +1,6 @@
 # Publish optimisation — implementation plan
 
-- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are captured for both hosts on the test library and for Cloudflare on the 1,000-item fixture (Appendix A). Both S0 defects are resolved (A.6 #11, #13). The GitHub fixture row is deliberately not measured (A.6 #14; risk J8). **S0 is complete. Next: S1 (ADR 0019).** Nothing from Phase 1 onward has started.
+- **Status:** S0 code landed 2026-11-01 (timings + sink + tests, all gates green). Device measurements are captured for both hosts on the test library and for Cloudflare on the 1,000-item fixture (Appendix A). Both S0 defects are resolved (A.6 #11, #13). The GitHub fixture row is deliberately not measured (A.6 #14; risk J8). **S0 is complete.** **S1 (2026-11-01):** `docs/adr/0019-availability-fast-lane.md` written (status *Proposed*), with amendment notes in ADR 0015, 0017 and 0018, the index entry, and the ARCHITECTURE §1.2 non-goal edit. The product owner decided the four open questions (A.6 #15–#17; ADR 0019 Decision 13). S1 also recorded five engineering corrections found while writing it (A.6 #18–#22). **S1 exit: the product owner accepts ADR 0019.** No code from Phase 1 onward has started.
 - **Branch:** `publishOptimisation`, created 2026-11-01 from `03313a3` (release 1.9.0+32). That commit is the tip of the `cloudflare` branch, not of `main` (see A.6 #1).
 - **Scope, in order:** Phase 0 measure → Phase 1 availability fast lane → Phase 2 cover work avoidance (three fixes) → Phase 3 publish speed. Catalogue chunking is designed but deferred (Part I).
 - **Product decisions:** recorded in A.3 (product owner, 2026-11-01).
@@ -59,7 +59,7 @@ This plan is written as discrete sessions. Each session must end green (every CI
 ## A.2 Outcomes
 
 **Phase 1 — availability fast lane**
-- Lending or returning an item updates the public **Available / Not available** tag by itself: within seconds on Cloudflare; about a minute on GitHub, up to about 7 minutes in a very busy hour.
+- Lending or returning an item updates the public **Available / Not available** tag by itself: usually under a minute on Cloudflare (≈ 36–40 s estimated; S8 measures the final wording, A.6 #15); about a minute on GitHub, up to about 7 minutes in a very busy hour.
 - No cover is read and the catalogue is not rebuilt for a loan.
 - The update still goes out if the vault locks before it is sent.
 - One switch in **Settings → Data** turns it off. It is on by default.
@@ -82,7 +82,7 @@ This plan is written as discrete sessions. Each session must end green (every CI
 
 | Measure | Target |
 |---|---|
-| Lane on Cloudflare: change → verified live | ≤ 20 s after Phase 1; ≤ 10 s after Phase 3 |
+| Lane on Cloudflare: debounce done → verified live | ≤ 20 s after Phase 1, kept as the budget after Phase 3 (the ≤ 10 s goal is withdrawn, A.6 #15) |
 | Lane on GitHub: debounce/pacing done → commit accepted | ≤ 10 s |
 | Unchanged republish of the 80-book library: covers processed | 0 (after Phase 2) |
 | Add 1 book with a cover to a 1,000-item fixture: covers processed | 1 (after Phase 2) |
@@ -94,6 +94,8 @@ This plan is written as discrete sessions. Each session must end green (every CI
 - *GitHub button returns at commit time*: **confirmed.** The button would return after 4–9 s of app work plus a 3.3–7.2 s commit, instead of after 43–57 s.
 - *Lane on Cloudflare, ≤ 20 s after Phase 1*: **achievable only if measured from the end of the 20 s debounce.** That is how the GitHub row is already worded. An availability-only deploy still pays the fixed Cloudflare overhead of reconcile, pipeline gates, upload, deploy and read-back. Without the 5 s sleep (AV13), that comes to about 15–17 s. With the debounce included, a change takes about 35–40 s to go live, so the A.2 wording "within seconds" needs S8's measured copy (G4).
 - *Lane on Cloudflare, ≤ 10 s after Phase 3*: **at risk.** SP2 and SP3 together remove an estimated 5–8 s, which leaves about 10–12 s. Keep it as the goal and re-measure in S13/S15.
+
+**S1 decision on the targets (product owner, 2026-11-01; ADR 0019 Decision 13a).** The S1 arithmetic corrects the two Cloudflare bullets above (A.6 #15). After the debounce, an availability-only deploy costs ≈ 16–20 s: reads ≤ 0.6, reconcile 3.2–3.5, unmarked gates 7.3–8.6, upload 3.1–4.8 (fixed latency), deploy 1.2–1.4, and a 2-file read-back ≈ 0.7 with no sleep. Lend → live is therefore ≈ 36–40 s. The "≈ 10–12 s after Phase 3" figure removed the 5 s sleep twice. Keeping every gate, Phase 3 adds only SP3 (≈ 1–2 s), so the ≤ 10 s goal is **withdrawn**, and ≤ 20 s after the debounce stays as the regression budget.
 
 ## A.3 Product decisions (product owner, 2026-11-01)
 
@@ -125,18 +127,18 @@ This plan is written as discrete sessions. Each session must end green (every CI
 
 | ID | Decision | Reason |
 |---|---|---|
-| AV1 | Public loan data is exactly one coarse tag per item (P1). "Not available" means every copy is out, using the existing rule `isBookUnavailable` (`vault/domain/availability.dart:26-34`). | One rule everywhere; never an exact count. |
-| AV2 | A new file **`availability.json`**, owned by a new **`availability` section**, lists only the keys of items that are **not available**. | Tiny (≈ 19 bytes per out item) and independent of covers and catalogue. Most books are on the shelf. |
+| AV1 | Public loan data is exactly one coarse tag per item (P1). "Not available" means every copy is out, using the existing rule `isBookUnavailable` (`vault/domain/availability.dart:26-34`). The inline `books.json` tag uses the same function from S3 (A.6 #18). | One rule everywhere; never an exact count. |
+| AV2 | A new file **`availability.json`**, owned by a new **`availability` section**, lists only the keys of items that are **not available**, and never items of kind Other (A.6 #17). | Tiny (≈ 19 bytes per out item) and independent of covers and catalogue. Most books are on the shelf. |
 | AV3 | **Join key:** every `books.json` item gains `key` = the first 16 hex characters of SHA-256(salt ‖ `"item:" + id`), computed with the existing helper `PublishCoverIds.shortHashHexForKey` and the same salt store as covers. The field is additive; `books.json` stays schema 1. | Internal ids are never published (`publish_export.dart:5-7`). ISBNs and titles are neither unique nor stable. The `item:` prefix keeps keys independent of cover file names. |
-| AV4 | **On by default; switch in Settings → Data** (P3). Turning it **off** stops updates and publishes **one deletion** of `availability.json`, so readers fall back to the tag inside `books.json` instead of a frozen file. | Readers must never see a file that has silently stopped updating. |
+| AV4 | **On by default; switch in Settings → Data** (P3). Turning it **off** stops updates and publishes **one deletion** of `availability.json`, so readers fall back to the tag inside `books.json` instead of a frozen file. While the lane is off and the record shows the file, any publish that runs first (catalogue included) carries that deletion, and the stored snapshots are cleared once it is published (A.6 #20). | Readers must never see a file that has silently stopped updating. |
 | AV5 | **Trigger:** a change in the derived "not available" key set, computed from `activeLoanCountsProvider` (`vault_providers.dart:77-87`) and the catalogue (copy counts, removals). A **null** count map (vault locked) means "unknown" and never triggers a publish. | Lending the second copy of a three-copy book changes no tag. "Unknown" must never become "everything available". |
 | AV6 | **Pacing:** wait 20 s after the last change (debounce). GitHub also waits at least **6 min** between availability publishes and allows at most **10 commits per rolling 60 min** from this app, all sections counted. Cloudflare uses the debounce only. | Lending five books at the counter becomes one publish. GitHub's soft limit is 10 builds per hour. |
 | AV7 | The computed key set is **saved when it is computed**, with `asOf` = the time of the loan change, so the publish can run after the vault locks. The saved data holds only public keys and timestamps. | Loans change only while the vault is unlocked, but the publish may happen later (offline, pacing). |
-| AV8 | **Writer consistency:** while the lane is on and loan counts are known, every **catalogue** publish also writes `availability.json` in the same commit or deploy. Readers prefer `availability.json` whenever it is present. | The two sources never disagree on a freshly published site, and readers need only one simple rule. |
-| AV9 | The inline `availability` field in `books.json` keeps being written exactly as today (only when the vault is unlocked at catalogue publish). New readers ignore it when `availability.json` is present. | Older Pitak versions keep showing a tag (P6). |
-| AV10 | **Gates**, checked inside the queue with fresh reads: (a) an active, connected host with a resolved target; (b) this exact target's live catalogue was published **with keys** (new `catalogueKeyed` flag in both publish records); (c) an ordinary publish would be allowed right now (for example, no blocking pending move). Otherwise nothing is sent and the status explains why. | Readers can only map keys that the live catalogue carries. |
+| AV8 | **Writer consistency:** while the lane is on and loan counts are known, every **catalogue** publish also writes `availability.json` in the same commit or deploy. Readers prefer `availability.json` whenever it is present and valid, for every item that carries a valid `key` (the per-item rule, ADR 0019 Decision 4). | The two sources never disagree on a freshly published site, and readers need only one simple rule. |
+| AV9 | The inline `availability` field in `books.json` keeps being written at the same times as today (only when the vault is unlocked at catalogue publish), through the AV1 rule (A.6 #18). New readers ignore it for an item that has a valid `key` while a valid `availability.json` is present (the per-item rule, ADR 0019 Decision 4). | Older Pitak versions keep showing a tag (P6). |
+| AV10 | **Gates**, checked inside the queue with fresh reads: (a) an active, connected host with a resolved target; (b) this exact target's live catalogue is **this phone's own keyed publish**: the new `catalogueKeyed` flag in both publish records, plus GitHub's head-tree `books.json` blob equal to the record's entry, or Cloudflare's live marker being this phone's own (A.6 #19); (c) an ordinary publish would be allowed right now (for example, no blocking pending move). Otherwise nothing is sent and the status explains why. | Readers can only map keys that the live catalogue carries. |
 | AV11 | **Failures** (stale site, foreign marker, missing bytes, offline, credential problem) keep the snapshot pending and show the reason. Retries happen only on the next change, app resume, **Update availability now**, or a bounded in-process backoff (1, 2, 5, 10 min, then every 10 min while the app runs). Never an immediate loop; never an automatic replacement. | G6; ADR 0017 requires the user's consent for replacements. |
-| AV12 | **GitHub:** an availability commit does **not** poll Pages inside the queue. The record is saved `deployed` with a **proof path** (`availability.json`), and a short **deferred check** outside the queue upgrades it to `live`. From now on every publish record stores the proof path of its last commit, and the pre-publish check reads that path (fixes A.1 item 8). | The queue must not be held for a minute per loan, and proof must come from a file the commit changed. |
+| AV12 | **GitHub:** an availability commit does **not** poll Pages inside the queue. The record is saved `deployed` with a **proof path** (`availability.json`), and a short **deferred check** outside the queue upgrades it to `live`; it polls until the expected state appears and never reports "contradicted" (A.6 #21). From now on every publish record stores the proof path of its last commit, and the pre-publish check reads that path (fixes A.1 item 8). | The queue must not be held for a minute per loan, and proof must come from a file the commit changed. |
 | AV13 | **Cloudflare:** availability-only deploys use the existing assembler. Every other file is referenced by its recorded hash; only `availability.json` and the marker are uploaded. Read-back covers the marker plus `availability.json` (or its 404 after a deletion), with the **first check immediately**, then the existing budget. All freshness and Version-URL gates stay. | A version is atomic and the marker is unique per deploy (ADR 0017 Decision 6), so the marker plus the changed file prove the new version. Amends ADR 0017 S8 through ADR 0019. |
 | AV14 | **Readers** (web viewer v8 and the native viewer) fetch `availability.json`, label tags **Available / Not available** everywhere (the web page's "All out" becomes "Not available"), and add an **Available now** filter and a summary line with the update time. The web page re-checks the file every 60 s while visible, using conditional revalidation, never query-string cache-busters (A.1 item 9). | P1 wording; consistent labels; GitHub's edge ignores query strings. |
 | AV15 | **Hostile-input caps** for `availability.json` in both readers: ≤ 1 MiB; ≤ 100,000 keys; each key matches `^[0-9a-f]{16}$`; the shared JSON depth guard; duplicates and unknown fields ignored; `schemaVersion` > 1 → the file is ignored and the inline tag is used. `asOf` is untrusted and is shown only when plausible. | Same posture as ADR 0015 and ADR 0016; a misread tag is worse than no tag. |
@@ -197,6 +199,15 @@ Record a deviation here before the affected session finishes.
 | 12 | Test library rows on "the real 80-book library" | Measured on the product owner's test library with 7–9 items with covers | That is the library on the test phone. Cover cost is per cover, so the 1,000-item fixture rows carry the size-dependent answer. |
 | 13 | B.1 builds the instrumented APK with a plain `flutter build`/`flutter run` | Every measurement build starts with `flutter clean` (`docs/RELEASING.md` §4), and the APK's `libapp.so` is checked before installing | Flutter 3.44's Gradle plugin can package a **stale `libapp.so`**: `merge<Variant>JniLibFolders` stays up to date after a Dart-only change (fixed upstream by flutter/flutter#188119, not in 3.44.2). Every incremental build after 17:13 on 2026-11-01 shipped the 17:13 Dart code. That caused handoff issue 1 (Cloudflare lines without `reads`/`reconcile`). The lines it produced are still valid for the marks they contain, because the marks change no behaviour. |
 | 14 | Appendix A row "Add 1 book + cover, 1,000-item fixture, GitHub" | Not measured; product owner decision, 2026-11-01 | Cover cost does not depend on the host: the same builder runs before either upload, and Cloudflare measured it. GitHub's own costs (commit, Pages) are measured on the test library. A first GitHub publish of 1,000 covers makes more than 1,000 blob requests, one per cover (`http_github_api.dart:416-429`). GitHub documents a limit of about 80 content-creating requests per minute and 500 per hour, so the run would probably be refused partway, and it could block content creation on the account for up to an hour. That risk is now J8 instead. |
+| 15 | A.2: Cloudflare lane ≤ 20 s after Phase 1 and **≤ 10 s after Phase 3**; outcome "within seconds" | ≤ 20 s **measured from the end of the debounce**; the ≤ 10 s target is **withdrawn**; outcome "usually under a minute" until S8 measures the final words. G.5 Phase 3 changes to match. Product owner decision, S1, 2026-11-01 (ADR 0019 Decision 13a) | S1 arithmetic from Appendix A: an availability-only deploy still pays reads, reconcile, the unmarked gates, upload (fixed latency), deploy and a 2-file read-back, ≈ 16–20 s after the debounce, so lend → live is ≈ 36–40 s. The S0 verdict's "≈ 10–12 s after Phase 3" subtracted the 5 s read-back sleep twice (AV13 already removes it for the lane, so SP2 cannot remove it again). With every gate kept, Phase 3 adds only SP3 (≈ 1–2 s), leaving ≈ 14–18 s. |
+| 16 | C.1: `asOf` in epoch milliseconds | `asOf` **rounded down to the whole minute** (still epoch milliseconds). Product owner decision, S1 (ADR 0019 Decision 13b) | Data minimisation: readers show minutes only, and on Cloudflare nothing else public gives the exact moment of a loan. |
+| 17 | AV2 / C.3: `out` lists every item that is not available | Kind **Other is never listed**. Product owner decision, S1 (ADR 0019 Decision 13c) | Neither reader shows a tag for Other once J7 lands, so the data would be public with no use. Lending an Other item then triggers no publish. |
+| 18 | AV9: the inline tag is written "exactly as today" | Written at the same times as today, but through the AV1 rule `isBookUnavailable` (S3) | Today `CatalogueSectionBuilder._availabilityFor` repeats `active >= copyCount` without the rule's clamp, a second copy of the rule that AV1 forbids. The output is identical for every row that passed `CatalogueItem.validate` (`copyCount >= 1`). With one function, AV8's "the two sources never disagree" holds by construction. |
+| 19 | AV10(b): "this exact target's live catalogue was published with keys" | The live `books.json` must be **this phone's own keyed publish**. GitHub: the head tree's `books.json` blob equals the record's entry, and the record has `catalogueKeyed`. Cloudflare: the live marker is this phone's own, and the record has `catalogueKeyed` (ADR 0019 Decision 7b) | A flag alone does not prove the live keys came from this phone's salt and ids. Another phone (with a different salt) or an older Pitak may have republished the catalogue since. Unmatched keys would make every item show Available, the dangerous direction. Found in S1. |
+| 20 | AV4: switching off publishes one deletion | Plus: while the lane is off and the record shows `availability.json`, **any** publish that runs first (the removal or a catalogue publish) deletes it in the same commit or deploy. The stored snapshots are cleared once the removal is published (ADR 0019 Decisions 6 and 9) | A removal still pending (offline) must not leave a frozen file live after a catalogue publish. The plaintext lane store should not keep loan-derived data the user has stopped publishing. |
+| 21 | C.5: the deferred check "reuses `PublishedFileReadBack.untilMatchesSha`" | It **polls until it sees the expected state**, through the structured `PublishedSiteReadVerifier`. Old bytes (or a 404 on a first publish) mean "keep waiting". An **availability removal** is proven by an exact 404 (a new proof-path row). Running out of budget leaves the record `deployed`, never "contradicted" (ADR 0019 Decision 10) | `untilMatchesSha` lets the first readable answer decide, so seconds after a commit it would call Pages' still-old bytes a contradiction. It also returns only bodies, so it cannot prove the 404 that a removal commit leaves. Found in S1. |
+| 22 | C.7 / C.11: reader model `PublishedAvailability` in `network/domain/entities/published_availability.dart` | `PublishedAvailabilityFile` in `network/domain/entities/published_availability_file.dart` | `PublishedAvailability` already names the per-item available/out enum in `published_catalogue.dart`. A second type with that name would collide. |
+| 23 | Part H: `docs/ARCHITECTURE.md` changes in Phase 1 (S8) | S1 already edits the §1.2 non-goal "no background or scheduled publishing" to "no publishing while the app is not running" (the availability write-up in §5/§6 stays in S8) | The lane re-opens a listed non-goal ("do not re-open without a trigger"). The architecture document must not contradict the ADR that re-opens it. |
 
 ---
 
@@ -269,11 +280,12 @@ Every item gains `key`:
 ### `availability.json` (new)
 
 ```json
-{"schemaVersion":1,"asOf":1761985000000,"out":["3f2c7a1b9e4d8051","9a0b44c1d2e3f405"]}
+{"schemaVersion":1,"asOf":1761984300000,"out":["3f2c7a1b9e4d8051","9a0b44c1d2e3f405"]}
 ```
 
 - `out` holds the keys of items whose every copy is lent out, **sorted**, with no duplicates. Compact JSON from one encoder, so the same set always produces identical bytes and an unchanged set is never uploaded again.
-- `asOf` is the time, in epoch milliseconds, of the loan change the set was computed from.
+- `asOf` is the time, in epoch milliseconds, of the loan change the set was computed from, **rounded down to the whole minute** (A.6 #16).
+- `out` never lists items of kind Other (A.6 #17).
 - Size is about 19 bytes per out item (50 items out ≈ 1 KB).
 
 | What the reader finds | Tag shown |
@@ -303,7 +315,7 @@ Every item gains `key`:
 
 ## C.3 The "not available" set
 
-- A function in the application layer, `notAvailableItemIds(items, activeCounts)`, returns the set of ids. Each item carries its id, copy count and removed flag. It calls the vault's `isBookUnavailable` (`availability.dart:26-34`), so the rule has one copy only. Verify the import against the layer test; application code may depend on another feature's domain.
+- A function in the application layer, `notAvailableItemIds(items, activeCounts)`, returns the set of ids. Each item carries its id, kind, copy count and removed flag; items of kind Other are skipped (A.6 #17). It calls the vault's `isBookUnavailable` (`availability.dart:26-34`), so the rule has one copy only. Verify the import against the layer test; application code may depend on another feature's domain.
 - `AvailabilitySnapshot.fromIds(ids, keys, asOf)` maps ids to sorted keys.
 - A null count map produces no snapshot (AV5).
 
@@ -382,9 +394,10 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
   | catalogue, including a combined catalogue + availability commit | `books.json` (its `exportedAt` changes on every publish) |
   | events | `events.json` |
   | availability only | `availability.json` |
+  | availability removal (switch off) | `availability.json`, expected as an exact 404 (A.6 #21) |
 
   `PublishVerificationCheck` (`publish_verification_check.dart:69-101`) reads the path and expected hash from the local record instead of a caller constant, and both existing callers change. Legacy records without a proof path fall back to today's per-section constants.
-- **Deferred check.** `DeferredPublishVerification` (application/site, shared with SP1) runs after the queue is released: first read at 30 s, then every 10 s, stopping at 150 s. It reuses the existing `PublishedFileReadBack.untilMatchesSha` machinery (bounded reads, no redirects). When proven, it re-enters the queue and upgrades the record to `live` — **only if** the record still has the same head and is still `deployed` — and records the verified address exactly as the in-queue read-back does today. It is best-effort and is cancelled on dispose; the next publish's pre-check covers anything it missed.
+- **Deferred check.** `DeferredPublishVerification` (application/site, shared with SP1) runs after the queue is released: first read at 30 s, then every 10 s, stopping at 150 s. It reads through the existing bounded, redirect-free structured port `PublishedSiteReadVerifier`, but **polls until it sees the expected state**: old bytes, or a 404 on a first publish, mean "Pages is still building", and an availability removal is proven by an exact 404. Running out of budget leaves the record `deployed`, never "contradicted". It does **not** use `untilMatchesSha`, whose first readable answer decides (right for checking an earlier commit, wrong seconds after one; A.6 #21). When proven, it re-enters the queue and upgrades the record to `live` — **only if** the record still has the same head and is still `deployed` — and records the verified address exactly as the in-queue read-back does today. It is best-effort and is cancelled on dispose; the next publish's pre-check covers anything it missed.
 - **Stale head.** `PublishCommitStale` becomes `pending("Another change reached your site first; Pitak will retry")`. There is no immediate retry; the next attempt starts from a fresh reconcile.
 
 ## C.6 Cloudflare path
@@ -401,9 +414,9 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
 ### Native viewer (`lib/features/network`)
 
 1. Add `PublishedFileKind.availability` (`published_file_cache.dart:28-34`): a saved copy revalidated with its entity tag, exactly like the other two kinds (ADR 0018). Add `PublishedSiteUrlPolicy.availabilityUrl` (`published_site_url_policy.dart:32-37`).
-2. `PublishedAvailabilityCodec` (infrastructure) applies AV15 and returns a domain `PublishedAvailability` (key set + `asOf`).
+2. `PublishedAvailabilityCodec` (infrastructure) applies AV15 and returns a domain `PublishedAvailabilityFile` (key set + `asOf`; not `PublishedAvailability`, which is the existing per-item enum, A.6 #22).
 3. The item reader (`published_catalogue_item_reader.dart`) reads `key` with the same pattern. An invalid key means "no key", so that item falls back to its inline tag.
-4. One pure merge rule (domain): if the file is present and valid, the tag comes from the key set (except kind "Other"); otherwise the inline tag is used.
+4. One pure merge rule (domain), **per item**: if the file is present and valid **and the item has a valid key**, the tag comes from the key set; otherwise the inline tag is used. Kind "Other" never shows a tag (ADR 0019 Decision 4).
 5. Load the catalogue and availability in parallel. An availability failure never blocks the catalogue; it shows the inline tag or nothing, plus a small note.
 6. UI:
    - the label reads **Not available** (`published_item_badges.dart:51-55`, `published_catalogue_item_page.dart:78-81`);
@@ -433,10 +446,10 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
 > | I want to… | Use |
 > |---|---|
 > | Get online today with the least setup | **GitHub Pages** — sign in with a code and name a folder. A few minutes. |
-> | Show loans almost the moment they happen | **Cloudflare Workers** — about ten minutes to set up, once. |
+> | Show loans within a minute, even on a busy day | **Cloudflare Workers** — about ten minutes to set up, once. |
 > | Start quickly and decide later | **GitHub Pages** now; **Move to other host** any time. |
 >
-> **An example.** Asha runs a reading room. On a busy Saturday morning she lends 12 books in an hour. Pitak updates her page by itself after each loan. On **Cloudflare**, readers see **Not available** within seconds. On **GitHub Pages**, each update takes about a minute to appear, and GitHub allows only about 10 updates an hour, so in a busy hour Pitak groups her loans together and a change can take up to about 7 minutes to show. On a quiet day both feel the same.
+> **An example.** Asha runs a reading room. On a busy Saturday morning she lends 12 books in an hour. Pitak updates her page by itself after each loan. On **Cloudflare**, readers usually see **Not available** in under a minute, however busy she is. On **GitHub Pages**, each update takes about a minute to appear, and GitHub allows only about 10 updates an hour, so in a busy hour Pitak groups her loans together and a change can take up to about 7 minutes to show. On a quiet day both feel the same.
 
 **Sentences that change in the same edit:**
 
@@ -450,7 +463,7 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
 - The publish counts in `guide_catalog_test.dart:86` become `[1, 2, 3, 1, 6, 2, 1, 1, 3]` (needs, "What goes online", table rows, example, GitHub steps, Cloudflare, "Every time after that", moving, good to know).
 - A new test asserts that the copy says "up to about ${gitHubSpacing.inMinutes + 1} minutes", so changing the constant fails CI until the copy is updated.
 - Mirror the copy in `docs/mockups/how-pitak-works.md` §3.3.
-- If the S8 measurements do not support "within seconds" (Cloudflare p90 above 20 s), the wording changes before release (G4).
+- The Cloudflare wording above follows the S1 decision ("usually under a minute", A.6 #15). If the S8 measurements do not support it (Cloudflare p90 above 20 s after the debounce), the wording changes again before release (G4).
 
 ## C.10 Privacy and security review (Phase 1)
 
@@ -483,7 +496,7 @@ Reads distinguish **absent** from **unreadable**. An unreadable store is treated
 | `lib/features/publish/presentation/widgets/availability_status_row.dart` | presentation | Status text and **Update availability now**. |
 | `lib/features/publish/presentation/widgets/availability_lifecycle_relay.dart` | presentation | Forwards app resume to the lane. |
 | `lib/features/settings/presentation/widgets/publishing_settings_group.dart` | presentation | The Settings switch. |
-| `lib/features/network/domain/entities/published_availability.dart` | domain | Reader model. |
+| `lib/features/network/domain/entities/published_availability_file.dart` | domain | Reader model `PublishedAvailabilityFile` (A.6 #22). |
 | `lib/features/network/infrastructure/published_availability_codec.dart` | infrastructure | Hostile-input reader. |
 
 ### Modified production files
@@ -757,7 +770,7 @@ Every gate in `AGENTS.md` §11, including the architecture boundary check and th
 
 - **Phase 1:** G.4 rows 1–10 pass. Lane timings meet A.2, or the copy is adjusted with a deviation. No regression in catalogue or events publishing.
 - **Phase 2:** counted-reader tests prove 0 and 1 cover reads (A.2). A restore on a second phone uploads no covers (device evidence). GitHub blob reuse is proven against the real API on a test repo.
-- **Phase 3:** the GitHub publish button returns at commit time. The Cloudflare lane is at or under 10 s p90. A publish with an unchanged head makes no tree request.
+- **Phase 3:** the GitHub publish button returns at commit time. The Cloudflare lane stays at or under 20 s p90 after the debounce (the 10 s goal is withdrawn, A.6 #15). A publish with an unchanged head makes no tree request.
 
 ---
 

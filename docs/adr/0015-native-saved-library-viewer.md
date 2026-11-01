@@ -1,8 +1,9 @@
 # ADR 0015: Native viewer for a saved library's published catalogue
 
 - **Status:** Accepted; decision 3 superseded by
-  [ADR 0018](0018-revalidated-saved-copies-of-published-files.md)
-- **Date:** 2026-10-25
+  [ADR 0018](0018-revalidated-saved-copies-of-published-files.md); amended by
+  [ADR 0019](0019-availability-fast-lane.md) (the availability file)
+- **Date:** 2026-10-25 (amended 2026-11-01)
 
 ## Context
 
@@ -125,6 +126,34 @@ library's current published `books.json`.** Concretely (plan
   viewer explains the existing choice and offers **Load covers**. The action
   persists the same opt-in; decision 11 still applies equally to same-site and
   third-party images. Native events themselves are specified by ADR 0016.
+
+## Amendment 2026-11-01 — the availability file (ADR 0019)
+
+The availability tag is still coarse, but it is no longer only a
+*publish-time* snapshot: a publishing library may update it separately through
+`availability.json`. What changes here:
+
+- **A third file.** The viewer also reads `availability.json` from the saved
+  site root, in parallel with `books.json`, under the same origin + directory +
+  per-redirect policy (decision 10) and the viewer-owned, abortable client
+  (decision 8). A failure never blocks the catalogue: items show their inline
+  tag or nothing, plus a small note. A 404 is a valid absent file.
+- **Hostile-input caps** (ADR 0019 Decision 4): at most 1 MiB; at most 100,000
+  keys; each key `^[0-9a-f]{16}$`; the shared depth guard; duplicates and
+  unknown fields ignored; `schemaVersion` > 1 means the file is ignored.
+- **`books.json` gains an additive `key` per item** (still schema 1, so
+  decision 14's "no schema change" holds). The reader now reads `key`; an
+  invalid key means "no key", and that item uses its inline tag.
+- **The tag is decided per item:** from the file when the file is valid *and*
+  the item has a valid key, otherwise from the inline tag. Kind Other never
+  shows a tag (unchanged).
+- **Labels:** *Available / Not available*; "All out" retires. The words still
+  never promise a live loan: a summary line shows when the tag was last
+  updated, from the file's untrusted `asOf`, only when plausible. The query
+  engine gains an **Available now** filter.
+- **Reader and writer models stay separate** (decision 5): the reader's
+  `PublishedAvailabilityFile` is not the publish feature's `AvailabilitySnapshot`.
+  Shared fixtures pin web/native parity, as for the catalogue.
 
 ## Consequences
 

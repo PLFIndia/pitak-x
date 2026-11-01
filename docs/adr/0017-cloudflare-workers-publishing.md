@@ -14,7 +14,9 @@
   moved-page name/destination-consent rules, the legacy-token fallback,
   lower-case new Worker names with a case-variant guard, and the reader's
   keep-address rule; amended 2026-10-31: replacement consent follows Worker
-  content, and the case-variant listing is removed)
+  content, and the case-variant listing is removed; amended 2026-11-01 by
+  [ADR 0019](0019-availability-fast-lane.md): the availability section, its
+  read-back set, per-record proof paths and GitHub's deferred check)
 - **Amends:** ADR 0007 (a third persisted `String` token plus ephemeral
   upload/completion JWTs) and ADR 0010 (no pinning for a second publishing
   API). ADR 0012 gains the `workers.dev` reader URL by the same work.
@@ -132,6 +134,50 @@ consequences the product cannot hide:
    *candidate* for the user to confirm — never an automatic follow — and
    acceptance is one transactional merge/repoint that keeps both URL and
    fingerprint uniqueness.
+
+## Amendment 2026-11-01 — the availability section (ADR 0019)
+
+ADR 0019 adds an automatic, in-process publisher (the *lane*) for one small
+file. Every rule above still applies to it. What changes:
+
+- **A fourth section.** `SiteSection.availability` owns exactly
+  `availability.json`, which joins Pitak's fixed public files (Decision 1). On
+  GitHub it is an owned path like any other: deleted only from a manifest that
+  recorded it, and by retirement (Decision 4). Complete snapshots for moves and
+  replacements include it when the lane is on, and its `asOf` is excluded from
+  the replacement digest, as `exportedAt` already is.
+- **Cloudflare read-back (S8).** An availability-only deploy uploads only
+  `availability.json` and the marker; every other file is referenced by its
+  recorded hash. Its read-back set is **the fresh marker plus
+  `availability.json`** (or that file's exact 404 after a removal). The first
+  round runs immediately, then the existing budget applies. The version is
+  atomic and the marker is unique per deploy (Decision 6), so these two files
+  prove the whole version. A combined catalogue + availability deploy reads
+  back the S8 set plus `availability.json`. Preflight, session baseline,
+  Version-URL gates (Decision 7) and the pending-deploy record are unchanged.
+- **The lane never replaces a site.** A missing bucket hash, or an unknown,
+  foreign or retired marker, leaves the update *pending* with "Open Publish to
+  web to repair the site". Preparing and confirming a whole-site replacement
+  stays a user action (S8).
+- **GitHub proof paths.** Every publish record now stores the proof path of its
+  last commit (`books.json`, `events.json`, `availability.json`, or
+  `availability.json` expected as an exact 404 after a removal). The
+  pre-publish check of a `deployed` record reads that path instead of a
+  per-section constant. This closes a gap where a catalogue publish could
+  "prove" an unconfirmed events commit from an unchanged `books.json`. Legacy
+  records without a proof path keep the old constants.
+- **GitHub deferred check.** An availability commit does not wait for Pages
+  inside the queue. It is saved `deployed`, and a check outside the queue
+  polls until the expected state appears (old bytes mean "still building", not
+  "contradicted"). It then upgrades the record to `live` only if the record is
+  unchanged, and records the verified share address as before. Running out of
+  budget leaves the record `deployed`; nothing is ever reported live without
+  proof (S11). Phase 3 (SP1) will reuse this for catalogue and events
+  publishes through a further amendment.
+- **One publisher per site matters more.** The lane is on by default, so a
+  second phone connected to the same site would publish without a tap. The
+  marker and ADR 0019's gate 7b fail closed, but the single-writer limitation
+  in the Consequences below is unchanged and still applies.
 
 ## Consequences
 
@@ -251,7 +297,10 @@ consequences the product cannot hide:
   blocking. A `live` manifest with an incomplete journal/connection commit is
   re-proven before repair. Persistence is ordered `deployed`, then `live`,
   journal `verifiedTarget`, and finally the whole secure connection's
-  write-proven flag.
+  write-proven flag. *Amended 2026-11-01 (ADR 0019):* an availability-only
+  deploy reads back the fresh marker plus `availability.json` (or its exact
+  404), with the first round immediately; a combined deploy adds
+  `availability.json` to this set. See the amendment below.
 - **S11 makes outcomes truthful (fix-plan L7/L12/N4/N5/N6).** A deploy-free
   check reports "Verified", never "Published!"; a failed old-record commit is a
   failure that says the previous publish is live and the new changes were not
