@@ -52,7 +52,7 @@ heading as part of the `chore(release):` commit.
   60 s while visible; the native viewer keeps a third saved copy (ADR 0018).
 - **Guide:** "Put your catalogue online" gains **Which host suits you?** and
   a worked example (P7); its GitHub minutes are pinned to `AvailabilityPacing`.
-- **Covers already online are not produced again (ADR 0020, proposed;
+- **Covers already online are not produced again (ADR 0020;
   publish-optimisation Phase 2 Fix 1, S9):** an incremental catalogue publish
   reuses a cover — no read, no re-encode, no upload — when the publish record
   names the same source for it, holds its file and carries the current
@@ -93,6 +93,20 @@ heading as part of the `chore(release):` commit.
   under a known file name are read again (ADR 0020 Decision 4).
 - New fitness function `test/architecture/cover_files_immutable_test.dart`:
   a stored cover file never changes once saved (CV1).
+- **GitHub never receives bytes it already holds (ADR 0020 Decision 6,
+  publish-optimisation Phase 2 Fix 3, S10).** Every GitHub commit
+  (catalogue, events, availability, move, retirement) is planned by the pure
+  `GitHubCommitPlan`, and `GitHubGitDataApi.commitFiles` now takes the plan
+  instead of a file list. A file is sent as a blob only when it changed, its
+  sha is nowhere in the branch's head tree (any path, owned or not) and the
+  same commit has not already sent those bytes; otherwise the tree names the
+  existing blob. `ReconciledPublication.knownBlobShas` /
+  `GitHubTreeSnapshot.blobShas` carry the head tree's blobs. A phone whose
+  record was lost, a move back to a repository that still holds the covers,
+  items sharing one picture and the moved `index.html`/`404.html` pair no
+  longer re-send bytes. `uploadedPaths`, the "uploading" phase and the S0
+  `bytes` count report real uploads only. Deletions are unchanged. Proven
+  against the real API on a throwaway repository.
 - `PRIVACY.md` (effective 2026-11-02): availability updates automatically;
   the viewer requests and saves `availability.json`.
 

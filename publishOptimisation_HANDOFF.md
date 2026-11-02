@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S9 complete + G.4 device evidence, 2026-11-02)
+# Publish optimisation — handoff (S10 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -26,8 +26,9 @@ all fixes"); the branch stays unpushed until then. §6 is the checklist.
 S9 — ADR 0020 and Fix 1 (covers) — **complete** (§S9), started on the
 product owner's go-ahead ("go ahead for next session", 2026-11-02, the same
 words that started S3–S8). The G.4 rows were not run first: no phone was
-attached (`adb devices` empty); they ran after S9 instead (§G4). **ADR 0020 is _proposed_: the product owner
-should accept it (or amend it) before S10 starts.**
+attached (`adb devices` empty); they ran after S9 instead (§G4). **ADR 0020
+was accepted by the product owner on 2026-11-02, as written** (at the start of
+S10).
 G.4 — device evidence — **done** (§G4, 2026-11-02, the product owner on the
 phone, build `6ac2ee1`): every Cloudflare row and GitHub rows 2 and 9 PASS;
 row 8 shortened by the product owner (plan A.6 #94); "usually under a
@@ -35,12 +36,17 @@ minute" kept by the product owner although the p90 rule was missed (A.6
 #93); Fix 1 confirmed on both hosts. Three observations for the product
 owner: plan J12–J14. **Phase 1's only open G.5 item is now the Linux golden
 regeneration (still deferred; the branch stays unpushed).**
-**S10 (Fix 3, GitHub blob reuse) has NOT started. Do not start it until the
-product owner explicitly says so.** Open decision for the product owner:
-plan J11 (§S9).
+S10 — Fix 3 (GitHub blob reuse, CV5) — **complete** (§S10), started on the
+product owner's go-ahead ("go ahead for the next item", 2026-11-02). J8 was
+**not measured**: the product owner skipped the live probe and treats it as
+confirmed by public reports; **its fix is an open product decision (§S10
+options, plan J8) and must be taken before Phase 2 ships.**
+**S11 (Fix 2, backup publish state) has NOT started. Do not start it until
+the product owner explicitly says so.** Open decisions for the product
+owner: plan J8 (§S10), J11 (§S9), J12–J14 (§G4).
 
-> Read this file first in any new session. §G4 (device evidence) and §S9
-> are the newest state, then §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
+> Read this file first in any new session. §S10 is the newest state, then
+> §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4, §S3, §S2 and §0
 > (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim lines
 > in §3), kept unchanged.
 
@@ -52,6 +58,125 @@ plan J11 (§S9).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S10 — Fix 3: GitHub never receives bytes it already holds (CV5)
+
+**Started:** 2026-11-02, product owner's go-ahead "go ahead for the next
+item". At the start the product owner **accepted ADR 0020 as written**
+(status, index, CHANGELOG and plan updated).
+
+**Commits:** `81311c7` (code + tests), then the docs commit (plan, ADR 0020
+S10 clarification, ARCHITECTURE §5.8, CHANGELOG, this handoff).
+
+**What changed for users (once released):** nothing on the site; no
+published byte changes. GitHub publishes send fewer files: a file whose
+exact bytes the branch already holds, at any path, is not uploaded again,
+and identical files in one commit are uploaded once. That helps a phone
+whose publish record was lost (reinstall without restore), a move back to
+a repository that still holds the covers, items sharing one picture, and
+every retirement (`index.html` and `404.html` are the same moved page).
+Deletions are unchanged (owned paths only).
+
+**The rule (`domain/github_commit_plan.dart`, plan A.6 #95–#98):** a file
+is sent as a blob only when (1) its section marked it changed, (2) its sha
+is nowhere in the branch's head tree (owned or not), and (3) no earlier file
+of the same commit already sent those bytes. `commitFiles` takes a
+`GitHubCommitPlan` instead of a file list, so all five GitHub commits
+(catalogue, events, availability, move, retirement) follow it by
+construction. The known set comes from `ReconciledPublication.knownBlobShas`
+(the move and retirement use their reader's tree); SP4 (S14) can supply the
+recorded shas instead without touching a caller.
+
+**J8 — not measured (plan A.6 #99).** The probe was ready
+(`/tmp/j8/probe.py`, outside the repo: stop at the first refusal, check
+blob reads and tree creates during a block, honour `Retry-After`, check that
+a later tree may name blobs from a refused attempt, then a paced run for the
+hourly cap). The `degt3rt` sign-in did not reach this Mac (`gh auth status`
+listed only PLFIndia, sangiti-dev and the broken axt1rp), and the product
+owner then chose **"Skip the probe"**: J8 counts as confirmed by public
+reports ([403 on `/git/blobs` after 24 chunks of 203 blob
+writes](https://github.com/thodel/agentic_historian/pull/489); [refused
+after about 180 blob writes](https://github.com/SolanaVault/vault-lst-list-generator/pull/3)).
+
+**Real-API proof of CV5 (plan G.5 Phase 2) — PASS.** On the product owner's
+choice, a throwaway public repo **`PLFIndia/pitak-cv5-proof`** (now
+**archived**; the gh token has no `delete_repo` scope, so the product owner
+deletes it by hand). A throwaway Dart script (not committed) ran the
+production `HttpGitHubApi` + `GitHubCommitPlan` through a request-counting
+`http` client, twice (2026-11-02, 15:14–15:17 IST):
+
+| Step | Files | Blob requests | Result |
+|---|---|---|---|
+| 1 baseline | new `covers/a.jpg` (40 kB random) + `books.json` | 2 | accepted |
+| 2 reuse | the same cover at `covers/b.jpg` + a new `books.json` | **1** (`books.json`) | accepted; `uploadedPaths` = `[books.json]`; head tree: `a.jpg` and `b.jpg` on the same blob sha |
+| 3 duplicates | identical new `index.html` and `404.html` | **1** | accepted; both on one sha |
+
+Commits `052172a`…`c9c2ef0` (run 1) and `9157491`…`7b00058` (run 2). Each
+run: 7 content-creating requests (blobs, trees, commits, ref moves) + the
+repo create.
+
+### J8 — the decision the product owner must take before Phase 2 ships
+
+**Who is affected:** a GitHub first publish, a move to GitHub, or one
+publish that adds more than a few hundred NEW covers. Cloudflare is not
+affected. Republishes are not affected (Fix 1 + CV5 send only new bytes).
+**What happens today:** the blob uploads are refused partway (HTTP 403,
+secondary rate limit), nothing is committed (the site stays as it was), the
+user reads "GitHub refused the request (403). You may have hit a rate limit
+or lack permission for this repository. Try again later.", and **every
+retry re-sends every blob**, because the refused attempt's blobs are in no
+tree. Above roughly 500 new covers it can never finish.
+
+| Option | What it does | Cost |
+|---|---|---|
+| **(a) Resume** | Remember (per repository, public shas only) the blobs a refused attempt created; the next attempt names them instead of re-sending, and the message says "N of M covers sent; publish again in an hour". The commit stays ONE atomic commit at the end. | A small local journal + recognising GitHub's secondary-limit answer + copy. Needs one real-API check first: that a later tree may name blobs no tree references yet (the J8 probe's phase 2b). |
+| **(b) Pacing** | At most about 1 blob request per second (under 80 a minute). | Alone it does not beat the ~500-an-hour cap; 1,000 covers take ≥ 17 minutes of uploading. |
+| (c) Batched commits | Commit covers in batches before `books.json`. | Several Pages builds (≈ 10 an hour soft limit); no longer one atomic commit; the record and R6 get more complex. |
+| (d) Message only | A clearer sentence for the refusal. | Large libraries still never finish on GitHub. |
+
+**Recommended: (a) + (b)** in a small session of its own before S11, or
+folded into S11. Not started: it is a product decision.
+
+**Files changed (code):** new `domain/github_commit_plan.dart`;
+`domain/github_api.dart` (port takes the plan; doc of `uploadedPaths`),
+`domain/github_models.dart` (`GitHubTreeSnapshot.blobShas`),
+`domain/site/move_plan.dart` (doc line);
+`application/github_publication_reconciler.dart` (`knownBlobShas`),
+`publish_library_use_case.dart`, `publish_events_use_case.dart`,
+`publish_availability_use_case.dart`, `github_move_destination.dart`,
+`github_move_source.dart`; `infrastructure/http_github_api.dart`,
+`commit_recording_github_api.dart`.
+**Tests:** new `test/features/publish/domain/github_commit_plan_test.dart`
+(9: the three rules, order, immutability, empty commit,
+`GitHubTreeSnapshot.blobShas`); new cases in the reconciler, the HTTP
+adapter (only `plan.uploads` are posted), the catalogue use case (3: a
+cover held at another path; two items sharing a picture; a lost record
+re-sends nothing and reports "committing"; a mutation run without rules 2
+and 3 failed all three), events, availability, move destination and
+retirement suites. Every fake of the port now takes the plan (9 fakes; they
+keep recording `plan.files`).
+
+**Gates at the end of S10 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: no generated file changed (no provider signature changed).
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,404 passed** (S9 ended at 5,386); the 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`
+  (checked by name against the S9 list). S10 changes no screen.
+- Line coverage: `github_commit_plan.dart`, `github_models.dart`,
+  `github_publication_reconciler.dart`, `commit_recording_github_api.dart`
+  100 %; `publish_availability_use_case.dart` 98.5 %, `http_github_api.dart`
+  96.8 %, `publish_library_use_case.dart` 96.6 %, `publish_events_use_case.dart`
+  94.4 %, `github_move_source.dart` 92.8 %, `github_move_destination.dart`
+  89.7 %. Every missed line predates S10 (thrown-transport and HTTP-error
+  branches, the move's progress callback).
+- File sizes ≤ 500 (largest touched: `publish_library_use_case.dart` 449,
+  `publish_events_use_case.dart` 406); `http_github_api.dart` 547 (ratchet
+  600).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 
@@ -1287,7 +1412,7 @@ throwaway repo.
 
 ---
 
-## 6. Next: goldens (deferred); S10 only on go-ahead
+## 6. Next: the J8 decision; goldens (deferred); S11 only on go-ahead
 
 S8's code and docs are done (§S8) and the G.4 device evidence is recorded
 (§G4, item 2 below). Phase 1 becomes the release candidate (plan G.5) once
@@ -1341,19 +1466,27 @@ at the new site until the vault is next unlocked (A.6 #81); "Update
 availability now" on GitHub still counts towards the 10-per-hour budget.
 
 **S9 is done (§S9)**, and G.4 confirmed Fix 1 on both hosts (0 covers
-read, 9 reused on an unchanged republish).
+read, 9 reused on an unchanged republish). **ADR 0020 is accepted.**
+**S10 is done (§S10)**: CV5 in code, proven against the real API.
 
-**Open decisions for the product owner (none blocks Phase 1):** accept or
-amend ADR 0020; plan J11 (replacement prepares twice); plan J12–J14 (§G4
-observations: a pending set re-published after a catalogue publish, the
-switch-off fallback to publish-time tags, a silent move with the vault
-locked).
+**Open decisions for the product owner:**
+- **plan J8 (blocks Phase 2 shipping, not Phase 1):** how a large GitHub
+  first publish or move gets past GitHub's content-creation limit; options
+  and the recommendation (a resume + b pacing) are in §S10. Option (a)
+  first needs one real-API check (a later tree may name blobs from a refused
+  attempt); that needs a GitHub account, so ask before doing it.
+- plan J11 (a replacement prepares twice), J12–J14 (§G4 observations: a
+  pending set re-published after a catalogue publish, the switch-off
+  fallback to publish-time tags, a silent move with the vault locked).
+- Delete the archived throwaway repo `PLFIndia/pitak-cv5-proof` (§S10;
+  the gh token cannot).
 
-**Then: S10 (Phase 2, Fix 3 — GitHub blob reuse, CV5) — only on the product
-owner's go-ahead, ideally after ADR 0020 is accepted.** Plan Part D.2 /
-Part F "S10". First step: verify plan J8 (does `POST /git/blobs` count
-towards GitHub's content-creation limit?) against a throwaway repository —
-that needs the product owner's GitHub account, so ask before doing it.
+**Then: S11 (Phase 2, Fix 2 — backup publish state, CV6/CV7, ADR 0014
+amendment) — only on the product owner's go-ahead.** Plan Part D.3 / Part F
+"S11", and §S9 "For S11" (Decision 4 vs adopting the archive's records). It
+first verifies plan J5 (the original Kotlin app tolerates the new backup
+entry). If the product owner picks J8 option (a), decide whether it is its
+own session before S11 or part of it.
 
 Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
 (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2). Every gate in

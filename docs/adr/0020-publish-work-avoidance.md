@@ -1,9 +1,8 @@
 # ADR 0020: Publish work avoidance and speed
 
-- **Status:** Proposed (2026-11-02), awaiting the product owner's
-  acceptance. Decisions 1–5 put plan CV1–CV4 — already part of the accepted
-  plan — into code in session S9; the rest is the agreed design for S10–S14
-  and may still be amended before those sessions start.
+- **Status:** Accepted (2026-11-02) by the product owner, as written.
+  Proposed the same day in session S9, which put Decisions 1–5 (plan
+  CV1–CV4) into code; Decisions 6–10 are the agreed design for S10–S14.
 - **Date:** 2026-11-02
 - **Amends:** nothing yet. ADR 0014 gains an amendment with Fix 2 (S11,
   Decision 7) and ADR 0017 with the non-blocking GitHub outcome (S12,
@@ -155,6 +154,24 @@ need to do.
    hash appears anywhere in it is not uploaded. Deletions still touch only
    owned paths. S10 first verifies plan J8 (whether blob creation counts
    towards GitHub's content-creation limit) against a throwaway repository.
+
+   *S10 clarification (as built, plan A.6 #95–#99).* The rule is one pure
+   domain type, `GitHubCommitPlan`, and `GitHubGitDataApi.commitFiles` takes
+   a plan instead of a file list, so all five GitHub commits (catalogue,
+   events, availability, move, retirement) follow it by construction. A
+   file is sent only when (1) its section marked it changed, (2) its sha is
+   nowhere in the head tree, and (3) no earlier file of the same commit
+   already sent those bytes; (3) was not in the plan, and it makes the moved
+   `index.html`/`404.html` pair and items sharing one picture send their
+   bytes once. The known set is `ReconciledPublication.knownBlobShas` (the
+   move reads its own tree); SP4 (S14) may supply the recorded shas instead.
+   A real-API run with the production client confirmed that GitHub accepts a
+   tree naming a held blob at another path without the bytes. **J8 was not
+   measured:** the product owner skipped the live probe and treats it as
+   confirmed by public reports. CV5 sends fewer blobs, but a first publish
+   or a move of more than a few hundred NEW covers can still be refused, and
+   a retry still re-sends what the refused attempt sent. That fix is a
+   separate product decision (plan J8).
 
 7. **Backups carry the publish state (CV6, CV7, S11; ADR 0014 amendment).**
    `publish_state.json`: the cover salt, both records and the active host —

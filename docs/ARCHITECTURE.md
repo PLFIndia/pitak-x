@@ -668,6 +668,17 @@ target passed to the current operation — that is what lets a move publish the
   and for a Cloudflare record whose hashes this build cannot use. A restore
   makes both records forget their local cover sources first. Changing the
   recipe on purpose means a new rendition number.
+- **GitHub never receives bytes it already holds** (ADR 0020 Decision 6,
+  CV5). Every GitHub commit (catalogue, events, availability, a move, a
+  retirement) goes through one pure `GitHubCommitPlan`. The port's
+  `commitFiles` accepts only a plan, so no commit can skip it. A file is
+  sent as a new blob only when its section marked it changed, no blob with
+  its sha is anywhere in the branch's head tree (owned or not), and no
+  earlier file of the same commit already sent those bytes; every other
+  entry names the existing blob by sha. Deletions stay the exact owned paths.
+  Reusing a blob claims and deletes nothing. GitHub limits content-creating
+  requests (about 80 a minute and 500 an hour, plan J8), so every blob not
+  sent keeps large publishes further from that limit.
 
 ### 5.9 `availability.json` and the availability lane (ADR 0019)
 
