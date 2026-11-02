@@ -27,6 +27,10 @@ import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
 /// Deliberate change, publish-optimisation S3 (ADR 0019 Decision 3): every
 /// item gains `key`, right after `kind`. Nothing else in `books.json`
 /// changed; the exact bytes are pinned below.
+///
+/// Deliberate change, publish-optimisation S7 (plan J10, A.6 #68): the
+/// payload gains a top-level `keySet`, right after `exportedAt`. Nothing else
+/// changed.
 void main() {
   const salt = 'salt-1234567890';
 
@@ -35,11 +39,19 @@ void main() {
   // The public item keys for this salt, pinned as literals:
   // sha256(salt + "item:<id>")[0..16]. A test below proves they are exactly
   // what `PublishItemKeys` computes.
-  const keys = {
+  const keyMap = {
     1: 'f1256752587d05c1',
     2: '1afb3bc2efa863e0',
     9: '2151cb8080cc871a',
   };
+
+  // sha256(salt + "key-set")[0..16], pinned like the keys (plan A.6 #68).
+  const keySetId = 'd6aa7f89958f43cb';
+
+  PublishKeySet keysOf(Map<int, String> keysById) =>
+      PublishKeySet.tryCreate(id: keySetId, keysById: keysById)!;
+
+  final keys = keysOf(keyMap);
 
   CatalogueItem book({int id = 1, String? cover}) => CatalogueItem(
     id: id,
@@ -139,10 +151,12 @@ void main() {
       expect(payload.keys, [
         'schemaVersion',
         'exportedAt',
+        'keySet',
         'books',
         'periodicals',
       ]);
       expect(payload['exportedAt'], 1000);
+      expect(payload['keySet'], keySetId);
       final books = payload['books'] as List;
       expect(books, hasLength(2));
       final first = books.first as Map<String, dynamic>;
@@ -161,8 +175,9 @@ void main() {
         'covers/8a6f3469e99e562b.jpg',
       );
 
-      // The exact published bytes. S3 added the two `"key"` lines and changed
-      // nothing else (checked against the pre-S3 builder's output).
+      // The exact published bytes. S3 added the two `"key"` lines and S7 the
+      // `"keySet"` line; nothing else changed (S3 was checked against the
+      // pre-S3 builder's output).
       expect(
         utf8.decode(
           section.files.firstWhere((f) => f.path == 'books.json').bytes,
@@ -173,18 +188,19 @@ void main() {
   );
 
   test('the pinned keys are exactly what PublishItemKeys computes', () {
-    for (final entry in keys.entries) {
+    for (final entry in keyMap.entries) {
       expect(
         PublishItemKeys.keyFor(salt: ascii.encode(salt), itemId: entry.key),
         entry.value,
       );
     }
+    expect(PublishItemKeys.keySetIdFor(salt: ascii.encode(salt)), keySetId);
   });
 
   group('item keys (ADR 0019 Decision 3)', () {
     Future<Either<Failure, PublishSection>> buildWith(
       List<CatalogueItem> books,
-      Map<int, String> itemKeys, {
+      PublishKeySet itemKeys, {
       List<Periodical> periodicals = const [],
     }) => builder().build(
       books: books,
@@ -221,16 +237,16 @@ void main() {
       )).toNullable()!;
       expect(
         [for (final row in rows(section)) row['key']],
-        [keys[1], keys[2], keys[9]],
+        [keyMap[1], keyMap[2], keyMap[9]],
       );
     });
 
     test('a removed item needs no key and is not published', () async {
-      final section = (await buildWith(
-        [book(), const CatalogueItem(id: 3, title: 'Gone', removed: true)],
-        const {1: 'f1256752587d05c1'},
-      )).toNullable()!;
-      expect([for (final row in rows(section)) row['key']], [keys[1]]);
+      final section = (await buildWith([
+        book(),
+        const CatalogueItem(id: 3, title: 'Gone', removed: true),
+      ], keysOf(const {1: 'f1256752587d05c1'}))).toNullable()!;
+      expect([for (final row in rows(section)) row['key']], [keyMap[1]]);
     });
 
     test(
@@ -254,7 +270,7 @@ void main() {
               settings: const PublishPageSettings(libraryName: 'Test Library'),
               previous: PublishManifest.empty,
               now: 1,
-              itemKeys: const {1: 'f1256752587d05c1'},
+              itemKeys: keysOf(const {1: 'f1256752587d05c1'}),
             );
         expect(
           (result.swap().toNullable()! as ValidationFailure).message,
@@ -264,23 +280,32 @@ void main() {
       },
     );
 
-    test('a malformed key refuses the build', () async {
-      final result = await buildWith([book()], const {1: 'NOT-A-KEY'});
+    test('a malformed or shared key cannot even reach the builder', () {
+      // Since S7 the builder takes a `PublishKeySet`, which refuses both
+      // (plan A.6 #68); the builder itself only checks completeness above.
       expect(
-        (result.swap().toNullable()! as ValidationFailure).message,
-        PublishItemKeys.collisionMessage,
+        PublishKeySet.tryCreate(id: keySetId, keysById: const {1: 'NOT-A-KEY'}),
+        isNull,
+      );
+      expect(
+        PublishKeySet.tryCreate(
+          id: keySetId,
+          keysById: const {1: 'f1256752587d05c1', 3: 'f1256752587d05c1'},
+        ),
+        isNull,
       );
     });
 
-    test('two items sharing a key refuse the build', () async {
-      final result = await buildWith(
-        [book(), book(id: 3)],
-        const {1: 'f1256752587d05c1', 3: 'f1256752587d05c1'},
-      );
-      expect(
-        (result.swap().toNullable()! as ValidationFailure).message,
-        PublishItemKeys.collisionMessage,
-      );
+    test('books.json names the key set its keys belong to', () async {
+      final section = (await buildWith([book()], keys)).toNullable()!;
+      final payload =
+          jsonDecode(
+                utf8.decode(
+                  section.files.firstWhere((f) => f.path == 'books.json').bytes,
+                ),
+              )
+              as Map<String, dynamic>;
+      expect(payload['keySet'], keySetId);
     });
   });
 
@@ -294,7 +319,7 @@ void main() {
         settings: const PublishPageSettings(libraryName: 'Test Library'),
         previous: PublishManifest.empty,
         now: 1,
-        itemKeys: const {1: 'f1256752587d05c1'},
+        itemKeys: keysOf(const {1: 'f1256752587d05c1'}),
       )).toNullable()!;
       final payload =
           jsonDecode(
@@ -474,12 +499,14 @@ void main() {
 }
 
 /// The exact `books.json` of the first test (production encoder, two-space
-/// indent). Pre-S3 it was the same text without the two `"key"` lines.
+/// indent). Pre-S3 it was the same text without the two `"key"` lines, and
+/// pre-S7 without the `"keySet"` line.
 /// (Dart drops the newline right after the opening quotes.)
 const _expectedBooksJson = '''
 {
   "schemaVersion": 1,
   "exportedAt": 1000,
+  "keySet": "d6aa7f89958f43cb",
   "books": [
     {
       "title": "The Odyssey",

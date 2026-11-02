@@ -9,6 +9,7 @@ import 'package:pitaka/features/publish/application/publish_cover_decider.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_artifact_sink.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
@@ -36,7 +37,10 @@ final class _Salt implements PublishCoverSaltStore {
 
 /// A valid public key for item 1 (ADR 0019): the builder refuses an item
 /// without one.
-const _keys = {1: '0123456789abcdef'};
+final _keys = PublishKeySet.tryCreate(
+  id: 'fedcba9876543210',
+  keysById: const {1: '0123456789abcdef'},
+)!;
 
 void main() {
   CatalogueSectionBuilder catalogue(_Sink sink) => CatalogueSectionBuilder(

@@ -3,6 +3,7 @@ import 'package:pitaka/features/publish/domain/availability/availability_lane_st
 import 'package:pitaka/features/publish/domain/availability/availability_pacing.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
+import '../../support/key_set_fixtures.dart';
 
 /// SPECIFICATION of what the lane store holds (ADR 0019 Decision 9, plan
 /// C.4).
@@ -27,7 +28,11 @@ void main() {
   )!;
 
   AvailabilitySnapshot snapshot(List<String> keys, [int asOf = 60000]) =>
-      AvailabilitySnapshot.tryCreate(keys: keys, asOfMillis: asOf)!;
+      AvailabilitySnapshot.tryCreate(
+        keySet: testKeySetId,
+        keys: keys,
+        asOfMillis: asOf,
+      )!;
 
   AvailabilityLaneState full() => AvailabilityLaneState(
     pending: snapshot([b, a], 120000),
@@ -48,6 +53,7 @@ void main() {
       final state = loaded(AvailabilityLaneState.decode(full().toJson()))!;
 
       expect(state.pending!.keys, [a, b]);
+      expect(state.pending!.keySet, testKeySetId);
       expect(state.pending!.asOf, 120000);
       expect(state.published!.targetId, github.targetId);
       expect(state.published!.siteUrl, github.siteUrl);
@@ -155,20 +161,36 @@ void main() {
     });
 
     test('a damaged pending set NEVER becomes an empty list', () {
+      const k = testKeySetId;
       final damagedPending = <String, Object?>{
-        'no out list': {'asOf': 60000},
-        'out is null': {'asOf': 60000, 'out': null},
-        'out is a string': {'asOf': 60000, 'out': 'abc'},
+        'no out list': {'keySet': k, 'asOf': 60000},
+        'out is null': {'keySet': k, 'asOf': 60000, 'out': null},
+        'out is a string': {'keySet': k, 'asOf': 60000, 'out': 'abc'},
         'out has a bad key': {
+          'keySet': k,
           'asOf': 60000,
           'out': ['NOT-A-KEY'],
         },
         'out has a number': {
+          'keySet': k,
           'asOf': 60000,
           'out': [1],
         },
-        'no asOf': {'out': <String>[]},
-        'negative asOf': {'asOf': -1, 'out': <String>[]},
+        'no asOf': {'keySet': k, 'out': <String>[]},
+        'negative asOf': {'keySet': k, 'asOf': -1, 'out': <String>[]},
+        // Plan A.6 #68: a set without its key-set id (the S6 development
+        // format) is damage too, never "nothing is out".
+        'no key-set id': {'asOf': 60000, 'out': <String>[]},
+        'key-set id not a string': {
+          'keySet': 5,
+          'asOf': 60000,
+          'out': <String>[],
+        },
+        'malformed key-set id': {
+          'keySet': 'NOT-A-KEY-SET-ID',
+          'asOf': 60000,
+          'out': <String>[],
+        },
         'pending is a list': <Object?>[],
       };
       for (final entry in damagedPending.entries) {

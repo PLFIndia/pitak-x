@@ -470,6 +470,11 @@ void main() {
       // asOf is this publish's own time, rounded down to the minute.
       expect(file['asOf'], 1761984300000);
       expect(file['schemaVersion'], 1);
+      // Plan J10, A.6 #68: both files name the SAME key set, the one made
+      // from this phone's salt, so readers bind the file to this catalogue.
+      final keySet = PublishItemKeys.keySetIdFor(salt: _saltBytes);
+      expect(json(snapshot.catalogue!, 'books.json')['keySet'], keySet);
+      expect(file['keySet'], keySet);
     });
 
     test('lane on + locked vault: the live file is left alone (AV5)', () async {

@@ -119,6 +119,30 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
    `availability.json` is still live: its items simply fall back to the inline
    tag.
 
+   *Clarification (S7, plan A.6 #68 and J10; product owner, 2026-11-02):*
+   **both files name the key set they belong to.** `books.json` gains a
+   top-level `keySet` and `availability.json` a `keySet` field, both 16
+   lower-case hex characters: `shortHashHexForKey(salt, "key-set")`, a hash
+   domain of its own next to item keys (`item:<id>`) and cover names. The file
+   is now:
+
+   ```json
+   {"schemaVersion":1,"keySet":"5e0c1d2b3a497f68","asOf":1761984300000,"out":["3f2c7a1b9e4d8051"]}
+   ```
+
+   A reader uses `availability.json` **only when both `keySet` values are
+   valid and equal**. A missing, malformed or different `keySet` means the
+   file is treated as missing (the inline tag, if any, is used). Why: on
+   GitHub, a file left by a previous install or by another phone is not in
+   this phone's record, so no publish of this phone deletes it (R13); next to
+   a `books.json` keyed with a new salt, its keys match nothing and every item
+   would show *Available*. A bound file can never be applied to a catalogue
+   keyed with a different salt, whoever wrote it. The id follows the salt,
+   not the ids, so the J9 reset (Decision 9 clarification) still guards
+   restores and overwrite merges. Both schemas stay 1 (additive fields;
+   older readers read named fields only), and no released build had written
+   either file's new field, so nothing needs migrating.
+
    - **Labels:** *Available / Not available* everywhere. "All out" retires in
      both readers. The words never promise a live loan: the summary line says
      when the tag was last updated ("312 of 340 available · updated 2:05 pm"),

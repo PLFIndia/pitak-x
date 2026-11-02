@@ -5,6 +5,7 @@ import 'package:pitaka/features/publish/domain/availability/availability_lane_st
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/infrastructure/prefs_availability_lane_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../support/key_set_fixtures.dart';
 
 /// The lane store over SharedPreferences (ADR 0019 Decision 9, plan C.4).
 ///
@@ -15,6 +16,7 @@ void main() {
 
   const key = PrefsAvailabilityLaneStore.key;
   final pending = AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
     keys: const ['00000000000000aa', '0000000000000001'],
     asOfMillis: 120000,
   )!;

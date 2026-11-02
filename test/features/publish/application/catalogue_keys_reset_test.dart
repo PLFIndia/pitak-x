@@ -7,6 +7,7 @@ import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 
 import '../support/availability_lane_fakes.dart';
+import '../support/key_set_fixtures.dart';
 
 /// Plan J9, decided in S6: a flow that changes what item ids name first
 /// marks the published keys unusable, inside the publish queue.
@@ -29,6 +30,7 @@ void main() {
     catalogueKeyed: true,
   );
   final set = AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
     keys: const ['0000000000000001'],
     asOfMillis: 60000,
   )!;

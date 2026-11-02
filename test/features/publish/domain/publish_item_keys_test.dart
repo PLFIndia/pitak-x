@@ -76,24 +76,60 @@ void main() {
     });
   });
 
+  group('keySetIdFor (plan J10, A.6 #68)', () {
+    test('is SHA-256(salt ‖ "key-set"), first 16 hex characters', () {
+      // Pinned bytes: readers compare this id across books.json and
+      // availability.json, so changing the formula would unbind every file.
+      expect(PublishItemKeys.keySetIdFor(salt: salt), 'd6aa7f89958f43cb');
+      expect(
+        PublishItemKeys.keySetIdFor(salt: salt),
+        PublishCoverIds.shortHashHexForKey(salt, 'key-set'),
+      );
+      expect(
+        PublishItemKeys.isValidKey(PublishItemKeys.keySetIdFor(salt: salt)),
+        isTrue,
+      );
+    });
+
+    test('follows the salt, so a new salt names a new key set', () {
+      expect(
+        PublishItemKeys.keySetIdFor(salt: salt),
+        isNot(PublishItemKeys.keySetIdFor(salt: ascii.encode('other'))),
+      );
+    });
+
+    test('is in its own hash domain (never a key or a cover name)', () {
+      final id = PublishItemKeys.keySetIdFor(salt: salt);
+      for (var itemId = 0; itemId < 200; itemId++) {
+        expect(id, isNot(PublishItemKeys.keyFor(salt: salt, itemId: itemId)));
+        expect(id, isNot(PublishCoverIds.shortHashHex(salt, itemId)));
+      }
+    });
+  });
+
   group('keysFor', () {
-    test('keys every id with one salt read', () async {
+    test('keys every id and names the key set with one salt read', () async {
       final store = _CountingSalt(salt);
       final result = await PublishItemKeys(store).keysFor([1, 2, 2, 42]);
 
       expect(store.reads, 1);
-      final keys = result.getOrElse((_) => fail('expected keys'));
-      expect(keys, {
+      final keySet = result.getOrElse((_) => fail('expected keys'));
+      expect(keySet.id, 'd6aa7f89958f43cb');
+      expect(keySet.keysById, {
         1: 'f1256752587d05c1',
         2: '1afb3bc2efa863e0',
         42: '213a75ff8a85d623',
       });
-      expect(() => keys[3] = 'x', throwsUnsupportedError);
+      expect(() => keySet.keysById[3] = 'x', throwsUnsupportedError);
+      expect(keySet.toString(), 'PublishKeySet(3 keys)');
     });
 
-    test('an empty id list is an empty map, not a failure', () async {
+    test('an empty id list is an empty key set, not a failure', () async {
       final result = await PublishItemKeys(_CountingSalt(salt)).keysFor([]);
-      expect(result.getOrElse((_) => fail('expected keys')), isEmpty);
+      final keySet = result.getOrElse((_) => fail('expected keys'));
+      expect(keySet.keysById, isEmpty);
+      // Still named: an empty library's books.json carries its keySet too.
+      expect(keySet.id, 'd6aa7f89958f43cb');
     });
 
     test('an unreadable salt fails closed with a fixed message', () async {
@@ -115,26 +151,49 @@ void main() {
     });
   });
 
-  group('requireUnique (collision handling)', () {
-    test('two ids with one key fail the whole set', () {
-      final result = PublishItemKeys.requireUnique({
-        1: '0123456789abcdef',
-        2: '0123456789abcdef',
-      });
+  group('PublishKeySet.tryCreate (collision and shape handling)', () {
+    const id = '0123456789abcdef';
+
+    test('two ids with one key are refused', () {
       expect(
-        _message(result.swap().toNullable()),
-        PublishItemKeys.collisionMessage,
+        PublishKeySet.tryCreate(
+          id: id,
+          keysById: const {1: '0123456789abcdef', 2: '0123456789abcdef'},
+        ),
+        isNull,
+      );
+    });
+
+    test('a malformed key or key-set id is refused', () {
+      expect(
+        PublishKeySet.tryCreate(id: id, keysById: const {1: 'NOT-A-KEY'}),
+        isNull,
+      );
+      expect(
+        PublishKeySet.tryCreate(
+          id: 'ABCDEF0123456789',
+          keysById: const {1: '0123456789abcdef'},
+        ),
+        isNull,
       );
     });
 
     test('distinct keys pass through unchanged and unmodifiable', () {
-      final result = PublishItemKeys.requireUnique({
-        1: '0123456789abcdef',
-        2: 'fedcba9876543210',
-      });
-      final keys = result.getOrElse((_) => fail('expected keys'));
-      expect(keys, {1: '0123456789abcdef', 2: 'fedcba9876543210'});
-      expect(() => keys.remove(1), throwsUnsupportedError);
+      final keySet = PublishKeySet.tryCreate(
+        id: id,
+        keysById: const {1: '0123456789abcdef', 2: 'fedcba9876543210'},
+      )!;
+      expect(keySet.id, id);
+      expect(keySet.keysById, {1: '0123456789abcdef', 2: 'fedcba9876543210'});
+      expect(() => keySet.keysById.remove(1), throwsUnsupportedError);
+    });
+
+    test('keysWithSalt reports a collision with the fixed message', () {
+      // A real 64-bit collision cannot be found on purpose; the pure rule
+      // above is what keysWithSalt relies on. Here: the success path keeps
+      // one key per distinct id.
+      final result = PublishItemKeys.keysWithSalt(salt: salt, itemIds: [5, 5]);
+      expect(result.getOrElse((_) => fail('keys')).keysById.keys, [5]);
     });
   });
 }

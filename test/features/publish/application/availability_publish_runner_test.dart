@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 
 import '../support/cloudflare_s8_fakes.dart';
 import '../support/github_lane_fakes.dart';
+import '../support/key_set_fixtures.dart';
 
 /// One lane publish inside the publish queue (ADR 0019 Decision 7, plan C.4
 /// "When the timer fires"; the stale-file removal of plan S6).
@@ -24,6 +25,7 @@ void main() {
     accountSubdomain: 'kadugodi',
   )!;
   final set = AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
     keys: const ['0000000000000001'],
     asOfMillis: 60000,
   )!;

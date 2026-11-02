@@ -13,8 +13,11 @@
 ///    same file bytes and an unchanged set is never uploaded again;
 ///  - `asOf` is rounded DOWN to the whole minute (product decision, A.6 #16):
 ///    readers show minutes only, so nothing finer is published;
-///  - "unchanged" compares the KEY SET only, never `asOf` (`sameKeysAs`,
-///    `contentHash`).
+///  - every set names the key set its keys came from (`keySet`, plan J10,
+///    A.6 #68), so readers never apply it to a catalogue keyed with another
+///    salt;
+///  - "unchanged" compares the keys and their key set only, never `asOf`
+///    (`sameKeysAs`, `contentHash`).
 ///
 /// The empty set is a real answer ("everything is on the shelf"), so it is
 /// only ever created from loan counts that were actually known. A null count
@@ -32,8 +35,11 @@ import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 /// matching `PublishTarget.isSameTarget`: the repo's lint bar refuses value
 /// equality on domain classes it cannot prove immutable.
 final class AvailabilitySnapshot {
-  AvailabilitySnapshot._({required List<String> keys, required this.asOf})
-    : keys = List.unmodifiable(keys);
+  AvailabilitySnapshot._({
+    required List<String> keys,
+    required this.keySet,
+    required this.asOf,
+  }) : keys = List.unmodifiable(keys);
 
   /// Most keys one snapshot may hold.
   ///
@@ -49,21 +55,27 @@ final class AvailabilitySnapshot {
   /// Keys of the items that are not available: sorted, no duplicates.
   final List<String> keys;
 
+  /// The id of the key set [keys] belong to (`PublishKeySet.id`): 16
+  /// lower-case hex characters. Published as the file's `keySet` field.
+  final String keySet;
+
   /// When the loan change behind this set happened, in epoch milliseconds,
   /// rounded down to the whole minute.
   final int asOf;
 
-  /// Builds a snapshot from [keys], or null when the input is not
-  /// publishable: a malformed key, more than [maxKeys] keys, or a negative
-  /// time.
+  /// Builds a snapshot from [keys] of the key set [keySet], or null when the
+  /// input is not publishable: a malformed key or key-set id, more than
+  /// [maxKeys] keys, or a negative time.
   ///
   /// Null is deliberate (fail closed): the caller must not publish anything,
   /// because dropping a bad key would show that item as Available.
   static AvailabilitySnapshot? tryCreate({
     required Iterable<String> keys,
+    required String keySet,
     required int asOfMillis,
   }) {
     if (asOfMillis < 0) return null;
+    if (!PublishItemKeys.isValidKey(keySet)) return null;
     final unique = <String>{};
     for (final key in keys) {
       if (!PublishItemKeys.isValidKey(key)) return null;
@@ -75,45 +87,50 @@ final class AvailabilitySnapshot {
     final sorted = unique.toList()..sort();
     return AvailabilitySnapshot._(
       keys: sorted,
+      keySet: keySet,
       asOf: floorToMinute(asOfMillis),
     );
   }
 
   /// Builds a snapshot from the internal ids of the items that are not
-  /// available (plan C.3), using [keysById] from `PublishItemKeys.keysFor`.
+  /// available (plan C.3), using [keySet] from `PublishItemKeys.keysFor`.
   ///
   /// Null when any id has no key, as well as for every reason [tryCreate]
   /// gives. A missing key must never be skipped: that item would silently
   /// show as Available.
   static AvailabilitySnapshot? fromIds({
     required Iterable<int> ids,
-    required Map<int, String> keysById,
+    required PublishKeySet keySet,
     required int asOfMillis,
   }) {
     final keys = <String>[];
     for (final id in ids) {
-      final key = keysById[id];
+      final key = keySet.keysById[id];
       if (key == null) return null;
       keys.add(key);
     }
-    return tryCreate(keys: keys, asOfMillis: asOfMillis);
+    return tryCreate(keys: keys, keySet: keySet.id, asOfMillis: asOfMillis);
   }
 
   /// [millis] rounded down to the whole minute (A.6 #16).
   static int floorToMinute(int millis) => millis - millis % minuteMillis;
 
-  /// A fingerprint of the key set alone (SHA-256, lower-case hex).
+  /// A fingerprint of the keys and their key-set id (SHA-256, lower-case
+  /// hex).
   ///
   /// The lane store remembers this for the last published set, so "is the
   /// new set different?" needs no copy of the old keys. `asOf` is left out on
   /// purpose: a later loan change that leaves the same items out is NOT a
-  /// change worth publishing.
+  /// change worth publishing. The key-set id is IN: an empty set under a new
+  /// salt is a different file (readers bind it to `books.json` by that id).
   late final String contentHash = sha256
-      .convert(utf8.encode('$_hashDomain\n${keys.join('\n')}'))
+      .convert(utf8.encode('$_hashDomain\n$keySet\n${keys.join('\n')}'))
       .toString();
 
-  /// True when [other] lists exactly the same keys, whatever its `asOf`.
+  /// True when [other] lists exactly the same keys of the same key set,
+  /// whatever its `asOf`.
   bool sameKeysAs(AvailabilitySnapshot other) {
+    if (keySet != other.keySet) return false;
     if (keys.length != other.keys.length) return false;
     for (var i = 0; i < keys.length; i++) {
       if (keys[i] != other.keys[i]) return false;
@@ -123,7 +140,11 @@ final class AvailabilitySnapshot {
 
   /// Versioned prefix for [contentHash], so the fingerprint of a key list can
   /// never be mistaken for the hash of anything else.
-  static const String _hashDomain = 'pitak-availability-keys-v1';
+  ///
+  /// v2 since the key-set id joined the hashed text (plan A.6 #68): a
+  /// fingerprint stored by a development build of the v1 format can never
+  /// equal a v2 one, so it only ever causes one extra publish.
+  static const String _hashDomain = 'pitak-availability-keys-v2';
 
   @override
   String toString() => 'AvailabilitySnapshot(${keys.length} out, asOf $asOf)';

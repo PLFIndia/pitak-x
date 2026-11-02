@@ -10,6 +10,7 @@ import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/publish_snapshot.dart';
+import '../support/key_set_fixtures.dart';
 
 PublishFile _jsonFile(String path, Map<String, Object?> value) {
   final bytes = utf8.encode(jsonEncode(value));
@@ -148,6 +149,7 @@ void main() {
     PublishSection availability({required int asOf, List<String>? out}) =>
         AvailabilitySectionBuilder.write(
           snapshot: AvailabilitySnapshot.tryCreate(
+            keySet: testKeySetId,
             keys: out ?? const ['3f2c7a1b9e4d8051'],
             asOfMillis: asOf,
           )!,

@@ -14,6 +14,7 @@ final class PublishExport {
   const PublishExport({
     required this.exportedAt,
     required this.books,
+    this.keySet,
     this.periodicals = const [],
     this.schemaVersion = schemaVersionValue,
   });
@@ -28,6 +29,15 @@ final class PublishExport {
   /// Epoch millis the payload was built.
   final int exportedAt;
 
+  /// The id of the key set every item `key` belongs to (`PublishKeySet.id`,
+  /// plan J10, A.6 #68): 16 lower-case hex characters. `availability.json`
+  /// carries the same id, and readers use that file only when the two match.
+  ///
+  /// Written by every catalogue publish since plan S7; null only in payloads
+  /// built without keys (older builds, or tests). Additive, so the schema
+  /// stays 1, and older readers ignore it.
+  final String? keySet;
+
   /// The world-facing book rows (books, magazine issues and others — the
   /// list kept its Kotlin-era name; the wire key stays `books`, ADR 0014).
   final List<PublishItem> books;
@@ -40,6 +50,7 @@ final class PublishExport {
   Map<String, dynamic> toJson() => {
     'schemaVersion': schemaVersion,
     'exportedAt': exportedAt,
+    if (keySet != null) 'keySet': keySet,
     'books': books.map((b) => b.toJson()).toList(),
     // Omitted when empty (the S18 Pitaka-JSON v4 rule): additive keys are
     // ignored by older viewers, and a library without magazines keeps the

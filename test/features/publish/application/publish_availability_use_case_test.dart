@@ -20,6 +20,7 @@ import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 
 import '../support/github_lane_fakes.dart';
+import '../support/key_set_fixtures.dart';
 
 /// The GitHub availability publish (plan S4, ADR 0019 Decisions 7 and 10):
 /// one file, `deployed` with its proof, no Pages wait inside the queue, gate
@@ -29,7 +30,11 @@ void main() {
   const clock = 120000;
 
   AvailabilitySnapshot snapshot(List<String> keys) =>
-      AvailabilitySnapshot.tryCreate(keys: keys, asOfMillis: 61000)!;
+      AvailabilitySnapshot.tryCreate(
+        keySet: testKeySetId,
+        keys: keys,
+        asOfMillis: 61000,
+      )!;
   final twoOut = snapshot(['00000000000000aa', '00000000000000bb']);
   final twoOutBytes = encodeAvailabilityJsonBytes(AvailabilityDocument(twoOut));
 
@@ -119,7 +124,8 @@ void main() {
       expect(file.bytes, twoOutBytes);
       expect(
         utf8.decode(file.bytes),
-        '{"schemaVersion":1,"asOf":60000,'
+        '{"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",'
+        '"asOf":60000,'
         '"out":["00000000000000aa","00000000000000bb"]}',
       );
 
@@ -186,7 +192,8 @@ void main() {
       expect(await write(h.useCase, none), isA<AvailabilityGoingLive>());
       expect(
         utf8.decode(h.api.commits.single.files.single.bytes),
-        '{"schemaVersion":1,"asOf":60000,"out":[]}',
+        '{"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",'
+        '"asOf":60000,"out":[]}',
       );
     });
   });

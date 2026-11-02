@@ -1,12 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_update.dart';
+import '../../support/key_set_fixtures.dart';
 
 /// The lane's instruction to an availability-only publish (plan S4): a write
 /// carries the saved set; a removal carries nothing, so it can never be read
 /// as "an empty set".
 void main() {
   final set = AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
     keys: const ['00000000000000aa'],
     asOfMillis: 120000,
   )!;

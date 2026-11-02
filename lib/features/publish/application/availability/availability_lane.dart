@@ -72,7 +72,7 @@ final class AvailabilityLane {
   /// `fake_async` controls in tests.
   AvailabilityLane({
     required AvailabilityLaneRepository repository,
-    required Future<Either<Failure, Map<int, String>>> Function(Iterable<int>)
+    required Future<Either<Failure, PublishKeySet>> Function(Iterable<int>)
     keysFor,
     required Future<AvailabilityRun> Function(AvailabilityUpdate) publish,
     required Future<Either<String, PublishTarget>> Function() currentTarget,
@@ -94,8 +94,7 @@ final class AvailabilityLane {
        _timerFactory = timer ?? Timer.new;
 
   final AvailabilityLaneMemory _memory;
-  final Future<Either<Failure, Map<int, String>>> Function(Iterable<int>)
-  _keysFor;
+  final Future<Either<Failure, PublishKeySet>> Function(Iterable<int>) _keysFor;
   final Future<AvailabilityRun> Function(AvailabilityUpdate) _publish;
   final Future<Either<String, PublishTarget>> Function() _currentTarget;
   final Future<DeferredVerificationOutcome> Function(
@@ -282,7 +281,7 @@ final class AvailabilityLane {
     }
     final snapshot = AvailabilitySnapshot.fromIds(
       ids: ids,
-      keysById: keys,
+      keySet: keys,
       asOfMillis: _clock(),
     );
     if (snapshot == null) {

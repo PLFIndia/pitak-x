@@ -207,7 +207,11 @@ final class AvailabilityLaneState {
   Map<String, Object?> toJson() => {
     'version': currentVersion,
     'pending': switch (pending) {
-      final pending? => {'asOf': pending.asOf, 'out': pending.keys},
+      final pending? => {
+        'keySet': pending.keySet,
+        'asOf': pending.asOf,
+        'out': pending.keys,
+      },
       null => null,
     },
     'published': switch (published) {
@@ -266,17 +270,27 @@ final class AvailabilityLaneState {
     );
   }
 
-  /// A pending set needs BOTH a valid time and a real list: a missing or
-  /// malformed `out` is damage, never "nothing is out".
+  /// A pending set needs its key-set id, a valid time and a real list: a
+  /// missing or malformed `out` is damage, never "nothing is out".
+  ///
+  /// `keySet` joined the pending set in plan S7 (A.6 #68) without a version
+  /// bump: only development builds ever stored a pending set, and one stored
+  /// without it reads as unreadable — the safe direction (nothing pending
+  /// until the lane computes a fresh set).
   static AvailabilitySnapshot? _decodePending(Object raw) {
     if (raw is! Map) return null;
+    final keySet = raw['keySet'];
     final asOf = raw['asOf'];
     final out = raw['out'];
-    if (asOf is! int || out is! List || out.any((key) => key is! String)) {
+    if (keySet is! String ||
+        asOf is! int ||
+        out is! List ||
+        out.any((key) => key is! String)) {
       return null;
     }
     return AvailabilitySnapshot.tryCreate(
       keys: out.cast<String>(),
+      keySet: keySet,
       asOfMillis: asOf,
     );
   }

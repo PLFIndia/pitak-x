@@ -4,10 +4,12 @@ import 'package:pitaka/features/publish/domain/availability/availability_lane_st
 import 'package:pitaka/features/publish/domain/availability/availability_snapshot.dart';
 
 import '../support/availability_lane_fakes.dart';
+import '../support/key_set_fixtures.dart';
 
 /// The ONE writer of the lane store (ADR 0019 Decision 9, plan S6).
 void main() {
   final set = AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
     keys: const ['0000000000000001'],
     asOfMillis: 60000,
   )!;

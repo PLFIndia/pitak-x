@@ -2,8 +2,15 @@
 /// ADR 0019 Decisions 2 and 4, plan C.1).
 ///
 /// ```json
-/// {"schemaVersion":1,"asOf":1761984300000,"out":["3f2c7a1b9e4d8051"]}
+/// {"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",
+///  "asOf":1761984300000,"out":["3f2c7a1b9e4d8051"]}
 /// ```
+///
+/// (One line on the wire; wrapped here only to fit the page.)
+///
+/// `keySet` names the key set the `out` keys belong to (plan J10, A.6 #68).
+/// `books.json` carries the same id, and readers use this file only when the
+/// two are equal, so a file computed against another salt is never applied.
 ///
 /// Why a separate type from `AvailabilitySnapshot` (beginner note): the
 /// snapshot is the lane's VALUE (which keys, since when). This type owns the
@@ -45,6 +52,7 @@ final class AvailabilityDocument {
   /// The file's JSON map, in its fixed field order.
   Map<String, Object> toJson() => {
     'schemaVersion': schemaVersion,
+    'keySet': snapshot.keySet,
     'asOf': snapshot.asOf,
     'out': snapshot.keys,
   };

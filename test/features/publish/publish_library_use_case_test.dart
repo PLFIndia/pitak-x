@@ -1924,7 +1924,8 @@ void main() {
       final availability = committedBytes(api, 'availability.json');
       expect(
         utf8.decode(availability),
-        '{"schemaVersion":1,"asOf":0,"out":["$keyOf1"]}',
+        '{"schemaVersion":1,"keySet":"d6aa7f89958f43cb",'
+        '"asOf":0,"out":["$keyOf1"]}',
         reason: 'the clock is 1000 ms, which rounds down to minute 0',
       );
       expect(

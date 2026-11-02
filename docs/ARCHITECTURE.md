@@ -565,6 +565,10 @@ image widget: no `Image.network`, no raw fallback, no local persistence.
     characters of SHA-256(salt ‖ `"item:" + id`) with the cover-name salt. It
     reveals no internal id; a publish without a valid, unique key for every
     live item writes nothing;
+  - top-level `keySet` (ADR 0019 Decision 4 clarification, written since
+    publish-optimisation S7): 16 hex characters naming the salt the keys came
+    from (SHA-256(salt ‖ `"key-set"`), first 16). `availability.json` carries
+    the same field, and readers use that file only when the two match;
   - top-level `periodicals[]`: `periodicalUid`, `title`, optional
     `titleTransliteration`, `issn`, `publisher`, `language`, `coverUrl`,
     `frequency` and `ageGroup`. Subscription windows, notes, location,

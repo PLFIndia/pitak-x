@@ -9,13 +9,18 @@ import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
+import '../support/key_set_fixtures.dart';
 
 /// The availability section (ADR 0019 Decisions 2 and 6, plan C.2 item 2).
 void main() {
   AvailabilitySnapshot snapshot(
     List<String> keys, {
     int asOf = 1761984345678,
-  }) => AvailabilitySnapshot.tryCreate(keys: keys, asOfMillis: asOf)!;
+  }) => AvailabilitySnapshot.tryCreate(
+    keySet: testKeySetId,
+    keys: keys,
+    asOfMillis: asOf,
+  )!;
 
   const keyA = '3f2c7a1b9e4d8051';
   const keyB = '9a0b44c1d2e3f405';
@@ -27,7 +32,8 @@ void main() {
       );
       expect(
         utf8.decode(bytes),
-        '{"schemaVersion":1,"asOf":1761984300000,'
+        '{"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",'
+        '"asOf":1761984300000,'
         '"out":["3f2c7a1b9e4d8051","9a0b44c1d2e3f405"]}',
       );
     });
@@ -50,7 +56,8 @@ void main() {
             AvailabilityDocument(snapshot(const [], asOf: 120000)),
           ),
         ),
-        '{"schemaVersion":1,"asOf":120000,"out":[]}',
+        '{"schemaVersion":1,"keySet":"5e0c1d2b3a497f68",'
+        '"asOf":120000,"out":[]}',
       );
     });
   });

@@ -176,15 +176,17 @@ final class PublishSnapshotBuilder {
     final catalogueInputs = inputs.catalogue;
     PublishSection? catalogueSection;
     var catalogueItemCount = 0;
-    var itemKeys = const <int, String>{};
+    PublishKeySet? itemKeys;
     if (catalogueInputs != null) {
       final live = catalogueInputs.items.where((b) => !b.removed).toList();
       // One salt read for the whole catalogue, before any cover is read. An
       // unreadable salt or a key collision stops the publish here with the
       // fixed message, so nothing is built or written (ADR 0019 Decision 3).
+      // The same read names the key set both files carry (plan A.6 #68).
       final keys = await _itemKeys.keysFor([for (final b in live) b.id]);
       if (keys case Left(value: final failure)) return Left(failure);
-      itemKeys = keys.toNullable()!;
+      final computed = keys.toNullable()!;
+      itemKeys = computed;
 
       final catalogue = await _catalogue.build(
         books: catalogueInputs.items,
@@ -194,7 +196,7 @@ final class PublishSnapshotBuilder {
         settings: inputs.pageSettings,
         previous: previous,
         now: now,
-        itemKeys: itemKeys,
+        itemKeys: computed,
         mode: mode,
         timing: timing,
       );
@@ -253,7 +255,8 @@ final class PublishSnapshotBuilder {
   ///
   /// - [AvailabilityFromLoanCounts] (the lane is on): written only when this
   ///   publish built the catalogue AND the loan counts are known, from the
-  ///   same counts and the same [itemKeys] as the inline tag (plan AV8). The
+  ///   same counts and the same [itemKeys] as the inline tag and the
+  ///   catalogue's `keySet` (plan AV8, A.6 #68). The
   ///   counts were read during this publish, so `asOf` is this publish's own
   ///   time (rounded down to the minute by the snapshot).
   /// - [AvailabilityRemoval] (the lane is off): the deletion when [previous]
@@ -264,7 +267,7 @@ final class PublishSnapshotBuilder {
   static Either<Failure, PublishSection?> _availabilitySection({
     required AvailabilityRequest request,
     required CatalogueInputs? catalogue,
-    required Map<int, String> itemKeys,
+    required PublishKeySet? itemKeys,
     required PreviousPublication previous,
     required int now,
   }) {
@@ -280,8 +283,10 @@ final class PublishSnapshotBuilder {
         final counts = catalogue?.activeLoanCounts;
         // Unknown counts are "unknown", never "everything is available"
         // (AV5): the live file stays as the lane last published it, unless
-        // its keys can no longer be vouched for (plan J9, S6).
-        if (catalogue == null || counts == null) {
+        // its keys can no longer be vouched for (plan J9, S6). Keys exist
+        // exactly when the catalogue was built, so `itemKeys` is null only
+        // together with `catalogue`.
+        if (catalogue == null || counts == null || itemKeys == null) {
           return Right(
             AvailabilitySectionBuilder.withoutFreshSet(
               request: request,
@@ -294,7 +299,7 @@ final class PublishSnapshotBuilder {
             items: catalogue.items,
             activeCounts: counts,
           ),
-          keysById: itemKeys,
+          keySet: itemKeys,
           asOfMillis: now,
         );
         if (snapshot == null) {

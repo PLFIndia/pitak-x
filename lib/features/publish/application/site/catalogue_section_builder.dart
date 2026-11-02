@@ -129,10 +129,12 @@ final class CatalogueSectionBuilder {
   /// descriptor, or null when none may be written — null REMOVES a previously
   /// published descriptor, so a stale location never outlives an opt-out.
   ///
-  /// [itemKeys] maps item id → public key (`PublishItemKeys.keysFor`,
-  /// ADR 0019 Decision 3). Every live item must have a valid key, and no two
-  /// may share one; otherwise nothing is built (fail closed), because an item
-  /// without its key could never be matched to `availability.json`.
+  /// [itemKeys] holds the public keys and their key-set id
+  /// (`PublishItemKeys.keysFor`, ADR 0019 Decisions 3 and 4). Its keys are
+  /// well-formed and unique by construction; every live item must have one,
+  /// otherwise nothing is built (fail closed), because an item without its
+  /// key could never be matched to `availability.json`. The key-set id is
+  /// written as `books.json`'s top-level `keySet` (plan A.6 #68).
   Future<Either<Failure, PublishSection>> build({
     required List<CatalogueItem> books,
     required List<Periodical> periodicals,
@@ -141,7 +143,7 @@ final class CatalogueSectionBuilder {
     required PublishPageSettings settings,
     required PreviousPublication previous,
     required int now,
-    required Map<int, String> itemKeys,
+    required PublishKeySet itemKeys,
     PublishMode mode = PublishMode.incremental,
     PublishTimingRecorder? timing,
   }) async {
@@ -249,6 +251,7 @@ final class CatalogueSectionBuilder {
 
     final export = PublishExport(
       exportedAt: now,
+      keySet: itemKeys.id,
       books: [
         for (final book in library)
           redactForPublish(
@@ -421,25 +424,25 @@ final class CatalogueSectionBuilder {
         : PublishItem.available;
   }
 
-  /// The key of every live item, or the fixed refusal when one is missing,
-  /// malformed, or shared with another item.
+  /// The key of every live item, or the fixed refusal when one is missing.
   ///
-  /// The caller computed [itemKeys] with `PublishItemKeys.keysFor`, which
-  /// already guarantees all three. Checking again here keeps the guarantee
-  /// with the ONE `books.json` builder, whoever calls it.
+  /// [itemKeys] cannot hold a malformed or shared key (`PublishKeySet`
+  /// refuses both), but it may not cover every item, for example when the
+  /// caller computed it for another list. Checking here keeps "every live
+  /// item has its key" with the ONE `books.json` builder, whoever calls it.
   static Either<Failure, Map<int, String>> _liveKeys(
     List<CatalogueItem> library,
-    Map<int, String> itemKeys,
+    PublishKeySet itemKeys,
   ) {
     final keys = <int, String>{};
     for (final item in library) {
-      final key = itemKeys[item.id];
-      if (key == null || !PublishItemKeys.isValidKey(key)) {
+      final key = itemKeys.keysById[item.id];
+      if (key == null) {
         return const Left(ValidationFailure(PublishItemKeys.collisionMessage));
       }
       keys[item.id] = key;
     }
-    return PublishItemKeys.requireUnique(keys);
+    return Right(keys);
   }
 
   /// True when [resolved] (the output of `IssueCover.resolve`) is [book]'s

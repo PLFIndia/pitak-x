@@ -26,6 +26,7 @@ import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 
 import '../../support/cloudflare_fakes.dart';
 import '../../support/cloudflare_s8_fakes.dart';
+import '../../support/key_set_fixtures.dart';
 
 /// Plan S5 (ADR 0019 Decision 11, plan AV13/C.6): the availability lane's
 /// Cloudflare publish, against the fake API.
@@ -49,7 +50,11 @@ void main() {
   };
 
   AvailabilitySnapshot snapshot(List<String> keys) =>
-      AvailabilitySnapshot.tryCreate(keys: keys, asOfMillis: 61000)!;
+      AvailabilitySnapshot.tryCreate(
+        keySet: testKeySetId,
+        keys: keys,
+        asOfMillis: 61000,
+      )!;
 
   final setA = snapshot(['0123456789abcdef']);
   final setB = snapshot(['0123456789abcdef', 'fedcba9876543210']);

@@ -20,6 +20,7 @@ import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 
 import '../support/availability_lane_fakes.dart';
+import '../support/key_set_fixtures.dart';
 
 /// The availability lane (ADR 0019 Decisions 6–9, plan C.4; the "Lane" row
 /// of plan C.11). Time runs under `fake_async`; storage, keys and the network
@@ -78,6 +79,8 @@ void main() {
 
         h.update(on(counts: {1: 1}));
         expect(h.store.saved!.pending!.keys, [keyOf(1)]);
+        // The saved set names the key set its keys came from (A.6 #68).
+        expect(h.store.saved!.pending!.keySet, testKeySetId);
         expect(h.status, isA<AvailabilityLaneScheduled>());
         fake.elapse(const Duration(seconds: 19));
         expect(h.sent, isEmpty);
@@ -143,6 +146,7 @@ void main() {
       () {
         fakeAsync((fake) {
           final saved = AvailabilitySnapshot.tryCreate(
+            keySet: testKeySetId,
             keys: [keyOf(1)],
             asOfMillis: 60000,
           )!;
@@ -618,10 +622,15 @@ void main() {
       });
     });
 
-    test('a key that is not publishable stops the set (fail closed)', () {
+    test('an item without its key stops the set (fail closed)', () {
       fakeAsync((fake) {
+        // A key set that does not cover the lent item: dropping it would
+        // show that item as Available, so nothing is published.
         final h = _Lane(fake, gitHub)
-          ..keysOverride = {1: 'NOT-A-KEY'}
+          ..keysOverride = PublishKeySet.tryCreate(
+            id: testKeySetId,
+            keysById: const {},
+          )
           ..start(on(counts: {1: 1}));
         fake.elapse(const Duration(hours: 1));
         expect(h.runs, 0);
@@ -775,9 +784,15 @@ final class _Lane {
             )
           : keysOverride != null
           ? Right(keysOverride!)
-          : Right({
-              for (final id in ids) id: id.toRadixString(16).padLeft(16, '0'),
-            }),
+          : Right(
+              PublishKeySet.tryCreate(
+                id: testKeySetId,
+                keysById: {
+                  for (final id in ids)
+                    id: id.toRadixString(16).padLeft(16, '0'),
+                },
+              )!,
+            ),
       publish: _publish,
       currentTarget: () async => target,
       prove: (request) async {
@@ -825,7 +840,7 @@ final class _Lane {
   Completer<void>? gate;
 
   /// Keys the fake returns instead of the derived ones (to force a bad key).
-  Map<int, String>? keysOverride;
+  PublishKeySet? keysOverride;
 
   final List<AvailabilityUpdate> sent = [];
   final List<PublishTarget> sentTo = [];
