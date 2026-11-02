@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S3 complete, 2026-11-02)
+# Publish optimisation — handoff (S4 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -8,12 +8,13 @@ S2 — Domain — **complete** (§S2), started on the product owner's go-ahead
 the same day.
 S3 — Writer — **complete** (§S3), started on the product owner's go-ahead
 ("go ahead for next session", 2026-11-02).
-**S4 (GitHub path) and S5 (Cloudflare path) have NOT started. Do not start
-them until the product owner explicitly says so** (§6 is the prepared
-checklist).
+S4 — GitHub path — **complete** (§S4), started on the product owner's
+go-ahead ("go ahead for next session", 2026-11-02, the same words as for S3).
+**S5 (Cloudflare path) has NOT started. Do not start it until the product
+owner explicitly says so** (§6 is the prepared checklist).
 
-> Read this file first in any new session. §S3 is the newest state, then §S2,
-> then §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
+> Read this file first in any new session. §S4 is the newest state, then §S3,
+> §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
 > lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
@@ -24,6 +25,130 @@ checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S4 — GitHub path (code; no change visible on published sites)
+
+**What changed for users:** nothing visible. Every GitHub commit now records
+which file proves it, and the check of an unconfirmed earlier commit reads
+that file. Before S4 a catalogue publish read `books.json` even when the
+unconfirmed commit was an events commit, so it could mark that commit live
+without checking it (plan A.1 item 8). That gap is closed and pinned by a
+regression test. Nothing in the app calls the new availability publish yet:
+the lane (S6) will.
+
+**What the code does now:**
+
+- **Proof per commit** (A.6 #43). `PublishManifest.afterCommit(proofPath:)`
+  is required. Catalogue (combined included) and the GitHub move →
+  `booksJson`; events → `eventsJson`; availability → `availabilityJson`;
+  removal → `availabilityJsonAbsent`. A proof that disagrees with the commit's
+  file set leaves no proof and no head (the fail-closed "unknown state", like
+  a damaged stored proof).
+- **The pre-check** (A.6 #42). `PublishVerificationCheck` reads only through
+  the structured `PublishedSiteReadVerifier`: a file proof compares the blob
+  sha (first readable answer decides; a 404 is still "unreadable", as
+  before); an absence proof is matched by an exact 404 and contradicted by a
+  body. Read caps come from `readBackMaxBytesFor(proof)` (domain, next to the
+  caps). `untilMatchesSha` is gone; `PublishVerificationOutcome` moved to
+  `publish_verification_check.dart`.
+- **The collaborator** (A.6 #44). `GitHubUnconfirmedCommitCheck`
+  (`application/github_unconfirmed_commit_check.dart`) takes the reconciled
+  record's proof (or the caller's legacy file), runs the check, and on a match
+  saves the record `live` and records the verified address. The catalogue,
+  events and availability use cases all use it. The two older use cases gain
+  a `reader` parameter; `PublishController` and `PublishEventsController` pass
+  `publishedSiteReadVerifierProvider`.
+- **The lane input** (A.6 #45). `AvailabilityUpdate`
+  (`domain/availability/availability_update.dart`) = `AvailabilityWrite(snapshot)`
+  | `AvailabilityDelete()`.
+- **The lane outcomes** (A.6 #46).
+  `application/availability/availability_publish_result.dart`:
+  `AvailabilityGoingLive(acceptedAt, verification, localStateSaved)`,
+  `AvailabilityAlreadyPublished`, `AvailabilityNotReady(reason)`,
+  `AvailabilityPending(reason)`, and `AvailabilityPublishMessages`
+  (`catalogueNotKeyed`, `siteMovedOn`; drafts, S8 sets the words).
+  `PublishRequestedSection.availability` was **not** added: it is a
+  Cloudflare-only selector, so S5 adds it.
+- **`PublishAvailabilityUseCase`** (`application/publish_availability_use_case.dart`):
+  token → Pages branch → reconcile → **gate 7b for writes only** (A.6 #47) →
+  pre-check (legacy proof `booksJson`) → `AvailabilitySectionBuilder.write` /
+  `.removal` → no commit when nothing changes (`AlreadyPublished`) →
+  `mergeSections` → `commitFiles(expectedHead)` → save `deployed` with the
+  proof → `GoingLive` carrying `DeferredVerificationRequest.forRecord(...)`
+  (null when the record could not be saved). Stale head → `Pending(siteMovedOn)`;
+  every other failure → `Pending` with the existing fixed GitHub message. No
+  Pages polling inside the queue. Timings under `availability` (A.6 #49).
+- **`DeferredPublishVerification`** (`application/site/deferred_publish_verification.dart`,
+  A.6 #48): first read 30 s after the commit, then every 10 s, last at 150 s
+  (13 reads; constants in `ReadBackBudget`). Polls until the expected state;
+  never "contradicted"; out of budget → `notProven`, record stays `deployed`.
+  Stops early (`superseded`) once the record has moved on; the upgrade enters
+  the publish queue (`SerialOpQueue`) and applies only to the unchanged
+  `deployed` record (same repo, head and proof), manifest `live` first, then
+  the journal. `cancel()` for the owner's dispose.
+- **Docs:** plan status, A.6 #42–#49 and the C.11 file map; ADR 0019
+  Decision 7 gains the S4 clarification that gate b guards writes only.
+
+**Tests added or extended:** `publish_verification_check_test.dart`
+(rewritten over the structured reader: absence proofs, per-proof caps, a
+throwing adapter); `github_unconfirmed_commit_check_test.dart`,
+`deferred_publish_verification_test.dart` (incl. real timers under
+`fake_async`, queue ordering, cancel), `publish_availability_use_case_test.dart`
+(26 tests incl. three end-to-end runs with the deferred check) and
+`availability_update_test.dart` (all new); `publish_manifest_test.dart`
+(proof per commit, disagreement rule, availability commit keeps the flag);
+the **A.1 item 8 regression** and the removal-404 pre-check in
+`publish_library_use_case_test.dart`, the reverse case in
+`publish_events_use_case_test.dart`; proof assertions in both use-case suites
+and `github_move_destination_test.dart`. Shared fakes:
+`test/features/publish/support/github_lane_fakes.dart`. The controller
+harness and the S11 controller test now stub the structured reader too (no
+real HTTP in tests).
+
+**Gates at the end of S4 (2026-11-02, macOS):**
+
+- build_runner: only the two controller source hashes changed
+  (`publish_controller.g.dart`, `publish_events_controller.g.dart`);
+  committed with the source.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed`: 0 changed.
+- `flutter test --coverage`: **4,880 passed** (S3 ended at 4,813). The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`;
+  a clean worktree of `14bc124` (the S3 head) fails exactly the same 10
+  (checked by name). Goldens are regenerated only by the Linux workflow.
+- Line coverage: `deferred_publish_verification.dart`,
+  `github_unconfirmed_commit_check.dart`, `publish_verification_check.dart`,
+  `availability_publish_result.dart`, `availability_update.dart`,
+  `published_site_verifier.dart` 100 %; `publish_availability_use_case.dart`
+  98.6 % (the one miss is the production wall-clock default);
+  `publish_manifest.dart` 97.8 % (older `toString`). The other touched files
+  are 86–94 %, and every missed line there predates S4.
+- File sizes ≤ 500 (largest touched: `publish_library_use_case.dart` at 456).
+- Rust untouched.
+
+**Line budgets:** `publish_library_use_case.dart` 456 (was 478),
+`publish_events_use_case.dart` 391 (was 410), `publish_to_cloudflare_use_case.dart`
+still 478 — S5's section inputs go into `cloudflare_section_inputs.dart`.
+
+**For S6, from S4 (do not lose these):**
+
+- Wire `PublishAvailabilityUseCase` and one `DeferredPublishVerification`
+  per lane instance (cancel it in `ref.onDispose`) in the planned
+  `core/di/src/availability_providers.dart`. Resolve the target inside the
+  queue with `ActivePublishTargetResolver` (gates a and c), then run the use
+  case; start the deferred check only **after** the queue is released.
+- Record `AvailabilityGoingLive.acceptedAt` with
+  `AvailabilityLaneState.withGitHubCommit` (the 10-per-hour budget). Manual
+  catalogue and events commits must be counted too (AV6).
+- `AvailabilityNotReady` means "wait for a catalogue publish"; do not back
+  off and retry it. `AvailabilityPending` uses the AV11 backoff.
+- **Safety point found in S4:** if gate 7b fails while this phone's record
+  still shows `availability.json` (another writer replaced `books.json`), the
+  live file's keys may match nothing, which shows every item as Available.
+  The lane should then publish the removal (no gate needed, A.6 #47) rather
+  than only showing "not ready". Decide in S6 together with J9.
 
 ---
 
@@ -442,37 +567,10 @@ throwaway repo.
 
 ---
 
-## 6. Next: S4 (GitHub) and S5 (Cloudflare) — on hold until the product owner says go
+## 6. Next: S5 (Cloudflare) — on hold until the product owner says go
 
-Both depend only on S3, so either may come first. The S3 checklist that stood
-here is done; §S3 records how each item landed.
-
-**S4 — GitHub path (plan C.5).**
-
-- `PublishAvailabilityUseCase`, modelled on `PublishEventsUseCase`: reconcile
-  → gates → section → `mergeSections` → `commitFiles(expectedHead)` → save
-  `deployed` with a proof path → return "going live". No Pages polling inside
-  the queue.
-- **Gate 7b on GitHub is already in the record:** `reconciledFrom` drops
-  `catalogueKeyed` unless the head tree's `books.json` equals the recorded
-  one, so "the reconciled record is keyed" is the whole GitHub half.
-- **Build the section from the lane's saved snapshot** with
-  `AvailabilitySectionBuilder.write(snapshot:, previous: reconciled)`, or
-  `.removal(previous:)` when the switch is off. If the file is unchanged
-  (`upload == false`) and nothing else changes, do not commit at all.
-- **Proof path:** add `afterCommit(proofPath:)`. Catalogue (combined
-  included) → `booksJson`; events → `eventsJson`; availability →
-  `availabilityJson`; removal → `availabilityJsonAbsent`.
-  `PublishVerificationCheck` reads the path and expected sha from the record
-  (legacy null → today's per-section constant); a removal needs the
-  structured reader for the exact 404. Add the A.1 item 8 regression test.
-- `DeferredPublishVerification` (shared with SP1): first read at 30 s, then
-  every 10 s, up to 150 s; polls until the expected state; never
-  "contradicted"; upgrades only an unchanged `deployed` record.
-- Add `PublishRequestedSection.availability` and the lane outcomes now
-  (A.6 #35).
-- **Line budget:** `publish_library_use_case.dart` is at 478. Put the proof
-  path selection and the pre-check in a collaborator.
+S4 (GitHub) is done; §S4 records how each checklist item landed. S5 depends
+only on S3 and may start on the product owner's go-ahead. S6 needs both.
 
 **S5 — Cloudflare path (plan C.6).**
 
@@ -491,7 +589,11 @@ here is done; §S3 records how each item landed.
   to "pending: Open Publish to web to repair the site" without calling the
   replacement preparation.
 - Gate 7b on Cloudflare: the live marker is this phone's own and the record
-  has `catalogueKeyed`.
+  has `catalogueKeyed`. As on GitHub (A.6 #47), a removal needs no gate 7b.
+- Add `PublishRequestedSection.availability` here (A.6 #46), and the
+  Cloudflare "verified live" outcome to
+  `application/availability/availability_publish_result.dart` (the GitHub
+  outcomes are already there). Take the input as `AvailabilityUpdate`.
 
 **For S6 (do not lose these):**
 
@@ -504,6 +606,8 @@ here is done; §S3 records how each item landed.
 - AV18 when the vault is locked during a move: `AvailabilityFromLoanCounts`
   can gain a `saved` snapshot field (the type is sealed for exactly this).
 - **J9** (restore of another library) needs its decision before S6's gates.
+- The four S4 items in §S4 "For S6" (wiring, the GitHub budget, not-ready vs
+  pending, and the removal when gate 7b fails while the file is live).
 
 Every gate in `AGENTS.md` §11 must be green at the end (CI runs
 `flutter analyze lib test integration_test`; a bare `dart analyze` also scans

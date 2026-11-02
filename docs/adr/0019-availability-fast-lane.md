@@ -173,6 +173,11 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
      reader walks in for a book that is out.
    - **c.** An ordinary publish would be allowed right now (for example, no
      pending move blocks it).
+   - *Clarification (S4, plan A.6 #47):* gate b guards a **write**. A removal
+     publishes no keys, and deleting this phone's recorded `availability.json`
+     is always the safe direction (readers fall back to the inline tag), so a
+     removal needs only gates a and c. That is the same reason a catalogue
+     publish may already carry the deletion (Decision 6).
 
 8. **Pacing and retries (AV6, AV11).**
    - Both hosts wait **20 s after the last change** (debounce), so lending five
