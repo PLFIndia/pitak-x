@@ -27,6 +27,7 @@ import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
 import 'package:pitaka/features/publish/domain/publish_cover_ids.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
@@ -1181,6 +1182,9 @@ void main() {
           coverUrlByBookId: {
             'periodical:uid-1': 'https://covers.openlibrary.org/x.jpg',
           },
+          // Since ADR 0020 every source-identity skip also needs the record
+          // to vouch for the cover recipe (plan CV3).
+          coverRendition: PublishCoverRendition.current,
         ),
       );
       var fetches = 0;
@@ -1206,6 +1210,45 @@ void main() {
         manifest.saved?.coverUrlByBookId['periodical:uid-1'],
         'https://covers.openlibrary.org/x.jpg',
       );
+    });
+
+    test('a record from before ADR 0020 fetches the remote cover once, '
+        'then the skip applies (plan A.6 #84)', () async {
+      const source = 'https://covers.openlibrary.org/x.jpg';
+      final api = _CapturingApi();
+      final salt = ascii.encode('salt-1234567890');
+      final path =
+          'covers/${PublishCoverIds.shortHashHexForKey(salt, 'periodical:uid-1')}.jpg';
+      final store = _MemManifest(
+        PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          ownershipConfirmed: true,
+          fileShas: {path: GitBlobSha.of(utf8.encode('REMOTE-IMG'))},
+          coverUrlByBookId: const {'periodical:uid-1': source},
+        ),
+      );
+      var fetches = 0;
+      Future<PublishResult> publish() => makeUseCase(
+        api,
+        store,
+        fetchRemoteCover: (_) async {
+          fetches++;
+          return utf8.encode('REMOTE-IMG');
+        },
+        books: [issue()],
+        periodicals: [series(cover: source)],
+      ).run();
+
+      expect(await publish(), isA<PublishSuccess>());
+      expect(fetches, 1, reason: 'unknown rendition: produced once');
+      final cover = api.committed!.firstWhere((f) => f.path == path);
+      expect(cover.upload, isFalse, reason: 'same bytes: nothing uploaded');
+      expect(store.current.coverRendition, PublishCoverRendition.current);
+
+      expect(await publish(), isA<PublishSuccess>());
+      expect(fetches, 1, reason: 'now the record vouches for it');
     });
   });
 
@@ -2026,5 +2069,79 @@ void main() {
         expect(manifest.current.shaFor('availability.json'), isNull);
       },
     );
+  });
+
+  group('S9 — covers already online are not produced again (ADR 0020)', () {
+    final library = [
+      book(cover: 'covers/one.jpg'),
+      book(id: 3, cover: 'covers/three.jpg'),
+    ];
+
+    test('an unchanged republish reads 0 covers and uploads none; one new '
+        'book with a cover reads exactly 1', () async {
+      final api = _CapturingApi();
+      final store = _MemManifest();
+      final reads = <String>[];
+      Future<PublishResult> publish(List<CatalogueItem> books) => makeUseCase(
+        api,
+        store,
+        readLocalCover: (src) async {
+          reads.add(src);
+          return utf8.encode('JPEG:$src');
+        },
+        books: books,
+      ).run();
+
+      expect(await publish(library), isA<PublishSuccess>());
+      expect(reads, ['covers/one.jpg', 'covers/three.jpg']);
+      expect(store.current.coverRendition, PublishCoverRendition.current);
+
+      reads.clear();
+      expect(await publish(library), isA<PublishSuccess>());
+      expect(reads, isEmpty, reason: 'plan A.2: 0 covers processed');
+      final covers = api.committed!.where((f) => f.path.startsWith('covers/'));
+      expect(covers, hasLength(2), reason: 'still on the site');
+      expect(covers.where((f) => f.upload), isEmpty);
+
+      reads.clear();
+      final grown = [...library, book(id: 4, cover: 'covers/four.jpg')];
+      expect(await publish(grown), isA<PublishSuccess>());
+      expect(reads, ['covers/four.jpg'], reason: 'plan A.2: 1 cover');
+    });
+
+    test('a cover someone else changed on the branch makes the next publish '
+        'produce every cover and put ours back', () async {
+      final api = _CapturingApi();
+      final store = _MemManifest();
+      final reads = <String>[];
+      PublishLibraryUseCase useCase() => makeUseCase(
+        api,
+        store,
+        readLocalCover: (src) async {
+          reads.add(src);
+          return utf8.encode('JPEG:$src');
+        },
+        books: library,
+      );
+      expect(await useCase().run(), isA<PublishSuccess>());
+      final edited =
+          'covers/${PublishCoverIds.shortHashHex(ascii.encode('salt-1234567890'), 3)}.jpg';
+      reads.clear();
+
+      final next = useCase();
+      // makeUseCase seeds the remote from the record; then a human edits one
+      // cover file on the branch.
+      api.treeFiles = {...api.treeFiles, edited: 'HUMAN-EDIT'};
+      expect(await next.run(), isA<PublishSuccess>());
+
+      expect(reads, ['covers/one.jpg', 'covers/three.jpg']);
+      final restored = api.committed!.firstWhere((f) => f.path == edited);
+      expect(restored.upload, isTrue);
+      expect(
+        restored.gitSha,
+        GitBlobSha.of(utf8.encode('JPEG:covers/three.jpg')),
+      );
+      expect(store.current.coverRendition, PublishCoverRendition.current);
+    });
   });
 }

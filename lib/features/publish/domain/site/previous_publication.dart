@@ -4,12 +4,14 @@
 /// Why an interface instead of passing the manifest around (beginner note):
 /// the catalogue/events section builders are HOST-NEUTRAL — the GitHub and the
 /// Cloudflare adapters both feed them. Each host stores different manifest
-/// details (git blob shas vs asset hashes), but both need the same two
+/// details (git blob shas vs asset hashes), but both need the same
 /// questions answered:
 ///  - "which content sha is already live at this path?" (skip an unchanged
-///    upload), and
-///  - "which cover SOURCE URL did the last publish use for this key?" (skip a
-///    remote cover whose URL did not change).
+///    upload),
+///  - "which cover SOURCE did the last publish use for this key?", and
+///  - "were those covers made with the rendition this build makes?" — the
+///    last two together let a cover that is already online be reused without
+///    reading or re-encoding it (ADR 0020, plan CV2).
 ///
 /// `PublishManifest` (GitHub) and the Cloudflare manifest implement this view;
 /// the builders never see host-specific fields.
@@ -29,6 +31,18 @@ abstract interface class PreviousPublication {
   /// EXACT deletions (never a prefix sweep — R13): a section may only delete
   /// paths it owns, and only those it really published.
   Iterable<String> get ownedPaths;
+
+  /// The cover rendition (`PublishCoverRendition`) of the covers this record
+  /// holds, or null when it cannot vouch for reusing them without their
+  /// bytes (ADR 0020 Decision 3).
+  ///
+  /// A cover is published by reference — not read, not re-encoded — only
+  /// when this equals `PublishCoverRendition.current`, the record names the
+  /// same source for its key, and the record holds its path (plan CV2).
+  /// Null (a record written before ADR 0020, another target, a record whose
+  /// hashes this build cannot use, or one whose cover files changed under
+  /// it) makes every cover be produced again, which is always safe.
+  int? get reusableCoverRendition;
 
   /// True when the recorded `books.json` carries item keys THIS phone wrote
   /// (ADR 0019 Decision 7b), so a recorded `availability.json` names the

@@ -260,6 +260,7 @@ final class PublishAvailabilityUseCase {
           commitSha: commitSha,
           mergedShas: merge.fileShas,
           coverUrlByBookId: reconciled.coverUrlByBookId,
+          coverRendition: reconciled.coverRendition,
           proofPath: proof,
         );
         final saved = _manifest.save(committed).isRight();

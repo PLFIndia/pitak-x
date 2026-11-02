@@ -140,6 +140,11 @@ final class _MergedRecord implements PreviousPublication {
   /// carries no keys of its own.
   @override
   bool get catalogueKeyed => false;
+
+  /// Never read by [mergeSection]; null ("unknown") is the safe answer, as
+  /// it reuses no cover.
+  @override
+  int? get reusableCoverRendition => null;
 }
 
 /// The previous record's entries that pass the path policy.

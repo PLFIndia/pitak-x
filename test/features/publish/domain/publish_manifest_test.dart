@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -216,6 +217,7 @@ void main() {
         commitSha: 'new-head',
         mergedShas: {'books.json': 'sha'},
         coverUrlByBookId: {'1': 'src'},
+        coverRendition: null,
         proofPath: PublishProofPath.booksJson,
       );
       expect(committed.headSha, 'new-head');
@@ -438,6 +440,7 @@ void main() {
             commitSha: 'c',
             mergedShas: merged,
             coverUrlByBookId: const {},
+            coverRendition: null,
             proofPath: proof,
           );
           expect(committed.proofPath, proof, reason: proof.name);
@@ -458,6 +461,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'b'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           proofPath: PublishProofPath.eventsJson,
         );
         expect(missingFile.proofPath, isNull);
@@ -468,6 +472,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'b', 'availability.json': 'a'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           proofPath: PublishProofPath.availabilityJsonAbsent,
         );
         expect(stillRecorded.proofPath, isNull);
@@ -566,6 +571,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'new-books'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           wroteKeyedCatalogue: true,
           proofPath: PublishProofPath.booksJson,
         );
@@ -577,6 +583,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'keyed-books', 'events.json': 'e2'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           proofPath: PublishProofPath.eventsJson,
         );
         expect(committed.catalogueKeyed, isTrue);
@@ -591,6 +598,7 @@ void main() {
             'availability.json': 'a',
           },
           coverUrlByBookId: const {},
+          coverRendition: null,
           proofPath: PublishProofPath.availabilityJson,
         );
         expect(committed.catalogueKeyed, isTrue);
@@ -601,6 +609,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'books.json': 'unkeyed-books'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           proofPath: PublishProofPath.booksJson,
         );
         expect(committed.catalogueKeyed, isFalse);
@@ -611,6 +620,7 @@ void main() {
           commitSha: 'c',
           mergedShas: {'events.json': 'e'},
           coverUrlByBookId: const {},
+          coverRendition: null,
           wroteKeyedCatalogue: true,
           proofPath: PublishProofPath.eventsJson,
         );
@@ -646,6 +656,169 @@ void main() {
         PublishManifest.fromJson(cleared.toJson()).catalogueKeyed,
         isFalse,
       );
+    });
+  });
+
+  group('ADR 0020: coverRendition', () {
+    const covered = PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      headSha: 'head-a',
+      ownershipConfirmed: true,
+      state: PublishState.live,
+      fileShas: {
+        'books.json': 'b',
+        'covers/aaaa.jpg': 'cover-a',
+        'covers/bbbb.jpg': 'cover-b',
+      },
+      coverUrlByBookId: {
+        '1': 'covers/one.jpg',
+        '2': 'file:///data/user/0/app/covers/two.jpg',
+        '3': 'https://covers.openlibrary.org/b/id/3-L.jpg',
+        'periodical:uid-1': 'covers/series.jpg',
+      },
+      catalogueKeyed: true,
+      coverRendition: PublishCoverRendition.current,
+    );
+
+    test('round-trips through JSON; the builders see it', () {
+      final json = covered.toJson();
+      expect(json['coverRendition'], PublishCoverRendition.current);
+      final back = PublishManifest.fromJson(json);
+      expect(back.coverRendition, PublishCoverRendition.current);
+      expect(back.reusableCoverRendition, PublishCoverRendition.current);
+    });
+
+    test('absent or malformed reads as unknown (every cover produced '
+        'again), and an unknown rendition is not written', () {
+      final json = covered.toJson()..remove('coverRendition');
+      expect(PublishManifest.fromJson(json).coverRendition, isNull);
+      for (final bad in <Object?>['1', 0, -2, 1.5, true]) {
+        final damaged = covered.toJson()..['coverRendition'] = bad;
+        expect(
+          PublishManifest.fromJson(damaged).coverRendition,
+          isNull,
+          reason: '$bad',
+        );
+      }
+      expect(
+        PublishManifest.empty.toJson().containsKey('coverRendition'),
+        isFalse,
+      );
+    });
+
+    test('afterCommit stores exactly the rendition it is given', () {
+      final catalogue = covered.afterCommit(
+        commitSha: 'c',
+        mergedShas: covered.fileShas,
+        coverUrlByBookId: covered.coverUrlByBookId,
+        coverRendition: PublishCoverRendition.current,
+        proofPath: PublishProofPath.booksJson,
+      );
+      expect(catalogue.coverRendition, PublishCoverRendition.current);
+      final unknown = covered.afterCommit(
+        commitSha: 'c',
+        mergedShas: covered.fileShas,
+        coverUrlByBookId: covered.coverUrlByBookId,
+        coverRendition: null,
+        proofPath: PublishProofPath.booksJson,
+      );
+      expect(unknown.coverRendition, isNull);
+    });
+
+    test('asLive and withoutCatalogueKeys keep it; asRetired drops it', () {
+      expect(covered.asLive().coverRendition, PublishCoverRendition.current);
+      expect(
+        covered.withoutCatalogueKeys().coverRendition,
+        PublishCoverRendition.current,
+      );
+      final retired = covered.asRetired(
+        commitSha: 'r',
+        movedFileShas: const {'index.html': 'moved'},
+      );
+      expect(retired.coverRendition, isNull, reason: 'no covers any more');
+    });
+
+    group('reconciledFrom', () {
+      test('same site, covers untouched: kept', () {
+        final next = covered.reconciledFrom(
+          tree: tree(covered.fileShas),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(next.coverRendition, PublishCoverRendition.current);
+      });
+
+      test('a recorded cover that is gone just drops out: kept', () {
+        final next = covered.reconciledFrom(
+          tree: tree({'books.json': 'b', 'covers/aaaa.jpg': 'cover-a'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(next.coverRendition, PublishCoverRendition.current);
+        expect(next.shaFor('covers/bbbb.jpg'), isNull);
+      });
+
+      test('someone else changed one cover on the branch: unknown, so the '
+          'next publish produces every cover and puts ours back', () {
+        final next = covered.reconciledFrom(
+          tree: tree({...covered.fileShas, 'covers/bbbb.jpg': 'edited'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(next.coverRendition, isNull);
+        expect(next.reusableCoverRendition, isNull);
+        expect(next.shaFor('covers/bbbb.jpg'), 'edited');
+      });
+
+      test('a change to a non-cover file does not touch it', () {
+        final next = covered.reconciledFrom(
+          tree: tree({...covered.fileShas, 'books.json': 'other'}),
+          ownerRepo: 'me/lib',
+          branch: 'main',
+        );
+        expect(next.coverRendition, PublishCoverRendition.current);
+      });
+
+      test('another repo or branch: unknown (the record claims nothing)', () {
+        for (final (repo, branch) in [('me/other', 'main'), ('me/lib', 'gh')]) {
+          final next = covered.reconciledFrom(
+            tree: tree(covered.fileShas, repo: repo, branch: branch),
+            ownerRepo: repo,
+            branch: branch,
+          );
+          expect(next.coverRendition, isNull, reason: '$repo@$branch');
+        }
+      });
+    });
+
+    group('withoutLocalCoverSources (ADR 0020 Decision 4)', () {
+      test('forgets covers/ and file:// sources, keeps remote ones and '
+          'everything else', () {
+        expect(covered.hasLocalCoverSources, isTrue);
+        final next = covered.withoutLocalCoverSources();
+        expect(next.coverUrlByBookId, {
+          '3': 'https://covers.openlibrary.org/b/id/3-L.jpg',
+        });
+        expect(next.hasLocalCoverSources, isFalse);
+        expect(next.fileShas, covered.fileShas);
+        expect(next.repo, covered.repo);
+        expect(next.branch, covered.branch);
+        expect(next.headSha, covered.headSha);
+        expect(next.state, covered.state);
+        expect(next.ownershipConfirmed, isTrue);
+        expect(next.catalogueKeyed, isTrue);
+        expect(next.coverRendition, PublishCoverRendition.current);
+        expect(next.proofPath, covered.proofPath);
+      });
+
+      test('a record with remote covers only has nothing to forget', () {
+        const remoteOnly = PublishManifest(
+          coverUrlByBookId: {'1': 'https://example.org/1.jpg'},
+        );
+        expect(remoteOnly.hasLocalCoverSources, isFalse);
+        expect(PublishManifest.empty.hasLocalCoverSources, isFalse);
+      });
     });
   });
 }

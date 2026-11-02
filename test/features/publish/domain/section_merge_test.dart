@@ -271,4 +271,7 @@ class _Previous implements PreviousPublication {
 
   @override
   bool get catalogueKeyed => false;
+
+  @override
+  int? get reusableCoverRendition => null;
 }

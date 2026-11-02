@@ -294,6 +294,7 @@ final class S8PublishHarness {
     PublishHostState? hostState,
     bool workerExists = false,
     PublishTimingSink? timingSink,
+    LocalCoverReader? readLocalCover,
   }) : _timingSink = timingSink,
        credentials = InMemoryCloudflareCredentialStore(
          connection ?? cloudflareTestConnection(),
@@ -327,7 +328,9 @@ final class S8PublishHarness {
       catalogue: CatalogueSectionBuilder(
         covers: PublishCoverDecider(
           coverIds: const PublishCoverIds(_FixedSalt()),
-          readLocalCover: (_) async => null,
+          // A test of cover reuse (ADR 0020) passes a counting reader; the
+          // default reads nothing, as every older test expects.
+          readLocalCover: readLocalCover ?? (_) async => null,
           fetchRemoteCover: (_) async => null,
         ),
         buildViewerHtml:

@@ -15,6 +15,11 @@
 /// saved sets, inside the publish queue, and only then runs the change. If
 /// that cannot be saved, the change does not run (fail closed).
 ///
+/// A restore also replaces the covers folder, so the same step makes both
+/// records forget which LOCAL cover files they published (ADR 0020
+/// Decision 4): the next publish reads those covers again instead of
+/// trusting a file name whose bytes may have changed.
+///
 /// It lives in core because two features (backup, import/export) call it and
 /// a third (publish) implements it; none of them imports another for it.
 library;

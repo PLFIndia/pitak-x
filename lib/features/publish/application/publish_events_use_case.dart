@@ -344,6 +344,7 @@ final class PublishEventsUseCase {
           commitSha: commitSha,
           mergedShas: merge.fileShas,
           coverUrlByBookId: manifest.coverUrlByBookId,
+          coverRendition: manifest.coverRendition,
           // events.json is always written (an empty publish writes an empty
           // list), so it proves this commit (ADR 0019 Decision 10).
           proofPath: PublishProofPath.eventsJson,

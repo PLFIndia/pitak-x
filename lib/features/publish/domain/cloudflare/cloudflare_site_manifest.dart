@@ -25,13 +25,20 @@
 /// Unlike GitHub, Cloudflare needs no proof path: the marker's fresh id
 /// proves the whole atomic version (plan A.6 #25).
 ///
+/// `coverRendition` (ADR 0020, additive) says which cover recipe made the
+/// recorded covers, so an unchanged cover can be reused without reading it
+/// (plan CV2/CV3). An older record lacks it: every cover is produced again.
+///
 /// PUBLIC data only — paths, content hashes, sizes, content types and public
 /// cover URLs. No token, no JWT, no account secret.
 library;
 
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
+import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_entry.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_marker.dart';
@@ -40,80 +47,7 @@ import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 import 'package:pitaka/features/publish/domain/site/site_path.dart';
 
-/// One published asset's metadata.
-final class CloudflareAssetEntry {
-  /// Creates an entry.
-  const CloudflareAssetEntry({
-    required this.sha,
-    required this.hash,
-    required this.size,
-    required this.type,
-  });
-
-  /// The host-neutral content identity (git blob sha), shared with the section
-  /// merge and the snapshot digest.
-  final String sha;
-
-  /// The Cloudflare asset hash (see [CloudflareAssetHash]).
-  final String hash;
-
-  /// Byte length of the file.
-  final int size;
-
-  /// The exact content type it is served with.
-  final CloudflareContentType type;
-
-  /// Encodes this entry (public data only).
-  Map<String, Object?> toJson() => {
-    'sha': sha,
-    'hash': hash,
-    'size': size,
-    'type': type.header,
-  };
-
-  /// Decodes an entry, or null when any field is missing or unknown.
-  ///
-  /// A wrong type is a corrupt record, not a crash: the caller treats null as
-  /// "no usable entry" and re-hashes or reconciles.
-  static CloudflareAssetEntry? fromJson(Object? raw) {
-    if (raw is! Map) return null;
-    final sha = raw['sha'];
-    final hash = raw['hash'];
-    final size = raw['size'];
-    final type = CloudflareContentType.forHeader(
-      raw['type'] is String ? raw['type'] as String : null,
-    );
-    if (sha is! String || sha.isEmpty) return null;
-    if (hash is! String || !_isAssetHash(hash)) return null;
-    if (size is! int || size < 0 || size > CloudflareLimits.maxFileBytes) {
-      return null;
-    }
-    if (type == null) return null;
-    return CloudflareAssetEntry(sha: sha, hash: hash, size: size, type: type);
-  }
-
-  @override
-  String toString() => 'CloudflareAssetEntry($sha, $hash, $size)';
-}
-
-/// The result of merging one section into a Cloudflare snapshot.
-final class CloudflareMergeResult {
-  /// Creates the result.
-  const CloudflareMergeResult({
-    required this.files,
-    required this.missingHashes,
-  });
-
-  /// The complete next Worker snapshot: path → entry.
-  final Map<String, CloudflareAssetEntry> files;
-
-  /// Paths the snapshot needs but has no trusted hash for.
-  ///
-  /// Non-empty means the caller must re-hash the bytes it can still read, and
-  /// if any remain, stop before deploy and reconcile (R5/R23). It is never
-  /// "publish without them".
-  final List<String> missingHashes;
-}
+export 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_entry.dart';
 
 /// What was last published to one Cloudflare Worker.
 final class CloudflareSiteManifest implements PreviousPublication {
@@ -128,6 +62,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
     this.files = const {},
     this.coverUrlByBookId = const {},
     this.catalogueKeyed = false,
+    this.coverRendition,
   });
 
   /// Decodes a record, or the EMPTY record when it does not describe a target.
@@ -136,9 +71,10 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// could authorise deleting another Worker's files), so a record whose target
   /// cannot be rebuilt claims nothing at all.
   ///
-  /// `catalogueKeyed` is the one field read leniently: anything but a stored
-  /// `true` reads as false, which is already the safe direction (the lane
-  /// waits for a catalogue publish) and is no reason to discard the files.
+  /// `catalogueKeyed` and `coverRendition` are read leniently: anything but a
+  /// stored `true` / a positive whole number reads as false / unknown, which
+  /// is already the safe direction (the lane waits for a catalogue publish;
+  /// every cover is produced again) and is no reason to discard the files.
   factory CloudflareSiteManifest.fromJson(Map<String, dynamic> json) {
     final target = _targetFrom(json['target']);
     if (target == null || json['schema'] != currentSchema) return empty;
@@ -187,6 +123,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
           json['catalogueKeyed'] == true &&
           state != PublishState.retired &&
           files.containsKey(_booksJsonPath),
+      coverRendition: PublishCoverRendition.tryParse(json['coverRendition']),
     );
   }
 
@@ -269,6 +206,10 @@ final class CloudflareSiteManifest implements PreviousPublication {
   @override
   final bool catalogueKeyed;
 
+  /// The cover rendition every cover recorded here was produced with
+  /// (ADR 0020 Decision 3), or null when unknown.
+  final int? coverRendition;
+
   static const String _booksJsonPath = 'books.json';
 
   /// True when the recorded hashes were computed with this build's formula.
@@ -311,6 +252,18 @@ final class CloudflareSiteManifest implements PreviousPublication {
   @override
   Iterable<String> get ownedPaths => files.keys;
 
+  /// [coverRendition], but only while [hashesTrusted]: a reused cover is
+  /// carried into the next version by its recorded hash, and a hash this
+  /// build cannot use would turn every reused cover into a missing file
+  /// (a whole-site replacement). Reading the covers again avoids that.
+  @override
+  int? get reusableCoverRendition => hashesTrusted ? coverRendition : null;
+
+  /// True when some recorded cover source is a file on this phone, see
+  /// [withoutLocalCoverSources].
+  bool get hasLocalCoverSources =>
+      coverUrlByBookId.values.any(CoverPaths.isLocal);
+
   /// The record to persist right after a deploy landed.
   ///
   /// [files] is the COMPLETE snapshot the deploy sent — a Cloudflare deploy
@@ -320,10 +273,15 @@ final class CloudflareSiteManifest implements PreviousPublication {
   /// item keys. [catalogueKeyed] then becomes true for that, stays as it was
   /// when the deploy carried this record's `books.json` forward unchanged,
   /// and is false otherwise — the same rule as `PublishManifest.afterCommit`.
+  ///
+  /// [coverRendition] travels with [coverUrlByBookId] (the deployed
+  /// catalogue's, or this record's own when the deploy carried the catalogue
+  /// forward); required so no deploy can forget it.
   CloudflareSiteManifest afterDeploy({
     required String publishId,
     required Map<String, CloudflareAssetEntry> files,
     required Map<String, String> coverUrlByBookId,
+    required int? coverRendition,
     bool wroteKeyedCatalogue = false,
   }) {
     final books = files[_booksJsonPath]?.sha;
@@ -339,6 +297,7 @@ final class CloudflareSiteManifest implements PreviousPublication {
       catalogueKeyed:
           books != null &&
           (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),
+      coverRendition: coverRendition,
     );
   }
 
@@ -353,11 +312,22 @@ final class CloudflareSiteManifest implements PreviousPublication {
   CloudflareSiteManifest withoutCatalogueKeys() =>
       _copy(state: state, catalogueKeyed: false);
 
+  /// The same record, but forgetting which LOCAL cover file each published
+  /// cover came from (ADR 0020 Decision 4, before a restore's generation
+  /// switch); see `PublishManifest.withoutLocalCoverSources`.
+  CloudflareSiteManifest withoutLocalCoverSources() => _copy(
+    state: state,
+    coverUrlByBookId: {
+      for (final entry in coverUrlByBookId.entries)
+        if (!CoverPaths.isLocal(entry.value)) entry.key: entry.value,
+    },
+  );
+
   /// The same record after the site became a moved page.
   ///
   /// A retirement deploy is a fresh deploy with a fresh publish id and only the
   /// moved files, so the file map is replaced, not merged (F.6). A moved page
-  /// has no catalogue, so it carries no keys.
+  /// has no catalogue, so it carries no keys and no cover rendition.
   CloudflareSiteManifest asRetired({
     required String publishId,
     required Map<String, CloudflareAssetEntry> files,
@@ -415,11 +385,13 @@ final class CloudflareSiteManifest implements PreviousPublication {
     },
     'coverUrlByBookId': coverUrlByBookId,
     'catalogueKeyed': catalogueKeyed,
+    if (coverRendition case final rendition?) 'coverRendition': rendition,
   };
 
   CloudflareSiteManifest _copy({
     required PublishState state,
     bool? catalogueKeyed,
+    Map<String, String>? coverUrlByBookId,
   }) => CloudflareSiteManifest(
     schema: schema,
     target: target,
@@ -428,8 +400,9 @@ final class CloudflareSiteManifest implements PreviousPublication {
     liveId: liveId,
     hashScheme: hashScheme,
     files: files,
-    coverUrlByBookId: coverUrlByBookId,
+    coverUrlByBookId: coverUrlByBookId ?? this.coverUrlByBookId,
     catalogueKeyed: catalogueKeyed ?? this.catalogueKeyed,
+    coverRendition: coverRendition,
   );
 
   static Map<String, Object?> _targetJson(CloudflarePublishTarget target) => {
@@ -479,5 +452,3 @@ final class CloudflareSiteManifest implements PreviousPublication {
       'CloudflareSiteManifest(${target?.targetId}, $state, '
       '${files.length} files)';
 }
-
-bool _isAssetHash(String value) => CloudflareAssetHash.isValidHash(value);

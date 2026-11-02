@@ -34,11 +34,19 @@
 ///    by THIS phone, so the availability lane may publish against it
 ///    (gate 7b). Absent reads as false.
 ///
+/// One more additive field arrived with ADR 0020 (schema still 2):
+/// `coverRendition` says which cover recipe (`PublishCoverRendition`) made
+/// the recorded covers, so an unchanged cover can be reused without reading
+/// or re-encoding it (plan CV2/CV3). Absent reads as unknown: every cover is
+/// produced again, as before.
+///
 /// PUBLIC data only — repo paths, git blob shas, public cover URLs — so it
 /// needs no encryption.
 library;
 
+import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/site/previous_publication.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -57,6 +65,7 @@ final class PublishManifest implements PreviousPublication {
     this.coverUrlByBookId = const {},
     this.proofPath,
     this.catalogueKeyed = false,
+    this.coverRendition,
   });
 
   /// Parses a manifest from [json]; tolerant of missing/odd fields.
@@ -81,6 +90,9 @@ final class PublishManifest implements PreviousPublication {
   ///    can prove it through a guessed file (plan A.1 item 8). A `live` or
   ///    `retired` record is already settled and needs no proof;
   ///  - `catalogueKeyed` is true only for a stored `true`.
+  ///
+  /// The ADR 0020 field: `coverRendition` is kept only when it is a positive
+  /// whole number; anything else reads as unknown (null).
   factory PublishManifest.fromJson(Map<String, dynamic> json) {
     Map<String, String> strMap(Object? o) => o is Map
         ? {
@@ -116,6 +128,7 @@ final class PublishManifest implements PreviousPublication {
       catalogueKeyed:
           json['catalogueKeyed'] == true &&
           fileShas.containsKey(_booksJsonPath),
+      coverRendition: PublishCoverRendition.tryParse(json['coverRendition']),
     );
   }
 
@@ -167,11 +180,23 @@ final class PublishManifest implements PreviousPublication {
   @override
   final bool catalogueKeyed;
 
+  /// The cover rendition every cover recorded here was produced with
+  /// (ADR 0020 Decision 3), or null when unknown.
+  ///
+  /// Like [catalogueKeyed] it is a claim about exact files: it survives a
+  /// reconcile only while every recorded cover is still on the branch with
+  /// the recorded sha ([reconciledFrom]).
+  final int? coverRendition;
+
   /// The empty manifest (no publication recorded on this phone).
   static const PublishManifest empty = PublishManifest();
 
   /// The catalogue file whose keys [catalogueKeyed] describes.
   static const String _booksJsonPath = 'books.json';
+
+  /// The site folder of the covers [coverRendition] describes (the
+  /// catalogue section's `covers/*`, `SiteSectionOwnership`).
+  static const String _coverPathPrefix = 'covers/';
 
   /// True when this record predates schema 2.
   bool get isLegacy => schema < currentSchema;
@@ -188,6 +213,16 @@ final class PublishManifest implements PreviousPublication {
   /// Every app-owned path this record claims.
   @override
   Iterable<String> get ownedPaths => fileShas.keys;
+
+  /// [coverRendition]: a GitHub record that survived [reconciledFrom] still
+  /// describes the exact cover files on the branch.
+  @override
+  int? get reusableCoverRendition => coverRendition;
+
+  /// True when some recorded cover source is a file on this phone
+  /// (`covers/…` or a legacy `file://` reference), see
+  /// [withoutLocalCoverSources].
+  bool get hasLocalCoverSources => coverUrlByBookId.values.any(_isLocal);
 
   /// True when this record describes exactly [ownerRepo] on [branch].
   bool describes({required String ownerRepo, required String branch}) =>
@@ -214,7 +249,12 @@ final class PublishManifest implements PreviousPublication {
   ///  - `catalogueKeyed` survives only while the branch still holds the exact
   ///    `books.json` this phone recorded. Another phone (with another salt)
   ///    or an older Pitak may have republished the catalogue since, and its
-  ///    keys would not match ours (ADR 0019 Decision 7b, plan A.6 #19).
+  ///    keys would not match ours (ADR 0019 Decision 7b, plan A.6 #19);
+  ///  - `coverRendition` survives only for the same site and only while no
+  ///    recorded cover was changed on the branch (a recorded cover that is
+  ///    gone simply drops out). If someone else edited one cover, the next
+  ///    publish produces EVERY cover again and so puts this phone's own
+  ///    pictures back, as every publish did before ADR 0020.
   PublishManifest reconciledFrom({
     required GitHubTreeSnapshot tree,
     required String ownerRepo,
@@ -234,6 +274,12 @@ final class PublishManifest implements PreviousPublication {
         catalogueKeyed &&
         recordedBooks != null &&
         tree.files[_booksJsonPath] == recordedBooks;
+    final coversUntouched = claimed.entries
+        .where((entry) => entry.key.startsWith(_coverPathPrefix))
+        .every((entry) {
+          final live = tree.files[entry.key];
+          return live == null || live == entry.value;
+        });
     return PublishManifest(
       repo: ownerRepo,
       branch: branch,
@@ -248,6 +294,7 @@ final class PublishManifest implements PreviousPublication {
       coverUrlByBookId: coverUrlByBookId,
       proofPath: sameHead ? proofPath : null,
       catalogueKeyed: stillKeyed,
+      coverRendition: sameSite && coversUntouched ? coverRendition : null,
     );
   }
 
@@ -279,10 +326,16 @@ final class PublishManifest implements PreviousPublication {
   /// proof ([PublishManifest.fromJson]): no proof and no head, so the next
   /// publish treats it as "unknown state" and its own read-back decides. Only
   /// a caller bug can cause it, and this is its fail-closed form.
+  ///
+  /// [coverRendition] travels with [coverUrlByBookId]: a commit that wrote
+  /// the catalogue passes its section's rendition and cover sources; any
+  /// other commit passes this record's own, unchanged. It is required for
+  /// the same reason as [proofPath]: no commit may forget it.
   PublishManifest afterCommit({
     required String commitSha,
     required Map<String, String> mergedShas,
     required Map<String, String> coverUrlByBookId,
+    required int? coverRendition,
     required PublishProofPath proofPath,
     bool wroteKeyedCatalogue = false,
   }) {
@@ -300,6 +353,7 @@ final class PublishManifest implements PreviousPublication {
       catalogueKeyed:
           books != null &&
           (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),
+      coverRendition: coverRendition,
     );
   }
 
@@ -315,6 +369,7 @@ final class PublishManifest implements PreviousPublication {
     coverUrlByBookId: coverUrlByBookId,
     proofPath: proofPath,
     catalogueKeyed: catalogueKeyed,
+    coverRendition: coverRendition,
   );
 
   /// The same record, but no longer vouching for the keys in its
@@ -333,14 +388,40 @@ final class PublishManifest implements PreviousPublication {
     fileShas: fileShas,
     coverUrlByBookId: coverUrlByBookId,
     proofPath: proofPath,
+    coverRendition: coverRendition,
+  );
+
+  /// The same record, but forgetting which LOCAL cover file each published
+  /// cover came from; remote cover sources and everything else are kept.
+  ///
+  /// Used before a restore switches to a new data generation (ADR 0020
+  /// Decision 4): the restored covers folder may hold different bytes under
+  /// a file name this record names, so the next publish must read those
+  /// covers again instead of trusting the name. It uploads only the ones
+  /// whose bytes really differ.
+  PublishManifest withoutLocalCoverSources() => PublishManifest(
+    schema: schema,
+    repo: repo,
+    branch: branch,
+    headSha: headSha,
+    ownershipConfirmed: ownershipConfirmed,
+    state: state,
+    fileShas: fileShas,
+    coverUrlByBookId: {
+      for (final entry in coverUrlByBookId.entries)
+        if (!_isLocal(entry.value)) entry.key: entry.value,
+    },
+    proofPath: proofPath,
+    catalogueKeyed: catalogueKeyed,
+    coverRendition: coverRendition,
   );
 
   /// The exact moved-page record after retirement read-back succeeds.
   ///
   /// The head is the retirement commit (or an already-retired head found by
   /// Retry), never the old live anchor. Only moved files remain owned. A
-  /// moved page has no catalogue, so it carries no keys and needs no proof
-  /// path (a retired record is never checked again).
+  /// moved page has no catalogue, so it carries no keys, no cover rendition
+  /// and needs no proof path (a retired record is never checked again).
   PublishManifest asRetired({
     required String commitSha,
     required Map<String, String> movedFileShas,
@@ -367,7 +448,12 @@ final class PublishManifest implements PreviousPublication {
     'coverUrlByBookId': coverUrlByBookId,
     if (proofPath case final proofPath?) 'proofPath': proofPath.name,
     'catalogueKeyed': catalogueKeyed,
+    if (coverRendition case final rendition?) 'coverRendition': rendition,
   };
+
+  /// The ONE local/remote rule for cover sources (`CoverPaths.isLocal`),
+  /// shared with the cover decider.
+  static bool _isLocal(String source) => CoverPaths.isLocal(source);
 
   static PublishState? _stateFrom(Object? raw) {
     for (final value in PublishState.values) {

@@ -1,6 +1,7 @@
-/// Marks the published item keys as "no longer vouched for" before an
-/// operation that changes what item ids name (application layer; ADR 0019
-/// Decision 3, plan J9 decided in S6).
+/// Marks the published item keys as "no longer vouched for", and forgets
+/// which local cover files were published, before an operation that changes
+/// what item ids name (application layer; ADR 0019 Decision 3, plan J9
+/// decided in S6; covers: ADR 0020 Decision 4, plan S9).
 ///
 /// The risk it closes (beginner note): `catalogueKeyed` in both publish
 /// records says "the live `books.json` carries keys THIS phone can match".
@@ -11,10 +12,20 @@
 /// real books, and gate 7b could not see it. An overwrite merge gives every
 /// book a new id, with the same effect.
 ///
+/// The same moment also changes what a local cover FILE NAME holds: a
+/// restore switches to a new covers folder built from the archive, which may
+/// hold other bytes under a name the records already know. From ADR 0020 on,
+/// a publish reuses a cover without reading it when the record names the
+/// same source (plan CV2), so the records must forget their LOCAL cover
+/// sources here, or the site could keep an old picture. (An overwrite merge
+/// gives every item a new id and so a new cover path; forgetting costs it
+/// nothing.)
+///
 /// What it does, inside the app-wide publish queue so no publish can run in
 /// between:
-///  1. clears `catalogueKeyed` in the GitHub record, the Cloudflare record
-///     and the unconfirmed Cloudflare attempt (which may be promoted later);
+///  1. clears `catalogueKeyed` and forgets the local cover sources in the
+///     GitHub record, the Cloudflare record and the unconfirmed Cloudflare
+///     attempt (which may be promoted later);
 ///  2. clears the lane's saved sets (their keys came from the old ids);
 ///  3. only then runs the change (the restore's generation switch, or the
 ///     overwrite), and tells a running lane to forget the sets it holds in
@@ -24,7 +35,8 @@
 /// [CatalogueKeysResetRefused] is thrown: the device stays exactly as it was
 /// (fail closed). Afterwards the lane says "Publish your catalogue once…",
 /// any publish that cannot write a fresh set deletes the old
-/// `availability.json`, and the next catalogue publish writes fresh keys.
+/// `availability.json`, and the next catalogue publish writes fresh keys and
+/// reads every local cover once more (uploading only those that differ).
 library;
 
 import 'package:fpdart/fpdart.dart';
@@ -90,20 +102,26 @@ final class CatalogueKeysReset {
       });
 
   Future<Either<Failure, Unit>> _reset() async {
+    // A record is rewritten only when it claims something the change makes
+    // untrue; an untouched record is never re-saved for nothing.
     final gitHub = _gitHubRecord.load();
-    if (gitHub.catalogueKeyed) {
-      final saved = _gitHubRecord.save(gitHub.withoutCatalogueKeys());
+    if (gitHub.catalogueKeyed || gitHub.hasLocalCoverSources) {
+      final saved = _gitHubRecord.save(
+        gitHub.withoutCatalogueKeys().withoutLocalCoverSources(),
+      );
       if (saved.isLeft()) return saved;
     }
     final cloudflare = _cloudflareRecord.load();
-    if (cloudflare.catalogueKeyed) {
-      final saved = _cloudflareRecord.save(cloudflare.withoutCatalogueKeys());
+    if (cloudflare.catalogueKeyed || cloudflare.hasLocalCoverSources) {
+      final saved = _cloudflareRecord.save(
+        cloudflare.withoutCatalogueKeys().withoutLocalCoverSources(),
+      );
       if (saved.isLeft()) return saved;
     }
     final attempt = _cloudflareRecord.loadPending();
-    if (attempt.catalogueKeyed) {
+    if (attempt.catalogueKeyed || attempt.hasLocalCoverSources) {
       final saved = _cloudflareRecord.savePending(
-        attempt.withoutCatalogueKeys(),
+        attempt.withoutCatalogueKeys().withoutLocalCoverSources(),
       );
       if (saved.isLeft()) return saved;
     }

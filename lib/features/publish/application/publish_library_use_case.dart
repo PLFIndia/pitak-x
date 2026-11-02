@@ -360,6 +360,7 @@ final class PublishLibraryUseCase {
           commitSha: commitSha,
           mergedShas: merge.fileShas,
           coverUrlByBookId: section.coverUrlByKey,
+          coverRendition: section.coverRendition,
           // The books.json just committed carries this phone's item keys
           // (ADR 0019 Decision 7b), so the lane may later publish against it.
           wroteKeyedCatalogue: snapshot.writesKeyedCatalogue,

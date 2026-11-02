@@ -19,6 +19,7 @@ import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_limits.dart
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_subdomain.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_worker_name.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
@@ -1659,5 +1660,84 @@ void main() {
       ]),
     );
     expect(timings.describe(), startsWith('publish timings cloudflare: '));
+  });
+
+  group('S9: covers already online are not produced again (ADR 0020)', () {
+    test('an unchanged republish reads 0 covers; the new version carries the '
+        'cover by its recorded hash', () async {
+      final reads = <String>[];
+      final h = S8PublishHarness(
+        dir,
+        readLocalCover: (src) async {
+          reads.add(src);
+          return utf8.encode('JPEG:$src');
+        },
+      );
+      h.reads.books = const [
+        CatalogueItem(id: 1, title: 'Covered', coverUrl: 'covers/one.jpg'),
+      ];
+
+      final first = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+      expect(first, isA<PublishSuccess>());
+      expect(reads, ['covers/one.jpg']);
+      final record = h.manifestStore.current;
+      expect(record.coverRendition, PublishCoverRendition.current);
+      final coverPath = record.ownedPaths.singleWhere(
+        (path) => path.startsWith('covers/'),
+      );
+      final recorded = record.entryFor(coverPath)!;
+
+      reads.clear();
+      h.nextPublishId = 'b' * 32;
+      final second = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.catalogue,
+      );
+
+      expect(second, isA<PublishSuccess>());
+      expect(reads, isEmpty, reason: 'plan A.2: 0 covers processed');
+      expect(h.api.deployCalls, 2);
+      final sent = h.api.uploadManifests.last.singleWhere(
+        (entry) => entry.path.value == coverPath,
+      );
+      expect(sent.hash, recorded.hash, reason: 'still in the new version');
+      final next = h.manifestStore.current;
+      expect(next.publishId, 'b' * 32);
+      expect(next.entryFor(coverPath)?.hash, recorded.hash);
+      expect(next.coverRendition, PublishCoverRendition.current);
+      expect(next.coverSourceFor('1'), 'covers/one.jpg');
+    });
+
+    test("an events-only deploy keeps the record's cover rendition", () async {
+      final h = S8PublishHarness(
+        dir,
+        readLocalCover: (src) async => utf8.encode('JPEG:$src'),
+      );
+      h.reads.books = const [
+        CatalogueItem(id: 1, title: 'Covered', coverUrl: 'covers/one.jpg'),
+      ];
+      expect(
+        await h.useCase.call(
+          target: h.target,
+          section: PublishRequestedSection.catalogue,
+        ),
+        isA<PublishSuccess>(),
+      );
+
+      h.nextPublishId = 'b' * 32;
+      final events = await h.useCase.call(
+        target: h.target,
+        section: PublishRequestedSection.events,
+      );
+
+      expect(events, isA<PublishSuccess>());
+      final next = h.manifestStore.current;
+      expect(next.publishId, 'b' * 32);
+      expect(next.coverRendition, PublishCoverRendition.current);
+      expect(next.coverSourceFor('1'), 'covers/one.jpg');
+    });
   });
 }

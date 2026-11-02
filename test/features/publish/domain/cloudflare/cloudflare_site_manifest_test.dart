@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_asset_hash.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_content_type.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_site_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_file.dart';
 import 'package:pitaka/features/publish/domain/site/publish_section.dart';
@@ -340,6 +341,7 @@ void main() {
         publishId: 'b' * 32,
         files: {'books.json': entry('sha-books')},
         coverUrlByBookId: const {},
+        coverRendition: null,
       );
 
       expect(manifest.state, PublishState.deployed);
@@ -461,6 +463,7 @@ void main() {
           publishId: 'b' * 32,
           files: {'books.json': entry('sha-new-books')},
           coverUrlByBookId: const {},
+          coverRendition: null,
           wroteKeyedCatalogue: true,
         );
         expect(next.catalogueKeyed, isTrue);
@@ -474,6 +477,7 @@ void main() {
             'availability.json': entry('sha-availability-2'),
           },
           coverUrlByBookId: const {},
+          coverRendition: null,
         );
         expect(next.catalogueKeyed, isTrue);
       });
@@ -483,6 +487,7 @@ void main() {
           publishId: 'b' * 32,
           files: {'books.json': entry('sha-other-books')},
           coverUrlByBookId: const {},
+          coverRendition: null,
         );
         expect(next.catalogueKeyed, isFalse);
       });
@@ -492,6 +497,7 @@ void main() {
           publishId: 'b' * 32,
           files: {'index.html': entry('i')},
           coverUrlByBookId: const {},
+          coverRendition: null,
           wroteKeyedCatalogue: true,
         );
         expect(next.catalogueKeyed, isFalse);
@@ -617,9 +623,101 @@ void main() {
         publishId: 'd' * 32,
         files: previous.mergedWith(merge: merge, built: {}).files,
         coverUrlByBookId: previous.coverUrlByBookId,
+        coverRendition: null,
       );
 
       expect(next.coverSourceFor('42'), 'https://covers.example/42.jpg');
+    });
+  });
+
+  group('ADR 0020: coverRendition', () {
+    CloudflareSiteManifest covered({
+      String? hashScheme = CloudflareAssetHash.scheme,
+    }) => CloudflareSiteManifest(
+      target: target,
+      state: PublishState.live,
+      publishId: 'a' * 32,
+      hashScheme: hashScheme,
+      files: {
+        'books.json': entry('sha-books'),
+        'index.html': entry('sha-index', type: CloudflareContentType.html),
+        'pitak-publish.json': entry('sha-marker'),
+      },
+      coverUrlByBookId: const {
+        '1': 'covers/one.jpg',
+        '2': 'file:///data/covers/two.jpg',
+        '3': 'https://covers.example/3.jpg',
+      },
+      catalogueKeyed: true,
+      coverRendition: PublishCoverRendition.current,
+    );
+
+    test('round-trips through JSON; malformed reads as unknown', () {
+      final json = covered().toJson();
+      expect(json['coverRendition'], PublishCoverRendition.current);
+      expect(
+        CloudflareSiteManifest.fromJson(json).coverRendition,
+        PublishCoverRendition.current,
+      );
+      for (final bad in <Object?>[null, '1', 0, 2.5]) {
+        final damaged = covered().toJson()..['coverRendition'] = bad;
+        final back = CloudflareSiteManifest.fromJson(damaged);
+        expect(back.coverRendition, isNull, reason: '$bad');
+        expect(back.files, isNotEmpty, reason: 'no reason to drop the files');
+      }
+      expect(live().toJson().containsKey('coverRendition'), isFalse);
+    });
+
+    test('reused only while the hashes are usable', () {
+      expect(covered().reusableCoverRendition, PublishCoverRendition.current);
+      final untrusted = covered(hashScheme: 'an-older-formula');
+      expect(untrusted.coverRendition, PublishCoverRendition.current);
+      expect(
+        untrusted.reusableCoverRendition,
+        isNull,
+        reason: 'a reused cover would become a missing hash',
+      );
+    });
+
+    test('afterDeploy stores what it is given; asLive and '
+        'withoutCatalogueKeys keep it; asRetired drops it', () {
+      final deployed = covered().afterDeploy(
+        publishId: 'b' * 32,
+        files: covered().files,
+        coverUrlByBookId: covered().coverUrlByBookId,
+        coverRendition: PublishCoverRendition.current,
+      );
+      expect(deployed.coverRendition, PublishCoverRendition.current);
+      expect(deployed.asLive().coverRendition, PublishCoverRendition.current);
+      expect(
+        covered().withoutCatalogueKeys().coverRendition,
+        PublishCoverRendition.current,
+      );
+      final retired = covered().asRetired(
+        publishId: 'c' * 32,
+        files: {
+          'index.html': entry('m', type: CloudflareContentType.html),
+          '404.html': entry('n', type: CloudflareContentType.html),
+          'pitak-publish.json': entry('r'),
+        },
+      );
+      expect(retired.coverRendition, isNull);
+    });
+
+    test('withoutLocalCoverSources forgets local sources only', () {
+      final manifest = covered();
+      expect(manifest.hasLocalCoverSources, isTrue);
+      final next = manifest.withoutLocalCoverSources();
+      expect(next.coverUrlByBookId, {'3': 'https://covers.example/3.jpg'});
+      expect(next.hasLocalCoverSources, isFalse);
+      expect(next.files, manifest.files);
+      expect(next.target, manifest.target);
+      expect(next.state, manifest.state);
+      expect(next.publishId, manifest.publishId);
+      expect(next.hashScheme, manifest.hashScheme);
+      expect(next.catalogueKeyed, isTrue);
+      expect(next.coverRendition, PublishCoverRendition.current);
+      expect(live().hasLocalCoverSources, isFalse);
     });
   });
 }

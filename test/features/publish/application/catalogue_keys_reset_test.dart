@@ -85,6 +85,80 @@ void main() {
     expect(keys.cloudflare.pendingSaves, isEmpty);
   });
 
+  group('ADR 0020 Decision 4: local cover sources are forgotten too', () {
+    // A restore switches to a covers folder built from the archive, so a
+    // file name a record knows may now hold other bytes. The next publish
+    // must read those covers again instead of reusing them by name.
+    const localAndRemote = {
+      '1': 'covers/one.jpg',
+      '2': 'file:///data/covers/two.jpg',
+      '3': 'https://covers.example/3.jpg',
+    };
+
+    test('in all three records, before the change runs; remote sources, the '
+        'rendition and the files stay', () async {
+      final keys = MemoryKeysReset();
+      keys.gitHub.current = const PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'HEAD',
+        fileShas: {'books.json': 'b1', 'covers/x.jpg': 'c1'},
+        coverUrlByBookId: localAndRemote,
+        coverRendition: 1,
+      );
+      final cloudflare = CloudflareSiteManifest(
+        target: cloudflareTarget,
+        publishId: 'a' * 32,
+        coverUrlByBookId: localAndRemote,
+        coverRendition: 1,
+      );
+      keys.cloudflare
+        ..current = cloudflare
+        ..pending = cloudflare;
+      var sourcesWhenChangeRan = <Map<String, String>>[];
+
+      await keys.reset.beforeIdsChange(() async {
+        sourcesWhenChangeRan = [
+          keys.gitHub.current.coverUrlByBookId,
+          keys.cloudflare.current.coverUrlByBookId,
+          keys.cloudflare.pending.coverUrlByBookId,
+        ];
+      });
+
+      const remoteOnly = {'3': 'https://covers.example/3.jpg'};
+      expect(sourcesWhenChangeRan, [remoteOnly, remoteOnly, remoteOnly]);
+      expect(keys.gitHub.current.coverRendition, 1);
+      expect(keys.gitHub.current.shaFor('covers/x.jpg'), 'c1');
+      expect(keys.cloudflare.current.coverRendition, 1);
+    });
+
+    test('a record with remote covers only is not rewritten', () async {
+      final keys = MemoryKeysReset();
+      keys.gitHub.current = const PublishManifest(
+        repo: 'me/lib',
+        coverUrlByBookId: {'3': 'https://covers.example/3.jpg'},
+      );
+      await keys.reset.beforeIdsChange(() async {});
+      expect(keys.gitHub.saves, isEmpty);
+    });
+
+    test('a failed save refuses the change (fail closed)', () async {
+      final keys = MemoryKeysReset();
+      keys.gitHub
+        ..current = const PublishManifest(
+          repo: 'me/lib',
+          coverUrlByBookId: {'1': 'covers/one.jpg'},
+        )
+        ..saveFails = true;
+      var ran = false;
+      await expectLater(
+        keys.reset.beforeIdsChange(() async => ran = true),
+        throwsA(isA<CatalogueKeysResetRefused>()),
+      );
+      expect(ran, isFalse);
+    });
+  });
+
   for (final failing in ['github', 'cloudflare', 'attempt', 'lane']) {
     test('a $failing save failure refuses the change (fail closed)', () async {
       final keys = seeded();

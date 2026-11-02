@@ -14,6 +14,7 @@ import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -427,6 +428,25 @@ void main() {
     expect(manifest.saved!.shaFor('books.json'), 'def');
     expect(manifest.saved!.shaFor('events.html'), isNotNull);
     expect(manifest.saved!.shaFor('events.json'), isNotNull);
+  });
+
+  test('an events commit carries the cover sources and their rendition '
+      '(ADR 0020)', () async {
+    final api = _CapturingApi();
+    final manifest = _MemManifest(
+      const PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'HEAD',
+        fileShas: {'index.html': 'abc', 'books.json': 'def'},
+        coverUrlByBookId: {'1': 'covers/one.jpg'},
+        coverRendition: PublishCoverRendition.current,
+      ),
+    );
+    await make(api: api, manifest: manifest).call(twoPosters());
+
+    expect(manifest.saved!.coverSourceFor('1'), 'covers/one.jpg');
+    expect(manifest.saved!.coverRendition, PublishCoverRendition.current);
   });
 
   test('drops a poster whose local image is missing (no broken img)', () async {

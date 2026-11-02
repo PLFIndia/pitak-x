@@ -15,9 +15,12 @@ import 'package:pitaka/features/import_export/domain/cover_paths.dart';
 
 /// Reads + downscales a local cover for publishing, rooted at [coversDir].
 ///
-/// Returns the cover's bytes re-encoded at the publish size (400x600 q80), or
-/// null when the reference is not a safe local cover, the file is missing,
-/// or the re-encode fails.
+/// Returns the cover's bytes re-encoded with the publish rendition
+/// (`PublishCoverRendition` 1: 400x600 q80, metadata stripped — the
+/// `ImageDownscaler` defaults, pinned to the rendition by
+/// `publish_cover_rendition_test.dart`, ADR 0020 Decision 3), or null when
+/// the reference is not a safe local cover, the file is missing, or the
+/// re-encode fails.
 ///
 /// Downscale-before-publish keeps the git push small AND strips EXIF/GPS
 /// before anything reaches the public site. NO raw fallback — when the
@@ -32,8 +35,8 @@ Future<List<int>?> Function(String coverUrl) localCoverReader(
   final file = File(p.join(coversDir, leaf));
   if (!file.existsSync()) return null;
   try {
-    // Worker isolate (N10-a): publish re-encodes EVERY local cover, so a
-    // large library would otherwise stall the UI for the whole loop.
+    // Worker isolate (N10-a): a publish may still re-encode many covers (the
+    // first one after an update, a move), so the UI must never stall on it.
     return await ImageDownscaler.downscaleJpegAsync(await file.readAsBytes());
   } on Exception {
     return null;

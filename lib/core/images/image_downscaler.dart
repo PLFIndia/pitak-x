@@ -9,6 +9,14 @@
 /// All EXIF metadata (including GPS) is stripped before encoding — see the
 /// comment in [ImageDownscaler.downscaleJpeg].
 ///
+/// Published covers depend on this function: a publish reuses a cover that
+/// is already online when it was made with the same recipe (ADR 0020,
+/// `PublishCoverRendition` in the publish domain). Changing on purpose HOW
+/// this function resizes or encodes (interpolation, metadata rule, frame
+/// choice) therefore also needs a new `PublishCoverRendition.current`, so
+/// every published cover is made once more. A new `image` package version
+/// that merely encodes the same picture into other bytes does not.
+///
 /// Pure-Dart via the `image` package (decode/resize/encode) — no platform
 /// dependency, so it is unit-testable and runs the same on every target.
 ///

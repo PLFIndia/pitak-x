@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/domain/availability/availability_update.
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
 import 'package:pitaka/features/publish/domain/github_models.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
@@ -55,6 +56,7 @@ void main() {
         coverUrlByBookId: const {'1': 'covers/a.jpg'},
         proofPath: PublishProofPath.booksJson,
         catalogueKeyed: true,
+        coverRendition: PublishCoverRendition.current,
       );
 
   ({
@@ -139,6 +141,8 @@ void main() {
       expect(record.shaFor('events.json'), 'events');
       expect(record.catalogueKeyed, isTrue);
       expect(record.coverSourceFor('1'), 'covers/a.jpg');
+      // ADR 0020: the covers did not change, so their rendition carries.
+      expect(record.coverRendition, PublishCoverRendition.current);
     });
 
     test('returns "going live" with the request the deferred check needs; '

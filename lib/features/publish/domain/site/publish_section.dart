@@ -87,6 +87,7 @@ final class PublishSection {
     required this.files,
     this.deletePaths = const [],
     this.coverUrlByKey = const {},
+    this.coverRendition,
   });
 
   /// Which part of the site this is.
@@ -100,9 +101,20 @@ final class PublishSection {
   final List<String> deletePaths;
 
   /// Cover-source bookkeeping: decider key (`<itemId>` or
-  /// `periodical:<uid>`) → the cover SOURCE URL this publish decided from.
-  /// The manifest stores it so the remote-cover identity skip survives.
+  /// `periodical:<uid>`) → the cover SOURCE the published file at that key's
+  /// path really shows. The record stores it so a cover whose source did not
+  /// change can be reused without being read (ADR 0020, plan CV2).
+  ///
+  /// A key is left out when no published file of a known source backs it
+  /// (for example, a cover that could not be read and fell back to an older
+  /// file of unknown rendition), so the next publish tries that cover again.
   final Map<String, String> coverUrlByKey;
+
+  /// The cover rendition (`PublishCoverRendition`) the covers of this
+  /// section were produced with: set by the catalogue builder, null for
+  /// every section that holds no covers. The record stores it with
+  /// [coverUrlByKey] (ADR 0020 Decision 3).
+  final int? coverRendition;
 
   /// Every path this section writes.
   List<String> get paths => [for (final f in files) f.path];

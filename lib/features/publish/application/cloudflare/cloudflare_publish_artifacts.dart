@@ -137,7 +137,11 @@ final class CloudflarePublishArtifactAssembler {
         ? CloudflareSiteManifest.empty
         : previous;
     var current = recorded;
+    // Cover sources and their rendition travel together (ADR 0020): a
+    // section that builds the catalogue replaces both, any other section
+    // carries the record's own.
     var coverSources = current.coverUrlByBookId;
+    var coverRendition = current.coverRendition;
     final missing = <String>[];
     final sections = snapshot.sections
         .where(
@@ -177,6 +181,7 @@ final class CloudflarePublishArtifactAssembler {
       deletedPaths.addAll(merge.deletePaths);
       if (section.section == SiteSection.catalogue) {
         coverSources = section.coverUrlByKey;
+        coverRendition = section.coverRendition;
       }
       current = CloudflareSiteManifest(
         target: target,
@@ -186,6 +191,7 @@ final class CloudflarePublishArtifactAssembler {
         hashScheme: CloudflareAssetHash.scheme,
         files: merged.files,
         coverUrlByBookId: coverSources,
+        coverRendition: coverRendition,
       );
     }
 
@@ -238,6 +244,7 @@ final class CloudflarePublishArtifactAssembler {
       publishId: marker.publishId,
       files: files,
       coverUrlByBookId: coverSources,
+      coverRendition: coverRendition,
       // The snapshot's catalogue is keyed, and this deploy carries it.
       wroteKeyedCatalogue:
           snapshot.writesKeyedCatalogue &&

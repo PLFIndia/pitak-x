@@ -30,6 +30,7 @@ import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/domain/cover_url_allow_list.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/publish_contact_links.dart';
+import 'package:pitaka/features/publish/domain/publish_cover_rendition.dart';
 import 'package:pitaka/features/publish/domain/publish_export.dart';
 import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_periodical_links.dart';
@@ -205,6 +206,7 @@ final class CatalogueSectionBuilder {
         series.coverUrl,
         periodicalUid: uid,
         manifest: previous,
+        mode: mode,
       );
       requireCover(decision);
       return periodicalCoverDecisions[uid] = decision;
@@ -219,6 +221,7 @@ final class CatalogueSectionBuilder {
           book.coverUrl,
           itemId: book.id,
           manifest: previous,
+          mode: mode,
         );
         requireCover(decision);
         coverDecisions[book.id] = decision;
@@ -248,6 +251,21 @@ final class CatalogueSectionBuilder {
     }
 
     if (missingCover case final failure?) return Left(failure);
+
+    // What the record will say each published cover shows (ADR 0020): taken
+    // from the DECISIONS, not from the rows, because only a decision knows
+    // whether the file online really is the current rendition of this
+    // source. A cover that fell back to an older file of unknown origin gets
+    // no entry, so the next publish tries it again (plan CV2). Series covers
+    // use the decider's 'periodical:' key so they never share the book id
+    // key space. Taken now: the decision maps are cleared after assembly.
+    final coverSources = <String, String>{
+      for (final entry in coverDecisions.entries)
+        if (entry.value.source case final source?) '${entry.key}': source,
+      for (final entry in periodicalCoverDecisions.entries)
+        if (entry.value.source case final source?)
+          'periodical:${entry.key}': source,
+    };
 
     final export = PublishExport(
       exportedAt: now,
@@ -361,18 +379,10 @@ final class CatalogueSectionBuilder {
             libraryJson == null && previous.shaFor(libraryJsonPath) != null
             ? const [libraryJsonPath]
             : const [],
-        coverUrlByKey: {
-          for (final b in library)
-            if (b.coverUrl != null && b.coverUrl!.isNotEmpty)
-              '${b.id}': b.coverUrl!,
-          // Series covers ride under the decider's 'periodical:' urlKey so the
-          // remote source-identity skip works for them without sharing the
-          // book id key space. Stored TRIMMED to match the value the decider
-          // compares against.
-          for (final p in periodicalByUid.values)
-            if ((p.coverUrl?.trim() ?? '').isNotEmpty)
-              'periodical:${p.periodicalUid}': p.coverUrl!.trim(),
-        },
+        coverUrlByKey: coverSources,
+        // Every cover above was produced by this build's recipe, or reused
+        // only because the record already said so (ADR 0020 Decision 3).
+        coverRendition: PublishCoverRendition.current,
       ),
     );
   }

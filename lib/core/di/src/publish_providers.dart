@@ -230,10 +230,11 @@ BoundedCoverDownload boundedCoverDownload(BoundedCoverDownloadRef ref) {
   return (url) async {
     final result = await BoundedCoverFetcher(client: client).fetch(url);
     if (result is! CoverFetched) return result;
-    // Downscale before publishing (400x600 q80): small git push AND EXIF/GPS
-    // stripped. No raw fallback — a cover that can't be re-encoded is
-    // dropped, never published unstripped (REVIEW_FINDINGS_2 S11). Runs in a
-    // worker isolate (N10-a) — a publish of many covers must not stall the UI.
+    // Downscale before publishing (400x600 q80 — the publish rendition,
+    // ADR 0020 Decision 3): small git push AND EXIF/GPS stripped. No raw
+    // fallback — a cover that can't be re-encoded is dropped, never
+    // published unstripped (REVIEW_FINDINGS_2 S11). Runs in a worker isolate
+    // (N10-a) — a publish of many covers must not stall the UI.
     final jpeg = await ImageDownscaler.downscaleJpegAsync(result.bytes);
     return jpeg == null
         ? const CoverRefused(CoverRefusal.notAnImage)
