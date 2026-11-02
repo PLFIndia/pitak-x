@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S5 complete, 2026-11-02)
+# Publish optimisation — handoff (S6 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -12,12 +12,14 @@ S4 — GitHub path — **complete** (§S4), started on the product owner's
 go-ahead ("go ahead for next session", 2026-11-02, the same words as for S3).
 S5 — Cloudflare path — **complete** (§S5), started on the product owner's
 go-ahead ("go ahead for next session", 2026-11-02, the same words again).
-**S6 (lane and UI) has NOT started. Do not start it until the product owner
+S6 — Lane and UI — **complete** (§S6), started on the product owner's
+go-ahead ("go ahead for next session", 2026-11-02, the same words again).
+**S7 (readers) has NOT started. Do not start it until the product owner
 explicitly says so** (§6 is the prepared checklist).
 
-> Read this file first in any new session. §S5 is the newest state, then §S4,
-> §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
-> verbatim lines in §3), kept unchanged.
+> Read this file first in any new session. §S6 is the newest state, then §S5,
+> §S4, §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites
+> the verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -27,6 +29,152 @@ explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S6 — Lane and UI (code; nothing changes for users yet)
+
+**What changed for users:** nothing visible, on purpose. The whole lane is
+built and tested, but ONE build switch, `availabilityLaneActivatedProvider`
+(`core/di/src/availability_providers.dart`), is **false until S8** (A.6 #58).
+While it is false: every publish still treats the lane as OFF (exactly as
+before S6), the Settings switch and the status row are not shown, the lane
+notifier is never started, and the lifecycle relay forwards nothing. S8 flips
+that one provider together with the guide copy (AV16) and the `main.dart`
+start.
+
+Two things DO run in this build, both invisible:
+- every accepted GitHub commit records its time in the lane store
+  (SharedPreferences key `availability_lane_state`; public times only), so
+  the hourly budget is already filled when S8 starts the lane (A.6 #63);
+- a restore and an overwrite merge first clear `catalogueKeyed` in both
+  publish records and the lane's saved sets (J9, A.6 #59). A restore whose
+  reset cannot be saved now fails with the device unchanged.
+
+**Decisions taken in S6 (all recorded in plan A.6; none needed the product
+owner — they are engineering choices the plan or the handoff left to S6):**
+
+| A.6 | Decision |
+|---|---|
+| #58 | The build switch above (shipped dark). |
+| #59 | **J9: clear, don't bind.** `CatalogueKeysReset.beforeIdsChange` clears `catalogueKeyed` (GitHub record, Cloudflare record, unconfirmed Cloudflare attempt) and the lane's saved sets inside the publish queue, THEN runs the change, then signals the running lane (`CatalogueIdsChanges`). A failed save refuses the change. Wired around the restore's generation switch AND the overwrite merge (every book gets a new id there). Core port: `CatalogueIdsChangeGuard`. |
+| #60 | **No fresh set, no unvouched file.** `AvailabilitySectionBuilder.withoutFreshSet`: a publish that writes no fresh set (vault locked, events publish) keeps a recorded `availability.json` only while `PreviousPublication.catalogueKeyed` (new getter) is true; otherwise deletes it. The GitHub events publish now follows the rule too (the carried A.6 #33 item). |
+| #61 | **The S4 safety point:** `AvailabilityNotReady.staleFileRecorded`; the runner publishes the removal in the same queue turn. |
+| #62 | **`Pending(repairSite)`:** `AvailabilityPending.needsRepair` → backoff starts at 10 min; a resume does not hurry it; a successful catalogue publish retries at once. |
+| #63 | **GitHub budget:** `CommitRecordingGitHubApi` wraps `gitHubApiProvider`; `AvailabilityLaneRepository` is the one writer of the lane store. |
+| #64 | **Structure:** plain-Dart engine `AvailabilityLane` (+ `availability_lane_memory.dart`, `availability_lane_outcomes.dart`), `AvailabilityPublishRunner`, thin keepAlive notifier `AvailabilityAutoPublisher`. Keys are computed inside the publish queue (first-use salt race). |
+| #65 | "Not ready" retries on a new set, the button or a successful catalogue publish (the lane listens to `publishControllerProvider`), never on a timer or a resume. |
+| #66 | The status row is its own "Availability" card after `PublishCard` in `ConnectionTab`; the one-time notice lives in the row. |
+| #67 | AV18 for a move made while the vault is locked is **not** implemented (no `saved` field): the destination gets no `availability.json` until the lane's next computation with known counts. No wrong tag, only a delay. **S8 decides.** |
+
+**New open risk J10 (plan Part J) — needs a decision before S8.** On GitHub,
+an `availability.json` written by a previous install (or another phone) is
+not in this phone's record and is never adopted (R13), so nothing deletes it.
+If this phone publishes its own keyed `books.json` (new salt) with the vault
+locked, readers apply the old keys: nothing matches, every keyed item shows
+*Available*. Natural fix in S7 (readers): bind the file to its catalogue with
+a key-set id in both files. That changes the public contract (C.1), so it
+needs the product owner's nod and its own A.6 row.
+
+**What the code does now (file by file):**
+
+- `application/availability/availability_lane.dart` — the lane's rules:
+  null counts never compute (AV5); a set is saved before it is scheduled
+  (AV7, through `AvailabilityLaneMemory`); only a changed key set (or a set
+  not yet on the CURRENT site, e.g. after a move) is published; pacing via
+  `AvailabilityPacing` (20 s debounce; GitHub 6 min spacing and 10/h budget
+  from the store's commit times); **Update availability now** = manual start;
+  switch off → one removal when a set of ours may be on the site, then the
+  saved sets are cleared; `libraryReplaced(inputs)` forgets every set (J9).
+- `availability_lane_outcomes.dart` — the outcome table (live / going live
+  + deferred proof / already published / not ready / pending / blocked).
+- `availability_publish_runner.dart` — one publish inside the queue:
+  `ActivePublishTargetResolver` (gates a/c), a LOCAL record check before a
+  removal (nothing recorded → nothing sent), the host's use case, the
+  stale-file removal, a thrown use case → pending (fixed sentence).
+- `availability_auto_publisher.dart` — keepAlive notifier; listens to the
+  switch, `activeLoanCountsProvider`, `libraryControllerProvider` (catalogue
+  mutation signal; items re-read only then), `publishControllerProvider`
+  (success → `sitePublished`) and `catalogueIdsChangesProvider`; owns one
+  `DeferredPublishVerification`, cancelled on dispose. Starts nothing unless
+  activated.
+- `availability_lane_status.dart` — `AvailabilityLaneStatus` (starting, off,
+  notReady, scheduled(at, gitHubMayDelay), publishing, goingLive, upToDate,
+  pending(reason, retryAt)) and `AvailabilityLaneView` (+ `noticeDue`).
+- `availability_lane_repository.dart` — the one writer (own queue); an
+  unreadable store starts from EMPTY (nothing pending), never an empty list.
+- `infrastructure/prefs_availability_lane_store.dart` — one versioned key,
+  decoded only through `AvailabilityLaneState.decode`; any damage →
+  unreadable; size cap 2 MB.
+- `infrastructure/commit_recording_github_api.dart` — counts accepted
+  commits; forwards everything else unchanged.
+- `catalogue_keys_reset.dart`, `catalogue_ids_changes.dart`,
+  `core/storage/catalogue_ids_change_guard.dart` — J9.
+- Settings: `AppSettings.autoPublishAvailability` (default **true**; key
+  `auto_publish_availability`, absent → true), `SettingsController
+  .setAutoPublishAvailability`, `PublishingSettingsGroup` in the Data tab.
+- Publish → Connection: `AvailabilityStatusRow` (status sentence, **Update
+  availability now**, the notice); `AvailabilityLifecycleRelay` (not placed).
+- `PublishController.availability()`: activated AND switch on →
+  `AvailabilityFromLoanCounts`, else `AvailabilityRemoval`; unreadable
+  settings fail the publish (like `pageSettings`).
+- Domain helpers: `AvailabilityLaneState.withPending/afterPublished/
+  withoutSnapshots/withoutPublished/withNoticeShown/holdsNoSnapshots`;
+  `withoutCatalogueKeys()` on both records.
+
+**Tests added or extended (S6):** new — `availability_lane_test.dart` (34,
+`fake_async`: AV5–AV7, debounce, vault lock, restart, move, keys failure,
+GitHub spacing and budget, every outcome, backoff 1/2/5/10/10, repair pace,
+resume, blocked, stale removal, switch off/on, damaged store, J9, notice,
+dispose, the button), `availability_auto_publisher_test.dart` (6,
+`ProviderContainer` overrides: never starts before activation, end to end,
+switch off, catalogue publish retry, restore signal, button/resume),
+`availability_publish_runner_test.dart`, `availability_lane_repository_test.dart`,
+`catalogue_keys_reset_test.dart`, `prefs_availability_lane_store_test.dart`,
+`commit_recording_github_api_test.dart`, `availability_status_row_test.dart`
+(light + dark), `availability_lifecycle_relay_test.dart`,
+`publishing_settings_group_test.dart` (light + dark),
+`core/di/availability_providers_test.dart`; extended — lane state, both
+records, section builder (`withoutFreshSet`), snapshot builder and GitHub
+catalogue (unvouched file deleted), GitHub events (the rule), both lane use
+cases (`staleFileRecorded`), publish controller (`availability()`, AV8 end to
+end), settings, restore controller (J9 + fail closed), merge use case (J9),
+`publish_salt_invariant_test.dart` (J9 wiring). Test support:
+`test/features/publish/support/availability_lane_fakes.dart`
+(`MemoryAvailabilityLaneStore`, `MemoryKeysReset`); the restore, merge and
+replacement harnesses override `catalogueKeysResetProvider` with it.
+
+**Gates at the end of S6 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+
+- build_runner: committed with the source. New generated files:
+  `availability_providers.g.dart`, `availability_auto_publisher.g.dart`,
+  `catalogue_ids_changes.g.dart`; source hashes changed in the backup,
+  import/export, publish, publish-controller, events-controller and settings
+  generated files.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,076 passed** (S5 ended at 4,936). The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`;
+  a clean worktree of `cb3606b` (the S5 head) fails exactly the same 10
+  (checked by name; "publish connection tab" is among them, unchanged
+  because the row is not built while the lane is not activated).
+- Line coverage: `availability_lane_memory.dart`, `availability_lane_outcomes.dart`,
+  `availability_lane_status.dart`, `availability_lane_repository.dart`,
+  `availability_publish_runner.dart`, `catalogue_keys_reset.dart`,
+  `catalogue_ids_changes.dart`, `prefs_availability_lane_store.dart`,
+  `commit_recording_github_api.dart`, `availability_lane_state.dart`,
+  `availability_section_builder.dart`, `availability_publish_result.dart`,
+  the status row, the relay and the Settings group 100 %;
+  `availability_lane.dart` 99.5 % (one fail-closed branch: a timer that finds
+  no pending set); `availability_auto_publisher.dart` 98.4 % and
+  `availability_providers.dart` 97.7 % (the lazy journal closure of the
+  deferred check, used only once a GitHub commit is proven);
+  `publish_events_controller.dart` 77.8 % (was 0 %: S6 added its first test,
+  the GitHub path with the removal rule).
+- File sizes ≤ 500 (largest touched: `settings_page.dart` 496,
+  `availability_lane.dart` 468, `publish_providers.dart` 462).
+- No new dependency; `pubspec.lock` and Rust untouched.
 
 ---
 
@@ -715,61 +863,55 @@ throwaway repo.
 
 ---
 
-## 6. Next: S6 (lane and UI) — on hold until the product owner says go
+## 6. Next: S7 (readers) — on hold until the product owner says go
 
-S5 (Cloudflare) is done; §S5 records how its checklist landed (the old S5
-checklist is superseded by plan A.6 #50–#55). S6 needs S4 and S5, both done,
+S6 (lane and UI) is done; §S6 records how its checklist landed (the old S6
+checklist is superseded by plan A.6 #58–#67). S7 needs only the S2 contract
 and starts only on the product owner's go-ahead.
 
-**S6 — Lane and UI (plan C.4 and C.8; tests per the C.11 "Lane" row).** The
-lane works fully in tests and is **not started** in the app (S8 starts it in
-`main.dart` together with the guide copy, AV16).
+**S7 — Readers (plan C.7; tests per the C.11 "Readers" row).**
 
-- `AvailabilityAutoPublisher`
-  (`application/availability/availability_auto_publisher.dart`):
-  `@Riverpod(keepAlive: true)` with the comment that justifies keepAlive
-  (timers and pending state outlive any screen), and an immutable
-  `AvailabilityLaneStatus` (the C.4 table: off, notReady, scheduled,
-  publishing, goingLive, upToDate, pending). Time and timers through
-  injected ports (G7); pacing through the S2 `AvailabilityPacing`.
-- `PrefsAvailabilityLaneStore` (infrastructure, one versioned
-  SharedPreferences key) implementing the S2 port with
-  `AvailabilityLaneState.decode` (absent vs unreadable; a damaged store never
-  yields an empty list).
-- `core/di/src/availability_providers.dart`: the GitHub
-  `PublishAvailabilityUseCase` with one `DeferredPublishVerification` per
-  lane instance (cancelled in `ref.onDispose`), the Cloudflare
-  `PublishAvailabilityToCloudflareUseCase` (the provider list is in §S5 "For
-  S6"), the store, and the keys.
-- `AppSettings.autoPublishAvailability` (default true; an absent key reads
-  true) in `PrefsSettingsRepository`; Settings → Data gains the "Publishing"
-  group in the new `settings/presentation/widgets/publishing_settings_group.dart`
-  (`settings_page.dart` is at 493 lines).
-- Publish → Connection: `availability_status_row.dart` with **Update
-  availability now**; the one-time notice; `AvailabilityLifecycleRelay`
-  written but not placed in `main.dart` until S8.
-- Tests: null counts never publish; lending a second copy publishes nothing;
-  the vault locks before the timer → the saved set is still published;
-  switch off → exactly one removal and the store is cleared once it is
-  published; a damaged store never yields an empty list; gates; status
-  mapping for all five outcomes; widget tests for the switch and the status
-  row in light and dark; `fake_async`, `ProviderContainer` overrides only.
+- **Decide J10 first** (plan Part J; §S6). The natural fix is a key-set id
+  in both `books.json` and `availability.json` so a reader ignores a file
+  computed against another salt. It changes the public contract (C.1, ADR
+  0019 Decision 2/4), so ask the product owner, then record an A.6 row and
+  an ADR 0019 clarification before writing code.
+- Native viewer (`lib/features/network`): `PublishedFileKind.availability`
+  (third saved file, ADR 0018 amendment), `PublishedSiteUrlPolicy
+  .availabilityUrl`, `PublishedAvailabilityCodec` (AV15 caps: ≤ 1 MiB,
+  ≤ 100,000 keys, `^[0-9a-f]{16}$`, the shared depth guard, duplicates and
+  unknown fields ignored, `schemaVersion` > 1 → ignored) returning
+  `PublishedAvailabilityFile` (A.6 #22), the item reader reads `key`, ONE
+  per-item merge rule in domain (ADR 0019 Decision 4; Other never tagged),
+  parallel load where an availability failure keeps the catalogue, labels
+  **Not available**, the **Available now** filter, the summary line
+  ("312 of 340 available · updated 2:05 pm", `asOf` through
+  `CatalogueRules.dateFromMillisOrNull`, shown only when plausible).
+- Web viewer `assets/publish/index.html` → viewerVersion 8: fetch
+  `availability.json` in parallel (`cache: "no-cache"`), re-check every 60 s
+  while visible (no query-string cache-buster), "All out" → **Not
+  available**, no tag for Other (J7), the filter and summary, defensive
+  parse mirroring AV15. CSP unchanged.
+- Shared fixtures for web/native parity (ADR 0015 decision 5;
+  `published_catalogue_parity_harness.js`). Goldens are regenerated only by
+  the Linux workflow.
 
-**For S6 (carried; do not lose these):**
+**For S8 (carried; do not lose these):**
 
-- `PublishController.availability()` must read the switch and return
-  `AvailabilityFromLoanCounts` when the lane is on (it returns
-  `AvailabilityRemoval` until then).
-- **The GitHub events publish does not build snapshots**, so it does not get
-  the removal rule from `PublishReads.availability()` (A.6 #33). S6 must give
-  it the same rule.
-- AV18 when the vault is locked during a move: `AvailabilityFromLoanCounts`
-  can gain a `saved` snapshot field (the type is sealed for exactly this).
-- **J9** (restore of another library) needs its decision before S6's gates.
-- The four S4 items in §S4 "For S6" (wiring, the GitHub budget, not-ready vs
-  pending, and the removal when gate 7b fails while the file is live).
-- The four S5 items in §S5 "For S6" (wiring, Live vs GoingLive, how to treat
-  `Pending(repairSite)`, no Cloudflare budget).
+- Flip `availabilityLaneActivatedProvider` to `true` (one line) in the same
+  change as the guide copy (C.9, AV16) and the `PRIVACY.md` sentence.
+- Start the lane in `main.dart`: keep `availabilityAutoPublisherProvider`
+  alive with `ref.listen` in `PitakaApp` (like `screenCaptureProtected`), and
+  place `AvailabilityLifecycleRelay` next to `AppLockObserver`.
+- Final words for every draft sentence: `AvailabilityLaneMessages`,
+  `AvailabilityPublishMessages`, the status-row texts and the notice
+  (`availability_status_row.dart`), the Settings switch copy.
+- Decide A.6 #67 (AV18 for a move while the vault is locked).
+- Remember: from S8 on, an unreadable lane store or a restore leaves the lane
+  "not ready" until the next catalogue publish (by design, J9).
+- The G.4 device evidence on both hosts; measure lend → live (Appendix A
+  "Lend → visible" rows) with the `publishTimings` build (operations
+  `availability` and `cloudflareAvailability`).
 - Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
   (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2).
 

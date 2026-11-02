@@ -212,6 +212,25 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
      no OS background work and no scheduler plugin. The lane is the one
      in-process automatic publisher. Publishing with the app closed stays
      deferred (plan Part I).
+   - *Clarification (S6, plan A.6 #58–#67):*
+     - **Keys follow the ids (plan J9).** A restore or an overwrite merge
+       changes what an internal id names. Before either runs, inside the
+       publish queue, `catalogueKeyed` is cleared in both records (and in an
+       unconfirmed Cloudflare attempt) and the lane's saved sets are cleared;
+       if that cannot be saved, the restore or merge does not run.
+     - **No fresh set, no unvouched file.** A publish that writes no fresh set
+       (the vault is locked, or it is an events publish) keeps a recorded
+       `availability.json` only while the record still vouches for the live
+       keys (`catalogueKeyed`); otherwise it deletes it, so readers fall back
+       to the inline tag. The same holds when gate b fails for the lane: its
+       stale file is removed at once.
+     - **Retries.** "Not ready" waits for a catalogue publish, a new set or the
+       button. A site that needs the user's repair retries at the slowest
+       backoff step. Every GitHub commit, manual or automatic, is counted for
+       the hourly budget at the one commit method.
+     - **Shipped dark.** The lane, the Settings switch and the status row exist
+       from S6 behind one build switch that S8 turns on with the guide copy
+       (AV16); until then every publish treats the lane as off.
 
 10. **GitHub path (AV12).** An availability commit does **not** wait for Pages
     inside the queue. Its record is saved `deployed` with a **proof path**, and
@@ -402,7 +421,10 @@ cover.
     every gate still runs.
   - **S6:** null counts never publish; lending a second copy publishes nothing;
     a publish still happens after the vault locks; switching off sends one
-    removal and clears the store; a damaged store never yields an empty list.
+    removal and clears the store; a damaged store never yields an empty list;
+    a restore and an overwrite merge clear `catalogueKeyed` first
+    (`publish_salt_invariant_test.dart`); a publish without a fresh set
+    deletes an unvouched file.
   - **S7:** reader caps; the per-item rule; parallel loading; web/native parity
     on shared fixtures.
   - **S8:** plan G.4 device evidence on both hosts, and the final copy.
