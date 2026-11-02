@@ -7,20 +7,27 @@ part of 'availability_providers.dart';
 // **************************************************************************
 
 String _$availabilityLaneActivatedHash() =>
-    r'6cead7dc8dfd161acb41ffa8b95f190e5b9a8de8';
+    r'b33f28ad4b97d47cd8f581d51b4b645300222c02';
 
-/// Whether this build runs the availability lane (plan A.6 #58).
+/// Whether this build runs the availability lane (plan A.6 #58, #77).
 ///
-/// **False until plan S8**, which turns it on in the same change as the
-/// guide copy (AV16: the copy must match what the app does) and starts the
-/// lane in `main.dart`. While it is false:
+/// **True since plan S8**, which turned it on in the same change as the
+/// guide copy (AV16: the copy must match what the app does) and the start in
+/// `main.dart`.
+///
+/// Why the switch is kept (beginner note): it is the ONE line that takes the
+/// lane out of a build again — the release kill switch while Phase 1 is a
+/// release candidate (plan A.6 #77). Set to false, a build behaves exactly
+/// as before S6:
 ///  - every publish treats the lane as OFF (`PublishController.availability`
-///    returns the removal), exactly as before S6;
+///    returns the removal), so a file this phone published is deleted by the
+///    next publish and readers fall back to the inline tag;
 ///  - the Settings switch and the status row are not shown, so nothing
 ///    promises an update the app does not make;
-///  - nothing starts the lane notifier.
+///  - nothing starts the lane notifier, and the lifecycle relay forwards
+///    nothing.
 ///
-/// Tests override it to exercise the lane, the switch and the row.
+/// Tests override it to exercise both sides.
 ///
 /// Copied from [availabilityLaneActivated].
 @ProviderFor(availabilityLaneActivated)

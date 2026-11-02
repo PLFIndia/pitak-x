@@ -124,13 +124,16 @@ final class AvailabilityPending extends AvailabilityPublishResult {
   bool get needsRepair => reason == AvailabilityPublishMessages.repairSite;
 }
 
-/// Fixed sentences only the availability lane shows (plan C.4 drafts; plan S8
-/// sets the final words). Every other reason reuses the host's existing fixed
-/// message, so the same failure reads the same everywhere.
+/// Fixed sentences only the availability lane shows (final words since plan
+/// S8, A.6 #80). Every other reason reuses the host's existing fixed
+/// message, so the same failure reads the same everywhere. They appear in
+/// the Availability card right under the Publish card, so they name its
+/// button, **Publish catalogue now**.
 abstract final class AvailabilityPublishMessages {
   /// Gate 7b failed: the live `books.json` does not carry this phone's keys.
   static const String catalogueNotKeyed =
-      'Publish your catalogue once to turn on automatic availability.';
+      'Tap Publish catalogue now once; after that, availability updates by '
+      'itself.';
 
   /// The branch moved between this phone's read and its commit (R6). Unlike
   /// a manual publish, the lane retries by itself, so the sentence says so.
@@ -143,5 +146,7 @@ abstract final class AvailabilityPublishMessages {
   /// missing bytes). Only a whole-site replacement can fix that, and that
   /// needs the user's review (ADR 0017 S8), so the lane never starts one
   /// (ADR 0019 Decision 11): it points the user to the screen that offers it.
-  static const String repairSite = 'Open Publish to web to repair the site.';
+  static const String repairSite =
+      'Your site needs a full publish: tap Publish catalogue now and review '
+      'the replacement.';
 }

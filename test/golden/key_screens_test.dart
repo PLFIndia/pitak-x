@@ -36,6 +36,8 @@ import 'package:pitaka/features/network/presentation/widgets/open_published_site
 import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/periodicals/domain/repositories/periodical_repository.dart';
 import 'package:pitaka/features/periodicals/presentation/pages/periodicals_page.dart';
+import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
+import 'package:pitaka/features/publish/application/availability/availability_lane_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/publish_credential_store.dart';
@@ -341,6 +343,10 @@ void main() {
               setupMessage: 'Pick a target repo first.',
             ),
           ),
+          // The Availability card (plan S8): pinned to what the lane says on
+          // a phone with no host, so the image never depends on platform
+          // storage or on how far the real lane got before the screenshot.
+          availabilityAutoPublisherProvider.overrideWith(_GoldenLane.new),
         ],
         child: themedApp(const PublishPage()),
       ),
@@ -640,6 +646,15 @@ class _GoldenCreds implements PublishCredentialStore {
   Future<void> clearTargetRepo() async {}
   @override
   Future<void> setToken(String token) async {}
+}
+
+/// The availability lane as it reads on a signed-out phone: no host, so
+/// nothing can be published yet (the runner's fixed sentence).
+class _GoldenLane extends AvailabilityAutoPublisher {
+  @override
+  AvailabilityLaneView build() => const AvailabilityLaneView(
+    status: AvailabilityLaneNotReady('Connect a publishing host first.'),
+  );
 }
 
 /// Picker seam so the restore page never touches real file IO.

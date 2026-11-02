@@ -19,10 +19,10 @@ import '../../features/publish/support/github_lane_fakes.dart';
 
 /// The availability wiring (plan C.11 `core/di/src/availability_providers`).
 void main() {
-  test('this build does not run the lane: plan S8 turns it on', () {
+  test('this build runs the lane (plan S8; the kill switch is on)', () {
     final container = ProviderContainer();
     addTearDown(container.dispose);
-    expect(container.read(availabilityLaneActivatedProvider), isFalse);
+    expect(container.read(availabilityLaneActivatedProvider), isTrue);
   });
 
   test('every GitHub commit goes through the recording decorator', () {

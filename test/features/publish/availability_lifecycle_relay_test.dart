@@ -7,7 +7,8 @@ import 'package:pitaka/features/publish/application/availability/availability_la
 import 'package:pitaka/features/publish/presentation/widgets/availability_lifecycle_relay.dart';
 
 /// The relay forwards app resumes to the lane (plan C.4 "Retry triggers"),
-/// and does nothing — not even start the lane — before plan S8.
+/// and does nothing — not even start the lane — in a build whose kill switch
+/// is off (plan A.6 #77).
 void main() {
   Future<_CountingLane> pump(
     WidgetTester tester, {
@@ -42,7 +43,7 @@ void main() {
     expect(lane.resumes, 1);
   });
 
-  testWidgets('before activation nothing is forwarded or started', (
+  testWidgets('with the kill switch off nothing is forwarded or started', (
     tester,
   ) async {
     final lane = await pump(tester, activated: false);

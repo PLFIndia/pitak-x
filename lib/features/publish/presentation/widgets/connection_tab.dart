@@ -170,8 +170,8 @@ class _ConnectionTabState extends ConsumerState<ConnectionTab> {
         ),
         const CloudflareConnectionSection(),
         const PublishCard(),
-        // Built only when this build runs the lane (plan S8): watching the
-        // lane's provider is what starts it.
+        // Built only when this build runs the lane (true since plan S8; the
+        // build's kill switch). `main.dart` has already started the lane.
         if (ref.watch(availabilityLaneActivatedProvider))
           const AvailabilityStatusRow(),
         if (ui.statusMessage != null) ...[

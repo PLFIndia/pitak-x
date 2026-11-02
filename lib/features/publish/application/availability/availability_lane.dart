@@ -62,7 +62,8 @@ final class AvailabilityLaneInputs {
   /// Active loans per item id, or null when the vault is locked (unknown).
   final Map<int, int>? activeCounts;
 
-  /// Every catalogue item, or null when the catalogue could not be read.
+  /// Every catalogue item, or null when the catalogue could not be read (or
+  /// was not read yet because the counts are unknown).
   final List<CatalogueItem>? items;
 }
 
@@ -241,6 +242,14 @@ final class AvailabilityLane {
       // Unknown, never "everything available" (AV5); a saved set still goes
       // out (AV7).
       if (_memory.pending != null) return _schedule();
+      // Nothing was ever published: name the FIRST thing to do (plan S8,
+      // A.6 #79). Without a host, unlocking the vault would not help yet.
+      if (_memory.published == null) {
+        final target = await _currentTarget();
+        if (target case Left(value: final reason)) {
+          return _emit(AvailabilityLaneNotReady(reason));
+        }
+      }
       return _settle();
     }
     final snapshot = await _computeSnapshot();

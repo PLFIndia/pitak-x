@@ -10,10 +10,14 @@
 /// still be published 20 s later, after the user has moved on; with
 /// auto-dispose the timer would die with the last listening widget.
 ///
-/// **Not started before plan S8.** Nothing reads this provider while
-/// `availabilityLaneActivatedProvider` is false, and if something did, the
-/// lane would still do nothing (it checks the switch first). S8 keeps it
-/// alive from `main.dart` (plan C.4 "Start").
+/// **Started at app start** (plan S8): `PitakaApp` in `main.dart` listens to
+/// this provider, which builds it once (plan C.4 "Start"). It starts no lane
+/// while `availabilityLaneActivatedProvider` is false (the build's kill
+/// switch, plan A.6 #77).
+///
+/// The catalogue is read only while loan counts are known (plan S8, A.6
+/// #78): with the vault locked no set can be computed, so reading every row
+/// at app start would be wasted work on a large library.
 library;
 
 import 'dart:async';
@@ -134,7 +138,12 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
   }
 
   Future<AvailabilityLaneInputs> _inputs() async {
-    if (_itemsStale) {
+    final counts = ref.read(activeLoanCountsProvider);
+    // Unknown counts (vault locked) cannot compute a set, so the items would
+    // not be used: they are read when the counts become known (the counts
+    // listener forwards then). Until that first read they stay null, which
+    // the lane already treats as "unknown" (AV5).
+    if (counts != null && _itemsStale) {
       _itemsStale = false;
       final repository = await ref.read(catalogueItemRepositoryProvider.future);
       // A failed read is "unknown", never "no items" (AV5), and is read
@@ -147,7 +156,7 @@ class AvailabilityAutoPublisher extends _$AvailabilityAutoPublisher {
           .read(settingsControllerProvider)
           .valueOrNull
           ?.autoPublishAvailability,
-      activeCounts: ref.read(activeLoanCountsProvider),
+      activeCounts: counts,
       items: _items,
     );
   }

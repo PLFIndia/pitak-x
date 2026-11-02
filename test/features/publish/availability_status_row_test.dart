@@ -27,7 +27,7 @@ void main() {
       );
       expect(
         text(const AvailabilityLaneOff()),
-        'Availability updates are off. Turn them on in Settings.',
+        'Availability updates are off. Turn them on in Settings → Data.',
       );
       expect(
         text(
@@ -65,6 +65,34 @@ void main() {
         'Availability will update in a moment. GitHub may delay this update.',
       );
     });
+
+    test(
+      'the final words (plan S8, A.6 #80) name places the user can find',
+      () {
+        // The switch lives in Settings → Data (PublishingSettingsGroup), the
+        // vault in the drawer as "Borrowers vault", and the card above this row
+        // has the button "Publish catalogue now".
+        expect(
+          availabilityNoticeText,
+          'Availability now updates by itself after you lend or return an '
+          'item. You can turn this off in Settings → Data.',
+        );
+        expect(
+          AvailabilityPublishMessages.catalogueNotKeyed,
+          'Tap Publish catalogue now once; after that, availability updates '
+          'by itself.',
+        );
+        expect(
+          AvailabilityPublishMessages.repairSite,
+          'Your site needs a full publish: tap Publish catalogue now and '
+          'review the replacement.',
+        );
+        expect(
+          AvailabilityLaneMessages.unlockVault,
+          'Unlock the Borrowers vault once so Pitak can see what is lent out.',
+        );
+      },
+    );
 
     test('pending: the reason, and the next try when known', () {
       expect(

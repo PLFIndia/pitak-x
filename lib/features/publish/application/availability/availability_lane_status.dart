@@ -108,10 +108,11 @@ final class AvailabilityLaneView {
   final bool noticeDue;
 }
 
-/// Fixed status sentences only the lane produces (plan C.4 drafts; plan S8
-/// sets the final words).
+/// Fixed status sentences only the lane produces (final words since plan S8,
+/// A.6 #80).
 abstract final class AvailabilityLaneMessages {
-  /// Loan counts were never known in this run and nothing is saved.
+  /// Loan counts were never known in this run and nothing is saved. Names
+  /// the drawer entry, **Borrowers vault**, so a beginner can find it.
   static const String unlockVault =
-      'Unlock the vault once so Pitak can read loans.';
+      'Unlock the Borrowers vault once so Pitak can see what is lent out.';
 }

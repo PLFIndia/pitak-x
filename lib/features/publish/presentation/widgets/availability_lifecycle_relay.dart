@@ -5,10 +5,10 @@
 /// tells the lane, which retries what is waiting (for example a set that
 /// could not go out while the phone was offline).
 ///
-/// **Not placed before plan S8.** S8 puts it next to `AppLockObserver` in
-/// `main.dart`, together with the code that starts the lane. Even if it were
-/// placed earlier, it does nothing while `availabilityLaneActivated` is
-/// false, so it can never start the lane by itself.
+/// Placed next to `AppLockObserver` in `main.dart` (plan S8), above the
+/// `MaterialApp`, because it needs the app's lifecycle rather than a route's.
+/// It does nothing while `availabilityLaneActivated` is false (the build's
+/// kill switch), so it can never start the lane by itself.
 library;
 
 import 'package:flutter/widgets.dart';

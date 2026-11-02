@@ -8,6 +8,9 @@ import 'package:pitaka/features/library/domain/catalogue_item_page.dart';
 import 'package:pitaka/features/library/domain/entities/catalogue_item.dart';
 import 'package:pitaka/features/library/domain/library_query.dart';
 import 'package:pitaka/features/library/domain/repositories/catalogue_item_repository.dart';
+import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
+import 'package:pitaka/features/publish/application/availability/availability_lane_status.dart';
+import 'package:pitaka/features/publish/presentation/widgets/availability_lifecycle_relay.dart';
 import 'package:pitaka/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -82,7 +85,84 @@ class _EmptyRepo implements CatalogueItemRepository {
       right(b.length);
 }
 
+/// Stands in for the availability lane: counts how `main.dart` reaches it
+/// without touching storage or the network.
+class _CountingLane extends AvailabilityAutoPublisher {
+  int builds = 0;
+  int resumes = 0;
+
+  @override
+  AvailabilityLaneView build() {
+    builds++;
+    return AvailabilityLaneView.starting;
+  }
+
+  @override
+  Future<void> resumed() async => resumes++;
+}
+
 void main() {
+  group('the availability lane starts with the app (plan S8)', () {
+    Future<_CountingLane> boot(WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({});
+      final lane = _CountingLane();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            catalogueItemRepositoryProvider.overrideWith(
+              (ref) async => _EmptyRepo(),
+            ),
+            availabilityAutoPublisherProvider.overrideWith(() => lane),
+          ],
+          child: const PitakaApp(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2)); // the splash timer
+      await tester.pumpAndSettle();
+      return lane;
+    }
+
+    testWidgets('built once at app start, before any publish screen', (
+      tester,
+    ) async {
+      final lane = await boot(tester);
+
+      expect(find.text('Library'), findsOneWidget);
+      expect(lane.builds, 1, reason: 'a loan on any screen is published');
+    });
+
+    testWidgets('the relay sits above MaterialApp and forwards a resume', (
+      tester,
+    ) async {
+      final lane = await boot(tester);
+      expect(
+        find.ancestor(
+          of: find.byType(MaterialApp),
+          matching: find.byType(AvailabilityLifecycleRelay),
+        ),
+        findsOneWidget,
+      );
+
+      // The legal round trip (the app's own AppLifecycleListener asserts
+      // every step): background, then foreground again.
+      for (final state in const [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        tester.binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+
+      expect(lane.resumes, 1);
+      expect(lane.builds, 1, reason: 'keepAlive: never rebuilt by a resume');
+    });
+  });
+
   testWidgets('app boots to the Library screen', (tester) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(

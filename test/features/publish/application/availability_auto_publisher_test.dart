@@ -49,6 +49,7 @@ void main() {
   late List<AvailabilityUpdate> sent;
   late AvailabilityPublishResult Function() answer;
   late int runnerBuilds;
+  late int catalogueReads;
   late _PublishResults? publishResults;
 
   setUp(() {
@@ -58,6 +59,7 @@ void main() {
     sent = [];
     answer = () => const AvailabilityLive(acceptedAt: base);
     runnerBuilds = 0;
+    catalogueReads = 0;
     publishResults = null;
   });
 
@@ -75,7 +77,8 @@ void main() {
         ),
         settingsRepositoryProvider.overrideWith((ref) async => settings),
         catalogueItemRepositoryProvider.overrideWith(
-          (ref) async => _Catalogue(() => items),
+          (ref) async =>
+              _Catalogue(() => items, onRead: () => catalogueReads++),
         ),
         libraryControllerProvider.overrideWith(_Library.new),
         publishControllerProvider.overrideWith(() {
@@ -238,6 +241,33 @@ void main() {
     });
   });
 
+  test('a locked vault reads no catalogue; known counts read it once '
+      '(plan S8, A.6 #78)', () {
+    fakeAsync((fake) {
+      final c = container(fake, activated: true)
+        ..listen(availabilityAutoPublisherProvider, (_, _) {});
+      fake.elapse(const Duration(minutes: 1));
+      // App start with the vault locked, then a catalogue edit: no set can
+      // be computed, so no row is read.
+      c.invalidate(libraryControllerProvider);
+      fake.elapse(const Duration(minutes: 1));
+      expect(catalogueReads, 0);
+
+      c.read(_counts.notifier).state = {1: 1};
+      fake.elapse(const Duration(seconds: 21));
+      expect(catalogueReads, 1);
+      expect((sent.single as AvailabilityWrite).snapshot.keys, hasLength(1));
+
+      // Another loan reuses the items; a catalogue edit reads them again.
+      c.read(_counts.notifier).state = {};
+      fake.elapse(const Duration(seconds: 21));
+      expect(catalogueReads, 1);
+      c.invalidate(libraryControllerProvider);
+      fake.elapse(Duration.zero);
+      expect(catalogueReads, 2);
+    });
+  });
+
   test('a lane that cannot start stays quiet (fail closed)', () {
     fakeAsync((fake) {
       final c = container(fake, activated: true, laneStoreFails: true)
@@ -284,13 +314,16 @@ final class _Salt implements PublishCoverSaltStore {
 }
 
 final class _Catalogue implements CatalogueItemRepository {
-  _Catalogue(this.items);
+  _Catalogue(this.items, {this.onRead});
 
   final List<CatalogueItem> Function() items;
+  final void Function()? onRead;
 
   @override
-  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async =>
-      Right(items());
+  Future<Either<Failure, List<CatalogueItem>>> getAllForInterchange() async {
+    onRead?.call();
+    return Right(items());
+  }
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

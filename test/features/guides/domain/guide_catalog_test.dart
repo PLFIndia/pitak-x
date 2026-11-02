@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/guides/domain/guide.dart';
 import 'package:pitaka/features/guides/domain/guide_catalog.dart';
 import 'package:pitaka/features/guides/domain/guide_markup.dart';
+import 'package:pitaka/features/publish/domain/availability/availability_pacing.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_account_id.dart';
 import 'package:pitaka/features/publish/presentation/widgets/cloudflare_token_dialog.dart';
 
@@ -83,7 +84,10 @@ void main() {
       GuideId.catalogue: [0, 3, 5, 3, 3, 3],
       // §3.2: 4 add steps, 2 purchase steps, 3 "Good to know".
       GuideId.wishlist: [0, 4, 2, 3],
-      GuideId.publish: [1, 2, 6, 2, 1, 1, 3],
+      // §3.3: one chip, "What goes online" (2), the host table (3 rows),
+      // the example, 6 GitHub steps, Cloudflare (2), "Every time after
+      // that", moving, 3 "Good to know" (plan C.9).
+      GuideId.publish: [1, 2, 3, 1, 6, 2, 1, 1, 3],
       // §3.4: one chip, the four values Pitak asks for, 6 token steps, 5
       // finishing steps, the "already on GitHub" paragraph, 3 "Good to know".
       GuideId.cloudflare: [1, 4, 6, 5, 1, 3],
@@ -268,6 +272,49 @@ void main() {
     test('the publish guide points readers to it', () {
       final publish = guideById(GuideId.publish).allText.join('\n');
       expect(publish, contains('**${guideById(GuideId.cloudflare).title}**'));
+    });
+  });
+
+  group('availability copy matches what the lane does (plan C.9, AV16)', () {
+    final publish = guideById(GuideId.publish).allText.join('\n');
+
+    test('the GitHub numbers are the pacing constants', () {
+      // G4: a number in user-facing copy is pinned to the code. The longest
+      // GitHub wait is the spacing between availability commits plus about a
+      // minute for Pages to build.
+      final longest = AvailabilityPacing.gitHubSpacing.inMinutes + 1;
+      expect(publish, contains('up to about $longest minutes'));
+      expect(
+        publish,
+        contains('about ${AvailabilityPacing.gitHubBudget} updates an hour'),
+      );
+    });
+
+    test('the host table and its example come right after "What goes '
+        'online"', () {
+      final sections = guideById(GuideId.publish).sections;
+      expect(sections[1], isA<GuideTable>());
+      expect(sections[1].title, 'Which host suits you?');
+      expect(
+        (sections[2] as GuideParagraphs).paragraphs.single,
+        startsWith('**An example.**'),
+      );
+    });
+
+    test('every guide line about availability says it updates by itself', () {
+      expect(publish, contains('Pitak updates that by itself'));
+      expect(publish, contains('Your page updates by itself'));
+      expect(publish, contains('**Settings → Data**'));
+      final vault = guideById(GuideId.vault).allText.join('\n');
+      expect(vault, contains('updates by itself after lending'));
+      // The pre-S8 sentence promised a tag only after a manual publish.
+      for (final guide in guideCatalog) {
+        expect(
+          guide.allText.join('\n'),
+          isNot(contains('vault was unlocked when you published')),
+          reason: '${guide.id}',
+        );
+      }
     });
   });
 

@@ -25,20 +25,27 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'availability_providers.g.dart';
 
-/// Whether this build runs the availability lane (plan A.6 #58).
+/// Whether this build runs the availability lane (plan A.6 #58, #77).
 ///
-/// **False until plan S8**, which turns it on in the same change as the
-/// guide copy (AV16: the copy must match what the app does) and starts the
-/// lane in `main.dart`. While it is false:
+/// **True since plan S8**, which turned it on in the same change as the
+/// guide copy (AV16: the copy must match what the app does) and the start in
+/// `main.dart`.
+///
+/// Why the switch is kept (beginner note): it is the ONE line that takes the
+/// lane out of a build again — the release kill switch while Phase 1 is a
+/// release candidate (plan A.6 #77). Set to false, a build behaves exactly
+/// as before S6:
 ///  - every publish treats the lane as OFF (`PublishController.availability`
-///    returns the removal), exactly as before S6;
+///    returns the removal), so a file this phone published is deleted by the
+///    next publish and readers fall back to the inline tag;
 ///  - the Settings switch and the status row are not shown, so nothing
 ///    promises an update the app does not make;
-///  - nothing starts the lane notifier.
+///  - nothing starts the lane notifier, and the lifecycle relay forwards
+///    nothing.
 ///
-/// Tests override it to exercise the lane, the switch and the row.
+/// Tests override it to exercise both sides.
 @Riverpod(keepAlive: true)
-bool availabilityLaneActivated(AvailabilityLaneActivatedRef ref) => false;
+bool availabilityLaneActivated(AvailabilityLaneActivatedRef ref) => true;
 
 /// Item keys for the lane, over the SAME salt store the snapshot builder
 /// uses (ADR 0019 Decision 3), so lane keys and `books.json` keys agree.

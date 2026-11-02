@@ -7,6 +7,8 @@ import 'package:pitaka/core/widgets/app_gate.dart';
 import 'package:pitaka/core/widgets/edge_to_edge_safe_area.dart';
 import 'package:pitaka/core/widgets/unfocus_on_pause.dart';
 import 'package:pitaka/features/library/presentation/pages/library_page.dart';
+import 'package:pitaka/features/publish/application/availability/availability_auto_publisher.dart';
+import 'package:pitaka/features/publish/presentation/widgets/availability_lifecycle_relay.dart';
 import 'package:pitaka/features/settings/application/settings_controller.dart';
 import 'package:pitaka/features/settings/presentation/app_theme_mode_mapper.dart';
 import 'package:pitaka/src/rust/frb_generated.dart';
@@ -40,36 +42,50 @@ class PitakaApp extends ConsumerWidget {
     // Screen-capture protection (Android FLAG_SECURE) follows the combined
     // policy app-wide: on while the vault is unlocked (PII visible) OR any
     // passphrase entry field is visible (#34/F-12, REVIEW_FINDINGS_2 S2).
-    ref.listen<bool>(screenCaptureProtectedProvider, (previous, secure) {
-      if (previous == secure) return;
-      ref.read(screenSecurityProvider).setSecure(secure: secure);
-    });
+    ref
+      ..listen<bool>(screenCaptureProtectedProvider, (previous, secure) {
+        if (previous == secure) return;
+        ref.read(screenSecurityProvider).setSecure(secure: secure);
+      })
+      // The availability lane (ADR 0019, plan C.4 "Start"): listening builds
+      // its keepAlive notifier once, at app start, so a set saved before the
+      // app last closed is retried now (AV17) and a loan made on any screen
+      // is published by itself. The notifier decides everything else — it
+      // starts nothing while `availabilityLaneActivated` is false — so there
+      // is nothing to do with its value here.
+      ..listen(availabilityAutoPublisherProvider, (_, _) {});
 
     // AppLockObserver sits ABOVE MaterialApp: it forwards lifecycle events to
     // the app-lock controller and, while locked, intercepts the Android back
     // button before the navigator can pop a route hidden under the lock (B01).
+    // AvailabilityLifecycleRelay sits next to it for the same reason (it
+    // needs the app's lifecycle, not a route's): it tells the lane when the
+    // app returns to the foreground, so a set that could not go out while
+    // offline is retried (plan C.4 "Retry triggers").
     return AppLockObserver(
-      child: MaterialApp(
-        title: 'Pitak',
-        // `builder` wraps the Navigator itself, so both wrappers below apply
-        // to EVERY route, dialog and sheet — not just `home`:
-        //  - AppGate: splash + optional biometric lock painted OVER the whole
-        //    navigator; routes underneath are kept alive but inert (B01).
-        //  - EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
-        //    navigation bar; pads all content clear of it once (decision A).
-        builder: (context, child) => AppGate(
-          child: EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
+      child: AvailabilityLifecycleRelay(
+        child: MaterialApp(
+          title: 'Pitak',
+          // `builder` wraps the Navigator itself, so both wrappers below apply
+          // to EVERY route, dialog and sheet — not just `home`:
+          //  - AppGate: splash + optional biometric lock painted OVER the whole
+          //    navigator; routes underneath are kept alive but inert (B01).
+          //  - EdgeToEdgeSafeArea: Android 15+ draws the app behind the system
+          //    navigation bar; pads all content clear of it once (decision A).
+          builder: (context, child) => AppGate(
+            child: EdgeToEdgeSafeArea(child: child ?? const SizedBox.shrink()),
+          ),
+          themeMode: themeMode,
+          // Both themes live in lib/core/theme/app_theme.dart so the golden and
+          // accessibility tests render exactly what ships.
+          theme: AppTheme.light,
+          darkTheme: AppTheme.dark,
+          // UnfocusOnPause: releases keyboard focus when the app is
+          // backgrounded, so the first tap after resume reliably reopens the
+          // keyboard (fixes the stale-IME "tap does nothing" bug) and clears
+          // focus off secret fields.
+          home: const UnfocusOnPause(child: LibraryPage()),
         ),
-        themeMode: themeMode,
-        // Both themes live in lib/core/theme/app_theme.dart so the golden and
-        // accessibility tests render exactly what ships.
-        theme: AppTheme.light,
-        darkTheme: AppTheme.dark,
-        // UnfocusOnPause: releases keyboard focus when the app is
-        // backgrounded, so the first tap after resume reliably reopens the
-        // keyboard (fixes the stale-IME "tap does nothing" bug) and clears
-        // focus off secret fields.
-        home: const UnfocusOnPause(child: LibraryPage()),
       ),
     );
   }

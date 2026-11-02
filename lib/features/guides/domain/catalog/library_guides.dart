@@ -193,9 +193,8 @@ const Guide vaultGuide = Guide(
     '**Require biometric to open Pitak** (Settings → Security) is a '
         'different thing: it covers the whole app with a prompt but does not '
         'encrypt anything. The vault is the encrypted part.',
-    'Your published page can show "available / on loan" — never who '
-        'borrowed. It only does so if the vault was unlocked when you '
-        'published.',
+    'Your published page shows **Available / Not available** and updates by '
+        'itself after lending — never who borrowed.',
   ],
   destination: GuideDestination.vault,
   destinationLabel: 'Open Borrowers vault',

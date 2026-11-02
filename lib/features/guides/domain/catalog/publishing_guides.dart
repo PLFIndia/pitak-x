@@ -19,8 +19,9 @@ library;
 
 import 'package:pitaka/features/guides/domain/guide.dart';
 
-/// "Put your catalogue online": what goes online, GitHub Pages step by step,
-/// and moving between the two hosts.
+/// "Put your catalogue online": what goes online, which host suits whom
+/// (P7, plan C.9), GitHub Pages step by step, and moving between the two
+/// hosts.
 const Guide publishGuide = Guide(
   id: GuideId.publish,
   title: 'Put your catalogue online',
@@ -38,9 +39,46 @@ const Guide publishGuide = Guide(
     GuideParagraphs(
       title: '',
       paragraphs: [
-        '**What goes online:** titles, authors, covers, and — if your vault '
-            'is unlocked when you publish — whether a book is available.',
+        '**What goes online:** titles, authors, covers, and whether each item '
+            'is **Available** or **Not available**. Pitak updates that by '
+            'itself after you lend or return something (switch it off in '
+            '**Settings → Data**).',
         '**Never goes online:** borrowers, loans, notes, shelf locations.',
+      ],
+    ),
+    // P7 (plan C.9): which host suits whom. The minutes in the example are
+    // pinned to `AvailabilityPacing` by guide_catalog_test.dart, so a change
+    // to the GitHub spacing fails CI until this copy follows (G4).
+    GuideTable(
+      title: 'Which host suits you?',
+      rows: [
+        (
+          want: 'Get online today with the least setup',
+          use:
+              '**GitHub Pages** — sign in with a code and name a folder. A '
+              'few minutes.',
+        ),
+        (
+          want: 'Show loans within a minute, even on a busy day',
+          use: '**Cloudflare Workers** — about ten minutes to set up, once.',
+        ),
+        (
+          want: 'Start quickly and decide later',
+          use: '**GitHub Pages** now; **Move to other host** any time.',
+        ),
+      ],
+    ),
+    GuideParagraphs(
+      title: '',
+      paragraphs: [
+        '**An example.** Asha runs a reading room. On a busy Saturday morning '
+            'she lends 12 books in an hour. Pitak updates her page by itself '
+            'as she lends. On **Cloudflare**, readers usually see **Not '
+            'available** in under a minute, however busy she is. On **GitHub '
+            'Pages**, each update takes about a minute to appear, and GitHub '
+            'allows only about 10 updates an hour, so in a busy hour Pitak '
+            'groups her loans together and a change can take up to about 7 '
+            'minutes to show. On a quiet day both feel the same.',
       ],
     ),
     GuideSteps(
@@ -79,11 +117,11 @@ const Guide publishGuide = Guide(
     GuideParagraphs(
       title: 'Every time after that',
       paragraphs: [
-        'Added or lent books? Open **Publish to web** and tap **Publish '
-            'catalogue now** again. Only what changed is uploaded, so it takes '
-            'seconds. It publishes to whichever host is active. When Pitak '
-            'only checks an earlier publish, the message says **Verified** — '
-            'nothing new was published.',
+        'Added books? Open **Publish to web** and tap **Publish catalogue '
+            'now**. Lent or returned something? Your page updates by itself. '
+            'Only what changed is uploaded. It publishes to whichever host is '
+            'active. When Pitak only checks an earlier publish, the message '
+            'says **Verified** — nothing new was published.',
       ],
     ),
     GuideParagraphs(

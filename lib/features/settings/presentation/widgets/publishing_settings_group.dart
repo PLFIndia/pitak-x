@@ -6,8 +6,9 @@
 /// to `SettingsController`, which saves them; the lane reacts by itself.
 ///
 /// Shown only when this build runs the lane (`availabilityLaneActivated`,
-/// false until plan S8): a switch that promises automatic updates must not
-/// appear before the app makes them (AV16).
+/// true since plan S8; the build's kill switch): a switch that promises
+/// automatic updates must not appear in a build that does not make them
+/// (AV16).
 library;
 
 import 'package:flutter/material.dart';

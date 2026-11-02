@@ -10,7 +10,7 @@ import '../../../support/a11y.dart';
 
 void main() {
   /// Pumps [guide] with a recording opener. Phone width (360 dp) so wrapping
-  /// is realistic; 3800 dp tall so the lazy ListView builds every child —
+  /// is realistic; 5000 dp tall so the lazy ListView builds every child —
   /// the longest guides (publish, which documents two hosts and the three
   /// move exits, and the Cloudflare setup guide) end inside that under the
   /// test font — and the a11y checks see every node, bottom button included.
@@ -19,12 +19,16 @@ void main() {
   /// only with a deliberate copy decision, never to make a long guide pass.
   /// (Phase 4 raised it 3400 → 3800 to record the "Replace and move" and
   /// "Verified" sentences; the Cloudflare setup detail moved into its own
-  /// guide instead of growing the publish guide past it.)
+  /// guide instead of growing the publish guide past it. Publish-optimisation
+  /// S8 raised it 3800 → 5000 for the product owner's "Which host suits
+  /// you?" table and its worked example (plan P7/C.9): the publish guide
+  /// now ends at about 4,910 dp under the test font, which wraps far more
+  /// than the real one.)
   Future<List<GuideDestination>> pumpGuide(
     WidgetTester tester,
     Guide guide,
   ) async {
-    tester.view.physicalSize = const Size(1080, 11400);
+    tester.view.physicalSize = const Size(1080, 15000);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
     final opened = <GuideDestination>[];
@@ -60,6 +64,8 @@ void main() {
       expect(find.textContaining('dash.cloudflare.com'), findsOneWidget);
 
       // Section headings and the six step bubbles.
+      expect(find.text('Which host suits you?'), findsOneWidget);
+      expect(find.textContaining('An example.'), findsOneWidget);
       expect(find.text('First time on GitHub Pages'), findsOneWidget);
       expect(find.text('Or use Cloudflare Workers'), findsOneWidget);
       expect(find.text('Every time after that'), findsOneWidget);

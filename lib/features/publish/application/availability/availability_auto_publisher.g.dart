@@ -7,7 +7,7 @@ part of 'availability_auto_publisher.dart';
 // **************************************************************************
 
 String _$availabilityAutoPublisherHash() =>
-    r'ec3d59a72cc5e441d116136f0f457274f5807587';
+    r'e7d1ce12586c7eac187b337993acf900914f7bdb';
 
 /// Owns the one [AvailabilityLane] of this app run.
 ///

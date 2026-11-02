@@ -3,12 +3,11 @@
 /// C.4 status table and C.8).
 ///
 /// Pure presentation: it renders the lane's [AvailabilityLaneView] and
-/// forwards the two taps to the notifier. The sentences are the plan's
-/// drafts; plan S8 sets the final words together with the guide copy.
+/// forwards the two taps to the notifier. The sentences are final since plan
+/// S8 (A.6 #80), worded together with the guide copy.
 ///
 /// Shown only when this build runs the lane (`availabilityLaneActivated`,
-/// false until plan S8): watching the lane's provider is what starts it, so
-/// the row must not even be built before then.
+/// true since plan S8; the build's kill switch).
 library;
 
 import 'package:flutter/material.dart';
@@ -19,10 +18,15 @@ import 'package:pitaka/features/publish/application/availability/availability_au
 import 'package:pitaka/features/publish/application/availability/availability_lane_status.dart';
 import 'package:pitaka/features/publish/presentation/widgets/section_card.dart';
 
-/// The one-time notice (plan C.8).
+/// The one-time notice (plan C.8). Names the exact place of the switch,
+/// **Settings → Data**, like the guide does.
 const String availabilityNoticeText =
-    'Availability now updates by itself after lending. You can turn this off '
-    'in Settings.';
+    'Availability now updates by itself after you lend or return an item. '
+    'You can turn this off in Settings → Data.';
+
+/// The status while the Settings switch is off.
+const String availabilityOffText =
+    'Availability updates are off. Turn them on in Settings → Data.';
 
 /// The status sentence for [status]. [now] is the current time and [time]
 /// formats an epoch-millisecond time for the user; both are passed in so the
@@ -33,8 +37,7 @@ String availabilityStatusText(
   required String Function(int millis) time,
 }) => switch (status) {
   AvailabilityLaneStarting() => 'Checking availability updates…',
-  AvailabilityLaneOff() =>
-    'Availability updates are off. Turn them on in Settings.',
+  AvailabilityLaneOff() => availabilityOffText,
   AvailabilityLaneNotReady(:final reason) => reason,
   AvailabilityLaneScheduled(:final at, :final gitHubMayDelay) => [
     if (at - now <= _soon.inMilliseconds)

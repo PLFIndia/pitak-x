@@ -69,6 +69,47 @@ void main() {
       });
     });
 
+    test('unknown counts and no host: the host comes first (plan S8)', () {
+      fakeAsync((fake) {
+        final h = _Lane(fake, gitHub)
+          ..target = const Left('Connect a publishing host first.')
+          ..start(on());
+        fake.elapse(const Duration(hours: 1));
+
+        expect(
+          (h.status as AvailabilityLaneNotReady).reason,
+          'Connect a publishing host first.',
+          reason: 'unlocking the vault would not help without a host',
+        );
+        expect(h.runs, 0);
+        expect(h.store.saved, isNull);
+
+        // Once a host is connected, the vault is the next step.
+        h
+          ..target = Right(gitHub)
+          ..update(on());
+        expect(
+          (h.status as AvailabilityLaneNotReady).reason,
+          AvailabilityLaneMessages.unlockVault,
+        );
+      });
+    });
+
+    test('unknown counts after a publish: the last published time stays', () {
+      fakeAsync((fake) {
+        final h = _Lane(fake, cloudflare)..start(on(counts: {1: 1}));
+        fake.elapse(const Duration(seconds: 20));
+        expect(h.status, isA<AvailabilityLaneUpToDate>());
+
+        // The host goes away and the vault locks: what is on the site is
+        // still what the row reports (no target read is needed for that).
+        h
+          ..target = const Left('Connect a publishing host first.')
+          ..update(on());
+        expect(h.status, isA<AvailabilityLaneUpToDate>());
+      });
+    });
+
     test('a loan is saved FIRST, then published 20 s after the change', () {
       fakeAsync((fake) {
         final h = _Lane(fake, cloudflare)..start(on(counts: {}));
