@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S12 complete, 2026-11-02)
+# Publish optimisation — handoff (S13 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -59,14 +59,18 @@ S12 — SP1 (GitHub returns at commit time) — **complete** (§S12), started on
 the product owner's go-ahead ("go ahead for the next item", 2026-11-02,
 confirmed as S12 in the session's first question, with the copy choices).
 J16 was fixed in its own commit (plan A.6 #126).
-**S13 (Phase 3: SP2 + SP3, Cloudflare read-back and preflight) has NOT
-started. Do not start it until the product owner explicitly says so.** Open
-decisions for the product owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the
-copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
-(§S11) and the guide line of §S12. New engineering observation J17 (§S12).
+S13 — SP2 + SP3 (Cloudflare reads side by side) — **complete** (§S13),
+started on the product owner's go-ahead ("go ahead for the next item",
+2026-11-02, confirmed as S13 in the session's first question; no copy
+involved).
+**S14 (Phase 3: SP4 + the SP5 measurement) has NOT started. Do not start it
+until the product owner explicitly says so.** Open decisions for the product
+owner: J11 (§S9), J12–J14 (§G4), J15 (§S10b), the copy of the rate-limit
+messages (§S10b), the copy of the backup/restore lines (§S11) and the guide
+line of §S12. Open engineering observation J17 (§S12).
 
-> Read this file first in any new session. §S12 is the newest state, then
-> §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
+> Read this file first in any new session. §S13 is the newest state, then
+> §S12, §S11, §S10b, §S10, §G4 (device evidence), §S9, §S8, §S7, §S6, §S5, §S4,
 > §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
 > verbatim lines in §3), kept unchanged.
 
@@ -78,6 +82,120 @@ copy of the rate-limit messages (§S10b), the copy of the backup/restore lines
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S13 — SP2 + SP3: Cloudflare reads side by side
+
+**Started:** 2026-11-02, product owner's go-ahead "go ahead for the next
+item". One question before building (S13, or J17 first, or something
+else); the product owner chose **"Yes, start S13 (Recommended)"** (plan A.6
+#127). There is no copy to choose: nothing on screen or on the site changes.
+No device step was possible (`adb` is not on this Mac's PATH and the session
+had no phone step), so the open device evidence (§S11 restore, §S12 timing)
+is still open.
+
+**Commits:** `99d6c16` (code + tests), then the docs commit (ADR 0017
+amendment, ADR 0019 Decision 11 note, ADR index, ARCHITECTURE §1/§5.8,
+CHANGELOG, plan, this handoff).
+
+**What changed for users (once released):** Cloudflare publishes are
+faster: catalogue, events, the availability lane, moves and Retry
+verification. Nothing else changes. Where the time comes from (S0, Appendix
+A):
+- the read-back of an ordinary deploy used to sleep 5 s before its first
+  read, and it no longer does;
+- its 4–6 reads now finish in about two network round trips instead of
+  one round trip each;
+- each of the three preflights per publish (start, after the upload
+  session, the final race check) now takes about one round trip plus the
+  route read, instead of four requests one after another.
+
+Estimate: about 6–9 s per Cloudflare catalogue or events publish, and about
+1–2 s for a lane update (AV13 had already removed its sleep). **Measured in
+S15, not yet on a device.**
+
+**The rules (as built; plan A.6 #127–#132):**
+
+| Part | Where | Rule |
+|---|---|---|
+| Round one at once | `CloudflarePublicationVerifier.verify` | No sleep before round 1, for every budget (after a deploy, an earlier record, a move). Each later round waits `interval`. Budgets unchanged (12 × 5 s in 90 s; 3 × 2 s in 20 s), so the last read comes one interval sooner. `CloudflareReadBackBudget.immediateFirstRound` and `afterAvailabilityDeploy` are gone; the pipeline uses `afterDeploy` for both scopes. |
+| Side by side | same, `_readRound` | A worker pool (the `refresh_run.dart` pattern), at most `defaultMaxConcurrentReads` = 4 reads in flight. Reads start in path order. No read starts after the deadline; a read in flight finishes. Verdicts are applied after the round, in path order. The constructor's `maxConcurrentReads` is passed only by tests (below 1 counts as 1). |
+| Preflight | `CloudflarePublishPreflightReader.call` | Subdomain, Worker presence and marker probe start together; the route read starts when presence says "exists". Each answer, or its `Exception`, is kept in a sealed `_ReadResult`. All reads are awaited, then judged in the old order (subdomain → presence → marker → route) inside the unchanged `try`/`catch`. A kept exception is re-thrown with its stack trace, so every typed failure is the same. An `Error` is not caught. |
+| Requests | same | Unchanged on every successful run. A failed run may already have sent the later reads (at most once each): only reads, answers ignored (A.6 #131). |
+
+**Engineering note for the product owner (no decision needed):** before
+S13, a preflight that found the account's workers.dev address changed
+stopped before reading anything else. Now the Worker check and the public
+marker read were already sent at the same moment. They only read, and the
+publish still stops with the same message. If someone else has taken the
+old address, that one public read reaches their site, just as the viewer
+reads any public address. It carries no token.
+
+**Tests:** the verifier suite has new groups: round one at once (a served
+deploy is proven in 1 round with no wait; later rounds wait; an earlier
+record is read at once); side by side (never more than 4, start order, the
+lane's two reads together, the deadline rule, a throwing read does not stop
+its round, one-at-a-time mode); and a **600-case seeded comparison**
+(scrambled answer order) of 4-at-once with 1-at-a-time: same outcome, same
+round count, same reads per round. The preflight suite has new tests: the
+three reads are in flight together; the route waits for presence; an absent
+Worker's route is never read. It also has an **800-combination comparison
+with a frozen copy of the pre-SP3 code**: same result and failure sentence,
+same requests on success, at most one of each on failure, never a write.
+The old "stops before Worker access" test now asserts the same failure and
+no write. The budget test pins both budgets' numbers. The lane test uses
+`afterDeploy`. **Mutation checks:** a verdict stored under the wrong path
+when reads overlap failed 19 tests; presence judged before the subdomain
+was caught; a route read for an absent Worker was caught.
+
+**Security notes (skill checklist):** no credential, input boundary or write
+path changed. The extra reads on a failed preflight are two authenticated
+GETs on the token's own account and one unauthenticated, origin-bound
+public read. Concurrency is bounded (4 public reads; the preflight's 3 + 1).
+The deadline still bounds the read-back: no read starts after it. A
+throwing read is still "unreadable", never "matched". No log line was added.
+
+**Device evidence (for S15):** on the timing build, a Cloudflare catalogue
+publish's `publish timings cloudflare:` line should show `readBack` around
+1–2 s with `rounds=1` (S0: 6.7–7.3 s), a shorter `reconcile` (the first
+preflight is inside it; S0 3.2–3.5 s) and a shorter `total`. The lane's
+`cloudflareAvailability` line should shrink by about 1–2 s (G.4 median
+15.8 s).
+
+**For S14 (do not lose these):** SP4 changes `GitHubTreeReader` and the
+reconciler (`knownBlobShas` is ready to take the recorded shas, A.6 #95).
+SP5 needs a real test repository and 5 + 5 Pages builds; the gh token
+cannot delete repositories (the product owner deletes throwaway repos by
+hand, as for `pitak-cv5-proof` and `pitak-j8-blob-reuse`).
+
+**Files changed (code):** `cloudflare_publication_verifier.dart` (393
+lines), `cloudflare_publish_preflight.dart` (304), `cloudflare_deploy_pipeline.dart`
+(318; budget switch removed), `domain/cloudflare/cloudflare_limits.dart`
+(244; flag and lane budget removed).
+**Tests:** `cloudflare_publication_verifier_test.dart`,
+`cloudflare_publish_preflight_test.dart`, `cloudflare_read_back_budget_test.dart`
+(rewritten), `publish_availability_to_cloudflare_use_case_test.dart` (one
+constant).
+
+**Gates at the end of S13 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`):**
+- build_runner: no generated file changed (no provider changed); the
+  pre-commit hook confirmed it.
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **5,689 passed** (S12 ended at 5,676). The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`:
+  a clean worktree of `f23a0ca` (the S12 head) fails exactly the same 10,
+  checked by name. S13 changes no screen.
+- Line coverage: `cloudflare_publication_verifier.dart` and
+  `cloudflare_limits.dart` 100 %; `cloudflare_publish_preflight.dart` 98.8 %
+  (the one miss is the older `isNewSite` getter);
+  `cloudflare_deploy_pipeline.dart` 93.5 % (every miss predates S13: older
+  failure branches).
+- File sizes ≤ 500 (largest touched: `cloudflare_publication_verifier.dart`
+  393).
+- No new dependency; `pubspec.lock` and Rust untouched. CSP unchanged.
 
 ---
 

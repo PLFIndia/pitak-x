@@ -230,6 +230,50 @@ after proof. What changes:
 - **Moves are unchanged.** A move destination still verifies itself inside
   the queue (the active pointer switches only after proof, Decision 5).
 
+## Amendment 2026-11-02 — Cloudflare reads run side by side (plans SP2, SP3)
+
+Publish-optimisation plans SP2 and SP3 (session S13). S0 measured a fixed
+overhead of about 18 s on every Cloudflare publish, whatever the library
+size. Of that, the read-back started with a 5 s sleep and then read its files
+one at a time, and the preflight, which runs three times per publish, made
+four requests one after another. Every check and its outcome stays exactly as
+above. What changes is only *when* the requests are sent:
+
+- **The read-back reads its first round at once** (SP2). Before, only the
+  availability lane's deploys did this (ADR 0019 Decision 11). Now every
+  deploy does, and so does the check of an earlier record. Each later round
+  still waits for the budget's interval. The budgets keep their numbers:
+  12 rounds 5 s apart inside 90 s after a deploy, and 3 rounds 2 s apart
+  inside 20 s for an earlier record. The lane's separate budget is gone,
+  because it would now be identical to the after-deploy one. One side
+  effect: the last read of a budget now comes one interval sooner (55 s
+  instead of 60 s after a deploy). A Cloudflare version is served within
+  seconds, and G.4 proved every lane deploy in its first round, so this
+  matters in no real case. After a deploy, a check that runs out is still
+  reported as "not proven yet", never as a failure.
+- **The reads of one round run side by side**, at most four at a time.
+  This is the worker-pool pattern of the saved-library refresh. Reads start
+  in path order, as before. No read starts after the deadline, and a read
+  already in flight finishes, bounded by its own transport limit. Each path
+  is read at most once per round, so the "last observation per path decides"
+  rule gives the same verified / contradicted / unreachable result as one
+  read after another. A seeded comparison test pins this.
+- **The preflight starts its independent reads together** (SP3): the
+  account-subdomain read, the Worker-presence read and the public marker
+  probe. The route read still waits until presence shows the Worker exists.
+  The answers are then judged in the old order (subdomain, presence, marker,
+  route), so every result and every typed failure is the same. A comparison
+  test against a frozen copy of the old code checks 800 API combinations.
+  On every successful run the requests are the same as before. When an early
+  check fails (for example, the account's workers.dev address changed), the
+  later reads may already have been sent: they only read, nothing is
+  written, and their answers are ignored. The final race check before a
+  deploy reads the same facts, in a shorter window.
+- **Unchanged:** every gate (Decisions 6 and 7: freshness, the session
+  baseline, Version URLs before and after a deploy), the pending-deploy
+  record, the three outcomes, the read-back sets, and all GitHub behaviour.
+  The S15 device measurements will record the time saved.
+
 ## Consequences
 
 - **Single-writer limitation is disclosed.** The local app-wide operation
@@ -351,7 +395,11 @@ after proof. What changes:
   write-proven flag. *Amended 2026-11-01 (ADR 0019):* an availability-only
   deploy reads back the fresh marker plus `availability.json` (or its exact
   404), with the first round immediately; a combined deploy adds
-  `availability.json` to this set. See the amendment below.
+  `availability.json` to this set. See the amendment below. *Amended
+  2026-11-02 (plans SP2/SP3):* every read-back now reads its first round at
+  once with up to four reads in flight, and the preflight sends its
+  independent reads together; budgets and outcomes are unchanged (see the
+  amendment of that date).
 - **S11 makes outcomes truthful (fix-plan L7/L12/N4/N5/N6).** A deploy-free
   check reports "Verified", never "Published!"; a failed old-record commit is a
   failure that says the previous publish is live and the new changes were not

@@ -362,6 +362,14 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
       is reported live; one whose read-back runs out stays `deployed` and is
       read back by the next publish (there is no deferred check on
       Cloudflare).
+    - *Clarified 2026-11-02 (plans SP2/SP3, ADR 0017 amendment of that
+      date):* the immediate first round is no longer the lane's own budget.
+      Every Cloudflare read-back now reads its first round at once, with up
+      to four reads side by side, so the lane uses the ordinary after-deploy
+      budget (`afterAvailabilityDeploy` is gone; the lane behaves the same).
+      The lane also gains SP3: its preflights send their independent reads
+      together. As the trade-off below says, SP2 saves the lane nothing new
+      (AV13 already removed its sleep); SP3 saves about 1–2 s.
 
 12. **Moves and retirement (AV18).** When the lane is on, a complete snapshot
     includes `availability.json` from the saved snapshot. Retirement deletes it

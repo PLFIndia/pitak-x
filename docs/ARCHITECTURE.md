@@ -54,7 +54,8 @@ file its record names (`books.json` for a catalogue commit, `events.json` for
 an events commit; first read 30 s after the commit, then every 10 s up to
 150 s; plan SP1, §5.8); a Cloudflare publish checks the
 `pitak-publish.json` marker, `books.json`, `library.json` (or its real 404),
-`events.json` and current poster references before it returns. Play builds
+`events.json` and current poster references before it returns (first round
+at once, at most four reads in flight; plan SP2, §5.8). Play builds
 check for an update once per launch and start Play's flexible-update flow;
 after the user accepts Play's dialog, the Store downloads in the background.
 The F-Droid flavor has no Play Core/update library and cannot run that check.
@@ -659,6 +660,21 @@ target passed to the current operation — that is what lets a move publish the
   changed"; the head still being this phone's own commit is what makes that
   safe. Outside the window, with no recorded time, or with a time in the
   future, the stricter rule stands. A move keeps its in-queue verification.
+- **A Cloudflare publish runs independent reads side by side** (plans SP2
+  and SP3, ADR 0017 amendment of 2026-11-02). The read-back
+  (`CloudflarePublicationVerifier`) reads its first round at once — for every
+  deploy and for an earlier record — and later rounds after the budget's
+  interval; within a round at most four reads are in flight
+  (`defaultMaxConcurrentReads`, the worker-pool pattern of the network
+  refresh), started in path order, and no read starts after the deadline. The
+  preflight (`CloudflarePublishPreflightReader`, three runs per publish)
+  starts the subdomain read, the Worker-presence read and the marker probe
+  together, starts the route read once presence shows the Worker exists, and
+  then judges the answers in the old one-by-one order, so results and typed
+  failures are unchanged. Budgets, outcomes, gates and the "last observation
+  per path decides" rule are unchanged. On a failed preflight the later reads
+  may already have been sent; they are reads only and their answers are
+  ignored.
 - **`hashScheme` gates hashes, not paths.** A different Cloudflare asset-hash
   scheme means "re-hash the bytes", never "forget which files we wrote".
 - **The Cloudflare marker is the freshness anchor.** Every deploy writes

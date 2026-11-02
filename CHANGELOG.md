@@ -186,6 +186,18 @@ heading as part of the `chore(release):` commit.
   publish started while Pages still builds the previous commit — the lane's
   included — no longer stops with "Your site is showing something different…".
   `PublishManifest`'s three derived records now share one private copy.
+- **Cloudflare publishes send their independent reads side by side** (plans
+  SP2 and SP3, S13; ADR 0017 amendment of 2026-11-02). The read-back reads
+  its first round at once — every deploy and every earlier-record check, no
+  longer only the availability lane's — and runs at most four reads at a time
+  (`CloudflarePublicationVerifier.defaultMaxConcurrentReads`), started in path
+  order; no read starts after the deadline. The three preflights of each
+  publish start the subdomain, Worker-presence and marker reads together (the
+  route read still waits for presence) and judge the answers in the old order,
+  so every result and typed failure is unchanged. Budgets keep their numbers;
+  `CloudflareReadBackBudget.afterAvailabilityDeploy` and `immediateFirstRound`
+  are gone (the lane uses `afterDeploy`). No screen or wording changes;
+  expected saving about 6–9 s per Cloudflare publish (S15 measures it).
 
 ### Fixed
 - A damaged local `publish_manifest.json` whose `ownershipConfirmed` was not
