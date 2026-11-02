@@ -22,6 +22,7 @@ const vm = require('vm');
 function makeElement() {
   return {
     value: '',
+    checked: false,
     innerHTML: '',
     textContent: '',
     className: '',
@@ -50,7 +51,10 @@ async function main() {
   const scriptMatch = html.match(/<script>\n([\s\S]*?)<\/script>/);
   assert.ok(scriptMatch, 'viewer inline script must exist');
 
-  const selectors = ['#root', '#q', '#sort', '#language', '#kind', '#meta', '#theme', '#eventsBanner'];
+  const selectors = [
+    '#root', '#q', '#sort', '#language', '#kind', '#availNow', '#availFilter', '#meta',
+    '#availSummary', '#theme', '#eventsBanner',
+  ];
   const elements = Object.fromEntries(selectors.map((s) => [s, makeElement()]));
   // The viewer's default sort is "Recently added"; `addedDate` is REDACTED from
   // every published row, so its comparator is 0 for all rows and the stable
@@ -61,8 +65,14 @@ async function main() {
     button.dataset.layout = layout;
     return button;
   });
+  const documentListeners = {};
   const document = {
     documentElement: makeElement(),
+    // v8: the viewer re-checks availability.json only while visible.
+    visibilityState: 'visible',
+    addEventListener(name, callback) {
+      documentListeners[name] = callback;
+    },
     querySelector(selector) {
       const element = elements[selector];
       assert.ok(element, `unexpected document.querySelector(${selector})`);
@@ -73,12 +83,25 @@ async function main() {
       return layoutButtons;
     },
   };
+  // The viewer's 60 s availability re-check is recorded, never fired: this
+  // harness compares grouping and order only.
+  const intervals = [];
   const context = {
     console,
     document,
     localStorage: { getItem() { return null; }, setItem() {} },
     matchMedia() { return { matches: false }; },
-    async fetch() {
+    setInterval(callback, milliseconds) {
+      intervals.push({ callback, milliseconds });
+      return intervals.length;
+    },
+    clearInterval() {},
+    TextDecoder,
+    async fetch(url) {
+      // No availability file (404): this harness is about rows and order;
+      // published_availability_parity_harness.js covers availability.
+      if (url === 'availability.json') return { ok: false, status: 404 };
+      // books.json (and the events.html probe) answer with the fixture.
       return { ok: true, async json() { return payload; } };
     },
   };
@@ -87,6 +110,9 @@ async function main() {
   });
   await new Promise((resolve) => setImmediate(resolve));
 
+  assert.equal(intervals.length, 1, 'viewer registers one availability re-check');
+  assert.equal(typeof documentListeners.visibilitychange, 'function',
+    'viewer re-checks availability when the page becomes visible');
   assert.equal(typeof context.filterAndSort, 'function', 'viewer exposes filterAndSort');
   assert.equal(typeof context.groupIssues, 'function', 'viewer exposes groupIssues');
 

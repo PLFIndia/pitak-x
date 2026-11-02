@@ -10,6 +10,7 @@ const vm = require('vm');
 function makeElement() {
   return {
     value: '',
+    checked: false,
     innerHTML: '',
     textContent: '',
     className: '',
@@ -39,8 +40,10 @@ async function main() {
   assert.ok(scriptMatch, 'viewer inline script must exist');
 
   const elements = Object.fromEntries(
-    ['#root', '#q', '#sort', '#language', '#kind', '#meta', '#theme', '#eventsBanner']
-      .map((selector) => [selector, makeElement()]),
+    [
+      '#root', '#q', '#sort', '#language', '#kind', '#availNow', '#availFilter', '#meta',
+      '#availSummary', '#theme', '#eventsBanner',
+    ].map((selector) => [selector, makeElement()]),
   );
   elements['#sort'].value = 'addedDate';
   const buttons = ['table', 'card', 'grid'].map((layout) => {
@@ -49,8 +52,14 @@ async function main() {
     return button;
   });
   const documentElement = makeElement();
+  const documentListeners = {};
   const document = {
     documentElement,
+    // v8: the viewer re-checks availability.json only while visible.
+    visibilityState: 'visible',
+    addEventListener(name, callback) {
+      documentListeners[name] = callback;
+    },
     querySelector(selector) {
       const element = elements[selector];
       assert.ok(element, `unexpected document.querySelector(${selector})`);
@@ -62,6 +71,9 @@ async function main() {
     },
   };
   const storage = new Map();
+  // The viewer's 60 s availability re-check is recorded, never fired: this
+  // harness checks the catalogue render, not the timer.
+  const intervals = [];
   const context = {
     console,
     document,
@@ -70,8 +82,16 @@ async function main() {
       setItem(key, value) { storage.set(key, String(value)); },
     },
     matchMedia() { return { matches: false }; },
+    setInterval(callback, milliseconds) {
+      intervals.push({ callback, milliseconds });
+      return intervals.length;
+    },
+    clearInterval() {},
+    TextDecoder,
     async fetch(url) {
       if (url === 'events.html') return { ok: false };
+      // No availability file: every item keeps its inline tag (if any).
+      if (url === 'availability.json') return { ok: false, status: 404 };
       assert.equal(url, 'books.json');
       return { ok: true, async json() { return payload; } };
     },
@@ -82,6 +102,14 @@ async function main() {
   // load() is intentionally fire-and-forget in the viewer. One macrotask turn
   // flushes its resolved fetch/json promises without changing production code.
   await new Promise((resolve) => setImmediate(resolve));
+
+  // v8 wiring exists but is never fired here; viewer_availability_harness.js
+  // exercises it.
+  assert.equal(intervals.length, 1, 'one availability re-check timer');
+  assert.equal(typeof documentListeners.visibilitychange, 'function');
+  // The Other row's inline "out" is not a tag (plan J7): nothing is tagged,
+  // so the availability summary stays empty.
+  assert.equal(elements['#availSummary'].textContent, '');
 
   const root = elements['#root'];
   const escapedTitle = 'Other &lt;img src=x onerror=alert(2)&gt; &amp; &quot;quoted&quot;';

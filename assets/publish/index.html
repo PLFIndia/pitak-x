@@ -2,18 +2,20 @@
 <!--
   Pitaka library viewer (D12).
   Single self-contained file: no CDN dependencies, no build step,
-  no runtime fetch beyond the sibling books.json.
+  no runtime fetch beyond its same-origin siblings: books.json,
+  availability.json (v8) and a HEAD probe of events.html (v6).
 
   Bundled with the app at app/src/main/assets/publish/index.html
   and uploaded verbatim to the user's GitHub repo on publish.
 
-  viewerVersion: 7
+  viewerVersion: 8
     v3: F-09 — Content-Security-Policy meta added; image origins
          restricted to same-origin, data:, and the OpenLibrary /
          Google Books cover hosts. Mirrors CoverUrlAllowList.kt.
     v4: genre + language filter facets (populated from books.json);
-         coarse availability badge ("Available" / "All out") rendered
-         when the publisher included it (vault unlocked at publish time).
+         coarse availability badge ("Available" / "All out", renamed
+         "Not available" in v8) rendered when the publisher included it
+         (vault unlocked at publish time).
          Availability is a coarse status only — never an exact count.
     v5 (Revision R): genre dropped as a dropdown — now matched via the
          search box (title/author/genre). Sort options are Recently added /
@@ -32,6 +34,32 @@
          keys, and this viewer reads them defensively on older payloads.
          (The stale "viewerVersion: 4" line was bumped to match — v5/v6
          landed without bumping it.)
+    v8: availability file (ADR 0019 Decision 4 + its S7 clarification,
+         plan C.7). The app keeps a small sibling availability.json
+         ({"schemaVersion":1,"keySet":…,"asOf":…,"out":[keys]}) up to date
+         after loans and returns, without republishing books.json. This
+         viewer requests it at the same time as books.json and asks again
+         every 60 s while the page is visible (and once when the tab
+         becomes visible again), always with cache: "no-cache" so the
+         browser revalidates its saved copy — never a ?query cache-buster
+         (GitHub's edge ignores query strings).
+         The file is untrusted. More than 1 MiB, invalid UTF-8, nesting
+         deeper than 16, not a JSON object, a newer schemaVersion, a bad
+         keySet, or one bad key in "out" makes the viewer ignore the WHOLE
+         file, exactly as if it were missing (404). It is used only when
+         its keySet equals the keySet at the top of books.json: a file left
+         by another install would otherwise match no key and mark every
+         item Available.
+         The tag, per item (availabilityTag): a book or magazine issue with
+         a valid key is "Not available" when its key is in "out", else
+         "Available"; any other book or issue keeps its inline tag from
+         books.json, if any. Kind Other and unknown kinds never show a tag
+         (the native viewer's rule, plan J7). Labels are Available /
+         Not available ("All out" retired). New: an "Available now"
+         checkbox that keeps only Available items, and a summary line
+         "N of M available · updated <time>" (the time only when asOf is
+         plausible). The CSP is unchanged: connect-src 'self' already
+         allows the request.
 -->
 <html lang="en">
 <head>
@@ -157,7 +185,7 @@
   button { cursor: pointer; }
   button.active { background: var(--accent); color: var(--ink-50); border-color: var(--accent); }
   .meta { color: var(--fg-muted); font-size: 12px; margin: 8px 0 0; }
-  /* Coarse availability badges (v4). Only "available" / "all out" — never a count. */
+  /* Coarse availability badges (v4; v8 labels). Only "Available" / "Not available" — never a count. */
   .avail { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; white-space: nowrap; }
   .avail-available { background: #1b5e2022; color: #1b5e20; border: 1px solid #1b5e2055; }
   .avail-out { background: #b0002022; color: #b00020; border: 1px solid #b0002055; }
@@ -174,6 +202,17 @@
   .series-head { grid-column: 1 / -1; margin: 18px 0 2px; font-size: 16px; font-weight: 600; }
   .series-head .meta, .series-row .meta { font-weight: 400; }
   .series-row td { padding-top: 14px; font-weight: 600; }
+  /* "Available now" filter (v8): a plain checkbox with its text, sized like
+     the other controls. */
+  .avail-filter { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; white-space: nowrap; cursor: pointer; }
+  .avail-filter input { margin: 0; accent-color: var(--accent); }
+  /* Offered only while something is tagged (or it is still ticked); the
+     display rule above would otherwise override the hidden attribute. */
+  .avail-filter[hidden] { display: none; }
+  /* Availability summary line (v8). Takes no space while it is empty
+     (nothing tagged, or the catalogue is still loading). */
+  #availSummary { margin-top: 2px; }
+  #availSummary:empty { display: none; }
   main { padding: 16px 20px 48px; }
 
   /* Layouts */
@@ -271,12 +310,15 @@
       <option value="magazine-issue">Magazines</option>
       <option value="other">Others</option>
     </select>
+    <!-- v8: keeps only items tagged Available (see availabilityTag). -->
+    <label class="avail-filter" id="availFilter" hidden><input type="checkbox" id="availNow" /> Available now</label>
     <button data-layout="table" class="active" aria-label="Table layout" aria-pressed="true">Table</button>
     <button data-layout="card" aria-label="Card layout" aria-pressed="false">Cards</button>
     <button data-layout="grid" aria-label="Cover grid layout" aria-pressed="false">Covers</button>
     <button id="theme" title="Toggle dark mode" aria-label="Toggle dark mode">🌗</button>
   </div>
   <p class="meta" id="meta">Loading…</p>
+  <p class="meta" id="availSummary"></p>
 </header>
 <main id="root"></main>
 
@@ -287,7 +329,10 @@
   const sortEl = $("#sort");
   const languageEl = $("#language");
   const kindEl = $("#kind");
+  const availNowEl = $("#availNow");
+  const availFilterEl = $("#availFilter");
   const meta = $("#meta");
+  const availSummaryEl = $("#availSummary");
   const theme = $("#theme");
 
   // ---- Theming ----
@@ -329,11 +374,22 @@
   sortEl.addEventListener("change", render);
   languageEl.addEventListener("change", render);
   kindEl.addEventListener("change", render);
+  availNowEl.addEventListener("change", render);
 
   // ---- Data ----
   let books = [];
   let periodicals = [];
   let loadError = null;
+  // True once books.json has been read. The availability answer may arrive
+  // first; render() waits for the catalogue instead of drawing an empty list.
+  let catalogueLoaded = false;
+  // v8: books.json's top-level keySet when it has the key shape, else null.
+  // availability.json applies only to a catalogue with the SAME keySet.
+  let catalogueKeySet = null;
+  // True when books.json declares a newer schema than this viewer knows; the
+  // notice stays in the meta line on every render (it used to be overwritten
+  // by the item count at once).
+  let newerSchema = false;
 
   async function load() {
     try {
@@ -343,13 +399,15 @@
       if (typeof data.schemaVersion !== "number") {
         throw new Error("Missing schemaVersion in books.json");
       }
-      if (data.schemaVersion > 1) {
-        meta.textContent = "This file was created by a newer Pitak. Re-publish from your phone to update the viewer.";
-      }
+      newerSchema = data.schemaVersion > 1;
       books = Array.isArray(data.books) ? data.books : [];
       // v7: additive key — absent on older payloads (or when the library
       // has no magazines); read defensively either way.
       periodicals = Array.isArray(data.periodicals) ? data.periodicals : [];
+      // v8: additive key — absent on payloads from older Pitak builds; then
+      // no availability.json can ever apply and inline tags are used.
+      catalogueKeySet = isKey(data.keySet) ? data.keySet : null;
+      catalogueLoaded = true;
       populateFacets();
       render();
     } catch (e) {
@@ -362,6 +420,233 @@
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
     }[c]));
+  }
+
+  // ---- Availability file (v8, ADR 0019 Decision 4) ----
+  // availability.json lists the keys of items whose every copy is lent out.
+  // It sits on a public site, so every byte is untrusted: the limits below
+  // are the same ones the app's own (native) reader applies, and shared
+  // test fixtures keep the two readers in step.
+  const AVAILABILITY_MAX_BYTES = 1048576; // 1 MiB
+  const AVAILABILITY_MAX_KEYS = 100000;
+  const AVAILABILITY_MAX_DEPTH = 16;
+  const AVAILABILITY_RECHECK_MS = 60000; // re-check once a minute
+  const EARLIEST_PLAUSIBLE_AS_OF = 1577836800000; // 2020-01-01T00:00Z: no Pitak existed earlier
+  const AS_OF_CLOCK_SKEW_MS = 86400000; // 24 h: allows a phone clock that runs ahead
+  // The exact shape of a public key (and of a keySet): 16 lower-case hex
+  // characters. No trimming, no case folding — a Pitak writer never emits
+  // anything else. (No "g" flag: a global regex remembers its last match
+  // position between test() calls, which would make answers alternate.)
+  const KEY_PATTERN = /^[0-9a-f]{16}$/;
+
+  // The last availability.json that passed every rule, or null (missing,
+  // ignored, or not answered yet).
+  let availabilityFile = null;
+  // Counts started availability checks, so only the newest answer is used.
+  let availabilityChecks = 0;
+
+  function isKey(value) {
+    return typeof value === "string" && KEY_PATTERN.test(value);
+  }
+
+  // Deepest {/[ nesting in JSON text, not counting brackets inside strings.
+  // Mirrors the app's JsonNestingDepth.maxDepthOf
+  // (lib/core/text/json_nesting_depth.dart) exactly, so both readers refuse
+  // the same files. Why it exists: a recursive JSON parser can run out of
+  // stack on a "[[[[…" bomb, so the text is measured BEFORE it is parsed.
+  function jsonNestingDepth(text) {
+    let depth = 0;
+    let max = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (c === 0x5c) escaped = true; // '\': the next character is escaped
+        else if (c === 0x22) inString = false; // '"': the string ends here
+        continue;
+      }
+      if (c === 0x22) {
+        inString = true;
+      } else if (c === 0x5b || c === 0x7b) { // '[' or '{'
+        depth++;
+        if (depth > max) max = depth;
+      } else if (c === 0x5d || c === 0x7d) { // ']' or '}'
+        if (depth > 0) depth--; // a stray closer never goes below zero
+      }
+    }
+    return max;
+  }
+
+  // Reads the raw bytes (an ArrayBuffer) of availability.json.
+  // Returns { keySet, asOf, out } when the file passes EVERY rule, or null,
+  // which means "treat it exactly like a missing file". All or nothing on
+  // purpose: skipping one bad key and keeping the rest would show that item
+  // as Available — worse than showing the inline tag.
+  // Pure: the same bytes always give the same answer. asOf is kept as it was
+  // written (or null) and judged only when shown, because "plausible"
+  // depends on the current time (see plausibleAsOf).
+  function parseAvailability(buffer) {
+    if (!buffer || typeof buffer.byteLength !== "number") return null;
+    if (buffer.byteLength > AVAILABILITY_MAX_BYTES) return null;
+    let data;
+    try {
+      // fatal: true makes invalid UTF-8 throw instead of turning into "�".
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
+      if (jsonNestingDepth(text) > AVAILABILITY_MAX_DEPTH) return null;
+      data = JSON.parse(text);
+    } catch (e) {
+      // Invalid UTF-8 or invalid JSON: not an availability file. Ignoring
+      // it IS the handling (the inline tags are shown instead).
+      return null;
+    }
+    // The root must be a plain object ({…}); arrays and null are not.
+    if (data === null || typeof data !== "object" || Array.isArray(data)) return null;
+    const version = data.schemaVersion;
+    if (!Number.isInteger(version) || version < 1) return null;
+    // A newer format may give the same fields another meaning: don't guess.
+    if (version > 1) return null;
+    if (!isKey(data.keySet)) return null;
+    const list = data.out;
+    if (!Array.isArray(list) || list.length > AVAILABILITY_MAX_KEYS) return null;
+    const out = new Set(); // a Set merges duplicate keys
+    for (const key of list) {
+      if (!isKey(key)) return null;
+      out.add(key);
+    }
+    // Unknown fields are simply never read. asOf never refuses the file.
+    return {
+      keySet: data.keySet,
+      asOf: Number.isInteger(data.asOf) ? data.asOf : null,
+      out: out,
+    };
+  }
+
+  // asOf when it is believable at nowMillis (not before 2020, at most 24 h
+  // ahead of now), else null — and then no "updated" time is shown.
+  function plausibleAsOf(asOf, nowMillis) {
+    if (!Number.isInteger(asOf)) return null;
+    if (asOf < EARLIEST_PLAUSIBLE_AS_OF) return null;
+    if (asOf > nowMillis + AS_OF_CLOCK_SKEW_MS) return null;
+    return asOf;
+  }
+
+  // The accepted file, but only when it belongs to THIS catalogue: both name
+  // the same keySet (plan J10). A file computed with another install's keys
+  // would match no item and wrongly show every item as Available.
+  function boundAvailabilityFile() {
+    if (availabilityFile === null || catalogueKeySet === null) return null;
+    return availabilityFile.keySet === catalogueKeySet ? availabilityFile : null;
+  }
+
+  // THE per-item availability rule: "available", "out" or null (no tag).
+  // Badge, "Available now" filter and summary all go through here, so they
+  // can never disagree. The native viewer applies the same rule
+  // (PublishedAvailabilityMerge).
+  function availabilityTag(b) {
+    if (!b || typeof b !== "object") return null;
+    // Only an absent (or null) kind means "book" — like the native reader,
+    // which treats any other unexpected value as an unknown kind.
+    const kind = b.kind === undefined || b.kind === null ? "book" : b.kind;
+    // Kind Other and kinds this viewer does not know never carry a tag, even
+    // when the payload has one (plan J7).
+    if (kind !== "book" && kind !== "magazine-issue") return null;
+    const file = boundAvailabilityFile();
+    if (file !== null && isKey(b.key)) return file.out.has(b.key) ? "out" : "available";
+    // No usable file, or no valid key: the tag written into books.json.
+    if (b.availability === "available" || b.availability === "out") return b.availability;
+    return null;
+  }
+
+  // Counts over ALL items (not just the filtered ones) for the summary line:
+  // tagged = items with any tag, available = items tagged "available".
+  // asOf = the plausible asOf of the file in use, else null.
+  function availabilitySummary() {
+    let available = 0;
+    let tagged = 0;
+    for (const b of books) {
+      const tag = availabilityTag(b);
+      if (tag !== null) tagged++;
+      if (tag === "available") available++;
+    }
+    const file = boundAvailabilityFile();
+    const asOf = file === null ? null : plausibleAsOf(file.asOf, Date.now());
+    return { available: available, tagged: tagged, asOf: asOf };
+  }
+
+  // "312 of 340 available · updated 2:05 pm" — or empty when nothing is
+  // tagged. textContent (not innerHTML), so nothing in it can become markup.
+  function renderAvailabilitySummary() {
+    const summary = availabilitySummary();
+    // Like the native viewer: "Available now" is offered only when an item
+    // shows a tag, and stays while ticked so it can always be unticked.
+    availFilterEl.hidden = summary.tagged === 0 && !availNowEl.checked;
+    if (summary.tagged === 0) {
+      availSummaryEl.textContent = "";
+      return;
+    }
+    let text = `${summary.available} of ${summary.tagged} available`;
+    if (summary.asOf !== null) text += " · updated " + updatedAtText(summary.asOf);
+    availSummaryEl.textContent = text;
+  }
+
+  // The time in the visitor's own locale; the day is added when it is not
+  // today ("1 Nov, 2:05 pm").
+  function updatedAtText(asOf) {
+    const when = new Date(asOf);
+    const time = when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (when.toDateString() === new Date().toDateString()) return time;
+    return when.toLocaleDateString([], { day: "numeric", month: "short" }) + ", " + time;
+  }
+
+  // One request for availability.json. Never rejects; the answer is either
+  //   { file: <parsed file or null> } — the server answered. null means the
+  //       file is missing (404 or any other non-OK status) or broke a rule;
+  //       both count as "no file";
+  //   { unreachable: true } — the request itself failed (offline, dropped
+  //       connection), so we learned nothing new about the file.
+  // cache: "no-cache" lets the browser revalidate its saved copy (a cheap
+  // "not modified" when nothing changed). Never a ?query cache-buster:
+  // GitHub's edge ignores query strings.
+  async function fetchAvailability() {
+    try {
+      const res = await fetch("availability.json", { cache: "no-cache" });
+      if (!res.ok) return { file: null };
+      return { file: parseAvailability(await res.arrayBuffer()) };
+    } catch (e) {
+      // fetch() or reading the body failed: a network problem, not an answer.
+      return { unreachable: true };
+    }
+  }
+
+  // True when two parsed files would show exactly the same tags and summary.
+  function sameAvailabilityFile(a, b) {
+    if (a === null || b === null) return a === b;
+    if (a.keySet !== b.keySet || a.asOf !== b.asOf || a.out.size !== b.out.size) return false;
+    for (const key of a.out) {
+      if (!b.out.has(key)) return false;
+    }
+    return true;
+  }
+
+  // Loads (or re-loads) availability.json and updates the page.
+  //  - A missing or ignored file drops the previous one: the inline tags
+  //    from books.json are shown again.
+  //  - A network error keeps whatever we had — nothing, on the first load.
+  //  - Only a changed file rebuilds the list. An unchanged re-check (the
+  //    usual case, every minute) refreshes just the summary line, so the
+  //    list does not flicker and a visitor's text selection survives.
+  async function checkAvailability() {
+    const check = ++availabilityChecks;
+    const answer = await fetchAvailability();
+    // A slow, older request must never overwrite a newer answer.
+    if (check !== availabilityChecks) return;
+    if (answer.unreachable) return;
+    const changed = !sameAvailabilityFile(availabilityFile, answer.file);
+    availabilityFile = answer.file;
+    if (changed) render();
+    else if (catalogueLoaded && !loadError) renderAvailabilitySummary();
   }
 
   // Populate the language facet dropdown from the loaded data.
@@ -393,10 +678,13 @@
     AGE_0_5: "Above 3", AGE_6_10: "Above 6", AGE_11_16: "Above 10", ADVANCE: "Advanced",
   };
 
-  // Coarse availability badge (v4). Only "available" / "out" (or nothing).
+  // Coarse availability badge (v4; v8 labels and rule): "Available" /
+  // "Not available", or nothing. The tag comes from availabilityTag(), the
+  // one per-item rule.
   function availBadge(b) {
-    if (b.availability === "available") return ` <span class="avail avail-available">Available</span>`;
-    if (b.availability === "out") return ` <span class="avail avail-out">All out</span>`;
+    const tag = availabilityTag(b);
+    if (tag === "available") return ` <span class="avail avail-available">Available</span>`;
+    if (tag === "out") return ` <span class="avail avail-out">Not available</span>`;
     return "";
   }
 
@@ -431,6 +719,8 @@
     const kindSel = kindEl.value;
     let out = books.slice();
     if (kindSel) out = out.filter((b) => (b.kind || "book") === kindSel);
+    // v8 "Available now": only items the visitor could borrow right now.
+    if (availNowEl.checked) out = out.filter((b) => availabilityTag(b) === "available");
     if (languageSel) out = out.filter((b) => (b.language || "").toLowerCase() === languageSel);
     if (needle) {
       out = out.filter((b) => {
@@ -507,9 +797,11 @@
   }
 
   function render() {
-    if (loadError) return;
+    if (loadError || !catalogueLoaded) return;
+    renderAvailabilitySummary();
     const filtered = filterAndSort();
-    meta.textContent = `${filtered.length} of ${books.length} item${books.length === 1 ? "" : "s"}`;
+    meta.textContent = `${filtered.length} of ${books.length} item${books.length === 1 ? "" : "s"}` +
+      (newerSchema ? " · This file was created by a newer Pitak. Re-publish from your phone to update the viewer." : "");
     if (filtered.length === 0) {
       root.innerHTML = '<div class="empty">No matches.</div>';
       return;
@@ -608,7 +900,25 @@
     return html + `</div>`;
   }
 
+  // ---- Start ----
+  // v8: books.json and availability.json are requested at the same time.
+  // The catalogue renders as soon as books.json arrives; the availability
+  // answer re-renders when (and if) it changes anything. Neither waits for
+  // the other, and fetchAvailability() turns every network or file problem
+  // into a plain answer, so an availability problem can never stop the
+  // catalogue.
   load();
+  checkAvailability();
+  // Re-check once a minute, but only while somebody can see the page: a
+  // hidden tab makes no requests at all.
+  setInterval(() => {
+    if (document.visibilityState === "visible") checkAvailability();
+  }, AVAILABILITY_RECHECK_MS);
+  // Coming back to the tab re-checks at once instead of waiting for the
+  // next minute.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") checkAvailability();
+  });
 </script>
 </body>
 </html>
