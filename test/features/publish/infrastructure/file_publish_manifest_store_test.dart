@@ -62,6 +62,25 @@ void main() {
     expect(loaded.fileShas, isEmpty);
   });
 
+  test('a field of the wrong type loads instead of escaping as a TypeError '
+      '(plan J16)', () {
+    File(p.join(dir.path, 'publish_manifest.json'))
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        jsonEncode({
+          'schema': 2,
+          'repo': 'me/lib',
+          'branch': 'main',
+          'ownershipConfirmed': 'yes',
+          'fileShas': {'books.json': 'sha'},
+        }),
+      );
+
+    final loaded = store().load();
+    expect(loaded.repo, 'me/lib');
+    expect(loaded.ownershipConfirmed, isFalse);
+  });
+
   test('a schema-1 file on disk still loads (upgrade path)', () {
     File(p.join(dir.path, 'publish_manifest.json'))
       ..parent.createSync(recursive: true)

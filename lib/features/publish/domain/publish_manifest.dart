@@ -117,8 +117,14 @@ final class PublishManifest implements PreviousPublication {
       repo: str(json['repo']),
       branch: str(json['branch']),
       headSha: unknownHead ? null : str(json['headSha']),
-      ownershipConfirmed:
-          json['ownershipConfirmed'] as bool? ?? fileShas.isNotEmpty,
+      // Absent = a legacy record (its paths are ours by construction); a
+      // value of another type is damage, read as "not confirmed" (fewer
+      // deletions allowed, R13) instead of a cast that throws (plan J16).
+      ownershipConfirmed: switch (json['ownershipConfirmed']) {
+        final bool stored => stored,
+        null => fileShas.isNotEmpty,
+        _ => false,
+      },
       state: state,
       fileShas: fileShas,
       coverUrlByBookId: strMap(json['coverUrlByBookId']),

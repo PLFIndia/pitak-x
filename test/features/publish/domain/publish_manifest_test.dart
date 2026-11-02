@@ -98,6 +98,28 @@ void main() {
       expect(decoded.fileShas, isEmpty);
     });
 
+    test('a damaged ownershipConfirmed reads as NOT confirmed instead of '
+        'throwing (plan J16)', () {
+      for (final damaged in <Object>[
+        'true',
+        1,
+        <String>[],
+        <String, Object>{},
+      ]) {
+        final decoded = PublishManifest.fromJson({
+          'schema': 2,
+          'repo': 'me/lib',
+          'branch': 'main',
+          'ownershipConfirmed': damaged,
+          'fileShas': {'books.json': 'sha-1'},
+        });
+        // Fail closed: not confirmed means no deletions until the next commit
+        // writes the paths again (R13).
+        expect(decoded.ownershipConfirmed, isFalse, reason: '$damaged');
+        expect(decoded.fileShas, {'books.json': 'sha-1'});
+      }
+    });
+
     test('odd shapes degrade to empty maps instead of throwing', () {
       final decoded = PublishManifest.fromJson({
         'repo': 7,
