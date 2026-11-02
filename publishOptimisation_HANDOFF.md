@@ -1,4 +1,4 @@
-# Publish optimisation — handoff (S4 complete, 2026-11-02)
+# Publish optimisation — handoff (S5 complete, 2026-11-02)
 
 **Branch:** `publishOptimisation` (from `03313a3`, release 1.9.0+32).
 **Plan:** `publishOptimisation_PLAN.md` (product decisions A.3, engineering decisions A.4, deviations A.6, measurements Appendix A).
@@ -10,12 +10,14 @@ S3 — Writer — **complete** (§S3), started on the product owner's go-ahead
 ("go ahead for next session", 2026-11-02).
 S4 — GitHub path — **complete** (§S4), started on the product owner's
 go-ahead ("go ahead for next session", 2026-11-02, the same words as for S3).
-**S5 (Cloudflare path) has NOT started. Do not start it until the product
-owner explicitly says so** (§6 is the prepared checklist).
+S5 — Cloudflare path — **complete** (§S5), started on the product owner's
+go-ahead ("go ahead for next session", 2026-11-02, the same words again).
+**S6 (lane and UI) has NOT started. Do not start it until the product owner
+explicitly says so** (§6 is the prepared checklist).
 
-> Read this file first in any new session. §S4 is the newest state, then §S3,
-> §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the verbatim
-> lines in §3), kept unchanged.
+> Read this file first in any new session. §S5 is the newest state, then §S4,
+> §S3, §S2 and §0 (S1). §1–§5 are the S0 record (plan Appendix A cites the
+> verbatim lines in §3), kept unchanged.
 
 > **Standing product decision P8 — public by design (product owner,
 > 2026-11-01).** Pitak is for **public libraries** whose catalogues exist for
@@ -25,6 +27,152 @@ owner explicitly says so** (§6 is the prepared checklist).
 > settled and needs no new review: borrower names and loan details (P1, in the
 > vault) and credentials and tokens (security, `AGENTS.md` §6). `PRIVACY.md`
 > only has to state accurately what is uploaded (a store requirement).
+
+---
+
+## S5 — Cloudflare path (code; no change visible on published sites)
+
+**What changed for users:** nothing visible. The Cloudflare half of the lane
+exists and is proven against the fake API, but nothing in the app calls it
+yet: the lane (S6) will. The ordinary catalogue/events publish behaves
+exactly as before (its whole suite passes unchanged); its first steps now
+live in a shared collaborator.
+
+**What the code does now:**
+
+- **`PublishAvailabilityToCloudflareUseCase`**
+  (`application/cloudflare/publish_availability_to_cloudflare_use_case.dart`,
+  A.6 #50). Input `AvailabilityUpdate`, output `AvailabilityPublishResult`.
+  Its own small use case (like GitHub's), over the SAME collaborators as the
+  ordinary publish. It has no `PublishReads`, no snapshot builder and no
+  replacement preparation, so it cannot read the library or start a review.
+- **The shared start** (`application/cloudflare/cloudflare_publish_start.dart`,
+  A.6 #50): `CloudflarePublishStarter.connectionFor(target)` (stored
+  connection for exactly this target: C3) and `.establish(...)` (record,
+  read-only preflight, L4 promotion) → `CloudflarePublishStart(local,
+  previousTarget, initial)`. Both Cloudflare use cases call it. The ordinary
+  use case went from 478 to 461 lines; its timing marks are unchanged.
+- **Gate order on Cloudflare** (A.6 #54): (1) removal with nothing recorded
+  → `AlreadyPublished`; (2) write and record not keyed (incl. no record for
+  this target) → `NotReady(catalogueNotKeyed)`; (3) freshness ≠ `known`
+  (foreign/unreadable/retired marker, missing Worker) → `Pending(repairSite)`,
+  for writes AND removals (a Cloudflare deploy is a complete version built
+  from this phone's record, so a removal over someone else's version would
+  be an unreviewed replacement); (4) the shared existing-publication check
+  (contradicted → `Pending(repairSite)`; its failures → `Pending(reason)`);
+  (5) section unchanged (`PublishSection.changesSite`) → `AlreadyPublished`.
+- **Exactly two files.** `PublishSnapshot.availabilityOnly(section)` goes
+  through the assembler with `onlySection: SiteSection.availability`; every
+  other file is carried by its recorded hash. A carried hash that is not
+  trusted (`requiresCompleteSnapshot`) → `Pending(repairSite)`.
+- **The pipeline** (`cloudflare_deploy_pipeline.dart`, A.6 #52) no longer
+  depends on the replacement preparation, `PublishReads` or `PublishInputs`.
+  The caller passes `readBack` (scope), `resultUrl` and `onLocalBytesMissing`
+  (ordinary: the reviewed replacement as before; a replacement:
+  `CloudflarePublishOutcomes.missingRequestedHash`, the exact old words; the
+  lane: `repairSite`). Every gate is unchanged and runs for the lane too.
+- **Read-back** (A.6 #53): `CloudflareReadBackScope { ordinary,
+  availabilityOnly }` in the verifier. The lane reads the fresh marker (exact
+  bytes) plus `availability.json` (its sha, or its exact 404 after a
+  removal); a deploy that neither wrote nor removed it proves nothing.
+  `CloudflareReadBackBudget.afterAvailabilityDeploy` = `afterDeploy` with
+  `immediateFirstRound: true` (12 rounds × 5 s in 90 s, round one at once).
+  Earlier records are always checked against the ordinary set.
+- **Outcomes** (A.6 #55, `availability_publish_result.dart`): new
+  `AvailabilityLive(acceptedAt, localStateSaved)` = deployed and read back.
+  Read-back out of budget → `AvailabilityGoingLive(verification: null)`, the
+  record stays `deployed` (no deferred check on Cloudflare; the next
+  publish's existing-publication check proves it). Any failure, including
+  after the deploy was accepted → `AvailabilityPending(reason)` with the
+  existing truthful sentence; the retry re-proves the earlier deploy first,
+  so a landed set then reads `AlreadyPublished` (pinned by the lane's L4
+  test). New sentence `AvailabilityPublishMessages.repairSite` ("Open Publish
+  to web to repair the site."; S8 sets final words). `acceptedAt` = the
+  marker time. A spool-cleanup failure does not change the outcome (debug
+  log; the next sweep removes it). Timings under `cloudflareAvailability`.
+- **Small shared rules** (A.6 #56): `PublishSection.changesSite` (the GitHub
+  availability use case now uses it too); `CloudflarePublishOutcomes.thrown`
+  is typed `PublishFailure`.
+- **`PublishRequestedSection.availability` was NOT added** (A.6 #51): with
+  the lane as its own use case nothing would produce it, and the ordinary
+  `onlySection` mapping would have treated it as `events`.
+- **Docs:** plan status line, A.6 #50–#57, C.6 pointer, C.11 file map; ADR
+  0019 Decision 11 gains the S5 clarification (removal needs the marker
+  check; never a replacement by construction; no deferred check).
+
+**Test fake fix found in S5 (A.6 #57):** `FakeCloudflareApi.onDeployAttempt`
+was documented but never called, so the ordinary L4 test "a landed deploy
+whose response was lost is recognised next time" never served the landed
+deploy. The fake now calls it; that test still passes and now really
+exercises the promotion.
+
+**Tests added or extended:** `publish_availability_to_cloudflare_use_case_test.dart`
+(new, 39 tests: exactly two files sent and a complete version; deployed →
+live, keyed kept; read-back reads only the marker and the file with no wait
+before round one; unchanged / changed / empty sets; read-back out of budget
+(11 waits of 5 s); record save failure; spool cleanup failure; gate 7b (not
+keyed, fresh phone, record for another Worker); never a replacement (foreign,
+retired, unreadable marker, missing Worker, contradicted record, missing
+bytes, untrusted hashes, removal over a foreign version), each asserting no
+library read; every gate (Version URLs before and after, Version-URL
+failure, stale anchor, unrecordable attempt, L4 lost response then
+`AlreadyPublished`, an unproven earlier deploy proven first, an unreachable
+one not blocking, a privacy failure in the check); removals (two files → one
+file, 404 proven, no gate 7b, nothing recorded); fixed-sentence failures (not
+connected, unreadable, target mismatch, offline, assembler refusal, thrown
+upload); timings; end to end catalogue → lane write → lane removal).
+Extended: `cloudflare_publication_verifier_test.dart` (availability-only
+scope, immediate first round), `cloudflare_publish_outcomes_test.dart`
+(`missingRequestedHash`; casts removed). New domain tests:
+`publish_snapshot_test.dart` (`availabilityOnly`, `changesSite`) and
+`cloudflare/cloudflare_read_back_budget_test.dart`. The S8 harness
+(`cloudflare_s8_fakes.dart`) gained `availabilityUseCase`, `nextPublishId`,
+`readBackWaits` and `RecordingArtifactStore.failDispose` (defaults keep every
+older test unchanged).
+
+**Gates at the end of S5 (2026-11-02, macOS, Flutter 3.44.2 via
+`.fvm/flutter_sdk`; the `flutter` on PATH is 3.41.1 and cannot resolve the
+pubspec):**
+
+- build_runner: no diff (no provider changed; S6 wires the use case).
+- `flutter analyze lib test integration_test`: no issues.
+- `dart format --set-exit-if-changed lib test integration_test`: 0 changed.
+- `flutter test --coverage`: **4,936 passed** (S4 ended at 4,880). The 10
+  failures are the same 10 macOS goldens in `test/golden/key_screens_test.dart`; a clean
+  worktree of `c50d8fe` (the S4 head) fails exactly the same 10 (checked by
+  name). Goldens are regenerated only by the Linux workflow.
+- Line coverage: `cloudflare_publish_start.dart`,
+  `availability_publish_result.dart`, `cloudflare_limits.dart`,
+  `publish_section.dart`, `publish_snapshot.dart` 100 %;
+  `publish_availability_to_cloudflare_use_case.dart` 97.5 % (the two misses
+  are fail-closed branches that cannot be reached: a verification-only
+  "finished" and a replacement review from the lane's own missing-bytes
+  policy); `cloudflare_publication_verifier.dart` 98.9 %;
+  `cloudflare_deploy_pipeline.dart` 93.7 %, `publish_to_cloudflare_use_case.dart`
+  90.2 %, `cloudflare_publish_outcomes.dart` 85.9 %: every missed line there
+  predates S5.
+- File sizes ≤ 500 (largest touched: `publish_to_cloudflare_use_case.dart`
+  at 461).
+- Rust untouched.
+
+**For S6, from S5 (do not lose these):**
+
+- Wire `PublishAvailabilityToCloudflareUseCase` in the planned
+  `core/di/src/availability_providers.dart` from the existing Cloudflare
+  providers (`cloudflareApiProvider`, `cloudflareCredentialStoreProvider`,
+  `cloudflareManifestStoreProvider`, `cloudflarePublishPreflightReaderProvider`,
+  `cloudflarePublishMarkerProbeProvider`, `cloudflareArtifactStoresProvider`,
+  `publishMarkerCodecProvider`, `cloudflarePublicationVerifierProvider`,
+  `cloudflareVerifiedStateCommitProvider`, `clockProvider`,
+  `publishTimingSinkProvider`). Resolve the target inside the queue with
+  `ActivePublishTargetResolver` (gates a and c), like GitHub.
+- `AvailabilityLive` and `AvailabilityGoingLive` both mean "save the set as
+  published". Only GitHub's `GoingLive` carries a deferred-check request;
+  on Cloudflare `verification` is always null.
+- `Pending(repairSite)` is a Pending (AV11 backoff) per the ADR, but no
+  retry can fix it without the user: S6 may want the status row to keep the
+  sentence and the backoff to stay at its 10-minute ceiling. Decide in S6.
+- Cloudflare's lane does not count towards any budget (AV6: debounce only).
 
 ---
 
@@ -567,35 +715,47 @@ throwaway repo.
 
 ---
 
-## 6. Next: S5 (Cloudflare) — on hold until the product owner says go
+## 6. Next: S6 (lane and UI) — on hold until the product owner says go
 
-S4 (GitHub) is done; §S4 records how each checklist item landed. S5 depends
-only on S3 and may start on the product owner's go-ahead. S6 needs both.
+S5 (Cloudflare) is done; §S5 records how its checklist landed (the old S5
+checklist is superseded by plan A.6 #50–#55). S6 needs S4 and S5, both done,
+and starts only on the product owner's go-ahead.
 
-**S5 — Cloudflare path (plan C.6).**
+**S6 — Lane and UI (plan C.4 and C.8; tests per the C.11 "Lane" row).** The
+lane works fully in tests and is **not started** in the app (S8 starts it in
+`main.dart` together with the guide copy, AV16).
 
-- An availability-only snapshot is `PublishSnapshot(availability: section)`
-  assembled with `onlySection: SiteSection.availability`. The S3 assembler
-  already accepts it, carries every other file by its recorded hash and keeps
-  `catalogueKeyed` (the events-deploy test proves the carry rule).
-- Section inputs go into the new `cloudflare_section_inputs.dart`:
-  `publish_to_cloudflare_use_case.dart` is at 478.
-- `CloudflareReadBackScope.availabilityOnly`: the fresh marker plus
-  `availability.json` (or its 404), first round immediately. The ordinary set
-  already includes `availability.json` since S3 (A.6 #36).
-- **The lane never replaces a site.** Today a missing bucket hash makes the
-  use case return `PublishReplacementRequired` (`prepareResult`). The
-  availability path must map that, and an unknown, foreign or retired marker,
-  to "pending: Open Publish to web to repair the site" without calling the
-  replacement preparation.
-- Gate 7b on Cloudflare: the live marker is this phone's own and the record
-  has `catalogueKeyed`. As on GitHub (A.6 #47), a removal needs no gate 7b.
-- Add `PublishRequestedSection.availability` here (A.6 #46), and the
-  Cloudflare "verified live" outcome to
-  `application/availability/availability_publish_result.dart` (the GitHub
-  outcomes are already there). Take the input as `AvailabilityUpdate`.
+- `AvailabilityAutoPublisher`
+  (`application/availability/availability_auto_publisher.dart`):
+  `@Riverpod(keepAlive: true)` with the comment that justifies keepAlive
+  (timers and pending state outlive any screen), and an immutable
+  `AvailabilityLaneStatus` (the C.4 table: off, notReady, scheduled,
+  publishing, goingLive, upToDate, pending). Time and timers through
+  injected ports (G7); pacing through the S2 `AvailabilityPacing`.
+- `PrefsAvailabilityLaneStore` (infrastructure, one versioned
+  SharedPreferences key) implementing the S2 port with
+  `AvailabilityLaneState.decode` (absent vs unreadable; a damaged store never
+  yields an empty list).
+- `core/di/src/availability_providers.dart`: the GitHub
+  `PublishAvailabilityUseCase` with one `DeferredPublishVerification` per
+  lane instance (cancelled in `ref.onDispose`), the Cloudflare
+  `PublishAvailabilityToCloudflareUseCase` (the provider list is in §S5 "For
+  S6"), the store, and the keys.
+- `AppSettings.autoPublishAvailability` (default true; an absent key reads
+  true) in `PrefsSettingsRepository`; Settings → Data gains the "Publishing"
+  group in the new `settings/presentation/widgets/publishing_settings_group.dart`
+  (`settings_page.dart` is at 493 lines).
+- Publish → Connection: `availability_status_row.dart` with **Update
+  availability now**; the one-time notice; `AvailabilityLifecycleRelay`
+  written but not placed in `main.dart` until S8.
+- Tests: null counts never publish; lending a second copy publishes nothing;
+  the vault locks before the timer → the saved set is still published;
+  switch off → exactly one removal and the store is cleared once it is
+  published; a damaged store never yields an empty list; gates; status
+  mapping for all five outcomes; widget tests for the switch and the status
+  row in light and dark; `fake_async`, `ProviderContainer` overrides only.
 
-**For S6 (do not lose these):**
+**For S6 (carried; do not lose these):**
 
 - `PublishController.availability()` must read the switch and return
   `AvailabilityFromLoanCounts` when the lane is on (it returns
@@ -608,6 +768,10 @@ only on S3 and may start on the product owner's go-ahead. S6 needs both.
 - **J9** (restore of another library) needs its decision before S6's gates.
 - The four S4 items in §S4 "For S6" (wiring, the GitHub budget, not-ready vs
   pending, and the removal when gate 7b fails while the file is live).
+- The four S5 items in §S5 "For S6" (wiring, Live vs GoingLive, how to treat
+  `Pending(repairSite)`, no Cloudflare budget).
+- Run the gates with the pinned SDK: `export PATH="$PWD/.fvm/flutter_sdk/bin:$PATH"`
+  (the `flutter` on PATH is 3.41.1; the pubspec needs 3.44.2).
 
 Every gate in `AGENTS.md` §11 must be green at the end (CI runs
 `flutter analyze lib test integration_test`; a bare `dart analyze` also scans

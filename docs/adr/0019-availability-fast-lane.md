@@ -265,6 +265,19 @@ rebuilding the catalogue.** That automatic publisher is called the **lane**.
     - **API budget:** one publish makes about 20–25 calls. The 20 s debounce
       allows at most 15 publishes per 5 minutes (≈ 375 calls), well under the
       1,200 limit.
+    - *Clarification (S5, plan A.6 #50–#55):* a **removal** also needs the
+      live marker to be this phone's own. It needs no gate b (Decision 7),
+      but every Cloudflare deploy is a complete version built from this
+      phone's record, so deploying over a site this phone did not publish
+      last would be a whole-site replacement nobody reviewed. A removal with
+      nothing recorded sends nothing. The lane's publish is its own small use
+      case over the shared start, existing-publication check, assembler and
+      deploy pipeline; the pipeline no longer knows how to prepare a
+      replacement (its caller says what missing bytes mean), so "never a
+      replacement" holds by construction. A deploy whose read-back proves it
+      is reported live; one whose read-back runs out stays `deployed` and is
+      read back by the next publish (there is no deferred check on
+      Cloudflare).
 
 12. **Moves and retirement (AV18).** When the lane is on, a complete snapshot
     includes `availability.json` from the saved snapshot. Retirement deletes it
