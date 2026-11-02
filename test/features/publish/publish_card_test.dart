@@ -7,17 +7,23 @@ import 'package:fpdart/fpdart.dart';
 import 'package:pitaka/core/error/failure.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/deferred_publish_verification.dart';
 import 'package:pitaka/features/publish/application/site/move_site_controller.dart';
 import 'package:pitaka/features/publish/application/site/move_site_result.dart';
+import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
+import 'package:pitaka/features/publish/domain/publish_manifest.dart';
+import 'package:pitaka/features/publish/domain/publish_target.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/presentation/widgets/publish_card.dart';
 
 import 'support/cloudflare_fakes.dart';
+import 'support/going_live_fakes.dart';
 import 'support/move_fakes.dart';
 
 final class _FakePublishController extends PublishController {
@@ -100,6 +106,7 @@ void main() {
     PublishController controller, {
     PublishSiteStatus? site,
     PublishJournalReset? reset,
+    PublishGoingLive? goingLive,
   }) async {
     tester.view.physicalSize = const Size(500, 1400);
     tester.view.devicePixelRatio = 1.0;
@@ -111,6 +118,8 @@ void main() {
           publishControllerProvider.overrideWith(() => controller),
           if (reset != null)
             publishJournalResetProvider.overrideWith(() => reset),
+          if (goingLive != null)
+            publishGoingLiveProvider.overrideWith(() => goingLive),
         ],
         child: const MaterialApp(home: Scaffold(body: PublishCard())),
       ),
@@ -147,6 +156,73 @@ void main() {
     expect(controller.calls, hasLength(1));
     expect(controller.calls.single.verificationOnly, isFalse);
     expect(find.text('Published! Your site is verified live.'), findsOneWidget);
+  });
+
+  testWidgets('plan SP1: a GitHub publish answers at commit time and its line '
+      'follows the deferred check (product owner, 2026-11-02)', (tester) async {
+    final gitHub = GitHubPublishTarget.create('me/lib')!;
+    final request = DeferredVerificationRequest.forRecord(
+      target: gitHub,
+      record: const PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'NEWCOMMIT',
+        fileShas: {'books.json': 'b1'},
+        proofPath: PublishProofPath.booksJson,
+        committedAt: 1000,
+      ),
+      revision: 1000,
+    )!;
+    final goingLive = RecordingPublishGoingLive();
+    await pump(
+      tester,
+      _FakePublishController([
+        PublishSuccess(
+          pagesUrl: gitHub.siteUrl,
+          uploadedPaths: const ['books.json'],
+          verification: request,
+        ),
+      ]),
+      site: PublishSiteStatus(
+        activeHost: PublishHost.github,
+        target: gitHub,
+        verifiedSiteUrl: null,
+        setupMessage: null,
+      ),
+      goingLive: goingLive,
+    );
+
+    await tester.tap(find.text('Publish catalogue now'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Published — going live (usually within a minute).'),
+      findsOneWidget,
+    );
+    // The button is free again at once: publishing again is allowed.
+    expect(
+      tester
+          .widget<FilledButton>(
+            find.widgetWithText(FilledButton, 'Publish catalogue now'),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    // GitHub never offers the Cloudflare-only deploy-free retry.
+    expect(find.text('Retry verification'), findsNothing);
+
+    goingLive.finish(request, DeferredVerificationOutcome.notProven);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Published! The commit is pushed — the site can take a minute to '
+        'update.',
+      ),
+      findsOneWidget,
+    );
+
+    goingLive.finish(request, DeferredVerificationOutcome.live);
+    await tester.pumpAndSettle();
+    expect(find.text('Published! Your site is live.'), findsOneWidget);
   });
 
   testWidgets('replacement cancel performs no confirmation or remote command', (

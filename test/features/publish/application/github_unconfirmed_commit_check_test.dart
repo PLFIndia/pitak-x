@@ -20,18 +20,24 @@ void main() {
   final books = utf8.encode('{"books":[]}');
   final events = utf8.encode('{"posters":[]}');
 
-  PublishManifest unconfirmed({PublishProofPath? proof}) => PublishManifest(
-    repo: 'me/lib',
-    branch: 'main',
-    headSha: 'HEAD',
-    fileShas: {'books.json': laneSha(books), 'events.json': laneSha(events)},
-    proofPath: proof,
-  );
+  PublishManifest unconfirmed({PublishProofPath? proof, int? committedAt}) =>
+      PublishManifest(
+        repo: 'me/lib',
+        branch: 'main',
+        headSha: 'HEAD',
+        fileShas: {
+          'books.json': laneSha(books),
+          'events.json': laneSha(events),
+        },
+        proofPath: proof,
+        committedAt: committedAt,
+      );
 
   Future<(PublishVerificationOutcome, LaneMemManifest, LaneRecorder)> run({
     required PublishManifest local,
     required LaneSite? site,
     PublishProofPath legacyProof = PublishProofPath.booksJson,
+    int now = 1700000000000,
   }) async {
     final manifest = LaneMemManifest(local);
     final recorder = LaneRecorder();
@@ -52,6 +58,7 @@ void main() {
           target: target,
           legacyProof: legacyProof,
           revision: 1,
+          now: now,
         );
     return (outcome, manifest, recorder);
   }
@@ -103,6 +110,35 @@ void main() {
     expect(manifest.saves, isEmpty);
     expect(recorder.recorded, isEmpty);
   });
+
+  test('plan SP1: other bytes while the recorded commit is still inside its '
+      'Pages build window are stillBuilding and write nothing', () async {
+    final (outcome, manifest, recorder) = await run(
+      local: unconfirmed(
+        proof: PublishProofPath.booksJson,
+        committedAt: 1700000000000 - 30000,
+      ),
+      site: LaneSite((_, _) => laneBody(utf8.encode('previous books'))),
+    );
+    expect(outcome, PublishVerificationOutcome.stillBuilding);
+    expect(manifest.saves, isEmpty);
+    expect(recorder.recorded, isEmpty);
+  });
+
+  test(
+    'plan SP1: after the window the same answer is a contradiction',
+    () async {
+      final (outcome, _, _) = await run(
+        local: unconfirmed(
+          proof: PublishProofPath.booksJson,
+          committedAt:
+              1700000000000 - const Duration(minutes: 10).inMilliseconds,
+        ),
+        site: LaneSite((_, _) => laneBody(utf8.encode('previous books'))),
+      );
+      expect(outcome, PublishVerificationOutcome.contradicted);
+    },
+  );
 
   test('a removal proof is matched by a 404 (no hash needed)', () async {
     final local = PublishManifest(

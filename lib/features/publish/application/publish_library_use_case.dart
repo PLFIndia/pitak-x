@@ -19,9 +19,15 @@
 ///     paths are replaced, the events section survives.
 ///  5. Commit the changed file set + exact owned deletions, passing the head
 ///     read in step 2 as `expectedHead` (a change made meanwhile is reported,
-///     never overwritten), persist the record, then read the live site back
-///     (bounded) and record the result. The commit's `GitHubCommitPlan` sends
-///     only bytes the branch does not already hold (CV5).
+///     never overwritten), and persist the record as `deployed`. The commit's
+///     `GitHubCommitPlan` sends only bytes the branch does not already hold
+///     (CV5).
+///  6. Return at once (plan SP1, ADR 0017 amendment of 2026-11-02). GitHub
+///     Pages needs 36–42 s to rebuild the site; that wait no longer holds the
+///     publish queue or the Publish button. The result carries a
+///     `DeferredVerificationRequest`, and the controller proves the commit
+///     live after the queue is released (`PublishGoingLive`). Nothing says
+///     "live", and the share address is not recorded, before that proof.
 ///
 /// Cover images are downscaled by the injected local-cover reader
 /// (`ImageDownscaler`, 400×600 q80 — the single image choke point), so a
@@ -34,11 +40,11 @@ import 'package:pitaka/features/publish/application/github_publication_reconcile
 import 'package:pitaka/features/publish/application/github_unconfirmed_commit_check.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/deferred_verification_request.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
-import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
 import 'package:pitaka/features/publish/domain/github_error_messages.dart';
@@ -53,7 +59,8 @@ import 'package:pitaka/features/publish/domain/site/section_merge.dart';
 
 export 'publish_result.dart';
 
-/// Coarse publish phases for the UI.
+/// Coarse publish phases for the UI. There is no "waiting for Pages" phase
+/// since plan SP1: the publish ends with the commit.
 enum PublishPhase {
   /// Building books.json / viewer, deciding what changed.
   preparing,
@@ -63,9 +70,6 @@ enum PublishPhase {
 
   /// Tree + commit + ref move.
   committing,
-
-  /// Waiting for the live site to serve the new content (bounded).
-  pagesBuilding,
 }
 
 /// Orchestrates a single publish run.
@@ -78,7 +82,6 @@ final class PublishLibraryUseCase {
     required PublishSnapshotBuilder snapshotBuilder,
     required PublishReads reads,
     required PublishHostStateRecorder hostState,
-    PublishedSiteVerifier? verifier,
     PublishedSiteReadVerifier? reader,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
@@ -88,15 +91,12 @@ final class PublishLibraryUseCase {
        _manifest = manifest,
        _snapshotBuilder = snapshotBuilder,
        _reads = reads,
-       _hostState = hostState,
-       _verifier = verifier,
        _unconfirmed = GitHubUnconfirmedCommitCheck(
          reader: reader,
          manifest: manifest,
          hostState: hostState,
          sleep: sleep ?? Future<void>.delayed,
        ),
-       _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
        _timingSink = timingSink;
 
@@ -113,17 +113,11 @@ final class PublishLibraryUseCase {
   /// Strict typed reads the snapshot is built from (R2).
   final PublishReads _reads;
 
-  /// Records the verified live target after a read-back proves it (R33). The
-  /// share/QR address never comes from this publish's own manifest.
-  final PublishHostStateRecorder _hostState;
-
-  /// Null ⇒ read-back skipped (tests / no network port wired).
-  final PublishedSiteVerifier? _verifier;
-
   /// The pre-publish check of this phone's unconfirmed commit, read through
-  /// the proof that commit recorded (ADR 0019 Decision 10).
+  /// the proof that commit recorded (ADR 0019 Decision 10). It is also the
+  /// only place this use case may record the verified address (R33): after
+  /// it proves an EARLIER commit live.
   final GitHubUnconfirmedCommitCheck _unconfirmed;
-  final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
   /// Publish-timings sink (plan S0). Null in every normal build, so no stage
@@ -137,9 +131,9 @@ final class PublishLibraryUseCase {
   /// Runs the publish to [target].
   ///
   /// [target] is the EXACT destination of this operation (R1/C3). It is the
-  /// only source of the site URL — for the descriptor, the read-back and the
-  /// success message — so a move can publish the new site while the old one is
-  /// still the active host.
+  /// only source of the site URL — for the descriptor, the deferred check and
+  /// the success message — so a move can publish the new site while the old
+  /// one is still the active host.
   ///
   /// Phase 1 reads every input strictly through [_reads]. It runs FIRST, so a
   /// library that cannot be read fails before a token is fetched, before the
@@ -214,8 +208,8 @@ final class PublishLibraryUseCase {
     final token = await _credentials.token();
     if (token == null) return const PublishFailure('Not signed in to GitHub.');
     // The target carries the address (derived, never supplied): no second
-    // derivation here, so the descriptor, the commit and the read-back can
-    // never disagree about where this publish goes.
+    // derivation here, so the descriptor, the commit and the deferred check
+    // can never disagree about where this publish goes.
     final owner = target.owner;
     final repo = target.repo;
     final pagesUrl = target.siteUrl;
@@ -264,6 +258,7 @@ final class PublishLibraryUseCase {
       target: target,
       legacyProof: PublishProofPath.booksJson,
       revision: now,
+      now: now,
     );
     timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
     if (verification == PublishVerificationOutcome.contradicted) {
@@ -345,9 +340,9 @@ final class PublishLibraryUseCase {
         // written; the next publish starts from their newest state.
         return const PublishFailure(gitHubStalePublishMessage);
       case PublishCommitSuccess(:final uploadedPaths, :final commitSha):
-        // R5/R9: persist the commit AS `deployed` before spending a minute on
-        // read-back, so a crash here is recoverable instead of "unknown". A
-        // failed save is reported, never swallowed: the site IS updated.
+        // R5/R9: persist the commit AS `deployed`: accepted, not yet seen
+        // live. A failed save is reported, never swallowed: the site IS
+        // updated.
         final committed = previous.afterCommit(
           commitSha: commitSha,
           mergedShas: merge.fileShas,
@@ -359,49 +354,27 @@ final class PublishLibraryUseCase {
           // Every catalogue commit changes books.json (`exportedAt`), so that
           // file proves it, also when availability.json rode along.
           proofPath: PublishProofPath.booksJson,
+          // The clock AFTER the commit: a paced upload can take minutes, and
+          // the Pages build window starts now (plan SP1).
+          committedAt: _clock(),
         );
-        var localStateSaved = _manifest.save(committed).isRight();
-
-        phase(PublishPhase.pagesBuilding);
-        // Bounded read-back: poll the LIVE books.json with a cache-buster
-        // until it serves exactly the bytes just published.
-        final booksJson = merge.files
-            .firstWhere((f) => f.path == CatalogueSectionBuilder.booksJsonPath)
-            .bytes;
-        final readBackStartedAt = timings.begin();
-        var readBackRounds = 0;
-        final pagesLive = await _readBack(
-          siteUrl: pagesUrl,
-          path: CatalogueSectionBuilder.booksJsonPath,
-          expected: booksJson,
-          revision: now,
-          onRound: timings.enabled ? (round) => readBackRounds = round : null,
-        );
-        timings.end(
-          PublishTimingStage.readBack,
-          readBackStartedAt,
-          rounds: timings.enabled ? readBackRounds : null,
-        );
-        if (pagesLive ?? false) {
-          // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). If the live
-          // upgrade succeeds it supersedes any earlier `deployed`-save failure;
-          // if it fails, the journal must not advance and the partial outcome
-          // remains visible. A journal failure after a successful live save is
-          // also reported rather than hidden behind "Published!".
-          final liveSaved = _manifest.save(committed.asLive()).isRight();
-          localStateSaved = liveSaved;
-          if (liveSaved) {
-            localStateSaved = (await _hostState.recordVerified(
-              target,
-            )).isRight();
-          }
-        }
+        final localStateSaved = _manifest.save(committed).isRight();
+        // Plan SP1: no waiting for Pages here. The deferred check proves the
+        // commit after the queue is released; without a saved record there
+        // is nothing it could upgrade, and the next publish's pre-check
+        // settles the commit instead.
         return PublishSuccess(
           pagesUrl: pagesUrl,
           uploadedPaths: uploadedPaths,
           availabilityOmitted: snapshot.availabilityOmitted,
-          pagesLive: pagesLive,
           localStateSaved: localStateSaved,
+          verification: localStateSaved
+              ? DeferredVerificationRequest.forRecord(
+                  target: target,
+                  record: committed,
+                  revision: now,
+                )
+              : null,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can
@@ -423,25 +396,6 @@ final class PublishLibraryUseCase {
     ValidationFailure(:final message) => message,
     _ => 'Something went wrong. Nothing was published.',
   };
-
-  /// Bounded origin-bound read-back of one just-published file.
-  Future<bool?> _readBack({
-    required String siteUrl,
-    required String path,
-    required List<int> expected,
-    required int revision,
-    void Function(int round)? onRound,
-  }) async {
-    final verifier = _verifier;
-    if (verifier == null) return null;
-    return PublishedFileReadBack(verifier: verifier, sleep: _sleep).untilServed(
-      siteUrl: siteUrl,
-      path: path,
-      expected: expected,
-      revision: revision,
-      onRound: onRound,
-    );
-  }
 }
 
 /// Load/save view of the manifest the orchestrators need.

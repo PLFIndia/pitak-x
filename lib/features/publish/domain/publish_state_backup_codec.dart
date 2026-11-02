@@ -159,7 +159,8 @@ abstract final class PublishStateBackupCodec {
   /// A GitHub record checked field by field BEFORE `PublishManifest.fromJson`
   /// (which is lenient by design for this phone's own file): a repository
   /// and branch the app could publish to, a 40-hex head, Pitak-owned paths
-  /// with 40-hex shas, a known state and bounded cover sources.
+  /// with 40-hex shas, a known state, a whole commit time and bounded cover
+  /// sources.
   static PublishManifest? _gitHubRecord(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
     final repo = raw['repo'];
@@ -176,6 +177,12 @@ abstract final class PublishStateBackupCodec {
       return null;
     }
     if (raw.containsKey('state') && _state(raw['state']) == null) return null;
+    // Plan SP1: when GitHub accepted the recorded commit (epoch ms).
+    final committedAt = raw['committedAt'];
+    if (raw.containsKey('committedAt') &&
+        (committedAt is! int || committedAt < 0)) {
+      return null;
+    }
     if (!_ownedFiles(raw['fileShas'])) return null;
     if (!_coverSources(raw['coverUrlByBookId'])) return null;
     return PublishManifest.fromJson(raw);

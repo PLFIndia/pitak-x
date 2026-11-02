@@ -24,9 +24,11 @@
 ///
 /// Since schema 2 the commit is also anchored: the branch head is read before
 /// building and passed back as `expectedHead`, so a commit made meanwhile is
-/// reported as stale instead of overwritten (R6). Read-back then decides
-/// whether the record may be called `live` — an accepted commit alone is not
-/// proof that the page is served (F.4 step 7).
+/// reported as stale instead of overwritten (R6). An accepted commit alone is
+/// not proof that the page is served (F.4 step 7), so the record is saved
+/// `deployed`. Since plan SP1 the use case returns right there; the result
+/// carries the request a deferred check (`PublishGoingLive`) proves after the
+/// publish queue is released.
 library;
 
 import 'package:pitaka/core/error/failure.dart';
@@ -36,11 +38,11 @@ import 'package:pitaka/features/publish/application/github_unconfirmed_commit_ch
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart'
     show PublishManifestGateway;
 import 'package:pitaka/features/publish/application/site/availability_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/deferred_verification_request.dart';
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_timings.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
-import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
@@ -74,7 +76,7 @@ final class PublishEventsSuccess extends PublishEventsResult {
     required this.eventsUrl,
     required this.uploadedPaths,
     this.localStateSaved = true,
-    this.pagesLive,
+    this.verification,
   });
 
   /// Public URL of the events page.
@@ -87,8 +89,9 @@ final class PublishEventsSuccess extends PublishEventsResult {
   /// of the publish (R9). The site IS updated; the next publish reconciles.
   final bool localStateSaved;
 
-  /// True only after exact read-back; null when verification did not finish.
-  final bool? pagesLive;
+  /// What the deferred check must prove for this commit (plan SP1); null when
+  /// this phone could not save the record, so nothing could be upgraded.
+  final DeferredVerificationRequest? verification;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.
@@ -114,7 +117,6 @@ final class PublishEventsUseCase {
     required PublishPageSettings settings,
     required PublishHostStateRecorder hostState,
     required AvailabilityRequest availability,
-    PublishedSiteVerifier? verifier,
     PublishedSiteReadVerifier? reader,
     Future<void> Function(Duration)? sleep,
     int Function()? clock,
@@ -129,16 +131,13 @@ final class PublishEventsUseCase {
          buildEventsJson: buildEventsJson,
        ),
        _settings = settings,
-       _hostState = hostState,
        _availability = availability,
-       _verifier = verifier,
        _unconfirmed = GitHubUnconfirmedCommitCheck(
          reader: reader,
          manifest: manifest,
          hostState: hostState,
          sleep: sleep ?? Future<void>.delayed,
        ),
-       _sleep = sleep ?? Future<void>.delayed,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
        _timingSink = timingSink;
 
@@ -151,21 +150,15 @@ final class PublishEventsUseCase {
   final EventsSectionBuilder _section;
   final PublishPageSettings _settings;
 
-  /// Records the verified live target after a read-back proves it (R33).
-  final PublishHostStateRecorder _hostState;
-
   /// What this publish does with a recorded `availability.json`. An events
   /// publish never computes a set, so the shared "no fresh set" rule decides
   /// (ADR 0019 Decision 6; plan A.6 #33 left this publish out until S6).
   final AvailabilityRequest _availability;
 
-  /// Null ⇒ read-back skipped (tests / no network port wired).
-  final PublishedSiteVerifier? _verifier;
-
   /// The pre-publish check of this phone's unconfirmed commit, read through
-  /// the proof that commit recorded (ADR 0019 Decision 10).
+  /// the proof that commit recorded (ADR 0019 Decision 10). It records the
+  /// verified address (R33) only after proving an EARLIER commit live.
   final GitHubUnconfirmedCommitCheck _unconfirmed;
-  final Future<void> Function(Duration) _sleep;
   final int Function() _clock;
 
   /// Publish-timings sink (plan S0). Null in every normal build; only
@@ -249,12 +242,14 @@ final class PublishEventsUseCase {
     // F.4 step 2 (deviation 48): verify an unconfirmed commit at this head
     // before building on it, through the proof that commit recorded (plan
     // A.1 item 8). Contradiction stops; unreachable does not.
+    final checkedAt = _clock();
     final verification = await _unconfirmed(
       local: localRecord,
       publication: publication,
       target: target,
       legacyProof: PublishProofPath.eventsJson,
-      revision: _clock(),
+      revision: checkedAt,
+      now: checkedAt,
     );
     timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
     if (verification == PublishVerificationOutcome.contradicted) {
@@ -343,59 +338,22 @@ final class PublishEventsUseCase {
           // events.json is always written (an empty publish writes an empty
           // list), so it proves this commit (ADR 0019 Decision 10).
           proofPath: PublishProofPath.eventsJson,
+          // After the commit returned: the Pages build window starts now.
+          committedAt: _clock(),
         );
-        var localStateSaved = _manifest.save(committed).isRight();
-
-        // F.4 step 7: an accepted commit is not proof that the page is served.
-        // Verify the machine-readable section (always present — a publish with
-        // zero posters still writes an explicit empty list), then record the
-        // truth.
-        final verifier = _verifier;
-        bool? pagesLive;
-        final eventsJson = merge.files
-            .where((f) => f.path == EventsSectionBuilder.eventsJsonPath)
-            .firstOrNull
-            ?.bytes;
-        if (verifier != null && eventsJson != null) {
-          final readBackStartedAt = timings.begin();
-          var readBackRounds = 0;
-          pagesLive =
-              await PublishedFileReadBack(
-                verifier: verifier,
-                sleep: _sleep,
-              ).untilServed(
-                siteUrl: target.siteUrl,
-                path: EventsSectionBuilder.eventsJsonPath,
-                expected: eventsJson,
-                revision: now,
-                onRound: timings.enabled
-                    ? (round) => readBackRounds = round
-                    : null,
-              );
-          timings.end(
-            PublishTimingStage.readBack,
-            readBackStartedAt,
-            rounds: timings.enabled ? readBackRounds : null,
-          );
-          if (pagesLive ?? false) {
-            // Manifest `live` FIRST, journal pointer SECOND (R5/E.5). The
-            // successful live record supersedes an earlier deployed-save
-            // failure; a failed upgrade leaves the journal untouched and is
-            // reported instead of being swallowed.
-            final liveSaved = _manifest.save(committed.asLive()).isRight();
-            localStateSaved = liveSaved;
-            if (liveSaved) {
-              localStateSaved = (await _hostState.recordVerified(
-                target,
-              )).isRight();
-            }
-          }
-        }
+        final localStateSaved = _manifest.save(committed).isRight();
+        // Plan SP1: no waiting for Pages inside the queue (see the header).
         return PublishEventsSuccess(
           eventsUrl: eventsUrl,
           uploadedPaths: uploadedPaths,
           localStateSaved: localStateSaved,
-          pagesLive: pagesLive,
+          verification: localStateSaved
+              ? DeferredVerificationRequest.forRecord(
+                  target: target,
+                  record: committed,
+                  revision: now,
+                )
+              : null,
         );
       case PublishCommitHttpError(:final code):
         // The response body is deliberately dropped: a hostile network can

@@ -92,9 +92,9 @@ const Guide publishGuide = Guide(
         'Tap **Set up a repository**, give it a short name like `my-library`, '
             'tap **Create** — that folder is where your page lives.',
         'Tap **Publish catalogue now**.',
-        'Your web address appears under **Your site**. Tap **Copy link** or '
-            '**Share**. The first time, the page can take a minute or two to '
-            'go live.',
+        'The card says **Published — going live**. When the page is live, '
+            'your web address appears under **Your site** (the first time '
+            'this can take a minute or two). Tap **Copy link** or **Share**.',
       ],
     ),
     GuideParagraphs(

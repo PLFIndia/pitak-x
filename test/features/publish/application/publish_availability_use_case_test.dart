@@ -517,6 +517,35 @@ void main() {
       expect(h.api.commits, isEmpty);
     });
 
+    test('plan SP1: a catalogue commit Pages is still building does not '
+        'block the lane (its pre-check reads "still building")', () async {
+      // The record a catalogue publish left seconds ago: deployed, proven
+      // through books.json, committed 20 s before this lane publish.
+      final catalogue = keyedLive();
+      final h = harness(
+        record: PublishManifest(
+          repo: catalogue.repo,
+          branch: catalogue.branch,
+          headSha: 'HEAD',
+          ownershipConfirmed: true,
+          fileShas: catalogue.fileShas,
+          proofPath: PublishProofPath.booksJson,
+          catalogueKeyed: true,
+          committedAt: clock - 20000,
+        ),
+      );
+      // Pages still serves the PREVIOUS books.json.
+      h.site.answer = (_, _) => laneBody(utf8.encode('{"books":"previous"}'));
+
+      final result = await write(h.useCase, snapshot(['00000000000000cc']));
+
+      expect(result, isA<AvailabilityGoingLive>());
+      expect(h.site.reads.single.$1, 'books.json');
+      expect(h.api.commits, hasLength(1));
+      // The lane's own commit records when GitHub accepted it.
+      expect(h.manifest.current.committedAt, clock);
+    });
+
     test('an unreachable site does not block the lane', () async {
       final h = harness(record: unconfirmedAvailability());
 

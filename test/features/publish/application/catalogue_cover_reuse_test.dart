@@ -107,6 +107,7 @@ void main() {
       coverUrlByBookId: section.coverUrlByKey,
       coverRendition: section.coverRendition,
       proofPath: PublishProofPath.booksJson,
+      committedAt: 1000,
       wroteKeyedCatalogue: true,
     );
   }

@@ -148,6 +148,8 @@ void main() {
     expect(destinationManifest.value.catalogueKeyed, isTrue);
     // A later pre-check proves this commit through books.json (Decision 10).
     expect(destinationManifest.value.proofPath, PublishProofPath.booksJson);
+    // Plan SP1: the record keeps when GitHub accepted the move's commit.
+    expect(destinationManifest.value.committedAt, 1700000000000);
     // The lane is off in this build, so the new site gets no availability.
     expect(
       commit.files.map((file) => file.path),

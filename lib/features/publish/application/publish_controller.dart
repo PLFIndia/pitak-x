@@ -26,6 +26,7 @@ import 'package:pitaka/features/periodicals/domain/entities/periodical.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_connection_controller.dart';
 import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publish_outcomes.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
+import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
@@ -55,8 +56,8 @@ class PublishController extends _$PublishController implements PublishReads {
     bool verificationOnly = false,
   }) async {
     // keepAlive for the duration of the run: this provider is autoDispose
-    // and the page only read()s it, so a long publish (the post-commit
-    // read-back waits up to 60 s) previously let Riverpod dispose+rebuild
+    // and the page only read()s it, so a long publish (a Cloudflare read-back
+    // waits up to 90 s) previously let Riverpod dispose+rebuild
     // the element mid-flight — the final `state =` then hit the rebuilt
     // element's already-completed future ("Bad state: Future already
     // completed"). The link pins the element until the run finishes.
@@ -75,6 +76,9 @@ class PublishController extends _$PublishController implements PublishReads {
               verificationOnly: verificationOnly,
             ),
           );
+      // Plan SP1: the queue is released, so a GitHub commit's deferred check
+      // may start. It is registered before the card sees the result.
+      ref.read(publishGoingLiveProvider.notifier).proveLater(result);
       state = AsyncData(result);
       return result;
     } on Object catch (e, st) {
@@ -134,11 +138,9 @@ class PublishController extends _$PublishController implements PublishReads {
     // use case supplies the target + the previous publication, so the section
     // is built exactly once against the manifest that will also be merged.
     final builder = await ref.read(publishSnapshotBuilderProvider.future);
-    // Bounded, origin-bound read-back (R16) — used to prove the live site
-    // serves exactly what was published. The structured reader (same bounded
-    // adapter) checks an earlier unconfirmed commit, whose proof may be an
-    // exact 404 (ADR 0019 Decision 10).
-    final verifier = ref.read(publishedSiteVerifierProvider);
+    // The structured, bounded, origin-bound reader (R16) checks an earlier
+    // unconfirmed commit, whose proof may be an exact 404 (ADR 0019
+    // Decision 10). This commit is proven later, outside the queue (SP1).
     final reader = ref.read(publishedSiteReadVerifierProvider);
 
     final useCase = PublishLibraryUseCase(
@@ -147,12 +149,11 @@ class PublishController extends _$PublishController implements PublishReads {
       manifest: manifest,
       snapshotBuilder: builder,
       reads: this,
-      // Lazy: the journal is only opened once a read-back proves the site is
-      // live (R33), never before the strict reads.
+      // Lazy: the journal is only opened once a check proves an earlier
+      // commit live (R33), never before the strict reads.
       hostState: LazyPublishHostStateRecorder(
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),
-      verifier: verifier,
       reader: reader,
       // Debug-only timings (plan S0); null in release builds.
       timingSink: ref.read(publishTimingSinkProvider),

@@ -13,6 +13,7 @@ import 'package:pitaka/features/publish/application/cloudflare/cloudflare_publis
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_events_use_case.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
+import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
@@ -49,6 +50,9 @@ class PublishEventsController extends _$PublishEventsController {
               verificationOnly: verificationOnly,
             ),
           );
+      // Plan SP1: the queue is released, so a GitHub commit's deferred check
+      // may start (the record and the share address follow its proof).
+      ref.read(publishGoingLiveProvider.notifier).proveLater(result);
       state = AsyncData(result);
       return result;
     } on Object catch (e, st) {
@@ -151,9 +155,9 @@ class PublishEventsController extends _$PublishEventsController {
     }
     final buildEventsHtml = ref.read(eventsHtmlFactoryProvider);
     final buildEventsJson = ref.read(eventsJsonFactoryProvider);
-    final verifier = ref.read(publishedSiteVerifierProvider);
     // The structured reader checks an earlier unconfirmed commit through the
     // proof it recorded, which may be an exact 404 (ADR 0019 Decision 10).
+    // This commit is proven later, outside the queue (plan SP1).
     final reader = ref.read(publishedSiteReadVerifierProvider);
     final useCase = PublishEventsUseCase(
       api: api,
@@ -168,7 +172,6 @@ class PublishEventsController extends _$PublishEventsController {
       hostState: LazyPublishHostStateRecorder(
         () => ref.read(publishHostStateRepositoryProvider.future),
       ),
-      verifier: verifier,
       reader: reader,
       // Debug-only timings (plan S0); null in release builds.
       timingSink: ref.read(publishTimingSinkProvider),
@@ -179,8 +182,8 @@ class PublishEventsController extends _$PublishEventsController {
       final PublishEventsSuccess success => PublishSuccess(
         pagesUrl: success.eventsUrl,
         uploadedPaths: success.uploadedPaths,
-        pagesLive: success.pagesLive,
         localStateSaved: success.localStateSaved,
+        verification: success.verification,
       ),
       PublishEventsFailure(:final reason) => PublishFailure(reason),
     };

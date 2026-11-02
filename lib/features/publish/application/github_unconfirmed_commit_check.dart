@@ -57,12 +57,17 @@ final class GitHubUnconfirmedCommitCheck {
   /// gives, just later. Both writes are best-effort: the publish continues
   /// either way, and a failed save leaves `deployed`, which is still the
   /// truth.
+  ///
+  /// [now] is the publish's clock time. While the recorded commit is inside
+  /// the Pages build window, other bytes are `stillBuilding`, not a
+  /// contradiction (plan SP1): the caller carries on, as for `unreachable`.
   Future<PublishVerificationOutcome> call({
     required PublishManifest local,
     required ReconciledPublication publication,
     required GitHubPublishTarget target,
     required PublishProofPath legacyProof,
     required int revision,
+    required int now,
   }) async {
     final reader = _reader;
     if (reader == null) return PublishVerificationOutcome.notApplicable;
@@ -79,6 +84,8 @@ final class GitHubUnconfirmedCommitCheck {
           expectedSha: reconciled.shaFor(proof.path),
           siteUrl: target.siteUrl,
           revision: revision,
+          committedAt: local.committedAt,
+          now: now,
         );
     if (outcome == PublishVerificationOutcome.matched) {
       _manifest.save(reconciled.asLive());

@@ -30,11 +30,19 @@
 ///  - `unreachable` — no answer at all: carry on, because a phone on a train
 ///    must not be locked out of publishing by a timeout.
 ///
-/// The FIRST readable answer decides. That is right here, because the earlier
-/// commit has had time to go live; it is wrong seconds after a commit, which
-/// is why the deferred check polls instead (ADR 0019 Decision 10).
+/// The FIRST readable answer decides. That is right once the earlier commit
+/// has had time to go live; seconds after a commit it is wrong, which is why
+/// the deferred check polls instead (ADR 0019 Decision 10). Since plan SP1 a
+/// publish returns at commit time, so the NEXT publish can start while GitHub
+/// Pages is still building the last one. Inside the build window
+/// ([ReadBackBudget.gitHubBuildWindow], counted from the commit time the
+/// record keeps) other bytes therefore mean [PublishVerificationOutcome
+/// .stillBuilding], not "contradicted". That is safe because the check only
+/// runs when the branch head is still this phone's own commit: no other
+/// writer committed, so building on it overwrites nobody's work.
 library;
 
+import 'package:pitaka/features/publish/application/site/read_back_budget.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
@@ -51,6 +59,9 @@ import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart
 ///    where a file was expected, oversize). That is not evidence of a
 ///    conflict, so it must not block a publish on a phone with a bad
 ///    connection;
+///  - [stillBuilding] — the site answered with other content, but the commit
+///    is younger than the Pages build window: carry on like [unreachable]
+///    (plan SP1);
 ///  - [notApplicable] — there is nothing to verify (the record is already live,
 ///    or the head moved, or no content sha was recorded).
 enum PublishVerificationOutcome {
@@ -62,6 +73,10 @@ enum PublishVerificationOutcome {
 
   /// The live site could not be read within the budget.
   unreachable,
+
+  /// The live site still serves other content, inside the build window of
+  /// the commit (plan SP1). Not proof either way; the publish carries on.
+  stillBuilding,
 
   /// There is nothing to verify.
   notApplicable,
@@ -108,6 +123,12 @@ final class PublishVerificationCheck {
   /// [proof] says which file proves that commit. [expectedSha] is the hash
   /// recorded for that file; it is ignored when the proof is an absence, and
   /// a file proof without a recorded hash has nothing to compare.
+  ///
+  /// [committedAt] is when that commit was accepted (null = unknown) and
+  /// [now] the current time, both epoch ms on this phone's clock. Other
+  /// content counts as [PublishVerificationOutcome.stillBuilding] only when
+  /// `0 <= now - committedAt < gitHubBuildWindow`; an unknown time or one in
+  /// the future (the clock moved back) keeps the stricter rule.
   Future<PublishVerificationOutcome> call({
     required PublishState? localState,
     required String? localAnchor,
@@ -116,6 +137,8 @@ final class PublishVerificationCheck {
     required String? expectedSha,
     required String siteUrl,
     required int revision,
+    required int? committedAt,
+    required int now,
   }) async {
     if (localState != PublishState.deployed) {
       return PublishVerificationOutcome.notApplicable;
@@ -128,13 +151,28 @@ final class PublishVerificationCheck {
     if (!proof.expectsAbsent && (expectedSha == null || expectedSha.isEmpty)) {
       return PublishVerificationOutcome.notApplicable;
     }
+    final building = isInsideBuildWindow(committedAt: committedAt, now: now);
     for (var attempt = 0; attempt < attempts; attempt++) {
       await _sleep(interval);
       final outcome = await _read(siteUrl, proof, '$revision-$attempt');
       final decided = _decide(outcome, proof: proof, expectedSha: expectedSha);
+      if (decided == PublishVerificationOutcome.contradicted && building) {
+        return PublishVerificationOutcome.stillBuilding;
+      }
       if (decided != null) return decided;
     }
     return PublishVerificationOutcome.unreachable;
+  }
+
+  /// True while a commit accepted at [committedAt] may still be building on
+  /// GitHub Pages at [now] (see [call]).
+  static bool isInsideBuildWindow({
+    required int? committedAt,
+    required int now,
+  }) {
+    if (committedAt == null) return false;
+    final age = now - committedAt;
+    return age >= 0 && age < ReadBackBudget.gitHubBuildWindow.inMilliseconds;
   }
 
   /// The verdict of one read, or null for "no readable answer yet, try

@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_result.dart';
 import 'package:pitaka/features/publish/application/publish_status_copy.dart';
+import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_journal_reset_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status.dart';
 import 'package:pitaka/features/publish/application/site/publish_site_status_controller.dart';
@@ -45,6 +46,9 @@ class _PublishCardState extends ConsumerState<PublishCard> {
     });
     final status = ref.watch(publishSiteStatusProvider);
     final publish = ref.watch(publishControllerProvider);
+    // Plan SP1: a GitHub publish returns at commit time; the line below
+    // follows its deferred check from "going live" to "live".
+    final goingLive = ref.watch(publishGoingLiveProvider);
     // The status reloads in the background whenever a connection changes,
     // and every move command that touches the journal triggers that. Keep
     // showing the last status while it reloads instead of swapping the card
@@ -63,13 +67,14 @@ class _PublishCardState extends ConsumerState<PublishCard> {
         title: 'Publish',
         child: Text('Could not load the publishing setup.'),
       ),
-      data: (site) => _buildCard(site, publish),
+      data: (site) => _buildCard(site, publish, goingLive),
     );
   }
 
   Widget _buildCard(
     PublishSiteStatus site,
     AsyncValue<PublishResult?> publish,
+    PublishGoingLiveState goingLive,
   ) {
     final busy = publish.isLoading;
     // While a publish runs, Riverpod still exposes the PREVIOUS result. That
@@ -152,7 +157,14 @@ class _PublishCardState extends ConsumerState<PublishCard> {
               if (result case final PublishSuccess success) ...[
                 const SizedBox(height: 8),
                 Text(
-                  cataloguePublishStatusMessage(success, host: site.activeHost),
+                  cataloguePublishStatusMessage(
+                    success,
+                    host: site.activeHost,
+                    goingLive: switch (success.verification) {
+                      final request? => goingLive.checkOf(request)?.outcome,
+                      null => null,
+                    },
+                  ),
                 ),
               ] else if (result case PublishFailure(:final reason)) ...[
                 const SizedBox(height: 8),

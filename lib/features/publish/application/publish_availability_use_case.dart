@@ -179,8 +179,11 @@ final class PublishAvailabilityUseCase {
       target: target,
       legacyProof: PublishProofPath.booksJson,
       revision: now,
+      now: now,
     );
     timings.end(PublishTimingStage.reconcile, reconcileStartedAt);
+    // `stillBuilding` (the last commit is inside its Pages build window) and
+    // `unreachable` carry on: neither is evidence of another writer (SP1).
     if (verification == PublishVerificationOutcome.contradicted) {
       return const AvailabilityPending(gitHubSiteChangedSincePublishMessage);
     }
@@ -260,6 +263,8 @@ final class PublishAvailabilityUseCase {
           coverUrlByBookId: reconciled.coverUrlByBookId,
           coverRendition: reconciled.coverRendition,
           proofPath: proof,
+          // After the commit returned: the Pages build window starts now.
+          committedAt: _clock(),
         );
         final saved = _manifest.save(committed).isRight();
         return AvailabilityGoingLive(

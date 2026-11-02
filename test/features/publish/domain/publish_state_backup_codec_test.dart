@@ -194,6 +194,15 @@ void main() {
       expect(decode(withGitHub({'state': 'published'})), isNull);
     });
 
+    test('a commit time that is not a whole, non-negative number (SP1)', () {
+      expect(decode(withGitHub({'committedAt': '1700000000000'})), isNull);
+      expect(decode(withGitHub({'committedAt': 1.5})), isNull);
+      expect(decode(withGitHub({'committedAt': -1})), isNull);
+      final kept = decode(withGitHub({'committedAt': 1700000000000}));
+      expect(kept?.gitHubRecord.committedAt, 1700000000000);
+      expect(decode(withoutGitHubKey('committedAt')), isNotNull);
+    });
+
     test('a claimed path that is not Pitak-owned or not safe', () {
       for (final path in [
         'notes/private.txt',

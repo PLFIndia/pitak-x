@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pitaka/features/publish/application/site/publish_verification_check.dart';
+import 'package:pitaka/features/publish/application/site/read_back_budget.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_document.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
@@ -73,6 +74,8 @@ void main() {
     String remoteAnchor = 'HEAD',
     PublishProofPath proof = PublishProofPath.booksJson,
     String? expectedSha = 'sha-books',
+    int? committedAt,
+    int now = 1700000000000,
   }) => check(reader).call(
     localState: localState,
     localAnchor: localAnchor,
@@ -81,6 +84,8 @@ void main() {
     expectedSha: expectedSha,
     siteUrl: 'https://me.github.io/lib/',
     revision: 1,
+    committedAt: committedAt,
+    now: now,
   );
 
   group('not applicable', () {
@@ -273,6 +278,105 @@ void main() {
           proof: PublishProofPath.availabilityJsonAbsent,
         ),
         PublishVerificationOutcome.matched,
+      );
+    });
+  });
+
+  group('plan SP1: the next publish may start while Pages still builds', () {
+    const now = 1700000000000;
+    final window = ReadBackBudget.gitHubBuildWindow.inMilliseconds;
+    final other = PublishedSiteReadBody(utf8.encode('{"books":[1]}'));
+
+    test('the window is the documented 10 minutes of a Pages build', () {
+      expect(ReadBackBudget.gitHubBuildWindow, const Duration(minutes: 10));
+    });
+
+    test(
+      'other bytes inside the window are stillBuilding, decided at once',
+      () async {
+        for (final age in [0, 1, window - 1]) {
+          final reader = _ScriptedReader([other, body]);
+          expect(
+            await run(
+              reader,
+              expectedSha: publishedSha,
+              committedAt: now - age,
+            ),
+            PublishVerificationOutcome.stillBuilding,
+            reason: 'age $age ms',
+          );
+          expect(reader.calls, hasLength(1), reason: 'age $age ms');
+        }
+      },
+    );
+
+    test('a removal still served inside the window is stillBuilding', () async {
+      expect(
+        await run(
+          _ScriptedReader([body]),
+          proof: PublishProofPath.availabilityJsonAbsent,
+          committedAt: now - 1000,
+        ),
+        PublishVerificationOutcome.stillBuilding,
+      );
+    });
+
+    test('the stricter rule holds at the window end, with no time, and for a '
+        'time in the future (the clock moved back)', () async {
+      for (final committedAt in <int?>[now - window, null, now + 1]) {
+        expect(
+          await run(
+            _ScriptedReader([other]),
+            expectedSha: publishedSha,
+            committedAt: committedAt,
+          ),
+          PublishVerificationOutcome.contradicted,
+          reason: '$committedAt',
+        );
+      }
+    });
+
+    test('inside the window a match is still a match and no answer is still '
+        'unreachable', () async {
+      expect(
+        await run(
+          _ScriptedReader([body]),
+          expectedSha: publishedSha,
+          committedAt: now - 1000,
+        ),
+        PublishVerificationOutcome.matched,
+      );
+      expect(
+        await run(
+          _ScriptedReader([unreadable]),
+          expectedSha: publishedSha,
+          committedAt: now - 1000,
+        ),
+        PublishVerificationOutcome.unreachable,
+      );
+    });
+
+    test('isInsideBuildWindow is the one rule', () {
+      expect(
+        PublishVerificationCheck.isInsideBuildWindow(
+          committedAt: now,
+          now: now,
+        ),
+        isTrue,
+      );
+      expect(
+        PublishVerificationCheck.isInsideBuildWindow(
+          committedAt: now - window,
+          now: now,
+        ),
+        isFalse,
+      );
+      expect(
+        PublishVerificationCheck.isInsideBuildWindow(
+          committedAt: null,
+          now: now,
+        ),
+        isFalse,
       );
     });
   });

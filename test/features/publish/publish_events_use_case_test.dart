@@ -97,7 +97,6 @@ class _MemManifest implements PublishManifestGateway {
   final PublishManifest _m;
   PublishManifest? saved;
   bool saveFails = false;
-  bool liveSaveFails = false;
   final List<PublishManifest> saves = [];
 
   /// The record a load would return right now.
@@ -108,7 +107,7 @@ class _MemManifest implements PublishManifestGateway {
 
   @override
   Either<Failure, Unit> save(PublishManifest m) {
-    if (saveFails || (liveSaveFails && m.state == PublishState.live)) {
+    if (saveFails) {
       return left(const StorageFailure('disk full'));
     }
     saved = m;
@@ -243,7 +242,6 @@ void main() {
       settings: const PublishPageSettings(libraryName: 'Test Library'),
       hostState: hostState ?? _Recorder(),
       availability: availability,
-      verifier: verifier,
       reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
@@ -758,59 +756,58 @@ void main() {
       expect(manifest.saved, isNull);
     });
 
-    test('R5: read-back upgrades the record to live', () async {
+    test('R5 / plan SP1: the commit is saved deployed and the use case '
+        'returns at once with the deferred check of that record', () async {
       final api = _CapturingApi();
-      final verifier = _FakeVerifier(
-        (_, _) async =>
-            api.committed!.firstWhere((f) => f.path == 'events.json').bytes,
-      );
+      final verifier = _FakeVerifier((_, _) async => utf8.encode('old'));
       final manifest = _MemManifest(published());
       final recorder = _Recorder();
-      await make(
+      final result = await make(
         api: api,
         manifest: manifest,
         verifier: verifier,
         hostState: recorder,
       ).call(twoPosters());
 
-      expect(verifier.paths, everyElement('events.json'));
-      expect(manifest.saves.map((m) => m.state), [
-        PublishState.deployed,
-        PublishState.live,
-      ]);
-      // R33: the events publish also proves the address it may claim.
-      expect(recorder.recorded.single.siteUrl, 'https://me.github.io/lib/');
+      final success = result as PublishEventsSuccess;
+      // `published()` records no events.json, so the pre-check has nothing
+      // to compare, and nothing is read after the commit either.
+      expect(verifier.paths, isEmpty);
+      expect(manifest.saves.map((m) => m.state), [PublishState.deployed]);
+      expect(manifest.current.proofPath, PublishProofPath.eventsJson);
+      expect(manifest.current.committedAt, 1000);
+      // R33: no share address before the deferred check proves the commit.
+      expect(recorder.recorded, isEmpty);
+      final request = success.verification!;
+      expect(request.headSha, 'NEW');
+      expect(request.proof, PublishProofPath.eventsJson);
+      expect(request.describes(manifest.current), isTrue);
     });
 
-    test('R5: an unproven read-back leaves the record deployed', () async {
-      final manifest = _MemManifest(published());
-      await make(
-        api: _CapturingApi(),
-        manifest: manifest,
-        verifier: _FakeVerifier((_, _) async => null),
-      ).call(twoPosters());
-
-      expect(manifest.current.state, PublishState.deployed);
-    });
-
-    test('R9: a failed live save does not advance the journal', () async {
+    test('plan SP1: publishing events while Pages still builds the last '
+        'catalogue commit goes ahead', () async {
       final api = _CapturingApi();
-      final manifest = _MemManifest(published())..liveSaveFails = true;
-      final recorder = _Recorder();
+      final verifier = _FakeVerifier((_, _) async => utf8.encode('old'));
+      final manifest = _MemManifest(
+        const PublishManifest(
+          repo: 'me/lib',
+          branch: 'main',
+          headSha: 'HEAD',
+          fileShas: {'index.html': 'abc', 'books.json': 'def'},
+          proofPath: PublishProofPath.booksJson,
+          // One second before this publish (the test clock says 1000).
+          committedAt: 0,
+        ),
+      );
       final result = await make(
         api: api,
         manifest: manifest,
-        verifier: _FakeVerifier(
-          (_, _) async =>
-              api.committed!.firstWhere((f) => f.path == 'events.json').bytes,
-        ),
-        hostState: recorder,
+        verifier: verifier,
       ).call(twoPosters());
 
       expect(result, isA<PublishEventsSuccess>());
-      expect((result as PublishEventsSuccess).localStateSaved, isFalse);
-      expect(manifest.current.state, PublishState.deployed);
-      expect(recorder.recorded, isEmpty);
+      expect(verifier.paths, ['books.json']);
+      expect(api.committed, isNotNull);
     });
 
     test('R9: a failed save is reported, not swallowed', () async {

@@ -54,6 +54,14 @@ abstract final class ReadBackBudget {
   static Duration get gitHubPagesTotal =>
       gitHubPagesInterval * gitHubPagesAttempts;
 
+  /// How long after a GitHub commit the live site may still serve the
+  /// previous files without that meaning "the site was changed by something
+  /// else" (plan SP1). Since a publish no longer waits for Pages, the next
+  /// publish can start while the last build is still running. GitHub
+  /// documents builds of up to 10 minutes, the same span as
+  /// [gitHubPagesTotal].
+  static Duration get gitHubBuildWindow => gitHubPagesTotal;
+
   /// Total wall-clock budget of [defaultAttempts] × [defaultInterval].
   static Duration get defaultTotal => defaultInterval * defaultAttempts;
 }

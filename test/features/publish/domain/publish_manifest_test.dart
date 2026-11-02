@@ -232,6 +232,103 @@ void main() {
     });
   });
 
+  group('committedAt (plan SP1)', () {
+    const local = PublishManifest(
+      repo: 'me/lib',
+      branch: 'main',
+      fileShas: {'books.json': 'old'},
+    );
+    PublishManifest commit({
+      PublishProofPath proof = PublishProofPath.booksJson,
+      Map<String, String> files = const {'books.json': 'new'},
+    }) => local.afterCommit(
+      commitSha: 'head-a',
+      mergedShas: files,
+      coverUrlByBookId: const {},
+      coverRendition: null,
+      proofPath: proof,
+      committedAt: 1700000000000,
+    );
+
+    test('afterCommit records it and JSON round-trips it', () {
+      final committed = commit();
+      expect(committed.committedAt, 1700000000000);
+      expect(committed.toJson()['committedAt'], 1700000000000);
+      expect(
+        PublishManifest.fromJson(committed.toJson()).committedAt,
+        1700000000000,
+      );
+    });
+
+    test('a proof that disagrees with the commit drops it with the head', () {
+      final committed = commit(proof: PublishProofPath.eventsJson);
+      expect(committed.headSha, isNull);
+      expect(committed.committedAt, isNull);
+      expect(committed.toJson().containsKey('committedAt'), isFalse);
+    });
+
+    test('absent, negative or not a whole number reads as unknown', () {
+      for (final raw in <Object?>[null, -1, 1.5, '1700000000000', true]) {
+        final decoded = PublishManifest.fromJson({
+          'schema': 2,
+          'repo': 'me/lib',
+          'branch': 'main',
+          'headSha': 'head-a',
+          'committedAt': ?raw,
+          'fileShas': {'books.json': 'sha'},
+        });
+        expect(decoded.committedAt, isNull, reason: '$raw');
+      }
+    });
+
+    test('reconciledFrom keeps it only for the same head', () {
+      final committed = commit();
+      expect(
+        committed
+            .reconciledFrom(
+              tree: tree({'books.json': 'new'}),
+              ownerRepo: 'me/lib',
+              branch: 'main',
+            )
+            .committedAt,
+        1700000000000,
+      );
+      expect(
+        committed
+            .reconciledFrom(
+              tree: tree({'books.json': 'new'}, head: 'head-b'),
+              ownerRepo: 'me/lib',
+              branch: 'main',
+            )
+            .committedAt,
+        isNull,
+      );
+      expect(
+        committed
+            .reconciledFrom(
+              tree: tree({'books.json': 'new'}, repo: 'me/other'),
+              ownerRepo: 'me/other',
+              branch: 'main',
+            )
+            .committedAt,
+        isNull,
+      );
+    });
+
+    test('the derived records keep it; a retired record drops it', () {
+      final committed = commit();
+      expect(committed.asLive().committedAt, 1700000000000);
+      expect(committed.withoutCatalogueKeys().committedAt, 1700000000000);
+      expect(committed.withoutLocalCoverSources().committedAt, 1700000000000);
+      expect(
+        committed
+            .asRetired(commitSha: 'head-r', movedFileShas: const {})
+            .committedAt,
+        isNull,
+      );
+    });
+  });
+
   group('state transitions', () {
     test('afterCommit records the head, the merged set and ownership', () {
       const local = PublishManifest(repo: 'me/lib', branch: 'main');
@@ -241,6 +338,7 @@ void main() {
         coverUrlByBookId: {'1': 'src'},
         coverRendition: null,
         proofPath: PublishProofPath.booksJson,
+        committedAt: 1000,
       );
       expect(committed.headSha, 'new-head');
       expect(committed.state, PublishState.deployed);
@@ -464,6 +562,7 @@ void main() {
             coverUrlByBookId: const {},
             coverRendition: null,
             proofPath: proof,
+            committedAt: 1000,
           );
           expect(committed.proofPath, proof, reason: proof.name);
           expect(committed.headSha, 'c', reason: proof.name);
@@ -485,6 +584,7 @@ void main() {
           coverUrlByBookId: const {},
           coverRendition: null,
           proofPath: PublishProofPath.eventsJson,
+          committedAt: 1000,
         );
         expect(missingFile.proofPath, isNull);
         expect(missingFile.headSha, isNull);
@@ -496,6 +596,7 @@ void main() {
           coverUrlByBookId: const {},
           coverRendition: null,
           proofPath: PublishProofPath.availabilityJsonAbsent,
+          committedAt: 1000,
         );
         expect(stillRecorded.proofPath, isNull);
         expect(stillRecorded.headSha, isNull);
@@ -596,6 +697,7 @@ void main() {
           coverRendition: null,
           wroteKeyedCatalogue: true,
           proofPath: PublishProofPath.booksJson,
+          committedAt: 1000,
         );
         expect(committed.catalogueKeyed, isTrue);
       });
@@ -607,6 +709,7 @@ void main() {
           coverUrlByBookId: const {},
           coverRendition: null,
           proofPath: PublishProofPath.eventsJson,
+          committedAt: 1000,
         );
         expect(committed.catalogueKeyed, isTrue);
       });
@@ -622,6 +725,7 @@ void main() {
           coverUrlByBookId: const {},
           coverRendition: null,
           proofPath: PublishProofPath.availabilityJson,
+          committedAt: 1000,
         );
         expect(committed.catalogueKeyed, isTrue);
       });
@@ -633,6 +737,7 @@ void main() {
           coverUrlByBookId: const {},
           coverRendition: null,
           proofPath: PublishProofPath.booksJson,
+          committedAt: 1000,
         );
         expect(committed.catalogueKeyed, isFalse);
       });
@@ -645,6 +750,7 @@ void main() {
           coverRendition: null,
           wroteKeyedCatalogue: true,
           proofPath: PublishProofPath.eventsJson,
+          committedAt: 1000,
         );
         expect(committed.catalogueKeyed, isFalse);
       });
@@ -736,6 +842,7 @@ void main() {
         coverUrlByBookId: covered.coverUrlByBookId,
         coverRendition: PublishCoverRendition.current,
         proofPath: PublishProofPath.booksJson,
+        committedAt: 1000,
       );
       expect(catalogue.coverRendition, PublishCoverRendition.current);
       final unknown = covered.afterCommit(
@@ -744,6 +851,7 @@ void main() {
         coverUrlByBookId: covered.coverUrlByBookId,
         coverRendition: null,
         proofPath: PublishProofPath.booksJson,
+        committedAt: 1000,
       );
       expect(unknown.coverRendition, isNull);
     });

@@ -1,12 +1,12 @@
 /// Bounded read-back of one published file (application layer; Cloudflare plan
 /// R16).
 ///
-/// Why a shared helper (beginner note): both publishes ("catalogue" and
-/// "events") must answer the same question after committing — "does the LIVE
-/// site serve exactly the bytes I just pushed?" — and both must answer it
-/// WITHOUT waiting forever. One implementation keeps the budget, the
-/// cache-buster and the origin binding identical for both, so a fix to the
-/// polling rule cannot land for one section only.
+/// Why a helper (beginner note): it answers "does the LIVE site serve exactly
+/// the bytes I just pushed?" WITHOUT waiting forever, with one budget,
+/// cache-buster and origin binding. Its user today is the Cloudflare address
+/// verification. The GitHub catalogue and events publishes used it until
+/// plan SP1; they now return at commit time and the deferred check
+/// (`deferred_publish_verification.dart`) proves the commit afterwards.
 ///
 /// The comparison is byte-for-byte against the bytes that were committed,
 /// capped at exactly their length: a longer body cannot be the file we wrote,

@@ -178,6 +178,7 @@ final class GitHubMoveDestination implements MoveDestinationPublisher {
           // The move verifies every file itself; for any LATER check the
           // catalogue's books.json proves this commit (ADR 0019 Decision 10).
           proofPath: PublishProofPath.booksJson,
+          committedAt: _clock(),
         );
         // L12: this record is the only proof the commit was ours, so a failed
         // save must reach the user rather than be discarded.

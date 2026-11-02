@@ -20,7 +20,6 @@ import 'package:pitaka/features/publish/application/site/catalogue_section_build
 import 'package:pitaka/features/publish/application/site/events_section_builder.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
-import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/git_blob_sha.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
@@ -63,10 +62,9 @@ class _MemManifest implements PublishManifestGateway {
   final PublishManifest _m;
   PublishManifest? saved;
   bool saveFails = false;
-  bool liveSaveFails = false;
 
   /// Every record this gateway was asked to persist, in order (R5: the commit
-  /// is saved as `deployed` first, then upgraded to `live`).
+  /// is saved as `deployed`; a pre-check may first mark an EARLIER one live).
   final List<PublishManifest> saves = [];
 
   /// The record a load would return right now.
@@ -77,7 +75,7 @@ class _MemManifest implements PublishManifestGateway {
 
   @override
   Either<Failure, Unit> save(PublishManifest m) {
-    if (saveFails || (liveSaveFails && m.state == PublishState.live)) {
+    if (saveFails) {
       return left(const StorageFailure('disk full'));
     }
     saved = m;
@@ -89,10 +87,11 @@ class _MemManifest implements PublishManifestGateway {
 /// Fake read-back: answers by (siteUrl, path) and records every call so the
 /// tests can assert the origin binding and the cache-buster.
 ///
-/// It answers BOTH read ports, like the production adapter: the read-back
-/// uses the plain one, the pre-check of an unconfirmed commit the structured
-/// one (ADR 0019 Decision 10). A null answer is "unreadable"; a path in
-/// [absentPaths] answers an exact 404.
+/// It answers BOTH read ports, like the production adapter: the controller's
+/// live `library.json` read uses the plain one, the pre-check of an
+/// unconfirmed commit the structured one (ADR 0019 Decision 10). Since plan
+/// SP1 the use case reads nothing after its own commit. A null answer is
+/// "unreadable"; a path in [absentPaths] answers an exact 404.
 class _FakeVerifier
     implements PublishedSiteVerifier, PublishedSiteReadVerifier {
   _FakeVerifier(this.answer, {this.absentPaths = const {}});
@@ -493,7 +492,6 @@ void main() {
             availability: availability,
           ),
       hostState: hostState ?? _Recorder(),
-      verifier: verifier,
       reader: verifier,
       sleep: (_) async {}, // no real waiting in tests
       clock: () => 1000,
@@ -545,62 +543,110 @@ void main() {
     },
   );
 
-  group('read-back verification (à la Localcart Orange)', () {
+  group('plan SP1 — the publish returns at commit time', () {
+    test('nothing is read from the live site after the commit; the result '
+        'carries the deferred check of the saved record', () async {
+      final api = _CapturingApi();
+      final manifest = _MemManifest();
+      final recorder = _Recorder();
+      final verifier = _FakeVerifier((_, _) async => utf8.encode('old'));
+      final result = await makeUseCase(
+        api,
+        manifest,
+        verifier: verifier,
+        hostState: recorder,
+        books: [book()],
+      ).run();
+
+      final success = result as PublishSuccess;
+      expect(api.committed, isNotNull);
+      // Not proven yet, and never claimed: no read, no live record, and no
+      // share address before the deferred check proves it (R33).
+      expect(success.pagesLive, isNull);
+      expect(verifier.calls, isEmpty);
+      expect(recorder.recorded, isEmpty);
+      expect(manifest.saves.map((m) => m.state), [PublishState.deployed]);
+      final saved = manifest.current;
+      expect(saved.headSha, 'NEWCOMMIT');
+      expect(saved.proofPath, PublishProofPath.booksJson);
+      // The commit time, read AFTER the commit (the test clock says 1000).
+      expect(saved.committedAt, 1000);
+      final request = success.verification!;
+      expect(request.headSha, 'NEWCOMMIT');
+      expect(request.proof, PublishProofPath.booksJson);
+      expect(request.expectedSha, saved.shaFor('books.json'));
+      expect(request.target.siteUrl, 'https://me.github.io/lib/');
+      expect(request.describes(saved), isTrue);
+    });
+
+    test('a record that could not be saved carries no deferred check '
+        '(there is nothing it could upgrade)', () async {
+      final manifest = _MemManifest()..saveFails = true;
+      final result = await makeUseCase(
+        _CapturingApi(),
+        manifest,
+        books: [book()],
+      ).run();
+
+      final success = result as PublishSuccess;
+      expect(success.localStateSaved, isFalse);
+      expect(success.verification, isNull);
+    });
+
+    test('publishing again while Pages still builds the last commit goes '
+        'ahead instead of reporting a changed site', () async {
+      final first = _MemManifest();
+      await makeUseCase(_CapturingApi(), first, books: [book()]).run();
+      final deployed = first.current;
+      expect(deployed.state, PublishState.deployed);
+
+      // Seconds later: Pages still serves the PREVIOUS books.json.
+      final api = _CapturingApi();
+      final manifest = _MemManifest(deployed);
+      final verifier = _FakeVerifier(
+        (_, path) async => path == 'books.json' ? utf8.encode('old') : null,
+      );
+      final result = await makeUseCase(
+        api,
+        manifest,
+        verifier: verifier,
+        books: [book(), book(id: 2)],
+      ).run();
+
+      expect(result, isA<PublishSuccess>());
+      expect(api.committed, isNotNull);
+      expect(verifier.calls.map((call) => call.$2), ['books.json']);
+      // The old commit was not proven, so it was not marked live.
+      expect(
+        manifest.saves.map((m) => m.state),
+        everyElement(PublishState.deployed),
+      );
+    });
+
     test(
-      'pagesLive true once the live site serves the published bytes',
+      'after the build window the same answer still stops the publish',
       () async {
-        final api = _CapturingApi();
-        late _FakeVerifier verifier;
-        verifier = _FakeVerifier((_, _) async {
-          // Poll 1: stale content; poll 2: the bytes just committed.
-          if (verifier.calls.length == 1) return utf8.encode('old');
-          return api.committed!.firstWhere((f) => f.path == 'books.json').bytes;
+        final first = _MemManifest();
+        await makeUseCase(_CapturingApi(), first, books: [book()]).run();
+        final stale = PublishManifest.fromJson({
+          ...first.current.toJson(),
+          'committedAt': 1000 - const Duration(minutes: 10).inMilliseconds,
         });
+        final api = _CapturingApi();
         final result = await makeUseCase(
           api,
-          _MemManifest(),
-          verifier: verifier,
+          _MemManifest(stale),
+          verifier: _FakeVerifier((_, _) async => utf8.encode('old')),
           books: [book()],
-          periodicals: const [],
         ).run();
-        expect((result as PublishSuccess).pagesLive, isTrue);
-        expect(verifier.calls, hasLength(2));
-        // Origin-bound: the exact site root and the fixed file, never a URL.
-        expect(verifier.calls.first.$1, 'https://me.github.io/lib/');
-        expect(verifier.calls.first.$2, 'books.json');
-        // Cache-busted, with a fresh buster per attempt.
-        expect(verifier.calls.first.$3, isNotNull);
-        expect(verifier.calls.first.$3, isNot(verifier.calls.last.$3));
+
+        expect(
+          (result as PublishFailure).reason,
+          gitHubSiteChangedSincePublishMessage,
+        );
+        expect(api.committed, isNull);
       },
     );
-
-    test('bounded: never-matching content stops after readBackAttempts '
-        'with pagesLive null (regression: infinite "Publishing…")', () async {
-      var polls = 0;
-      final result = await makeUseCase(
-        _CapturingApi(),
-        _MemManifest(),
-        verifier: _FakeVerifier((_, _) async {
-          polls++;
-          return utf8.encode('never matches');
-        }),
-        books: [book()],
-        periodicals: const [],
-      ).run();
-      expect((result as PublishSuccess).pagesLive, isNull);
-      expect(polls, PublishedFileReadBack.defaultAttempts);
-    });
-
-    test('fetch failures (null) are tolerated and stay bounded', () async {
-      final result = await makeUseCase(
-        _CapturingApi(),
-        _MemManifest(),
-        verifier: _FakeVerifier((_, _) async => null),
-        books: [book()],
-        periodicals: const [],
-      ).run();
-      expect((result as PublishSuccess).pagesLive, isNull);
-    });
   });
 
   test('publishes books.json + index.html and returns the pages URL', () async {
@@ -615,7 +661,7 @@ void main() {
     expect(result, isA<PublishSuccess>());
     final s = result as PublishSuccess;
     expect(s.pagesUrl, 'https://me.github.io/lib/');
-    // No verifier wired ⇒ read-back skipped ⇒ unknown liveness.
+    // Plan SP1: a GitHub publish never claims "live" at commit time.
     expect(s.pagesLive, isNull);
     // books.json + index.html both in the commit.
     final paths = api.committed!.map((f) => f.path).toSet();
@@ -826,17 +872,16 @@ void main() {
 
     test('a user site (me/me.github.io) reports the ROOT address', () async {
       final api = _CapturingApi();
-      final verifier = _FakeVerifier((_, _) async => null);
       final result = await makeUseCase(
         api,
         _MemManifest(),
-        verifier: verifier,
         books: [book()],
         periodicals: const [],
       ).run(target: gitHubTarget('me/me.github.io'));
-      expect((result as PublishSuccess).pagesUrl, 'https://me.github.io/');
-      // The read-back is bound to the same resolved address.
-      expect(verifier.calls.first.$1, 'https://me.github.io/');
+      final success = result as PublishSuccess;
+      expect(success.pagesUrl, 'https://me.github.io/');
+      // The deferred check (plan SP1) is bound to the same resolved address.
+      expect(success.verification!.target.siteUrl, 'https://me.github.io/');
     });
   });
 
@@ -1680,53 +1725,22 @@ void main() {
       expect(api.deleted, isEmpty);
     });
 
-    test(
-      'R5: the commit is recorded as deployed, then upgraded to live',
-      () async {
-        final api = _CapturingApi();
-        final verifier = _FakeVerifier(
-          (_, _) async =>
-              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
-        );
-        final manifest = _MemManifest();
-        final result = await makeUseCase(
-          api,
-          manifest,
-          verifier: verifier,
-          books: [book()],
-        ).run();
+    test('R5: the commit is recorded as deployed with the file that proves '
+        'it; the deferred check upgrades it later (plan SP1)', () async {
+      final manifest = _MemManifest();
+      final result = await makeUseCase(
+        _CapturingApi(),
+        manifest,
+        books: [book()],
+      ).run();
 
-        expect((result as PublishSuccess).pagesLive, isTrue);
-        expect(manifest.saves.map((m) => m.state), [
-          PublishState.deployed,
-          PublishState.live,
-        ]);
-        // Both saves describe the commit the API returned, and name the file
-        // that proves it (ADR 0019 Decision 10).
-        expect(manifest.saves.first.headSha, 'NEWCOMMIT');
-        expect(
-          manifest.saves.map((m) => m.proofPath),
-          everyElement(PublishProofPath.booksJson),
-        );
-        expect(manifest.current.branch, 'main');
-      },
-    );
-
-    test(
-      'R5: a read-back that never lands leaves the record deployed',
-      () async {
-        final manifest = _MemManifest();
-        final result = await makeUseCase(
-          _CapturingApi(),
-          manifest,
-          verifier: _FakeVerifier((_, _) async => utf8.encode('stale')),
-          books: [book()],
-        ).run();
-
-        expect((result as PublishSuccess).pagesLive, isNull);
-        expect(manifest.current.state, PublishState.deployed);
-      },
-    );
+      expect((result as PublishSuccess).pagesLive, isNull);
+      expect(manifest.saves.map((m) => m.state), [PublishState.deployed]);
+      // ADR 0019 Decision 10: the record names its proof.
+      expect(manifest.current.headSha, 'NEWCOMMIT');
+      expect(manifest.current.proofPath, PublishProofPath.booksJson);
+      expect(manifest.current.branch, 'main');
+    });
 
     group('F.4 step 2 — an unconfirmed publication is verified first', () {
       final liveBooks = utf8.encode('{"books":[]}');
@@ -1907,27 +1921,6 @@ void main() {
 
         expect(result, isA<PublishSuccess>());
       });
-    });
-
-    test('R9: a failed live save does not advance the journal', () async {
-      final api = _CapturingApi();
-      final manifest = _MemManifest()..liveSaveFails = true;
-      final recorder = _Recorder();
-      final result = await makeUseCase(
-        api,
-        manifest,
-        verifier: _FakeVerifier(
-          (_, _) async =>
-              api.committed!.firstWhere((f) => f.path == 'books.json').bytes,
-        ),
-        hostState: recorder,
-        books: [book()],
-      ).run();
-
-      expect((result as PublishSuccess).pagesLive, isTrue);
-      expect(result.localStateSaved, isFalse);
-      expect(manifest.current.state, PublishState.deployed);
-      expect(recorder.recorded, isEmpty);
     });
 
     test('R9: a failed save is reported, not swallowed', () async {

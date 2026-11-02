@@ -22,9 +22,10 @@ import 'package:pitaka/features/periodicals/domain/repositories/periodical_repos
 import 'package:pitaka/features/publish/application/publish_controller.dart';
 import 'package:pitaka/features/publish/application/publish_library_use_case.dart';
 import 'package:pitaka/features/publish/application/site/catalogue_section_builder.dart';
+import 'package:pitaka/features/publish/application/site/deferred_publish_verification.dart';
+import 'package:pitaka/features/publish/application/site/publish_going_live_controller.dart';
 import 'package:pitaka/features/publish/application/site/publish_host_state_repository.dart';
 import 'package:pitaka/features/publish/application/site/publish_snapshot_builder.dart';
-import 'package:pitaka/features/publish/application/site/published_file_read_back.dart';
 import 'package:pitaka/features/publish/domain/availability/availability_request.dart';
 import 'package:pitaka/features/publish/domain/github_api.dart';
 import 'package:pitaka/features/publish/domain/github_commit_plan.dart';
@@ -35,6 +36,7 @@ import 'package:pitaka/features/publish/domain/publish_item_keys.dart';
 import 'package:pitaka/features/publish/domain/publish_manifest.dart';
 import 'package:pitaka/features/publish/domain/site/publish_host_state.dart';
 import 'package:pitaka/features/publish/domain/site/publish_mode.dart';
+import 'package:pitaka/features/publish/domain/site/publish_proof_path.dart';
 import 'package:pitaka/features/publish/domain/site/publish_state.dart';
 import 'package:pitaka/features/publish/domain/site/published_site_verifier.dart';
 import 'package:pitaka/features/publish/presentation/pages/publish_page.dart';
@@ -42,6 +44,7 @@ import 'package:pitaka/features/settings/domain/app_settings.dart';
 import 'package:pitaka/features/settings/domain/settings_repository.dart';
 
 import 'support/cloudflare_fakes.dart';
+import 'support/going_live_fakes.dart';
 
 const _safeReadFailure =
     'Could not read the library. Nothing was published. '
@@ -121,10 +124,37 @@ void main() {
             as Map<String, dynamic>;
     expect(payload['books'], isEmpty);
     expect(files.map((file) => file.path), contains('index.html'));
-    // R5: the commit is persisted immediately, then upgraded once the live
-    // site proves it — the record ends `live`.
-    expect(h.manifest.current.state, PublishState.live);
-    expect((result as PublishSuccess).pagesLive, isTrue);
+    // R5 + plan SP1: the commit is persisted `deployed` and the publish
+    // returns at once; the deferred check (handed over after the queue is
+    // released) is what may upgrade it later.
+    expect(h.manifest.current.state, PublishState.deployed);
+    expect((result as PublishSuccess).pagesLive, isNull);
+    expect(h.goingLive.tracked.single, same(result.verification));
+  });
+
+  testWidgets('plan SP1: the deferred check proves the record the commit '
+      'saved; a failed publish starts none', (tester) async {
+    final h = _Harness();
+    final result = await h.publish(tester) as PublishSuccess;
+
+    final request = h.goingLive.tracked.single;
+    expect(request.headSha, h.manifest.current.headSha);
+    expect(request.describes(h.manifest.current), isTrue);
+    // The card reads the check by the very request the result carries.
+    final check = h.container
+        .read(publishGoingLiveProvider)
+        .checkOf(result.verification!);
+    expect(check?.outcome, isNull);
+    // The publish read nothing back after its commit. Any later read is the
+    // journal's own legacy migration (this harness starts without a
+    // journal), which uses its fixed 'migrate' cache-buster.
+    final afterCommit = h.verifier.cacheBusters.skip(h.readsBeforeCommit);
+    expect(afterCommit, everyElement('migrate'));
+
+    // A failure carries no request, so a second (failed) publish adds none.
+    h.books.read = () async => left(const StorageFailure('private'));
+    expect(await h.publish(tester), isA<PublishFailure>());
+    expect(h.goingLive.tracked, hasLength(1));
   });
 
   testWidgets(
@@ -327,12 +357,18 @@ void main() {
           .read(publishEventsControllerProvider.notifier)
           .publish();
       await tester.pump();
-      await tester.pump(const Duration(minutes: 2)); // the read-back rounds
+      await tester.pump(_settle);
       final result = await pending;
 
       expect(result, isA<PublishSuccess>());
       expect(h.api.deletions.single, contains('availability.json'));
       expect(h.manifest.current.shaFor('availability.json'), isNull);
+      // Plan SP1: the events controller hands its commit's deferred check
+      // over too, proven through events.json.
+      final request = h.goingLive.tracked.single;
+      expect(request, same((result as PublishSuccess).verification));
+      expect(request.proof, PublishProofPath.eventsJson);
+      expect(result.pagesLive, isNull);
     });
 
     testWidgets('lane active + known counts: the catalogue commit carries '
@@ -423,7 +459,7 @@ void main() {
         succeeds ? right([]) : left(const StorageFailure('private')),
       );
       await tester.pump();
-      await tester.pump(PublishedFileReadBack.defaultInterval);
+      await tester.pump(_settle);
       final result = await pending;
       expect(result, succeeds ? isA<PublishSuccess>() : isA<PublishFailure>());
       expect(h.api.commits, hasLength(succeeds ? 1 : 0));
@@ -444,7 +480,7 @@ void main() {
           succeeds ? right([]) : left(const StorageFailure('private')),
         );
         await tester.pump();
-        await tester.pump(PublishedFileReadBack.defaultInterval);
+        await tester.pump(_settle);
         expect(
           await pending,
           succeeds ? isA<PublishSuccess>() : isA<PublishFailure>(),
@@ -505,7 +541,19 @@ void main() {
     h.books.read = () async => right([]);
     await tester.tap(publish);
     await tester.pump();
-    await tester.pump(PublishedFileReadBack.defaultInterval);
+    await tester.pump(_settle);
+    await tester.pumpAndSettle();
+    // Plan SP1: the card answers at commit time, then follows the deferred
+    // check (product owner, 2026-11-02: a line that updates itself).
+    expect(
+      find.text('Published — going live (usually within a minute).'),
+      findsOneWidget,
+    );
+    expect(tester.widget<FilledButton>(publish).onPressed, isNotNull);
+    h.goingLive.finish(
+      h.goingLive.tracked.single,
+      DeferredVerificationOutcome.live,
+    );
     await tester.pumpAndSettle();
     expect(find.text('Published! Your site is live.'), findsOneWidget);
     expect(h.api.commits, hasLength(1));
@@ -743,6 +791,12 @@ List<int> committedBytes(List<DesiredFile> commit, String path) {
   throw StateError('no $path in commit');
 }
 
+/// How far a test advances the fake clock after starting a publish: enough
+/// for the pre-check of an earlier unconfirmed commit (3 polls, 2 s apart)
+/// and Riverpod's zero-delay dispose timers. Since plan SP1 a GitHub publish
+/// no longer waits for its own read-back.
+const Duration _settle = Duration(seconds: 10);
+
 /// Every side-effecting port is in memory; unexpected calls fail the test.
 class _Harness {
   /// [networkUnavailable] makes the network repository provider fail the way
@@ -825,6 +879,8 @@ class _Harness {
         // A clock that ticks a minute per read: two publishes never share a
         // timestamp, so an updatedAt-reuse test is deterministic.
         clockProvider.overrideWithValue(() => 1000 + (++_clockTicks * 60000)),
+        // Plan SP1: the deferred check is recorded, not run (no 30 s timer).
+        publishGoingLiveProvider.overrideWith(() => goingLive),
       ],
     );
     if (observe) {
@@ -844,6 +900,7 @@ class _Harness {
   /// anything else is the read-back poll for books.json.
   late final _Verifier verifier = _Verifier((path) async {
     liveReads++;
+    if (api.commits.isEmpty) readsBeforeCommit++;
     if (api.commits.isEmpty) return null;
     final committed = api.commits.last;
     if (path == 'library.json') {
@@ -876,6 +933,10 @@ class _Harness {
   int remoteReads = 0;
   int liveReads = 0;
 
+  /// Live reads made before the first commit existed.
+  int readsBeforeCommit = 0;
+  final goingLive = RecordingPublishGoingLive();
+
   Future<PublishResult> publish(
     WidgetTester tester, {
     PublishMode mode = PublishMode.incremental,
@@ -884,9 +945,7 @@ class _Harness {
         .read(publishControllerProvider.notifier)
         .publish(mode: mode);
     await tester.pump();
-    // Advance the real use case's read-back delay on the test clock, not wall
-    // time. The fake serves the committed bytes on the very first poll.
-    await tester.pump(PublishedFileReadBack.defaultInterval);
+    await tester.pump(_settle);
     return pending;
   }
 }
@@ -1000,6 +1059,7 @@ class _Events implements EventsRepository {
 class _Verifier implements PublishedSiteVerifier, PublishedSiteReadVerifier {
   _Verifier(this.answer);
   final Future<List<int>?> Function(String path) answer;
+  final List<String?> cacheBusters = [];
 
   @override
   Future<List<int>?> read({
@@ -1007,7 +1067,10 @@ class _Verifier implements PublishedSiteVerifier, PublishedSiteReadVerifier {
     required String path,
     required int maxBytes,
     String? cacheBuster,
-  }) => answer(path);
+  }) {
+    cacheBusters.add(cacheBuster);
+    return answer(path);
+  }
 
   @override
   Future<PublishedSiteReadOutcome> readOutcome({
@@ -1016,6 +1079,7 @@ class _Verifier implements PublishedSiteVerifier, PublishedSiteReadVerifier {
     required int maxBytes,
     String? cacheBuster,
   }) async {
+    cacheBusters.add(cacheBuster);
     final body = await answer(path);
     return body == null
         ? const PublishedSiteReadUnreadable()

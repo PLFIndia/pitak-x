@@ -40,6 +40,11 @@
 /// or re-encoding it (plan CV2/CV3). Absent reads as unknown: every cover is
 /// produced again, as before.
 ///
+/// And one with plan SP1 (ADR 0017 amendment of 2026-11-02, schema still 2):
+/// `committedAt` is when GitHub accepted the commit at `headSha`, so the next
+/// publish can tell "Pages is still building it" from "the site changed".
+/// Absent reads as unknown, which keeps the older, stricter rule.
+///
 /// PUBLIC data only — repo paths, git blob shas, public cover URLs — so it
 /// needs no encryption.
 library;
@@ -66,6 +71,7 @@ final class PublishManifest implements PreviousPublication {
     this.proofPath,
     this.catalogueKeyed = false,
     this.coverRendition,
+    this.committedAt,
   });
 
   /// Parses a manifest from [json]; tolerant of missing/odd fields.
@@ -92,7 +98,8 @@ final class PublishManifest implements PreviousPublication {
   ///  - `catalogueKeyed` is true only for a stored `true`.
   ///
   /// The ADR 0020 field: `coverRendition` is kept only when it is a positive
-  /// whole number; anything else reads as unknown (null).
+  /// whole number; anything else reads as unknown (null). The SP1 field
+  /// `committedAt` is kept only as a non-negative whole number.
   factory PublishManifest.fromJson(Map<String, dynamic> json) {
     Map<String, String> strMap(Object? o) => o is Map
         ? {
@@ -135,6 +142,10 @@ final class PublishManifest implements PreviousPublication {
           json['catalogueKeyed'] == true &&
           fileShas.containsKey(_booksJsonPath),
       coverRendition: PublishCoverRendition.tryParse(json['coverRendition']),
+      committedAt: switch (json['committedAt']) {
+        final int at when at >= 0 => at,
+        _ => null,
+      },
     );
   }
 
@@ -194,6 +205,11 @@ final class PublishManifest implements PreviousPublication {
   /// the recorded sha ([reconciledFrom]).
   final int? coverRendition;
 
+  /// When GitHub accepted the commit at [headSha] (epoch ms, this phone's
+  /// clock), or null when unknown (plan SP1). It describes that one commit,
+  /// so it follows [headSha] exactly like [proofPath] does.
+  final int? committedAt;
+
   /// The empty manifest (no publication recorded on this phone).
   static const PublishManifest empty = PublishManifest();
 
@@ -251,7 +267,8 @@ final class PublishManifest implements PreviousPublication {
   ///    delete them;
   ///  - `state` survives only while it describes this exact head; otherwise
   ///    the record is `deployed` again (an unproven commit). The proof path
-  ///    describes that same head, so it follows the same rule;
+  ///    and the commit time describe that same head, so they follow the same
+  ///    rule;
   ///  - `catalogueKeyed` survives only while the branch still holds the exact
   ///    `books.json` this phone recorded. Another phone (with another salt)
   ///    or an older Pitak may have republished the catalogue since, and its
@@ -301,6 +318,7 @@ final class PublishManifest implements PreviousPublication {
       proofPath: sameHead ? proofPath : null,
       catalogueKeyed: stillKeyed,
       coverRendition: sameSite && coversUntouched ? coverRendition : null,
+      committedAt: sameHead ? committedAt : null,
     );
   }
 
@@ -337,12 +355,17 @@ final class PublishManifest implements PreviousPublication {
   /// the catalogue passes its section's rendition and cover sources; any
   /// other commit passes this record's own, unchanged. It is required for
   /// the same reason as [proofPath]: no commit may forget it.
+  ///
+  /// [committedAt] is when GitHub answered the commit (the clock read AFTER
+  /// it returned: a paced upload can take many minutes), required for the
+  /// same reason (plan SP1).
   PublishManifest afterCommit({
     required String commitSha,
     required Map<String, String> mergedShas,
     required Map<String, String> coverUrlByBookId,
     required int? coverRendition,
     required PublishProofPath proofPath,
+    required int committedAt,
     bool wroteKeyedCatalogue = false,
   }) {
     final books = mergedShas[_booksJsonPath];
@@ -360,23 +383,12 @@ final class PublishManifest implements PreviousPublication {
           books != null &&
           (wroteKeyedCatalogue || (booksUnchanged && catalogueKeyed)),
       coverRendition: coverRendition,
+      committedAt: provable ? committedAt : null,
     );
   }
 
   /// The same record, now proven to be served by the live site.
-  PublishManifest asLive() => PublishManifest(
-    schema: schema,
-    repo: repo,
-    branch: branch,
-    headSha: headSha,
-    ownershipConfirmed: ownershipConfirmed,
-    state: PublishState.live,
-    fileShas: fileShas,
-    coverUrlByBookId: coverUrlByBookId,
-    proofPath: proofPath,
-    catalogueKeyed: catalogueKeyed,
-    coverRendition: coverRendition,
-  );
+  PublishManifest asLive() => _copyWith(state: PublishState.live);
 
   /// The same record, but no longer vouching for the keys in its
   /// `books.json` ([catalogueKeyed] false); everything else is kept.
@@ -384,18 +396,7 @@ final class PublishManifest implements PreviousPublication {
   /// Used when the ids behind the keys may now name other items: a restore
   /// that activates a new data generation (plan J9, S6). The next catalogue
   /// publish writes fresh keys and sets the flag again.
-  PublishManifest withoutCatalogueKeys() => PublishManifest(
-    schema: schema,
-    repo: repo,
-    branch: branch,
-    headSha: headSha,
-    ownershipConfirmed: ownershipConfirmed,
-    state: state,
-    fileShas: fileShas,
-    coverUrlByBookId: coverUrlByBookId,
-    proofPath: proofPath,
-    coverRendition: coverRendition,
-  );
+  PublishManifest withoutCatalogueKeys() => _copyWith(catalogueKeyed: false);
 
   /// The same record, but forgetting which LOCAL cover file each published
   /// cover came from; remote cover sources and everything else are kept.
@@ -411,21 +412,34 @@ final class PublishManifest implements PreviousPublication {
   /// with it (ADR 0020 Decision 7, plan S11; `coverSourcesKeptAfterNewCovers`).
   PublishManifest withoutLocalCoverSources({
     Set<String> exceptLeaves = const {},
+  }) => _copyWith(
+    coverUrlByBookId: coverSourcesKeptAfterNewCovers(
+      coverUrlByBookId,
+      keptLeaves: exceptLeaves,
+    ),
+  );
+
+  /// This record with only the given fields replaced. The three derived
+  /// records above share this ONE copy, so a field added later cannot be
+  /// forgotten in one of them (beginner note: that is how a record silently
+  /// loses a fact on its way through `asLive`).
+  PublishManifest _copyWith({
+    PublishState? state,
+    Map<String, String>? coverUrlByBookId,
+    bool? catalogueKeyed,
   }) => PublishManifest(
     schema: schema,
     repo: repo,
     branch: branch,
     headSha: headSha,
     ownershipConfirmed: ownershipConfirmed,
-    state: state,
+    state: state ?? this.state,
     fileShas: fileShas,
-    coverUrlByBookId: coverSourcesKeptAfterNewCovers(
-      coverUrlByBookId,
-      keptLeaves: exceptLeaves,
-    ),
+    coverUrlByBookId: coverUrlByBookId ?? this.coverUrlByBookId,
     proofPath: proofPath,
-    catalogueKeyed: catalogueKeyed,
+    catalogueKeyed: catalogueKeyed ?? this.catalogueKeyed,
     coverRendition: coverRendition,
+    committedAt: committedAt,
   );
 
   /// The exact moved-page record after retirement read-back succeeds.
@@ -433,7 +447,8 @@ final class PublishManifest implements PreviousPublication {
   /// The head is the retirement commit (or an already-retired head found by
   /// Retry), never the old live anchor. Only moved files remain owned. A
   /// moved page has no catalogue, so it carries no keys, no cover rendition
-  /// and needs no proof path (a retired record is never checked again).
+  /// and needs no proof path or commit time (a retired record is never
+  /// checked again).
   PublishManifest asRetired({
     required String commitSha,
     required Map<String, String> movedFileShas,
@@ -461,6 +476,7 @@ final class PublishManifest implements PreviousPublication {
     if (proofPath case final proofPath?) 'proofPath': proofPath.name,
     'catalogueKeyed': catalogueKeyed,
     if (coverRendition case final rendition?) 'coverRendition': rendition,
+    if (committedAt case final at?) 'committedAt': at,
   };
 
   /// The ONE local/remote rule for cover sources (`CoverPaths.isLocal`),

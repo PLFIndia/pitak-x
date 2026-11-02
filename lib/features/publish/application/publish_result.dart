@@ -4,6 +4,7 @@
 /// small and readable while publish preparation gains explicit validation.
 library;
 
+import 'package:pitaka/features/publish/application/site/deferred_verification_request.dart';
 import 'package:pitaka/features/publish/domain/cloudflare/cloudflare_remote_anchor.dart';
 import 'package:pitaka/features/publish/domain/publish_target.dart';
 
@@ -129,6 +130,7 @@ final class PublishSuccess extends PublishResult {
     this.localStateSaved = true,
     this.temporaryCleanupFailed = false,
     this.newDeployment = true,
+    this.verification,
   });
 
   /// The public page URL.
@@ -141,8 +143,9 @@ final class PublishSuccess extends PublishResult {
   final bool availabilityOmitted;
 
   /// True when the live site was VERIFIED serving this publish's bytes
-  /// (read-back, à la Localcart Orange); null when the bounded wait ran out
-  /// before the Pages build landed (it usually finishes moments later).
+  /// (read-back, à la Localcart Orange); null when not proven yet. A GitHub
+  /// publish is always null since plan SP1: it returns at commit time and
+  /// [verification] proves it afterwards.
   final bool? pagesLive;
 
   /// False when the commit landed but this phone could not save its own record
@@ -160,6 +163,13 @@ final class PublishSuccess extends PublishResult {
   /// False for a deploy-free verification of an earlier publication (fix-plan
   /// L7), so the card can say "Verified" instead of "Published!".
   final bool newDeployment;
+
+  /// GitHub only (plan SP1): what the deferred check must prove for this
+  /// commit, which the controller hands to `PublishGoingLive` once the
+  /// publish queue is released. Null for Cloudflare (its read-back runs
+  /// inside the publish) and when this phone could not save the record, so
+  /// nothing could be upgraded.
+  final DeferredVerificationRequest? verification;
 }
 
 /// Publish failed; [reason] is a safe, human-readable message.
